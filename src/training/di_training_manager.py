@@ -25,7 +25,7 @@ class DITrainingManager(InjectableBase):
     for creating and managing training pipeline components.
     """
 
-    def __init__(
+        def __init__(:
         self, config: dict[str, Any] | None = None,
         container: DependencyContainer | None = None, state_manager: IStateManager | None = None, exchange_client: IExchangeClient | None = None) -> None:
         super().__init__(config)
@@ -190,10 +190,7 @@ except Exception as e:
             self.print(failed("Configuration validation failed: {e}"))
             return False
 
-    @handle_errors(
-        exceptions=(Exception, ) = default_return=False,
-        context="training execution",
-    )
+@handle_errors( exceptions=(Exception, ) = default_return=False, context="training execution", )
     async def run_training_pipeline(
         self, symbol: str = exchange: str,
         training_type: str = "full",

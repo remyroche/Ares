@@ -76,13 +76,9 @@ vif_scores[feature] = vif
 except Exception:
             vif_scores[feature] = np.nan
 
-return pd.Series(vif_scores)
+    return pd.Series(vif_scores)
 
-@comprehensive_vif_validation(
-timeout_seconds = 30,
-max_vif_threshold = 1000.0,
-fallback_strategy="ones"
-)
+@comprehensive_vif_validation( timeout_seconds = 30, max_vif_threshold = 1000.0, fallback_strategy="ones" )
 def calculate_vif_robust(data: pd.DataFrame, features: Optional[List[str]] = None) -> pd.Series:
     """
 Robust VIF calculation with comprehensive error handling.
@@ -107,7 +103,7 @@ features = [f for f in features if f in data.columns and data[f].dtype in ['int6
 
 if not features:
         logger.warning("⚠️ VIF Calculator: No valid numeric features found")
-return pd.Series()
+    return pd.Series()
 
 # Remove features with zero variance
 variances, data[features].var()
@@ -118,7 +114,7 @@ features = [f for f in features if f not in zero_var_features]
 
 if len(features) < 2:
         logger.warning("⚠️ VIF Calculator: Not enough features for VIF calculation")
-return pd.Series([1.0] * len(features), index = features)
+    return pd.Series([1.0] * len(features), index = features)
 
 try:
     pass  # TODO: Add proper exception handling
@@ -182,19 +178,20 @@ vif_series, vif_series.fillna(1.0)  # Default VIF for problematic features
 logger.info(f"✅ VIF Calculator: Successfully calculated VIF for {len(features)} features")
 logger.info(f"📊 VIF range: {vif_series.min():.2f} to {vif_series.max():.2f}")
 
-return vif_series
+    return vif_series
 
 except Exception as e:
             logger.error(f"❌ VIF Calculator: Matrix inversion failed: {e}")
 # Fallback to simple VIF calculation
-return calculate_vif_simple(data, features)
+    return calculate_vif_simple(data, features)
 
 except Exception as e:
         logger.error(f"❌ VIF Calculator: Unexpected error: {e}")
 # Return default values
-return pd.Series([1.0] * len(features), index = features)
+    return pd.Series([1.0] * len(features), index = features)
 
-def calculate_vif_iterative(
+def calculate_vif_iterative(:
+    pass  # TODO: Add implementation
 data: pd.DataFrame,
 max_vif: float, 10.0,
 max_iterations: int, 10,
@@ -250,7 +247,7 @@ final_vif, calculate_vif_robust(data, current_features)
 
 logger.info(f"📊 VIF Calculator: Final result - {len(current_features)} features kept, {len(removed_features)} removed")
 
-return final_vif, removed_features
+    return final_vif, removed_features
 
 def analyze_vif_issues(vif_values: pd.Series) -> Dict[str, any]:
     """
@@ -306,7 +303,7 @@ logger.info(f"   VIF range: {analysis['min_vif']:.2f} to {analysis['max_vif']:.2
 logger.info(f"   Mean VIF: {analysis['mean_vif']:.2f}")
 logger.info(f"   Issues found: {len(analysis['issues'])}")
 
-return analysis
+    return analysis
 
 def get_vif_recommendations(vif_values: pd.Series, threshold: float, 10.0) -> List[str]:
     """
@@ -351,4 +348,4 @@ recommendations.append("Check for constant features or data issues")
 if not recommendations:
         recommendations.append("VIF values look good - no immediate action required")
 
-return recommendations
+    return recommendations

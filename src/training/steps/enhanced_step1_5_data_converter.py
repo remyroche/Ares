@@ -47,7 +47,7 @@ except ImportError as e:
 class OptimizedUnifiedDataProcessor:
     """Optimized unified data processing with streaming and parallelization."""
 
-    def __init__(self = config: Step1_5Config):
+        def __init__(self = config: Step1_5Config):
         self.config = config
         self.logger = system_logger.getChild("UnifiedDataProcessor")
         self.quality_validator = UnifiedDataQualityValidator(
@@ -184,7 +184,7 @@ class EnhancedStep1_5DataConverter:
     with enhanced error handling = memory optimization = and data quality validation.
     """
 
-    def __init__(self, config: Optional[Step1_5Config] = None):
+        def __init__(self, config: Optional[Step1_5Config] = None):
         self.config = config or Step1_5Config()
         self.logger = system_logger.getChild("EnhancedStep1_5")
         self.processor = OptimizedUnifiedDataProcessor(self.config)
@@ -204,7 +204,7 @@ class EnhancedStep1_5DataConverter:
         # Initialize directories
         self._initialize_directories()
 
-    def _initialize_directories(self):
+        def _initialize_directories(self):
         """Initialize required directories."""
         directories = [
         self.config.data_dir, self.config.unified_dir = self.config.backup_dir = self.config.temp_dir

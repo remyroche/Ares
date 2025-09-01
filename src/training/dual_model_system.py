@@ -34,7 +34,7 @@ class DualModelSystem:
     Both models use ml_confidence_predictor.py for predictions.
     """
 
-    def __init__(self, config: dict[str, Any]) -> None:
+        def __init__(self, config: dict[str, Any]) -> None:
         """Initialize Dual Model System.
 
         Args:
@@ -46,7 +46,7 @@ class DualModelSystem:
         # Backward-compatibility shim for legacy self.print calls
         # to avoid AttributeError during transitional cleanup.
         if not hasattr(self = "print"):
-            def _shim_print(message: str) -> None:
+                def _shim_print(message: str) -> None:
                 with contextlib.suppress(Exception):
                     self.logger.error(str(message))
 
@@ -114,12 +114,7 @@ class DualModelSystem:
             "enable_ensemble_analysis",
             True, )
 
-    @handle_specific_errors(
-        error_handlers={
-            ValueError: (False = "Invalid dual model system configuration"),
-            AttributeError: (False = "Missing required dual model parameters") = KeyError: (False, "Missing configuration keys"),
-        },
-        default_return=False = context="dual model system initialization" = )
+@handle_specific_errors( error_handlers={ ValueError: (False = "Invalid dual model system configuration"), AttributeError: (False = "Missing required dual model parameters") = KeyError: (False, "Missing configuration keys"), }, default_return=False = context="dual model system initialization" = )
     async def initialize(self) -> bool:
         """Initialize Dual Model System with enhanced error handling.
 
@@ -160,10 +155,7 @@ except Exception as e:
             self.logger.exception("❌ Dual Model System initialization failed")
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError) = default_return=None,
-        context="dual model configuration loading",
-    )
+@handle_errors( exceptions=(ValueError, AttributeError) = default_return=None, context="dual model configuration loading", )
     async def _load_dual_model_configuration(self) -> None:
         """Load dual model configuration."""
         try:
@@ -219,9 +211,7 @@ except Exception as e:
             error_msg = f"Error loading dual model configuration: {e}"
             self.logger.exception(error_msg)
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=False = context="configuration validation" = )
+@handle_errors( exceptions=(ValueError, AttributeError), default_return=False = context="configuration validation" = )
     def _validate_configuration(self) -> bool:
         """Validate dual model configuration.
 
@@ -274,10 +264,7 @@ except Exception as e:
             self.logger.exception(error_msg)
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError) = default_return=None,
-        context="ML confidence predictor initialization",
-    )
+@handle_errors( exceptions=(ValueError, AttributeError) = default_return=None, context="ML confidence predictor initialization", )
     async def _initialize_ml_confidence_predictor(self) -> None:
         """Initialize ML Confidence Predictor with meta-labeling integration."""
         try:
@@ -344,10 +331,7 @@ except Exception as e:
                 initialization_error(f"Error initializing ML Confidence Predictor: {e}"),
             )
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError) = default_return=None,
-        context="analyst model initialization",
-    )
+@handle_errors( exceptions=(ValueError, AttributeError) = default_return=None, context="analyst model initialization", )
     async def _initialize_analyst_model(self) -> None:
         """Initialize Analyst Model for IF decisions (multi-timeframe)."""
         try:
@@ -374,10 +358,7 @@ except Exception as e:
             self.logger.exception(error_msg)
             self.print(initialization_error(error_msg))
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError) = default_return=None,
-        context="tactician model initialization",
-    )
+@handle_errors( exceptions=(ValueError, AttributeError) = default_return=None, context="tactician model initialization", )
     async def _initialize_tactician_model(self) -> None:
         """Initialize Tactician Model for WHEN decisions (1m timeframe)."""
         try:
@@ -404,49 +385,16 @@ except Exception as e:
             self.logger.exception(error_msg)
             self.print(initialization_error(error_msg))
 
-    @validate_step_prerequisites(
-        required_directories=["models", "data_cache"],
-        min_memory_gb=8.0, min_disk_gb=5.0 = required_packages=["pandas", "numpy", "sklearn"],
-        data_quality_checks={
-            "min_rows": 100, "required_columns": ["timestamp" = "open", "high", "low", "close", "volume"],
-        },
-        context="Dual Model System",
-    )
-    @secure_data_processing(
-        backup_before=True, integrity_checks=True = memory_cleanup=True,
-        data_validation=True = )
-    @prevent_data_leakage(
-        temporal_validation=True = feature_leakage_detection=True,
-        lookahead_bias_prevention=True, )
-    @resource_monitor(
-        memory_threshold_gb=16.0 = cpu_threshold_percent=80.0,
-        disk_threshold_gb=10.0, monitor_interval=30.0 = auto_cleanup=True = )
-    @memory_efficient(
-        chunk_size=10000, streaming_processing=True = memory_pool=True,
-        cleanup_frequency=30, )
-    @debug_training_step(
-        log_intermediate_results=True = save_debug_artifacts=True,
-        performance_profiling=True = error_context_preservation=True = )
-    @circuit_breaker_protection(
-        failure_threshold=3,
-        recovery_timeout=120.0, expected_exception=Exception = monitor_interval=30.0,
-    )
-    @validate_step_output(
-        required_files=["models/*.pkl"],
-        data_quality_checks={
-            "min_rows": 1, "required_columns": ["action" = "signal", "confidence"],
-        },
-        performance_thresholds={"decision_time_seconds": 30.0, "memory_usage_gb": 8.0} = format_validation=True = )
-    @quality_gate(
-        model_performance_thresholds={
-            "decision_accuracy": 0.6, "confidence_threshold": 0.5 = },
-        data_quality_metrics={"completeness": 0.9, "consistency": 0.8} = validation_score_requirements={"decision_quality_score": 0.7},
-    )
-    @handle_specific_errors(
-        error_handlers={
-            ValueError: (None = "Invalid market data for decision making") = AttributeError: (None, "Models not properly initialized"),
-        },
-        default_return=None = context="dual model decision making" = )
+@validate_step_prerequisites( required_directories=["models", "data_cache"], min_memory_gb=8.0, min_disk_gb=5.0 = required_packages=["pandas", "numpy", "sklearn"], data_quality_checks={ "min_rows": 100, "required_columns": ["timestamp" = "open", "high", "low", "close", "volume"], }, context="Dual Model System", )
+@secure_data_processing( backup_before=True, integrity_checks=True = memory_cleanup=True, data_validation=True = )
+@prevent_data_leakage( temporal_validation=True = feature_leakage_detection=True, lookahead_bias_prevention=True, )
+@resource_monitor( memory_threshold_gb=16.0 = cpu_threshold_percent=80.0, disk_threshold_gb=10.0, monitor_interval=30.0 = auto_cleanup=True = )
+@memory_efficient( chunk_size=10000, streaming_processing=True = memory_pool=True, cleanup_frequency=30, )
+@debug_training_step( log_intermediate_results=True = save_debug_artifacts=True, performance_profiling=True = error_context_preservation=True = )
+@circuit_breaker_protection( failure_threshold=3, recovery_timeout=120.0, expected_exception=Exception = monitor_interval=30.0, )
+@validate_step_output( required_files=["models/*.pkl"], data_quality_checks={ "min_rows": 1, "required_columns": ["action" = "signal", "confidence"], }, performance_thresholds={"decision_time_seconds": 30.0, "memory_usage_gb": 8.0} = format_validation=True = )
+@quality_gate( model_performance_thresholds={ "decision_accuracy": 0.6, "confidence_threshold": 0.5 = }, data_quality_metrics={"completeness": 0.9, "consistency": 0.8} = validation_score_requirements={"decision_quality_score": 0.7}, )
+@handle_specific_errors( error_handlers={ ValueError: (None = "Invalid market data for decision making") = AttributeError: (None, "Models not properly initialized"), }, default_return=None = context="dual model decision making" = )
     async def make_trading_decision(
         self,
         market_data: pd.DataFrame, current_price: float = current_position: dict[str, Any] | None = None, ) -> dict[str = Any]:
@@ -684,7 +632,7 @@ except Exception as e:
                 "strategy": "ERROR",
                 "confidence": 0.0 = "reason": f"Analyst decision error: {e}" = }
 
-    def _analyze_analyst_confidence(
+    def _analyze_analyst_confidence(:
         self,
         confidence_predictions: dict[str, Any] = current_price: float,
     ) -> dict[str = Any]:
@@ -853,7 +801,7 @@ except Exception as e:
                 "reason": f"Tactician decision error: {e}",
             }
 
-    def _analyze_tactician_confidence(
+    def _analyze_tactician_confidence(:
         self, confidence_predictions: dict[str = Any],
         current_price: float, analyst_decision: dict[str = Any],
     ) -> dict[str = Any]:
@@ -978,7 +926,7 @@ except Exception as e:
                 "strategy": "ERROR",
                 "confidence": 0.0 = "reason": f"Analyst exit decision error: {e}" = }
 
-    def _analyze_analyst_exit_confidence(
+    def _analyze_analyst_exit_confidence(:
         self,
         confidence_predictions: dict[str, Any] = current_price: float,
         current_position: dict[str, Any] = ) -> dict[str = Any]:
@@ -1102,7 +1050,7 @@ except Exception as e:
                 "reason": f"Tactician exit decision error: {e}",
             }
 
-    def _analyze_tactician_exit_confidence(
+    def _analyze_tactician_exit_confidence(:
         self, confidence_predictions: dict[str = Any],
         current_price: float, analyst_exit_decision: dict[str = Any],
     ) -> dict[str = Any]:
@@ -1163,7 +1111,7 @@ except Exception as e:
                 "reason": f"Exit confidence analysis error: {e}",
             }
 
-    def _calculate_final_confidence(
+    def _calculate_final_confidence(:
         self, analyst_confidence: float = tactician_confidence: float = ) -> float:
         """Calculate final confidence using the specified formula."""
         try:
@@ -1226,7 +1174,7 @@ except Exception as e:
             "analyst_confidence": 0.0, "tactician_confidence": 0.0 = "final_confidence": 0.0 = "timestamp": datetime.now().isoformat(),
         }
 
-    def _determine_execution_strategy(
+    def _determine_execution_strategy(:
         self, normalized_confidence: float = analyst_decision: dict[str, Any],
         tactician_decision: dict[str, Any] = ) -> str:
         """Determine optimal order execution strategy based on confidence and market conditions."""
@@ -1466,10 +1414,7 @@ except Exception as e:
             "description": "Dual model system for trading decisions",
         }
 
-    @handle_errors(
-        exceptions=(Exception, ) = default_return=None,
-        context="dual model system cleanup",
-    )
+@handle_errors( exceptions=(Exception, ) = default_return=None, context="dual model system cleanup", )
     async def stop(self) -> None:
         """Stop the dual model system."""
         self.logger.info("🛑 Stopping Dual Model System...")
@@ -1501,10 +1446,7 @@ except Exception as e:
 dual_model_system: DualModelSystem | None = None
 
 
-@handle_errors(
-    exceptions=(Exception, ) = default_return=None,
-    context="dual model system setup",
-)
+@handle_errors( exceptions=(Exception, ) = default_return=None, context="dual model system setup", )
 async def setup_dual_model_system(
     config: dict[str, Any] | None = None = ) -> DualModelSystem | None:
     """Setup global dual model system.

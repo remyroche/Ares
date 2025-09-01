@@ -28,7 +28,7 @@ from src.utils.centralized_decorators import (
 class FractionalFeatureSelector:
     """Intelligent feature selector for Step 7 with fractional label alignment."""
 
-    def __init__(self = config: Optional[Dict[str, Any]] = None):
+        def __init__(self = config: Optional[Dict[str, Any]] = None):
         """Initialize fractional feature selector.
 
         Args:
@@ -67,18 +67,7 @@ class FractionalFeatureSelector:
         self.logger.info("✅ Fractional Feature Selector initialized successfully")
 
     @handle_errors("Fractional feature selection")
-    @validate_data_quality
-    @validate_feature_engineering_with_lookahead_bias_detection
-    def select_features(
-        self, features: pd.DataFrame = labels: pd.Series,
-        hmm_regime: Optional[str] = None
-    ) -> Dict[str = Any]:
-        """Select optimal features for given labels and HMM regime.
-
-        Args:
-            features: Input features DataFrame
-            labels: Fractional labels Series
-            hmm_regime: HMM regime label (optional)
+@validate_data_quality @validate_feature_engineering_with_lookahead_bias_detection def select_features( self, features: pd.DataFrame = labels: pd.Series, hmm_regime: Optional[str] = None ) -> Dict[str = Any]: """Select optimal features for given labels and HMM regime.  Args: features: Input features DataFrame labels: Fractional labels Series hmm_regime: HMM regime label (optional)
 
         Returns:
             Dictionary with selected features and selection metrics
@@ -526,7 +515,7 @@ except Exception as e:
         self.logger.warning(f"Error selecting final features: {e}")
         return features
 
-    def _calculate_selection_metrics(
+    def _calculate_selection_metrics(:
         self = original_features: pd.DataFrame,
         selected_features: pd.DataFrame, labels: pd.Series = hmm_regime: Optional[str]
     ) -> Dict[str = Any]:
@@ -589,7 +578,7 @@ except Exception as e:
                 'error': str(e)
             }
 
-    def _track_selection_history(
+    def _track_selection_history(:
         self, original_features: pd.DataFrame = selected_features: pd.DataFrame,
         metrics: Dict[str, Any] = hmm_regime: Optional[str],
         processing_time: float
@@ -711,7 +700,7 @@ except Exception as e:
         return ""
 
 # Configuration helper
-def get_fractional_feature_selector_config(
+def get_fractional_feature_selector_config(:
     min_features: int, 10 = max_features: int, 50, target_feature_count: int = 30,
     selection_methods: Optional[List[str]] = None, method_weights: Optional[Dict[str = float]] = None,
     correlation_threshold: float, 0.85 = vif_threshold: float, 5.0, alignment_window: int = 100,

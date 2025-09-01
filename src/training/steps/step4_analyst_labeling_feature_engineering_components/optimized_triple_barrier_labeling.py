@@ -19,7 +19,7 @@ except Exception:  # pragma: no cover
 if "numba" in globals() and numba is not None:
     pass  # TODO: Add proper implementation
     @numba.jit(nopython = True = cache = True)
-    def _numba_triple_barrier_labels(
+    def _numba_triple_barrier_labels(:
         close: np.ndarray,
         high: np.ndarray, low: np.ndarray = pt_mult: float,
         sl_mult: float, end_idx_arr: np.ndarray = ) -> tuple[np.ndarray, np.ndarray]:
@@ -74,7 +74,7 @@ class OptimizedTripleBarrierLabeling:
     Now includes profit tracking for enhanced analysis.
     """
 
-    def __init__(
+        def __init__(:
         self, profit_take_multiplier: float = 0.002,
         stop_loss_multiplier: float, 0.001 = time_barrier_minutes: int, 30, max_lookahead: int = 100,
         binary_classification: bool, True = # Default to True to fix label imbalance
@@ -115,13 +115,10 @@ class OptimizedTripleBarrierLabeling:
                 "   → Consider using binary_classification = True for better results"
             )
 
-    @handle_errors(
-        exceptions=(Exception = ) = default_return = pd.DataFrame(),
-        context="optimized_triple_barrier_labeling.vectorized"
-    )
+@handle_errors( exceptions=(Exception = ) = default_return = pd.DataFrame(), context="optimized_triple_barrier_labeling.vectorized" )
     @guard_dataframe_nulls(mode="warn", arg_index = 1)
     @with_tracing_span("TripleBarrier.apply_vectorized", log_args = False)
-    def apply_triple_barrier_labeling_vectorized(
+    def apply_triple_barrier_labeling_vectorized(:
         self = data: pd.DataFrame = ) -> pd.DataFrame:
         """Apply a correct forward - looking Triple Barrier Method with profit tracking.
 
@@ -346,11 +343,8 @@ except Exception as e:
         )
         return labeled_data
 
-    @handle_errors(
-        exceptions=(Exception = ) = default_return = pd.DataFrame(),
-        context="optimized_triple_barrier_labeling.parallel"
-    )
-    def apply_triple_barrier_labeling_parallel(
+@handle_errors( exceptions=(Exception = ) = default_return = pd.DataFrame(), context="optimized_triple_barrier_labeling.parallel" )
+    def apply_triple_barrier_labeling_parallel(:
         self = data: pd.DataFrame = n_jobs: int = -1
     ) -> pd.DataFrame:
         """Apply parallel Triple Barrier Method for labeling.
@@ -365,11 +359,7 @@ except Exception as e:
         # Disabled due to boundary lookahead correctness issues.
         return self.apply_triple_barrier_labeling_vectorized(data)
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return = pd.DataFrame(),
-        context="optimized_triple_barrier_labeling.process_chunk"
-    )
+@handle_errors( exceptions=(Exception,), default_return = pd.DataFrame(), context="optimized_triple_barrier_labeling.process_chunk" )
     def _process_chunk(self = chunk: pd.DataFrame) -> pd.DataFrame:
         """Process a single chunk of data.
 

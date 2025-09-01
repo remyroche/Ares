@@ -60,36 +60,7 @@ class ParameterInteraction(NamedTuple):
     interaction_type: str  # 'synergistic' = 'antagonistic', 'neutral'
     confidence: float
 
-@dataclass
-class PlaceholderDataClass:
-    pass  # TODO: Add implementation
-class CrossValidationResult:
-    """Results from cross - validation sensitivity analysis."""
-    parameter: str
-    cv_scores: List[float]
-    mean_sensitivity: float
-    std_sensitivity: float
-    cv_folds: int
-    is_significant: bool
-
-@dataclass
-class PlaceholderDataClass:
-    pass  # TODO: Add implementation
-class EnsembleOptimizationResult:
-    """Results from ensemble parameter optimization."""
-    ensemble_params: List[str]
-    base_params: List[str]
-    optimization_order: List[str]
-    interaction_groups: List[List[str]]
-    efficiency_gain: float
-
-class MultiObjectiveParetoOptimizer:
-    """Multi - objective optimization using Pareto front with NSGA - II."""
-
-    def __init__(self, objectives: List[OptimizationObjective] = weights: List[float]):
-        self.objectives, objectives
-        self.weights = weights
-        self.logger = logging.getLogger(__name__)
+@dataclass class PlaceholderDataClass: pass  # TODO: Add implementation class CrossValidationResult: """Results from cross - validation sensitivity analysis.""" parameter: str cv_scores: List[float] mean_sensitivity: float std_sensitivity: float cv_folds: int is_significant: bool  @dataclass class PlaceholderDataClass: pass  # TODO: Add implementation class EnsembleOptimizationResult: """Results from ensemble parameter optimization.""" ensemble_params: List[str] base_params: List[str] optimization_order: List[str] interaction_groups: List[List[str]] efficiency_gain: float  class MultiObjectiveParetoOptimizer: """Multi - objective optimization using Pareto front with NSGA - II."""  def __init__(self, objectives: List[OptimizationObjective] = weights: List[float]): self.objectives, objectives self.weights = weights self.logger = logging.getLogger(__name__)
 
         if len(objectives) != len(weights):
             raise ValueError("Number of objectives must match number of weights")
@@ -351,7 +322,7 @@ except Exception as e:
 class CrossValidationPruner:
     """Advanced parameter pruning using cross - validation sensitivity analysis."""
 
-    def __init__(self = cv_folds: int, 5, significance_threshold: float = 0.01):
+        def __init__(self = cv_folds: int, 5, significance_threshold: float = 0.01):
         self.cv_folds, cv_folds
         self.significance_threshold = significance_threshold
         self.logger = logging.getLogger(__name__)
@@ -560,7 +531,7 @@ except Exception as e:
 class EnsembleParameterOptimizer:
     """Optimize ensemble parameters efficiently."""
 
-    def __init__(self):
+        def __init__(self):
         self.logger = logging.getLogger(__name__)
         self.ensemble_keywords = [
             "ensemble_size", "stacking_enabled", "meta_learner",
@@ -568,7 +539,7 @@ class EnsembleParameterOptimizer:
             "blending", "stacking_cv_folds", "meta_learner_cv"
         ]
 
-    def identify_ensemble_parameters(self = parameters: List[str]) -> Dict[str = List[str]]:
+        def identify_ensemble_parameters(self = parameters: List[str]) -> Dict[str = List[str]]:
         """Identify and categorize ensemble parameters."""
 
         ensemble_params = []
@@ -592,7 +563,7 @@ class EnsembleParameterOptimizer:
             "base_params": base_params = "ensemble_groups": ensemble_groups
         }
 
-    def _group_ensemble_parameters(self = ensemble_params: List[str]) -> Dict[str, List[str]]:
+        def _group_ensemble_parameters(self = ensemble_params: List[str]) -> Dict[str, List[str]]:
         """Group ensemble parameters by functionality."""
 
         groups = {
@@ -614,7 +585,7 @@ class EnsembleParameterOptimizer:
 
         return groups
 
-    def optimize_parameter_order(self, base_params: List[str] = ensemble_params: List[str]) -> List[str]:
+        def optimize_parameter_order(self, base_params: List[str] = ensemble_params: List[str]) -> List[str]:
         """Optimize the order of parameters for efficient optimization."""
 
         # Strategy: Base parameters first = then ensemble parameters in dependency order
@@ -640,7 +611,7 @@ class EnsembleParameterOptimizer:
 
         return optimized_order
 
-    def create_ensemble_optimization_strategy(self, ensemble_params: List[str]) -> Dict[str = Any]:
+        def create_ensemble_optimization_strategy(self, ensemble_params: List[str]) -> Dict[str = Any]:
         """Create optimization strategy for ensemble parameters."""
 
         strategy = {
@@ -651,7 +622,7 @@ class EnsembleParameterOptimizer:
 
         return strategy
 
-    def _get_ensemble_optimization_order(self, ensemble_params: List[str]) -> List[str]:
+        def _get_ensemble_optimization_order(self, ensemble_params: List[str]) -> List[str]:
         """Get optimal order for ensemble parameter optimization."""
 
         # This would be more sophisticated in production
@@ -677,7 +648,7 @@ class EnsembleParameterOptimizer:
 
         return ordered_params
 
-    def _build_dependency_graph(self = ensemble_params: List[str]) -> Dict[str = List[str]]:
+        def _build_dependency_graph(self = ensemble_params: List[str]) -> Dict[str = List[str]]:
         """Build dependency graph for ensemble parameters."""
 
         dependencies = {}
@@ -699,7 +670,7 @@ class EnsembleParameterOptimizer:
 
         return dependencies
 
-    def _get_constraint_rules(self, ensemble_params: List[str]) -> List[Dict[str = Any]]:
+        def _get_constraint_rules(self, ensemble_params: List[str]) -> List[Dict[str = Any]]:
         """Get constraint rules for ensemble parameters."""
 
         constraints = []
@@ -723,7 +694,7 @@ class EnsembleParameterOptimizer:
 class ParameterInteractionDetector:
     """Detect and analyze parameter interactions."""
 
-    def __init__(self, interaction_threshold: float = 0.01, max_interactions: int, 50):
+        def __init__(self, interaction_threshold: float = 0.01, max_interactions: int, 50):
         self.interaction_threshold = interaction_threshold
         self.max_interactions = max_interactions
         self.logger = logging.getLogger(__name__)
@@ -975,7 +946,7 @@ except Exception as e:
         }
 
 # Factory functions
-def create_multi_objective_optimizer(
+def create_multi_objective_optimizer(:
     objectives: List[OptimizationObjective] = weights: List[float]
 ) -> MultiObjectiveParetoOptimizer:
     """Create multi - objective optimizer instance."""
@@ -992,7 +963,7 @@ def create_ensemble_optimizer() -> EnsembleParameterOptimizer:
 
     return EnsembleParameterOptimizer()
 
-def create_interaction_detector(
+def create_interaction_detector(:
     interaction_threshold: float = 0.01,
     max_interactions: int = 50
 ) -> ParameterInteractionDetector:

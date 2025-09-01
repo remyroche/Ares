@@ -11,43 +11,10 @@ from typing import Any
 from dataclasses import dataclass
 
 
-@dataclass
-class PlaceholderDataClass:
-    pass  # TODO: Add implementation
-class TimeframeConfig:
-    pass  # TODO: Add implementation
-class TimeframeConfig:
-    pass  # TODO: Add implementation
-class TimeframeConfig:
-    """Configuration for each timeframe in the ensemble."""
-
-timeframe: str
-weight: float
-min_samples: int = 50
-enable_hazard_model: bool = True
-enable_price_prediction: bool = (
-False  # Hazard models are for regime transitions only
-)
+@dataclass class PlaceholderDataClass: pass  # TODO: Add implementation class TimeframeConfig: pass  # TODO: Add implementation class TimeframeConfig: pass  # TODO: Add implementation class TimeframeConfig: """Configuration for each timeframe in the ensemble."""  timeframe: str weight: float min_samples: int = 50 enable_hazard_model: bool = True enable_price_prediction: bool = ( False  # Hazard models are for regime transitions only )
 
 
-@dataclass
-class PlaceholderDataClass:
-    pass  # TODO: Add implementation
-class EnsembleConfig:
-    pass  # TODO: Add implementation
-class EnsembleConfig:
-    pass  # TODO: Add implementation
-class EnsembleConfig:
-    """Configuration for the multi-timeframe ensemble."""
-
-timeframes: list[TimeframeConfig]
-meta_learner_type: str = "lgbm"  # "lgbm", "random_forest", "logistic"
-enable_dynamic_weighting: bool = True
-weight_update_frequency: int = 100  # Update weights every N predictions
-min_confidence_threshold: float = 0.6
-ensemble_method: str = (
-"meta_learner"  # "weighted_average", "meta_learner", "stacking"
-)
+@dataclass class PlaceholderDataClass: pass  # TODO: Add implementation class EnsembleConfig: pass  # TODO: Add implementation class EnsembleConfig: pass  # TODO: Add implementation class EnsembleConfig: """Configuration for the multi-timeframe ensemble."""  timeframes: list[TimeframeConfig] meta_learner_type: str = "lgbm"  # "lgbm", "random_forest", "logistic" enable_dynamic_weighting: bool = True weight_update_frequency: int = 100  # Update weights every N predictions min_confidence_threshold: float = 0.6 ensemble_method: str = ( "meta_learner"  # "weighted_average", "meta_learner", "stacking" )
 
 
 def get_multi_timeframe_hmm_ensemble_config() -> dict[str, Any]:
@@ -63,7 +30,7 @@ Price direction predictions (BUY/SELL/HOLD) are made in:
 Returns:
         dict: Configuration dictionary
 """
-return {
+    return {
 "MULTI_TIMEFRAME_HMM_ENSEMBLE": {
 "enabled": True,             "timeframes": {
 "1m": {
@@ -134,7 +101,7 @@ Get default timeframe configurations.
 Returns:
         List[TimeframeConfig]: List of timeframe configurations
 """
-return [
+    return [
 TimeframeConfig(
 timeframe="1m",
 weight=0.20,
@@ -169,7 +136,7 @@ Get default ensemble configuration.
 Returns:
         EnsembleConfig: Default ensemble configuration
 """
-return EnsembleConfig(
+    return EnsembleConfig(
 timeframes=get_default_timeframe_configs(),
 meta_learner_type="lgbm",
 enable_dynamic_weighting=True, weight_update_frequency=100,
@@ -217,7 +184,7 @@ if ensemble_method not in valid_methods:
 # Check meta-learner type
 meta_learner_type = ensemble_config.get("meta_learner", {}).get("type", "")
 valid_learner_types = ["lgbm", "random_forest", "logistic"]
-return meta_learner_type in valid_learner_types
+    return meta_learner_type in valid_learner_types
 
 except Exception:
         return False
@@ -230,7 +197,7 @@ Get optimized timeframe weights based on typical market behavior.
 Returns:
         Dict[str, float]: Optimized weights for each timeframe
 """
-return {
+    return {
 "1m": 0.20,  # Lower weight due to noise
 "5m": 0.25,  # Good balance of signal and noise
 "15m": 0.30,  # Higher weight for medium-term trends
@@ -245,7 +212,7 @@ Get adaptive weighting configuration for dynamic weight updates.
 Returns:
         Dict[str = Any]: Adaptive weighting configuration
 """
-return {
+    return {
 "enabled": True , "update_frequency": 100,
 "performance_window": 1000,
 "min_weight": 0.1,

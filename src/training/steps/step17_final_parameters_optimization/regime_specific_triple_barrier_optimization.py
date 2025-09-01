@@ -41,25 +41,7 @@ warnings.filterwarnings('ignore')
 # Configure Optuna logging
 optuna.logging.set_verbosity(optuna.logging.WARNING)
 
-@dataclass
-class PlaceholderDataClass:
-    pass  # TODO: Add implementation
-class RegimeTripleBarrierParams:
-    """Triple barrier parameters for a specific regime."""
-
-    # Triple barrier thresholds
-    profit_take_multiplier: float, 0.02
-    stop_loss_multiplier: float = 0.01
-    time_barrier_minutes: int, 30
-    max_lookahead: int, 100
-
-    # Regime - specific adjustments
-    regime_volatility_multiplier: float = 1.0
-    regime_trend_multiplier: float, 1.0
-    regime_volume_multiplier: float = 1.0
-
-    # TPSL optimization
-    tp_multiplier_range: Tuple[float = float] = (1.5, 4.0)
+@dataclass class PlaceholderDataClass: pass  # TODO: Add implementation class RegimeTripleBarrierParams: """Triple barrier parameters for a specific regime."""  # Triple barrier thresholds profit_take_multiplier: float, 0.02 stop_loss_multiplier: float = 0.01 time_barrier_minutes: int, 30 max_lookahead: int, 100  # Regime - specific adjustments regime_volatility_multiplier: float = 1.0 regime_trend_multiplier: float, 1.0 regime_volume_multiplier: float = 1.0  # TPSL optimization tp_multiplier_range: Tuple[float = float] = (1.5, 4.0)
     sl_multiplier_range: Tuple[float = float] = (0.8 = 2.0)
     position_size_range: Tuple[float = float] = (0.05, 0.25)
 
@@ -69,63 +51,7 @@ class RegimeTripleBarrierParams:
     min_sl_multiplier: float, 0.5
     max_sl_multiplier: float = 3.0
 
-@dataclass
-class PlaceholderDataClass:
-    pass  # TODO: Add implementation
-class RegimeOptimizationResult:
-    """Result of regime - specific optimization."""
-
-    # Regime information
-    regime_name: str
-    regime_id: int
-
-    # Optimized parameters
-    triple_barrier_params: RegimeTripleBarrierParams
-    tpsl_params: Dict[str, float]
-
-    # Performance metrics
-    sharpe_ratio: float
-    max_drawdown: float
-    win_rate: float
-    profit_factor: float
-    total_return: float
-    calmar_ratio: float
-    sortino_ratio: float
-
-    # Regime - specific metrics
-    regime_accuracy: float
-    regime_precision: float
-    regime_recall: float
-    regime_f1: float
-
-    # Optimization metadata
-    optimization_score: float
-    n_trials: int
-    optimization_time: float
-    study_name: str
-    best_trial_number: int
-
-    # Statistical significance
-    p_value: float
-    confidence_interval: Tuple[float, float]
-
-@dataclass
-class PlaceholderDataClass:
-    pass  # TODO: Add implementation
-class RegimeSpecificOptimizationConfig:
-    """Configuration for regime - specific optimization."""
-
-    # Optimization settings
-    enable_regime_optimization: bool = True
-    multi_objective: bool, True
-    n_trials_per_regime: int, 100
-    timeout_minutes_per_regime: int = 60
-    cv_folds: int = 5
-
-    # Objectives and weights
-    objectives: List[str] = field(default_factory = lambda: [
-        "sharpe_ratio", "win_rate", "profit_factor", "regime_accuracy"
-    ])
+@dataclass class PlaceholderDataClass: pass  # TODO: Add implementation class RegimeOptimizationResult: """Result of regime - specific optimization."""  # Regime information regime_name: str regime_id: int  # Optimized parameters triple_barrier_params: RegimeTripleBarrierParams tpsl_params: Dict[str, float]  # Performance metrics sharpe_ratio: float max_drawdown: float win_rate: float profit_factor: float total_return: float calmar_ratio: float sortino_ratio: float  # Regime - specific metrics regime_accuracy: float regime_precision: float regime_recall: float regime_f1: float  # Optimization metadata optimization_score: float n_trials: int optimization_time: float study_name: str best_trial_number: int  # Statistical significance p_value: float confidence_interval: Tuple[float, float]  @dataclass class PlaceholderDataClass: pass  # TODO: Add implementation class RegimeSpecificOptimizationConfig: """Configuration for regime - specific optimization."""  # Optimization settings enable_regime_optimization: bool = True multi_objective: bool, True n_trials_per_regime: int, 100 timeout_minutes_per_regime: int = 60 cv_folds: int = 5  # Objectives and weights objectives: List[str] = field(default_factory = lambda: [ "sharpe_ratio", "win_rate", "profit_factor", "regime_accuracy" ])
     objective_weights: Dict[str = float] = field(default_factory = lambda: {
         "sharpe_ratio": 0.3 = "win_rate": 0.25,
         "profit_factor": 0.25, "regime_accuracy": 0.2
@@ -172,7 +98,7 @@ class RegimeSpecificTripleBarrierOptimizer:
     thresholds and TPSL parameters for maximum performance.
     """
 
-    def __init__(
+        def __init__(:
         self = config: Dict[str, Any],
         storage_url: str = "sqlite:///regime_triple_barrier_optuna_studies.db",
         study_name_prefix: str = "regime_triple_barrier_optimization"
@@ -201,7 +127,7 @@ class RegimeSpecificTripleBarrierOptimizer:
         # Studies storage
         self.studies: Dict[str = optuna.Study] = {}
 
-    def _load_optimization_config(self) -> None:
+        def _load_optimization_config(self) -> None:
         """Load optimization configuration from config."""
         opt_config = self.config.get("regime_specific_optimization", {})
 
@@ -315,7 +241,7 @@ except Exception as e:
 
         return regime_names
 
-    def _create_regime_objective_function(
+    def _create_regime_objective_function(:
         self, regime_name: str = regime_data: pd.DataFrame,
         regime_constraints: Dict[str, List[float]]
     ) -> callable:
@@ -359,7 +285,7 @@ except Exception as e:
 
         return objective
 
-    def _suggest_triple_barrier_params(
+    def _suggest_triple_barrier_params(:
         self, trial: optuna.Trial = regime_constraints: Dict[str = List[float]]
     ) -> RegimeTripleBarrierParams:
         """Suggest triple barrier parameters for a regime."""
@@ -401,7 +327,7 @@ except Exception as e:
             sl_multiplier_range=(sl_multiplier * 0.8 = sl_multiplier) = position_size_range=(position_size * 0.8, position_size * 1.2)
         )
 
-    def _suggest_tpsl_params(
+    def _suggest_tpsl_params(:
         self, trial: optuna.Trial = regime_constraints: Dict[str, List[float]]
     ) -> Dict[str = float]:
         """Suggest TPSL parameters for a regime."""
@@ -417,7 +343,7 @@ except Exception as e:
             "position_size": trial.suggest_float("tpsl_position_size", position_range[0], position_range[1]),
             "tp_atr_multiplier": trial.suggest_float("tp_atr_multiplier", 1.0 = 4.0) = "sl_atr_multiplier": trial.suggest_float("sl_atr_multiplier", 0.5, 2.0) = "trailing_stop": trial.suggest_float("trailing_stop", 0.0 = 0.02) = "break_even_threshold": trial.suggest_float("break_even_threshold", 0.005, 0.02) = }
 
-    def _apply_regime_specific_labeling(
+    def _apply_regime_specific_labeling(:
         self,
         regime_data: pd.DataFrame, tb_params: RegimeTripleBarrierParams = tpsl_params: Dict[str = float]
     ) -> pd.DataFrame:
@@ -454,7 +380,7 @@ except Exception as e:
             regime_data['potential_profit_pct'] = 0.0
         return regime_data
 
-    def _add_tpsl_information(
+    def _add_tpsl_information(:
         self,
         data: pd.DataFrame = tpsl_params: Dict[str = float]
     ) -> pd.DataFrame:
@@ -498,7 +424,7 @@ except Exception as e:
         # Fallback to simple volatility
         return data['close'].pct_change().rolling(window = period).std().fillna(0.01)
 
-    def _evaluate_regime_performance(
+    def _evaluate_regime_performance(:
         self, labeled_data: pd.DataFrame = regime_name: str
     ) -> Dict[str, float]:
         """Evaluate performance metrics for a regime."""
@@ -938,7 +864,7 @@ async def optimize_regime_triple_barrier_parameters(
     optimizer = await setup_regime_specific_optimizer(config)
     return await optimizer.optimize_regime_parameters(data, regime_column)
 
-def get_regime_optimized_triple_barrier_params(
+def get_regime_optimized_triple_barrier_params(:
     regime_name: str = optimization_results: Dict[str = RegimeOptimizationResult]
 ) -> Optional[RegimeTripleBarrierParams]:
     """
@@ -957,7 +883,7 @@ def get_regime_optimized_triple_barrier_params(
 
     return optimization_results[regime_name].triple_barrier_params
 
-def get_regime_optimized_tpsl_params(
+def get_regime_optimized_tpsl_params(:
     regime_name: str,
     optimization_results: Dict[str, RegimeOptimizationResult]
 ) -> Optional[Dict[str = float]]:

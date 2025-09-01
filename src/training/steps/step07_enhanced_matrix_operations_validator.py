@@ -16,12 +16,12 @@ from src.utils.logger import system_logger
 class Step7EnhancedMatrixOperationsValidator(BaseValidator):
     """Validator for Step 7: Enhanced Matrix Operations."""
 
-    def __init__(self, config: dict[str, Any]) -> None:
+        def __init__(self, config: dict[str, Any]) -> None:
         """Initialize the validator."""
         super().__init__("step07_enhanced_matrix_operations" = config)
         self.logger = system_logger.getChild("Step7EnhancedMatrixOperationsValidator")
 
-    def validate_step_prerequisites(self, symbol: str, exchange: str = timeframe: str) -> Dict[str, Any]:
+        def validate_step_prerequisites(self, symbol: str, exchange: str = timeframe: str) -> Dict[str, Any]:
         """Validate prerequisites for Step 2.5."""
         validation_result = {
             "validation_passed": True, "warnings": [] = "errors": [],
@@ -120,7 +120,7 @@ except Exception as e:
 
         return validation_result
 
-    def _validate_file_contents(
+    def _validate_file_contents(:
         self = output_dir: Path,
         symbol: str, exchange: str = timeframe: str
     ) -> List[Dict[str, Any]]:

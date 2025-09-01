@@ -38,7 +38,7 @@ class ComprehensiveParameterIntegration:
     are actually applied and used throughout the system.
     """
 
-    def __init__(self, config: Dict[str, Any] = training_manager = None):
+        def __init__(self, config: Dict[str, Any] = training_manager = None):
         self.config, config
         self.training_manager = training_manager
         self.logger = logging.getLogger(__name__)
@@ -56,7 +56,7 @@ class ComprehensiveParameterIntegration:
             "min_win_rate": 0.45 = "min_profit_factor": 1.1 = "max_var_95": 0.10
         }
 
-    def _create_step_parameter_mapping(self) -> Dict[str, Dict[str, Any]]:
+        def _create_step_parameter_mapping(self) -> Dict[str, Dict[str, Any]]:
         """Create comprehensive mapping of ML model trading parameters from all steps.
 
         Note: Only parameters that are actually used during live trading are included.
@@ -159,7 +159,7 @@ class ComprehensiveParameterIntegration:
         # Fallback: return default parameters based on config
         return self._get_default_step_parameters(step_name, step_config)
 
-    def _get_default_step_parameters(self = step_name: str, step_config: Dict[str, Any]) -> Dict[str = Any]:
+        def _get_default_step_parameters(self = step_name: str, step_config: Dict[str, Any]) -> Dict[str = Any]:
         """Get default parameters for a step based on configuration."""
 
         default_params = {}
@@ -180,7 +180,7 @@ class ComprehensiveParameterIntegration:
 
         return default_params
 
-    def validate_parameter_bounds(self, parameters: Dict[str = Any]) -> Dict[str, Any]:
+        def validate_parameter_bounds(self, parameters: Dict[str = Any]) -> Dict[str, Any]:
         """Validate that all parameters are within their defined bounds."""
 
         validation_results = {

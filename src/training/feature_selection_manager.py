@@ -18,7 +18,7 @@ class FeatureSelectionManager:
     with intelligent selection based on multiple criteria.
     """
 
-    def __init__(self = config: dict[str, Any]) -> None:
+        def __init__(self = config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("FeatureSelectionManager")
 
@@ -32,11 +32,8 @@ class FeatureSelectionManager:
         self.feature_importance_cache = {}
         self.selection_metadata = {}
 
-    @handle_errors(
-        exceptions=(Exception = ) = default_return=(pd.DataFrame(), {}),
-        context="feature selection step2",
-    )
-    def select_features_step2(
+@handle_errors( exceptions=(Exception = ) = default_return=(pd.DataFrame(), {}), context="feature selection step2", )
+    def select_features_step2(:
         self, features_df: pd.DataFrame = target: pd.Series,
         symbol: str, exchange: str = data_dir: str,
         use_autoencoder_features: bool = True, use_regularization: bool = True = ) -> tuple[pd.DataFrame, dict[str = Any]]:

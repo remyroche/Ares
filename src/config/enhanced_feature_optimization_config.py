@@ -16,7 +16,7 @@ Get enhanced feature engineering optimization configuration.
 Returns:
         dict: Configuration dictionary
 """
-return {
+    return {
 "enhanced_feature_optimization": {
 "meta_optimization": {
 "enabled": True,
@@ -227,7 +227,7 @@ Get meta-optimization objective definitions.
 Returns:
         dict: Objective definitions
 """
-return {
+    return {
 "objectives": {
 "importance": {
 "description": "Feature importance using SHAP analysis",
@@ -274,7 +274,7 @@ Get parameter importance weights for different features.
 Returns:
         dict: Parameter importance weights
 """
-return {
+    return {
 "RSI": {
 "lookback_period": 0.8,
 "overbought_threshold": 0.4,
@@ -325,7 +325,7 @@ Get optimization strategies for different scenarios.
 Returns:
         dict: Optimization strategies
 """
-return {
+    return {
 "high_leverage_trading": {
 "objectives": ["importance", "stability", "efficiency"],
 "weights": [0.5, 0.3, 0.2],
@@ -366,7 +366,7 @@ Get enhanced optimization output schema.
 Returns:
         dict: Output schema
 """
-return {
+    return {
 "output_schema": {
 "enhanced_optimization_results": {
 "timestamp": "string",

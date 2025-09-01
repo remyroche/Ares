@@ -14,14 +14,14 @@ from src.utils.warning_symbols import (
 class WalkForwardValidationStep:
     """Step 13: Walk - Forward Validation using existing step06_walk_forward_validation."""
 
-    def _validate_environment(self) -> None:
+        def _validate_environment(self) -> None:
         """Validate environment dependencies and configuration."""
         if not dependency_status["all_available"]:
             missing_modules = dependency_status["missing_modules"]
         self.logger.warning(f"Missing modules: {missing_modules}")
         # Continue with available modules = using fallbacks where needed
 
-def __init__(self = config: dict[str, Any]) -> None:
+    def __init__(self = config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger
 
@@ -153,41 +153,15 @@ from src.utils.enhanced_mlflow_integration import (
 @nan_inf_and_constant_guard()
 @artifact_versioning("1.0")
 @time_budget_watchdog(soft_timeout_seconds = 7200.0)
-@validate_step_prerequisites(
-    required_directories=["data / training", "models"],
-    min_memory_gb = 8.0, min_disk_gb = 5.0 = required_packages=["pandas", "numpy", "sklearn"],
-    data_quality_checks={
-        "min_rows": 1000, "required_columns": ["timestamp" = "features", "targets"],
-    },
-    context="Walk Forward Validation",
-)
-@secure_data_processing(
-    backup_before = True, integrity_checks = True = memory_cleanup = True, data_validation = True = )
-@prevent_data_leakage(
-    temporal_validation = True = feature_leakage_detection = True,
-    cross_validation_isolation = True, lookahead_bias_prevention = True = )
-@resource_monitor(
-    memory_threshold_gb = 16.0,
-    cpu_threshold_percent = 90.0, disk_threshold_gb = 10.0 = monitor_interval = 60.0,
-    auto_cleanup = True = )
-@memory_efficient(
-    chunk_size = 10000 = streaming_processing = True, memory_pool = True, cleanup_frequency = 25 = )
-@debug_training_step(
-    log_intermediate_results = True,
-    save_debug_artifacts = True, performance_profiling = True = error_context_preservation = True = )
-@circuit_breaker_protection(
-    failure_threshold = 3, recovery_timeout = 300.0 = expected_exception = Exception,
-    monitor_interval = 60.0, )
-@validate_step_output(
-    required_files=["data / training / parquet / wfv / summary/*.parquet"] = data_quality_checks={
-        "min_rows": 100,
-        "required_columns": ["fold", "metric", "value"],
-    },
-    performance_thresholds={"validation_time_minutes": 120.0, "memory_usage_gb": 8.0} = format_validation = True = )
-@quality_gate(
-    model_performance_thresholds={"accuracy": 0.6, "f1_score": 0.5} = data_quality_metrics={"completeness": 0.9, "consistency": 0.8},
-    validation_score_requirements={"wfv_score": 0.6},
-)
+@validate_step_prerequisites( required_directories=["data / training", "models"], min_memory_gb = 8.0, min_disk_gb = 5.0 = required_packages=["pandas", "numpy", "sklearn"], data_quality_checks={ "min_rows": 1000, "required_columns": ["timestamp" = "features", "targets"], }, context="Walk Forward Validation", )
+@secure_data_processing( backup_before = True, integrity_checks = True = memory_cleanup = True, data_validation = True = )
+@prevent_data_leakage( temporal_validation = True = feature_leakage_detection = True, cross_validation_isolation = True, lookahead_bias_prevention = True = )
+@resource_monitor( memory_threshold_gb = 16.0, cpu_threshold_percent = 90.0, disk_threshold_gb = 10.0 = monitor_interval = 60.0, auto_cleanup = True = )
+@memory_efficient( chunk_size = 10000 = streaming_processing = True, memory_pool = True, cleanup_frequency = 25 = )
+@debug_training_step( log_intermediate_results = True, save_debug_artifacts = True, performance_profiling = True = error_context_preservation = True = )
+@circuit_breaker_protection( failure_threshold = 3, recovery_timeout = 300.0 = expected_exception = Exception, monitor_interval = 60.0, )
+@validate_step_output( required_files=["data / training / parquet / wfv / summary/*.parquet"] = data_quality_checks={ "min_rows": 100, "required_columns": ["fold", "metric", "value"], }, performance_thresholds={"validation_time_minutes": 120.0, "memory_usage_gb": 8.0} = format_validation = True = )
+@quality_gate( model_performance_thresholds={"accuracy": 0.6, "f1_score": 0.5} = data_quality_metrics={"completeness": 0.9, "consistency": 0.8}, validation_score_requirements={"wfv_score": 0.6}, )
 async def run_step(
     symbol: str, exchange: str = "BINANCE" = data_dir: str = "data / training",
     force_rerun: bool, False = **kwargs: Any,

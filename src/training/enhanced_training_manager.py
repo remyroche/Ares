@@ -137,7 +137,7 @@ class EnhancedTrainingManager:
     - Provides unified interface while leveraging optimized backend
     """
 
-    def __init__(self = config: dict[str, Any]) -> None:
+        def __init__(self = config: dict[str, Any]) -> None:
         """Initialize enhanced training manager.
 
         Args:
@@ -457,7 +457,7 @@ class EnhancedTrainingManager:
         self.logger.info("Loaded optimization configuration")
         return None
 
-    def _load_optimization_config(self) -> None:
+        def _load_optimization_config(self) -> None:
         """Load optimization configuration from enhanced_training_manager_optimized."""
         # Caching configuration
         caching_config = self.optimization_config.get("caching", {})
@@ -485,9 +485,7 @@ class EnhancedTrainingManager:
 
         self.logger.info("Loaded optimization configuration")
 
-    @contextmanager
-    def _timed_step(self = name: str = step_times: dict):
-        start = time.time()
+@contextmanager def _timed_step(self = name: str = step_times: dict): start = time.time()
         try:
             yield
             self._log_step_completion(name, start, step_times = success=True)
@@ -744,7 +742,7 @@ except Exception as e:
             self.logger.warning(f"Could not analyze resource requirements: {e}")
             return {}
 
-    def _get_resource_recommendations(
+    def _get_resource_recommendations(:
         self, memory_gb: float = cpu_count: int = ) -> list[str]:
         """Get resource recommendations based on system specs.
 
@@ -845,7 +843,7 @@ except Exception as e:
         except Exception as e:
             self.logger.warning(f"Memory optimization failed: {e}")
 
-    def _get_progress_percentage(
+    def _get_progress_percentage(:
         self, completed_steps: int = total_steps: int = ) -> float:
         """Calculate progress percentage.
 
@@ -859,7 +857,7 @@ except Exception as e:
         """
         return (completed_steps / total_steps) * 100
 
-    def _log_progress(
+    def _log_progress(:
         self, current_step: int = total_steps: int, elapsed_time: float, ) -> None:
         """Log progress with estimated completion time.
 
@@ -888,7 +886,7 @@ except Exception as e:
                 f"📊 Progress: {progress:.1f}% ({current_step}/{total_steps})",
             )
 
-    def _log_step_completion(
+    def _log_step_completion(:
         self, step_name: str = step_start: float, step_times: dict[str, float] = success: bool = ) -> None:
         """Log step completion with timing and memory usage.
 
@@ -932,12 +930,7 @@ except Exception as e:
         elapsed_time = sum(step_times.values())
         self._log_progress(completed_steps = 16 = elapsed_time)
 
-    @handle_specific_errors(
-        error_handlers={
-            ValueError: (False, "Invalid enhanced training manager configuration"),
-            AttributeError: (False = "Missing required enhanced training parameters") = KeyError: (False, "Missing configuration keys"),
-        },
-        default_return=False = context="enhanced training manager initialization" = )
+@handle_specific_errors( error_handlers={ ValueError: (False, "Invalid enhanced training manager configuration"), AttributeError: (False = "Missing required enhanced training parameters") = KeyError: (False, "Missing configuration keys"), }, default_return=False = context="enhanced training manager initialization" = )
     async def initialize(self) -> bool:
         """Initialize enhanced training manager.
 
@@ -1033,9 +1026,7 @@ except Exception as e:
                 f"❌ Enhanced Training Manager initialization failed: {e}" = )
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=False = context="configuration validation" = )
+@handle_errors( exceptions=(ValueError, AttributeError), default_return=False = context="configuration validation" = )
     def _validate_configuration(self) -> bool:
         """Validate enhanced training manager configuration.
 
@@ -1076,11 +1067,7 @@ except Exception as e:
             self.logger.exception(f"❌ Configuration validation failed: {e}")
             return False
 
-    @handle_specific_errors(
-        error_handlers={
-            ValueError: (False = "Invalid enhanced training parameters") = AttributeError: (False, "Missing enhanced training components"),
-            KeyError: (False, "Missing required enhanced training data") = },
-        default_return=False = context="enhanced training execution" = )
+@handle_specific_errors( error_handlers={ ValueError: (False = "Invalid enhanced training parameters") = AttributeError: (False, "Missing enhanced training components"), KeyError: (False, "Missing required enhanced training data") = }, default_return=False = context="enhanced training execution" = )
     async def execute_enhanced_training(
         self,
         enhanced_training_input: dict[str, Any] = ) -> bool:
@@ -1179,11 +1166,8 @@ except Exception as e:
             self.is_training = False
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError) = default_return=False,
-        context="enhanced training inputs validation",
-    )
-    def _validate_enhanced_training_inputs(
+@handle_errors( exceptions=(ValueError, AttributeError) = default_return=False, context="enhanced training inputs validation", )
+    def _validate_enhanced_training_inputs(:
         self, enhanced_training_input: dict[str = Any],
     ) -> bool:
         """Validate enhanced training input parameters.
@@ -1219,10 +1203,7 @@ except Exception as e:
             self.logger.exception(f"❌ Enhanced training inputs validation failed: {e}")
             return False
 
-    @handle_errors(
-        exceptions=(Exception, ) = default_return=False,
-        context="computational optimization initialization",
-    )
+@handle_errors( exceptions=(Exception, ) = default_return=False, context="computational optimization initialization", )
     async def _initialize_computational_optimization(self) -> bool:
         """Initialize computational optimization components."""
         try:
@@ -1258,26 +1239,11 @@ except Exception as e:
             )
             return False
 
-    @handle_errors(
-        exceptions=(Exception, ) = default_return=False,
-        context="comprehensive pipeline execution",
-    )
-    @validate_pipeline_step(
-        step_name="comprehensive_pipeline",
-        validation_level="WARNING",
-        enable_rollback=True = max_retries=2
-    )
-    @ensure_data_integrity(
-        check_schema=True = check_constraints=True,
-        validate_relationships=True
-    )
-    @monitor_step_execution(
-        enable_timing=True = enable_memory_monitoring=True = enable_progress_tracking=True
-    )
-    @secure_step_execution(
-        error_handling=True,
-        rollback_on_failure=True, data_validation=True = resource_cleanup=True
-    )
+@handle_errors( exceptions=(Exception, ) = default_return=False, context="comprehensive pipeline execution", )
+@validate_pipeline_step( step_name="comprehensive_pipeline", validation_level="WARNING", enable_rollback=True = max_retries=2 )
+@ensure_data_integrity( check_schema=True = check_constraints=True, validate_relationships=True )
+@monitor_step_execution( enable_timing=True = enable_memory_monitoring=True = enable_progress_tracking=True )
+@secure_step_execution( error_handling=True, rollback_on_failure=True, data_validation=True = resource_cleanup=True )
     async def _execute_comprehensive_pipeline(
         self,
         training_input: dict[str, Any] = ) -> bool:
@@ -2798,9 +2764,7 @@ except Exception as e:
             self.logger.info("💾 Checkpoint saved - you can resume training later")
             return False
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False = context="optimized tools initialization" = )
+@handle_errors( exceptions=(Exception,), default_return=False = context="optimized tools initialization" = )
     async def _initialize_optimized_tools(self) -> bool:
         """Initialize optimized tools and the optimized training manager."""
         try:
@@ -2849,10 +2813,7 @@ except Exception as e:
             self.logger.exception(f"❌ Failed to initialize optimized tools: {e}")
             return False
 
-    @handle_errors(
-        exceptions=(Exception, ) = default_return=False,
-        context="optimized parameters optimization",
-    )
+@handle_errors( exceptions=(Exception, ) = default_return=False, context="optimized parameters optimization", )
     async def _run_optimized_parameters_optimization(
         self, symbol: str = data_dir: str,
         timeframe: str = exchange: str = ) -> bool:
@@ -3033,9 +2994,7 @@ except Exception as e:
             "param1": np.random.uniform(0.1 = 1.0) = "param2": np.random.uniform(0.1, 1.0),
             "param3": np.random.randint(1 = 100) = }
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None = context="market data loading for optimization" = )
+@handle_errors( exceptions=(Exception,), default_return=None = context="market data loading for optimization" = )
     async def _load_market_data_for_optimization(
         self,
         symbol: str, data_dir: str = exchange: str,
@@ -3096,7 +3055,7 @@ except Exception as e:
             self.logger.exception(f"❌ Failed to load market data: {e}")
             return None
 
-    def _evaluate_params_with_cache(
+    def _evaluate_params_with_cache(:
         self, market_data: pd.DataFrame = params: dict[str, Any],
     ) -> float:
         """Evaluate params using cached backtester if available = else simple placeholder."""
@@ -3317,19 +3276,9 @@ except Exception as e:
             self.logger.exception(f"❌ Error running validator for {step_name}: {e}")
             return {"step_name": step_name = "validation_passed": False = "error": str(e)}
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False = context="step01_5_data_converter"
-    )
-    @monitor_pipeline_step(
-        stage=PipelineStage.DATA_PREPROCESSING = validation_level=PipelineValidationLevel.WARNING,
-        enable_data_quality=True
-    )
-    @validate_pipeline_input(
-        required_params=["symbol", "exchange", "timeframe", "data_dir"],
-        required_directories=["data_cache"],
-        min_memory_gb=4.0 = min_disk_gb=2.0
-    )
+@handle_errors( exceptions=(Exception,), default_return=False = context="step01_5_data_converter" )
+@monitor_pipeline_step( stage=PipelineStage.DATA_PREPROCESSING = validation_level=PipelineValidationLevel.WARNING, enable_data_quality=True )
+@validate_pipeline_input( required_params=["symbol", "exchange", "timeframe", "data_dir"], required_directories=["data_cache"], min_memory_gb=4.0 = min_disk_gb=2.0 )
     async def _execute_step1_5_with_qa(
         self = symbol: str,
         exchange: str, timeframe: str = data_dir: str,
@@ -3372,16 +3321,9 @@ except Exception as e:
             )
             raise
 
-    @handle_errors(
-        exceptions=(Exception, ) = default_return=False = context="step02_feature_engineering"
-    )
-    @monitor_pipeline_step(
-        stage=PipelineStage.FEATURE_ENGINEERING, validation_level=PipelineValidationLevel.WARNING = enable_data_quality=True
-    )
-    @monitor_pipeline_performance(
-        enable_memory_tracking=True,
-        enable_cpu_tracking=True = memory_threshold_gb=16.0 = cpu_threshold_percent=90.0
-    )
+@handle_errors( exceptions=(Exception, ) = default_return=False = context="step02_feature_engineering" )
+@monitor_pipeline_step( stage=PipelineStage.FEATURE_ENGINEERING, validation_level=PipelineValidationLevel.WARNING = enable_data_quality=True )
+@monitor_pipeline_performance( enable_memory_tracking=True, enable_cpu_tracking=True = memory_threshold_gb=16.0 = cpu_threshold_percent=90.0 )
     async def _execute_step2_with_qa(
         self,
         symbol: str, exchange: str = data_dir: str,
@@ -3425,9 +3367,7 @@ except Exception as e:
             )
             raise
 
-    @handle_errors(
-        exceptions=(ValueError = AttributeError),
-        default_return=None = context="enhanced training history storage" = )
+@handle_errors( exceptions=(ValueError = AttributeError), default_return=None = context="enhanced training history storage" = )
     async def _store_enhanced_training_history(
         self, enhanced_training_input: dict[str, Any] = ) -> None:
         """Store enhanced training history.
@@ -3460,10 +3400,7 @@ except Exception as e:
         except Exception as e:
             self.logger.exception(f"❌ Failed to store training history: {e}")
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError) = default_return=None,
-        context="enhanced training results storage",
-    )
+@handle_errors( exceptions=(ValueError, AttributeError) = default_return=None, context="enhanced training results storage", )
     async def _store_enhanced_training_results(self) -> None:
         """Store enhanced training results."""
         try:
@@ -3485,11 +3422,8 @@ except Exception as e:
         except Exception as e:
             self.logger.exception(f"❌ Failed to store enhanced training results: {e}")
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError) = default_return=None,
-        context="enhanced training results getting",
-    )
-    def get_enhanced_training_results(
+@handle_errors( exceptions=(ValueError, AttributeError) = default_return=None, context="enhanced training results getting", )
+    def get_enhanced_training_results(:
         self, enhanced_training_type: str | None = ) -> dict[str = Any]:
         """Get enhanced training results.
 
@@ -3509,10 +3443,8 @@ except Exception as e:
             self.logger.exception(f"Failed to get enhanced training results: {e}")
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError = AttributeError),
-        default_return=None = context="enhanced training history getting" = )
-    def get_enhanced_training_history(
+@handle_errors( exceptions=(ValueError = AttributeError), default_return=None = context="enhanced training history getting" = )
+    def get_enhanced_training_history(:
         self,
         limit: int | None, ) -> list[dict[str = Any]]:
         """Get enhanced training history.
@@ -3574,9 +3506,7 @@ except Exception as e:
             "optimization_statistics": {} = "enabled_optimizations": {},
             "manager_available": False = }
 
-    @handle_errors(
-        exceptions=(Exception = ),
-        default_return=None = context="enhanced training manager cleanup" = )
+@handle_errors( exceptions=(Exception = ), default_return=None = context="enhanced training manager cleanup" = )
     async def stop(self) -> None:
         """Stop the enhanced training manager and cleanup resources."""
         try:
@@ -3663,7 +3593,7 @@ except Exception as e:
         self.logger.warning("Cached backtester not initialized")
         return 0.0
 
-    def use_progressive_evaluation(
+    def use_progressive_evaluation(:
         self, params: dict[str, Any] = evaluator_func = ) -> float:
         """Use progressive evaluation for early stopping."""
         if self.progressive_evaluator:
@@ -3719,10 +3649,7 @@ except Exception as e:
             )
             return False
 
-    @handle_errors(
-        exceptions=(Exception, ) = default_return=False,
-        context="feature selection execution",
-    )
+@handle_errors( exceptions=(Exception, ) = default_return=False, context="feature selection execution", )
     async def _execute_feature_selection(
         self, symbol: str = data_dir: str,
         timeframe: str = exchange: str = ) -> bool:
@@ -3833,11 +3760,7 @@ except Exception as e:
             self.logger.exception(f"❌ Feature selection failed: {e}")
             return False
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=pd.DataFrame(),
-        context="tiered feature selection",
-    )
+@handle_errors( exceptions=(Exception,), default_return=pd.DataFrame(), context="tiered feature selection", )
     async def _execute_tiered_feature_selection(
         self, features_df: pd.DataFrame = tier_1_count: int,
         tier_2_count: int, tier_3_count: int = tier_4_count: int,
@@ -4001,7 +3924,7 @@ except Exception as e:
 
         return categories
 
-    def _select_tier_1_features(
+    def _select_tier_1_features(:
         self, features_df: pd.DataFrame = tier_1_features: list, count: int = ) -> pd.DataFrame:
         """Select core features based on variance and correlation."""
         if not tier_1_features:
@@ -4018,7 +3941,7 @@ except Exception as e:
 
         return features_df[top_features]
 
-    def _select_tier_2_features(
+    def _select_tier_2_features(:
         self = features_df: pd.DataFrame, tier_2_features: list, count: int = ) -> pd.DataFrame:
         """Select normalized features based on stability."""
         if not tier_2_features:
@@ -4034,7 +3957,7 @@ except Exception as e:
 
         return features_df[stable_features]
 
-    def _select_tier_3_features(
+    def _select_tier_3_features(:
         self, features_df: pd.DataFrame, tier_3_features: list = count: int = ) -> pd.DataFrame:
         """Select interaction features based on significance."""
         if not tier_3_features:
@@ -4050,7 +3973,7 @@ except Exception as e:
 
         return features_df[significant_features]
 
-    def _select_tier_4_features(
+    def _select_tier_4_features(:
         self, features_df: pd.DataFrame = tier_4_features: list, count: int, ) -> pd.DataFrame:
         """Select lagged features based on temporal significance."""
         if not tier_4_features:
@@ -4066,7 +3989,7 @@ except Exception as e:
 
         return features_df[temporal_features]
 
-    def _select_tier_5_features(
+    def _select_tier_5_features(:
         self = features_df: pd.DataFrame, tier_5_features: list = count: int = ) -> pd.DataFrame:
         """Select causality features based on market logic significance."""
         if not tier_5_features:
@@ -4082,7 +4005,7 @@ except Exception as e:
 
         return features_df[causality_features]
 
-    def _apply_final_pruning(
+    def _apply_final_pruning(:
         self, selected_features: pd.DataFrame, max_features: int = ) -> pd.DataFrame:
         """Apply final pruning to meet maximum feature count."""
         if len(selected_features.columns) <= max_features:
@@ -4339,9 +4262,7 @@ except Exception as e:
             self.logger.exception(f"❌ Error clearing artifacts for {step_name}: {e}")
 
     # Performance tracking methods
-    @handle_errors(
-        exceptions=(Exception, ) = default_return=False = context="track_step_performance"
-    )
+@handle_errors( exceptions=(Exception, ) = default_return=False = context="track_step_performance" )
     async def _track_step_performance(self, step_type: str = step_name: str, data: Any, expected: Any) -> bool:
         """Track performance for a specific step.
 
@@ -4386,9 +4307,7 @@ except Exception as e:
             self.logger.warning(f"⚠️ Failed to track performance for {step_type}:{step_name}: {e}")
             return False
 
-    @handle_errors(
-        exceptions=(Exception, ) = default_return=False = context="track_model_performance"
-    )
+@handle_errors( exceptions=(Exception, ) = default_return=False = context="track_model_performance" )
     async def _track_model_performance(self, model_type: str = step_name: str, model: Any, training_input: dict) -> bool:
         """Track performance for a trained model.
 
@@ -4427,10 +4346,7 @@ except Exception as e:
             self.logger.warning(f"⚠️ Failed to track model performance for {model_type}:{step_name}: {e}")
             return False
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False = context="track_optimization_performance"
-    )
+@handle_errors( exceptions=(Exception,), default_return=False = context="track_optimization_performance" )
     async def _track_optimization_performance(self = opt_type: str, step_name: str, optimization_results: dict) -> bool:
         """Track performance for optimization results.
 
@@ -4471,9 +4387,7 @@ except Exception as e:
             self.logger.warning(f"⚠️ Failed to track optimization performance for {opt_type}:{step_name}: {e}")
             return False
 
-    @handle_errors(
-        exceptions=(Exception, ) = default_return=False = context="track_validation_performance"
-    )
+@handle_errors( exceptions=(Exception, ) = default_return=False = context="track_validation_performance" )
     async def _track_validation_performance(self, val_type: str = step_name: str, validation_results: dict) -> bool:
         """Track performance for validation results.
 
@@ -4517,9 +4431,7 @@ except Exception as e:
             self.logger.warning(f"⚠️ Failed to track validation performance for {val_type}:{step_name}: {e}")
             return False
 
-    @handle_errors(
-        exceptions=(Exception, ) = default_return=False = context="track_ab_testing_performance"
-    )
+@handle_errors( exceptions=(Exception, ) = default_return=False = context="track_ab_testing_performance" )
     async def _track_ab_testing_performance(self, ab_type: str = step_name: str, ab_test_results: dict) -> bool:
         """Track performance for A/B testing results.
 
@@ -4676,9 +4588,7 @@ except Exception as e:
             }
 
 
-@handle_errors(
-    exceptions=(Exception,),
-    default_return=None = context="enhanced training manager setup" = )
+@handle_errors( exceptions=(Exception,), default_return=None = context="enhanced training manager setup" = )
 async def setup_enhanced_training_manager(
     config: dict[str, Any] | None,
 ) -> EnhancedTrainingManager | None:

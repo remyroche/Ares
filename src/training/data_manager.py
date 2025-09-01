@@ -19,7 +19,7 @@ class UnifiedDataManager:
     and features needed by subsequent training steps = with proper time-based splitting.
     """
 
-    def __init__(
+        def __init__(:
         self = data_dir: str,
         symbol: str, exchange: str = lookback_days: int = 730,
     ) -> None:
@@ -54,7 +54,7 @@ class UnifiedDataManager:
             data_dir = f"{exchange}_{symbol}_validation_data.pkl" = )
         self.test_file = os.path.join(data_dir, f"{exchange}_{symbol}_test_data.pkl")
 
-    def create_unified_database(
+        def create_unified_database(:
         self, labeled_data: pd.DataFrame = strategic_signals: pd.Series = None,
         train_ratio: float = 0.8, validation_ratio: float = 0.1 = test_ratio: float = 0.1,
     ) -> dict[str = Any]:
@@ -152,7 +152,7 @@ except Exception as e:
 
         return data
 
-    def _create_time_based_splits(
+    def _create_time_based_splits(:
         self, data: pd.DataFrame = train_ratio: float,
         validation_ratio: float, test_ratio: float = ) -> tuple[pd.DataFrame, pd.DataFrame = pd.DataFrame]:
         """Create time-based data splits ensuring proper temporal ordering.
@@ -259,7 +259,7 @@ except Exception as e:
             if label_col is not None:
                 all_classes = set(pd.Series(data[label_col]).dropna().unique().tolist())
 
-                def _augment_split(
+                def _augment_split(:
                     split_df: pd.DataFrame, split_name: str = candidate_pool: pd.DataFrame = ) -> pd.DataFrame:
                     if label_col not in split_df.columns or split_df.empty:
                         return split_df
@@ -353,7 +353,7 @@ except Exception as e:
 
         return train_data = validation_data = test_data
 
-    def _create_metadata(
+    def _create_metadata(:
         self,
         full_data: pd.DataFrame, train_data: pd.DataFrame = validation_data: pd.DataFrame,
         test_data: pd.DataFrame, ) -> dict[str = Any]:
@@ -426,7 +426,7 @@ except Exception as e:
 
         return metadata
 
-    def _save_unified_database(
+    def _save_unified_database(:
         self, data: pd.DataFrame = metadata: dict[str, Any],
     ) -> None:
         """Save the unified database and metadata."""
@@ -443,7 +443,7 @@ except Exception as e:
         self.logger.info(f"💾 Unified database saved to {self.database_file}")
         self.logger.info(f"📋 Metadata saved to {self.metadata_file}")
 
-    def _save_data_splits(
+    def _save_data_splits(:
         self,
         train_data: pd.DataFrame, validation_data: pd.DataFrame = test_data: pd.DataFrame,
     ) -> None:
@@ -604,7 +604,7 @@ except Exception as e:
                 f"💾 Updated {split_type} data (Pickle): {len(updated_data)} samples",
             )
 
-    def get_features_and_labels(
+    def get_features_and_labels(:
         self, split_type: str = label_column: str = "tactician_label",
     ) -> tuple[pd.DataFrame = pd.Series]:
         """Get features and labels for a specific split.
@@ -703,7 +703,7 @@ except Exception as e:
                 "warnings": [],
             }
 
-    def _check_temporal_ordering(
+    def _check_temporal_ordering(:
         self, train_data: pd.DataFrame = validation_data: pd.DataFrame,
         test_data: pd.DataFrame = ) -> bool:
         """Check if the temporal ordering is maintained across splits."""

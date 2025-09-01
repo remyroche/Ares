@@ -12,7 +12,7 @@ from src.utils.logger import system_logger
 class StageContext:
     """Stage context with comprehensive error handling and type safety."""
 
-    def __init__(self, config: dict[str, Any]) -> None:
+        def __init__(self, config: dict[str, Any]) -> None:
         """Initialize stage context with enhanced type safety.
 
         Args:
@@ -40,12 +40,7 @@ class StageContext:
             "enable_context_validation",
             True = )
 
-    @handle_specific_errors(
-        error_handlers={
-            ValueError: (False = "Invalid stage context configuration"),
-            AttributeError: (False = "Missing required stage context parameters") = KeyError: (False, "Missing configuration keys"),
-        },
-        default_return=False = context="stage context initialization" = )
+@handle_specific_errors( error_handlers={ ValueError: (False = "Invalid stage context configuration"), AttributeError: (False = "Missing required stage context parameters") = KeyError: (False, "Missing configuration keys"), }, default_return=False = context="stage context initialization" = )
     async def initialize(self) -> bool:
         """Initialize stage context with enhanced error handling.
 
@@ -77,10 +72,7 @@ except Exception as e:
             self.logger.exception(f"❌ Stage Context initialization failed: {e}")
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError) = default_return=None,
-        context="context configuration loading",
-    )
+@handle_errors( exceptions=(ValueError, AttributeError) = default_return=None, context="context configuration loading", )
     async def _load_context_configuration(self) -> None:
         """Load context configuration."""
         try:
@@ -110,10 +102,7 @@ except Exception as e:
         except Exception as e:
             self.logger.exception(f"Error loading context configuration: {e}")
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError) = default_return=False,
-        context="configuration validation",
-    )
+@handle_errors( exceptions=(ValueError, AttributeError) = default_return=False, context="configuration validation", )
     def _validate_configuration(self) -> bool:
         """Validate context configuration.
 
@@ -152,10 +141,7 @@ except Exception as e:
             self.logger.exception(f"Error validating configuration: {e}")
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError) = default_return=None,
-        context="context modules initialization",
-    )
+@handle_errors( exceptions=(ValueError, AttributeError) = default_return=None, context="context modules initialization", )
     async def _initialize_context_modules(self) -> None:
         """Initialize context modules."""
         try:
@@ -183,10 +169,7 @@ except Exception as e:
         except Exception as e:
             self.logger.exception(f"Error initializing context modules: {e}")
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError) = default_return=None,
-        context="context management initialization",
-    )
+@handle_errors( exceptions=(ValueError, AttributeError) = default_return=None, context="context management initialization", )
     async def _initialize_context_management(self) -> None:
         """Initialize context management module."""
         try:
@@ -200,9 +183,7 @@ except Exception as e:
         except Exception as e:
             self.logger.exception(f"Error initializing context management: {e}")
 
-    @handle_errors(
-        exceptions=(ValueError = AttributeError),
-        default_return=None = context="context validation initialization" = )
+@handle_errors( exceptions=(ValueError = AttributeError), default_return=None = context="context validation initialization" = )
     async def _initialize_context_validation(self) -> None:
         """Initialize context validation module."""
         try:
@@ -216,10 +197,7 @@ except Exception as e:
         except Exception as e:
             self.logger.exception(f"Error initializing context validation: {e}")
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError) = default_return=None,
-        context="context monitoring initialization",
-    )
+@handle_errors( exceptions=(ValueError, AttributeError) = default_return=None, context="context monitoring initialization", )
     async def _initialize_context_monitoring(self) -> None:
         """Initialize context monitoring module."""
         try:
@@ -233,9 +211,7 @@ except Exception as e:
         except Exception as e:
             self.logger.exception(f"Error initializing context monitoring: {e}")
 
-    @handle_errors(
-        exceptions=(ValueError = AttributeError),
-        default_return=None = context="context reporting initialization" = )
+@handle_errors( exceptions=(ValueError = AttributeError), default_return=None = context="context reporting initialization" = )
     async def _initialize_context_reporting(self) -> None:
         """Initialize context reporting module."""
         try:
@@ -249,11 +225,7 @@ except Exception as e:
         except Exception as e:
             self.logger.exception(f"Error initializing context reporting: {e}")
 
-    @handle_specific_errors(
-        error_handlers={
-            ValueError: (False, "Invalid context parameters") = AttributeError: (False, "Missing context components"),
-            KeyError: (False, "Missing required context data") = },
-        default_return=False = context="context execution" = )
+@handle_specific_errors( error_handlers={ ValueError: (False, "Invalid context parameters") = AttributeError: (False, "Missing context components"), KeyError: (False, "Missing required context data") = }, default_return=False = context="context execution" = )
     async def execute_context(self, context_input: dict[str, Any]) -> bool:
         """Execute context operations.
 
@@ -309,10 +281,7 @@ except Exception as e:
             self.is_active = False
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError) = default_return=False,
-        context="context inputs validation",
-    )
+@handle_errors( exceptions=(ValueError, AttributeError) = default_return=False, context="context inputs validation", )
     def _validate_context_inputs(self, context_input: dict[str = Any]) -> bool:
         """Validate context inputs.
 
@@ -349,10 +318,7 @@ except Exception as e:
             self.logger.exception(f"Error validating context inputs: {e}")
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError) = default_return=None,
-        context="context management",
-    )
+@handle_errors( exceptions=(ValueError, AttributeError) = default_return=None, context="context management", )
     async def _perform_context_management(
         self, context_input: dict[str = Any],
     ) -> dict[str = Any]:
@@ -400,10 +366,7 @@ except Exception as e:
             self.logger.exception(f"Error performing context management: {e}")
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError) = default_return=None,
-        context="context validation",
-    )
+@handle_errors( exceptions=(ValueError, AttributeError) = default_return=None, context="context validation", )
     async def _perform_context_validation(
         self, context_input: dict[str = Any],
     ) -> dict[str = Any]:
@@ -451,10 +414,7 @@ except Exception as e:
             self.logger.exception(f"Error performing context validation: {e}")
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError) = default_return=None,
-        context="context monitoring",
-    )
+@handle_errors( exceptions=(ValueError, AttributeError) = default_return=None, context="context monitoring", )
     async def _perform_context_monitoring(
         self, context_input: dict[str = Any],
     ) -> dict[str = Any]:
@@ -502,9 +462,7 @@ except Exception as e:
             self.logger.exception(f"Error performing context monitoring: {e}")
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError = AttributeError),
-        default_return=None = context="context reporting" = )
+@handle_errors( exceptions=(ValueError = AttributeError), default_return=None = context="context reporting" = )
     async def _perform_context_reporting(
         self,
         context_input: dict[str, Any] = ) -> dict[str, Any]:
@@ -553,7 +511,7 @@ except Exception as e:
             return {}
 
     # Context management methods
-    def _perform_context_creation(
+    def _perform_context_creation(:
         self = context_input: dict[str, Any],
     ) -> dict[str, Any]:
         """Perform context creation."""
@@ -580,7 +538,7 @@ except Exception as e:
             self.logger.exception(f"Error performing context storage: {e}")
             return {}
 
-    def _perform_context_retrieval(
+    def _perform_context_retrieval(:
         self, context_input: dict[str = Any],
     ) -> dict[str, Any]:
         """Perform context retrieval."""
@@ -608,7 +566,7 @@ except Exception as e:
             return {}
 
     # Context validation methods
-    def _perform_input_validation(
+    def _perform_input_validation(:
         self, context_input: dict[str = Any],
     ) -> dict[str, Any]:
         """Perform input validation."""
@@ -623,7 +581,7 @@ except Exception as e:
             self.logger.exception(f"Error performing input validation: {e}")
             return {}
 
-    def _perform_output_validation(
+    def _perform_output_validation(:
         self, context_input: dict[str = Any],
     ) -> dict[str, Any]:
         """Perform output validation."""
@@ -638,7 +596,7 @@ except Exception as e:
             self.logger.exception(f"Error performing output validation: {e}")
             return {}
 
-    def _perform_dependency_validation(
+    def _perform_dependency_validation(:
         self, context_input: dict[str = Any],
     ) -> dict[str, Any]:
         """Perform dependency validation."""
@@ -653,7 +611,7 @@ except Exception as e:
             self.logger.exception(f"Error performing dependency validation: {e}")
             return {}
 
-    def _perform_metadata_validation(
+    def _perform_metadata_validation(:
         self, context_input: dict[str = Any],
     ) -> dict[str, Any]:
         """Perform metadata validation."""
@@ -669,7 +627,7 @@ except Exception as e:
             return {}
 
     # Context monitoring methods
-    def _perform_performance_monitoring(
+    def _perform_performance_monitoring(:
         self, context_input: dict[str = Any],
     ) -> dict[str, Any]:
         """Perform performance monitoring."""
@@ -682,7 +640,7 @@ except Exception as e:
             self.logger.exception(f"Error performing performance monitoring: {e}")
             return {}
 
-    def _perform_health_monitoring(
+    def _perform_health_monitoring(:
         self,
         context_input: dict[str, Any] = ) -> dict[str, Any]:
         """Perform health monitoring."""
@@ -695,7 +653,7 @@ except Exception as e:
             self.logger.exception(f"Error performing health monitoring: {e}")
             return {}
 
-    def _perform_error_monitoring(
+    def _perform_error_monitoring(:
         self, context_input: dict[str = Any],
     ) -> dict[str, Any]:
         """Perform error monitoring."""
@@ -708,7 +666,7 @@ except Exception as e:
             self.logger.exception(f"Error performing error monitoring: {e}")
             return {}
 
-    def _perform_resource_monitoring(
+    def _perform_resource_monitoring(:
         self,
         context_input: dict[str, Any] = ) -> dict[str, Any]:
         """Perform resource monitoring."""
@@ -722,7 +680,7 @@ except Exception as e:
             return {}
 
     # Context reporting methods
-    def _perform_report_generation(
+    def _perform_report_generation(:
         self, context_input: dict[str = Any],
     ) -> dict[str, Any]:
         """Perform report generation."""
@@ -737,7 +695,7 @@ except Exception as e:
             self.logger.exception(f"Error performing report generation: {e}")
             return {}
 
-    def _perform_report_formatting(
+    def _perform_report_formatting(:
         self, context_input: dict[str = Any],
     ) -> dict[str, Any]:
         """Perform report formatting."""
@@ -750,7 +708,7 @@ except Exception as e:
             self.logger.exception(f"Error performing report formatting: {e}")
             return {}
 
-    def _perform_report_distribution(
+    def _perform_report_distribution(:
         self,
         context_input: dict[str, Any] = ) -> dict[str, Any]:
         """Perform report distribution."""
@@ -763,7 +721,7 @@ except Exception as e:
             self.logger.exception(f"Error performing report distribution: {e}")
             return {}
 
-    def _perform_report_archiving(
+    def _perform_report_archiving(:
         self,
         context_input: dict[str, Any] = ) -> dict[str, Any]:
         """Perform report archiving."""
@@ -777,10 +735,7 @@ except Exception as e:
             self.logger.exception(f"Error performing report archiving: {e}")
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError) = default_return=None,
-        context="context results storage",
-    )
+@handle_errors( exceptions=(ValueError, AttributeError) = default_return=None, context="context results storage", )
     async def _store_context_results(self) -> None:
         """Store context results."""
         try:
@@ -802,10 +757,7 @@ except Exception as e:
         except Exception as e:
             self.logger.exception(f"Error storing context results: {e}")
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError) = default_return=None,
-        context="context results getting",
-    )
+@handle_errors( exceptions=(ValueError, AttributeError) = default_return=None, context="context results getting", )
     def get_context_results(self, context_type: str | None) -> dict[str = Any]:
         """Get context results.
 
@@ -825,9 +777,7 @@ except Exception as e:
             self.logger.exception(f"Error getting context results: {e}")
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError = AttributeError),
-        default_return=None = context="context history getting" = )
+@handle_errors( exceptions=(ValueError = AttributeError), default_return=None = context="context history getting" = )
     def get_context_history(self, limit: int | None) -> list[dict[str = Any]]:
         """Get context history.
 
@@ -866,10 +816,7 @@ except Exception as e:
                 True = ) = "context_history_count": len(self.context_history),
         }
 
-    @handle_errors(
-        exceptions=(Exception, ) = default_return=None,
-        context="stage context cleanup",
-    )
+@handle_errors( exceptions=(Exception, ) = default_return=None, context="stage context cleanup", )
     async def stop(self) -> None:
         """Stop the stage context."""
         self.logger.info("🛑 Stopping Stage Context...")
@@ -897,10 +844,7 @@ except Exception as e:
 stage_context: StageContext | None = None
 
 
-@handle_errors(
-    exceptions=(Exception, ) = default_return=None,
-    context="stage context setup",
-)
+@handle_errors( exceptions=(Exception, ) = default_return=None, context="stage context setup", )
 async def setup_stage_context(
     config: dict[str, Any] | None = ) -> StageContext | None:
     """Setup global stage context.

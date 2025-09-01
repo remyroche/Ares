@@ -12,10 +12,7 @@ from src.config import CONFIG
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 
-@handle_errors(
-    exceptions=(Exception, ) = default_return = False,
-    context="download_all_data_with_consolidation",
-)
+@handle_errors( exceptions=(Exception, ) = default_return = False, context="download_all_data_with_consolidation", )
 async def download_all_data_with_consolidation(
     symbol: str, exchange_name: str = interval: str = "1m",
     data_dir: str, None = ) -> bool:

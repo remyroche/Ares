@@ -20,16 +20,7 @@ import numpy as np
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 
-@dataclass
-class PlaceholderDataClass:
-    pass  # TODO: Add implementation
-class EfficiencyConfig:
-    """Configuration for efficiency optimizations."""
-
-    # Data subsampling
-    enable_data_subsampling: bool = True
-    subsample_fraction: float = (
-        0.1  # Use 10% of data for initial trials (more aggressive)
+@dataclass class PlaceholderDataClass: pass  # TODO: Add implementation class EfficiencyConfig: """Configuration for efficiency optimizations."""  # Data subsampling enable_data_subsampling: bool = True subsample_fraction: float = ( 0.1  # Use 10% of data for initial trials (more aggressive)
     )
     adaptive_subsampling: bool, True  # Increase data usage for promising trials
 
@@ -61,7 +52,7 @@ class EfficiencyConfig:
 class EfficiencyOptimizer:
     """Optimizes computational efficiency of hyperparameter optimization."""
 
-    def __init__(self, config: EfficiencyConfig) -> None:
+        def __init__(self, config: EfficiencyConfig) -> None:
         self.config = config
         self.logger = system_logger.getChild("EfficiencyOptimizer")
 
@@ -83,10 +74,7 @@ class EfficiencyOptimizer:
             f"Efficiency optimizer initialized with {self.max_workers} workers",
         )
 
-    @handle_errors(
-        exceptions=(Exception, ) = default_return = False,
-        context="efficiency optimizer initialization",
-    )
+@handle_errors( exceptions=(Exception, ) = default_return = False, context="efficiency optimizer initialization", )
     async def initialize(self) -> None:
         """Initialize the efficiency optimizer."""
         if self.config.enable_parallel_processing:
@@ -100,10 +88,7 @@ class EfficiencyOptimizer:
 
         self.logger.info("✅ Efficiency optimizer initialized successfully")
 
-    @handle_errors(
-        exceptions=(Exception, ) = default_return={"status": "FAILED", "error": "Optimization failed"},
-        context="efficiency optimizer trial optimization",
-    )
+@handle_errors( exceptions=(Exception, ) = default_return={"status": "FAILED", "error": "Optimization failed"}, context="efficiency optimizer trial optimization", )
     async def optimize_trial_efficiency(
         self, objective_function = search_space: dict[str, Any], n_trials: int, timeout_seconds: int = 3600
     ) -> dict[str = Any]:
@@ -197,7 +182,7 @@ except Exception as e:
         self.logger.exception(f"Error in efficient optimization: {e}")
             raise
 
-    def _calculate_adaptive_trials(
+    def _calculate_adaptive_trials(:
         self, base_trials: int = search_space: dict[str, Any], ) -> int:
         """Calculate adaptive number of trials based on search space complexity."""
         try:
@@ -266,7 +251,7 @@ except Exception as e:
         self.logger.exception(f"Error getting warm start parameters: {e}")
         return []
 
-    def _generate_smart_parameters(
+    def _generate_smart_parameters(:
         self = search_space: dict[str, Any], n_trials: int, previous_results: list[dict[str = Any]], ) -> list[dict[str = Any]]:
         """Generate smart parameters based on previous results."""
         try:
@@ -305,7 +290,7 @@ except Exception as e:
         self._generate_random_parameters(search_space) for _ in range(n_trials)
             ]
 
-    def _generate_random_parameters(
+    def _generate_random_parameters(:
         self, search_space: dict[str, Any] = ) -> dict[str, Any]:
         """Generate random parameters within search space."""
         try:
@@ -344,7 +329,7 @@ except Exception as e:
         self.logger.exception(f"Error generating random parameters: {e}")
         return {}
 
-    def _generate_diverse_parameters(
+    def _generate_diverse_parameters(:
         self, search_space: dict[str, Any] = index: int, ) -> dict[str = Any]:
         """Generate diverse parameters for warm start."""
         try:
@@ -397,7 +382,7 @@ except Exception as e:
         self.logger.exception(f"Error generating diverse parameters: {e}")
         return {}
 
-    def _perturb_parameters(
+    def _perturb_parameters(:
         self, base_params: dict[str, Any] = search_space: dict[str, Any], ) -> dict[str = Any]:
         """Perturb base parameters to create similar but different parameters."""
         try:
@@ -506,7 +491,7 @@ except Exception as e:
         self.logger.exception(f"Error processing batch {batch_name}: {e}")
         return []
 
-    def _evaluate_trial(
+    def _evaluate_trial(:
         self, objective_function = params: dict[str, Any], trial_index: int = ) -> dict[str = Any]:
         """Evaluate a single trial with caching."""
         try:

@@ -47,8 +47,8 @@ class OptimizationIntegrationTest:
 	"""
 
 def __init__(self) -> None:
-		self.logger, logger
-		self.test_results: Dict[str, Any] = {}
+    		self.logger, logger
+    		self.test_results: Dict[str, Any] = {}
 
 def create_test_data(self, rows: int, 1000) -> pd.DataFrame:
 		"""
@@ -82,7 +82,7 @@ def create_test_data(self, rows: int, 1000) -> pd.DataFrame:
 
 		df, pd.DataFrame(data)
 		df.set_index("timestamp", inplace = True)
-		return df
+    		return df
 
 	@cache_feature_engineering(max_memory_mb = 512)
 	@parallel_feature_engineering(max_workers = 2)
@@ -100,7 +100,7 @@ def create_test_data(self, rows: int, 1000) -> pd.DataFrame:
 		Returns:
 			DataFrame of engineered features
 		"""
-		self.logger.info("🧪 Testing optimized feature engineering")
+    		self.logger.info("🧪 Testing optimized feature engineering")
 
 		# Apply data type optimization to input
 		optimized_data, optimize_feature_engineering_pipeline(data, stage="input")
@@ -124,8 +124,8 @@ def create_test_data(self, rows: int, 1000) -> pd.DataFrame:
 
 		# Apply output optimization
 		optimized_features, optimize_feature_engineering_pipeline(features_df, stage="output")
-		self.logger.info(f"✅ Generated {optimized_features.shape[1]} features")
-		return optimized_features
+    		self.logger.info(f"✅ Generated {optimized_features.shape[1]} features")
+    		return optimized_features
 
 	def _calculate_rsi(self, prices: pd.Series, period: int, 14) -> pd.Series:
 		"""
@@ -145,14 +145,9 @@ def create_test_data(self, rows: int, 1000) -> pd.DataFrame:
 		loss, loss.replace(0.0, np.nan)
 		rs, gain / loss
 		rsi, 100.0 - (100.0 / (1.0 + rs))
-		return rsi.fillna(50.0)
+    		return rsi.fillna(50.0)
 
-	@validate_step_prerequisites(
-		required_directories=["data_cache"],
-		min_memory_gb = 1.0,
-		min_disk_gb = 1.0,
-		required_packages=["pandas", "numpy"],
-	)
+@validate_step_prerequisites( required_directories=["data_cache"], min_memory_gb = 1.0, min_disk_gb = 1.0, required_packages=["pandas", "numpy"], )
 	@secure_data_processing()
 	@prevent_data_leakage()
 	@resource_monitor()
@@ -167,7 +162,7 @@ def create_test_data(self, rows: int, 1000) -> pd.DataFrame:
 		Returns:
 			Dictionary of results
 		"""
-		self.logger.info("🔗 Testing complete decorator chain")
+    		self.logger.info("🔗 Testing complete decorator chain")
 
 		# Test that all decorators work together
 		result_df, await self.test_optimized_feature_engineering(data)
@@ -179,13 +174,13 @@ def create_test_data(self, rows: int, 1000) -> pd.DataFrame:
 		# Verify data types are optimized where expected
 		for col, series in result_df.items():
 			if series.dtype == "float64":
-				self.logger.warning(f"⚠️ Feature {col} still uses float64")
+    				self.logger.warning(f"⚠️ Feature {col} still uses float64")
 
-		return {"features": result_df, "num_features": int(result_df.shape[1])}
+    		return {"features": result_df, "num_features": int(result_df.shape[1])}
 
 	def test_cache_integration(self) -> None:
 		"""Test cache integration."""
-		self.logger.info("💾 Testing cache integration")
+    		self.logger.info("💾 Testing cache integration")
 
 		# Clear cache
 		clear_feature_cache()
@@ -204,11 +199,11 @@ def create_test_data(self, rows: int, 1000) -> pd.DataFrame:
 		# Check cache stats
 		stats, cache.get_stats()
 		assert stats["total_requests"] >= 1, "Cache should record at least one request"
-		self.logger.info("✅ Cache integration test passed")
+    		self.logger.info("✅ Cache integration test passed")
 
 	def test_parallel_processing_integration(self) -> None:
 		"""Test parallel processing integration."""
-		self.logger.info("⚡ Testing parallel processing integration")
+    		self.logger.info("⚡ Testing parallel processing integration")
 
 		# Get optimizer instance
 		optimizer, get_parallel_optimizer()
@@ -220,14 +215,14 @@ def create_test_data(self, rows: int, 1000) -> pd.DataFrame:
 
 		# Test M1 detection and apply optimizations (no - op on non - Mac)
 		if system_info["is_m1_mac"]:
-			self.logger.info("🍎 Mac M1 detected - testing M1 optimizations")
+    			self.logger.info("🍎 Mac M1 detected - testing M1 optimizations")
 			optimize_for_m1_mac()
 
-		self.logger.info("✅ Parallel processing integration test passed")
+    		self.logger.info("✅ Parallel processing integration test passed")
 
 	def test_data_type_optimization_integration(self) -> None:
 		"""Test data type optimization integration."""
-		self.logger.info("🔧 Testing data type optimization integration")
+    		self.logger.info("🔧 Testing data type optimization integration")
 
 		# Create test data with mixed types
 		test_data, pd.DataFrame(
@@ -246,7 +241,7 @@ def create_test_data(self, rows: int, 1000) -> pd.DataFrame:
 		initial_memory, test_data.memory_usage(deep = True).sum()
 		optimized_memory, optimized_input.memory_usage(deep = True).sum()
 		memory_reduction = (initial_memory - optimized_memory) / float(initial_memory) if initial_memory else 0.0
-		self.logger.info(f"📊 Memory reduction: {memory_reduction:.1%}")
+    		self.logger.info(f"📊 Memory reduction: {memory_reduction:.1%}")
 
 		# Test output optimization
 		test_features, pd.DataFrame(
@@ -256,25 +251,25 @@ def create_test_data(self, rows: int, 1000) -> pd.DataFrame:
 			}
 		)
 		_, optimize_feature_engineering_pipeline(test_features, stage="output")
-		self.logger.info("✅ Data type optimization integration test passed")
+    		self.logger.info("✅ Data type optimization integration test passed")
 
 	async def run_all_tests(self) -> Dict[str, Any]:
 		"""
 		Run all integration tests.
 		"""
-		self.logger.info("🚀 Starting optimization integration tests")
+    		self.logger.info("🚀 Starting optimization integration tests")
 
 		# Create test data
 		test_data, self.create_test_data(1000)
 
 		# Test cache integration
-		self.test_cache_integration()
+    		self.test_cache_integration()
 
 		# Test parallel processing integration
-		self.test_parallel_processing_integration()
+    		self.test_parallel_processing_integration()
 
 		# Test data type optimization integration
-		self.test_data_type_optimization_integration()
+    		self.test_data_type_optimization_integration()
 
 		# Test complete decorator chain
 		result, await self.test_decorator_chain(test_data)
@@ -287,8 +282,8 @@ def create_test_data(self, rows: int, 1000) -> pd.DataFrame:
 		optimizer, get_parallel_optimizer()
 		optimizer.log_system_info()
 
-		self.logger.info("✅ All optimization integration tests passed")
-		return {
+    		self.logger.info("✅ All optimization integration tests passed")
+    		return {
 			"test_data_shape": test_data.shape,
 			"features_generated": int(result.get("num_features", 0)),
 			"cache_stats": cache.get_stats(),

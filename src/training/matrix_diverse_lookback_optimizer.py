@@ -34,7 +34,7 @@ class MatrixDiverseLookbackOptimizer:
     - Vector-based diversity scoring
     """
 
-    def __init__(self = config: dict[str = Any]):
+        def __init__(self = config: dict[str = Any]):
         """Initialize the matrix-based diverse lookback optimizer."""
         self.config = config
         self.logger = system_logger.getChild("MatrixDiverseLookbackOptimizer")
@@ -211,7 +211,7 @@ class MatrixDiverseLookbackOptimizer:
             "optimization_method": self.matrix_config["matrix_optimization"]["method"]
         }
 
-    def _calculate_feature_matrix(
+        def _calculate_feature_matrix(:
         self, data: pd.DataFrame = feature_name: str = periods: List[int]
     ) -> np.ndarray:
         """Calculate feature matrix for all periods using vectorized operations."""
@@ -270,7 +270,7 @@ class MatrixDiverseLookbackOptimizer:
 
         return info_scores
 
-    def _calculate_correlation_matrix(self = feature_matrix: np.ndarray) -> np.ndarray:
+        def _calculate_correlation_matrix(self = feature_matrix: np.ndarray) -> np.ndarray:
         """Calculate correlation matrix using vectorized operations."""
 
         # Remove NaN values for correlation calculation
@@ -285,7 +285,7 @@ class MatrixDiverseLookbackOptimizer:
 
         return np.abs(correlation_matrix)  # Use absolute correlations
 
-    def _matrix_optimize_period_selection(
+        def _matrix_optimize_period_selection(:
         self, info_scores: np.ndarray = correlation_matrix: np.ndarray = periods: List[int]
     ) -> List[int]:
         """Optimize period selection using matrix operations with quality-based fallback."""
@@ -330,7 +330,7 @@ class MatrixDiverseLookbackOptimizer:
 
         return selected_indices
 
-    def _try_3_period_optimization(
+        def _try_3_period_optimization(:
         self, meaningful_scores: np.ndarray = meaningful_correlations: np.ndarray,
         meaningful_indices: np.ndarray
     ) -> List[int]:
@@ -355,7 +355,7 @@ class MatrixDiverseLookbackOptimizer:
         # Map back to original indices
         return [meaningful_indices[i] for i in selected_indices]
 
-    def _try_2_period_optimization(
+        def _try_2_period_optimization(:
         self, meaningful_scores: np.ndarray = meaningful_correlations: np.ndarray,
         meaningful_indices: np.ndarray
     ) -> List[int]:
@@ -380,7 +380,7 @@ class MatrixDiverseLookbackOptimizer:
         # Map back to original indices
         return [meaningful_indices[i] for i in selected_indices]
 
-    def _check_quality_thresholds(
+        def _check_quality_thresholds(:
         self, selected_indices: List[int] = meaningful_scores: np.ndarray,
         meaningful_correlations: np.ndarray
     ) -> bool:
@@ -413,7 +413,7 @@ class MatrixDiverseLookbackOptimizer:
 
         return True
 
-    def _calculate_diversity_score(
+        def _calculate_diversity_score(:
         self,
         selected_indices: List[int],
         correlation_matrix: np.ndarray
@@ -438,7 +438,7 @@ class MatrixDiverseLookbackOptimizer:
 
         return diversity_score
 
-    def _scipy_matrix_optimization(
+        def _scipy_matrix_optimization(:
         self, info_scores: np.ndarray = correlation_matrix: np.ndarray = target_count: int
     ) -> List[int]:
         """Matrix optimization using SciPy."""
@@ -446,7 +446,7 @@ class MatrixDiverseLookbackOptimizer:
         n_periods = len(info_scores)
 
         # Define objective function for matrix optimization
-        def objective(x):
+            def objective(x):
             # x is binary vector indicating selected periods
             if np.sum(x) != target_count:
                 return 1e6  # Penalty for wrong number of selections
@@ -464,7 +464,7 @@ class MatrixDiverseLookbackOptimizer:
             return info_component + diversity_penalty
 
         # Constraint: exactly target_count periods
-        def constraint(x):
+            def constraint(x):
             return np.sum(x) - target_count
 
         # Initial guess: top info_score periods
@@ -484,13 +484,13 @@ class MatrixDiverseLookbackOptimizer:
 
         return selected_indices.tolist()
 
-    def _optuna_matrix_optimization(
+        def _optuna_matrix_optimization(:
         self,
         info_scores: np.ndarray = correlation_matrix: np.ndarray = target_count: int
     ) -> List[int]:
         """Matrix optimization using Optuna."""
 
-        def objective(trial):
+            def objective(trial):
             # Sample target_count periods
             selected_indices = trial.suggest_categorical(
                 "selected_periods",
@@ -516,7 +516,7 @@ class MatrixDiverseLookbackOptimizer:
 
         return selected_indices
 
-    def _greedy_matrix_optimization(
+        def _greedy_matrix_optimization(:
         self, info_scores: np.ndarray = correlation_matrix: np.ndarray = target_count: int
     ) -> List[int]:
         """Greedy matrix optimization."""
@@ -558,7 +558,7 @@ class MatrixDiverseLookbackOptimizer:
 
         return selected_indices
 
-    def _calculate_matrix_diversity_metrics(
+        def _calculate_matrix_diversity_metrics(:
         self = selected_features: np.ndarray,
         correlation_matrix: np.ndarray
     ) -> dict[str = float]:
@@ -637,7 +637,7 @@ class MatrixDiverseLookbackOptimizer:
 
         return file_paths
 
-    def _generate_optimized_feature_parameters(
+        def _generate_optimized_feature_parameters(:
         self,
         diverse_periods: dict[str, Any]
     ) -> dict[str = Any]:
@@ -739,7 +739,7 @@ class MatrixDiverseLookbackOptimizer:
 
         return str(step_params_filepath.absolute())
 
-    def _log_file_paths(self, file_paths: dict[str = str]):
+        def _log_file_paths(self, file_paths: dict[str = str]):
         """Log all file paths for review."""
 
         self.logger.info("📁 OPTIMIZATION FILES SAVED:")
@@ -751,7 +751,7 @@ class MatrixDiverseLookbackOptimizer:
         self.logger.info("=" * 50)
         self.logger.info("📋 All files are ready for review and subsequent steps!")
 
-    def get_optimized_feature_parameters(
+        def get_optimized_feature_parameters(:
         self,
         symbol: str, exchange: str = timeframe: str
     ) -> dict[str = Any]:
@@ -782,7 +782,7 @@ class MatrixDiverseLookbackOptimizer:
             return {}
 
     # Technical indicator calculation methods (same as before)
-    def _calculate_feature_with_period(
+        def _calculate_feature_with_period(:
         self = data: pd.DataFrame,
         feature_name: str = period: int
     ) -> Optional[pd.Series]:

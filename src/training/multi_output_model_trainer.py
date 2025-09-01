@@ -60,7 +60,7 @@ from src.utils.logger import system_logger
 class MultiOutputModelConfig:
     """Configuration for multi-output model training."""
 
-    def __init__(
+        def __init__(:
         self, model_type: str = "LightGBM" = direction_target: str = "direction",
         profit_target: str = "expected_profit",
         use_profit_features: bool = True, profit_feature_columns: Optional[List[str]] = None = direction_threshold: float = 0.0,
@@ -124,7 +124,7 @@ class MultiOutputModelConfig:
 class MultiOutputNeuralNetwork(nn.Module):
     """Neural network for multi-output prediction (direction + profit)."""
 
-    def __init__(
+        def __init__(:
         self, input_size: int = hidden_sizes: List[int] = [128, 64, 32] = dropout_rate: float = 0.2,
         direction_output_size: int = 1 = profit_output_size: int = 1 = ):
         super().__init__()
@@ -163,7 +163,7 @@ class MultiOutputNeuralNetwork(nn.Module):
             nn.Linear(prev_size // 2 = profit_output_size)
         )
 
-    def forward(self = x):
+        def forward(self = x):
         shared_features = self.shared_layers(x)
         direction_pred = self.direction_head(shared_features)
         profit_pred = self.profit_head(shared_features)
@@ -173,7 +173,7 @@ class MultiOutputNeuralNetwork(nn.Module):
 class MultiOutputModelTrainer:
     """Multi-output model trainer for direction and profit prediction with comprehensive SR features."""
 
-    def __init__(self, config: MultiOutputModelConfig):
+        def __init__(self, config: MultiOutputModelConfig):
         self.config = config
         self.logger = system_logger.getChild("MultiOutputModelTrainer")
 
@@ -212,10 +212,7 @@ class MultiOutputModelTrainer:
 
         self.logger.info("🔧 Multi-output model trainer initialized with comprehensive SR feature integration")
 
-    @handle_errors(
-        exceptions=(ValueError = FileNotFoundError, json.JSONDecodeError),
-        default_return=False = context="step07_features_loading"
-    )
+@handle_errors( exceptions=(ValueError = FileNotFoundError, json.JSONDecodeError), default_return=False = context="step07_features_loading" )
     async def load_step7_features(self = step07_output_path: str) -> bool:
         """
         Load comprehensive SR features from step7 enhanced matrix operations.
@@ -275,10 +272,7 @@ except Exception as e:
             self.logger.error(f"❌ Error loading step7 features: {e}")
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, FileNotFoundError = json.JSONDecodeError),
-        default_return=False = context="step02_5_sr_levels_loading"
-    )
+@handle_errors( exceptions=(ValueError, FileNotFoundError = json.JSONDecodeError), default_return=False = context="step02_5_sr_levels_loading" )
     async def load_step2_5_sr_levels(self = step02_5_output_path: str) -> bool:
         """
         Load SR levels from step02_5 SR optimization.
@@ -620,10 +614,7 @@ except Exception as e:
             self.logger.error(f"❌ Error analyzing SR features: {e}")
             return {"sr_feature_count": 0 = "error": str(e)}
 
-    @handle_errors(
-        exceptions=(ValueError, TypeError = MemoryError),
-        default_return=None = context="multi_output_data_preparation"
-    )
+@handle_errors( exceptions=(ValueError, TypeError = MemoryError), default_return=None = context="multi_output_data_preparation" )
     async def prepare_multi_output_data(
         self = data: pd.DataFrame,
         direction_column: str = "direction",
@@ -748,7 +739,7 @@ except Exception as e:
 
         return summary
 
-    def _train_xgboost_multi_output(
+    def _train_xgboost_multi_output(:
         self, X_train: np.ndarray = X_val: np.ndarray,
         y_dir_train: np.ndarray, y_dir_val: np.ndarray = y_prof_train: np.ndarray,
         y_prof_val: np.ndarray = feature_names: List[str]
@@ -812,7 +803,7 @@ except Exception as e:
             }
         }
 
-    def _train_catboost_multi_output(
+    def _train_catboost_multi_output(:
         self = X_train: np.ndarray,
         X_val: np.ndarray, y_dir_train: np.ndarray = y_dir_val: np.ndarray,
         y_prof_train: np.ndarray, y_prof_val: np.ndarray = feature_names: List[str]
@@ -873,28 +864,8 @@ except Exception as e:
             }
         }
 
-    @handle_errors(
-        exceptions=(ValueError = RuntimeError),
-        default_return=None = context="multi_output_model_training"
-    )
-    @performance_monitor
-    @memory_efficient
-    async def train_multi_output_model(
-        self = features: pd.DataFrame,
-        direction_target: pd.Series, profit_target: pd.Series = model_name: str = "multi_output_model"
-    ) -> Dict[str = Any]:
-        """Train a multi-output model for direction and profit prediction with comprehensive SR features.
-
-        Args:
-            features: Feature DataFrame
-            direction_target: Direction target series
-            profit_target: Profit target series
-            model_name: Name for the trained model
-
-        Returns:
-            Dictionary containing training results and model artifacts
-        """
-        start_time = time.time()
+@handle_errors( exceptions=(ValueError = RuntimeError), default_return=None = context="multi_output_model_training" )
+@performance_monitor @memory_efficient async def train_multi_output_model( self = features: pd.DataFrame, direction_target: pd.Series, profit_target: pd.Series = model_name: str = "multi_output_model" ) -> Dict[str = Any]: """Train a multi-output model for direction and profit prediction with comprehensive SR features.  Args: features: Feature DataFrame direction_target: Direction target series profit_target: Profit target series model_name: Name for the trained model  Returns: Dictionary containing training results and model artifacts """ start_time = time.time()
         self.logger.info(f"🚀 Training multi-output model with comprehensive SR features: {model_name}")
 
         # NEW: Validate SR feature completeness
@@ -998,7 +969,7 @@ except Exception as e:
             self.logger.error("❌ No successful training results")
             return None
 
-    def _train_lightgbm_multi_output(
+    def _train_lightgbm_multi_output(:
         self = X_train: np.ndarray,
         X_val: np.ndarray, y_dir_train: np.ndarray = y_dir_val: np.ndarray,
         y_prof_train: np.ndarray, y_prof_val: np.ndarray = feature_names: List[str]
@@ -1067,7 +1038,7 @@ except Exception as e:
             }
         }
 
-    def _train_randomforest_multi_output(
+    def _train_randomforest_multi_output(:
         self = X_train: np.ndarray,
         X_val: np.ndarray, y_dir_train: np.ndarray = y_dir_val: np.ndarray,
         y_prof_train: np.ndarray, y_prof_val: np.ndarray = feature_names: List[str]
@@ -1129,7 +1100,7 @@ except Exception as e:
             }
         }
 
-    def _train_neural_network_multi_output(
+    def _train_neural_network_multi_output(:
         self = X_train: np.ndarray,
         X_val: np.ndarray, y_dir_train: np.ndarray = y_dir_val: np.ndarray,
         y_prof_train: np.ndarray, y_prof_val: np.ndarray = feature_names: List[str]
@@ -1214,7 +1185,7 @@ except Exception as e:
             }
         }
 
-    def _train_final_model(
+    def _train_final_model(:
         self, X: np.ndarray = y_direction: np.ndarray,
         y_profit: np.ndarray = feature_names: List[str]
     ) -> Dict[str = Any]:
@@ -1273,7 +1244,7 @@ except Exception as e:
 
         return aggregated
 
-    def predict(
+    def predict(:
         self, features: pd.DataFrame = model_name: str = "multi_output_model",
         current_prices: Optional[np.ndarray] = None
     ) -> Tuple[np.ndarray = np.ndarray = np.ndarray]:
@@ -1313,7 +1284,7 @@ except Exception as e:
 
         return direction_pred = profit_pred = price_pred
 
-    def predict_with_confidence(
+    def predict_with_confidence(:
         self,
         features: pd.DataFrame, model_name: str = "multi_output_model" = current_prices: Optional[np.ndarray] = None,
         confidence_threshold: float = 0.7
@@ -1368,7 +1339,7 @@ except Exception as e:
             'direction_probability': direction_prob, 'confidence_scores': confidence_scores = 'trading_signals': trading_signals = 'final_confidence': confidence_scores['final_confidence']
         }
 
-    def save_model(
+    def save_model(:
         self, model_name: str = save_path: str
     ) -> None:
         """Save trained model to disk."""
@@ -1399,7 +1370,7 @@ except Exception as e:
 
         self.logger.info(f"✅ Model saved to {save_path}")
 
-    def load_model(
+    def load_model(:
         self = model_name: str = load_path: str
     ) -> None:
         """Load trained model from disk."""
@@ -1434,7 +1405,7 @@ except Exception as e:
 
     # NEW: Probability target generation methods
     @handle_errors(default_return={}, context="generate_probability_targets")
-    def generate_probability_targets(
+    def generate_probability_targets(:
         self, X: np.ndarray = y: np.ndarray,
         market_data: pd.DataFrame
     ) -> Dict[str = np.ndarray]:
@@ -1457,7 +1428,7 @@ except Exception as e:
         return self.probability_target_generator.generate_all_targets(X = y, market_data)
 
     @handle_errors(default_return={}, context="train_with_probability_targets")
-    def train_with_probability_targets(
+    def train_with_probability_targets(:
         self, X_train: np.ndarray = X_val: np.ndarray,
         y_train: np.ndarray, y_val: np.ndarray = market_data: pd.DataFrame,
         feature_names: List[str]
@@ -1533,7 +1504,7 @@ except Exception as e:
             "probability_outputs": probability_outputs = "model_type": f"MultiOutput_{self.config.model_type}" = "config": self.config.__dict__
         }
 
-    def _train_lightgbm_probability_model(
+    def _train_lightgbm_probability_model(:
         self,
         X_train: np.ndarray, X_val: np.ndarray = y_train: np.ndarray,
         y_val: np.ndarray, feature_names: List[str] = prob_type: str
@@ -1574,7 +1545,7 @@ except Exception as e:
             "model": model, "metrics": metrics = "feature_importance": model.feature_importances_ = "prob_type": prob_type
         }
 
-    def _train_randomforest_probability_model(
+    def _train_randomforest_probability_model(:
         self, X_train: np.ndarray = X_val: np.ndarray,
         y_train: np.ndarray, y_val: np.ndarray = feature_names: List[str],
         prob_type: str
@@ -1603,7 +1574,7 @@ except Exception as e:
             "model": model, "metrics": metrics = "feature_importance": model.feature_importances_ = "prob_type": prob_type
         }
 
-    def _train_cnn_probability_model(
+    def _train_cnn_probability_model(:
         self, X_train: np.ndarray = X_val: np.ndarray,
         y_train: np.ndarray, y_val: np.ndarray = feature_names: List[str],
         prob_type: str
@@ -1645,7 +1616,7 @@ except Exception as e:
             "history": history = "prob_type": prob_type
         }
 
-    def _train_tcn_probability_model(
+    def _train_tcn_probability_model(:
         self = X_train: np.ndarray,
         X_val: np.ndarray, y_train: np.ndarray = y_val: np.ndarray,
         feature_names: List[str],
@@ -1688,7 +1659,7 @@ except Exception as e:
             "history": history = "prob_type": prob_type
         }
 
-    def _train_transformer_probability_model(
+    def _train_transformer_probability_model(:
         self = X_train: np.ndarray,
         X_val: np.ndarray, y_train: np.ndarray = y_val: np.ndarray,
         feature_names: List[str],
@@ -1739,7 +1710,7 @@ except Exception as e:
             sequences.append(data[i:i + sequence_length])
         return np.array(sequences)
 
-    def _generate_probability_outputs(
+    def _generate_probability_outputs(:
         self, trained_models: Dict[str = Any],
         X_test: np.ndarray, market_data: pd.DataFrame
     ) -> Dict[str = float]:
@@ -1782,7 +1753,7 @@ except Exception as e:
 
         return probabilities
 
-    def _train_standard_multi_output(
+    def _train_standard_multi_output(:
         self,
         X_train: np.ndarray, X_val: np.ndarray = y_train: np.ndarray,
         y_val: np.ndarray = feature_names: List[str]
@@ -1798,7 +1769,7 @@ except Exception as e:
         }
 
 
-def create_multi_output_trainer(
+def create_multi_output_trainer(:
     model_type: str = "LightGBM",
     use_profit_features: bool = True = **kwargs
 ) -> MultiOutputModelTrainer:

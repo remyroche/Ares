@@ -28,42 +28,42 @@ Initialize ML tactics manager.
 Args:
             config: Configuration dictionary
 """
-self.config: dict[str, Any] = config
-self.logger = system_logger.getChild("MLTacticsManager")
+    self.config: dict[str, Any] = config
+    self.logger = system_logger.getChild("MLTacticsManager")
 
 # ML tactics state
-self.is_initialized: bool = False
-self.ml_predictions: dict[str, Any] = {}
-self.ml_decisions: dict[str, Any] = {}
+    self.is_initialized: bool = False
+    self.ml_predictions: dict[str, Any] = {}
+    self.ml_decisions: dict[str, Any] = {}
 
 # Configuration from step17 optimization results
-self.ml_config: dict[str, Any] = self.config.get("ml_tactics_manager", {})
+    self.ml_config: dict[str, Any] = self.config.get("ml_tactics_manager", {})
 
 # Load step17 optimized parameters
 step17_config = self.config.get("step17_optimization", {})
 ml_tactics_optimization = step17_config.get("ml_tactics", {})
 
 # Load optimized ML tactics parameters
-self.enable_ml_tactics: bool = ml_tactics_optimization.get("enable_ml_tactics", True)
-self.confidence_threshold: float = ml_tactics_optimization.get("confidence_threshold", 0.7)
-self.regime_threshold: float = ml_tactics_optimization.get("regime_threshold", 0.6)
+    self.enable_ml_tactics: bool = ml_tactics_optimization.get("enable_ml_tactics", True)
+    self.confidence_threshold: float = ml_tactics_optimization.get("confidence_threshold", 0.7)
+    self.regime_threshold: float = ml_tactics_optimization.get("regime_threshold", 0.6)
 
 # Load additional optimized parameters
-self.ml_weight: float = ml_tactics_optimization.get("ml_weight", 0.8)
-self.regime_weight: float = ml_tactics_optimization.get("regime_weight", 0.2)
-self.confidence_boost_factor: float = ml_tactics_optimization.get("confidence_boost_factor", 1.2)
-self.risk_adjustment_factor: float = ml_tactics_optimization.get("risk_adjustment_factor", 1.0)
+    self.ml_weight: float = ml_tactics_optimization.get("ml_weight", 0.8)
+    self.regime_weight: float = ml_tactics_optimization.get("regime_weight", 0.2)
+    self.confidence_boost_factor: float = ml_tactics_optimization.get("confidence_boost_factor", 1.2)
+    self.risk_adjustment_factor: float = ml_tactics_optimization.get("risk_adjustment_factor", 1.0)
 
 # NEW: Multi-output prediction models
-self.multi_output_models: dict[str, Any] = {}
-self.is_trained: bool = False
-self.last_training_time: datetime | None = None
+    self.multi_output_models: dict[str, Any] = {}
+    self.is_trained: bool = False
+    self.last_training_time: datetime | None = None
 
 # NEW: Scenario-based predictor
-self.scenario_predictor = None
+    self.scenario_predictor = None
 
 # NEW: Barrier configuration (50% and 25% of Analyst barriers)
-self.barrier_config = {
+    self.barrier_config = {
 "fifty_percent": {
 "profit_target_multiplier": 0.5,
 "stop_loss_multiplier": 0.5,
@@ -87,21 +87,21 @@ self.barrier_config = {
 }
 
 # NEW: Confidence thresholds for green light signals (MTF unified)
-self.green_light_thresholds = {
+    self.green_light_thresholds = {
 "fifty_percent": ml_tactics_optimization.get("fifty_percent_threshold", 0.75),
 "twenty_five_percent": ml_tactics_optimization.get("twenty_five_percent_threshold", 0.8),
 "combined_threshold": ml_tactics_optimization.get("combined_threshold", 0.7)
 }
 
 # NEW: Exit thresholds (MTF unified)
-self.exit_thresholds = {
+    self.exit_thresholds = {
 "fifty_percent": ml_tactics_optimization.get("exit_fifty_percent_threshold", 0.4),
 "twenty_five_percent": ml_tactics_optimization.get("exit_twenty_five_percent_threshold", 0.35),
 "combined_exit_threshold": ml_tactics_optimization.get("combined_exit_threshold", 0.45)
 }
 
 # NEW: Combined confidence weights (Analyst + Tactician confidences)
-self.confidence_weights = {
+    self.confidence_weights = {
 "analyst_weight": ml_tactics_optimization.get("analyst_confidence_weight", 0.3),
 "fifty_percent_1m_weight": ml_tactics_optimization.get("fifty_percent_1m_weight", 0.25),
 "twenty_five_percent_1m_weight": ml_tactics_optimization.get("twenty_five_percent_1m_weight", 0.15),
@@ -109,15 +109,7 @@ self.confidence_weights = {
 "twenty_five_percent_5m_weight": ml_tactics_optimization.get("twenty_five_percent_5m_weight", 0.1)
 }
 
-@handle_specific_errors(
-error_handlers={
-ValueError: (False, "Invalid ML tactics manager configuration"),
-AttributeError: (False, "Missing required ML tactics parameters"),
-KeyError: (False, "Missing configuration keys"),
-},
-default_return=False,
-context="ML tactics manager initialization",
-)
+@handle_specific_errors( error_handlers={ ValueError: (False, "Invalid ML tactics manager configuration"), AttributeError: (False, "Missing required ML tactics parameters"), KeyError: (False, "Missing configuration keys"), }, default_return=False, context="ML tactics manager initialization", )
 async def initialize(self) -> bool:
         """
 Initialize ML tactics manager.
@@ -131,12 +123,12 @@ try:
 except Exception as e:
     # Log the error and handle gracefully
     pass
-self.logger.info("Initializing ML Tactics Manager...")
+    self.logger.info("Initializing ML Tactics Manager...")
 
 # Validate configuration
 if not self._validate_configuration():
                 self.logger.error(invalid("Invalid configuration for ML tactics manager"))
-return False
+    return False
 
 # Initialize ML models
 await self._initialize_ml_models()
@@ -144,19 +136,15 @@ await self._initialize_ml_models()
 # Initialize scenario-based predictor
 await self._initialize_scenario_predictor()
 
-self.is_initialized = True
-self.logger.info("✅ ML Tactics Manager initialized successfully")
-return True
+    self.is_initialized = True
+    self.logger.info("✅ ML Tactics Manager initialized successfully")
+    return True
 
 except Exception as e:
             self.logger.error(failed(f"❌ ML Tactics Manager initialization failed: {e}"))
-return False
+    return False
 
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=False,
-context="configuration validation",
-)
+@handle_errors( exceptions=(ValueError, AttributeError), default_return=False, context="configuration validation", )
 def _validate_configuration(self) -> bool:
         """
 Validate ML tactics manager configuration.
@@ -172,53 +160,53 @@ except Exception as e:
     pass
 if self.confidence_threshold <= 0 or self.confidence_threshold > 1:
                 self.logger.error(invalid("Invalid confidence_threshold configuration"))
-return False
+    return False
 
 if self.regime_threshold <= 0 or self.regime_threshold > 1:
                 self.logger.error(invalid("Invalid regime_threshold configuration"))
-return False
+    return False
 
 if self.ml_weight <= 0 or self.ml_weight > 1:
                 self.logger.error(invalid("Invalid ml_weight configuration"))
-return False
+    return False
 
 if self.regime_weight <= 0 or self.regime_weight > 1:
                 self.logger.error(invalid("Invalid regime_weight configuration"))
-return False
+    return False
 
 # Validate barrier configuration
 for barrier_type, config in self.barrier_config.items():
                 if config["profit_target_multiplier"] <= 0 or config["stop_loss_multiplier"] <= 0:
                     self.logger.error(invalid(f"Invalid barrier configuration for {barrier_type}"))
-return False
+    return False
 
 # Validate thresholds
 for threshold_type, threshold in self.green_light_thresholds.items():
                 if threshold <= 0 or threshold > 1:
                     self.logger.error(invalid(f"Invalid green light threshold for {threshold_type}"))
-return False
+    return False
 
 for threshold_type, threshold in self.exit_thresholds.items():
                 if threshold <= 0 or threshold > 1:
                     self.logger.error(invalid(f"Invalid exit threshold for {threshold_type}"))
-return False
+    return False
 
 # Validate confidence weights
 total_weight = sum(self.confidence_weights.values())
 if abs(total_weight - 1.0) > 0.01:  # Allow small floating point errors
-self.logger.error(invalid(f"Confidence weights must sum to 1.0, got {total_weight}"))
-return False
+    self.logger.error(invalid(f"Confidence weights must sum to 1.0, got {total_weight}"))
+    return False
 
 for weight_name, weight in self.confidence_weights.items():
                 if weight < 0 or weight > 1:
                     self.logger.error(invalid(f"Invalid confidence weight for {weight_name}: {weight}"))
-return False
+    return False
 
-return True
+    return True
 
 except Exception as e:
             self.logger.error(failed(f"Configuration validation failed: {e}"))
-return False
+    return False
 
 def refresh_step17_configuration(self, step17_results: dict[str, Any]) -> None:
         """
@@ -238,18 +226,18 @@ if "ml_tactics" in step17_results:
                 ml_tactics_optimization = step17_results["ml_tactics"]
 
 # Update ML tactics parameters
-self.enable_ml_tactics = ml_tactics_optimization.get("enable_ml_tactics", self.enable_ml_tactics)
-self.confidence_threshold = ml_tactics_optimization.get("confidence_threshold", self.confidence_threshold)
-self.regime_threshold = ml_tactics_optimization.get("regime_threshold", self.regime_threshold)
+    self.enable_ml_tactics = ml_tactics_optimization.get("enable_ml_tactics", self.enable_ml_tactics)
+    self.confidence_threshold = ml_tactics_optimization.get("confidence_threshold", self.confidence_threshold)
+    self.regime_threshold = ml_tactics_optimization.get("regime_threshold", self.regime_threshold)
 
 # Update additional parameters
-self.ml_weight = ml_tactics_optimization.get("ml_weight", self.ml_weight)
-self.regime_weight = ml_tactics_optimization.get("regime_weight", self.regime_weight)
-self.confidence_boost_factor = ml_tactics_optimization.get("confidence_boost_factor", self.confidence_boost_factor)
-self.risk_adjustment_factor = ml_tactics_optimization.get("risk_adjustment_factor", self.risk_adjustment_factor)
+    self.ml_weight = ml_tactics_optimization.get("ml_weight", self.ml_weight)
+    self.regime_weight = ml_tactics_optimization.get("regime_weight", self.regime_weight)
+    self.confidence_boost_factor = ml_tactics_optimization.get("confidence_boost_factor", self.confidence_boost_factor)
+    self.risk_adjustment_factor = ml_tactics_optimization.get("risk_adjustment_factor", self.risk_adjustment_factor)
 
 # Update barrier and threshold configurations
-self.barrier_config = {
+    self.barrier_config = {
 "fifty_percent": {
 "profit_target_multiplier": ml_tactics_optimization.get("fifty_percent_profit_target_multiplier", 0.5),
 "stop_loss_multiplier": ml_tactics_optimization.get("fifty_percent_stop_loss_multiplier", 0.5),
@@ -271,17 +259,17 @@ self.barrier_config = {
 "timeframe": ml_tactics_optimization.get("twenty_five_percent_5m_timeframe", "5m")
 }
 }
-self.green_light_thresholds = {
+    self.green_light_thresholds = {
 "fifty_percent": ml_tactics_optimization.get("fifty_percent_threshold", 0.75),
 "twenty_five_percent": ml_tactics_optimization.get("twenty_five_percent_threshold", 0.8),
 "combined_threshold": ml_tactics_optimization.get("combined_threshold", 0.7)
 }
-self.exit_thresholds = {
+    self.exit_thresholds = {
 "fifty_percent": ml_tactics_optimization.get("exit_fifty_percent_threshold", 0.4),
 "twenty_five_percent": ml_tactics_optimization.get("exit_twenty_five_percent_threshold", 0.35),
 "combined_exit_threshold": ml_tactics_optimization.get("combined_exit_threshold", 0.45)
 }
-self.confidence_weights = {
+    self.confidence_weights = {
 "analyst_weight": ml_tactics_optimization.get("analyst_confidence_weight", 0.3),
 "fifty_percent_1m_weight": ml_tactics_optimization.get("fifty_percent_1m_weight", 0.25),
 "twenty_five_percent_1m_weight": ml_tactics_optimization.get("twenty_five_percent_1m_weight", 0.15),
@@ -289,7 +277,7 @@ self.confidence_weights = {
 "twenty_five_percent_5m_weight": ml_tactics_optimization.get("twenty_five_percent_5m_weight", 0.1)
 }
 
-self.logger.info("✅ ML tactics manager configuration refreshed from step17 results")
+    self.logger.info("✅ ML tactics manager configuration refreshed from step17 results")
 
 except Exception as e:
             self.logger.error(f"Error refreshing step17 configuration: {e}")
@@ -303,18 +291,14 @@ except Exception as e:
     # Log the error and handle gracefully
     pass
 from .scenario_based_predictor import ScenarioBasedPredictor
-self.scenario_predictor = ScenarioBasedPredictor(self.config)
+    self.scenario_predictor = ScenarioBasedPredictor(self.config)
 await self.scenario_predictor.initialize()
-self.logger.info("✅ Scenario-based predictor initialized")
+    self.logger.info("✅ Scenario-based predictor initialized")
 except Exception as e:
             self.logger.error(f"❌ Scenario predictor initialization failed: {e}")
-self.scenario_predictor = None
+    self.scenario_predictor = None
 
-@handle_errors(
-exceptions=(Exception,),
-default_return=False,
-context="ML models initialization",
-)
+@handle_errors( exceptions=(Exception,), default_return=False, context="ML models initialization", )
 async def _initialize_ml_models(self) -> bool:
         """
 Initialize multi-output prediction models.
@@ -328,7 +312,7 @@ try:
 except Exception as e:
     # Log the error and handle gracefully
     pass
-self.logger.info("Initializing multi-output prediction models...")
+    self.logger.info("Initializing multi-output prediction models...")
 
 # Initialize models for each barrier type
 for barrier_type in ["fifty_percent", "twenty_five_percent", "fifty_percent_5m", "twenty_five_percent_5m"]:
@@ -348,18 +332,14 @@ if not self.is_trained:
                 self.logger.warning("No pre-trained models found, using fallback models")
 await self._initialize_fallback_models()
 
-self.logger.info("✅ Multi-output prediction models initialized")
-return True
+    self.logger.info("✅ Multi-output prediction models initialized")
+    return True
 
 except Exception as e:
             self.logger.error(failed(f"❌ ML models initialization failed: {e}"))
-return False
+    return False
 
-@handle_errors(
-exceptions=(Exception,),
-default_return=False,
-context="pre-trained models loading",
-)
+@handle_errors( exceptions=(Exception,), default_return=False, context="pre-trained models loading", )
 async def _load_pretrained_models(self) -> bool:
         """
 Load pre-trained multi-output models.
@@ -375,18 +355,14 @@ except Exception as e:
     pass
 # This would load actual trained models from disk
 # For now, we'll use fallback models
-self.logger.info("Loading pre-trained models (fallback mode)")
-return False
+    self.logger.info("Loading pre-trained models (fallback mode)")
+    return False
 
 except Exception as e:
             self.logger.error(failed(f"❌ Failed to load pre-trained models: {e}"))
-return False
+    return False
 
-@handle_errors(
-exceptions=(Exception,),
-default_return=False,
-context="fallback models initialization",
-)
+@handle_errors( exceptions=(Exception,), default_return=False, context="fallback models initialization", )
 async def _initialize_fallback_models(self) -> bool:
         """
 Initialize fallback models for testing.
@@ -400,30 +376,22 @@ try:
 except Exception as e:
     # Log the error and handle gracefully
     pass
-self.logger.info("Initializing fallback models...")
+    self.logger.info("Initializing fallback models...")
 
 # Create simple fallback models for each barrier type
 for barrier_type in ["fifty_percent", "twenty_five_percent", "fifty_percent_5m", "twenty_five_percent_5m"]:
                 self.multi_output_models[barrier_type]["is_trained"] = True
-self.multi_output_models[barrier_type]["model"] = "fallback"
+    self.multi_output_models[barrier_type]["model"] = "fallback"
 
-self.is_trained = True
-self.logger.info("✅ Fallback models initialized")
-return True
+    self.is_trained = True
+    self.logger.info("✅ Fallback models initialized")
+    return True
 
 except Exception as e:
             self.logger.error(failed(f"❌ Fallback models initialization failed: {e}"))
-return False
+    return False
 
-@handle_specific_errors(
-error_handlers={
-ValueError: (False, "Invalid ML tactics parameters"),
-AttributeError: (False, "Missing ML tactics components"),
-KeyError: (False, "Missing required ML tactics data"),
-},
-default_return=False,
-context="ML tactics execution",
-)
+@handle_specific_errors( error_handlers={ ValueError: (False, "Invalid ML tactics parameters"), AttributeError: (False, "Missing ML tactics components"), KeyError: (False, "Missing required ML tactics data"), }, default_return=False, context="ML tactics execution", )
 async def execute_ml_tactics(
 self, tactics_input: dict[str, Any],
 ) -> dict[str, Any]:
@@ -442,7 +410,7 @@ try:
 except Exception as e:
     # Log the error and handle gracefully
     pass
-self.logger.info("🤖 Executing ML tactics...")
+    self.logger.info("🤖 Executing ML tactics...")
 
 # Validate tactics input
 if not self._validate_tactics_input(tactics_input):
@@ -453,7 +421,7 @@ ml_predictions = self._get_ml_predictions()
 
 if not ml_predictions:
                 self.logger.warning(warning("⚠️ No ML predictions available"))
-return {}
+    return {}
 
 # Apply regime and location tactics
 regime_tactics = self._apply_regime_and_location_tactics(ml_predictions)
@@ -495,28 +463,17 @@ ml_results = {
 "timestamp": datetime.now(),
 }
 
-self.ml_decisions = ml_results
-self.logger.info("✅ ML tactics execution completed successfully")
+    self.ml_decisions = ml_results
+    self.logger.info("✅ ML tactics execution completed successfully")
 
-return ml_results
+    return ml_results
 
 except Exception as e:
             self.logger.error(failed(f"❌ ML tactics execution failed: {e}"))
-return {}
+    return {}
 
-@validate_data_quality(
-required_columns=None,  # This method validates dict input, not DataFrame
-min_rows=1,
-max_null_ratio=0.0,
-check_duplicates=False,
-check_timestamps=False,
-context="ML tactics input validation"
-)
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=False,
-context="ML tactics input validation",
-)
+@validate_data_quality( required_columns=None,  # This method validates dict input, not DataFrame min_rows=1, max_null_ratio=0.0, check_duplicates=False, check_timestamps=False, context="ML tactics input validation" )
+@handle_errors( exceptions=(ValueError, AttributeError), default_return=False, context="ML tactics input validation", )
 def _validate_tactics_input(self, tactics_input: dict[str, Any]) -> bool:
         """
 Validate ML tactics input parameters.
@@ -540,24 +497,20 @@ for field in required_fields:
                     self.logger.error(
 f"Missing required ML tactics input field: {field}",
 )
-return False
+    return False
 
 # Validate specific field values
 if tactics_input.get("current_price", 0) <= 0:
                 self.logger.error(invalid("Invalid current_price value"))
-return False
+    return False
 
-return True
+    return True
 
 except Exception as e:
             self.logger.error(failed(f"ML tactics input validation failed: {e}"))
-return False
+    return False
 
-@handle_errors(
-exceptions=(Exception,),
-default_return=None,
-context="ML predictions retrieval",
-)
+@handle_errors( exceptions=(Exception,), default_return=None, context="ML predictions retrieval", )
 def _get_ml_predictions(self) -> dict[str, Any] | None:
         """
 Get ML predictions.
@@ -573,7 +526,7 @@ except Exception as e:
     pass
 # This would typically retrieve ML predictions from the analyst or other sources
 # For now, return mock predictions
-return {
+    return {
 "regime_prediction": {
 "BULL_TREND": 0.7,
 "BEAR_TREND": 0.2,
@@ -613,14 +566,11 @@ return {
 
 except Exception as e:
             self.logger.error(failed(f"❌ Failed to get ML predictions: {e}"))
-return None
+    return None
 
-@handle_errors(
-exceptions=(Exception,),
-default_return=None,
-context="regime and location tactics application",
-)
-def _apply_regime_and_location_tactics(
+@handle_errors( exceptions=(Exception,), default_return=None, context="regime and location tactics application", )
+def _apply_regime_and_location_tactics(:
+    pass  # TODO: Add implementation
 self, regime_info: dict[str, Any],
 ) -> dict[str, Any]:
         """
@@ -659,7 +609,7 @@ location_tactics = self._get_location_tactics(
 dominant_location, location_confidence,
 )
 
-return {
+    return {
 "dominant_regime": dominant_regime,
 "regime_confidence": regime_confidence,
 "dominant_location": dominant_location,
@@ -675,14 +625,11 @@ except Exception as e:
             self.logger.exception(
 f"❌ Regime and location tactics application failed: {e}",
 )
-return {}
+    return {}
 
-@handle_errors(
-exceptions=(Exception,),
-default_return=None,
-context="ML entry decisions making",
-)
-def _make_ml_entry_decisions(
+@handle_errors( exceptions=(Exception,), default_return=None, context="ML entry decisions making", )
+def _make_ml_entry_decisions(:
+    pass  # TODO: Add implementation
 self, ml_predictions: dict[str, Any],
 ) -> dict[str, Any]:
         """
@@ -717,7 +664,7 @@ else:
 else:
                 decision = "HOLD_LOW_CONFIDENCE"
 
-return {
+    return {
 "decision": decision,
 "confidence": confidence,
 "direction": direction,
@@ -727,14 +674,11 @@ return {
 
 except Exception as e:
             self.logger.error(failed(f"❌ ML entry decisions making failed: {e}"))
-return {}
+    return {}
 
-@handle_errors(
-exceptions=(Exception,),
-default_return=None,
-context="ML sizing decisions making",
-)
-def _make_ml_sizing_decisions(
+@handle_errors( exceptions=(Exception,), default_return=None, context="ML sizing decisions making", )
+def _make_ml_sizing_decisions(:
+    pass  # TODO: Add implementation
 self, ml_predictions: dict[str, Any],
 ) -> dict[str, Any]:
         """
@@ -772,7 +716,7 @@ else:
                 adjusted_multiplier = 1.0
 decision = "MAINTAIN_SIZE"
 
-return {
+    return {
 "decision": decision,
 "confidence": confidence,
 "size_multiplier": adjusted_multiplier,
@@ -782,14 +726,11 @@ return {
 
 except Exception as e:
             self.logger.error(failed(f"❌ ML sizing decisions making failed: {e}"))
-return {}
+    return {}
 
-@handle_errors(
-exceptions=(Exception,),
-default_return=None,
-context="ML leverage decisions making",
-)
-def _make_ml_leverage_decisions(
+@handle_errors( exceptions=(Exception,), default_return=None, context="ML leverage decisions making", )
+def _make_ml_leverage_decisions(:
+    pass  # TODO: Add implementation
 self, ml_predictions: dict[str, Any],
 ) -> dict[str, Any]:
         """
@@ -827,7 +768,7 @@ else:
                 adjusted_leverage = 1.0
 decision = "MAINTAIN_LEVERAGE"
 
-return {
+    return {
 "decision": decision,
 "confidence": confidence,
 "leverage_multiplier": adjusted_leverage,
@@ -837,14 +778,11 @@ return {
 
 except Exception as e:
             self.logger.error(failed(f"❌ ML leverage decisions making failed: {e}"))
-return {}
+    return {}
 
-@handle_errors(
-exceptions=(Exception,),
-default_return=None,
-context="ML directional decisions making",
-)
-def _make_ml_directional_decisions(
+@handle_errors( exceptions=(Exception,), default_return=None, context="ML directional decisions making", )
+def _make_ml_directional_decisions(:
+    pass  # TODO: Add implementation
 self, ml_predictions: dict[str, Any],
 ) -> dict[str, Any]:
         """
@@ -879,7 +817,7 @@ else:
 else:
                 decision = "UNCERTAIN"
 
-return {
+    return {
 "decision": decision,
 "confidence": confidence,
 "direction": direction,
@@ -889,14 +827,11 @@ return {
 
 except Exception as e:
             self.logger.error(failed(f"❌ ML directional decisions making failed: {e}"))
-return {}
+    return {}
 
-@handle_errors(
-exceptions=(Exception,),
-default_return=None,
-context="ML liquidation risk decisions making",
-)
-def _make_ml_liquidation_risk_decisions(
+@handle_errors( exceptions=(Exception,), default_return=None, context="ML liquidation risk decisions making", )
+def _make_ml_liquidation_risk_decisions(:
+    pass  # TODO: Add implementation
 self, ml_predictions: dict[str, Any],
 ) -> dict[str, Any]:
         """
@@ -934,7 +869,7 @@ else:
 else:
                 decision = "UNCERTAIN_RISK"
 
-return {
+    return {
 "decision": decision,
 "confidence": confidence,
 "risk_level": risk_level,
@@ -946,13 +881,9 @@ except Exception as e:
             self.logger.exception(
 f"❌ ML liquidation risk decisions making failed: {e}",
 )
-return {}
+    return {}
 
-@handle_errors(
-exceptions=(Exception,),
-default_return=None,
-context="position size calculation",
-)
+@handle_errors( exceptions=(Exception,), default_return=None, context="position size calculation", )
 async def _calculate_position_size(
 self, ml_predictions: dict[str, Any],
 ) -> dict[str, Any]:
@@ -982,7 +913,7 @@ calculated_size = base_position_size * size_multiplier
 max_position_size = 0.3  # 30% maximum position size
 calculated_size = min(calculated_size, max_position_size)
 
-return {
+    return {
 "base_size": base_position_size,
 "size_multiplier": size_multiplier,
 "calculated_size": calculated_size,
@@ -993,13 +924,9 @@ return {
 
 except Exception as e:
             self.logger.error(failed(f"❌ Position size calculation failed: {e}"))
-return {}
+    return {}
 
-@handle_errors(
-exceptions=(Exception,),
-default_return=None,
-context="leverage calculation",
-)
+@handle_errors( exceptions=(Exception,), default_return=None, context="leverage calculation", )
 async def _calculate_leverage(
 self, ml_predictions: dict[str, Any],
 ) -> dict[str, Any]:
@@ -1029,7 +956,7 @@ calculated_leverage = base_leverage * leverage_multiplier
 max_leverage = 10.0  # 10x maximum leverage
 calculated_leverage = min(calculated_leverage, max_leverage)
 
-return {
+    return {
 "base_leverage": base_leverage,
 "leverage_multiplier": leverage_multiplier,
 "calculated_leverage": calculated_leverage,
@@ -1040,7 +967,7 @@ return {
 
 except Exception as e:
             self.logger.error(failed(f"❌ Leverage calculation failed: {e}"))
-return {}
+    return {}
 
 # Helper methods for regime and location tactics
 
@@ -1051,7 +978,7 @@ tactics = {
 "BEAR_TREND": {"position_multiplier": 0.8, "risk_tolerance": "LOW"},
 "SIDEWAYS_RANGE": {"position_multiplier": 1.0, "risk_tolerance": "MEDIUM"},
 }
-return tactics.get(
+    return tactics.get(
 regime, {"position_multiplier": 1.0, "risk_tolerance": "MEDIUM"},
 )
 
@@ -1062,17 +989,18 @@ tactics = {
 "NEAR_RESISTANCE": {"entry_aggression": "LOW", "stop_distance": "WIDE"},
 "MIDDLE": {"entry_aggression": "MEDIUM", "stop_distance": "MEDIUM"},
 }
-return tactics.get(
+    return tactics.get(
 location,
 {"entry_aggression": "MEDIUM", "stop_distance": "MEDIUM"},
 )
 
-def _combine_regime_location_tactics(
+def _combine_regime_location_tactics(:
+    pass  # TODO: Add implementation
 self, regime_tactics: dict[str, Any],
 location_tactics: dict[str, Any],
 ) -> dict[str, Any]:
         """Combine regime and location tactics."""
-return {
+    return {
 "position_multiplier": regime_tactics.get("position_multiplier", 1.0),
 "risk_tolerance": regime_tactics.get("risk_tolerance", "MEDIUM"),
 "entry_aggression": location_tactics.get("entry_aggression", "MEDIUM"),
@@ -1086,13 +1014,9 @@ Get the latest ML decisions.
 Returns:
             dict: ML decisions
 """
-return self.ml_decisions.copy()
+    return self.ml_decisions.copy()
 
-@handle_errors(
-exceptions=(Exception,),
-default_return=None,
-context="ML tactics manager cleanup",
-)
+@handle_errors( exceptions=(Exception,), default_return=None, context="ML tactics manager cleanup", )
 async def stop(self) -> None:
         """Stop the ML tactics manager and cleanup resources."""
 try:
@@ -1101,18 +1025,14 @@ try:
 except Exception as e:
     # Log the error and handle gracefully
     pass
-self.logger.info("🛑 Stopping ML Tactics Manager...")
-self.is_initialized = False
-self.logger.info("✅ ML Tactics Manager stopped successfully")
+    self.logger.info("🛑 Stopping ML Tactics Manager...")
+    self.is_initialized = False
+    self.logger.info("✅ ML Tactics Manager stopped successfully")
 
 except Exception as e:
             self.logger.error(failed(f"❌ Failed to stop ML Tactics Manager: {e}"))
 
-@handle_errors(
-exceptions=(Exception,),
-default_return=None,
-context="ML tactics manager cleanup",
-)
+@handle_errors( exceptions=(Exception,), default_return=None, context="ML tactics manager cleanup", )
 async def cleanup(self) -> None:
         """Cleanup ML tactics manager resources."""
 try:
@@ -1121,18 +1041,14 @@ try:
 except Exception as e:
     # Log the error and handle gracefully
     pass
-self.logger.info("Cleaning up ML Tactics Manager...")
+    self.logger.info("Cleaning up ML Tactics Manager...")
 await self.stop()
-self.ml_decisions.clear()
-self.logger.info("✅ ML Tactics Manager cleanup completed")
+    self.ml_decisions.clear()
+    self.logger.info("✅ ML Tactics Manager cleanup completed")
 except Exception as e:
             self.logger.error(f"Error cleaning up ML Tactics Manager: {e}")
 
-@handle_errors(
-exceptions=(Exception,),
-default_return=None,
-context="multi-output predictions generation",
-)
+@handle_errors( exceptions=(Exception,), default_return=None, context="multi-output predictions generation", )
 async def generate_multi_output_predictions(
 self,
 market_data: pd.DataFrame,
@@ -1161,7 +1077,7 @@ except Exception as e:
     pass
 if not self.is_trained:
                 self.logger.warning("Models not trained, using fallback predictions")
-return self._generate_fallback_predictions()
+    return self._generate_fallback_predictions()
 
 # Calculate Tactician barriers (50% and 25% of Analyst barriers)
 tactician_barriers = self._calculate_tactician_barriers(analyst_barriers)
@@ -1199,18 +1115,14 @@ result = {
 }
 }
 
-self.logger.info(f"Generated multi-output predictions for {symbol}: {green_light_signal['signal']}")
-return result
+    self.logger.info(f"Generated multi-output predictions for {symbol}: {green_light_signal['signal']}")
+    return result
 
 except Exception as e:
             self.logger.error(failed(f"❌ Multi-output predictions generation failed: {e}"))
-return self._generate_fallback_predictions()
+    return self._generate_fallback_predictions()
 
-@handle_errors(
-exceptions=(Exception,),
-default_return=None,
-context="enhanced predictions generation",
-)
+@handle_errors( exceptions=(Exception,), default_return=None, context="enhanced predictions generation", )
 async def generate_enhanced_predictions(
 self,
 market_data: pd.DataFrame,
@@ -1272,12 +1184,12 @@ result = {
 }
 }
 
-self.logger.info(f"Generated enhanced predictions for {symbol}")
-return result
+    self.logger.info(f"Generated enhanced predictions for {symbol}")
+    return result
 
 except Exception as e:
             self.logger.error(failed(f"❌ Enhanced predictions generation failed: {e}"))
-return {
+    return {
 "multi_output": await self.generate_multi_output_predictions(
 market_data, analyst_barriers, symbol, timeframe, analyst_confidence
 ),
@@ -1292,7 +1204,8 @@ market_data, analyst_barriers, symbol, timeframe, analyst_confidence
 }
 }
 
-def _make_enhanced_decisions(
+def _make_enhanced_decisions(:
+    pass  # TODO: Add implementation
 self,
 multi_output_predictions: dict[str, Any],
 scenario_predictions: dict[str, Any] | None,
@@ -1329,7 +1242,7 @@ if base_green_light == "GREEN":
                 reasoning.append("Multi-output system: GREEN")
 else:
                 reasoning.append(f"Multi-output system: {base_green_light}")
-return {
+    return {
 "entry_signal": False,
 "confidence": base_confidence,
 "reasoning": "Multi-output system not green",
@@ -1387,7 +1300,7 @@ reasoning.append("Scenario analysis: NOT AVAILABLE")
 # Final decision
 final_entry_signal = enhanced_entry_signal and base_green_light == "GREEN"
 
-return {
+    return {
 "entry_signal": final_entry_signal,
 "confidence": enhanced_confidence,
 "reasoning": " | ".join(reasoning),
@@ -1401,7 +1314,7 @@ return {
 
 except Exception as e:
             self.logger.error(failed(f"❌ Enhanced decision making failed: {e}"))
-return {
+    return {
 "entry_signal": False,
 "confidence": 0.0,
 "reasoning": f"Error in enhanced decision making: {e}",
@@ -1409,7 +1322,8 @@ return {
 "multi_output_analysis": None
 }
 
-def _calculate_tactician_barriers(
+def _calculate_tactician_barriers(:
+    pass  # TODO: Add implementation
 self,
 analyst_barriers: dict[str, float]
 ) -> dict[str, dict[str, float]]:
@@ -1462,11 +1376,11 @@ tactician_barriers["twenty_five_percent_5m"] = {
 "timeframe": self.barrier_config["twenty_five_percent_5m"]["timeframe"]
 }
 
-return tactician_barriers
+    return tactician_barriers
 
 except Exception as e:
             self.logger.error(failed(f"❌ Barrier calculation failed: {e}"))
-return {
+    return {
 "fifty_percent": {"upper_barrier": 0.01, "lower_barrier": -0.005, "timeframe": "1m"},
 "twenty_five_percent": {"upper_barrier": 0.005, "lower_barrier": -0.0025, "timeframe": "1m"},
 "fifty_percent_5m": {"upper_barrier": 0.01, "lower_barrier": -0.005, "timeframe": "5m"},
@@ -1520,7 +1434,7 @@ if self.multi_output_models[barrier_type]["calibrator"]:
 # Validate confidence
 confidence = np.clip(confidence, 0.0, 1.0)
 
-return {
+    return {
 "confidence": confidence,
 "direction": direction,
 "upper_barrier": barriers["upper_barrier"],
@@ -1531,7 +1445,7 @@ return {
 
 except Exception as e:
             self.logger.error(failed(f"❌ Barrier prediction failed for {barrier_type}: {e}"))
-return None
+    return None
 
 def _extract_features(self, market_data: pd.DataFrame) -> np.ndarray:
         """
@@ -1553,7 +1467,7 @@ features = []
 
 if len(market_data) < 20:
                 # Not enough data, return default features
-return np.array([0.5] * 10)
+    return np.array([0.5] * 10)
 
 # Price-based features
 close_prices = market_data['close'].values
@@ -1602,11 +1516,11 @@ np.mean(volumes[-5:]) / np.mean(volumes[-20:]) if np.mean(volumes[-20:]) > 0 els
 (close_prices[-1] - low_prices[-1]) / close_prices[-1]   # Lower shadow
 ])
 
-return np.array(features)
+    return np.array(features)
 
 except Exception as e:
             self.logger.error(failed(f"❌ Feature extraction failed: {e}"))
-return np.array([0.5] * 10)
+    return np.array([0.5] * 10)
 
 def _generate_fallback_confidence(self, barrier_type: str, features: np.ndarray) -> float:
         """
@@ -1656,11 +1570,11 @@ base_confidence -= 0.1
 if barrier_type == "twenty_five_percent":
                 base_confidence *= 0.9  # Slightly lower for smaller barriers
 
-return np.clip(base_confidence, 0.0, 1.0)
+    return np.clip(base_confidence, 0.0, 1.0)
 
 except Exception as e:
             self.logger.error(failed(f"❌ Fallback confidence generation failed: {e}"))
-return 0.5
+    return 0.5
 
 def _determine_direction(self, features: np.ndarray) -> str:
         """
@@ -1689,7 +1603,7 @@ else:
 
 except Exception as e:
             self.logger.error(failed(f"❌ Direction determination failed: {e}"))
-return "UP"
+    return "UP"
 
 def _predict_with_model(self, barrier_type: str, features: np.ndarray) -> float:
         """
@@ -1710,11 +1624,11 @@ except Exception as e:
     pass
 # This would use the actual trained model
 # For now, return fallback confidence
-return self._generate_fallback_confidence(barrier_type, features)
+    return self._generate_fallback_confidence(barrier_type, features)
 
 except Exception as e:
             self.logger.error(failed(f"❌ Model prediction failed: {e}"))
-return 0.5
+    return 0.5
 
 def _calibrate_prediction(self, barrier_type: str, confidence: float) -> float:
         """
@@ -1735,13 +1649,14 @@ except Exception as e:
     pass
 # This would use the actual calibrator
 # For now, return original confidence
-return confidence
+    return confidence
 
 except Exception as e:
             self.logger.error(failed(f"❌ Prediction calibration failed: {e}"))
-return confidence
+    return confidence
 
-def _calculate_combined_confidence(
+def _calculate_combined_confidence(:
+    pass  # TODO: Add implementation
 self,
 predictions: dict[str, Any],
 analyst_confidence: float = 0.5
@@ -1784,13 +1699,14 @@ else:
 
 combined_confidence += confidence * weight
 
-return np.clip(combined_confidence, 0.0, 1.0)
+    return np.clip(combined_confidence, 0.0, 1.0)
 
 except Exception as e:
             self.logger.error(failed(f"❌ Combined confidence calculation failed: {e}"))
-return 0.5
+    return 0.5
 
-def _evaluate_green_light_signal(
+def _evaluate_green_light_signal(:
+    pass  # TODO: Add implementation
 self,
 predictions: dict[str, Any],
 combined_confidence: float
@@ -1849,7 +1765,7 @@ else:
                 signal = "RED_LIGHT"
 reason = "Thresholds not met"
 
-return {
+    return {
 "signal": signal,
 "reason": reason,
 "fifty_percent_ok": fifty_percent_ok,
@@ -1861,7 +1777,7 @@ return {
 
 except Exception as e:
             self.logger.error(failed(f"❌ Green light signal evaluation failed: {e}"))
-return {
+    return {
 "signal": "RED_LIGHT",
 "reason": "Evaluation failed",
 "fifty_percent_ok": False,
@@ -1878,7 +1794,7 @@ Generate fallback predictions when models are not available.
 Returns:
             dict: Fallback predictions
 """
-return {
+    return {
 "fifty_percent": {
 "confidence": 0.5,
 "direction": "UP",
@@ -1927,11 +1843,7 @@ return {
 }
 }
 
-@handle_errors(
-exceptions=(Exception,),
-default_return=None,
-context="exit signal evaluation",
-)
+@handle_errors( exceptions=(Exception,), default_return=None, context="exit signal evaluation", )
 async def evaluate_exit_signal(
 self,
 current_predictions: dict[str, Any],
@@ -1992,7 +1904,7 @@ else:
                 exit_signal = "HOLD"
 reason = "Confidence above exit thresholds"
 
-return {
+    return {
 "exit_signal": exit_signal,
 "reason": reason,
 "fifty_percent_exit": fifty_percent_exit,
@@ -2004,7 +1916,7 @@ return {
 
 except Exception as e:
             self.logger.error(failed(f"❌ Exit signal evaluation failed: {e}"))
-return {
+    return {
 "exit_signal": "HOLD",
 "reason": "Evaluation failed",
 "fifty_percent_exit": False,
@@ -2014,11 +1926,7 @@ return {
 "exit_thresholds": self.exit_thresholds
 }
 
-@handle_errors(
-exceptions=(Exception,),
-default_return=None,
-context="ML tactics manager setup",
-)
+@handle_errors( exceptions=(Exception,), default_return=None, context="ML tactics manager setup", )
 async def setup_ml_tactics_manager(
 config: dict[str, Any] | None = None,
 ) -> MLTacticsManager | None:
@@ -2040,7 +1948,7 @@ except Exception as e:
 manager = MLTacticsManager(config or {})
 if await manager.initialize():
             return manager
-return None
+    return None
 except Exception as e:
         system_logger.exception(failed(f"Failed to setup ML Tactics Manager: {e}"))
-return None
+    return None

@@ -7,7 +7,7 @@ from src.utils.logger import system_logger
 class StageRegistry:
     """Stage registry with comprehensive error handling and type safety."""
 
-    def __init__(self = config: dict[str, Any]) -> None:
+        def __init__(self = config: dict[str, Any]) -> None:
         """Initialize stage registry with enhanced type safety.
 
         Args:
@@ -33,11 +33,7 @@ class StageRegistry:
             "enable_stage_validation" = True,
         )
 
-    @handle_specific_errors(
-        error_handlers={
-            ValueError: (False = "Invalid stage registry configuration") = AttributeError: (False, "Missing required stage registry parameters"),
-            KeyError: (False, "Missing configuration keys") = },
-        default_return=False = context="stage registry initialization" = )
+@handle_specific_errors( error_handlers={ ValueError: (False = "Invalid stage registry configuration") = AttributeError: (False, "Missing required stage registry parameters"), KeyError: (False, "Missing configuration keys") = }, default_return=False = context="stage registry initialization" = )
     async def initialize(self) -> bool:
         """Initialize stage registry with enhanced error handling.
 
@@ -69,10 +65,7 @@ except Exception as e:
             self.logger.exception(f"❌ Stage Registry initialization failed: {e}")
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError) = default_return=None,
-        context="stage configuration loading",
-    )
+@handle_errors( exceptions=(ValueError, AttributeError) = default_return=None, context="stage configuration loading", )
     async def _load_stage_configuration(self) -> None:
         """Load stage configuration."""
         try:

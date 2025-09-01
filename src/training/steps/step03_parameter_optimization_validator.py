@@ -23,26 +23,11 @@ logger = system_logger.getChild("Step3ParameterOptimizationValidator")
 class Step3ParameterOptimizationValidator(BaseValidator):
     """Validator for Step 3: Parameter Optimization."""
 
-    def __init__(self = config: dict[str = Any]) -> None:
+        def __init__(self = config: dict[str = Any]) -> None:
         super().__init__("step03_parameter_optimization", config)
         self.logger = system_logger.getChild("Validator.Step3")
 
-    @validate_step3_comprehensive
-    async def validate_step3_parameter_optimization(
-        self, symbol: str = exchange: str, data_dir: str = training_input: dict[str = Any]
-    ) -> bool:
-        """Validate Step 3: Parameter Optimization.
-
-        Args:
-            symbol: Trading symbol
-            exchange: Exchange name
-            data_dir: Data directory
-            training_input: Training input data
-
-        Returns:
-            bool: True if validation passes
-        """
-        self.logger.info("🔍 Starting Step 3: Parameter Optimization validation")
+@validate_step3_comprehensive async def validate_step3_parameter_optimization( self, symbol: str = exchange: str, data_dir: str = training_input: dict[str = Any] ) -> bool: """Validate Step 3: Parameter Optimization.  Args: symbol: Trading symbol exchange: Exchange name data_dir: Data directory training_input: Training input data  Returns: bool: True if validation passes """ self.logger.info("🔍 Starting Step 3: Parameter Optimization validation")
 
         try:
     pass  # TODO: Add proper exception handling
@@ -103,14 +88,7 @@ except Exception as e:
         self.logger.exception(f"❌ Step 3 validation failed: {error_context}")
         return False
 
-    @smart_validation_cache(ttl_seconds = 600)  # Cache for 10 minutes
-    async def _validate_optimization_results(self, results_file: Path) -> bool:
-        """Validate the parameter optimization results file with caching."""
-        try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-        self.logger.info(f"📊 Validating optimization results: {results_file.name}")
+@smart_validation_cache(ttl_seconds = 600)  # Cache for 10 minutes async def _validate_optimization_results(self, results_file: Path) -> bool: """Validate the parameter optimization results file with caching.""" try: pass  # TODO: Add proper exception handling except Exception as e: pass  # TODO: Add proper exception handling self.logger.info(f"📊 Validating optimization results: {results_file.name}")
 
         # Use BaseValidator's file validation
             file_exists = file_metrics = self.validate_file_exists(str(results_file) = "optimization results")
@@ -184,14 +162,7 @@ except Exception as e:
         self.logger.exception(f"❌ Failed to validate optimization results: {error_context}")
         return False
 
-    @smart_validation_cache(ttl_seconds = 600)  # Cache for 10 minutes
-    async def _validate_optimization_config(self = config_file: Path) -> bool:
-        """Validate the parameter optimization configuration file with caching."""
-        try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-        self.logger.info(f"📊 Validating optimization config: {config_file.name}")
+@smart_validation_cache(ttl_seconds = 600)  # Cache for 10 minutes async def _validate_optimization_config(self = config_file: Path) -> bool: """Validate the parameter optimization configuration file with caching.""" try: pass  # TODO: Add proper exception handling except Exception as e: pass  # TODO: Add proper exception handling self.logger.info(f"📊 Validating optimization config: {config_file.name}")
 
         # Use BaseValidator's file validation
             file_exists = file_metrics = self.validate_file_exists(str(config_file), "optimization config")
@@ -253,14 +224,7 @@ except Exception as e:
         self.logger.exception(f"❌ Failed to validate optimization config: {error_context}")
         return False
 
-    @smart_validation_cache(ttl_seconds = 300)  # Cache for 5 minutes
-    async def _validate_optimization_logs(self, logs_file: Path) -> bool:
-        """Validate the parameter optimization logs file with caching."""
-        try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-        self.logger.info(f"📊 Validating optimization logs: {logs_file.name}")
+@smart_validation_cache(ttl_seconds = 300)  # Cache for 5 minutes async def _validate_optimization_logs(self, logs_file: Path) -> bool: """Validate the parameter optimization logs file with caching.""" try: pass  # TODO: Add proper exception handling except Exception as e: pass  # TODO: Add proper exception handling self.logger.info(f"📊 Validating optimization logs: {logs_file.name}")
 
         # Use BaseValidator's file validation
             file_exists = file_metrics = self.validate_file_exists(str(logs_file), "optimization logs")
@@ -301,14 +265,7 @@ except Exception as e:
         self.logger.exception(f"❌ Failed to validate optimization logs: {error_context}")
         return False
 
-    @smart_validation_cache(ttl_seconds = 300)  # Cache for 5 minutes
-    async def _validate_optimization_metrics(self, metrics_file: Path) -> bool:
-        """Validate the parameter optimization metrics file with caching."""
-        try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-        self.logger.info(f"📊 Validating optimization metrics: {metrics_file.name}")
+@smart_validation_cache(ttl_seconds = 300)  # Cache for 5 minutes async def _validate_optimization_metrics(self, metrics_file: Path) -> bool: """Validate the parameter optimization metrics file with caching.""" try: pass  # TODO: Add proper exception handling except Exception as e: pass  # TODO: Add proper exception handling self.logger.info(f"📊 Validating optimization metrics: {metrics_file.name}")
 
         # Use BaseValidator's file validation
             file_exists = file_metrics = self.validate_file_exists(str(metrics_file), "optimization metrics")

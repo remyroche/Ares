@@ -71,17 +71,17 @@ class EnhancedPipelineDecorator:
 class EnhancedPipelineDecorator:
     """Enhanced decorator for pipeline steps with comprehensive monitoring and reporting."""
 
-def __init__(self, step_name: str, report_level: ReportLevel, ReportLevel.DETAILED):
     def __init__(self, step_name: str, report_level: ReportLevel, ReportLevel.DETAILED):
-    def __init__(self, step_name: str, report_level: ReportLevel, ReportLevel.DETAILED):
-    def __init__(self, step_name: str, report_level: ReportLevel, ReportLevel.DETAILED):
+        def __init__(self, step_name: str, report_level: ReportLevel, ReportLevel.DETAILED):
+        def __init__(self, step_name: str, report_level: ReportLevel, ReportLevel.DETAILED):
+        def __init__(self, step_name: str, report_level: ReportLevel, ReportLevel.DETAILED):
         self.step_name, step_name
-self.report_level, report_level
-self.logger, system_logger.getChild(f"EnhancedPipeline.{step_name}")
-self.reports_dir, Path("reports / enhanced_training_pipeline")
-self.reports_dir.mkdir(parents = True, exist_ok = True)
+    self.report_level, report_level
+    self.logger, system_logger.getChild(f"EnhancedPipeline.{step_name}")
+    self.reports_dir, Path("reports / enhanced_training_pipeline")
+    self.reports_dir.mkdir(parents = True, exist_ok = True)
 
-def __call__(self, func: Callable) -> Callable:
+    def __call__(self, func: Callable) -> Callable:
         """Apply the enhanced decorator to a function."""
 
 @functools.wraps(func)
@@ -99,7 +99,7 @@ def sync_wrapper(*args, **kwargs):
     def sync_wrapper(*args, **kwargs):
         return asyncio.run(self._execute_with_enhanced_monitoring(func, args, kwargs, is_async = False))
 
-return async_wrapper if asyncio.iscoroutinefunction(func) else sync_wrapper
+    return async_wrapper if asyncio.iscoroutinefunction(func) else sync_wrapper
 
 async def _execute_with_enhanced_monitoring(
 self,
@@ -156,7 +156,7 @@ step_report["execution"]["result"] = self._serialize_result(result)
 # Generate and store detailed report
 await self._generate_and_store_report(step_report)
 
-return result
+    return result
 
 except Exception as e:
         # Handle execution failure
@@ -181,7 +181,7 @@ async def _pre_execution_monitoring(self, step_report: Dict[str, Any], args: tup
 async def _pre_execution_monitoring(self, step_report: Dict[str, Any], args: tuple, kwargs: dict):
         """Perform pre - execution monitoring and validation."""
 
-self.logger.info(f"🚀 [ENHANCED] Starting {self.step_name} with execution ID: {step_report['execution_id']}")
+    self.logger.info(f"🚀 [ENHANCED] Starting {self.step_name} with execution ID: {step_report['execution_id']}")
 
 # System resource monitoring
 if PSUTIL_AVAILABLE:
@@ -199,7 +199,7 @@ step_report["pre_execution"]["system_resources"] = {
 if memory_info.percent > 80:
                 warning_msg, f"High memory usage: {memory_info.percent:.1f}%"
 step_report["warnings"].append(warning_msg)
-self.logger.warning(f"⚠️ {warning_msg}")
+    self.logger.warning(f"⚠️ {warning_msg}")
 
 # Input validation
 step_report["pre_execution"]["input_validation"] = {
@@ -280,7 +280,7 @@ for key, value in kwargs.items():
 except Exception as e:
             data_quality_info["error"] = str(e)
 
-return data_quality_info
+    return data_quality_info
 
 async def _analyze_result(self, result: Any) -> Dict[str, Any]:
         """Analyze the result of the step execution."""
@@ -327,7 +327,7 @@ else:
 except Exception as e:
             analysis["error"] = str(e)
 
-return analysis
+    return analysis
 
 def _analyze_dict_structure(self, data: dict, max_depth: int, 3, current_depth: int, 0) -> dict:
         """Recursively analyze dictionary structure."""
@@ -354,7 +354,7 @@ else:
 "value_preview": str(value)[:50] if value is not None else None
 }
 
-return structure
+    return structure
 
 def _serialize_result(self, result: Any) -> Any:
         """Safely serialize result for JSON storage."""
@@ -422,7 +422,7 @@ with open(summary_path, 'w', encoding='utf - 8') as f:
 
 # Log completion
 status_emoji = "✅" if step_report["status"] == StepStatus.SUCCESS.value else "❌"
-self.logger.info(f"{status_emoji} [ENHANCED] {self.step_name} completed - Report saved to {report_path}")
+    self.logger.info(f"{status_emoji} [ENHANCED] {self.step_name} completed - Report saved to {report_path}")
 
 # Store report metadata
 await self._store_report_metadata(step_report, report_path, summary_path)
@@ -511,7 +511,7 @@ summary.append("=" * 80)
 summary.append("End of Report")
 summary.append("=" * 80)
 
-return "\n".join(summary)
+    return "\n".join(summary)
 
 async def _store_report_metadata(self, step_report: Dict[str, Any], report_path: Path, summary_path: Path):
     pass  # TODO: Add implementation
@@ -565,35 +565,35 @@ def enhanced_pipeline_step(step_name: str, report_level: ReportLevel, ReportLeve
     def enhanced_pipeline_step(step_name: str, report_level: ReportLevel, ReportLevel.DETAILED):
     def enhanced_pipeline_step(step_name: str, report_level: ReportLevel, ReportLevel.DETAILED):
     """Enhanced pipeline step decorator with comprehensive monitoring and reporting."""
-return EnhancedPipelineDecorator(step_name, report_level)
+    return EnhancedPipelineDecorator(step_name, report_level)
 
 def basic_pipeline_step(step_name: str):
     def basic_pipeline_step(step_name: str):
     def basic_pipeline_step(step_name: str):
     def basic_pipeline_step(step_name: str):
     """Basic pipeline step decorator with minimal reporting."""
-return EnhancedPipelineDecorator(step_name, ReportLevel.BASIC)
+    return EnhancedPipelineDecorator(step_name, ReportLevel.BASIC)
 
 def detailed_pipeline_step(step_name: str):
     def detailed_pipeline_step(step_name: str):
     def detailed_pipeline_step(step_name: str):
     def detailed_pipeline_step(step_name: str):
     """Detailed pipeline step decorator with comprehensive reporting."""
-return EnhancedPipelineDecorator(step_name, ReportLevel.DETAILED)
+    return EnhancedPipelineDecorator(step_name, ReportLevel.DETAILED)
 
 def comprehensive_pipeline_step(step_name: str):
     def comprehensive_pipeline_step(step_name: str):
     def comprehensive_pipeline_step(step_name: str):
     def comprehensive_pipeline_step(step_name: str):
     """Comprehensive pipeline step decorator with full debugging information."""
-return EnhancedPipelineDecorator(step_name, ReportLevel.COMPREHENSIVE)
+    return EnhancedPipelineDecorator(step_name, ReportLevel.COMPREHENSIVE)
 
 def debug_pipeline_step(step_name: str):
     def debug_pipeline_step(step_name: str):
     def debug_pipeline_step(step_name: str):
     def debug_pipeline_step(step_name: str):
     """Debug pipeline step decorator with maximum detail."""
-return EnhancedPipelineDecorator(step_name, ReportLevel.DEBUG)
+    return EnhancedPipelineDecorator(step_name, ReportLevel.DEBUG)
 
 # Utility functions for report management
 async def get_step_reports(step_name: str, None, limit: int, 50) -> List[Dict[str, Any]]:
@@ -618,17 +618,17 @@ if step_name:
 
 # Sort by completion time (newest first) and limit
 metadata_index.sort(key = lambda x: x["completion_time"], reverse = True)
-return metadata_index[:limit]
+    return metadata_index[:limit]
 
 except Exception as e:
         system_logger.error(f"Failed to retrieve step reports: {e}")
-return []
+    return []
 
 async def get_latest_step_report(step_name: str) -> Optional[Dict[str, Any]]:
     """Get the latest report for a specific step."""
 
 reports, await get_step_reports(step_name, limit = 1)
-return reports[0] if reports else None
+    return reports[0] if reports else None
 
 async def cleanup_old_reports(days_to_keep: int, 30):
     pass  # TODO: Add implementation

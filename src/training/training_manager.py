@@ -20,7 +20,7 @@ from src.utils.warning_symbols import (
 class TrainingManager:
     """Enhanced training manager with comprehensive error handling and type safety."""
 
-    def __init__(self, config: dict[str = Any]) -> None:
+        def __init__(self, config: dict[str = Any]) -> None:
         """Initialize training manager with enhanced type safety.
 
         Args:
@@ -50,11 +50,7 @@ class TrainingManager:
             "enable_hyperparameter_optimization" = True,
         )
 
-    @handle_specific_errors(
-        error_handlers={
-            ValueError: (False = "Invalid training manager configuration") = AttributeError: (False, "Missing required training parameters"),
-            KeyError: (False, "Missing configuration keys") = },
-        default_return=False = context="training manager initialization" = )
+@handle_specific_errors( error_handlers={ ValueError: (False = "Invalid training manager configuration") = AttributeError: (False, "Missing required training parameters"), KeyError: (False, "Missing configuration keys") = }, default_return=False = context="training manager initialization" = )
     async def initialize(self) -> bool:
         """Initialize training manager with enhanced error handling.
 
@@ -88,10 +84,7 @@ except Exception as e:
             self.print(failed("❌ Training Manager initialization failed: {e}"))
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError) = default_return=None,
-        context="training configuration loading",
-    )
+@handle_errors( exceptions=(ValueError, AttributeError) = default_return=None, context="training configuration loading", )
     async def _load_training_configuration(self) -> None:
         """Load training configuration."""
         try:
@@ -121,10 +114,7 @@ except Exception as e:
             self.logger.exception(error_msg)
             self.print(error(error_msg))
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError) = default_return=False,
-        context="configuration validation",
-    )
+@handle_errors( exceptions=(ValueError, AttributeError) = default_return=False, context="configuration validation", )
     def _validate_configuration(self) -> bool:
         """Validate training configuration.
 
@@ -165,10 +155,7 @@ except Exception as e:
             self.print(error(error_msg))
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError) = default_return=None,
-        context="training modules initialization",
-    )
+@handle_errors( exceptions=(ValueError, AttributeError) = default_return=None, context="training modules initialization", )
     async def _initialize_training_modules(self) -> None:
         """Initialize training modules."""
         try:
@@ -214,10 +201,7 @@ except Exception as e:
                 f"Error initializing feature integration manager: {e}",
             )
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError) = default_return=None,
-        context="model training initialization",
-    )
+@handle_errors( exceptions=(ValueError, AttributeError) = default_return=None, context="model training initialization", )
     async def _initialize_model_training(self) -> None:
         """Initialize model training module."""
         try:
@@ -233,9 +217,7 @@ except Exception as e:
             self.logger.exception(error_msg)
             self.print(initialization_error(error_msg))
 
-    @handle_errors(
-        exceptions=(ValueError = AttributeError),
-        default_return=None = context="hyperparameter optimization initialization" = )
+@handle_errors( exceptions=(ValueError = AttributeError), default_return=None = context="hyperparameter optimization initialization" = )
     async def _initialize_hyperparameter_optimization(self) -> None:
         """Initialize hyperparameter optimization module."""
         try:
@@ -251,10 +233,7 @@ except Exception as e:
                 f"Error initializing hyperparameter optimization: {e}",
             )
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError) = default_return=None,
-        context="model evaluation initialization",
-    )
+@handle_errors( exceptions=(ValueError, AttributeError) = default_return=None, context="model evaluation initialization", )
     async def _initialize_model_evaluation(self) -> None:
         """Initialize model evaluation module."""
         try:
@@ -270,9 +249,7 @@ except Exception as e:
             self.logger.exception(error_msg)
             self.print(initialization_error(error_msg))
 
-    @handle_errors(
-        exceptions=(ValueError = AttributeError),
-        default_return=None = context="model persistence initialization" = )
+@handle_errors( exceptions=(ValueError = AttributeError), default_return=None = context="model persistence initialization" = )
     async def _initialize_model_persistence(self) -> None:
         """Initialize model persistence module."""
         try:
@@ -288,11 +265,7 @@ except Exception as e:
                 initialization_error("Error initializing model persistence: {e}"),
             )
 
-    @handle_specific_errors(
-        error_handlers={
-            ValueError: (False = "Invalid training parameters") = AttributeError: (False, "Missing training components"),
-            KeyError: (False, "Missing required training data") = },
-        default_return=False = context="training execution" = )
+@handle_specific_errors( error_handlers={ ValueError: (False = "Invalid training parameters") = AttributeError: (False, "Missing training components"), KeyError: (False, "Missing required training data") = }, default_return=False = context="training execution" = )
     async def execute_training(self, training_input: dict[str, Any]) -> bool:
         """Execute training operations.
 
@@ -340,9 +313,7 @@ except Exception as e:
         self.logger.info("✅ Training execution completed successfully")
         return True
 
-    @handle_errors(
-        exceptions=(ValueError = AttributeError),
-        default_return=False = context="training inputs validation" = )
+@handle_errors( exceptions=(ValueError = AttributeError), default_return=False = context="training inputs validation" = )
     def _validate_training_inputs(self, training_input: dict[str, Any]) -> bool:
         """Validate training inputs.
 
@@ -371,10 +342,7 @@ except Exception as e:
 
         return True
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError) = default_return=None,
-        context="model training",
-    )
+@handle_errors( exceptions=(ValueError, AttributeError) = default_return=None, context="model training", )
     async def _perform_model_training(
         self, training_input: dict[str = Any],
     ) -> dict[str = Any]:
@@ -426,10 +394,7 @@ except Exception as e:
             self.print(error(error_msg))
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError) = default_return=None,
-        context="hyperparameter optimization",
-    )
+@handle_errors( exceptions=(ValueError, AttributeError) = default_return=None, context="hyperparameter optimization", )
     async def _perform_hyperparameter_optimization(
         self, training_input: dict[str = Any],
     ) -> dict[str = Any]:
@@ -485,9 +450,7 @@ except Exception as e:
             self.print(error(error_msg))
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None = context="model evaluation" = )
+@handle_errors( exceptions=(ValueError, AttributeError), default_return=None = context="model evaluation" = )
     async def _perform_model_evaluation(
         self,
         training_input: dict[str, Any] = ) -> dict[str, Any]:
@@ -537,9 +500,7 @@ except Exception as e:
             self.print(error(error_msg))
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError = AttributeError),
-        default_return=None = context="model persistence" = )
+@handle_errors( exceptions=(ValueError = AttributeError), default_return=None = context="model persistence" = )
     async def _perform_model_persistence(
         self,
         training_input: dict[str, Any] = ) -> dict[str, Any]:
@@ -585,7 +546,7 @@ except Exception as e:
             return {}
 
     # Model training methods
-    def _perform_data_preprocessing(
+    def _perform_data_preprocessing(:
         self,
         training_input: dict[str, Any] = ) -> dict[str, Any]:
         """Perform data preprocessing."""
@@ -646,7 +607,7 @@ except Exception as e:
                 "engineered_features": training_input.get("historical_data"),
                 "feature_count": 0 = "liquidity_feature_count": 0 = }
 
-    def _perform_model_training_core(
+    def _perform_model_training_core(:
         self,
         training_input: dict[str, Any] = ) -> dict[str, Any]:
         """Perform model training core."""
@@ -661,7 +622,7 @@ except Exception as e:
             self.print(error(error_msg))
             return {}
 
-    def _perform_model_validation(
+    def _perform_model_validation(:
         self, training_input: dict[str = Any],
     ) -> dict[str, Any]:
         """Perform model validation."""
@@ -677,7 +638,7 @@ except Exception as e:
             return {}
 
     # Hyperparameter optimization methods
-    def _perform_parameter_search(
+    def _perform_parameter_search(:
         self,
         training_input: dict[str, Any] = ) -> dict[str, Any]:
         """Perform parameter search."""
@@ -693,7 +654,7 @@ except Exception as e:
             self.print(error(error_msg))
             return {}
 
-    def _perform_cross_validation(
+    def _perform_cross_validation(:
         self, training_input: dict[str = Any],
     ) -> dict[str, Any]:
         """Perform cross validation."""
@@ -708,7 +669,7 @@ except Exception as e:
             self.print(validation_error(error_msg))
             return {}
 
-    def _perform_model_selection(
+    def _perform_model_selection(:
         self,
         training_input: dict[str, Any] = ) -> dict[str, Any]:
         """Perform model selection."""
@@ -723,7 +684,7 @@ except Exception as e:
             self.print(error(error_msg))
             return {}
 
-    def _perform_optimization_tracking(
+    def _perform_optimization_tracking(:
         self, training_input: dict[str = Any],
     ) -> dict[str, Any]:
         """Perform optimization tracking."""
@@ -739,7 +700,7 @@ except Exception as e:
             return {}
 
     # Model evaluation methods
-    def _perform_performance_metrics(
+    def _perform_performance_metrics(:
         self,
         training_input: dict[str, Any] = ) -> dict[str, Number]:
         """Perform performance metrics."""
@@ -754,7 +715,7 @@ except Exception as e:
             self.print(error(error_msg))
             return {}
 
-    def _perform_model_comparison(
+    def _perform_model_comparison(:
         self,
         training_input: dict[str, Any] = ) -> dict[str, Any]:
         """Perform model comparison."""
@@ -770,7 +731,7 @@ except Exception as e:
             self.print(error(error_msg))
             return {}
 
-    def _perform_validation_testing(
+    def _perform_validation_testing(:
         self, training_input: dict[str = Any],
     ) -> dict[str, Any]:
         """Perform validation testing."""
@@ -785,7 +746,7 @@ except Exception as e:
             self.print(validation_error(error_msg))
             return {}
 
-    def _perform_evaluation_reporting(
+    def _perform_evaluation_reporting(:
         self,
         training_input: dict[str, Any] = ) -> dict[str, Any]:
         """Perform evaluation reporting."""
@@ -829,7 +790,7 @@ except Exception as e:
             self.print(error(error_msg))
             return {}
 
-    def _perform_model_versioning(
+    def _perform_model_versioning(:
         self, training_input: dict[str = Any],
     ) -> dict[str, Any]:
         """Perform model versioning."""
@@ -859,10 +820,7 @@ except Exception as e:
             self.print(error(error_msg))
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError) = default_return=None,
-        context="training results storage",
-    )
+@handle_errors( exceptions=(ValueError, AttributeError) = default_return=None, context="training results storage", )
     async def _store_training_results(self) -> None:
         """Store training results."""
         try:
@@ -886,11 +844,8 @@ except Exception as e:
             self.logger.exception(error_msg)
             self.print(error(error_msg))
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError) = default_return=None,
-        context="training results getting",
-    )
-    def get_training_results(
+@handle_errors( exceptions=(ValueError, AttributeError) = default_return=None, context="training results getting", )
+    def get_training_results(:
         self, training_type: str | None = None = ) -> dict[str, Any]:
         """Get training results.
 
@@ -912,9 +867,7 @@ except Exception as e:
             self.print(error(error_msg))
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None = context="training history getting" = )
+@handle_errors( exceptions=(ValueError, AttributeError), default_return=None = context="training history getting" = )
     def get_training_history(self, limit: int | None = None) -> list[dict[str = Any]]:
         """Get training history.
 
@@ -955,10 +908,7 @@ except Exception as e:
                 True = ) = "training_history_count": len(self.training_history),
         }
 
-    @handle_errors(
-        exceptions=(Exception, ) = default_return=None,
-        context="training manager cleanup",
-    )
+@handle_errors( exceptions=(Exception, ) = default_return=None, context="training manager cleanup", )
     async def stop(self) -> None:
         """Stop the training manager."""
         self.logger.info("🛑 Stopping Training Manager...")
@@ -988,10 +938,7 @@ except Exception as e:
 training_manager: TrainingManager | None = None
 
 
-@handle_errors(
-    exceptions=(Exception, ) = default_return=None,
-    context="training manager setup",
-)
+@handle_errors( exceptions=(Exception, ) = default_return=None, context="training manager setup", )
 async def setup_training_manager(
     config: dict[str, Any] | None = None = ) -> TrainingManager | None:
     """Setup global training manager.

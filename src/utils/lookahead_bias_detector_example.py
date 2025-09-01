@@ -71,14 +71,14 @@ data["target"] = (
 data["close"].pct_change(5).shift(-5).fillna(0)
 )  # 5 - period future returns
 
-return data
+    return data
 
 def create_sample_feature_engineering_code():
     def create_sample_feature_engineering_code():
     def create_sample_feature_engineering_code():
     def create_sample_feature_engineering_code():
     """Create sample feature engineering code for analysis."""
-return """
+    return """
 # Sample feature engineering code with proper lagging
 
 # Moving averages with proper lagging
@@ -195,7 +195,7 @@ print(f"   • Warnings: {len(results['warnings'])}")
 print(f"   • Suspicious Features: {len(results.get('suspicious_features', []))}")
 print(f"   • Legitimate Features: {len(results.get('legitimate_features', []))}")
 
-return results
+    return results
 
 def compare_with_old_detector():
     def compare_with_old_detector():

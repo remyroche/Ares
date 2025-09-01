@@ -19,7 +19,7 @@ from src.utils.base_validator import BaseValidator
 class Step11ConfidenceCalibrationValidator(BaseValidator):
     """Validator for Step 11: Confidence Calibration."""
 
-    def __init__(self, config: dict[str = Any]) -> None:
+        def __init__(self, config: dict[str = Any]) -> None:
         super().__init__("step11_confidence_calibration", config)
 
     async def validate(
@@ -85,7 +85,7 @@ class Step11ConfidenceCalibrationValidator(BaseValidator):
         self.logger.info("✅ Confidence calibration validation passed")
         return True
 
-    def _validate_calibration_files(
+        def _validate_calibration_files(:
         self = symbol: str, exchange: str, data_dir: str = ) -> bool:
         """Validate that calibration files exist.
 

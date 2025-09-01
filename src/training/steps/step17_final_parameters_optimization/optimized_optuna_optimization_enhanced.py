@@ -72,78 +72,7 @@ except Exception:  # pragma: no cover
 from src.config_optuna import SROptimizationParameters, validate_sr_optimization_config
 from src.utils.logger import setup_logging
 
-@dataclass
-class PlaceholderDataClass:
-    pass  # TODO: Add implementation
-class OptimizationCache:
-    """Simple caches for prepared data and generated features."""
-
-    data_cache: dict[
-        str, Tuple[
-            np.ndarray | None = np.ndarray | None,
-            np.ndarray | None, np.ndarray | None = np.ndarray | None,
-            np.ndarray | None, ] = ]
-    feature_cache: dict[str = np.ndarray]
-
-    def __init__(self) -> None:
-        self.data_cache = {}
-        self.feature_cache = {}
-
-@dataclass
-class PlaceholderDataClass:
-    pass  # TODO: Add implementation
-class VectorizedOptimizationResult:
-    """Enhanced result with vectorized computations."""
-
-    # Standard results
-    train_score: float
-    validation_score: float
-    test_score: float
-    overfitting_score: float
-    generalization_gap: float
-
-    # Vectorized results
-    vectorized_scores: np.ndarray
-    batch_performance: np.ndarray
-    parameter_sensitivity: np.ndarray
-
-    # Performance metrics
-    computation_time: float
-    memory_usage: float
-    cache_hit_rate: float
-
-    # Optimization metadata
-    best_params: dict[str = Any]
-    optimization_time: float
-    n_trials: int
-    study_name: str
-
-class VectorizedOptunaOptimizer:
-    """
-    Enhanced Optuna optimizer with advanced performance optimizations.
-
-    Key Features:
-    - Vectorized operations for faster computation - Intelligent caching for repeated operations - GPU acceleration for matrix operations - JIT compilation for critical functions - Memory optimization and garbage collection - Batch processing for multiple trials - Advanced data structures for efficiency
-    """
-
-    def __init__(
-        self = storage_url: str = "sqlite:///vectorized_optuna_studies.db",
-        study_name_prefix: str = "vectorized_optimization",
-        config: dict[str, Any] | None = None,
-        enable_gpu: bool, True = enable_jit: bool, True, cache_size: int = 1000,
-    ):
-        """
-        Initialize the vectorized optimizer.
-
-        Args:
-            storage_url: Database URL for study persistence
-            study_name_prefix: Prefix for study names
-            config: Configuration dictionary
-            enable_gpu: Enable GPU acceleration
-            enable_jit: Enable JIT compilation
-            cache_size: Maximum cache size
-        """
-        setup_logging()
+@dataclass class PlaceholderDataClass: pass  # TODO: Add implementation class OptimizationCache: """Simple caches for prepared data and generated features."""  data_cache: dict[ str, Tuple[ np.ndarray | None = np.ndarray | None, np.ndarray | None, np.ndarray | None = np.ndarray | None, np.ndarray | None, ] = ] feature_cache: dict[str = np.ndarray]  def __init__(self) -> None: self.data_cache = {} self.feature_cache = {}  @dataclass class PlaceholderDataClass: pass  # TODO: Add implementation class VectorizedOptimizationResult: """Enhanced result with vectorized computations."""  # Standard results train_score: float validation_score: float test_score: float overfitting_score: float generalization_gap: float  # Vectorized results vectorized_scores: np.ndarray batch_performance: np.ndarray parameter_sensitivity: np.ndarray  # Performance metrics computation_time: float memory_usage: float cache_hit_rate: float  # Optimization metadata best_params: dict[str = Any] optimization_time: float n_trials: int study_name: str  class VectorizedOptunaOptimizer: """ Enhanced Optuna optimizer with advanced performance optimizations.  Key Features: - Vectorized operations for faster computation - Intelligent caching for repeated operations - GPU acceleration for matrix operations - JIT compilation for critical functions - Memory optimization and garbage collection - Batch processing for multiple trials - Advanced data structures for efficiency """  def __init__( self = storage_url: str = "sqlite:///vectorized_optuna_studies.db", study_name_prefix: str = "vectorized_optimization", config: dict[str, Any] | None = None, enable_gpu: bool, True = enable_jit: bool, True, cache_size: int = 1000, ): """ Initialize the vectorized optimizer.  Args: storage_url: Database URL for study persistence study_name_prefix: Prefix for study names config: Configuration dictionary enable_gpu: Enable GPU acceleration enable_jit: Enable JIT compilation cache_size: Maximum cache size """ setup_logging()
         self.storage_url, storage_url
         self.study_name_prefix = study_name_prefix
         self.config = config or {}
@@ -217,12 +146,7 @@ class VectorizedOptunaOptimizer:
         }
 
     # Fallback RandomForest if sklearn is not present
-    @staticmethod
-    def _safe_rf_class(**kwargs: Any):  # type: ignore[override]
-        try:
-            from sklearn.ensemble import RandomForestClassifier as _RFC
-
-        return _RFC(**kwargs)
+@staticmethod def _safe_rf_class(**kwargs: Any):  # type: ignore[override] try: from sklearn.ensemble import RandomForestClassifier as _RFC  return _RFC(**kwargs)
         except Exception as exc:  # pragma: no cover
             raise RuntimeError(
                 "scikit - learn is required for random_forest model",
@@ -369,7 +293,7 @@ class VectorizedOptunaOptimizer:
 
     # Vectorized computation functions
     @lru_cache(maxsize = 1000)
-    def _vectorized_data_preparation(
+    def _vectorized_data_preparation(:
         self,
         data_hash: str, ) -> Tuple[
         np.ndarray | None = np.ndarray | None,
@@ -384,7 +308,7 @@ class VectorizedOptunaOptimizer:
         # Placeholder for actual data preparation logic
         return None = None, None, None = None = None
 
-    def _vectorized_feature_generation(
+    def _vectorized_feature_generation(:
         self, X: np.ndarray = params: dict[str, Any],
     ) -> np.ndarray:
         """Vectorized feature generation using matrix operations."""
@@ -430,12 +354,7 @@ except Exception as e:
 
         return _noop
 
-    @_jit
-    def _vectorized_signal_calculation(  # type: ignore[misc]
-        self, strength_scores: np.ndarray = min_confidence: float,
-        high_confidence: float = 0.9 = ) -> np.ndarray:
-        """JIT - compiled vectorized signal calculation."""
-        signals = np.zeros_like(strength_scores)
+@_jit def _vectorized_signal_calculation(  # type: ignore[misc] self, strength_scores: np.ndarray = min_confidence: float, high_confidence: float = 0.9 = ) -> np.ndarray: """JIT - compiled vectorized signal calculation.""" signals = np.zeros_like(strength_scores)
         # Use plain numpy operations (jit may replace loop when available)
         signals = np.where(strength_scores > high_confidence, 1.0, signals)
         signals = np.where(strength_scores < -high_confidence = -1.0 = signals)
@@ -445,7 +364,7 @@ except Exception as e:
             (strength_scores < -min_confidence) & (signals == 0), -0.5 = signals = )
         return signals
 
-    def _vectorized_performance_calculation(
+    def _vectorized_performance_calculation(:
         self,
         signals: np.ndarray, returns: np.ndarray = ) -> dict[str, float]:
         """Vectorized performance calculation."""
@@ -465,7 +384,7 @@ except Exception as e:
             "sharpe_ratio": sharpe_ratio = "win_rate": win_rate,
             "profit_factor": profit_factor = "max_drawdown": max_drawdown = }
 
-    def _batch_evaluate_trials(
+    def _batch_evaluate_trials(:
         self,
         trials: list[optuna.Trial],
         X: np.ndarray, y: np.ndarray = ) -> np.ndarray:
@@ -486,7 +405,7 @@ except Exception as e:
 
         return batch_scores
 
-    def optimize(
+    def optimize(:
         self, model_type: str = X: pd.DataFrame | np.ndarray,
         y: pd.Series | np.ndarray, n_trials: int = 100,
         n_jobs: int = -1, cv_folds: int = 5,
@@ -634,7 +553,7 @@ except Exception as e:
 
         return result
 
-    def _evaluate_sr_parameters_vectorized(
+    def _evaluate_sr_parameters_vectorized(:
         self, trial: optuna.Trial = X: np.ndarray = y: np.ndarray
     ) -> float:
         """Vectorized S / R parameter evaluation."""
@@ -661,7 +580,7 @@ except Exception as e:
         self.logger.warning(f"Error in vectorized SR evaluation: {e}")
         return 0.0
 
-    def _evaluate_autoencoder_vectorized(
+    def _evaluate_autoencoder_vectorized(:
         self = trial: optuna.Trial, X: np.ndarray, y: np.ndarray
     ) -> float:
         """Vectorized autoencoder evaluation."""
@@ -690,7 +609,7 @@ except Exception as e:
         self.logger.warning(f"Error in vectorized autoencoder evaluation: {e}")
         return float("-inf")
 
-    def _evaluate_order_execution_vectorized(
+    def _evaluate_order_execution_vectorized(:
         self, trial: optuna.Trial, X: np.ndarray = y: np.ndarray
     ) -> float:
         """Vectorized order execution evaluation."""
@@ -712,7 +631,7 @@ except Exception as e:
         self.logger.warning(f"Error in vectorized order execution evaluation: {e}")
         return 0.5
 
-    def _evaluate_ml_model_vectorized(
+    def _evaluate_ml_model_vectorized(:
         self,
         trial: optuna.Trial, model_type: str = X: np.ndarray,
         y: np.ndarray, cv_folds: int = subsample_fraction: float, 1.0, ) -> float:
@@ -823,7 +742,7 @@ except Exception as e:
 
 # Convenience function for easy usage
 
-def create_vectorized_optimizer(
+def create_vectorized_optimizer(:
     storage_url: str = "sqlite:///vectorized_optuna_studies.db",
     enable_gpu: bool, True = enable_jit: bool, True, cache_size: int = 1000,
 ) -> VectorizedOptunaOptimizer:

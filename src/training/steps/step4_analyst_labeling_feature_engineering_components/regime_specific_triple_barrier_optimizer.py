@@ -62,7 +62,7 @@ class RegimeSpecificTripleBarrierOptimizer:
     parameters before ML training begins.
     """
 
-    def __init__(self, config: Dict[str, Any] = training_manager = None):
+        def __init__(self, config: Dict[str, Any] = training_manager = None):
         self.config, config
         self.training_manager = training_manager
         self.logger = logging.getLogger(__name__)
@@ -85,7 +85,7 @@ class RegimeSpecificTripleBarrierOptimizer:
         else:
         self.logger.warning("⚠️ Triple barrier labeler not available for integration")
 
-    def _create_triple_barrier_labeler(self):
+        def _create_triple_barrier_labeler(self):
         """Create triple barrier labeler for integration."""
 
         try:
@@ -417,7 +417,7 @@ except Exception as e:
             "best_model": best_model = "regime_config": regime_config
         }
 
-    def _create_regime_objective(
+    def _create_regime_objective(:
         self = regime_name: str,
         regime_data: pd.DataFrame, regime_config: Dict[str = Any]
     ):
@@ -439,7 +439,7 @@ except Exception as e:
 
         return objective
 
-    def _sample_regime_parameters(
+    def _sample_regime_parameters(:
         self,
         trial: optuna.Trial, regime_config: Dict[str = Any]
     ) -> Dict[str, Any]:
@@ -480,7 +480,7 @@ except Exception as e:
 
         return params
 
-    def _evaluate_regime_parameters(
+    def _evaluate_regime_parameters(:
         self,
         regime_name: str, regime_data: pd.DataFrame = params: Dict[str, Any]
     ) -> float:
@@ -511,7 +511,7 @@ except Exception as e:
         self.logger.error(f"Failed to evaluate parameters for {regime_name}: {e}")
         return float('-inf')
 
-    def _calculate_regime_performance_score(
+    def _calculate_regime_performance_score(:
         self = regime_name: str,
         barrier_params: Dict[str, Any] = labeling_params: Dict[str, Any],
         position_params: Dict[str, Any] = risk_params: Dict[str, Any]

@@ -126,37 +126,37 @@ Centralized S/R detection using multiple methods:
 )
 
 # Confidence thresholds
-self.min_sr_confidence: float = self.sr_config.get(
+    self.min_sr_confidence: float = self.sr_config.get(
 "min_sr_confidence",
 0.4,
 )
-self.high_confidence_threshold: float = self.sr_config.get(
+    self.high_confidence_threshold: float = self.sr_config.get(
 "high_confidence_threshold",
 0.8,
 )
-self.confidence_decay_rate: float = self.sr_config.get(
+    self.confidence_decay_rate: float = self.sr_config.get(
 "confidence_decay_rate",
 0.95,
 )
-self.regime_confidence_boost: float = self.sr_config.get(
+    self.regime_confidence_boost: float = self.sr_config.get(
 "regime_confidence_boost",
 0.1,
 )
-self.ensemble_confidence_threshold: float = self.sr_config.get(
+    self.ensemble_confidence_threshold: float = self.sr_config.get(
 "ensemble_confidence_threshold",
 0.7,
 )
 
 # Feature calculation parameters
-self.feature_config: dict[str, Any] = self.sr_config.get(
+    self.feature_config: dict[str, Any] = self.sr_config.get(
 "feature_calculation",
 {},
 )
-self.enable_comprehensive_features: bool = self.feature_config.get(
+    self.enable_comprehensive_features: bool = self.feature_config.get(
 "enable_comprehensive_features",
 True,
 )
-self.strength_score_weights: dict[str, float] = self.feature_config.get(
+    self.strength_score_weights: dict[str, float] = self.feature_config.get(
 "strength_score_weights",
 {
 "touch_count": 0.3,
@@ -168,43 +168,43 @@ self.strength_score_weights: dict[str, float] = self.feature_config.get(
 )
 
 # LM Model Selection Configuration
-self.lm_config: dict[str, Any] = self.sr_config.get("lm_model_selection", {})
-self.enable_specialist_models: bool = self.lm_config.get(
+    self.lm_config: dict[str, Any] = self.sr_config.get("lm_model_selection", {})
+    self.enable_specialist_models: bool = self.lm_config.get(
 "enable_specialist_models",
 True,
 )
-self.sr_proximity_trigger_base: float = self.lm_config.get(
+    self.sr_proximity_trigger_base: float = self.lm_config.get(
 "sr_proximity_trigger_base",
 0.006,
 )  # 0.6% base proximity
-self.sr_proximity_trigger_min: float = self.lm_config.get(
+    self.sr_proximity_trigger_min: float = self.lm_config.get(
 "sr_proximity_trigger_min",
 0.003,
 )  # 0.3% minimum proximity
-self.sr_proximity_trigger_max: float = self.lm_config.get(
+    self.sr_proximity_trigger_max: float = self.lm_config.get(
 "sr_proximity_trigger_max",
 0.015,
 )  # 1.5% maximum proximity
-self.proximity_decay_rate: float = self.lm_config.get(
+    self.proximity_decay_rate: float = self.lm_config.get(
 "proximity_decay_rate",
 0.98,
 )
-self.proximity_boost_factor: float = self.lm_config.get(
+    self.proximity_boost_factor: float = self.lm_config.get(
 "proximity_boost_factor",
 1.2,
 )
 
 # Model ensemble configuration
-self.ensemble_config: dict[str, Any] = self.sr_config.get("ensemble_config", {})
-self.enable_ensemble: bool = self.ensemble_config.get(
+    self.ensemble_config: dict[str, Any] = self.sr_config.get("ensemble_config", {})
+    self.enable_ensemble: bool = self.ensemble_config.get(
 "enable_ensemble",
 True,
 )
-self.ensemble_method: str = self.ensemble_config.get(
+    self.ensemble_method: str = self.ensemble_config.get(
 "ensemble_method",
 "weighted_average",
 )
-self.model_weights: dict[str, float] = self.ensemble_config.get(
+    self.model_weights: dict[str, float] = self.ensemble_config.get(
 "model_weights",
 {
 "fractal": 0.4,
@@ -215,58 +215,50 @@ self.model_weights: dict[str, float] = self.ensemble_config.get(
 )
 
 # Performance tracking
-self.performance_metrics: dict[str, Any] = {}
-self.prediction_history: list[dict[str, Any]] = []
+    self.performance_metrics: dict[str, Any] = {}
+    self.prediction_history: list[dict[str, Any]] = []
 
 # DBSCAN clustering configuration
-self.dbscan_config: dict[str, Any] = self.sr_config.get("dbscan_clustering", {})
-self.enable_dbscan_clustering: bool = self.dbscan_config.get("enable_dbscan_clustering", True)
-self.dbscan_eps: float = self.dbscan_config.get("eps", 0.01)  # 1% of price for neighborhood
-self.dbscan_min_samples: int = self.dbscan_config.get("min_samples", 3)  # Minimum points for cluster
-self.dbscan_enable_noise_filtering: bool = self.dbscan_config.get("enable_noise_filtering", True)
+    self.dbscan_config: dict[str, Any] = self.sr_config.get("dbscan_clustering", {})
+    self.enable_dbscan_clustering: bool = self.dbscan_config.get("enable_dbscan_clustering", True)
+    self.dbscan_eps: float = self.dbscan_config.get("eps", 0.01)  # 1% of price for neighborhood
+    self.dbscan_min_samples: int = self.dbscan_config.get("min_samples", 3)  # Minimum points for cluster
+    self.dbscan_enable_noise_filtering: bool = self.dbscan_config.get("enable_noise_filtering", True)
 
 # Enhanced strength calculation configuration
-self.strength_config: dict[str, Any] = self.sr_config.get("strength_calculation", {})
-self.enable_enhanced_strength: bool = self.strength_config.get("enable_enhanced_strength", True)
-self.touch_count_lookback: int = self.strength_config.get("touch_count_lookback", 100)
-self.bounce_rate_threshold: float = self.strength_config.get("bounce_rate_threshold", 0.02)  # 2% bounce
-self.isolation_distance_threshold: float = self.strength_config.get("isolation_distance_threshold", 0.05)  # 5% distance
-self.age_decay_factor: float = self.strength_config.get("age_decay_factor", 0.95)  # 5% decay per period
+    self.strength_config: dict[str, Any] = self.sr_config.get("strength_calculation", {})
+    self.enable_enhanced_strength: bool = self.strength_config.get("enable_enhanced_strength", True)
+    self.touch_count_lookback: int = self.strength_config.get("touch_count_lookback", 100)
+    self.bounce_rate_threshold: float = self.strength_config.get("bounce_rate_threshold", 0.02)  # 2% bounce
+    self.isolation_distance_threshold: float = self.strength_config.get("isolation_distance_threshold", 0.05)  # 5% distance
+    self.age_decay_factor: float = self.strength_config.get("age_decay_factor", 0.95)  # 5% decay per period
 
 # Optimization integration
-self.optimized_params: Optional[dict[str, Any]] = None
-self.use_optimized_params: bool = self.sr_config.get("use_optimized_params", True)
+    self.optimized_params: Optional[dict[str, Any]] = None
+    self.use_optimized_params: bool = self.sr_config.get("use_optimized_params", True)
 
 # Advanced S/R method configuration
-self.advanced_config: dict[str, Any] = self.sr_config.get("advanced_sr_methods", {})
-self.enable_fibonacci_analysis: bool = self.advanced_config.get("enable_fibonacci_analysis", True)
-self.enable_elliott_wave_analysis: bool = self.advanced_config.get("enable_elliott_wave_analysis", True)
-self.enable_order_flow_analysis: bool = self.advanced_config.get("enable_order_flow_analysis", True)
+    self.advanced_config: dict[str, Any] = self.sr_config.get("advanced_sr_methods", {})
+    self.enable_fibonacci_analysis: bool = self.advanced_config.get("enable_fibonacci_analysis", True)
+    self.enable_elliott_wave_analysis: bool = self.advanced_config.get("enable_elliott_wave_analysis", True)
+    self.enable_order_flow_analysis: bool = self.advanced_config.get("enable_order_flow_analysis", True)
 
 # Advanced method parameters
-self.fibonacci_sensitivity: float = self.advanced_config.get("fibonacci_sensitivity", 0.7)
-self.elliott_confidence_threshold: float = self.advanced_config.get("elliott_confidence_threshold", 0.6)
-self.order_flow_hvn_threshold: float = self.advanced_config.get("order_flow_hvn_threshold", 1.5)
+    self.fibonacci_sensitivity: float = self.advanced_config.get("fibonacci_sensitivity", 0.7)
+    self.elliott_confidence_threshold: float = self.advanced_config.get("elliott_confidence_threshold", 0.6)
+    self.order_flow_hvn_threshold: float = self.advanced_config.get("order_flow_hvn_threshold", 1.5)
 
 # Multi-timeframe configuration
-self.timeframe_config: dict[str, Any] = self.sr_config.get("multi_timeframe", {})
-self.enable_multi_timeframe: bool = self.timeframe_config.get("enable_multi_timeframe", True)
-self.timeframe_weights: dict[str, float] = self.timeframe_config.get("timeframe_weights", {
+    self.timeframe_config: dict[str, Any] = self.sr_config.get("multi_timeframe", {})
+    self.enable_multi_timeframe: bool = self.timeframe_config.get("enable_multi_timeframe", True)
+    self.timeframe_weights: dict[str, float] = self.timeframe_config.get("timeframe_weights", {
 "1m": 0.05, "5m": 0.1, "15m": 0.15, "1h": 0.25, "4h": 0.25, "1d": 0.2
 })
 
-@handle_specific_errors(
-error_handlers={
-ValueError: (False, "Invalid SR breakout predictor configuration"),
-AttributeError: (False, "Missing required SR parameters"),
-KeyError: (False, "Missing configuration keys"),
-},
-default_return=False,
-context="SR breakout predictor initialization",
-)
+@handle_specific_errors( error_handlers={ ValueError: (False, "Invalid SR breakout predictor configuration"), AttributeError: (False, "Missing required SR parameters"), KeyError: (False, "Missing configuration keys"), }, default_return=False, context="SR breakout predictor initialization", )
 async def initialize(self) -> bool:
         """Initialize the SR breakout predictor."""
-self.logger.info("Initializing SR breakout predictor...")
+    self.logger.info("Initializing SR breakout predictor...")
 
 try:
 
@@ -283,18 +275,18 @@ if not self._validate_configuration():
 if not await self._initialize_components():
                 return False
 
-self.is_initialized = True
-self.logger.info("✅ SR breakout predictor initialized successfully")
+    self.is_initialized = True
+    self.logger.info("✅ SR breakout predictor initialized successfully")
 
 # Initialize reporting system
 if self.reporting_enabled:
                 self._initialize_reporting_system()
 
-return True
+    return True
 
 except Exception as e:
             self.logger.error(f"Failed to initialize SR breakout predictor: {e}")
-return False
+    return False
 
 def _validate_configuration(self) -> bool:
         """Validate SR breakout predictor configuration."""
@@ -313,30 +305,30 @@ required_keys = [
 for key in required_keys:
                 if not hasattr(self, key):
                     self.logger.error(f"Missing required configuration key: {key}")
-return False
+    return False
 
 # Validate values
 if self.sr_proximity_threshold <= 0:
                 self.logger.error("Invalid sr_proximity_threshold")
-return False
+    return False
 
 if self.breakout_confidence_threshold <= 0 or self.breakout_confidence_threshold >= 1:
                 self.logger.error("Invalid breakout_confidence_threshold")
-return False
+    return False
 
 if self.min_sr_strength <= 0 or self.min_sr_strength >= 1:
                 self.logger.error("Invalid min_sr_strength")
-return False
+    return False
 
 if self.max_sr_levels <= 0:
                 self.logger.error("Invalid max_sr_levels")
-return False
+    return False
 
-return True
+    return True
 
 except Exception as e:
             self.logger.error(f"Configuration validation failed: {e}")
-return False
+    return False
 
 async def _initialize_components(self) -> bool:
         """Initialize SR breakout predictor components."""
@@ -355,12 +347,12 @@ except Exception as e:
 if self.use_optimized_params:
                 await self._load_optimized_parameters()
 
-self.logger.info("✅ SR breakout predictor components initialized")
-return True
+    self.logger.info("✅ SR breakout predictor components initialized")
+    return True
 
 except Exception as e:
             self.logger.error(f"Failed to initialize components: {e}")
-return False
+    return False
 
 async def _load_optimized_parameters(self) -> None:
         """Load optimized parameters from optimization results."""
@@ -381,7 +373,7 @@ if data.get("best_result"):
                     best_result = data["best_result"]
 
 # Apply optimized parameters
-self.optimized_params = {
+    self.optimized_params = {
 "method_weights": best_result.get("method_weights", {}),
 "strength_weights": best_result.get("strength_weights", {}),
 "dbscan_params": best_result.get("dbscan_params", {}),
@@ -392,7 +384,7 @@ self.optimized_params = {
 # Update current parameters with optimized values
 await self._apply_optimized_parameters()
 
-self.logger.info("✅ Loaded and applied optimized parameters")
+    self.logger.info("✅ Loaded and applied optimized parameters")
 else:
                     self.logger.warning("No best result found in optimization file")
 else:
@@ -416,13 +408,13 @@ if not self.optimized_params:
 method_weights = self.optimized_params.get("method_weights", {})
 if method_weights:
                 self.model_weights.update(method_weights)
-self.logger.info(f"Applied optimized method weights: {method_weights}")
+    self.logger.info(f"Applied optimized method weights: {method_weights}")
 
 # Apply strength weights
 strength_weights = self.optimized_params.get("strength_weights", {})
 if strength_weights:
                 self.strength_score_weights.update(strength_weights)
-self.logger.info(f"Applied optimized strength weights: {strength_weights}")
+    self.logger.info(f"Applied optimized strength weights: {strength_weights}")
 
 # Apply DBSCAN parameters
 dbscan_params = self.optimized_params.get("dbscan_params", {})
@@ -431,7 +423,7 @@ if dbscan_params:
                     self.dbscan_eps = dbscan_params["eps"]
 if "min_samples" in dbscan_params:
                     self.dbscan_min_samples = dbscan_params["min_samples"]
-self.logger.info(f"Applied optimized DBSCAN parameters: {dbscan_params}")
+    self.logger.info(f"Applied optimized DBSCAN parameters: {dbscan_params}")
 
 # Apply advanced parameters
 advanced_params = self.optimized_params.get("advanced_params", {})
@@ -439,25 +431,25 @@ if advanced_params:
                 # Apply Fibonacci parameters
 if "fibonacci_sensitivity" in advanced_params:
                     self.fibonacci_sensitivity = advanced_params["fibonacci_sensitivity"]
-self.logger.info(f"Applied optimized Fibonacci sensitivity: {self.fibonacci_sensitivity}")
+    self.logger.info(f"Applied optimized Fibonacci sensitivity: {self.fibonacci_sensitivity}")
 
 # Apply Elliott Wave parameters
 if "elliott_confidence_threshold" in advanced_params:
                     self.elliott_confidence_threshold = advanced_params["elliott_confidence_threshold"]
-self.logger.info(f"Applied optimized Elliott confidence threshold: {self.elliott_confidence_threshold}")
+    self.logger.info(f"Applied optimized Elliott confidence threshold: {self.elliott_confidence_threshold}")
 
 # Apply Order Flow parameters
 if "order_flow_hvn_threshold" in advanced_params:
                     self.order_flow_hvn_threshold = advanced_params["order_flow_hvn_threshold"]
-self.logger.info(f"Applied optimized Order Flow HVN threshold: {self.order_flow_hvn_threshold}")
+    self.logger.info(f"Applied optimized Order Flow HVN threshold: {self.order_flow_hvn_threshold}")
 
-self.logger.info(f"Applied optimized advanced parameters: {advanced_params}")
+    self.logger.info(f"Applied optimized advanced parameters: {advanced_params}")
 
 # Apply timeframe weights
 timeframe_weights = self.optimized_params.get("timeframe_weights", {})
 if timeframe_weights:
                 self.timeframe_weights = timeframe_weights
-self.logger.info(f"Applied optimized timeframe weights: {timeframe_weights}")
+    self.logger.info(f"Applied optimized timeframe weights: {timeframe_weights}")
 
 except Exception as e:
             self.logger.error(f"Failed to apply optimized parameters: {e}")
@@ -470,15 +462,15 @@ try:
 except Exception as e:
     # Log the error and handle gracefully
     pass
-self.optimized_params = optimized_params
+    self.optimized_params = optimized_params
 await self._apply_optimized_parameters()
-self.logger.info("✅ Set optimized parameters directly")
+    self.logger.info("✅ Set optimized parameters directly")
 except Exception as e:
             self.logger.error(f"Failed to set optimized parameters: {e}")
 
 def get_current_parameters(self) -> dict[str, Any]:
         """Get current parameters for comparison."""
-return {
+    return {
 "method_weights": self.model_weights,
 "strength_weights": self.strength_score_weights,
 "dbscan_params": {
@@ -514,7 +506,7 @@ report_path.mkdir(parents=True, exist_ok=True)
 (report_path / "html").mkdir(exist_ok=True)
 (report_path / "metrics").mkdir(exist_ok=True)
 
-self.logger.info(f"📊 Reporting system initialized: {report_path}")
+    self.logger.info(f"📊 Reporting system initialized: {report_path}")
 
 except Exception as e:
             self.logger.error(f"Failed to initialize reporting system: {e}")
@@ -526,7 +518,7 @@ import uuid
 
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 unique_id = str(uuid.uuid4())[:8]
-return f"sr_report_{timestamp}_{unique_id}"
+    return f"sr_report_{timestamp}_{unique_id}"
 
 def _calculate_comprehensive_metrics(self, market_data: pd.DataFrame, sr_context: dict[str, Any]) -> dict[str, Any]:
         """Calculate comprehensive metrics for reporting."""
@@ -636,7 +628,7 @@ performance_metrics = {
 "overall_analysis_quality": self._calculate_overall_quality_score(market_metrics, sr_metrics, clustering_metrics, advanced_metrics)
 }
 
-return {
+    return {
 "market_metrics": market_metrics,
 "sr_metrics": sr_metrics,
 "clustering_metrics": clustering_metrics,
@@ -646,7 +638,7 @@ return {
 
 except Exception as e:
             self.logger.error(f"Error calculating comprehensive metrics: {e}")
-return {}
+    return {}
 
 def _calculate_data_quality_score(self, market_data: pd.DataFrame) -> float:
         """Calculate data quality score (0-1)."""
@@ -673,11 +665,11 @@ price_changes = market_data["close"].pct_change().abs()
 anomaly_ratio = (price_changes > 0.1).sum() / len(price_changes)
 score -= anomaly_ratio * 0.2
 
-return max(0.0, min(1.0, score))
+    return max(0.0, min(1.0, score))
 
 except Exception as e:
             self.logger.error(f"Error calculating data quality score: {e}")
-return 0.5
+    return 0.5
 
 def _calculate_sr_confidence_score(self, sr_context: dict[str, Any]) -> float:
         """Calculate S/R confidence score (0-1)."""
@@ -705,11 +697,11 @@ clustering_result = sr_context.get("clustering_result", {})
 if clustering_result.get("n_clusters", 0) > 0:
                 score += 0.1
 
-return min(1.0, score)
+    return min(1.0, score)
 
 except Exception as e:
             self.logger.error(f"Error calculating SR confidence score: {e}")
-return 0.5
+    return 0.5
 
 def _calculate_overall_quality_score(self, market_metrics: dict, sr_metrics: dict, clustering_metrics: dict, advanced_metrics: dict) -> float:
         """Calculate overall analysis quality score (0-1)."""
@@ -739,11 +731,11 @@ if advanced_metrics.get("fibonacci_analysis", {}).get("levels_detected", 0) > 0:
 if advanced_metrics.get("elliott_wave_analysis", {}).get("waves_detected", 0) > 0:
                 score += 0.1
 
-return min(1.0, score)
+    return min(1.0, score)
 
 except Exception as e:
             self.logger.error(f"Error calculating overall quality score: {e}")
-return 0.5
+    return 0.5
 
 async def _generate_detailed_report(self, market_data: pd.DataFrame, sr_context: dict[str, Any]) -> dict[str, Any]:
         """Generate detailed metrics report."""
@@ -757,7 +749,7 @@ if not self.reporting_enabled:
                 return {}
 
 # Generate report ID
-self.current_report_id = self._generate_report_id()
+    self.current_report_id = self._generate_report_id()
 
 # Calculate comprehensive metrics
 metrics = self._calculate_comprehensive_metrics(market_data, sr_context)
@@ -795,7 +787,7 @@ report = {
 }
 
 # Store in history
-self.metrics_history.append(report)
+    self.metrics_history.append(report)
 
 # Limit history size
 if len(self.metrics_history) > 100:
@@ -804,12 +796,12 @@ if len(self.metrics_history) > 100:
 # Save report to file
 await self._save_report_to_file(report)
 
-self.logger.info(f"📊 Detailed metrics report generated: {self.current_report_id}")
-return report
+    self.logger.info(f"📊 Detailed metrics report generated: {self.current_report_id}")
+    return report
 
 except Exception as e:
             self.logger.error(f"Error generating detailed report: {e}")
-return {}
+    return {}
 
 async def _save_report_to_file(self, report: dict[str, Any]) -> None:
         """Save report to file in specified format."""
@@ -832,11 +824,11 @@ with open(json_file, 'w') as f:
 
 # Save CSV metrics
 csv_file = report_path / "csv" / f"{self.current_report_id}_metrics.csv"
-self._save_metrics_to_csv(report["metrics"], csv_file)
+    self._save_metrics_to_csv(report["metrics"], csv_file)
 
 # Save HTML report
 html_file = report_path / "html" / f"{self.current_report_id}.html"
-self._save_html_report(report, html_file)
+    self._save_html_report(report, html_file)
 
 # Save latest metrics summary
 summary_file = report_path / "metrics" / "latest_metrics.json"
@@ -852,7 +844,7 @@ with open(summary_file, 'w') as f:
 }
 }, f, indent=2, default=str)
 
-self.logger.info(f"📁 Report saved: {self.current_report_id}")
+    self.logger.info(f"📁 Report saved: {self.current_report_id}")
 
 except Exception as e:
             self.logger.error(f"Error saving report to file: {e}")
@@ -994,11 +986,11 @@ async def get_latest_report(self) -> dict[str, Any]:
         """Get the latest generated report."""
 if self.metrics_history:
             return self.metrics_history[-1]
-return {}
+    return {}
 
 async def get_report_history(self, limit: int = 10) -> list[dict[str, Any]]:
         """Get recent report history."""
-return self.metrics_history[-limit:] if self.metrics_history else []
+    return self.metrics_history[-limit:] if self.metrics_history else []
 
 async def cleanup_old_reports(self) -> None:
         """Clean up old reports based on retention policy."""
@@ -1026,9 +1018,9 @@ if subdir_path.exists():
                             file_time = datetime.fromtimestamp(file_path.stat().st_mtime)
 if file_time < cutoff_date:
                                 file_path.unlink()
-self.logger.info(f"Cleaned up old report: {file_path}")
+    self.logger.info(f"Cleaned up old report: {file_path}")
 
-self.logger.info("🧹 Old reports cleanup completed")
+    self.logger.info("🧹 Old reports cleanup completed")
 
 except Exception as e:
             self.logger.error(f"Error cleaning up old reports: {e}")
@@ -1043,7 +1035,7 @@ except Exception as e:
     pass
 if not self.reporting_enabled:
                 self.logger.warning("Reporting is disabled. Enable it in configuration to generate reports.")
-return {}
+    return {}
 
 if sr_context is None:
                 # Generate SR context if not provided
@@ -1051,16 +1043,16 @@ current_price = market_data["close"].iloc[-1]
 sr_context = await self.get_sr_context(market_data, current_price)
 
 report = await self._generate_detailed_report(market_data, sr_context)
-self.logger.info(f"📊 Manual report generated: {self.current_report_id}")
-return report
+    self.logger.info(f"📊 Manual report generated: {self.current_report_id}")
+    return report
 
 except Exception as e:
             self.logger.error(f"Error generating manual report: {e}")
-return {}
+    return {}
 
 def get_reporting_status(self) -> dict[str, Any]:
         """Get reporting system status."""
-return {
+    return {
 "reporting_enabled": self.reporting_enabled,
 "report_directory": self.report_directory,
 "report_format": self.report_format,
@@ -1070,22 +1062,8 @@ return {
 "last_report_timestamp": self.metrics_history[-1]["report_timestamp"] if self.metrics_history else None
 }
 
-@validate_data_quality(
-required_columns=["open", "high", "low", "close", "volume"],
-min_rows=50,
-max_null_ratio=0.1,
-check_duplicates=True,
-check_timestamps=True,
-context="SR breakout prediction input validation"
-)
-@handle_specific_errors(
-error_handlers={
-ValueError: (None, "Invalid input data for SR breakout prediction"),
-AttributeError: (None, "Predictor not properly initialized"),
-},
-default_return=None,
-context="SR breakout prediction",
-)
+@validate_data_quality( required_columns=["open", "high", "low", "close", "volume"], min_rows=50, max_null_ratio=0.1, check_duplicates=True, check_timestamps=True, context="SR breakout prediction input validation" )
+@handle_specific_errors( error_handlers={ ValueError: (None, "Invalid input data for SR breakout prediction"), AttributeError: (None, "Predictor not properly initialized"), }, default_return=None, context="SR breakout prediction", )
 async def predict_sr_breakouts(
 self,
 market_data: pd.DataFrame,
@@ -1103,7 +1081,7 @@ Returns:
 """
 if not self.is_initialized:
             self.logger.error("SR breakout predictor not initialized")
-return {}
+    return {}
 
 try:
 
@@ -1112,7 +1090,7 @@ try:
 except Exception as e:
     # Log the error and handle gracefully
     pass
-self.logger.info("Predicting SR breakouts...")
+    self.logger.info("Predicting SR breakouts...")
 
 # Detect support and resistance levels
 support_levels = await self._detect_support_levels(market_data)
@@ -1149,34 +1127,20 @@ if self.reporting_enabled:
                 await self._generate_detailed_report(market_data, predictions)
 
 # Store predictions
-self.sr_predictions = predictions
+    self.sr_predictions = predictions
 
 # Update performance metrics
-self._update_performance_metrics(predictions)
+    self._update_performance_metrics(predictions)
 
-self.logger.info("✅ SR breakout predictions generated")
-return predictions
+    self.logger.info("✅ SR breakout predictions generated")
+    return predictions
 
 except Exception as e:
             self.logger.error(f"Error predicting SR breakouts: {e}")
-return {}
+    return {}
 
-@validate_data_quality(
-required_columns=["open", "high", "low", "close", "volume"],
-min_rows=50,
-max_null_ratio=0.1,
-check_duplicates=True,
-check_timestamps=True,
-context="SR context calculation input validation"
-)
-@handle_specific_errors(
-error_handlers={
-ValueError: (None, "Invalid input data for SR context calculation"),
-AttributeError: (None, "Predictor not properly initialized"),
-},
-default_return={},
-context="SR context calculation",
-)
+@validate_data_quality( required_columns=["open", "high", "low", "close", "volume"], min_rows=50, max_null_ratio=0.1, check_duplicates=True, check_timestamps=True, context="SR context calculation input validation" )
+@handle_specific_errors( error_handlers={ ValueError: (None, "Invalid input data for SR context calculation"), AttributeError: (None, "Predictor not properly initialized"), }, default_return={}, context="SR context calculation", )
 async def get_sr_context(
 self,
 market_data: pd.DataFrame,
@@ -1194,7 +1158,7 @@ Returns:
 """
 if not self.is_initialized:
             self.logger.error("SR breakout predictor not initialized")
-return {}
+    return {}
 
 try:
 
@@ -1299,11 +1263,11 @@ except Exception as e:
                 self.logger.warning(f"Error generating detailed report: {e}")
 context["report_id"] = "report_generation_failed"
 
-return context
+    return context
 
 except Exception as e:
             self.logger.error(f"Error getting S/R context: {e}")
-return {}
+    return {}
 
 async def extract_ml_features(self, market_data: pd.DataFrame, current_price: float) -> dict[str, float]:
         """
@@ -1326,7 +1290,7 @@ try:
 except Exception as e:
     # Log the error and handle gracefully
     pass
-self.logger.info("🔧 Extracting comprehensive SR features for ML training...")
+    self.logger.info("🔧 Extracting comprehensive SR features for ML training...")
 
 # Get comprehensive SR context
 sr_context = await self.get_sr_context(market_data, current_price)
@@ -1515,16 +1479,16 @@ features.update({
 "sr_optimization_score": 0.5,
 })
 
-self.logger.info(f"✅ Extracted {len(features)} SR features for ML training")
-return features
+    self.logger.info(f"✅ Extracted {len(features)} SR features for ML training")
+    return features
 
 except Exception as e:
             self.logger.error(f"❌ Error extracting SR features for ML training: {e}")
-return self._get_default_sr_features()
+    return self._get_default_sr_features()
 
 def _get_default_sr_features(self) -> dict[str, float]:
         """Return default SR features when extraction fails."""
-return {
+    return {
 # Proximity features
 "sr_proximity": 1.0, "support_proximity": 1.0, "resistance_proximity": 1.0,
 "sr_nearest_support": 0.0, "sr_nearest_resistance": 0.0, "sr_distance": 1.0,
@@ -1593,11 +1557,11 @@ elif self.sr_detection_method == "atr":
                 return await self._detect_atr_support_levels(market_data)
 else:
                 self.logger.warning(f"Unknown SR detection method: {self.sr_detection_method}")
-return await self._detect_fractal_support_levels(market_data)
+    return await self._detect_fractal_support_levels(market_data)
 
 except Exception as e:
             self.logger.error(f"Error detecting support levels: {e}")
-return []
+    return []
 
 async def _detect_resistance_levels(self, market_data: pd.DataFrame) -> list[dict[str, Any]]:
         """Detect resistance levels using configured method with mandatory dual price and VWAP logic."""
@@ -1620,11 +1584,11 @@ elif self.sr_detection_method == "atr":
                 return await self._detect_atr_resistance_levels(market_data)
 else:
                 self.logger.warning(f"Unknown SR detection method: {self.sr_detection_method}")
-return await self._detect_fractal_resistance_levels(market_data)
+    return await self._detect_fractal_resistance_levels(market_data)
 
 except Exception as e:
             self.logger.error(f"Error detecting resistance levels: {e}")
-return []
+    return []
 
 async def _detect_fractal_support_levels(self, market_data: pd.DataFrame) -> list[dict[str, Any]]:
         """Detect support levels using fractal analysis with mandatory dual price and VWAP logic."""
@@ -1650,13 +1614,13 @@ if 'vwap' in market_data.columns:
                 self.logger.info(f"✅ Detected {len(price_support)} price-based and {len(vwap_support)} VWAP-based fractal support levels")
 else:
                 self.logger.warning("⚠️ VWAP data not available - using price-only detection for fractal support levels")
-self.logger.info(f"✅ Detected {len(price_support)} price-based fractal support levels")
+    self.logger.info(f"✅ Detected {len(price_support)} price-based fractal support levels")
 
-return support_levels[:self.max_sr_levels]
+    return support_levels[:self.max_sr_levels]
 
 except Exception as e:
             self.logger.error(f"Error in fractal support detection: {e}")
-return []
+    return []
 
 async def _detect_fractal_support_levels_price(self, market_data: pd.DataFrame) -> list[dict[str, Any]]:
         """Detect support levels using fractal analysis with price data."""
@@ -1687,11 +1651,11 @@ support_level = {
 }
 support_levels.append(support_level)
 
-return support_levels
+    return support_levels
 
 except Exception as e:
             self.logger.error(f"Error in price-based fractal support detection: {e}")
-return []
+    return []
 
 async def _detect_fractal_support_levels_vwap(self, market_data: pd.DataFrame) -> list[dict[str, Any]]:
         """Detect support levels using fractal analysis with VWAP data."""
@@ -1722,11 +1686,11 @@ support_level = {
 }
 support_levels.append(support_level)
 
-return support_levels
+    return support_levels
 
 except Exception as e:
             self.logger.error(f"Error in VWAP-based fractal support detection: {e}")
-return []
+    return []
 
 async def _detect_fractal_resistance_levels(self, market_data: pd.DataFrame) -> list[dict[str, Any]]:
         """Detect resistance levels using fractal analysis with mandatory dual price and VWAP logic."""
@@ -1752,13 +1716,13 @@ if 'vwap' in market_data.columns:
                 self.logger.info(f"✅ Detected {len(price_resistance)} price-based and {len(vwap_resistance)} VWAP-based fractal resistance levels")
 else:
                 self.logger.warning("⚠️ VWAP data not available - using price-only detection for fractal resistance levels")
-self.logger.info(f"✅ Detected {len(price_resistance)} price-based fractal resistance levels")
+    self.logger.info(f"✅ Detected {len(price_resistance)} price-based fractal resistance levels")
 
-return resistance_levels[:self.max_sr_levels]
+    return resistance_levels[:self.max_sr_levels]
 
 except Exception as e:
             self.logger.error(f"Error in fractal resistance detection: {e}")
-return []
+    return []
 
 async def _detect_fractal_resistance_levels_price(self, market_data: pd.DataFrame) -> list[dict[str, Any]]:
         """Detect resistance levels using fractal analysis with price data."""
@@ -1789,11 +1753,11 @@ resistance_level = {
 }
 resistance_levels.append(resistance_level)
 
-return resistance_levels
+    return resistance_levels
 
 except Exception as e:
             self.logger.error(f"Error in price-based fractal resistance detection: {e}")
-return []
+    return []
 
 async def _detect_fractal_resistance_levels_vwap(self, market_data: pd.DataFrame) -> list[dict[str, Any]]:
         """Detect resistance levels using fractal analysis with VWAP data."""
@@ -1824,11 +1788,11 @@ resistance_level = {
 }
 resistance_levels.append(resistance_level)
 
-return resistance_levels
+    return resistance_levels
 
 except Exception as e:
             self.logger.error(f"Error in VWAP-based fractal resistance detection: {e}")
-return []
+    return []
 
 def _deduplicate_sr_levels(self, levels: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Deduplicate support/resistance levels based on price proximity and data source."""
@@ -1870,12 +1834,12 @@ break
 if not is_duplicate:
                     deduplicated.append(level)
 
-self.logger.info(f"✅ Deduplicated {len(levels)} levels to {len(deduplicated)} unique levels")
-return deduplicated
+    self.logger.info(f"✅ Deduplicated {len(levels)} levels to {len(deduplicated)} unique levels")
+    return deduplicated
 
 except Exception as e:
             self.logger.error(f"Error deduplicating SR levels: {e}")
-return levels
+    return levels
 
 async def _detect_volume_support_levels(self, market_data: pd.DataFrame) -> list[dict[str, Any]]:
         """Detect support levels using volume-weighted analysis with mandatory dual price and VWAP logic."""
@@ -1901,13 +1865,13 @@ if 'vwap' in market_data.columns:
                 self.logger.info(f"✅ Detected {len(price_support)} price-based and {len(vwap_support)} VWAP-based volume support levels")
 else:
                 self.logger.warning("⚠️ VWAP data not available - using price-only detection for volume support levels")
-self.logger.info(f"✅ Detected {len(price_support)} price-based volume support levels")
+    self.logger.info(f"✅ Detected {len(price_support)} price-based volume support levels")
 
-return support_levels[:self.max_sr_levels]
+    return support_levels[:self.max_sr_levels]
 
 except Exception as e:
             self.logger.error(f"Error in volume support detection: {e}")
-return []
+    return []
 
 async def _detect_volume_support_levels_price(self, market_data: pd.DataFrame) -> list[dict[str, Any]]:
         """Detect support levels using volume-weighted analysis with price data."""
@@ -1935,11 +1899,11 @@ support_level = {
 }
 support_levels.append(support_level)
 
-return support_levels
+    return support_levels
 
 except Exception as e:
             self.logger.error(f"Error in price-based volume support detection: {e}")
-return []
+    return []
 
 async def _detect_volume_support_levels_vwap(self, market_data: pd.DataFrame) -> list[dict[str, Any]]:
         """Detect support levels using volume-weighted analysis with VWAP data."""
@@ -1964,11 +1928,11 @@ support_level = {
 }
 support_levels.append(support_level)
 
-return support_levels
+    return support_levels
 
 except Exception as e:
             self.logger.error(f"Error in VWAP-based volume support detection: {e}")
-return []
+    return []
 
 async def _detect_volume_resistance_levels(self, market_data: pd.DataFrame) -> list[dict[str, Any]]:
         """Detect resistance levels using volume-weighted analysis with mandatory dual price and VWAP logic."""
@@ -1994,13 +1958,13 @@ if 'vwap' in market_data.columns:
                 self.logger.info(f"✅ Detected {len(price_resistance)} price-based and {len(vwap_resistance)} VWAP-based volume resistance levels")
 else:
                 self.logger.warning("⚠️ VWAP data not available - using price-only detection for volume resistance levels")
-self.logger.info(f"✅ Detected {len(price_resistance)} price-based volume resistance levels")
+    self.logger.info(f"✅ Detected {len(price_resistance)} price-based volume resistance levels")
 
-return resistance_levels[:self.max_sr_levels]
+    return resistance_levels[:self.max_sr_levels]
 
 except Exception as e:
             self.logger.error(f"Error in volume resistance detection: {e}")
-return []
+    return []
 
 async def _detect_volume_resistance_levels_price(self, market_data: pd.DataFrame) -> list[dict[str, Any]]:
         """Detect resistance levels using volume-weighted analysis with price data."""
@@ -2028,11 +1992,11 @@ resistance_level = {
 }
 resistance_levels.append(resistance_level)
 
-return resistance_levels
+    return resistance_levels
 
 except Exception as e:
             self.logger.error(f"Error in price-based volume resistance detection: {e}")
-return []
+    return []
 
 async def _detect_volume_resistance_levels_vwap(self, market_data: pd.DataFrame) -> list[dict[str, Any]]:
         """Detect resistance levels using volume-weighted analysis with VWAP data."""
@@ -2057,11 +2021,11 @@ resistance_level = {
 }
 resistance_levels.append(resistance_level)
 
-return resistance_levels
+    return resistance_levels
 
 except Exception as e:
             self.logger.error(f"Error in VWAP-based volume resistance detection: {e}")
-return []
+    return []
 
 async def _detect_pivot_support_levels(self, market_data: pd.DataFrame) -> list[dict[str, Any]]:
         """Detect support levels using pivot point analysis with mandatory dual price and VWAP logic."""
@@ -2087,13 +2051,13 @@ if 'vwap' in market_data.columns:
                 self.logger.info(f"✅ Detected {len(price_support)} price-based and {len(vwap_support)} VWAP-based pivot support levels")
 else:
                 self.logger.warning("⚠️ VWAP data not available - using price-only detection for pivot support levels")
-self.logger.info(f"✅ Detected {len(price_support)} price-based pivot support levels")
+    self.logger.info(f"✅ Detected {len(price_support)} price-based pivot support levels")
 
-return support_levels[:self.max_sr_levels]
+    return support_levels[:self.max_sr_levels]
 
 except Exception as e:
             self.logger.error(f"Error in pivot support detection: {e}")
-return []
+    return []
 
 async def _detect_pivot_support_levels_price(self, market_data: pd.DataFrame) -> list[dict[str, Any]]:
         """Detect support levels using pivot point analysis with price data."""
@@ -2122,11 +2086,11 @@ for i in range(len(market_data)):
 }
 support_levels.append(support_level)
 
-return support_levels
+    return support_levels
 
 except Exception as e:
             self.logger.error(f"Error in price-based pivot support detection: {e}")
-return []
+    return []
 
 async def _detect_pivot_support_levels_vwap(self, market_data: pd.DataFrame) -> list[dict[str, Any]]:
         """Detect support levels using pivot point analysis with VWAP data."""
@@ -2155,11 +2119,11 @@ for i in range(len(market_data)):
 }
 support_levels.append(support_level)
 
-return support_levels
+    return support_levels
 
 except Exception as e:
             self.logger.error(f"Error in VWAP-based pivot support detection: {e}")
-return []
+    return []
 
 async def _detect_pivot_resistance_levels(self, market_data: pd.DataFrame) -> list[dict[str, Any]]:
         """Detect resistance levels using pivot point analysis with mandatory dual price and VWAP logic."""
@@ -2185,13 +2149,13 @@ if 'vwap' in market_data.columns:
                 self.logger.info(f"✅ Detected {len(price_resistance)} price-based and {len(vwap_resistance)} VWAP-based pivot resistance levels")
 else:
                 self.logger.warning("⚠️ VWAP data not available - using price-only detection for pivot resistance levels")
-self.logger.info(f"✅ Detected {len(price_resistance)} price-based pivot resistance levels")
+    self.logger.info(f"✅ Detected {len(price_resistance)} price-based pivot resistance levels")
 
-return resistance_levels[:self.max_sr_levels]
+    return resistance_levels[:self.max_sr_levels]
 
 except Exception as e:
             self.logger.error(f"Error in pivot resistance detection: {e}")
-return []
+    return []
 
 async def _detect_pivot_resistance_levels_price(self, market_data: pd.DataFrame) -> list[dict[str, Any]]:
         """Detect resistance levels using pivot point analysis with price data."""
@@ -2220,11 +2184,11 @@ for i in range(len(market_data)):
 }
 resistance_levels.append(resistance_level)
 
-return resistance_levels
+    return resistance_levels
 
 except Exception as e:
             self.logger.error(f"Error in price-based pivot resistance detection: {e}")
-return []
+    return []
 
 async def _detect_pivot_resistance_levels_vwap(self, market_data: pd.DataFrame) -> list[dict[str, Any]]:
         """Detect resistance levels using pivot point analysis with VWAP data."""
@@ -2253,11 +2217,11 @@ for i in range(len(market_data)):
 }
 resistance_levels.append(resistance_level)
 
-return resistance_levels
+    return resistance_levels
 
 except Exception as e:
             self.logger.error(f"Error in VWAP-based pivot resistance detection: {e}")
-return []
+    return []
 
 async def _detect_atr_support_levels(self, market_data: pd.DataFrame) -> list[dict[str, Any]]:
         """Detect support levels using ATR-based analysis with mandatory dual price and VWAP logic."""
@@ -2283,13 +2247,13 @@ if 'vwap' in market_data.columns:
                 self.logger.info(f"✅ Detected {len(price_support)} price-based and {len(vwap_support)} VWAP-based ATR support levels")
 else:
                 self.logger.warning("⚠️ VWAP data not available - using price-only detection for ATR support levels")
-self.logger.info(f"✅ Detected {len(price_support)} price-based ATR support levels")
+    self.logger.info(f"✅ Detected {len(price_support)} price-based ATR support levels")
 
-return support_levels[:self.max_sr_levels]
+    return support_levels[:self.max_sr_levels]
 
 except Exception as e:
             self.logger.error(f"Error in ATR support detection: {e}")
-return []
+    return []
 
 async def _detect_atr_support_levels_price(self, market_data: pd.DataFrame) -> list[dict[str, Any]]:
         """Detect support levels using ATR-based analysis with price data."""
@@ -2321,11 +2285,11 @@ for i in range(len(market_data)):
 }
 support_levels.append(support_level)
 
-return support_levels
+    return support_levels
 
 except Exception as e:
             self.logger.error(f"Error in price-based ATR support detection: {e}")
-return []
+    return []
 
 async def _detect_atr_support_levels_vwap(self, market_data: pd.DataFrame) -> list[dict[str, Any]]:
         """Detect support levels using ATR-based analysis with VWAP data."""
@@ -2357,11 +2321,11 @@ for i in range(len(market_data)):
 }
 support_levels.append(support_level)
 
-return support_levels
+    return support_levels
 
 except Exception as e:
             self.logger.error(f"Error in VWAP-based ATR support detection: {e}")
-return []
+    return []
 
 async def _detect_atr_resistance_levels(self, market_data: pd.DataFrame) -> list[dict[str, Any]]:
         """Detect resistance levels using ATR-based analysis with mandatory dual price and VWAP logic."""
@@ -2387,13 +2351,13 @@ if 'vwap' in market_data.columns:
                 self.logger.info(f"✅ Detected {len(price_resistance)} price-based and {len(vwap_resistance)} VWAP-based ATR resistance levels")
 else:
                 self.logger.warning("⚠️ VWAP data not available - using price-only detection for ATR resistance levels")
-self.logger.info(f"✅ Detected {len(price_resistance)} price-based ATR resistance levels")
+    self.logger.info(f"✅ Detected {len(price_resistance)} price-based ATR resistance levels")
 
-return resistance_levels[:self.max_sr_levels]
+    return resistance_levels[:self.max_sr_levels]
 
 except Exception as e:
             self.logger.error(f"Error in ATR resistance detection: {e}")
-return []
+    return []
 
 async def _detect_atr_resistance_levels_price(self, market_data: pd.DataFrame) -> list[dict[str, Any]]:
         """Detect resistance levels using ATR-based analysis with price data."""
@@ -2425,11 +2389,11 @@ for i in range(len(market_data)):
 }
 resistance_levels.append(resistance_level)
 
-return resistance_levels
+    return resistance_levels
 
 except Exception as e:
             self.logger.error(f"Error in price-based ATR resistance detection: {e}")
-return []
+    return []
 
 async def _detect_atr_resistance_levels_vwap(self, market_data: pd.DataFrame) -> list[dict[str, Any]]:
         """Detect resistance levels using ATR-based analysis with VWAP data."""
@@ -2461,11 +2425,11 @@ for i in range(len(market_data)):
 }
 resistance_levels.append(resistance_level)
 
-return resistance_levels
+    return resistance_levels
 
 except Exception as e:
             self.logger.error(f"Error in VWAP-based ATR resistance detection: {e}")
-return []
+    return []
 
 # ============================================================================
 # ADVANCED S/R DETECTION METHODS
@@ -2506,12 +2470,12 @@ for level in extension_levels:
                     fib_price = high + (level - 1) * swing_range
 fib_levels[f'fib_{int(level * 1000)}'] = fib_price
 
-self.logger.info(f"✅ Calculated Fibonacci levels with sensitivity {self.fibonacci_sensitivity}: {len(fib_levels)} levels")
-return fib_levels
+    self.logger.info(f"✅ Calculated Fibonacci levels with sensitivity {self.fibonacci_sensitivity}: {len(fib_levels)} levels")
+    return fib_levels
 
 except Exception as e:
             self.logger.error(f"Error calculating Fibonacci levels: {e}")
-return {}
+    return {}
 
 @validate_data_quality(validation_level="WARNING")
 async def detect_elliott_wave_levels(self, market_data: pd.DataFrame) -> dict[str, Any]:
@@ -2563,12 +2527,12 @@ else:
 'confidence': 0.3
 }
 
-self.logger.info(f"✅ Detected Elliott Wave pattern: {elliott_levels.get('pattern_type', 'unknown')}")
-return elliott_levels
+    self.logger.info(f"✅ Detected Elliott Wave pattern: {elliott_levels.get('pattern_type', 'unknown')}")
+    return elliott_levels
 
 except Exception as e:
             self.logger.error(f"Error detecting Elliott Wave levels: {e}")
-return {'pattern_type': 'error', 'confidence': 0.0}
+    return {'pattern_type': 'error', 'confidence': 0.0}
 
 def _find_elliott_wave_points(self, prices: np.ndarray, highs: np.ndarray, lows: np.ndarray) -> list[dict[str, Any]]:
         """Find potential Elliott Wave points in price data."""
@@ -2593,7 +2557,7 @@ elif lows[i] < lows[i-1] and lows[i] < lows[i-2] and lows[i] < lows[i+1] and low
 'low': lows[i]
 })
 
-return wave_points[:10]  # Limit to first 10 points
+    return wave_points[:10]  # Limit to first 10 points
 
 def _calculate_elliott_pattern_confidence(self, wave_points: list[dict[str, Any]]) -> float:
         """Calculate confidence score for Elliott Wave pattern."""
@@ -2633,11 +2597,11 @@ else:
                 confidence_factors.append(0.6)
 
 # Calculate average confidence
-return np.mean(confidence_factors) if confidence_factors else 0.3
+    return np.mean(confidence_factors) if confidence_factors else 0.3
 
 except Exception as e:
             self.logger.error(f"Error calculating Elliott pattern confidence: {e}")
-return 0.3
+    return 0.3
 
 @validate_data_quality(validation_level="WARNING")
 async def analyze_order_flow_levels(self, market_data: pd.DataFrame) -> dict[str, Any]:
@@ -2674,12 +2638,12 @@ order_flow_analysis = {
 'avg_volume': market_data['volume'].mean()
 }
 
-self.logger.info(f"✅ Order flow analysis complete: POC at {poc_level:.2f}, {len(hvn_levels)} HVN levels")
-return order_flow_analysis
+    self.logger.info(f"✅ Order flow analysis complete: POC at {poc_level:.2f}, {len(hvn_levels)} HVN levels")
+    return order_flow_analysis
 
 except Exception as e:
             self.logger.error(f"Error analyzing order flow levels: {e}")
-return {}
+    return {}
 
 async def _calculate_volume_profile(self, market_data: pd.DataFrame) -> dict[str, Any]:
         """Calculate volume profile for order flow analysis."""
@@ -2742,7 +2706,7 @@ if volume > avg_volume * self.order_flow_hvn_threshold  # Use optimized threshol
 # Sort HVN by strength
 hvn_levels.sort(key=lambda x: x['strength'], reverse=True)
 
-return {
+    return {
 'poc': poc_level,
 'value_area_high': value_area_high,
 'value_area_low': value_area_low,
@@ -2752,7 +2716,7 @@ return {
 
 except Exception as e:
             self.logger.error(f"Error calculating volume profile: {e}")
-return {}
+    return {}
 
 async def _detect_order_imbalances(self, market_data: pd.DataFrame) -> list[dict[str, Any]]:
         """Detect order flow imbalances."""
@@ -2794,11 +2758,11 @@ imbalance = {
 }
 imbalances.append(imbalance)
 
-return imbalances
+    return imbalances
 
 except Exception as e:
             self.logger.error(f"Error detecting order imbalances: {e}")
-return []
+    return []
 
 @validate_data_quality(validation_level="WARNING")
 async def detect_multi_timeframe_confluence(self, market_data: dict[str, pd.DataFrame]) -> dict[str, Any]:
@@ -2868,12 +2832,12 @@ if len(v['timeframes']) >= 3
 # Sort by strength
 strong_confluence = dict(sorted(strong_confluence.items(), key=lambda x: x[1]['strength'], reverse=True))
 
-self.logger.info(f"✅ Multi-timeframe confluence analysis: {len(strong_confluence)} strong confluence levels")
-return strong_confluence
+    self.logger.info(f"✅ Multi-timeframe confluence analysis: {len(strong_confluence)} strong confluence levels")
+    return strong_confluence
 
 except Exception as e:
             self.logger.error(f"Error detecting multi-timeframe confluence: {e}")
-return {}
+    return {}
 
 @validate_data_quality(validation_level="WARNING")
 async def get_comprehensive_sr_analysis(self, market_data: pd.DataFrame, multi_timeframe_data: dict[str, pd.DataFrame] = None) -> dict[str, Any]:
@@ -2909,12 +2873,12 @@ comprehensive_analysis = {
 ]
 }
 
-self.logger.info(f"✅ Comprehensive S/R analysis complete with {len(comprehensive_analysis['analysis_methods'])} methods")
-return comprehensive_analysis
+    self.logger.info(f"✅ Comprehensive S/R analysis complete with {len(comprehensive_analysis['analysis_methods'])} methods")
+    return comprehensive_analysis
 
 except Exception as e:
             self.logger.error(f"Error in comprehensive S/R analysis: {e}")
-return {}
+    return {}
 
 def _calculate_level_strength(self, market_data: pd.DataFrame, index: int, level_type: str) -> float:
         """Calculate the strength of a support/resistance level."""
@@ -2939,11 +2903,11 @@ price_factor = 1.0 - (market_data['close'].iloc[index] - market_data['high'].ilo
 
 base_strength *= max(0.1, price_factor)
 
-return min(1.0, max(0.0, base_strength))
+    return min(1.0, max(0.0, base_strength))
 
 except Exception as e:
             self.logger.error(f"Error calculating level strength: {e}")
-return 0.5
+    return 0.5
 
 # ============================================================================
 # ENHANCED STRENGTH CALCULATION METHODS
@@ -2982,12 +2946,12 @@ if abs(high - level_price) / level_price < 0.01 or abs(low - level_price) / leve
 
 touch_counts[level_id] = touch_count
 
-self.logger.info(f"✅ Calculated touch counts for {len(touch_counts)} S/R levels")
-return touch_counts
+    self.logger.info(f"✅ Calculated touch counts for {len(touch_counts)} S/R levels")
+    return touch_counts
 
 except Exception as e:
             self.logger.error(f"Error calculating touch counts: {e}")
-return {}
+    return {}
 
 @validate_data_quality(validation_level="WARNING")
 async def calculate_level_age(self, market_data: pd.DataFrame, sr_levels: list[dict[str, Any]]) -> dict[str, float]:
@@ -3021,12 +2985,12 @@ level_ages[level_id] = {
 'is_recent': age_periods <= 10
 }
 
-self.logger.info(f"✅ Calculated age scores for {len(level_ages)} S/R levels")
-return level_ages
+    self.logger.info(f"✅ Calculated age scores for {len(level_ages)} S/R levels")
+    return level_ages
 
 except Exception as e:
             self.logger.error(f"Error calculating level ages: {e}")
-return {}
+    return {}
 
 @validate_data_quality(validation_level="WARNING")
 async def calculate_bounce_rate(self, market_data: pd.DataFrame, sr_levels: list[dict[str, Any]]) -> dict[str, float]:
@@ -3087,12 +3051,12 @@ bounce_rates[level_id] = {
 'is_untested': is_untested
 }
 
-self.logger.info(f"✅ Calculated bounce rates for {len(bounce_rates)} S/R levels")
-return bounce_rates
+    self.logger.info(f"✅ Calculated bounce rates for {len(bounce_rates)} S/R levels")
+    return bounce_rates
 
 except Exception as e:
             self.logger.error(f"Error calculating bounce rates: {e}")
-return {}
+    return {}
 
 @validate_data_quality(validation_level="WARNING")
 async def calculate_isolation_score(self, sr_levels: list[dict[str, Any]]) -> dict[str, float]:
@@ -3129,12 +3093,12 @@ isolation_scores[level_id] = {
 'is_isolated': isolation_score > 0.7
 }
 
-self.logger.info(f"✅ Calculated isolation scores for {len(isolation_scores)} S/R levels")
-return isolation_scores
+    self.logger.info(f"✅ Calculated isolation scores for {len(isolation_scores)} S/R levels")
+    return isolation_scores
 
 except Exception as e:
             self.logger.error(f"Error calculating isolation scores: {e}")
-return {}
+    return {}
 
 @validate_data_quality(validation_level="WARNING")
 async def cluster_sr_levels_dbscan(self, sr_levels: list[dict[str, Any]]) -> dict[str, Any]:
@@ -3147,7 +3111,7 @@ except Exception as e:
     pass
 if not DBSCAN_AVAILABLE:
                 self.logger.warning("DBSCAN not available, returning unclustered levels")
-return {
+    return {
 'clusters': {},
 'n_clusters': 0,
 'noise_points': 0,
@@ -3231,8 +3195,8 @@ clustered_levels[cluster_id].update({
 'level_count': len(levels)
 })
 
-self.logger.info(f"✅ DBSCAN clustering: {n_clusters} clusters, {noise_points} noise points filtered")
-return {
+    self.logger.info(f"✅ DBSCAN clustering: {n_clusters} clusters, {noise_points} noise points filtered")
+    return {
 'clusters': clustered_levels,
 'n_clusters': n_clusters,
 'noise_points': noise_points,
@@ -3242,7 +3206,7 @@ return {
 
 except Exception as e:
             self.logger.error(f"Error in DBSCAN clustering: {e}")
-return {
+    return {
 'clusters': {},
 'n_clusters': 0,
 'noise_points': 0,
@@ -3261,7 +3225,7 @@ except Exception as e:
     pass
 if not self.enable_enhanced_strength:
                 # Return basic strength calculation
-return {f"{level['price']:.4f}": level.get('strength', 0.5) for level in sr_levels}
+    return {f"{level['price']:.4f}": level.get('strength', 0.5) for level in sr_levels}
 
 # Calculate all strength factors
 touch_counts = await self.calculate_touch_count(market_data, sr_levels)
@@ -3364,12 +3328,12 @@ comprehensive_strengths[level_id] = {
 }
 }
 
-self.logger.info(f"✅ Calculated comprehensive strength for {len(comprehensive_strengths)} S/R levels")
-return comprehensive_strengths
+    self.logger.info(f"✅ Calculated comprehensive strength for {len(comprehensive_strengths)} S/R levels")
+    return comprehensive_strengths
 
 except Exception as e:
             self.logger.error(f"Error calculating comprehensive strength: {e}")
-return {f"{level['price']:.4f}": level.get('strength', 0.5) for level in sr_levels}
+    return {f"{level['price']:.4f}": level.get('strength', 0.5) for level in sr_levels}
 
 async def _calculate_breakout_probabilities(
 self,
@@ -3404,11 +3368,11 @@ probabilities[f"resistance_breakout_{i}"] = prob
 else:
                     probabilities[f"resistance_breakout_{i}"] = 0.0
 
-return probabilities
+    return probabilities
 
 except Exception as e:
             self.logger.error(f"Error calculating breakout probabilities: {e}")
-return {}
+    return {}
 
 async def _calculate_confidence_scores(
 self,
@@ -3435,11 +3399,11 @@ for i, level in enumerate(resistance_levels):
                 confidence = level.get("confidence", 0.5) * level.get("strength", 0.5)
 confidence_scores[f"resistance_confidence_{i}"] = confidence
 
-return confidence_scores
+    return confidence_scores
 
 except Exception as e:
             self.logger.error(f"Error calculating confidence scores: {e}")
-return {}
+    return {}
 
 async def _generate_sr_features(
 self,
@@ -3485,13 +3449,14 @@ features["support_level_count"] = len(support_levels)
 features["resistance_level_count"] = len(resistance_levels)
 features["total_sr_levels"] = len(support_levels) + len(resistance_levels)
 
-return features
+    return features
 
 except Exception as e:
             self.logger.error(f"Error generating SR features: {e}")
-return {}
+    return {}
 
-def _find_nearest_level(
+def _find_nearest_level(:
+    pass  # TODO: Add implementation
 self,
 current_price: float,
 levels: list[dict[str, Any]],
@@ -3526,13 +3491,14 @@ if combined_score > best_score:
                     best_score = combined_score
 nearest_level = level
 
-return nearest_level
+    return nearest_level
 
 except Exception as e:
             self.logger.error(f"Error finding nearest {level_type} level: {e}")
-return None
+    return None
 
-def _calculate_proximity(
+def _calculate_proximity(:
+    pass  # TODO: Add implementation
 self,
 current_price: float,
 level: dict[str, Any] | None,
@@ -3548,11 +3514,11 @@ if not level:
                 return 1.0
 
 distance = abs(current_price - level["price"]) / current_price
-return distance
+    return distance
 
 except Exception as e:
             self.logger.error(f"Error calculating proximity: {e}")
-return 1.0
+    return 1.0
 
 def _calculate_pivot_levels(self, market_data: pd.DataFrame) -> dict[str, Any]:
         """Calculate pivot point levels."""
@@ -3597,7 +3563,7 @@ pivot = (high + low + close) / 3
 r1 = 2 * pivot - low
 s1 = 2 * pivot - high
 
-return {
+    return {
 "pivot": pivot,
 "r1": r1,
 "s1": s1,
@@ -3607,7 +3573,7 @@ return {
 
 except Exception as e:
             self.logger.error(f"Error calculating pivot levels: {e}")
-return {}
+    return {}
 
 async def _extract_outcome_features(
 self,
@@ -3663,17 +3629,17 @@ else 0
 
 # Technical indicators
 features["rsi"] = (
-self._calculate_rsi(market_data["close"]).iloc[-1]
+    self._calculate_rsi(market_data["close"]).iloc[-1]
 if len(market_data) >= 14
 else 50
 )
 features["macd"] = (
-self._calculate_macd(market_data["close"]).iloc[-1]
+    self._calculate_macd(market_data["close"]).iloc[-1]
 if len(market_data) >= 26
 else 0
 )
 features["bb_position"] = (
-self._calculate_bb_position(market_data["close"]).iloc[-1]
+    self._calculate_bb_position(market_data["close"]).iloc[-1]
 if len(market_data) >= 20
 else 0.5
 )
@@ -3711,13 +3677,14 @@ features["momentum_strength"] = self._calculate_momentum_strength(
 market_data,
 )
 
-return features
+    return features
 
 except Exception as e:
             self.logger.error(f"Error extracting outcome features: {e}")
-return {}
+    return {}
 
-def _predict_outcome_rules(
+def _predict_outcome_rules(:
+    pass  # TODO: Add implementation
 self,
 features: dict[str, float],
 sr_context: dict[str, Any],
@@ -3761,9 +3728,10 @@ else:
 
 except Exception as e:
             self.logger.error(f"Error predicting outcome: {e}")
-return "consolidation"
+    return "consolidation"
 
-def _calculate_outcome_confidence(
+def _calculate_outcome_confidence(:
+    pass  # TODO: Add implementation
 self,
 features: dict[str, float],
 sr_context: dict[str, Any],
@@ -3803,11 +3771,11 @@ rsi = features.get("rsi", 50)
 if rsi < 30 or rsi > 70:
                 confidence += 0.1
 
-return min(1.0, confidence)
+    return min(1.0, confidence)
 
 except Exception as e:
             self.logger.error(f"Error calculating outcome confidence: {e}")
-return 0.5
+    return 0.5
 
 def _calculate_rsi(self, prices: pd.Series, period: int = 14) -> pd.Series:
         """Calculate RSI indicator."""
@@ -3815,17 +3783,19 @@ delta = prices.diff()
 gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
 loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
 rs = gain / loss
-return 100 - (100 / (1 + rs))
+    return 100 - (100 / (1 + rs))
 
-def _calculate_macd(
+def _calculate_macd(:
+    pass  # TODO: Add implementation
 self, prices: pd.Series, fast: int = 12, slow: int = 26
 ) -> pd.Series:
         """Calculate MACD indicator."""
 ema_fast = prices.ewm(span=fast).mean()
 ema_slow = prices.ewm(span=slow).mean()
-return ema_fast - ema_slow
+    return ema_fast - ema_slow
 
-def _calculate_bb_position(
+def _calculate_bb_position(:
+    pass  # TODO: Add implementation
 self, prices: pd.Series, period: int = 20, std: int = 2
 ) -> pd.Series:
         """Calculate Bollinger Band position."""
@@ -3836,7 +3806,7 @@ lower_band = sma - (std_dev * std)
 
 # Position within bands (0, at lower band, 1, at upper band)
 bb_position = (prices - lower_band) / (upper_band - lower_band)
-return bb_position.clip(0, 1)
+    return bb_position.clip(0, 1)
 
 def _calculate_market_trend(self, market_data: pd.DataFrame) -> float:
         """Calculate market trend strength."""
@@ -3856,10 +3826,10 @@ slope = np.polyfit(x, prices, 1)[0]
 avg_price = np.mean(prices)
 normalized_slope = slope / avg_price if avg_price > 0 else 0
 
-return float(np.clip(normalized_slope * 100, -1, 1))
+    return float(np.clip(normalized_slope * 100, -1, 1))
 except Exception as e:
             self.logger.error(f"Error calculating market trend: {e}")
-return 0.0
+    return 0.0
 
 def _calculate_momentum_strength(self, market_data: pd.DataFrame) -> float:
         """Calculate momentum strength."""
@@ -3885,10 +3855,10 @@ else 0
 
 momentum = short_momentum * 0.7 + long_momentum * 0.3
 
-return float(np.clip(momentum * 100, -1, 1))
+    return float(np.clip(momentum * 100, -1, 1))
 except Exception as e:
             self.logger.error(f"Error calculating momentum strength: {e}")
-return 0.0
+    return 0.0
 
 def _update_performance_metrics(self, predictions: dict[str, Any]) -> None:
         """Update performance metrics for SR breakout predictions."""
@@ -3899,28 +3869,22 @@ except Exception as e:
     # Log the error and handle gracefully
     pass
 # Store prediction in history
-self.prediction_history.append(predictions)
+    self.prediction_history.append(predictions)
 
 # Keep only recent predictions
 if len(self.prediction_history) > 1000:
                 self.prediction_history = self.prediction_history[-1000:]
 
 # Calculate basic metrics
-self.performance_metrics["total_predictions"] = len(self.prediction_history)
-self.performance_metrics["last_prediction_time"] = predictions.get("timestamp", pd.Timestamp.now())
+    self.performance_metrics["total_predictions"] = len(self.prediction_history)
+    self.performance_metrics["last_prediction_time"] = predictions.get("timestamp", pd.Timestamp.now())
 
 except Exception as e:
             self.logger.error(f"Error updating performance metrics: {e}")
 
-@handle_specific_errors(
-error_handlers={
-ValueError: (False, "Invalid input data for S/R proximity check"),
-KeyError: (False, "Missing required S/R context data"),
-},
-default_return=False,
-context="S/R proximity check",
-)
-def is_near_sr_level(
+@handle_specific_errors( error_handlers={ ValueError: (False, "Invalid input data for S/R proximity check"), KeyError: (False, "Missing required S/R context data"), }, default_return=False, context="S/R proximity check", )
+def is_near_sr_level(:
+    pass  # TODO: Add implementation
 self,
 current_price: float,
 sr_context: dict[str, Any],
@@ -3952,13 +3916,14 @@ resistance_proximity = sr_context.get("resistance_proximity", 1.0)
 is_near_support = support_proximity <= self.sr_proximity_threshold
 is_near_resistance = resistance_proximity <= self.sr_proximity_threshold
 
-return is_near_support or is_near_resistance
+    return is_near_support or is_near_resistance
 
 except Exception as e:
             self.logger.error(f"Error checking S/R proximity: {e}")
-return False
+    return False
 
-def get_sr_proximity_details(
+def get_sr_proximity_details(:
+    pass  # TODO: Add implementation
 self,
 current_price: float,
 sr_context: dict[str, Any],
@@ -3999,29 +3964,14 @@ details = {
 "closest_level_type": "support" if sr_context.get("support_proximity", 1.0) < sr_context.get("resistance_proximity", 1.0) else "resistance",
 }
 
-return details
+    return details
 
 except Exception as e:
             self.logger.error(f"Error getting S/R proximity details: {e}")
-return {}
+    return {}
 
-@validate_data_quality(
-required_columns=["open", "high", "low", "close", "volume"],
-min_rows=20,
-max_null_ratio=0.1,
-check_duplicates=True,
-check_timestamps=True,
-context="S/R outcome prediction input validation"
-)
-@handle_specific_errors(
-error_handlers={
-ValueError: ({}, "Invalid input data for S/R outcome prediction"),
-KeyError: ({}, "Missing required S/R context data"),
-AttributeError: ({}, "Predictor not properly initialized"),
-},
-default_return={},
-context="S/R outcome prediction",
-)
+@validate_data_quality( required_columns=["open", "high", "low", "close", "volume"], min_rows=20, max_null_ratio=0.1, check_duplicates=True, check_timestamps=True, context="S/R outcome prediction input validation" )
+@handle_specific_errors( error_handlers={ ValueError: ({}, "Invalid input data for S/R outcome prediction"), KeyError: ({}, "Missing required S/R context data"), AttributeError: ({}, "Predictor not properly initialized"), }, default_return={}, context="S/R outcome prediction", )
 async def predict_sr_outcome(
 self,
 market_data: pd.DataFrame,
@@ -4041,7 +3991,7 @@ Returns:
 """
 if not self.is_initialized:
             self.logger.error("SR breakout predictor not initialized")
-return {}
+    return {}
 
 try:
 
@@ -4068,28 +4018,14 @@ result = {
 "timestamp": pd.Timestamp.now(),
 }
 
-return result
+    return result
 
 except Exception as e:
             self.logger.error(f"Error predicting S/R outcome: {e}")
-return {}
+    return {}
 
-@validate_data_quality(
-required_columns=["open", "high", "low", "close", "volume"],
-min_rows=50,
-max_null_ratio=0.1,
-check_duplicates=True,
-check_timestamps=True,
-context="S/R features calculation input validation"
-)
-@handle_specific_errors(
-error_handlers={
-ValueError: ({}, "Invalid input data for S/R features calculation"),
-AttributeError: ({}, "Predictor not properly initialized"),
-},
-default_return={},
-context="S/R features calculation",
-)
+@validate_data_quality( required_columns=["open", "high", "low", "close", "volume"], min_rows=50, max_null_ratio=0.1, check_duplicates=True, check_timestamps=True, context="S/R features calculation input validation" )
+@handle_specific_errors( error_handlers={ ValueError: ({}, "Invalid input data for S/R features calculation"), AttributeError: ({}, "Predictor not properly initialized"), }, default_return={}, context="S/R features calculation", )
 async def calculate_sr_features(
 self,
 market_data: pd.DataFrame,
@@ -4105,7 +4041,7 @@ Returns:
 """
 if not self.is_initialized:
             self.logger.error("SR breakout predictor not initialized")
-return {}
+    return {}
 
 try:
 
@@ -4131,29 +4067,15 @@ features.update({
 "resistance_proximity": sr_context.get("resistance_proximity", 1.0),
 })
 
-self.logger.info("✅ SR features calculated")
-return features
+    self.logger.info("✅ SR features calculated")
+    return features
 
 except Exception as e:
             self.logger.error(f"Error calculating SR features: {e}")
-return {}
+    return {}
 
-@validate_data_quality(
-required_columns=["open", "high", "low", "close", "volume"],
-min_rows=100,
-max_null_ratio=0.1,
-check_duplicates=True,
-check_timestamps=True,
-context="Comprehensive S/R features calculation input validation"
-)
-@handle_specific_errors(
-error_handlers={
-ValueError: ({}, "Invalid input data for comprehensive S/R features calculation"),
-AttributeError: ({}, "Predictor not properly initialized"),
-},
-default_return={},
-context="Comprehensive S/R features calculation",
-)
+@validate_data_quality( required_columns=["open", "high", "low", "close", "volume"], min_rows=100, max_null_ratio=0.1, check_duplicates=True, check_timestamps=True, context="Comprehensive S/R features calculation input validation" )
+@handle_specific_errors( error_handlers={ ValueError: ({}, "Invalid input data for comprehensive S/R features calculation"), AttributeError: ({}, "Predictor not properly initialized"), }, default_return={}, context="Comprehensive S/R features calculation", )
 async def calculate_comprehensive_sr_features(
 self,
 market_data: pd.DataFrame,
@@ -4169,7 +4091,7 @@ Returns:
 """
 if not self.is_initialized:
             self.logger.error("SR breakout predictor not initialized")
-return {}
+    return {}
 
 try:
 
@@ -4206,12 +4128,12 @@ lookback_features = await self._extract_outcome_features(lookback_data, lookback
 for feature_name, feature_value in lookback_features.items():
                         features[f"{feature_name}_{lookback}"] = pd.Series([feature_value] * len(market_data), index=market_data.index)
 
-self.logger.info(f"✅ Generated {len(features)} comprehensive SR features")
-return features
+    self.logger.info(f"✅ Generated {len(features)} comprehensive SR features")
+    return features
 
 except Exception as e:
             self.logger.error(f"Error calculating comprehensive SR features: {e}")
-return {}
+    return {}
 
 async def _generate_comprehensive_sr_features(
 self,
@@ -4291,11 +4213,11 @@ features["sr_zone_width"] = pd.Series([sr_context.get("sr_zone_width", 0.0)] * l
 for feature_name, feature_value in base_features.items():
                 features[f"sr_{feature_name}"] = pd.Series([feature_value] * len(market_data), index=market_data.index)
 
-return features
+    return features
 
 except Exception as e:
             self.logger.error(f"Error generating comprehensive SR features: {e}")
-return {}
+    return {}
 
 def _calculate_multi_timeframe_sr_score(self, market_data: pd.DataFrame) -> float:
         """Calculate multi-timeframe SR score."""
@@ -4317,11 +4239,11 @@ high_low_ratio = tf_data['high'].max() / tf_data['low'].min()
 volume_weight = tf_data['volume'].mean() / market_data['volume'].mean()
 scores.append(high_low_ratio * volume_weight)
 
-return np.mean(scores) if scores else 1.0
+    return np.mean(scores) if scores else 1.0
 
 except Exception as e:
             self.logger.error(f"Error calculating multi-timeframe SR score: {e}")
-return 1.0
+    return 1.0
 
 def _calculate_clarity_factor(self, sr_context: dict[str, Any]) -> float:
         """Calculate SR clarity factor."""
@@ -4340,11 +4262,11 @@ clarity = (support_strength + resistance_strength) / 2
 if zone_width > 0:
                 clarity *= (1.0 - min(zone_width, 0.5))
 
-return max(0.0, min(1.0, clarity))
+    return max(0.0, min(1.0, clarity))
 
 except Exception as e:
             self.logger.error(f"Error calculating clarity factor: {e}")
-return 0.5
+    return 0.5
 
 def _calculate_directional_pressure(self, market_data: pd.DataFrame, sr_context: dict[str, Any]) -> float:
         """Calculate directional pressure towards SR levels using percentages."""
@@ -4375,11 +4297,11 @@ if momentum < 0:
 else:
                 pressure = 1.0 / (1.0 + resistance_distance_pct)
 
-return max(0.0, min(1.0, pressure))
+    return max(0.0, min(1.0, pressure))
 
 except Exception as e:
             self.logger.error(f"Error calculating directional pressure: {e}")
-return 0.5
+    return 0.5
 
 def _calculate_sr_score(self, sr_context: dict[str, Any]) -> float:
         """Calculate overall SR score using percentages."""
@@ -4398,11 +4320,11 @@ resistance_proximity = sr_context.get("resistance_proximity", 1.0)
 support_score = support_strength * (1.0 / (1.0 + support_proximity))
 resistance_score = resistance_strength * (1.0 / (1.0 + resistance_proximity))
 
-return (support_score + resistance_score) / 2
+    return (support_score + resistance_score) / 2
 
 except Exception as e:
             self.logger.error(f"Error calculating SR score: {e}")
-return 0.5
+    return 0.5
 
 def _calculate_delta_sr_score(self, market_data: pd.DataFrame, sr_context: dict[str, Any]) -> float:
         """Calculate change in SR score over time."""
@@ -4421,11 +4343,11 @@ prev_price = market_data['close'].iloc[-20]
 
 # Simplified delta calculation
 price_change = (current_price - prev_price) / prev_price
-return price_change
+    return price_change
 
 except Exception as e:
             self.logger.error(f"Error calculating delta SR score: {e}")
-return 0.0
+    return 0.0
 
 def _calculate_isolation_score(self, sr_context: dict[str, Any]) -> float:
         """Calculate isolation score for SR levels."""
@@ -4448,11 +4370,11 @@ for level in support_levels + resistance_levels:
                 if "strength_factors" in level and "isolation_score" in level["strength_factors"]:
                     isolation_scores.append(level["strength_factors"]["isolation_score"])
 
-return np.mean(isolation_scores) if isolation_scores else 0.5
+    return np.mean(isolation_scores) if isolation_scores else 0.5
 
 except Exception as e:
             self.logger.error(f"Error calculating isolation score: {e}")
-return 0.5
+    return 0.5
 
 def _determine_sr_level(self, current_price: float, sr_context: dict[str, Any]) -> float:
         """Determine current SR level position as percentage."""
@@ -4469,13 +4391,13 @@ if nearest_resistance > nearest_support and current_price > 0:
                 # Calculate position as percentage within the SR zone
 support_distance_pct = (current_price - nearest_support) / current_price
 zone_width_pct = (nearest_resistance - nearest_support) / current_price
-return support_distance_pct / zone_width_pct if zone_width_pct > 0 else 0.5
+    return support_distance_pct / zone_width_pct if zone_width_pct > 0 else 0.5
 else:
                 return 0.5
 
 except Exception as e:
             self.logger.error(f"Error determining SR level: {e}")
-return 0.5
+    return 0.5
 
 def _predict_sr_outcome(self, market_data: pd.DataFrame, sr_context: dict[str, Any]) -> float:
         """Predict SR outcome based on current market conditions as percentage."""
@@ -4493,13 +4415,13 @@ nearest_resistance = sr_context.get("nearest_resistance", current_price)
 if nearest_resistance > nearest_support and current_price > 0:
                 support_distance_pct = (current_price - nearest_support) / current_price
 zone_width_pct = (nearest_resistance - nearest_support) / current_price
-return support_distance_pct / zone_width_pct if zone_width_pct > 0 else 0.5
+    return support_distance_pct / zone_width_pct if zone_width_pct > 0 else 0.5
 else:
                 return 0.5
 
 except Exception as e:
             self.logger.error(f"Error predicting SR outcome: {e}")
-return 0.5
+    return 0.5
 
 async def set_weights(self, weights: dict[str, float]) -> bool:
         """
@@ -4557,29 +4479,15 @@ if weight_key in weights:
 if timeframe_weights:
                 self.timeframe_weights.update(timeframe_weights)
 
-self.logger.info(f"✅ S/R weights updated: {weights}")
-return True
+    self.logger.info(f"✅ S/R weights updated: {weights}")
+    return True
 
 except Exception as e:
             self.logger.error(f"Error setting S/R weights: {e}")
-return False
+    return False
 
-@validate_data_quality(
-required_columns=["open", "high", "low", "close", "volume"],
-min_rows=50,
-max_null_ratio=0.1,
-check_duplicates=True,
-check_timestamps=True,
-context="Breakout prediction input validation"
-)
-@handle_specific_errors(
-error_handlers={
-ValueError: (None, "Invalid input data for breakout prediction"),
-AttributeError: (None, "Predictor not properly initialized"),
-},
-default_return=None,
-context="Breakout prediction",
-)
+@validate_data_quality( required_columns=["open", "high", "low", "close", "volume"], min_rows=50, max_null_ratio=0.1, check_duplicates=True, check_timestamps=True, context="Breakout prediction input validation" )
+@handle_specific_errors( error_handlers={ ValueError: (None, "Invalid input data for breakout prediction"), AttributeError: (None, "Predictor not properly initialized"), }, default_return=None, context="Breakout prediction", )
 async def predict_breakout(self, market_data: pd.DataFrame) -> dict[str, Any] | None:
         """
 Predict breakout direction and confidence.
@@ -4616,7 +4524,7 @@ if sr_context.get("resistance_proximity", 1.0) < sr_context.get("support_proximi
 else:
                     direction = "down"  # Breaking support
 
-return {
+    return {
 "direction": direction,
 "confidence": outcome.get("confidence", 0.5),
 "price": current_price,
@@ -4626,7 +4534,7 @@ return {
 
 except Exception as e:
             self.logger.error(f"Error predicting breakout: {e}")
-return None
+    return None
 
 async def stop(self) -> None:
         """Stop the SR breakout predictor."""
@@ -4636,17 +4544,13 @@ try:
 except Exception as e:
     # Log the error and handle gracefully
     pass
-self.logger.info("Stopping SR breakout predictor...")
-self.is_initialized = False
-self.logger.info("✅ SR breakout predictor stopped successfully")
+    self.logger.info("Stopping SR breakout predictor...")
+    self.is_initialized = False
+    self.logger.info("✅ SR breakout predictor stopped successfully")
 except Exception as e:
             self.logger.error(f"❌ Failed to stop SR breakout predictor: {e}")
 
-@handle_errors(
-exceptions=(Exception,),
-default_return=None,
-context="SR breakout predictor cleanup",
-)
+@handle_errors( exceptions=(Exception,), default_return=None, context="SR breakout predictor cleanup", )
 async def cleanup(self) -> None:
         """Cleanup SR breakout predictor resources."""
 try:
@@ -4655,12 +4559,12 @@ try:
 except Exception as e:
     # Log the error and handle gracefully
     pass
-self.logger.info("Cleaning up SR breakout predictor...")
+    self.logger.info("Cleaning up SR breakout predictor...")
 await self.stop()
-self.sr_predictions.clear()
-self.prediction_history.clear()
-self.performance_metrics.clear()
-self.logger.info("✅ SR breakout predictor cleanup completed")
+    self.sr_predictions.clear()
+    self.prediction_history.clear()
+    self.performance_metrics.clear()
+    self.logger.info("✅ SR breakout predictor cleanup completed")
 except Exception as e:
             self.logger.error(f"Error cleaning up SR breakout predictor: {e}")
 
@@ -4726,11 +4630,11 @@ comparison["level_quality"] = {
 # Recommendations
 comparison["recommendations"] = self._generate_comparison_recommendations(comparison)
 
-return comparison
+    return comparison
 
 except Exception as e:
             self.logger.error(f"Error calculating comparison metrics: {e}")
-return {}
+    return {}
 
 def _analyze_data_sources(self, support_levels: list[dict[str, Any]], resistance_levels: list[dict[str, Any]]) -> dict[str, Any]:
         """Analyze the distribution and characteristics of data sources."""
@@ -4777,11 +4681,11 @@ analysis["source_characteristics"] = {
 # Method effectiveness
 analysis["method_effectiveness"] = self._analyze_method_effectiveness(all_levels)
 
-return analysis
+    return analysis
 
 except Exception as e:
             self.logger.error(f"Error analyzing data sources: {e}")
-return {}
+    return {}
 
 def _calculate_overlap_rate(self, price_levels: list[dict[str, Any]], vwap_levels: list[dict[str, Any]]) -> float:
         """Calculate the overlap rate between price and VWAP detected levels."""
@@ -4803,11 +4707,11 @@ for price_level in price_levels:
 if price_diff < 0.01:  # Within 1%
 overlap_count += 1
 
-return overlap_count / total_comparisons if total_comparisons > 0 else 0.0
+    return overlap_count / total_comparisons if total_comparisons > 0 else 0.0
 
 except Exception as e:
             self.logger.error(f"Error calculating overlap rate: {e}")
-return 0.0
+    return 0.0
 
 def _calculate_quality_score(self, levels: list[dict[str, Any]]) -> float:
         """Calculate a quality score for a set of levels based on strength and confidence."""
@@ -4829,11 +4733,11 @@ confidence = level.get("confidence", 0)
 level_score = (strength * 0.7) + (confidence * 0.3)
 total_score += level_score
 
-return total_score / len(levels)
+    return total_score / len(levels)
 
 except Exception as e:
             self.logger.error(f"Error calculating quality score: {e}")
-return 0.0
+    return 0.0
 
 def _analyze_method_effectiveness(self, levels: list[dict[str, Any]]) -> dict[str, Any]:
         """Analyze the effectiveness of different detection methods."""
@@ -4868,11 +4772,11 @@ for method in method_stats:
 method_stats[method]["avg_strength"] = method_stats[method]["total_strength"] / count
 method_stats[method]["avg_confidence"] = method_stats[method]["total_confidence"] / count
 
-return method_stats
+    return method_stats
 
 except Exception as e:
             self.logger.error(f"Error analyzing method effectiveness: {e}")
-return {}
+    return {}
 
 def _generate_comparison_recommendations(self, comparison: dict[str, Any]) -> dict[str, Any]:
         """Generate recommendations based on comparison analysis."""
@@ -4915,11 +4819,11 @@ if comparison["detection_efficiency"]["vwap_detection_rate"] < 0.2:
 if comparison["detection_efficiency"]["price_detection_rate"] < 0.2:
                 recommendations["optimization_suggestions"].append("Low price detection rate - check price-based detection parameters")
 
-return recommendations
+    return recommendations
 
 except Exception as e:
             self.logger.error(f"Error generating comparison recommendations: {e}")
-return {}
+    return {}
 
 def _validate_vwap_data(self, market_data: pd.DataFrame) -> bool:
         """Validate that VWAP data is available and properly formatted."""
@@ -4931,28 +4835,28 @@ except Exception as e:
     pass
 if 'vwap' not in market_data.columns:
                 self.logger.warning("⚠️ VWAP column not found in market data")
-return False
+    return False
 
 if market_data['vwap'].isnull().all():
                 self.logger.warning("⚠️ VWAP column contains only null values")
-return False
+    return False
 
 if len(market_data['vwap'].dropna()) < 20:
                 self.logger.warning("⚠️ Insufficient VWAP data (less than 20 non-null values)")
-return False
+    return False
 
 # Check for reasonable VWAP values
 vwap_values = market_data['vwap'].dropna()
 if vwap_values.min() <= 0:
                 self.logger.warning("⚠️ VWAP contains non-positive values")
-return False
+    return False
 
-self.logger.info(f"✅ VWAP data validated: {len(vwap_values)} valid values")
-return True
+    self.logger.info(f"✅ VWAP data validated: {len(vwap_values)} valid values")
+    return True
 
 except Exception as e:
             self.logger.error(f"Error validating VWAP data: {e}")
-return False
+    return False
 
 def _get_detection_summary(self, price_levels: list, vwap_levels: list, method_name: str, level_type: str) -> str:
         """Generate a summary of detection results for both price and VWAP approaches."""
@@ -4970,11 +4874,11 @@ if total_levels == 0:
 if len(vwap_levels) == 0:
                 return f"⚠️ {method_name} {level_type}: {len(price_levels)} price-based levels (VWAP not available)"
 
-return f"✅ {method_name} {level_type}: {len(price_levels)} price-based + {len(vwap_levels)} VWAP-based = {total_levels} total levels"
+    return f"✅ {method_name} {level_type}: {len(price_levels)} price-based + {len(vwap_levels)} VWAP-based = {total_levels} total levels"
 
 except Exception as e:
             self.logger.error(f"Error generating detection summary: {e}")
-return f"Error generating {method_name} {level_type} summary"
+    return f"Error generating {method_name} {level_type} summary"
 
 
 async def setup_sr_breakout_predictor(
@@ -5003,10 +4907,10 @@ sr_config["sr_breakout_predictor"]["use_optimized_params"] = True
 predictor = SRBreakoutPredictor(sr_config)
 if await predictor.initialize():
             return predictor
-return None
+    return None
 except Exception as e:
         system_logger.exception(f"Failed to setup SR Breakout Predictor: {e}")
-return None
+    return None
 
 
 def ensure_optimized_sr_config(config: dict[str, Any]) -> dict[str, Any]:
@@ -5022,4 +4926,4 @@ Returns:
 sr_config = config.copy()
 sr_config["sr_breakout_predictor"] = sr_config.get("sr_breakout_predictor", {})
 sr_config["sr_breakout_predictor"]["use_optimized_params"] = True
-return sr_config
+    return sr_config

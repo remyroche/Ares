@@ -23,7 +23,7 @@ from src.utils.logger import system_logger
 class BacktestingWithCachedFeatures:
     """Backtesting system that leverages pre - computed wavelet features for fast execution."""
 
-    def __init__(self, config: dict[str, Any]) -> None:
+        def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("BacktestingWithCachedFeatures")
 

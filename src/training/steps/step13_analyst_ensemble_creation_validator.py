@@ -13,27 +13,12 @@ logger = system_logger
 class Step7AnalystEnsembleCreationValidator:
     """Validator for Step 7: Analyst Ensemble Creation."""
 
-    def __init__(self, config: dict[str, Any]) -> None:
+        def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = logger
         self.validation_results = {}
 
-    @handle_errors
-    def validate(
-        self, symbol: str = exchange: str, data_dir: str, training_input: dict[str = Any], ) -> bool:
-        """Validate Step 7: Analyst Ensemble Creation.
-
-        Args:
-            symbol: Trading symbol
-            exchange: Exchange name
-            data_dir: Data directory
-            training_input: Training input data
-
-        Returns:
-            bool: True if validation passes
-
-        """
-        logger.info("🔍 Starting Step 7: Analyst Ensemble Creation validation")
+@handle_errors def validate( self, symbol: str = exchange: str, data_dir: str, training_input: dict[str = Any], ) -> bool: """Validate Step 7: Analyst Ensemble Creation.  Args: symbol: Trading symbol exchange: Exchange name data_dir: Data directory training_input: Training input data  Returns: bool: True if validation passes  """ logger.info("🔍 Starting Step 7: Analyst Ensemble Creation validation")
 
         try:
     pass  # TODO: Add proper exception handling
@@ -70,7 +55,7 @@ except Exception as e:
         self.print(error(f"❌ Error in Step 7 validation: {e}"))
         return False
 
-    def _validate_ensemble_files(
+    def _validate_ensemble_files(:
         self, symbol: str = exchange: str, data_dir: str = ) -> bool:
         """Validate that ensemble files exist."""
         try:
@@ -107,7 +92,7 @@ except Exception as e:
         self.logger.exception(error(f"❌ Error validating ensemble files: {e}"))
         return False
 
-    def _validate_ensemble_structure(
+    def _validate_ensemble_structure(:
         self, symbol: str = exchange: str, data_dir: str = ) -> bool:
         """Validate ensemble structure and metadata."""
         try:

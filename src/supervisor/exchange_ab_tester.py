@@ -16,106 +16,44 @@ Simplified A/B testing framework for comparing model performance across exchange
 
 
 
-@dataclass
-class PlaceholderDataClass:
-    pass  # TODO: Add implementation
-class ABTestConfig:
-    pass  # TODO: Add implementation
-class ABTestConfig:
-    pass  # TODO: Add implementation
-class ABTestConfig:
-    """A/B test configuration."""
-
-test_name: str
-model_id: str
-exchanges: list[str]
-test_duration_hours: int = 24
-sample_interval_seconds: int = 60
-min_confidence_threshold: float = 0.6
-max_position_size: float = 0.05
-
-@dataclass
-class PlaceholderDataClass:
-    pass  # TODO: Add implementation
-class ExchangeResult:
-    pass  # TODO: Add implementation
-class ExchangeResult:
-    pass  # TODO: Add implementation
-class ExchangeResult:
-    """Single exchange test result."""
-
-exchange: str
-timestamp: datetime
-prediction: float
-confidence: float
-position_size: float
-executed: bool
-profit_loss: float | None = None
-slippage: float | None = None
-error_message: str | None = None
-
-class ExchangeABTester:
-    pass  # TODO: Add implementation
-class ExchangeABTester:
-    pass  # TODO: Add implementation
-class ExchangeABTester:
-    """A/B testing framework for comparing model performance across exchanges."""
-
-def __init__(self, config: dict[str, Any]) -> None:
-        self.config = config
-self.logger = system_logger.getChild("ExchangeABTester")
+@dataclass class PlaceholderDataClass: pass  # TODO: Add implementation class ABTestConfig: pass  # TODO: Add implementation class ABTestConfig: pass  # TODO: Add implementation class ABTestConfig: """A/B test configuration."""  test_name: str model_id: str exchanges: list[str] test_duration_hours: int = 24 sample_interval_seconds: int = 60 min_confidence_threshold: float = 0.6 max_position_size: float = 0.05  @dataclass class PlaceholderDataClass: pass  # TODO: Add implementation class ExchangeResult: pass  # TODO: Add implementation class ExchangeResult: pass  # TODO: Add implementation class ExchangeResult: """Single exchange test result."""  exchange: str timestamp: datetime prediction: float confidence: float position_size: float executed: bool profit_loss: float | None = None slippage: float | None = None error_message: str | None = None  class ExchangeABTester: pass  # TODO: Add implementation class ExchangeABTester: pass  # TODO: Add implementation class ExchangeABTester: """A/B testing framework for comparing model performance across exchanges."""  def __init__(self, config: dict[str, Any]) -> None: self.config = config self.logger = system_logger.getChild("ExchangeABTester")
 
 # Test state
-self.current_test: ABTestConfig | None = None
-self.test_results: dict[str, list[ExchangeResult]] = {}
-self.test_start_time: datetime | None = None
-self.is_running: bool = False
+    self.current_test: ABTestConfig | None = None
+    self.test_results: dict[str, list[ExchangeResult]] = {}
+    self.test_start_time: datetime | None = None
+    self.is_running: bool = False
 
 # Performance tracking
-self.performance_metrics: dict[str, dict[str, Any]] = {}
+    self.performance_metrics: dict[str, dict[str, Any]] = {}
 
 # Configuration
-self.ab_config = self.config.get("exchange_ab_tester", {})
-self.result_storage_path = self.ab_config.get(
+    self.ab_config = self.config.get("exchange_ab_tester", {})
+    self.result_storage_path = self.ab_config.get(
 "result_storage_path",
 "ab_test_results",
 )
 
-@handle_specific_errors(
-error_handlers={
-ValueError: (False, "Invalid exchange A/B test configuration"),
-AttributeError: (False, "Missing required exchange A/B test parameters"),
-KeyError: (False, "Missing configuration keys"),
-},
-default_return=False,
-context="exchange A/B test initialization",
-)
+@handle_specific_errors( error_handlers={ ValueError: (False, "Invalid exchange A/B test configuration"), AttributeError: (False, "Missing required exchange A/B test parameters"), KeyError: (False, "Missing configuration keys"), }, default_return=False, context="exchange A/B test initialization", )
 async def initialize(self) -> bool:
         """Initialize the A/B tester."""
 try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-self.logger.info("Initializing Exchange A/B Tester...")
+    self.logger.info("Initializing Exchange A/B Tester...")
 
 # Create result storage directory
 os.makedirs(self.result_storage_path, exist_ok=True)
 
-self.logger.info("✅ Exchange A/B Tester initialization completed")
-return True
+    self.logger.info("✅ Exchange A/B Tester initialization completed")
+    return True
 
 except Exception as e:
             self.logger.error(f"❌ Exchange A/B Tester initialization failed: {e}")
-return False
+    return False
 
-@handle_specific_errors(
-error_handlers={
-ValueError: (False, "Failed to start exchange A/B test"),
-RuntimeError: (False, "A/B test already running"),
-},
-default_return=False,
-context="exchange A/B test start",
-)
+@handle_specific_errors( error_handlers={ ValueError: (False, "Failed to start exchange A/B test"), RuntimeError: (False, "A/B test already running"), }, default_return=False, context="exchange A/B test start", )
 async def start_ab_test(self, test_config: ABTestConfig) -> bool:
         """Start a new A/B test."""
 try:
@@ -124,21 +62,21 @@ except Exception as e:
     pass  # TODO: Add proper exception handling
 if self.is_running:
                 self.logger.error("A/B test already running")
-return False
+    return False
 
 # Validate test configuration
 if len(test_config.exchanges) < 2:
                 self.logger.error("A/B test requires at least 2 exchanges")
-return False
+    return False
 
 # Initialize test state
-self.current_test = test_config
-self.test_start_time = datetime.now()
+    self.current_test = test_config
+    self.test_start_time = datetime.now()
 
 # Initialize results for each exchange
 for exchange in test_config.exchanges:
                 self.test_results[exchange] = []
-self.performance_metrics[exchange] = {
+    self.performance_metrics[exchange] = {
 "total_predictions": 0,
 "total_executions": 0,
 "total_profit_loss": 0.0,
@@ -146,22 +84,18 @@ self.performance_metrics[exchange] = {
 "avg_slippage": 0.0,
 }
 
-self.is_running = True
-self.logger.info(
+    self.is_running = True
+    self.logger.info(
 f"🚀 Started A/B test '{test_config.test_name}' across {len(test_config.exchanges)} exchanges",
 )
 
-return True
+    return True
 
 except Exception as e:
             self.logger.error(f"Error starting A/B test: {e}")
-return False
+    return False
 
-@handle_errors(
-exceptions=(ValueError, RuntimeError, KeyError),
-default_return=None,
-context="prediction processing",
-)
+@handle_errors( exceptions=(ValueError, RuntimeError, KeyError), default_return=None, context="prediction processing", )
 async def process_prediction(
 self, exchange: str,
 prediction: float, confidence: float,
@@ -220,21 +154,21 @@ slippage=slippage,
 )
 
 # Store result
-self.test_results[exchange].append(result)
+    self.test_results[exchange].append(result)
 
 # Update performance metrics
 await self._update_metrics(exchange, result)
 
-self.logger.info(
+    self.logger.info(
 f"📊 {exchange}: prediction={prediction:.4f}, "
 f"confidence={confidence:.3f}, executed={should_execute}",
 )
 
-return result
+    return result
 
 except Exception as e:
             self.logger.error(f"Error processing prediction for {exchange}: {e}")
-return ExchangeResult(
+    return ExchangeResult(
 exchange=exchange,
 timestamp=datetime.now(),
 prediction=0.0,
@@ -244,11 +178,7 @@ executed=False,
 error_message=str(e),
 )
 
-@handle_errors(
-exceptions=(KeyError, ValueError, ZeroDivisionError),
-default_return=None,
-context="metrics update",
-)
+@handle_errors( exceptions=(KeyError, ValueError, ZeroDivisionError), default_return=None, context="metrics update", )
 async def _update_metrics(self, exchange: str, result: ExchangeResult) -> None:
         """Update performance metrics for an exchange."""
 try:
@@ -286,11 +216,7 @@ metrics["accuracy"] * (metrics["total_executions"] - 1) + 0
 except Exception as e:
             self.logger.error(f"Error updating metrics: {e}")
 
-@handle_errors(
-exceptions=(Exception,),
-default_return=False,
-context="A/B test stop",
-)
+@handle_errors( exceptions=(Exception,), default_return=False, context="A/B test stop", )
 async def stop_ab_test(self) -> bool:
         """Stop the current A/B test and generate results."""
 try:
@@ -300,8 +226,8 @@ except Exception as e:
 if not self.is_running:
                 return False
 
-self.is_running = False
-self.logger.info("🛑 Stopping A/B test...")
+    self.is_running = False
+    self.logger.info("🛑 Stopping A/B test...")
 
 # Generate final results
 await self._generate_results()
@@ -309,18 +235,14 @@ await self._generate_results()
 # Save results
 await self._save_results()
 
-self.logger.info("✅ A/B test completed successfully")
-return True
+    self.logger.info("✅ A/B test completed successfully")
+    return True
 
 except Exception as e:
             self.logger.error(f"Error stopping A/B test: {e}")
-return False
+    return False
 
-@handle_errors(
-exceptions=(KeyError, ValueError, AttributeError),
-default_return=None,
-context="results generation",
-)
+@handle_errors( exceptions=(KeyError, ValueError, AttributeError), default_return=None, context="results generation", )
 async def _generate_results(self) -> None:
         """Generate final test results."""
 try:
@@ -330,7 +252,7 @@ except Exception as e:
 if not self.current_test:
                 return
 
-self.logger.info("📊 Generating A/B test results...")
+    self.logger.info("📊 Generating A/B test results...")
 
 # Create comparison summary
 comparison_data = []
@@ -354,7 +276,7 @@ if comparison_data:
                 df = pd.DataFrame(comparison_data)
 
 # Log summary
-self.logger.info("🏆 Exchange Performance Summary:")
+    self.logger.info("🏆 Exchange Performance Summary:")
 for _, row in df.iterrows():
                     self.logger.info(
 f"  {row['exchange']}: "
@@ -367,21 +289,17 @@ f"ExecRate={row['execution_rate']:.3f}",
 best_pnl = df.loc[df["total_profit_loss"].idxmax()]
 best_accuracy = df.loc[df["accuracy"].idxmax()]
 
-self.logger.info(
+    self.logger.info(
 f"🥇 Best P&L: {best_pnl['exchange']} ({best_pnl['total_profit_loss']:.4f})",
 )
-self.logger.info(
+    self.logger.info(
 f"🎯 Best Accuracy: {best_accuracy['exchange']} ({best_accuracy['accuracy']:.3f})",
 )
 
 except Exception as e:
             self.logger.error(f"Error generating results: {e}")
 
-@handle_errors(
-exceptions=(IOError, OSError, AttributeError),
-default_return=None,
-context="results saving",
-)
+@handle_errors( exceptions=(IOError, OSError, AttributeError), default_return=None, context="results saving", )
 async def _save_results(self) -> None:
         """Save test results to file."""
 try:
@@ -409,23 +327,19 @@ for exchange, results in self.test_results.items()
 with open(filename, "w") as f:
                 json.dump(save_data, f, indent=2, default=str)
 
-self.logger.info(f"💾 Test results saved to {filename}")
+    self.logger.info(f"💾 Test results saved to {filename}")
 
 except Exception as e:
             self.logger.error(f"Error saving results: {e}")
 
-@handle_errors(
-exceptions=(AttributeError,),
-default_return={},
-context="test status retrieval",
-)
+@handle_errors( exceptions=(AttributeError,), default_return={}, context="test status retrieval", )
 def get_test_status(self) -> dict[str, Any]:
         """Get current test status."""
 try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-return {
+    return {
 "is_running": self.is_running,
 "current_test": asdict(self.current_test)
 if self.current_test
@@ -441,13 +355,9 @@ for exchange, results in self.test_results.items()
 }
 except Exception as e:
             self.logger.error(f"Error getting test status: {e}")
-return {"error": str(e)}
+    return {"error": str(e)}
 
-@handle_errors(
-exceptions=(Exception,),
-default_return=None,
-context="A/B tester cleanup",
-)
+@handle_errors( exceptions=(Exception,), default_return=None, context="A/B tester cleanup", )
 async def cleanup(self) -> None:
         """Cleanup resources."""
 try:
@@ -457,18 +367,14 @@ except Exception as e:
 if self.is_running:
                 await self.stop_ab_test()
 
-self.test_results.clear()
-self.performance_metrics.clear()
-self.logger.info("✅ Exchange A/B Tester cleanup completed")
+    self.test_results.clear()
+    self.performance_metrics.clear()
+    self.logger.info("✅ Exchange A/B Tester cleanup completed")
 
 except Exception as e:
             self.logger.error(f"Error during cleanup: {e}")
 
-@handle_errors(
-exceptions=(Exception,),
-default_return=None,
-context="exchange A/B tester setup",
-)
+@handle_errors( exceptions=(Exception,), default_return=None, context="exchange A/B tester setup", )
 async def setup_exchange_ab_tester(
 config: dict[str, Any] = None,
 ) -> ExchangeABTester | None:
@@ -483,8 +389,8 @@ if config is None:
 tester = ExchangeABTester(config)
 if await tester.initialize():
             return tester
-return None
+    return None
 
 except Exception as e:
         system_logger.exception(f"Error setting up exchange A/B tester: {e}")
-return None
+    return None

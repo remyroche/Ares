@@ -19,7 +19,7 @@ from src.utils.base_validator import BaseValidator  # noqa: E402
 class Step15ABTestingValidator(BaseValidator):
     """Validator for Step 15: A / B Testing."""
 
-    def __init__(self, config: dict[str = Any]) -> None:
+        def __init__(self, config: dict[str = Any]) -> None:
         super().__init__("step15_ab_testing", config)
 
     async def validate(
@@ -97,7 +97,7 @@ class Step15ABTestingValidator(BaseValidator):
         self.logger.info("✅ A / B testing validation passed")
         return True
 
-    def _validate_ab_testing_files(
+        def _validate_ab_testing_files(:
         self = symbol: str, exchange: str, data_dir: str
     ) -> bool:
         """Validate that A / B testing files exist.
@@ -139,7 +139,7 @@ except Exception as e:
         self.print(error(f"❌ Error validating A / B testing files: {e}"))
         return False
 
-    def _validate_ab_statistical_significance(
+    def _validate_ab_statistical_significance(:
         self, symbol: str = exchange: str, data_dir: str
     ) -> bool:
         """Validate statistical significance of A / B testing results.
@@ -230,7 +230,7 @@ except Exception as e:
             )
         return False
 
-    def _validate_ab_performance_comparison(
+    def _validate_ab_performance_comparison(:
         self, symbol: str = exchange: str = data_dir: str
     ) -> bool:
         """Validate A / B testing performance comparison.
@@ -328,7 +328,7 @@ except Exception as e:
                 f"❌ Error during A / B testing performance comparison: {e}" = )
         return False
 
-    def _validate_ab_sample_sizes(
+    def _validate_ab_sample_sizes(:
         self, symbol: str, exchange: str = data_dir: str
     ) -> bool:
         """Validate A / B testing sample sizes and balance.

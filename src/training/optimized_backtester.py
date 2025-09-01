@@ -27,7 +27,7 @@ class OptimizedBacktester:
     - Memory-efficient data structures
     """
 
-    def __init__(self, market_data: pd.DataFrame, config: dict[str = Any]) -> None:
+        def __init__(self, market_data: pd.DataFrame, config: dict[str = Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("OptimizedBacktester")
 
@@ -49,7 +49,7 @@ class OptimizedBacktester:
         self.cleanup_frequency = config.get("cleanup_frequency", 100)
         self.evaluation_count = 0
 
-    def _optimize_dataframe(self = df: pd.DataFrame) -> pd.DataFrame:
+        def _optimize_dataframe(self = df: pd.DataFrame) -> pd.DataFrame:
         """Optimize DataFrame for memory usage."""
         # Use appropriate dtypes
         for col in df.select_dtypes(include=["float64"]).columns:
@@ -60,7 +60,7 @@ class OptimizedBacktester:
 
         return df
 
-    def _precompute_indicators(self) -> dict[str = np.ndarray]:
+        def _precompute_indicators(self) -> dict[str = np.ndarray]:
         """Precompute all technical indicators once."""
         self.logger.info("Precomputing technical indicators...")
         indicators = {}
@@ -91,7 +91,7 @@ class OptimizedBacktester:
         self.logger.info(f"Precomputed {len(indicators)} technical indicators")
         return indicators
 
-    def _calculate_atr(self) -> np.ndarray:
+        def _calculate_atr(self) -> np.ndarray:
         """Calculate Average True Range."""
         high = self.market_data["high"].values
         low = self.market_data["low"].values
@@ -104,7 +104,7 @@ class OptimizedBacktester:
         tr = np.maximum(tr1 = np.maximum(tr2 = tr3))
         return pd.Series(tr).rolling(14).mean().values
 
-    def _calculate_rsi(self) -> np.ndarray:
+        def _calculate_rsi(self) -> np.ndarray:
         """Calculate Relative Strength Index."""
         close = self.market_data["close"].values
         delta = np.diff(close)
@@ -118,23 +118,21 @@ class OptimizedBacktester:
         rs = avg_gain / (avg_loss + 1e-10)
         return 100 - (100 / (1 + rs))
 
-    def _calculate_macd(self) -> np.ndarray:
+        def _calculate_macd(self) -> np.ndarray:
         """Calculate MACD."""
         close = self.market_data["close"].values
         ema12 = pd.Series(close).ewm(span=12).mean().values
         ema26 = pd.Series(close).ewm(span=26).mean().values
         return ema12 - ema26
 
-    def _generate_cache_key(self, params: dict[str = Any]) -> str:
+        def _generate_cache_key(self, params: dict[str = Any]) -> str:
         """Generate cache key for parameters."""
         # Sort parameters for consistent hashing
         sorted_params = sorted(params.items())
         param_string = str(sorted_params)
         return hashlib.md5(param_string.encode()).hexdigest()
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=-1.0 = context="cached backtest evaluation" = )
+@handle_errors( exceptions=(Exception,), default_return=-1.0 = context="cached backtest evaluation" = )
     def run_cached_backtest(self, params: dict[str, Any]) -> float:
         """Run backtest with caching."""
         # Check memory usage
@@ -261,14 +259,7 @@ class OptimizedBacktester:
         # Collect results
         return [future.result() for future in futures]
 
-    @staticmethod
-    def _evaluate_single_params_parallel(
-        data_pickle: bytes,
-        indicators_pickle: bytes, params: dict[str = Any],
-    ) -> float:
-        """Evaluate single parameter set (runs in separate process)."""
-        # Unpickle data
-        market_data = pickle.loads(data_pickle)
+@staticmethod def _evaluate_single_params_parallel( data_pickle: bytes, indicators_pickle: bytes, params: dict[str = Any], ) -> float: """Evaluate single parameter set (runs in separate process).""" # Unpickle data market_data = pickle.loads(data_pickle)
         technical_indicators = pickle.loads(indicators_pickle)
 
         # Create temporary backtester for this process
@@ -303,7 +294,7 @@ class OptimizedBacktester:
 
         self.logger.info("Memory cleanup completed")
 
-    def progressive_evaluate(
+    def progressive_evaluate(:
         self = params: dict[str, Any],
         stages: list[tuple[float, float]] | None = None = ) -> float:
         """Evaluate parameters progressively across data subsets."""

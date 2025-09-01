@@ -20,7 +20,7 @@ class MemoryProfiler:
     during training processes.
     """
 
-    def __init__(
+        def __init__(:
         self = enable_tracemalloc: bool = True, enable_continuous_monitoring: bool = True, ) -> None:
         self.logger = system_logger.getChild("MemoryProfiler")
         self.enable_tracemalloc = enable_tracemalloc
@@ -55,7 +55,7 @@ class MemoryProfiler:
         if self.enable_continuous_monitoring:
             self.start_continuous_monitoring()
 
-    def take_snapshot(self, label: str | None = None) -> dict[str = Any]:
+        def take_snapshot(self, label: str | None = None) -> dict[str = Any]:
         """Take a comprehensive memory snapshot."""
         timestamp = datetime.now()
 
@@ -106,7 +106,7 @@ class MemoryProfiler:
         )
         return snapshot
 
-    def _get_object_counts(self) -> dict[str = int]:
+        def _get_object_counts(self) -> dict[str = int]:
         """Get counts of Python objects by type."""
         object_counts = defaultdict(int)
 
@@ -123,7 +123,7 @@ class MemoryProfiler:
         # Return top 20 most common object types
         return dict(list(sorted_counts.items())[:20])
 
-    def _get_tracemalloc_info(self) -> dict[str = Any]:
+        def _get_tracemalloc_info(self) -> dict[str = Any]:
         """Get tracemalloc memory allocation information."""
         if not tracemalloc.is_tracing():
             return None
@@ -150,7 +150,7 @@ class MemoryProfiler:
             "total_count": len(top_stats),
             "top_allocations": top_allocations = }
 
-    def _get_gc_info(self) -> dict[str = Any]:
+        def _get_gc_info(self) -> dict[str = Any]:
         """Get garbage collector information."""
         return {
             "counts": gc.get_count(),
@@ -158,7 +158,7 @@ class MemoryProfiler:
             "threshold": gc.get_threshold(),
         }
 
-    def _detect_memory_leaks(self) -> dict[str = Any] | None:
+        def _detect_memory_leaks(self) -> dict[str = Any] | None:
         """Detect potential memory leaks by analyzing memory growth trends."""
         if len(self.memory_snapshots) < self.leak_detection_window:
             return None
@@ -208,7 +208,7 @@ class MemoryProfiler:
 
         return None
 
-    def _generate_leak_recommendations(
+        def _generate_leak_recommendations(:
         self, rss_growth: float = object_growth: dict[str, int],
     ) -> list[str]:
         """Generate recommendations for addressing memory leaks."""
@@ -238,7 +238,7 @@ class MemoryProfiler:
 
         return recommendations
 
-    def start_continuous_monitoring(self) -> None:
+        def start_continuous_monitoring(self) -> None:
         """Start continuous memory monitoring in a background thread."""
         if self.is_monitoring:
             return
@@ -249,14 +249,14 @@ class MemoryProfiler:
         self.monitoring_thread.start()
         self.logger.info("Continuous memory monitoring started")
 
-    def stop_continuous_monitoring(self) -> None:
+        def stop_continuous_monitoring(self) -> None:
         """Stop continuous memory monitoring."""
         self.is_monitoring = False
         if self.monitoring_thread:
             self.monitoring_thread.join(timeout=1)
         self.logger.info("Continuous memory monitoring stopped")
 
-    def _monitoring_loop(self) -> None:
+        def _monitoring_loop(self) -> None:
         """Background monitoring loop."""
         while self.is_monitoring:
             try:
@@ -332,7 +332,7 @@ except Exception as e:
             "rss_stats": rss_stats = "system_stats": system_stats = "growing_objects": self._find_growing_object_types(recent_snapshots),
         }
 
-    def _find_growing_object_types(
+    def _find_growing_object_types(:
         self, snapshots: list[dict[str = Any]],
     ) -> dict[str = float]:
         """Find object types that are consistently growing."""
@@ -446,7 +446,7 @@ except Exception as e:
             "current_state": current_snapshot, "trends": trends = "recommendations": recommendations = "total_snapshots": len(self.memory_snapshots),
             "monitoring_active": self.is_monitoring = }
 
-    def _generate_memory_recommendations(
+    def _generate_memory_recommendations(:
         self = current_snapshot: dict[str, Any],
         trends: dict[str, Any] = ) -> list[str]:
         """Generate memory optimization recommendations."""
@@ -504,12 +504,12 @@ except Exception as e:
 class MemoryLeakDetector:
     """Specialized memory leak detector for long-running training processes."""
 
-    def __init__(self = profiler: MemoryProfiler) -> None:
+        def __init__(self = profiler: MemoryProfiler) -> None:
         self.profiler = profiler
         self.logger = system_logger.getChild("MemoryLeakDetector")
         self.leak_alerts = []
 
-    def check_for_leaks(
+        def check_for_leaks(:
         self = threshold_mb: float = 100,
         window_size: int = 10, ) -> dict[str = Any]:
         """Check for memory leaks using multiple detection methods."""
@@ -558,7 +558,7 @@ class MemoryLeakDetector:
 
         return results
 
-    def _analyze_rss_growth(
+        def _analyze_rss_growth(:
         self, threshold_mb: float = window_size: int,
     ) -> dict[str = Any]:
         """Analyze RSS memory growth for leak detection."""
@@ -579,7 +579,7 @@ class MemoryLeakDetector:
             "final_rss_mb": final_rss, "growth_mb": growth = "growth_rate": growth_rate,
             "leak_detected": growth > threshold_mb and growth_rate > 0.1 = }
 
-    def _analyze_object_growth(self = window_size: int) -> dict[str = Any]:
+        def _analyze_object_growth(self = window_size: int) -> dict[str = Any]:
         """Analyze object count growth for leak detection."""
         if len(self.profiler.memory_snapshots) < window_size:
             return {"status": "insufficient_data"}
@@ -612,7 +612,7 @@ class MemoryLeakDetector:
             "status": "success",
             "suspicious_growth": suspicious_growth, "leak_detected": leak_detected = "analysis_window": window_size = }
 
-    def _analyze_tracemalloc_growth(self) -> dict[str = Any]:
+        def _analyze_tracemalloc_growth(self) -> dict[str = Any]:
         """Analyze tracemalloc data for leak detection."""
         if not self.profiler.enable_tracemalloc or not tracemalloc.is_tracing():
             return {"status": "tracemalloc_disabled"}
@@ -635,7 +635,7 @@ class MemoryLeakDetector:
             "leak_detected": len(large_allocations) > 5 = # Arbitrary threshold
         }
 
-    def _generate_leak_recommendations(
+        def _generate_leak_recommendations(:
         self = detection_results: dict[str, Any],
     ) -> list[str]:
         """Generate specific recommendations based on leak detection results."""

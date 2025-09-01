@@ -7,34 +7,7 @@ import os
 from dataclasses import dataclass
 
 
-@dataclass
-class PlaceholderDataClass:
-    pass  # TODO: Add implementation
-class EnsembleConfig:
-    pass  # TODO: Add implementation
-class EnsembleConfig:
-    pass  # TODO: Add implementation
-class EnsembleConfig:
-    weights: dict[str, float]
-macro_thresholds: dict[
-str, dict[str, dict[str, float]],
-]  # regime -> timeframe -> {class: thr}
-timeframe_thresholds: dict[str, dict[str, float]]  # timeframe -> {class: thr}
-reliability_path: str | None
-
-
-class TransitionInferenceCombiner:
-    pass  # TODO: Add implementation
-class TransitionInferenceCombiner:
-    pass  # TODO: Add implementation
-class TransitionInferenceCombiner:
-    """
-Combine per-timeframe path_class probabilities into a single, reliability-adjusted score,
-apply macro-regime thresholds for gating, and compute an exit bias with conservative rules.
-"""
-
-def __init__(self, config: dict[str, Any]) -> None:
-        self.logger = system_logger.getChild("TransitionInferenceCombiner")
+@dataclass class PlaceholderDataClass: pass  # TODO: Add implementation class EnsembleConfig: pass  # TODO: Add implementation class EnsembleConfig: pass  # TODO: Add implementation class EnsembleConfig: weights: dict[str, float] macro_thresholds: dict[ str, dict[str, dict[str, float]], ]  # regime -> timeframe -> {class: thr} timeframe_thresholds: dict[str, dict[str, float]]  # timeframe -> {class: thr} reliability_path: str | None   class TransitionInferenceCombiner: pass  # TODO: Add implementation class TransitionInferenceCombiner: pass  # TODO: Add implementation class TransitionInferenceCombiner: """ Combine per-timeframe path_class probabilities into a single, reliability-adjusted score, apply macro-regime thresholds for gating, and compute an exit bias with conservative rules. """  def __init__(self, config: dict[str, Any]) -> None: self.logger = system_logger.getChild("TransitionInferenceCombiner")
 tm = (config or {}).get("TRANSITION_MODELING", {})
 ens = tm.get("timeframe_ensemble", {}) or {}
 inf = tm.get("inference", {}) or {}
@@ -42,7 +15,7 @@ seq = tm.get("seq2seq", {}) or {}
 artifact_dir = str(
 seq.get("artifact_dir_models", "checkpoints/transition_models"),
 )
-self.cfg = EnsembleConfig(
+    self.cfg = EnsembleConfig(
 weights=ens.get(
 "weights",
 {"1m": 0.3, "5m": 0.3, "15m": 0.25, "30m": 0.15},
@@ -51,8 +24,8 @@ macro_thresholds=inf.get("macro_regime_thresholds", {}),
 timeframe_thresholds=inf.get("path_class_thresholds", {}),
 reliability_path=os.path.join(artifact_dir, "reliability.json"),
 )
-self.reliability: dict[str, dict[str, float]] = self._load_reliability(
-self.cfg.reliability_path,
+    self.reliability: dict[str, dict[str, float]] = self._load_reliability(
+    self.cfg.reliability_path,
 )
 
 def _load_reliability(self, path: str | None) -> dict[str, dict[str, float]]:
@@ -72,14 +45,15 @@ if isinstance(d, dict)
 }
 except Exception as e:
             self.logger.warning(f"Failed to load transition reliability: {e}")
-return {}
+    return {}
 
 def _apply_reliability(self, timeframe: str, cls: str, p: float) -> float:
         # Simple multiplicative scaling; can be replaced by calibrated curves later
 s = float(self.reliability.get(timeframe, {}).get(cls, 1.0))
-return max(0.0, min(1.0, p * s))
+    return max(0.0, min(1.0, p * s))
 
-def combine_probs(
+def combine_probs(:
+    pass  # TODO: Add implementation
 self,
 path_probs_by_timeframe: dict[str, dict[str, float]],
 ) -> dict[str, float]:
@@ -102,9 +76,10 @@ combined[c] += w * p_adj
 if weight_sum > 0:
             for c in combined:
                 combined[c] /= weight_sum
-return combined
+    return combined
 
-def gate_decision(
+def gate_decision(:
+    pass  # TODO: Add implementation
 self,
 combined_probs: dict[str, float],
 timeframe: str = None,
@@ -127,13 +102,14 @@ if cont >= thr_cont:
             allow, trigger = True, "continuation"
 if bot >= thr_bot and bot >= cont:
             allow, trigger = True, "beginning_of_trend"
-return {
+    return {
 "allow_trade": allow,
 "trigger": trigger,
 "thresholds": {"continuation": thr_cont, "beginning_of_trend": thr_bot},
 }
 
-def exit_bias(
+def exit_bias(:
+    pass  # TODO: Add implementation
 self,
 path_probs_1m: dict[str, float],
 _position_side: str = "long",
@@ -165,7 +141,7 @@ adverse = r_rev
 bias = adverse - favorable
 strong_reversal = adverse > 0.40
 exit_flag = bool(strong_reversal or bias > 0)
-return {
+    return {
 "exit_bias": float(bias),
 "p_reversal": float(adverse),
 "p_favorable": float(favorable),

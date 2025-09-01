@@ -202,10 +202,11 @@ if tf in ("1m", "5m"):
 if tf in ("15m", "30m"):
         return "high"
 # default to high for unknown intraday
-return "high"
+    return "high"
 
 
-def get_model_choice_for_label(
+def get_model_choice_for_label(:
+    pass  # TODO: Add implementation
 label: str, timeframe: str,
 ) -> tuple[str, dict[str, Any]]:
     """Return (model_key, params) for the given base label and timeframe.
@@ -218,7 +219,7 @@ cfg = LABEL_GROUPS.get(base)
 if not cfg:
         return "lightgbm", {"num_leaves": 48}
 key, params = cfg.get(band, cfg.get("high"))
-return key, dict(params or {})
+    return key, dict(params or {})
 
 
 def build_model(model_key: str, params: dict[str, Any]) -> Any:
@@ -314,46 +315,46 @@ class HMMWrapper:
 class HMMWrapper:
     pass  # TODO: Add implementation
 class HMMWrapper:
-                    def __init__(self, n_states: int = 4):
-                    def __init__(self, n_states: int = 4):
-                    def __init__(self, n_states: int = 4):
-                    def __init__(self, n_states: int = 4):
+                        def __init__(self, n_states: int = 4):
+                        def __init__(self, n_states: int = 4):
+                        def __init__(self, n_states: int = 4):
+                        def __init__(self, n_states: int = 4):
                         self.hmm = GaussianHMM(
 n_components=n_states,
 covariance_type="diag",
 random_state=42,
 )
-self.decoder = LogisticRegression(
+    self.decoder = LogisticRegression(
 max_iter=500,
 random_state=42,
 )
-self._fitted = False
+    self._fitted = False
 
 def fit(self, x: Any, y: Any) -> HMMWrapper:
                         if isinstance(x, pd.DataFrame | pd.Series):
                             x_arr = x.to_numpy()
 else:
                             x_arr = np.asarray(x)
-self.hmm.fit(x_arr)
+    self.hmm.fit(x_arr)
 states = self.hmm.predict(x_arr)
-self.decoder.fit(states.reshape(-1, 1), y)
-self._fitted = True
-return self
+    self.decoder.fit(states.reshape(-1, 1), y)
+    self._fitted = True
+    return self
 
 def predict_proba(self, x: Any) -> np.ndarray:
                         x_arr = x.values if hasattr(x, "values") else np.asarray(x)
 states = self.hmm.predict(x_arr)
-return self.decoder.predict_proba(states.reshape(-1, 1))
+    return self.decoder.predict_proba(states.reshape(-1, 1))
 
 def predict(self, x: Any) -> np.ndarray:
                         proba = self.predict_proba(x)
-return (proba[:, -1] > DEFAULT_PROBA_THRESHOLD).astype(int)
+    return (proba[:, -1] > DEFAULT_PROBA_THRESHOLD).astype(int)
 
-return HMMWrapper(n_states=int(params.get("n_states", 4)))
+    return HMMWrapper(n_states=int(params.get("n_states", 4)))
 except Exception:  # noqa: BLE001 - optional dependency fallback
-return mapping["lightgbm"]
+    return mapping["lightgbm"]
 
-return mapping.get(
+    return mapping.get(
 key,
 RandomForestClassifier(
 n_estimators=200,
@@ -363,7 +364,7 @@ n_jobs=-1,
 ),
 )
 except Exception:  # noqa: BLE001 - safe factory fallback
-return RandomForestClassifier(
+    return RandomForestClassifier(
 n_estimators=200,
 max_depth=10,
 random_state=42,
@@ -376,4 +377,4 @@ def select_model_for_label_timeframe(label: str, timeframe: str):
     def select_model_for_label_timeframe(label: str, timeframe: str):
     def select_model_for_label_timeframe(label: str, timeframe: str):
     key, params = get_model_choice_for_label(label, timeframe)
-return build_model(key, params)
+    return build_model(key, params)

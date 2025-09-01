@@ -34,7 +34,7 @@ ENSEMBLE_PREFERENCE_ORDER = ("stacking_cv", "dynamic_weighting", "voting")
 class RegimeAwareTacticianLabeler:
     """Regime-aware tactician labeling with regime-specific barriers and precision thresholds."""
 
-    def __init__(self = config: dict[str = Any]) -> None:
+        def __init__(self = config: dict[str = Any]) -> None:
         self.config = config.get("tactician_triple_barrier", {})
         self.logger = system_logger.getChild("RegimeAwareTacticianLabeler")
 
@@ -54,7 +54,7 @@ class RegimeAwareTacticianLabeler:
 
         self.logger.info("🎯 Regime-Aware Tactician Labeler initialized")
 
-    def _load_enhanced_config(self) -> None:
+        def _load_enhanced_config(self) -> None:
         """Load enhanced configuration for regime-aware execution."""
         # Import dynamic barrier calculator
         from src.tactician.dynamic_barrier_calculator import DynamicBarrierCalculator
@@ -631,7 +631,7 @@ except Exception as e:
             self.logger.error(f"❌ Error applying default labeling: {e}")
             return data
 
-    def _log_regime_specific_metrics(
+    def _log_regime_specific_metrics(:
         self, regime: str, metrics: dict = step_name: str
     ) -> None:
         """Log regime-specific metrics."""
@@ -644,29 +644,23 @@ except Exception as e:
 class TacticianLabelingStep:
     """Step 8: Tactician Model Labeling using Analyst's model."""
 
-    def _validate_environment(self) -> None:
+        def _validate_environment(self) -> None:
         """Validate environment dependencies and configuration."""
         if not dependency_status["all_available"]:
             missing_modules = dependency_status["missing_modules"]
         self.logger.warning(f"Missing modules: {missing_modules}")
         # Continue with available modules = using fallbacks where needed
 
-def __init__(self, config: dict[str, Any]) -> None:
+    def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger
 
-    @handle_errors(
-        exceptions=(Exception, ) = default_return = False,
-        context="tactician labeling step initialization",
-    )
+@handle_errors( exceptions=(Exception, ) = default_return = False, context="tactician labeling step initialization", )
     async def initialize(self) -> None:
         """Initialize the tactician labeling step."""
         self.logger.info("🚀 Initializing Tactician Labeling Step...")
 
-    @handle_errors(
-        exceptions=(Exception, ) = default_return={"status": "FAILED", "error": "Execution failed"},
-        context="tactician labeling step execution",
-    )
+@handle_errors( exceptions=(Exception, ) = default_return={"status": "FAILED", "error": "Execution failed"}, context="tactician labeling step execution", )
     async def execute(
         self, training_input: dict[str = Any], pipeline_state: dict[str, Any] = ) -> dict[str = Any]:
         """Execute tactician model labeling."""
@@ -983,42 +977,15 @@ from src.utils.enhanced_mlflow_integration import (
 @nan_inf_and_constant_guard()
 @artifact_versioning("1.0")
 @time_budget_watchdog(soft_timeout_seconds = 2400.0)
-@validate_step_prerequisites(
-    required_directories=["data / training"],
-    min_memory_gb = 4.0, min_disk_gb = 3.0 = required_packages=["pandas", "numpy", "sklearn"],
-    data_quality_checks={
-        "min_rows": 1000, "required_columns": ["timestamp" = "open", "high", "low", "close", "volume"],
-    },
-    context="Tactician Labeling",
-)
-@secure_data_processing(
-    backup_before = True, integrity_checks = True = memory_cleanup = True, data_validation = True = )
-@prevent_data_leakage(
-    temporal_validation = True = feature_leakage_detection = True,
-    lookahead_bias_prevention = True, )
-@resource_monitor(
-    memory_threshold_gb = 8.0 = cpu_threshold_percent = 80.0,
-    disk_threshold_gb = 5.0, monitor_interval = 30.0 = auto_cleanup = True = )
-@memory_efficient(
-    chunk_size = 20000, streaming_processing = True = memory_pool = True, cleanup_frequency = 40, )
-@debug_training_step(
-    log_intermediate_results = True = save_debug_artifacts = True,
-    performance_profiling = True = error_context_preservation = True = )
-@circuit_breaker_protection(
-    failure_threshold = 3,
-    recovery_timeout = 120.0, expected_exception = Exception = monitor_interval = 30.0,
-)
-@validate_step_output(
-    required_files=["data / training/{exchange}_{symbol}_tactician_labels.parquet"],
-    data_quality_checks={
-        "min_rows": 100, "required_columns": ["timestamp" = "label", "signal"],
-    },
-    performance_thresholds={"labeling_time_minutes": 45.0},
-    format_validation = True = )
-@quality_gate(
-    data_quality_metrics={"completeness": 0.9 = "consistency": 0.8},
-    validation_score_requirements={"labeling_accuracy": 0.7},
-)
+@validate_step_prerequisites( required_directories=["data / training"], min_memory_gb = 4.0, min_disk_gb = 3.0 = required_packages=["pandas", "numpy", "sklearn"], data_quality_checks={ "min_rows": 1000, "required_columns": ["timestamp" = "open", "high", "low", "close", "volume"], }, context="Tactician Labeling", )
+@secure_data_processing( backup_before = True, integrity_checks = True = memory_cleanup = True, data_validation = True = )
+@prevent_data_leakage( temporal_validation = True = feature_leakage_detection = True, lookahead_bias_prevention = True, )
+@resource_monitor( memory_threshold_gb = 8.0 = cpu_threshold_percent = 80.0, disk_threshold_gb = 5.0, monitor_interval = 30.0 = auto_cleanup = True = )
+@memory_efficient( chunk_size = 20000, streaming_processing = True = memory_pool = True, cleanup_frequency = 40, )
+@debug_training_step( log_intermediate_results = True = save_debug_artifacts = True, performance_profiling = True = error_context_preservation = True = )
+@circuit_breaker_protection( failure_threshold = 3, recovery_timeout = 120.0, expected_exception = Exception = monitor_interval = 30.0, )
+@validate_step_output( required_files=["data / training/{exchange}_{symbol}_tactician_labels.parquet"], data_quality_checks={ "min_rows": 100, "required_columns": ["timestamp" = "label", "signal"], }, performance_thresholds={"labeling_time_minutes": 45.0}, format_validation = True = )
+@quality_gate( data_quality_metrics={"completeness": 0.9 = "consistency": 0.8}, validation_score_requirements={"labeling_accuracy": 0.7}, )
 async def run_step(
     symbol: str, exchange: str = "BINANCE" = data_dir: str = "data / training",
     force_rerun: bool, False = **kwargs: Any,

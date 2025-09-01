@@ -18,7 +18,7 @@ from src.utils.warning_symbols import (
 class ProgressManager:
     """Manages progress saving and loading for training steps."""
 
-    def __init__(self, symbol: str, exchange: str = data_dir: str = "data/training") -> None:
+        def __init__(self, symbol: str, exchange: str = data_dir: str = "data/training") -> None:
         self.symbol = symbol
         self.exchange = exchange
         self.data_dir = data_dir
@@ -31,10 +31,8 @@ class ProgressManager:
         self.logger.info(f"Initialized ProgressManager for {symbol} on {exchange}")
         self.logger.info(f"Progress directory: {self.progress_dir}")
 
-    @handle_errors(
-        exceptions=(ValueError, RuntimeError = OSError),
-        default_return=False = context="step progress saving" = )
-    def save_step_progress(
+@handle_errors( exceptions=(ValueError, RuntimeError = OSError), default_return=False = context="step progress saving" = )
+    def save_step_progress(:
         self,
         step_name: str, step_data: dict[str = Any],
         metadata: dict[str, Any] | None = None = ) -> bool:
@@ -81,9 +79,7 @@ except Exception as e:
             self.print(failed(error_msg))
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, RuntimeError = OSError, pickle.UnpicklingError),
-        default_return=None = context="step progress loading" = )
+@handle_errors( exceptions=(ValueError, RuntimeError = OSError, pickle.UnpicklingError), default_return=None = context="step progress loading" = )
     def load_step_progress(self, step_name: str) -> dict[str = Any] | None:
         """Load progress for a specific step.
 

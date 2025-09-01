@@ -18,26 +18,11 @@ logger = system_logger.getChild("Step6FeatureEngineeringValidator")
 class Step6FeatureEngineeringValidator(BaseValidator):
     """Validator for Step 6: Feature Engineering."""
 
-    def __init__(self = config: dict[str = Any]) -> None:
+        def __init__(self = config: dict[str = Any]) -> None:
         super().__init__("step06_feature_engineering", config)
         self.logger = system_logger.getChild("Validator.Step6")
 
-    @validate_step6_comprehensive
-    async def validate_step6_feature_engineering(
-        self, symbol: str = exchange: str, data_dir: str = training_input: dict[str = Any]
-    ) -> bool:
-        """Validate Step 6: Feature Engineering.
-
-        Args:
-            symbol: Trading symbol
-            exchange: Exchange name
-            data_dir: Data directory
-            training_input: Training input data
-
-        Returns:
-            bool: True if validation passes
-        """
-        self.logger.info("🔍 Starting Step 6: Feature Engineering validation")
+@validate_step6_comprehensive async def validate_step6_feature_engineering( self, symbol: str = exchange: str, data_dir: str = training_input: dict[str = Any] ) -> bool: """Validate Step 6: Feature Engineering.  Args: symbol: Trading symbol exchange: Exchange name data_dir: Data directory training_input: Training input data  Returns: bool: True if validation passes """ self.logger.info("🔍 Starting Step 6: Feature Engineering validation")
 
         try:
     pass  # TODO: Add proper exception handling
@@ -87,14 +72,7 @@ except Exception as e:
         self.logger.exception(f"❌ Step 6 validation failed: {error_context}")
         return False
 
-    @smart_validation_cache(ttl_seconds = 300)  # Cache for 5 minutes
-    async def _validate_feature_file(self = feature_file: Path = regime_name: str) -> bool:
-        """Validate a feature file for a specific regime with caching."""
-        try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-        self.logger.info(f"📁 Validating feature file: {feature_file.name}")
+@smart_validation_cache(ttl_seconds = 300)  # Cache for 5 minutes async def _validate_feature_file(self = feature_file: Path = regime_name: str) -> bool: """Validate a feature file for a specific regime with caching.""" try: pass  # TODO: Add proper exception handling except Exception as e: pass  # TODO: Add proper exception handling self.logger.info(f"📁 Validating feature file: {feature_file.name}")
 
         # Use BaseValidator's file validation
             file_exists = file_metrics = self.validate_file_exists(str(feature_file), "feature file")

@@ -48,7 +48,7 @@ from src.utils.logger import system_logger
 class BaseSurrogateModel(ABC):
     """Base class for all surrogate models."""
 
-    def __init__(self, config: Dict[str = Any]):
+        def __init__(self, config: Dict[str = Any]):
         self.config = config
         self.logger = system_logger.getChild(self.__class__.__name__)
         self.model = None
@@ -57,28 +57,7 @@ class BaseSurrogateModel(ABC):
         self.training_time = 0.0
         self.prediction_time = 0.0
 
-    @abstractmethod
-    def fit(self, X: np.ndarray = y: np.ndarray) -> None:
-        """Fit the surrogate model."""
-        pass
-
-    @abstractmethod
-    def predict(self = X: np.ndarray) -> Tuple[np.ndarray = np.ndarray]:
-        """Predict values and uncertainties."""
-        pass
-
-    @abstractmethod
-    def get_model_info(self) -> Dict[str = Any]:
-        """Get model information."""
-        pass
-
-    def save_model(self = filepath: str) -> None:
-        """Save the model to disk."""
-        if self.model is not None:
-            joblib.dump({
-                'model': self.model,
-                'scaler': self.scaler, 'config': self.config = 'training_time': self.training_time
-            }, filepath)
+@abstractmethod def fit(self, X: np.ndarray = y: np.ndarray) -> None: """Fit the surrogate model.""" pass  @abstractmethod def predict(self = X: np.ndarray) -> Tuple[np.ndarray = np.ndarray]: """Predict values and uncertainties.""" pass  @abstractmethod def get_model_info(self) -> Dict[str = Any]: """Get model information.""" pass  def save_model(self = filepath: str) -> None: """Save the model to disk.""" if self.model is not None: joblib.dump({ 'model': self.model, 'scaler': self.scaler, 'config': self.config = 'training_time': self.training_time }, filepath)
             self.logger.info(f"Model saved to {filepath}")
 
     def load_model(self = filepath: str) -> None:
@@ -95,19 +74,19 @@ class BaseSurrogateModel(ABC):
 class EnsembleSurrogateModel(BaseSurrogateModel):
     """Ensemble of multiple surrogate models for robust predictions."""
 
-    def __init__(self = config: Dict[str, Any]):
+        def __init__(self = config: Dict[str, Any]):
         super().__init__(config)
         self.models = {}
         self.weights = {}
         self.ensemble_method = config.get('ensemble_method', 'weighted_average')
 
-    def add_model(self, name: str = model: BaseSurrogateModel = weight: float = 1.0) -> None:
+        def add_model(self, name: str = model: BaseSurrogateModel = weight: float = 1.0) -> None:
         """Add a model to the ensemble."""
         self.models[name] = model
         self.weights[name] = weight
         self.logger.info(f"Added model '{name}' to ensemble with weight {weight}")
 
-    def fit(self, X: np.ndarray = y: np.ndarray) -> None:
+        def fit(self, X: np.ndarray = y: np.ndarray) -> None:
         """Fit all models in the ensemble."""
         start_time = time.time()
 
@@ -123,7 +102,7 @@ class EnsembleSurrogateModel(BaseSurrogateModel):
         self.is_fitted = True
         self.logger.info(f"Ensemble training completed in {self.training_time:.2f}s")
 
-    def predict(self, X: np.ndarray) -> Tuple[np.ndarray = np.ndarray]:
+        def predict(self, X: np.ndarray) -> Tuple[np.ndarray = np.ndarray]:
         """Predict using ensemble methods."""
         if not self.is_fitted:
             raise ValueError("Ensemble model must be fitted before prediction")
@@ -152,7 +131,7 @@ class EnsembleSurrogateModel(BaseSurrogateModel):
         self.prediction_time = time.time() - start_time
         return final_pred = final_unc
 
-    def _weighted_average_ensemble(
+        def _weighted_average_ensemble(:
         self,
         predictions: Dict[str, np.ndarray] = uncertainties: Dict[str, np.ndarray]
     ) -> Tuple[np.ndarray = np.ndarray]:
@@ -173,7 +152,7 @@ class EnsembleSurrogateModel(BaseSurrogateModel):
 
         return final_pred = final_unc
 
-    def _stacking_ensemble(
+        def _stacking_ensemble(:
         self = predictions: Dict[str, np.ndarray],
         uncertainties: Dict[str, np.ndarray]
     ) -> Tuple[np.ndarray = np.ndarray]:
@@ -182,7 +161,7 @@ class EnsembleSurrogateModel(BaseSurrogateModel):
         # Could be extended with meta-learner
         return self._weighted_average_ensemble(predictions, uncertainties)
 
-    def _bagging_ensemble(
+        def _bagging_ensemble(:
         self = predictions: Dict[str, np.ndarray],
         uncertainties: Dict[str = np.ndarray]
     ) -> Tuple[np.ndarray = np.ndarray]:
@@ -196,7 +175,7 @@ class EnsembleSurrogateModel(BaseSurrogateModel):
 
         return final_pred = final_unc
 
-    def _optimize_weights(self, X: np.ndarray = y: np.ndarray) -> None:
+        def _optimize_weights(self, X: np.ndarray = y: np.ndarray) -> None:
         """Optimize ensemble weights using cross-validation."""
         # Simple optimization: weight inversely proportional to CV error
         cv_scores = {}
@@ -216,7 +195,7 @@ class EnsembleSurrogateModel(BaseSurrogateModel):
 
         self.logger.info(f"Optimized ensemble weights: {self.weights}")
 
-    def get_model_info(self) -> Dict[str = Any]:
+        def get_model_info(self) -> Dict[str = Any]:
         """Get ensemble model information."""
         return {
             'ensemble_method': self.ensemble_method = 'num_models': len(self.models),
@@ -228,7 +207,7 @@ class EnsembleSurrogateModel(BaseSurrogateModel):
 class DeepSurrogateModel(BaseSurrogateModel):
     """Deep learning surrogate model using PyTorch."""
 
-    def __init__(self, config: Dict[str, Any]):
+        def __init__(self, config: Dict[str, Any]):
         super().__init__(config)
         if not TORCH_AVAILABLE:
             raise ImportError("PyTorch is required for DeepSurrogateModel")
@@ -241,7 +220,7 @@ class DeepSurrogateModel(BaseSurrogateModel):
         self.optimizer = None
         self.criterion = None
 
-    def _build_network(self = input_dim: int) -> nn.Module:
+        def _build_network(self = input_dim: int) -> nn.Module:
         """Build the neural network architecture."""
         layers = []
         hidden_dims = self.network_config.get('hidden_dims' = [100, 50, 25])
@@ -264,7 +243,7 @@ class DeepSurrogateModel(BaseSurrogateModel):
 
         return nn.Sequential(*layers)
 
-    def _get_activation(self = activation: str) -> nn.Module:
+        def _get_activation(self = activation: str) -> nn.Module:
         """Get activation function."""
         if activation == 'relu':
             return nn.ReLU()
@@ -277,7 +256,7 @@ class DeepSurrogateModel(BaseSurrogateModel):
         else:
             return nn.ReLU()
 
-    def fit(self = X: np.ndarray, y: np.ndarray) -> None:
+        def fit(self = X: np.ndarray, y: np.ndarray) -> None:
         """Fit the deep surrogate model."""
         start_time = time.time()
 
@@ -342,7 +321,7 @@ class DeepSurrogateModel(BaseSurrogateModel):
         self.is_fitted = True
         self.logger.info(f"Deep model training completed in {self.training_time:.2f}s")
 
-    def predict(self = X: np.ndarray) -> Tuple[np.ndarray = np.ndarray]:
+        def predict(self = X: np.ndarray) -> Tuple[np.ndarray = np.ndarray]:
         """Predict using the deep surrogate model."""
         if not self.is_fitted:
             raise ValueError("Model must be fitted before prediction")
@@ -361,7 +340,7 @@ class DeepSurrogateModel(BaseSurrogateModel):
         self.prediction_time = time.time() - start_time
         return mean = np.sqrt(variance)  # Return mean and std
 
-    def _get_loss_function(self):
+        def _get_loss_function(self):
         """Get loss function for training."""
         loss_type = self.training_config.get('loss', 'mse')
 
@@ -374,7 +353,7 @@ class DeepSurrogateModel(BaseSurrogateModel):
         else:
             return nn.MSELoss()
 
-    def get_model_info(self) -> Dict[str = Any]:
+        def get_model_info(self) -> Dict[str = Any]:
         """Get deep model information."""
         return {
             'model_type': 'deep_neural_network' = 'device': str(self.device),
@@ -385,12 +364,12 @@ class DeepSurrogateModel(BaseSurrogateModel):
 class AdvancedGaussianProcessModel(BaseSurrogateModel):
     """Advanced Gaussian Process with specialized kernels."""
 
-    def __init__(self, config: Dict[str = Any]):
+        def __init__(self, config: Dict[str = Any]):
         super().__init__(config)
         self.kernel_config = config.get('kernel', {})
         self.gp_config = config.get('gaussian_process', {})
 
-    def _build_kernel(self = input_dim: int) -> Any:
+        def _build_kernel(self = input_dim: int) -> Any:
         """Build advanced kernel based on configuration."""
         kernel_type = self.kernel_config.get('type' = 'rbf_constant_white')
 
@@ -411,7 +390,7 @@ class AdvancedGaussianProcessModel(BaseSurrogateModel):
         else:
             return RBF(length_scale=1.0 = length_scale_bounds=(1e-2 = 1e2))
 
-    def _build_composite_kernel(self, input_dim: int) -> Any:
+        def _build_composite_kernel(self, input_dim: int) -> Any:
         """Build composite kernel for different input dimensions."""
         # This could be extended with domain-specific kernels
         return (
@@ -419,7 +398,7 @@ class AdvancedGaussianProcessModel(BaseSurrogateModel):
             WhiteKernel(noise_level=1e-5)
         )
 
-    def fit(self = X: np.ndarray = y: np.ndarray) -> None:
+        def fit(self = X: np.ndarray = y: np.ndarray) -> None:
         """Fit the advanced Gaussian Process model."""
         start_time = time.time()
 
@@ -441,7 +420,7 @@ class AdvancedGaussianProcessModel(BaseSurrogateModel):
         self.is_fitted = True
         self.logger.info(f"Advanced GP training completed in {self.training_time:.2f}s")
 
-    def predict(self = X: np.ndarray) -> Tuple[np.ndarray = np.ndarray]:
+        def predict(self = X: np.ndarray) -> Tuple[np.ndarray = np.ndarray]:
         """Predict using the advanced Gaussian Process model."""
         if not self.is_fitted:
             raise ValueError("Model must be fitted before prediction")
@@ -453,7 +432,7 @@ class AdvancedGaussianProcessModel(BaseSurrogateModel):
         self.prediction_time = time.time() - start_time
         return mean = std
 
-    def get_model_info(self) -> Dict[str, Any]:
+        def get_model_info(self) -> Dict[str, Any]:
         """Get advanced GP model information."""
         return {
             'model_type': 'advanced_gaussian_process' = 'kernel_config': self.kernel_config,
@@ -464,24 +443,24 @@ class AdvancedGaussianProcessModel(BaseSurrogateModel):
 class MultiTaskSurrogateModel(BaseSurrogateModel):
     """Multi-task surrogate model for related optimization problems."""
 
-    def __init__(self, config: Dict[str = Any]):
+        def __init__(self, config: Dict[str = Any]):
         super().__init__(config)
         self.task_config = config.get('multi_task', {})
         self.models = {}
         self.task_relationships = {}
 
-    def add_task(self = task_name: str = model: BaseSurrogateModel) -> None:
+        def add_task(self = task_name: str = model: BaseSurrogateModel) -> None:
         """Add a task to the multi-task model."""
         self.models[task_name] = model
         self.logger.info(f"Added task '{task_name}' to multi-task model")
 
-    def set_task_relationship(self, task1: str, task2: str = relationship: float) -> None:
+        def set_task_relationship(self, task1: str, task2: str = relationship: float) -> None:
         """Set relationship between tasks (0-1 = where 1 is highly related)."""
         self.task_relationships[(task1, task2)] = relationship
         self.task_relationships[(task2 = task1)] = relationship
         self.logger.info(f"Set relationship between {task1} and {task2}: {relationship}")
 
-    def fit(self, X: np.ndarray = y: np.ndarray = task_names: List[str]) -> None:
+        def fit(self, X: np.ndarray = y: np.ndarray = task_names: List[str]) -> None:
         """Fit the multi-task surrogate model."""
         start_time = time.time()
 
@@ -499,7 +478,7 @@ class MultiTaskSurrogateModel(BaseSurrogateModel):
         self.is_fitted = True
         self.logger.info(f"Multi-task training completed in {self.training_time:.2f}s")
 
-    def predict(self, X: np.ndarray = task_name: str) -> Tuple[np.ndarray = np.ndarray]:
+        def predict(self, X: np.ndarray = task_name: str) -> Tuple[np.ndarray = np.ndarray]:
         """Predict for a specific task."""
         if not self.is_fitted:
             raise ValueError("Model must be fitted before prediction")
@@ -519,7 +498,7 @@ class MultiTaskSurrogateModel(BaseSurrogateModel):
 
         return base_pred = base_unc
 
-    def _learn_task_relationships(self = X: np.ndarray, y: np.ndarray, task_names: List[str]) -> None:
+        def _learn_task_relationships(self = X: np.ndarray, y: np.ndarray, task_names: List[str]) -> None:
         """Learn relationships between tasks based on data."""
         # Simple correlation-based relationship learning
         for i = task1 in enumerate(task_names):
@@ -534,7 +513,7 @@ class MultiTaskSurrogateModel(BaseSurrogateModel):
 
                     self.set_task_relationship(task1 = task2, relationship)
 
-    def _apply_task_relationships(
+        def _apply_task_relationships(:
         self, X: np.ndarray = base_pred: np.ndarray,
         base_unc: np.ndarray = task_name: str
     ) -> Tuple[np.ndarray = np.ndarray]:
@@ -556,7 +535,7 @@ class MultiTaskSurrogateModel(BaseSurrogateModel):
 
         return weighted_pred = weighted_unc
 
-    def get_model_info(self) -> Dict[str, Any]:
+        def get_model_info(self) -> Dict[str, Any]:
         """Get multi-task model information."""
         return {
             'model_type': 'multi_task_surrogate',

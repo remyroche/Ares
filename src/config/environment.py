@@ -23,14 +23,15 @@ from pydantic import Field
 from pydantic_settings import BaseSettings
 except Exception:  # minimal fallback types for smoke test
 class BaseSettings:  # type: ignore
-def __init__(self, **kwargs):
     def __init__(self, **kwargs):
-    def __init__(self, **kwargs):
-    def __init__(self, **kwargs):
+        def __init__(self, **kwargs):
+        def __init__(self, **kwargs):
+        def __init__(self, **kwargs):
             for k, v in kwargs.items():
                 setattr(self, k, v)
-def Field(default=None, env: str | None = None):  # type: ignore
-return default
+    def Field(default=None, env: str | None = None):  # type: ignore:
+    pass  # TODO: Add implementation
+    return default
 
 from src.utils.logger import system_logger
 
@@ -132,32 +133,7 @@ env="MLFLOW_EXPERIMENT_NAME",
 )
 
 # --- Derived Properties ---
-@property
-def is_live_mode(self) -> bool:
-        """Check if running in live mode."""
-return self.trading_environment == "LIVE"
-
-@property
-def is_testnet_mode(self) -> bool:
-        """Check if running in testnet mode."""
-return self.trading_environment == "TESTNET"
-
-@property
-def is_paper_mode(self) -> bool:
-        """Check if running in paper mode."""
-return self.trading_environment == "PAPER"
-
-def get_exchange_credentials(self, exchange_name: str) -> dict[str, str | None]:
-        """Get credentials for a specific exchange.
-
-Args:
-            exchange_name: Name of the exchange
-
-Returns:
-            dict: Exchange credentials
-
-"""
-exchange_name_lower = exchange_name.lower()
+@property def is_live_mode(self) -> bool: """Check if running in live mode.""" return self.trading_environment == "LIVE"  @property def is_testnet_mode(self) -> bool: """Check if running in testnet mode.""" return self.trading_environment == "TESTNET"  @property def is_paper_mode(self) -> bool: """Check if running in paper mode.""" return self.trading_environment == "PAPER"  def get_exchange_credentials(self, exchange_name: str) -> dict[str, str | None]: """Get credentials for a specific exchange.  Args: exchange_name: Name of the exchange  Returns: dict: Exchange credentials  """ exchange_name_lower = exchange_name.lower()
 
 if exchange_name_lower == "binance":
             return {
@@ -180,7 +156,7 @@ if exchange_name_lower == "okx":
 "api_secret": self.okx_api_secret,
 "password": self.okx_password,
 }
-return {"api_key": None, "api_secret": None}
+    return {"api_key": None, "api_secret": None}
 
 def validate_credentials(self, exchange_name: str) -> bool:
         """Validate that credentials are available for the specified exchange.
@@ -193,7 +169,7 @@ Returns:
 
 """
 credentials = self.get_exchange_credentials(exchange_name)
-return (
+    return (
 credentials["api_key"] is not None and credentials["api_secret"] is not None
 )
 
@@ -219,7 +195,7 @@ if database_type.lower() == "influxdb":
 "org": self.influxdb_org,
 "bucket": self.influxdb_bucket,
 }
-return {}
+    return {}
 
 def get_email_config(self) -> dict[str, str | None]:
         """Get email configuration.
@@ -228,7 +204,7 @@ Returns:
             dict: Email configuration
 
 """
-return {
+    return {
 "sender_address": self.email_sender_address,
 "sender_password": self.email_sender_password,
 "recipient_address": self.email_recipient_address,
@@ -241,7 +217,7 @@ Returns:
             dict: MLflow configuration
 
 """
-return {
+    return {
 "tracking_uri": self.mlflow_tracking_uri,
 "experiment_name": self.mlflow_experiment_name,
 }
@@ -259,11 +235,11 @@ try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-return EnvironmentSettings()
+    return EnvironmentSettings()
 except Exception as e:
         system_logger.error(f"Error loading environment settings: {e}")
 # Return default settings
-return EnvironmentSettings(
+    return EnvironmentSettings(
 trading_environment="PAPER",
 trade_symbol="ETHUSDT",
 exchange_name="BINANCE",

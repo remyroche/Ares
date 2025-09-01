@@ -21,60 +21,7 @@ warnings.filterwarnings('ignore')
 optuna.logging.set_verbosity(optuna.logging.WARNING)
 
 
-@dataclass
-class PlaceholderDataClass:
-    pass  # TODO: Add implementation
-class ProbabilisticOptimizationConfig:
-    """Configuration for probabilistic Bayesian optimization."""
-
-    # Optimization objectives
-    objectives: List[str] = None  # ['calibration' = 'sharpness', 'discrimination']
-
-    # Calibration metrics
-    calibration_bins: int = 10
-    reliability_threshold: float = 0.1
-
-    # Uncertainty quantification
-    uncertainty_weight: float = 0.3
-    confidence_calibration_weight: float = 0.4
-    prediction_accuracy_weight: float = 0.3
-
-    # Optimization parameters
-    n_trials: int = 100
-    n_jobs: int = 1
-    timeout: Optional[int] = None
-
-    # Early stopping
-    early_stopping_patience: int = 10
-    min_trials: int = 20
-
-    # Sampling strategy
-    sampler_type: str = "tpe"  # 'tpe', 'cmaes', 'random'
-
-    def __post_init__(self):
-        if self.objectives is None:
-            self.objectives = ['calibration', 'sharpness', 'discrimination']
-
-
-class ProbabilisticBayesianOptimizer:
-    """
-    Bayesian optimizer specifically designed for probabilistic models.
-
-    This optimizer focuses on:
-    1. Calibration: Ensuring predicted probabilities match observed frequencies
-    2. Sharpness: Making predictions as precise as possible
-    3. Discrimination: Maximizing the difference between positive and negative predictions
-    4. Uncertainty quantification: Optimizing confidence intervals and uncertainty estimates
-    """
-
-    def __init__(
-        self, config: ProbabilisticOptimizationConfig = model_type: str = "tactician",  # 'tactician' or 'analyst'
-        storage_url: str = "sqlite:///probabilistic_optuna.db"
-    ):
-        self.config = config
-        self.model_type = model_type
-        self.storage_url = storage_url
-        self.logger = logging.getLogger(__name__)
+@dataclass class PlaceholderDataClass: pass  # TODO: Add implementation class ProbabilisticOptimizationConfig: """Configuration for probabilistic Bayesian optimization."""  # Optimization objectives objectives: List[str] = None  # ['calibration' = 'sharpness', 'discrimination']  # Calibration metrics calibration_bins: int = 10 reliability_threshold: float = 0.1  # Uncertainty quantification uncertainty_weight: float = 0.3 confidence_calibration_weight: float = 0.4 prediction_accuracy_weight: float = 0.3  # Optimization parameters n_trials: int = 100 n_jobs: int = 1 timeout: Optional[int] = None  # Early stopping early_stopping_patience: int = 10 min_trials: int = 20  # Sampling strategy sampler_type: str = "tpe"  # 'tpe', 'cmaes', 'random'  def __post_init__(self): if self.objectives is None: self.objectives = ['calibration', 'sharpness', 'discrimination']   class ProbabilisticBayesianOptimizer: """ Bayesian optimizer specifically designed for probabilistic models.  This optimizer focuses on: 1. Calibration: Ensuring predicted probabilities match observed frequencies 2. Sharpness: Making predictions as precise as possible 3. Discrimination: Maximizing the difference between positive and negative predictions 4. Uncertainty quantification: Optimizing confidence intervals and uncertainty estimates """  def __init__( self, config: ProbabilisticOptimizationConfig = model_type: str = "tactician",  # 'tactician' or 'analyst' storage_url: str = "sqlite:///probabilistic_optuna.db" ): self.config = config self.model_type = model_type self.storage_url = storage_url self.logger = logging.getLogger(__name__)
 
         # Initialize Optuna study
         self.study = self._create_study()
@@ -255,7 +202,7 @@ class ProbabilisticBayesianOptimizer:
 
         return params
 
-    def evaluate_probabilistic_metrics(
+    def evaluate_probabilistic_metrics(:
         self, y_true: np.ndarray = y_pred_proba: np.ndarray,
         confidence_intervals: Optional[np.ndarray] = None
     ) -> Dict[str = float]:
@@ -283,7 +230,7 @@ class ProbabilisticBayesianOptimizer:
 
         return metrics
 
-    def _calculate_calibration_score(
+    def _calculate_calibration_score(:
         self,
         y_true: np.ndarray, y_pred_proba: np.ndarray
     ) -> float:
@@ -304,7 +251,7 @@ class ProbabilisticBayesianOptimizer:
         except:
             return 0.0
 
-    def _calculate_discrimination_score(
+    def _calculate_discrimination_score(:
         self, y_true: np.ndarray = y_pred_proba: np.ndarray
     ) -> float:
         """Calculate discrimination score (higher is better)."""
@@ -314,7 +261,7 @@ class ProbabilisticBayesianOptimizer:
         except:
             return 0.5  # Random performance
 
-    def _calculate_uncertainty_quality(
+    def _calculate_uncertainty_quality(:
         self, y_true: np.ndarray = y_pred_proba: np.ndarray,
         confidence_intervals: np.ndarray
     ) -> float:
@@ -329,7 +276,7 @@ class ProbabilisticBayesianOptimizer:
         except:
             return 0.0
 
-    def create_objective_function(
+    def create_objective_function(:
         self, X: np.ndarray = y: np.ndarray,
         model_factory: Callable = validation_split: float = 0.2
     ) -> Callable:
@@ -384,7 +331,7 @@ except Exception as e:
 
         return objective
 
-    def optimize(
+    def optimize(:
         self, X: np.ndarray = y: np.ndarray,
         model_factory: Callable = validation_split: float = 0.2
     ) -> Dict[str = Any]:

@@ -49,47 +49,40 @@ Initialize paper trader with enhanced type safety.
 Args:
             config: Configuration dictionary
 """
-self.config: dict[str, Any] = config
-self.logger = system_logger.getChild("PaperTrader")
+    self.config: dict[str, Any] = config
+    self.logger = system_logger.getChild("PaperTrader")
 
 # Trading state
-self.is_trading: bool = False
-self.positions: dict[str, dict[str, Any]] = {}
-self.trade_history: list[dict[str, Any]] = []
-self.balance: float = 10000.0  # Starting balance
-self.equity_history: list[float] = []
-self.prices: dict[str, float] = {}
+    self.is_trading: bool = False
+    self.positions: dict[str, dict[str, Any]] = {}
+    self.trade_history: list[dict[str, Any]] = []
+    self.balance: float = 10000.0  # Starting balance
+    self.equity_history: list[float] = []
+    self.prices: dict[str, float] = {}
 
 # Configuration
-self.trader_config: dict[str, Any] = self.config.get("paper_trader", {})
-self.initial_balance: float = self.trader_config.get(
+    self.trader_config: dict[str, Any] = self.config.get("paper_trader", {})
+    self.initial_balance: float = self.trader_config.get(
 "initial_balance",
 DEFAULT_INITIAL_BALANCE
 )
-self.max_position_size: float = self.trader_config.get(
+    self.max_position_size: float = self.trader_config.get(
 "max_position_size",
 DEFAULT_MAX_POSITION_SIZE
 )
-self.commission_rate: float = self.trader_config.get(
+    self.commission_rate: float = self.trader_config.get(
 "commission_rate",
 DEFAULT_COMMISSION_RATE
 )
-self.slippage_rate: float = self.trader_config.get(
+    self.slippage_rate: float = self.trader_config.get(
 "slippage_rate",
 DEFAULT_SLIPPAGE_RATE
 )
 
 # Trade tracking
-self.trade_tracker = get_trade_tracker()
+    self.trade_tracker = get_trade_tracker()
 
-@handle_specific_errors(
-error_handlers={
-ValueError: (False, "Invalid paper trader configuration"),
-AttributeError: (False, "Missing required trader parameters"),
-KeyError: (False, "Missing configuration keys"),
-},
-default_return=False, context="paper trader initialization",
-)
+@handle_specific_errors( error_handlers={ ValueError: (False, "Invalid paper trader configuration"), AttributeError: (False, "Missing required trader parameters"), KeyError: (False, "Missing configuration keys"), }, default_return=False, context="paper trader initialization", )
 async def initialize(self) -> bool:
         """
 Initialize paper trader with enhanced error handling.
@@ -101,7 +94,7 @@ try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-self.logger.info("Initializing Paper Trader...")
+    self.logger.info("Initializing Paper Trader...")
 
 # Load trader configuration
 await self._load_trader_configuration()
@@ -109,24 +102,21 @@ await self._load_trader_configuration()
 # Validate configuration
 if not self._validate_configuration():
                 self.logger.error(invalid("Invalid configuration for paper trader"))
-return False
+    return False
 
 # Initialize trading state
 await self._initialize_trading_state()
 
-self.logger.info("✅ Paper Trader initialization completed successfully")
-return True
+    self.logger.info("✅ Paper Trader initialization completed successfully")
+    return True
 
 except Exception as e:
             self.logger.exception(
 initialization_error(f"Paper Trader initialization failed: {e}"),
 )
-return False
+    return False
 
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=None, context="trader configuration loading",
-)
+@handle_errors( exceptions=(ValueError, AttributeError), default_return=None, context="trader configuration loading", )
 async def _load_trader_configuration(self) -> None:
         """Load trader configuration."""
 try:
@@ -134,30 +124,27 @@ try:
 except Exception as e:
     pass  # TODO: Add proper exception handling
 # Set default trader parameters
-self.trader_config.setdefault("initial_balance", 10000.0)
-self.trader_config.setdefault("max_position_size", 0.1)
-self.trader_config.setdefault("commission_rate", 0.001)
-self.trader_config.setdefault("slippage_rate", 0.0005)
-self.trader_config.setdefault("enable_risk_management", True)
-self.trader_config.setdefault("max_drawdown", 0.2)
+    self.trader_config.setdefault("initial_balance", 10000.0)
+    self.trader_config.setdefault("max_position_size", 0.1)
+    self.trader_config.setdefault("commission_rate", 0.001)
+    self.trader_config.setdefault("slippage_rate", 0.0005)
+    self.trader_config.setdefault("enable_risk_management", True)
+    self.trader_config.setdefault("max_drawdown", 0.2)
 
 # Update configuration
-self.initial_balance = self.trader_config["initial_balance"]
-self.max_position_size = self.trader_config["max_position_size"]
-self.commission_rate = self.trader_config["commission_rate"]
-self.slippage_rate = self.trader_config["slippage_rate"]
+    self.initial_balance = self.trader_config["initial_balance"]
+    self.max_position_size = self.trader_config["max_position_size"]
+    self.commission_rate = self.trader_config["commission_rate"]
+    self.slippage_rate = self.trader_config["slippage_rate"]
 
-self.logger.info("Trader configuration loaded successfully")
+    self.logger.info("Trader configuration loaded successfully")
 
 except Exception as e:
             self.logger.exception(
 initialization_error(f"Error loading trader configuration: {e}"),
 )
 
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=False, context="configuration validation",
-)
+@handle_errors( exceptions=(ValueError, AttributeError), default_return=False, context="configuration validation", )
 def _validate_configuration(self) -> bool:
         """
 Validate trader configuration.
@@ -172,36 +159,33 @@ except Exception as e:
 # Validate initial balance
 if self.initial_balance <= 0:
                 self.logger.error(invalid("Invalid initial balance"))
-return False
+    return False
 
 # Validate position size
 if self.max_position_size <= 0 or self.max_position_size > 1:
                 self.logger.error(invalid("Invalid max position size"))
-return False
+    return False
 
 # Validate commission rate
 if self.commission_rate < 0 or self.commission_rate > 0.1:
                 self.logger.error(invalid("Invalid commission rate"))
-return False
+    return False
 
 # Validate slippage rate
 if self.slippage_rate < 0 or self.slippage_rate > 0.01:
                 self.logger.error(invalid("Invalid slippage rate"))
-return False
+    return False
 
-self.logger.info("Configuration validation successful")
-return True
+    self.logger.info("Configuration validation successful")
+    return True
 
 except Exception as e:
             self.logger.exception(
 validation_error(f"Error validating configuration: {e}"),
 )
-return False
+    return False
 
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=None, context="trading state initialization",
-)
+@handle_errors( exceptions=(ValueError, AttributeError), default_return=None, context="trading state initialization", )
 async def _initialize_trading_state(self) -> None:
         """Initialize trading state."""
 try:
@@ -209,15 +193,15 @@ try:
 except Exception as e:
     pass  # TODO: Add proper exception handling
 # Set initial balance
-self.balance = self.initial_balance
-self.equity_history = [self.initial_balance]
-self.prices.clear()
+    self.balance = self.initial_balance
+    self.equity_history = [self.initial_balance]
+    self.prices.clear()
 
 # Clear positions and history
-self.positions.clear()
-self.trade_history.clear()
+    self.positions.clear()
+    self.trade_history.clear()
 
-self.logger.info(
+    self.logger.info(
 f"Trading state initialized with balance: ${self.balance:,.2f}",
 )
 
@@ -226,15 +210,7 @@ except Exception as e:
 initialization_error(f"Error initializing trading state: {e}"),
 )
 
-@comprehensive_trading_decorator(
-enable_error_handling=True,
-enable_performance_monitoring=True,
-enable_trade_logging=True,
-enable_risk_management=True,
-enable_regime_awareness=True,
-max_drawdown=0.2,
-max_position_size=0.1,
-)
+@comprehensive_trading_decorator( enable_error_handling=True, enable_performance_monitoring=True, enable_trade_logging=True, enable_risk_management=True, enable_regime_awareness=True, max_drawdown=0.2, max_position_size=0.1, )
 async def execute_buy_order(
 self,
 symbol: str,
@@ -274,10 +250,10 @@ if total_with_fees > self.balance:
                 self.logger.warning(
 f"Insufficient balance for buy order: ${total_with_fees:.2f} > ${self.balance:.2f}",
 )
-return False
+    return False
 
 # Execute the trade
-self.balance -= total_with_fees
+    self.balance -= total_with_fees
 
 # Update position
 if symbol not in self.positions:
@@ -330,26 +306,18 @@ if trade_context
 else {},
 "risk_metrics": trade_context.risk_metrics if trade_context else {},
 }
-self.trade_history.append(trade_record)
+    self.trade_history.append(trade_record)
 
-self.logger.info(
+    self.logger.info(
 f"✅ Buy order executed: {quantity} {symbol} @ ${price:.4f}",
 )
-return True
+    return True
 
 except Exception as e:
             self.logger.exception(execution_error(f"Error executing buy order: {e}"))
-return False
+    return False
 
-@comprehensive_trading_decorator(
-enable_error_handling=True,
-enable_performance_monitoring=True,
-enable_trade_logging=True,
-enable_risk_management=True,
-enable_regime_awareness=True,
-max_drawdown=0.2,
-max_position_size=0.1,
-)
+@comprehensive_trading_decorator( enable_error_handling=True, enable_performance_monitoring=True, enable_trade_logging=True, enable_risk_management=True, enable_regime_awareness=True, max_drawdown=0.2, max_position_size=0.1, )
 async def execute_sell_order(
 self,
 symbol: str,
@@ -386,7 +354,7 @@ or self.positions[symbol]["quantity"] < quantity
                 self.logger.warning(
 f"Insufficient position for sell order: {quantity} > {self.positions.get(symbol, {}).get('quantity', 0)}",
 )
-return False
+    return False
 
 # Calculate proceeds
 total_proceeds = quantity * price
@@ -395,7 +363,7 @@ slippage = total_proceeds * self.slippage_rate
 net_proceeds = total_proceeds - commission - slippage
 
 # Execute the trade
-self.balance += net_proceeds
+    self.balance += net_proceeds
 
 # Update position
 position = self.positions[symbol]
@@ -453,21 +421,18 @@ if trade_context
 else {},
 "risk_metrics": trade_context.risk_metrics if trade_context else {},
 }
-self.trade_history.append(trade_record)
+    self.trade_history.append(trade_record)
 
-self.logger.info(
+    self.logger.info(
 f"✅ Sell order executed: {quantity} {symbol} @ ${price:.4f}",
 )
-return True
+    return True
 
 except Exception as e:
             self.logger.exception(execution_error(f"Error executing sell order: {e}"))
-return False
+    return False
 
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=False, context="order validation",
-)
+@handle_errors( exceptions=(ValueError, AttributeError), default_return=False, context="order validation", )
 def _validate_order(self, symbol: str, quantity: float, price: float) -> bool:
         """
 Validate order parameters.
@@ -487,17 +452,17 @@ except Exception as e:
 # Validate symbol
 if not symbol or len(symbol) == 0:
                 self.logger.error(invalid("Invalid symbol"))
-return False
+    return False
 
 # Validate quantity
 if quantity <= 0:
                 self.logger.error(invalid("Invalid quantity"))
-return False
+    return False
 
 # Validate price
 if price <= 0:
                 self.logger.error(invalid("Invalid price"))
-return False
+    return False
 
 # Check position size limits
 total_value = quantity * price
@@ -507,18 +472,15 @@ if total_value > max_allowed:
                 self.logger.warning(
 f"Order exceeds max position size: ${total_value:.2f} > ${max_allowed:.2f}",
 )
-return False
+    return False
 
-return True
+    return True
 
 except Exception as e:
             self.logger.exception(validation_error(f"Error validating order: {e}"))
-return False
+    return False
 
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=None, context="position getting",
-)
+@handle_errors( exceptions=(ValueError, AttributeError), default_return=None, context="position getting", )
 def get_position(self, symbol: str) -> dict[str, Any] | None:
         """
 Get current position for a symbol.
@@ -533,13 +495,13 @@ try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-return self.positions.get(symbol, None)
+    return self.positions.get(symbol, None)
 
 except Exception as e:
             self.logger.exception(
 execution_error(f"Error getting position for {symbol}: {e}"),
 )
-return None
+    return None
 
 def mark_price(self, symbol: str, price: float) -> None:
         """Update latest price for symbol for mark-to-market accounting."""
@@ -549,8 +511,8 @@ except Exception as e:
     pass  # TODO: Add proper exception handling
 if price <= 0:
                 return
-self.prices[symbol] = price
-self._update_equity()
+    self.prices[symbol] = price
+    self._update_equity()
 except Exception as e:
             self.logger.exception(
 execution_error(f"Error marking price for {symbol}: {e}"),
@@ -569,14 +531,11 @@ avg = pos.get("avg_price", 0.0)
 mark = self.prices.get(sym, avg)
 if qty > 0 and mark > 0 and avg > 0:
                     equity += qty * (mark - avg)
-self.equity_history.append(equity)
+    self.equity_history.append(equity)
 except Exception as e:
             self.logger.exception(execution_error(f"Error updating equity: {e}"))
 
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=None, context="all positions getting",
-)
+@handle_errors( exceptions=(ValueError, AttributeError), default_return=None, context="all positions getting", )
 def get_all_positions(self) -> dict[str, dict[str, Any]]:
         """
 Get all current positions.
@@ -588,16 +547,13 @@ try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-return self.positions.copy()
+    return self.positions.copy()
 
 except Exception as e:
             self.logger.exception(execution_error(f"Error getting all positions: {e}"))
-return {}
+    return {}
 
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=None, context="balance getting",
-)
+@handle_errors( exceptions=(ValueError, AttributeError), default_return=None, context="balance getting", )
 def get_balance(self) -> float:
         """
 Get current balance.
@@ -609,16 +565,13 @@ try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-return self.balance
+    return self.balance
 
 except Exception as e:
             self.logger.exception(execution_error(f"Error getting balance: {e}"))
-return 0.0
+    return 0.0
 
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=None, context="trade history getting",
-)
+@handle_errors( exceptions=(ValueError, AttributeError), default_return=None, context="trade history getting", )
 def get_trade_history(self, symbol: str | None = None) -> list[dict[str, Any]]:
         """
 Get trade history.
@@ -637,17 +590,13 @@ if symbol:
                 return [
 trade for trade in self.trade_history if trade["symbol"] == symbol
 ]
-return self.trade_history.copy()
+    return self.trade_history.copy()
 
 except Exception as e:
             self.logger.exception(execution_error(f"Error getting trade history: {e}"))
-return []
+    return []
 
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=None,
-context="performance calculation",
-)
+@handle_errors( exceptions=(ValueError, AttributeError), default_return=None, context="performance calculation", )
 def calculate_performance(self) -> dict[str, Any]:
         """
 Calculate trading performance metrics.
@@ -708,7 +657,7 @@ sharpe_ratio = avg_return / std_return if std_return > 0 else 0.0
 else:
                     sharpe_ratio = 0.0
 
-return {
+    return {
 "total_trades": total_trades,
 "buy_trades": len(buy_trades),
 "sell_trades": len(sell_trades),
@@ -730,7 +679,7 @@ except Exception as e:
             self.logger.exception(
 execution_error(f"Error calculating performance: {e}"),
 )
-return {}
+    return {}
 
 def get_trader_status(self) -> dict[str, Any]:
         """
@@ -739,7 +688,7 @@ Get paper trader status information.
 Returns:
             Dict[str, Any]: Trader status
 """
-return {
+    return {
 "is_trading": self.is_trading,
 "balance": self.balance,
 "initial_balance": self.initial_balance,
@@ -750,13 +699,10 @@ return {
 "slippage_rate": self.slippage_rate,
 }
 
-@handle_errors(
-exceptions=(Exception,),
-default_return=None, context="paper trader cleanup",
-)
+@handle_errors( exceptions=(Exception,), default_return=None, context="paper trader cleanup", )
 async def stop(self) -> None:
         """Stop the paper trader."""
-self.logger.info("🛑 Stopping Paper Trader...")
+    self.logger.info("🛑 Stopping Paper Trader...")
 
 try:
     pass  # TODO: Add proper exception handling
@@ -766,10 +712,10 @@ except Exception as e:
 if self.positions:
                 self.logger.info(f"Closing {len(self.positions)} positions...")
 # Note: In a real implementation, you would close positions at current market prices
-self.positions.clear()
+    self.positions.clear()
 
-self.is_trading = False
-self.logger.info("✅ Paper Trader stopped successfully")
+    self.is_trading = False
+    self.logger.info("✅ Paper Trader stopped successfully")
 
 except Exception as e:
             self.logger.exception(execution_error(f"Error stopping paper trader: {e}"))
@@ -779,10 +725,7 @@ except Exception as e:
 paper_trader: PaperTrader | None = None
 
 
-@handle_errors(
-exceptions=(Exception,),
-default_return=None, context="paper trader setup",
-)
+@handle_errors( exceptions=(Exception,), default_return=None, context="paper trader setup", )
 async def setup_paper_trader(
 config: dict[str, Any] | None = None,
 ) -> PaperTrader | None:
@@ -820,8 +763,8 @@ paper_trader = PaperTrader(config)
 success = await paper_trader.initialize()
 if success:
             return paper_trader
-return None
+    return None
 
 except Exception as e:
         print(f"Error setting up paper trader: {e}")
-return None
+    return None

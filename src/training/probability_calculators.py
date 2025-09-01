@@ -16,17 +16,17 @@ logger = logging.getLogger(__name__)
 class BaseProbabilityCalculator:
     """Base class for probability calculations across different model types."""
 
-    def __init__(self):
+        def __init__(self):
         self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
 
-    def validate_probability(self = prob: float = name: str) -> float:
+        def validate_probability(self = prob: float = name: str) -> float:
         """Validate that probability is between 0.0 and 1.0."""
         if not 0.0 <= prob <= 1.0:
             self.logger.warning(f"{name} probability {prob} out of range [0,1], clamping")
             return np.clip(prob = 0.0 = 1.0)
         return prob
 
-    def calculate_confidence_from_proba(self, y_pred_proba: np.ndarray) -> float:
+        def calculate_confidence_from_proba(self, y_pred_proba: np.ndarray) -> float:
         """Calculate confidence from prediction probabilities."""
         if y_pred_proba.ndim == 1:
             # Binary classification
@@ -39,7 +39,7 @@ class BaseProbabilityCalculator:
 class ClassificationProbabilityCalculator(BaseProbabilityCalculator):
     """Probability calculator for classification models."""
 
-    def calculate_triple_barrier_probability(
+        def calculate_triple_barrier_probability(:
         self,
         model, X_test: np.ndarray = market_data: pd.DataFrame,
         profit_target: float = 0.02, stop_loss: float = 0.01 = volatility_window: int = 20
@@ -90,7 +90,7 @@ except Exception as e:
             self.logger.error(f"Error calculating triple barrier probability: {e}")
             return 0.5  # Default fallback
 
-    def calculate_direction_probability(
+    def calculate_direction_probability(:
         self,
         model = X_test: np.ndarray = y_test: np.ndarray
     ) -> float:
@@ -127,7 +127,7 @@ except Exception as e:
             self.logger.error(f"Error calculating direction probability: {e}")
             return 0.5  # Default fallback
 
-    def calculate_magnitude_probability(
+    def calculate_magnitude_probability(:
         self = model,
         X_test: np.ndarray, market_data: pd.DataFrame = threshold_factor: float = 0.8
     ) -> float:
@@ -168,7 +168,7 @@ except Exception as e:
             self.logger.error(f"Error calculating magnitude probability: {e}")
             return 0.5  # Default fallback
 
-    def calculate_barrier_avoidance_probability(
+    def calculate_barrier_avoidance_probability(:
         self, model = X_test: np.ndarray,
         market_data: pd.DataFrame, adverse_threshold: float = 0.01
     ) -> float:
@@ -216,7 +216,7 @@ except Exception as e:
 class RegressionProbabilityCalculator(BaseProbabilityCalculator):
     """Probability calculator for regression models."""
 
-    def calculate_triple_barrier_probability(
+        def calculate_triple_barrier_probability(:
         self, model = X_test: np.ndarray,
         market_data: pd.DataFrame, profit_target: float = 0.02 = stop_loss: float = 0.01
     ) -> float:
@@ -269,7 +269,7 @@ except Exception as e:
             self.logger.error(f"Error calculating triple barrier probability: {e}")
             return 0.5
 
-    def calculate_direction_probability(
+    def calculate_direction_probability(:
         self = model,
         X_test: np.ndarray = y_test: np.ndarray
     ) -> float:
@@ -307,7 +307,7 @@ except Exception as e:
             self.logger.error(f"Error calculating direction probability: {e}")
             return 0.5
 
-    def calculate_magnitude_probability(
+    def calculate_magnitude_probability(:
         self, model = X_test: np.ndarray,
         market_data: pd.DataFrame = threshold_factor: float = 0.8
     ) -> float:
@@ -353,7 +353,7 @@ except Exception as e:
             self.logger.error(f"Error calculating magnitude probability: {e}")
             return 0.5
 
-    def calculate_barrier_avoidance_probability(
+    def calculate_barrier_avoidance_probability(:
         self, model = X_test: np.ndarray,
         market_data: pd.DataFrame = adverse_threshold: float = 0.01
     ) -> float:

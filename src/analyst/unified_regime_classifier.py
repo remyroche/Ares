@@ -27,6 +27,7 @@ with_tracing_span,
 
 
 class UnifiedRegimeClassifier:
+    pass  # TODO: Add implementation
 """
 Unified Market Regime Classifier with HMM-based labeling and ensemble prediction.
 
@@ -36,54 +37,55 @@ Approach:
 3. Location classification (SUPPORT, RESISTANCE, OPEN_RANGE)
 """
 
-def __init__(
+def __init__(:
+    pass  # TODO: Add implementation
 self,
 config: dict[str, Any],
 exchange: str = "UNKNOWN",
 symbol: str = "UNKNOWN",
 ):
         # Ensure NumPy RNG pickles created under different versions can be loaded
-self._enable_numpy_rng_unpickle_compat(system_logger)
-self.config = config.get("analyst", {}).get("unified_regime_classifier", {})
-self.global_config = config
-self.logger = system_logger.getChild("UnifiedRegimeClassifier")
-self.exchange = exchange
-self.symbol = symbol
+    self._enable_numpy_rng_unpickle_compat(system_logger)
+    self.config = config.get("analyst", {}).get("unified_regime_classifier", {})
+    self.global_config = config
+    self.logger = system_logger.getChild("UnifiedRegimeClassifier")
+    self.exchange = exchange
+    self.symbol = symbol
 
 # Add print method for compatibility
-self.print = self.logger.info
+    self.print = self.logger.info
 
 # HMM Configuration - enforce at least 4 states (BULL, BEAR, SIDEWAYS, VOLATILE)
 configured_states = int(self.config.get("n_states", 4))
-self.n_states = max(4, configured_states)
-self.n_iter = self.config.get("n_iter", 100)
-self.random_state = self.config.get("random_state", 42)
-self.target_timeframe = self.config.get(
+    self.n_states = max(4, configured_states)
+    self.n_iter = self.config.get("n_iter", 100)
+    self.random_state = self.config.get("random_state", 42)
+    self.target_timeframe = self.config.get(
 "target_timeframe",
 "1h",
 )  # Strategist works on 1h timeframe
-self.volatility_period = self.config.get("volatility_period", 10)
+    self.volatility_period = self.config.get("volatility_period", 10)
 
 # Thresholds for regime interpretation (configurable)
 # Optimized thresholds for better regime balance (reduced from 23 to 18)
-self.adx_sideways_threshold = self.config.get("adx_sideways_threshold", 18)  # Lowered for better balance
-self.volatility_threshold = self.config.get("volatility_threshold", 0.025)  # Keep same
-self.atr_normalized_threshold = self.config.get(
+    self.adx_sideways_threshold = self.config.get("adx_sideways_threshold", 18)  # Lowered for better balance
+    self.volatility_threshold = self.config.get("volatility_threshold", 0.025)  # Keep same
+    self.atr_normalized_threshold = self.config.get(
 "atr_normalized_threshold",
 0.035,  # Keep same
 )
-self.volatility_percentile_threshold = self.config.get(
+    self.volatility_percentile_threshold = self.config.get(
 "volatility_percentile_threshold",
 0.80,  # Keep same
 )
 # Additional volatility breadth threshold using Bollinger Band width
-self.bb_width_volatility_threshold = self.config.get(
+    self.bb_width_volatility_threshold = self.config.get(
 "bb_width_volatility_threshold",
 0.045,  # Keep same
 )
 
 # Log how regime state targets are chosen
-self.logger.info(
+    self.logger.info(
 {
 "msg": "UnifiedRegimeClassifier configuration",
 "n_states_configured": configured_states,
@@ -108,7 +110,7 @@ if blank_mode:
 "min_data_points",
 50,
 )  # Reduced for BLANK mode
-self.logger.info(
+    self.logger.info(
 "🔧 BLANK MODE DETECTED: Using reduced minimum data points (50)",
 )
 else:
@@ -118,24 +120,24 @@ else:
 )  # Default for full mode
 
 # Models
-self.hmm_model = None
-self.scaler = None
-self.state_to_regime_map = {}
+    self.hmm_model = None
+    self.scaler = None
+    self.state_to_regime_map = {}
 
 # Ensemble Models for Basic Regimes
-self.basic_ensemble = None
+    self.basic_ensemble = None
 
 # Location Classifier
-self.location_classifier = None
-self.location_label_encoder = None
+    self.location_classifier = None
+    self.location_label_encoder = None
 
 # Enhanced S/R Integration with SRBreakoutPredictor
-self.enable_sr_integration = self.config.get("enable_sr_integration", True)
-self.sr_predictor = None
-self.basic_label_encoder = None
+    self.enable_sr_integration = self.config.get("enable_sr_integration", True)
+    self.sr_predictor = None
+    self.basic_label_encoder = None
 
 # S/R Configuration for enhanced regime analysis with optimized parameters
-self.sr_config = {
+    self.sr_config = {
 "sr_breakout_predictor": {
 "enable_sr_breakout_tactics": True,
 "sr_proximity_threshold": 0.02,
@@ -183,8 +185,8 @@ self.sr_config = {
 }
 
 # Training Status
-self.trained = False
-self.last_training_time = None
+    self.trained = False
+    self.last_training_time = None
 
 # Model Paths
 # Resolve checkpoints directory to an absolute path anchored at the project root
@@ -196,26 +198,26 @@ base_checkpoint_dir = CONFIG.get("CHECKPOINT_DIR", "checkpoints")
 if not os.path.isabs(base_checkpoint_dir):
             base_checkpoint_dir = os.path.join(project_root, base_checkpoint_dir)
 
-self.model_dir = os.path.join(base_checkpoint_dir, "analyst_models")
+    self.model_dir = os.path.join(base_checkpoint_dir, "analyst_models")
 # Optional hierarchical directory for compatibility
-self._hierarchical_model_dir = os.path.join(
-self.model_dir,
-self.exchange,
-self.symbol,
-self.target_timeframe,
+    self._hierarchical_model_dir = os.path.join(
+    self.model_dir,
+    self.exchange,
+    self.symbol,
+    self.target_timeframe,
 )
 os.makedirs(self.model_dir, exist_ok=True)
 
-self.hmm_model_path = os.path.join(
-self.model_dir,
+    self.hmm_model_path = os.path.join(
+    self.model_dir,
 f"unified_hmm_model_{self.exchange}_{self.symbol}_{self.target_timeframe}.joblib",
 )
-self.ensemble_model_path = os.path.join(
-self.model_dir,
+    self.ensemble_model_path = os.path.join(
+    self.model_dir,
 f"unified_ensemble_model_{self.exchange}_{self.symbol}_{self.target_timeframe}.joblib",
 )
-self.location_model_path = os.path.join(
-self.model_dir,
+    self.location_model_path = os.path.join(
+    self.model_dir,
 f"unified_location_model_{self.exchange}_{self.symbol}_{self.target_timeframe}.joblib",
 )
 
@@ -234,44 +236,26 @@ except Exception as e:
     # Exception handling placeholder - implement specific error handling as needed
 if not self.enable_sr_integration:
                 self.logger.info("S/R integration disabled, skipping SRBreakoutPredictor initialization")
-return True
+    return True
 
-self.logger.info("🚀 Initializing SRBreakoutPredictor for enhanced regime analysis...")
+    self.logger.info("🚀 Initializing SRBreakoutPredictor for enhanced regime analysis...")
 
 # Initialize SRBreakoutPredictor with enhanced configuration
-self.sr_predictor = SRBreakoutPredictor(self.sr_config)
+    self.sr_predictor = SRBreakoutPredictor(self.sr_config)
 init_success = await self.sr_predictor.initialize()
 
 if not init_success:
                 self.logger.error("❌ Failed to initialize SRBreakoutPredictor")
-return False
+    return False
 
-self.logger.info("✅ SRBreakoutPredictor initialized successfully for enhanced regime analysis")
-return True
+    self.logger.info("✅ SRBreakoutPredictor initialized successfully for enhanced regime analysis")
+    return True
 
 except Exception as e:
             self.logger.error(f"❌ Error initializing SRBreakoutPredictor: {e}")
-return False
+    return False
 
-@staticmethod
-def _enable_numpy_rng_unpickle_compat(logger=None) -> None:
-        """Enable compatibility for unpickling NumPy RNG BitGenerators.
-
-Idempotently monkeypatches numpy.random._pickle.__bit_generator_ctor to
-accept class objects or repr strings by converting them to their class name.
-"""
-# Use an attribute on the function to avoid double patching within this class
-if getattr(
-UnifiedRegimeClassifier._enable_numpy_rng_unpickle_compat, "_patched", False
-):
-            return
-try:
-    # Exception handling placeholder - implement specific error handling as needed
-except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
-import numpy.random._pickle as np_random_pickle  # type: ignore[attr-defined]
-
-original_ctor = getattr(np_random_pickle, "__bit_generator_ctor", None)
+@staticmethod def _enable_numpy_rng_unpickle_compat(logger=None) -> None: """Enable compatibility for unpickling NumPy RNG BitGenerators.  Idempotently monkeypatches numpy.random._pickle.__bit_generator_ctor to accept class objects or repr strings by converting them to their class name. """ # Use an attribute on the function to avoid double patching within this class if getattr( UnifiedRegimeClassifier._enable_numpy_rng_unpickle_compat, "_patched", False ): return try: # Exception handling placeholder - implement specific error handling as needed except Exception as e: # Exception handling placeholder - implement specific error handling as needed import numpy.random._pickle as np_random_pickle  # type: ignore[attr-defined]  original_ctor = getattr(np_random_pickle, "__bit_generator_ctor", None)
 if original_ctor is None:
                 UnifiedRegimeClassifier._enable_numpy_rng_unpickle_compat._patched = (
 True
@@ -279,7 +263,8 @@ True
 return
 
 # Delegate to a module-level picklable ctor defined here to avoid closures
-def _normalized_numpy_bitgen_ctor(
+def _normalized_numpy_bitgen_ctor(:
+    pass  # TODO: Add implementation
 bit_generator_name, state=None, *args, **kwargs
 ):  # type: ignore[override]
 name_candidate = bit_generator_name
@@ -300,13 +285,13 @@ try:
     # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
     # Exception handling placeholder - implement specific error handling as needed
-return original_ctor(name_candidate, effective_state)
+    return original_ctor(name_candidate, effective_state)
 except (TypeError, ValueError):
                     try:
     # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
     # Exception handling placeholder - implement specific error handling as needed
-return original_ctor(name_candidate)
+    return original_ctor(name_candidate)
 except Exception as ctor_exc:  # noqa: BLE001
 try:
     # Exception handling placeholder - implement specific error handling as needed
@@ -342,11 +327,7 @@ if logger is not None:
 warning(f"NumPy RNG unpickle shim not applied (URC): {_shim_exc}")
 )
 
-@handle_errors(
-exceptions=(Exception,),
-default_return=False,
-context="UnifiedRegimeClassifier.initialize",
-)
+@handle_errors( exceptions=(Exception,), default_return=False, context="UnifiedRegimeClassifier.initialize", )
 async def initialize(self) -> bool:
         """
 Initialize the UnifiedRegimeClassifier.
@@ -354,7 +335,7 @@ Initialize the UnifiedRegimeClassifier.
 Returns:
             bool: True if initialization successful, False otherwise
 """
-self.logger.info(
+    self.logger.info(
 f"Initializing UnifiedRegimeClassifier for {self.exchange}_{self.symbol}",
 )
 
@@ -364,13 +345,13 @@ os.makedirs(self.model_dir, exist_ok=True)
 # Try to load existing models
 if self.load_models():
             self.logger.info("✅ Loaded existing models successfully")
-self.trained = True
+    self.trained = True
 else:
             self.logger.info("ℹ️  No existing models found, will train new models")
-self.trained = False
+    self.trained = False
 
-self.logger.info("✅ UnifiedRegimeClassifier initialized successfully")
-return True
+    self.logger.info("✅ UnifiedRegimeClassifier initialized successfully")
+    return True
 
 async def _calculate_features(
 self,
@@ -396,7 +377,7 @@ f"Insufficient data: {len(klines_df)} < {min_data_points}. Consider reducing min
 )
 # Try with a lower threshold if possible
 if len(klines_df) >= 200:  # Minimum viable amount
-self.logger.info(
+    self.logger.info(
 f"Proceeding with {len(klines_df)} data points (reduced from {min_data_points})",
 )
 min_data_points = len(klines_df)
@@ -404,9 +385,9 @@ else:
                 self.logger.error(
 f"Data too small: {len(klines_df)} < 200 minimum required",
 )
-return pd.DataFrame()
+    return pd.DataFrame()
 
-self.logger.info(f"🔧 Calculating features for {len(klines_df)} periods...")
+    self.logger.info(f"🔧 Calculating features for {len(klines_df)} periods...")
 
 # Create features DataFrame
 features_df = klines_df.copy()
@@ -550,11 +531,11 @@ initial_length = len(features_df)
 features_df = features_df.dropna()
 dropped_rows = initial_length - len(features_df)
 
-self.logger.info(
+    self.logger.info(
 f"✅ Calculated comprehensive features for {len(features_df)} periods (dropped {dropped_rows} rows due to NaN)",
 )
 
-return features_df
+    return features_df
 
 def _calculate_volatility_regime(self, features_df: pd.DataFrame) -> pd.Series:
         """
@@ -594,7 +575,7 @@ vol_accel = features_df["volatility_20"].diff() > 0
 # Combine conditions for VOLATILE regime
 volatile_regime = high_vol | atr_norm_high | bb_width_high | vol_accel
 
-return volatile_regime.astype(int)
+    return volatile_regime.astype(int)
 
 async def _add_enhanced_sr_features(self, features_df: pd.DataFrame) -> pd.DataFrame:
         """
@@ -604,7 +585,7 @@ try:
     # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
     # Exception handling placeholder - implement specific error handling as needed
-self.logger.info("🔧 Adding enhanced S/R features...")
+    self.logger.info("🔧 Adding enhanced S/R features...")
 
 # Initialize enhanced S/R features
 features_df["sr_proximity"] = 0.0
@@ -719,15 +700,15 @@ if isolation_scores:
 
 except Exception as e:
                     # Continue with next data point if there's an error
-self.logger.debug(f"Error calculating enhanced S/R features for index {i}: {e}")
+    self.logger.debug(f"Error calculating enhanced S/R features for index {i}: {e}")
 continue
 
-self.logger.info("✅ Enhanced S/R features added successfully")
-return features_df
+    self.logger.info("✅ Enhanced S/R features added successfully")
+    return features_df
 
 except Exception as e:
             self.logger.error(f"Error adding enhanced S/R features: {e}")
-return self._add_basic_sr_features(features_df)
+    return self._add_basic_sr_features(features_df)
 
 def _add_basic_sr_features(self, features_df: pd.DataFrame) -> pd.DataFrame:
         """
@@ -737,7 +718,7 @@ try:
     # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
     # Exception handling placeholder - implement specific error handling as needed
-self.logger.info("🔧 Adding basic S/R features...")
+    self.logger.info("🔧 Adding basic S/R features...")
 
 # Initialize basic S/R features
 features_df["sr_proximity"] = 0.0
@@ -799,21 +780,17 @@ features_df.loc[features_df.index[i], "sr_isolation_score"] = 0.5
 
 except Exception as e:
                     # Continue with next data point if there's an error
-self.logger.debug(f"Error calculating basic S/R features for index {i}: {e}")
+    self.logger.debug(f"Error calculating basic S/R features for index {i}: {e}")
 continue
 
-self.logger.info("✅ Basic S/R features added successfully")
-return features_df
+    self.logger.info("✅ Basic S/R features added successfully")
+    return features_df
 
 except Exception as e:
             self.logger.error(f"Error adding basic S/R features: {e}")
-return features_df
+    return features_df
 
-@handle_errors(
-exceptions=(Exception,),
-default_return=None,
-context="UnifiedRegimeClassifier._calculate_rsi",
-)
+@handle_errors( exceptions=(Exception,), default_return=None, context="UnifiedRegimeClassifier._calculate_rsi", )
 def _calculate_rsi(self, df: pd.DataFrame, period: int = 14) -> pd.DataFrame:
         """Calculate RSI indicator using price differences."""
 # Use price differences instead of absolute prices
@@ -822,14 +799,11 @@ gain = (close_diff.where(close_diff > 0, 0)).rolling(window=period).mean()
 loss = (-close_diff.where(close_diff < 0, 0)).rolling(window=period).mean()
 rs = gain / loss
 df["rsi"] = 100 - (100 / (1 + rs))
-return df
+    return df
 
-@handle_errors(
-exceptions=(Exception,),
-default_return=None,
-context="UnifiedRegimeClassifier._calculate_macd",
-)
-def _calculate_macd(
+@handle_errors( exceptions=(Exception,), default_return=None, context="UnifiedRegimeClassifier._calculate_macd", )
+def _calculate_macd(:
+    pass  # TODO: Add implementation
 self,
 df: pd.DataFrame,
 fast: int = 12,
@@ -844,13 +818,9 @@ exp2 = close_diff.ewm(span=slow).mean()
 df["macd"] = exp1 - exp2
 df["macd_signal"] = df["macd"].ewm(span=signal).mean()
 df["macd_histogram"] = df["macd"] - df["macd_signal"]
-return df
+    return df
 
-@handle_errors(
-exceptions=(Exception,),
-default_return=None,
-context="UnifiedRegimeClassifier._calculate_adx",
-)
+@handle_errors( exceptions=(Exception,), default_return=None, context="UnifiedRegimeClassifier._calculate_adx", )
 def _calculate_adx(self, df: pd.DataFrame, period: int = 14) -> pd.DataFrame:
         """Calculate the Average Directional Index (ADX)."""
 high = df["high"]
@@ -882,14 +852,11 @@ dx = 100 * (abs(plus_di - minus_di) / (plus_di + minus_di))
 df["adx"] = dx.ewm(alpha=1 / period, adjust=False).mean()
 df["adx"] = df["adx"].fillna(25)  # Fill initial NaNs with a neutral value
 
-return df
+    return df
 
-@handle_errors(
-exceptions=(Exception,),
-default_return=None,
-context="UnifiedRegimeClassifier._calculate_bollinger_bands",
-)
-def _calculate_bollinger_bands(
+@handle_errors( exceptions=(Exception,), default_return=None, context="UnifiedRegimeClassifier._calculate_bollinger_bands", )
+def _calculate_bollinger_bands(:
+    pass  # TODO: Add implementation
 self,
 df: pd.DataFrame,
 period: int = 20,
@@ -906,13 +873,9 @@ df["bb_position"] = (close_diff - df["bb_lower"]) / (
 df["bb_upper"] - df["bb_lower"]
 )
 df["bb_width"] = (df["bb_upper"] - df["bb_lower"]) / sma
-return df
+    return df
 
-@handle_errors(
-exceptions=(Exception,),
-default_return=None,
-context="UnifiedRegimeClassifier._calculate_atr",
-)
+@handle_errors( exceptions=(Exception,), default_return=None, context="UnifiedRegimeClassifier._calculate_atr", )
 def _calculate_atr(self, df: pd.DataFrame, period: int = 14) -> pd.DataFrame:
         """Calculate Average True Range using price differences."""
 # Use price differences instead of absolute prices
@@ -927,11 +890,12 @@ true_range = np.maximum(
 high_low_diff, np.maximum(high_close_diff, low_close_diff)
 )
 df["atr"] = true_range.rolling(window=period).mean()
-return df
+    return df
 
 # --- Simple fallbacks are no longer required when using basic decorator without recovery strategies ---
 
-def _interpret_hmm_states(
+def _interpret_hmm_states(:
+    pass  # TODO: Add implementation
 self,
 features_df: pd.DataFrame,
 state_sequence: np.ndarray,
@@ -1001,7 +965,7 @@ state_analysis[state] = {
 "count": len(state_data),
 }
 
-self.logger.info(
+    self.logger.info(
 f"State {state}: {regime} "
 f"(mean_return={mean_return:.4f}, mean_vol={mean_volatility:.4f}, mean_adx={mean_adx:.2f}, "
 f"is_sideways={is_sideways})",
@@ -1026,7 +990,7 @@ mapped_counts[data["regime"]] = mapped_counts.get(data["regime"], 0) + int(
 data.get("count", 0)
 )
 
-self.logger.info(
+    self.logger.info(
 {
 "msg": "HMM state mapping summary",
 "n_states": self.n_states,
@@ -1042,7 +1006,7 @@ list({r for r in state_to_regime_map.values()})
 }
 )
 
-return state_analysis
+    return state_analysis
 
 async def _calculate_enhanced_sr_levels(self, df_window: pd.DataFrame) -> dict:
         """
@@ -1060,7 +1024,7 @@ except Exception as e:
     # Exception handling placeholder - implement specific error handling as needed
 if not self.sr_predictor or not self.enable_sr_integration:
                 # Fallback to basic pivot calculation if SRBreakoutPredictor not available
-return await self._calculate_basic_pivots(df_window)
+    return await self._calculate_basic_pivots(df_window)
 
 if len(df_window) < 5:
                 return {
@@ -1080,7 +1044,7 @@ sr_context = await self.sr_predictor.get_sr_context(df_window, current_price)
 
 if not sr_context:
                 self.logger.warning("Failed to get S/R context, falling back to basic calculation")
-return await self._calculate_basic_pivots(df_window)
+    return await self._calculate_basic_pivots(df_window)
 
 # Extract enhanced S/R levels and metrics
 support_levels = sr_context.get("support_levels", [])
@@ -1110,7 +1074,7 @@ enhanced_strengths = {
 "enhanced_strength_resistance": sr_context.get("enhanced_strength_resistance", {}),
 }
 
-return {
+    return {
 "s1": s1,
 "s2": s2,
 "r1": r1,
@@ -1128,7 +1092,7 @@ return {
 
 except Exception as e:
             self.logger.error(f"Error calculating enhanced S/R levels: {e}")
-return await self._calculate_basic_pivots(df_window)
+    return await self._calculate_basic_pivots(df_window)
 
 async def _calculate_basic_pivots(self, df_window: pd.DataFrame) -> dict:
         """
@@ -1166,7 +1130,7 @@ r2 = pivot + (high - low)
 s1 = 2 * pivot - high
 s2 = pivot - (high - low)
 
-return {
+    return {
 "s1": s1,
 "s2": s2,
 "r1": r1,
@@ -1187,7 +1151,7 @@ return {
 
 except Exception as e:
             self.logger.error(f"Error calculating basic pivots: {e}")
-return {
+    return {
 "s1": 0, "s2": 0, "r1": 0, "r2": 0, "pivot": 0,
 "enhanced_strengths": {},
 "clustering_result": {},
@@ -1206,7 +1170,7 @@ except Exception as e:
     # Exception handling placeholder - implement specific error handling as needed
 if not self.sr_predictor or not self.enable_sr_integration:
                 # Fallback to basic volume analysis
-return self._analyze_basic_volume_levels(df_window)
+    return self._analyze_basic_volume_levels(df_window)
 
 if df_window.empty or len(df_window) < 20:
                 return None
@@ -1219,7 +1183,7 @@ sr_context = await self.sr_predictor.get_sr_context(df_window, current_price)
 
 if not sr_context:
                 self.logger.warning("Failed to get S/R context for volume analysis, falling back to basic")
-return self._analyze_basic_volume_levels(df_window)
+    return self._analyze_basic_volume_levels(df_window)
 
 # Extract order flow analysis
 order_flow_analysis = sr_context.get("order_flow_analysis", {})
@@ -1281,11 +1245,11 @@ if imbalances:
 "average_size": np.mean([imb.get("size", 0.0) for imb in imbalances]) if imbalances else 0.0,
 }
 
-return analyzed_levels if analyzed_levels else None
+    return analyzed_levels if analyzed_levels else None
 
 except Exception as e:
             self.logger.error(f"Error in enhanced volume analysis: {e}")
-return self._analyze_basic_volume_levels(df_window)
+    return self._analyze_basic_volume_levels(df_window)
 
 def _analyze_basic_volume_levels(self, df_window: pd.DataFrame) -> dict | None:
         """
@@ -1377,7 +1341,7 @@ analyzed_levels[level_name] = {
 "age_strength": age_strength,
 }
 
-return analyzed_levels
+    return analyzed_levels
 
 @validate_data_quality(validation_level="WARNING")
 @with_tracing_span("enhanced_location_classification")
@@ -1385,7 +1349,7 @@ async def _classify_enhanced_location(self, features_df: pd.DataFrame) -> list[s
         """
 Enhanced location classification using centralized SRBreakoutPredictor with advanced S/R analysis.
 """
-self.logger.info(
+    self.logger.info(
 "Classifying location with enhanced S/R analysis using SRBreakoutPredictor...",
 )
 
@@ -1403,7 +1367,7 @@ f"Insufficient data for enhanced location classification. "
 f"Need at least {long_term_period} rows, but only have {len(features_df)}. "
 f"Returning all OPEN_RANGE labels."
 )
-return ["OPEN_RANGE"] * len(features_df)
+    return ["OPEN_RANGE"] * len(features_df)
 
 locations = []
 
@@ -1522,10 +1486,10 @@ else:
 padding = ["OPEN_RANGE"] * start_index
 final_locations = padding + locations
 
-self.logger.info(
+    self.logger.info(
 f"Finished enhanced location classification. Found: {pd.Series(final_locations).value_counts().to_dict()}",
 )
-return final_locations
+    return final_locations
 
 @validate_data_quality(validation_level="WARNING")
 @with_tracing_span("location_classification")
@@ -1550,10 +1514,10 @@ except RuntimeError:
                     loop = asyncio.new_event_loop()
 asyncio.set_event_loop(loop)
 
-return loop.run_until_complete(self._classify_enhanced_location(features_df))
+    return loop.run_until_complete(self._classify_enhanced_location(features_df))
 except Exception as e:
                 self.logger.warning(f"Enhanced location classification failed, falling back to basic: {e}")
-return self._classify_basic_location(features_df)
+    return self._classify_basic_location(features_df)
 else:
             return self._classify_basic_location(features_df)
 
@@ -1561,7 +1525,7 @@ def _classify_basic_location(self, features_df: pd.DataFrame) -> list[str]:
         """
 Basic location classification as fallback when enhanced analysis is not available.
 """
-self.logger.info("Using basic location classification...")
+    self.logger.info("Using basic location classification...")
 
 # --- Configuration for dual-timeframe analysis ---
 long_term_hvn_period = self.config.get("long_term_hvn_period", 720)  # 30 days on 1h chart
@@ -1576,7 +1540,7 @@ f"Insufficient data for location classification. "
 f"Need at least {long_term_hvn_period} rows, but only have {len(features_df)}. "
 f"Returning all OPEN_RANGE labels."
 )
-return ["OPEN_RANGE"] * len(features_df)
+    return ["OPEN_RANGE"] * len(features_df)
 
 locations = []
 
@@ -1657,10 +1621,10 @@ else:
 padding = ["OPEN_RANGE"] * start_index
 final_locations = padding + locations
 
-self.logger.info(
+    self.logger.info(
 f"Finished basic location classification. Found: {pd.Series(final_locations).value_counts().to_dict()}",
 )
-return final_locations
+    return final_locations
 
 async def train_hmm_labeler(self, historical_klines: pd.DataFrame) -> bool:
         """
@@ -1670,20 +1634,20 @@ try:
     # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
     # Exception handling placeholder - implement specific error handling as needed
-self.logger.info("🎓 Training HMM-based Market Regime Classifier with enhanced S/R integration...")
+    self.logger.info("🎓 Training HMM-based Market Regime Classifier with enhanced S/R integration...")
 
 # Initialize SRBreakoutPredictor for enhanced analysis
 if self.enable_sr_integration:
                 sr_init_success = await self.initialize_sr_predictor()
 if not sr_init_success:
                     self.logger.warning("Failed to initialize SRBreakoutPredictor, continuing with basic analysis")
-self.enable_sr_integration = False
+    self.enable_sr_integration = False
 
 # Calculate features
 features_df = await self._calculate_features(historical_klines)
 if features_df.empty:
                 self.logger.error("No features available for HMM training")
-return False
+    return False
 
 # Prepare features for HMM
 hmm_features = features_df[
@@ -1705,32 +1669,32 @@ hmm_features = features_df[
 ].fillna(0)
 
 # Scale features
-self.scaler = StandardScaler()
+    self.scaler = StandardScaler()
 hmm_features_scaled = self.scaler.fit_transform(hmm_features)
 
 # Train HMM model
-self.hmm_model = hmm.GaussianHMM(
+    self.hmm_model = hmm.GaussianHMM(
 n_components=self.n_states,
 n_iter=self.n_iter,
 random_state=self.random_state,
 covariance_type="full",
 )
 
-self.hmm_model.fit(hmm_features_scaled)
+    self.hmm_model.fit(hmm_features_scaled)
 
 # Get state sequence
 state_sequence = self.hmm_model.predict(hmm_features_scaled)
 
 # Interpret states and create regime mapping
 state_analysis = self._interpret_hmm_states(features_df, state_sequence)
-self.state_to_regime_map = state_analysis["state_to_regime_map"]
+    self.state_to_regime_map = state_analysis["state_to_regime_map"]
 
-self.logger.info("✅ HMM-based regime classifier trained successfully")
-return True
+    self.logger.info("✅ HMM-based regime classifier trained successfully")
+    return True
 
 except Exception as e:
             self.logger.error(f"❌ Failed to train HMM regime classifier: {e}")
-return False
+    return False
 
 async def train_location_classifier(self, historical_klines: pd.DataFrame) -> bool:
         """
@@ -1740,7 +1704,7 @@ try:
     # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
     # Exception handling placeholder - implement specific error handling as needed
-self.logger.info("🎓 Training Location Classifier...")
+    self.logger.info("🎓 Training Location Classifier...")
 
 # Calculate features
 features_df = await self._calculate_features(historical_klines)
@@ -1748,7 +1712,7 @@ if features_df.empty:
                 self.logger.error(
 "No features available for location classifier training",
 )
-return False
+    return False
 
 # Check if we have enough data for location classification
 long_term_hvn_period = self.config.get("long_term_hvn_period", 720)
@@ -1758,7 +1722,7 @@ f"Insufficient data for location classification. "
 f"Need at least {long_term_hvn_period} rows, but only have {len(features_df)}. "
 f"Skipping location classifier training."
 )
-return True  # Return True to avoid breaking the pipeline
+    return True  # Return True to avoid breaking the pipeline
 
 # Get location labels using the new _classify_location method
 location_labels = self._classify_location(features_df)
@@ -1769,10 +1733,10 @@ if len(location_labels) != len(features_df):
 f"Location labels length ({len(location_labels)}) does not match "
 f"features length ({len(features_df)}). Skipping location classifier training."
 )
-return True  # Return True to avoid breaking the pipeline
+    return True  # Return True to avoid breaking the pipeline
 
 # Encode location labels
-self.location_label_encoder = LabelEncoder()
+    self.location_label_encoder = LabelEncoder()
 location_encoded = self.location_label_encoder.fit_transform(
 location_labels,
 )
@@ -1783,7 +1747,7 @@ location_features = features_df[
 ].fillna(0)
 
 # Train location classifier
-self.location_classifier = LGBMClassifier(
+    self.location_classifier = LGBMClassifier(
 n_estimators=100,
 learning_rate=0.1,
 max_depth=6,
@@ -1791,14 +1755,14 @@ random_state=42,
 verbose=-1,
 )
 
-self.location_classifier.fit(location_features, location_encoded)
+    self.location_classifier.fit(location_features, location_encoded)
 
-self.logger.info("✅ Location classifier trained successfully")
-return True
+    self.logger.info("✅ Location classifier trained successfully")
+    return True
 
 except Exception as e:
             self.logger.error(f"❌ Failed to train location classifier: {e}")
-return False
+    return False
 
 async def train_basic_ensemble(self, historical_klines: pd.DataFrame) -> bool:
         """
@@ -1808,13 +1772,13 @@ try:
     # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
     # Exception handling placeholder - implement specific error handling as needed
-self.logger.info("🎓 Training Basic Regime Ensemble...")
+    self.logger.info("🎓 Training Basic Regime Ensemble...")
 
 # Calculate features
 features_df = await self._calculate_features(historical_klines)
 if features_df.empty:
                 self.logger.error("No features available for ensemble training")
-return False
+    return False
 
 # Get HMM-based labels
 hmm_features = features_df[
@@ -1839,12 +1803,12 @@ state_sequence = self.hmm_model.predict(hmm_features_scaled)
 
 # Map states to regimes
 regime_labels = [
-self.state_to_regime_map.get(state, "SIDEWAYS")
+    self.state_to_regime_map.get(state, "SIDEWAYS")
 for state in state_sequence
 ]
 
 # Encode regime labels
-self.basic_label_encoder = LabelEncoder()
+    self.basic_label_encoder = LabelEncoder()
 regime_encoded = self.basic_label_encoder.fit_transform(regime_labels)
 
 # Prepare features for ensemble
@@ -1867,7 +1831,7 @@ ensemble_features = features_df[
 ].fillna(0)
 
 # Train ensemble
-self.basic_ensemble = LGBMClassifier(
+    self.basic_ensemble = LGBMClassifier(
 n_estimators=100,
 learning_rate=0.1,
 max_depth=6,
@@ -1875,14 +1839,14 @@ random_state=42,
 verbose=-1,
 )
 
-self.basic_ensemble.fit(ensemble_features, regime_encoded)
+    self.basic_ensemble.fit(ensemble_features, regime_encoded)
 
-self.logger.info("✅ Basic regime ensemble trained successfully")
-return True
+    self.logger.info("✅ Basic regime ensemble trained successfully")
+    return True
 
 except Exception as e:
             self.logger.error(f"❌ Failed to train basic ensemble: {e}")
-return False
+    return False
 
 async def train_complete_system(self, historical_klines: pd.DataFrame) -> bool:
         """
@@ -1892,7 +1856,7 @@ try:
     # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
     # Exception handling placeholder - implement specific error handling as needed
-self.logger.info("🎓 Training Complete Regime Classification System...")
+    self.logger.info("🎓 Training Complete Regime Classification System...")
 
 # Initialize SR analyzer
 # Legacy S/R/Candle code removed
@@ -1909,19 +1873,19 @@ if not await self.train_basic_ensemble(historical_klines):
 if not await self.train_location_classifier(historical_klines):
                 return False
 
-self.trained = True
-self.last_training_time = datetime.now()
+    self.trained = True
+    self.last_training_time = datetime.now()
 
-self.logger.info(
+    self.logger.info(
 "✅ Complete regime classification system trained successfully",
 )
 # Persist trained models so subsequent runs can load them
-self.save_models()
-return True
+    self.save_models()
+    return True
 
 except Exception as e:
             self.logger.error(f"❌ Failed to train complete system: {e}")
-return False
+    return False
 
 async def predict_regime(
 self,
@@ -1942,7 +1906,7 @@ except Exception as e:
     # Exception handling placeholder - implement specific error handling as needed
 if not self.trained:
                 self.logger.warning("Models not trained, returning default prediction")
-return "SIDEWAYS", 0.5, {}
+    return "SIDEWAYS", 0.5, {}
 
 # Calculate features
 features_df = await self._calculate_features(current_klines)
@@ -1988,11 +1952,11 @@ additional_info = {
 "prediction_time": datetime.now().isoformat(),
 }
 
-return regime, regime_confidence, additional_info
+    return regime, regime_confidence, additional_info
 
 except Exception as e:
             self.logger.error(f"❌ Error in regime prediction: {e}")
-return "SIDEWAYS", 0.5, {"error": str(e)}
+    return "SIDEWAYS", 0.5, {"error": str(e)}
 
 async def predict_regime_and_location(
 self,
@@ -2013,7 +1977,7 @@ except Exception as e:
     # Exception handling placeholder - implement specific error handling as needed
 if not self.trained:
                 self.logger.warning("Models not trained, returning default predictions")
-return "SIDEWAYS", "OPEN_RANGE", 0.5, {}
+    return "SIDEWAYS", "OPEN_RANGE", 0.5, {}
 
 # Calculate features
 features_df = await self._calculate_features(current_klines)
@@ -2085,11 +2049,11 @@ additional_info = {
 "prediction_time": datetime.now().isoformat(),
 }
 
-return regime, location, overall_confidence, additional_info
+    return regime, location, overall_confidence, additional_info
 
 except Exception as e:
             self.logger.error(f"❌ Error in regime/location prediction: {e}")
-return "SIDEWAYS", "OPEN_RANGE", 0.5, {"error": str(e)}
+    return "SIDEWAYS", "OPEN_RANGE", 0.5, {"error": str(e)}
 
 def save_models(self) -> None:
         """Save all trained models."""
@@ -2099,31 +2063,31 @@ except Exception as e:
     # Exception handling placeholder - implement specific error handling as needed
 if self.hmm_model:
                 joblib.dump(self.hmm_model, self.hmm_model_path)
-self.logger.info(f"✅ HMM model saved to {self.hmm_model_path}")
+    self.logger.info(f"✅ HMM model saved to {self.hmm_model_path}")
 
 if self.basic_ensemble:
                 joblib.dump(self.basic_ensemble, self.ensemble_model_path)
-self.logger.info(
+    self.logger.info(
 f"✅ Basic ensemble saved to {self.ensemble_model_path}",
 )
 
 if self.location_classifier:
                 joblib.dump(self.location_classifier, self.location_model_path)
-self.logger.info(
+    self.logger.info(
 f"✅ Location classifier saved to {self.location_model_path}",
 )
 
 # Save label encoders
 if self.basic_label_encoder:
                 joblib.dump(
-self.basic_label_encoder,
-self.ensemble_model_path.replace(".joblib", "_encoder.joblib"),
+    self.basic_label_encoder,
+    self.ensemble_model_path.replace(".joblib", "_encoder.joblib"),
 )
 
 if self.location_label_encoder:
                 joblib.dump(
-self.location_label_encoder,
-self.location_model_path.replace(".joblib", "_encoder.joblib"),
+    self.location_label_encoder,
+    self.location_model_path.replace(".joblib", "_encoder.joblib"),
 )
 
 except Exception:
@@ -2136,7 +2100,7 @@ try:
 except Exception as e:
     # Exception handling placeholder - implement specific error handling as needed
 # Log model directory and candidate paths
-self.logger.info(
+    self.logger.info(
 {
 "msg": "UnifiedRegimeClassifier model directories",
 "model_dir": self.model_dir,
@@ -2153,21 +2117,21 @@ loaded_any = False
 
 # Candidate paths (flat first, then optional hierarchical forms)
 hmm_candidates = [
-self.hmm_model_path,
+    self.hmm_model_path,
 os.path.join(
 getattr(self, "_hierarchical_model_dir", self.model_dir),
 "unified_hmm_model.joblib",
 ),
 ]
 ensemble_candidates = [
-self.ensemble_model_path,
+    self.ensemble_model_path,
 os.path.join(
 getattr(self, "_hierarchical_model_dir", self.model_dir),
 "unified_ensemble_model.joblib",
 ),
 ]
 location_candidates = [
-self.location_model_path,
+    self.location_model_path,
 os.path.join(
 getattr(self, "_hierarchical_model_dir", self.model_dir),
 "unified_location_model.joblib",
@@ -2178,32 +2142,32 @@ def _first_existing(paths: list[str]) -> str | None:
                 for p in paths:
                     if os.path.exists(p):
                         return p
-return None
+    return None
 
 # Load HMM model
 hmm_path = _first_existing(hmm_candidates)
 if hmm_path is not None:
                 self.hmm_model = joblib.load(hmm_path)
-self.logger.info(f"✅ Loaded HMM model from {hmm_path}")
+    self.logger.info(f"✅ Loaded HMM model from {hmm_path}")
 loaded_any = True
 
 # Load basic ensemble
 ensemble_path = _first_existing(ensemble_candidates)
 if ensemble_path is not None:
                 self.basic_ensemble = joblib.load(ensemble_path)
-self.logger.info(f"✅ Loaded basic ensemble from {ensemble_path}")
+    self.logger.info(f"✅ Loaded basic ensemble from {ensemble_path}")
 loaded_any = True
 
 # Load location classifier
 location_path = _first_existing(location_candidates)
 if location_path is not None:
                 self.location_classifier = joblib.load(location_path)
-self.logger.info(f"✅ Loaded location classifier from {location_path}")
+    self.logger.info(f"✅ Loaded location classifier from {location_path}")
 loaded_any = True
 
 # Load label encoders
 encoder_candidates = [
-self.ensemble_model_path.replace(".joblib", "_encoder.joblib"),
+    self.ensemble_model_path.replace(".joblib", "_encoder.joblib"),
 os.path.join(
 getattr(self, "_hierarchical_model_dir", self.model_dir),
 "unified_ensemble_model_encoder.joblib",
@@ -2214,7 +2178,7 @@ if enc_path is not None:
                 self.basic_label_encoder = joblib.load(enc_path)
 
 location_encoder_candidates = [
-self.location_model_path.replace(".joblib", "_encoder.joblib"),
+    self.location_model_path.replace(".joblib", "_encoder.joblib"),
 os.path.join(
 getattr(self, "_hierarchical_model_dir", self.model_dir),
 "unified_location_model_encoder.joblib",
@@ -2224,15 +2188,14 @@ loc_enc_path = _first_existing(location_encoder_candidates)
 if loc_enc_path is not None:
                 self.location_label_encoder = joblib.load(loc_enc_path)
 
-self.trained = loaded_any
-return loaded_any
+    self.trained = loaded_any
+    return loaded_any
 
 except Exception:
             self.logger.error(f"❌ Error loading models: {e}")
-return False
+    return False
 
-@comprehensive_data_validation
-@with_tracing_span("regime_classification")
+@comprehensive_data_validation @with_tracing_span("regime_classification")
 async def classify_regimes(self, historical_klines: pd.DataFrame) -> dict[str, Any]:
         """
 Classify regimes for historical data (for training purposes).
@@ -2254,13 +2217,13 @@ if not self.trained:
 training_success = await self.train_complete_system(historical_klines)
 if not training_success:
                     self.logger.error("❌ Failed to train regime classification models")
-return {"error": "Failed to train regime classification models"}
+    return {"error": "Failed to train regime classification models"}
 
 # Calculate features
 features_df = await self._calculate_features(historical_klines)
 if features_df.empty:
                 self.logger.error("❌ No features available for classification")
-return {"error": "No features available for classification"}
+    return {"error": "No features available for classification"}
 
 # Get regime predictions
 regime_features = features_df[
@@ -2303,7 +2266,7 @@ counts = {
 r: int((np.array(regimes) == r).sum()) for r in unique_regimes
 }
 # Detailed logging on regime prediction composition
-self.logger.info(
+    self.logger.info(
 {
 "msg": "Ensemble regime prediction summary",
 "unique_regimes": unique_regimes,
@@ -2341,7 +2304,7 @@ elif self.hmm_model and self.scaler and self.state_to_regime_map:
 hmm_features_scaled = self.scaler.transform(regime_features)
 state_sequence = self.hmm_model.predict(hmm_features_scaled)
 regimes = [
-self.state_to_regime_map.get(state, "SIDEWAYS")
+    self.state_to_regime_map.get(state, "SIDEWAYS")
 for state in state_sequence
 ]
 # For HMM, use a default confidence score since we don't have probabilities
@@ -2352,7 +2315,7 @@ unique_regimes = list(sorted(set(regimes)))
 counts = {
 r: int((np.array(regimes) == r).sum()) for r in unique_regimes
 }
-self.logger.info(
+    self.logger.info(
 {
 "msg": "HMM regime prediction summary",
 "unique_regimes": unique_regimes,
@@ -2392,13 +2355,13 @@ else:
 training_success = await self.train_complete_system(historical_klines)
 if not training_success:
                     self.logger.error("❌ Failed to train regime classification models")
-return {"error": "Failed to train regime classification models"}
+    return {"error": "Failed to train regime classification models"}
 
 # Retry classification after training
-self.logger.info(
+    self.logger.info(
 "🔄 Retrying regime classification with newly trained models...",
 )
-return await self.classify_regimes(historical_klines)
+    return await self.classify_regimes(historical_klines)
 
 # Get location predictions
 location_labels = self._classify_location(features_df)
@@ -2406,9 +2369,9 @@ location_labels = self._classify_location(features_df)
 regime_distribution = dict(pd.Series(regimes).value_counts())
 # Convert numpy types to regular Python types for clean logging
 clean_distribution = {k: int(v) for k, v in regime_distribution.items()}
-self.logger.info(f"📊 Regime distribution: {clean_distribution}")
+    self.logger.info(f"📊 Regime distribution: {clean_distribution}")
 
-return {
+    return {
 "regimes": regimes,
 "confidence_scores": confidence_scores,
 "locations": location_labels,
@@ -2421,11 +2384,11 @@ pd.Series(location_labels).value_counts(),
 
 except Exception as e:
             self.logger.exception(f"❌ Error in regime classification: {e}")
-return {"error": str(e)}
+    return {"error": str(e)}
 
 def get_system_status(self) -> dict[str, Any]:
         """Get system status and statistics."""
-return {
+    return {
 "trained": self.trained,
 "last_training_time": self.last_training_time.isoformat()
 if self.last_training_time

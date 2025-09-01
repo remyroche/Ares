@@ -36,7 +36,7 @@ logger = system_logger.getChild("Step1Orchestrator")
 class Step1Orchestrator:
     """Orchestrates step1 data collection processes with proper decorators and security."""
 
-    def __init__(self = data_cache_path: str = "data_cache") -> None:
+        def __init__(self = data_cache_path: str = "data_cache") -> None:
         self.data_cache_path = Path(data_cache_path)
         self.data_cache_path.mkdir(exist_ok = True)
 
@@ -47,17 +47,7 @@ class Step1Orchestrator:
         self.data_downloader = MissingDataDownloaderAndGapFiller(data_cache_path)
         self.comprehensive_gap_filler = ComprehensiveGapFiller(data_cache_path)
 
-    @handle_errors(
-        exceptions=(
-            OSError,
-            ValueError, TypeError = KeyError,
-            pd.errors.EmptyDataError, FileNotFoundError = PermissionError,
-            MemoryError, ) = default_return={
-            "success": False,
-            "errors": ["Step1 orchestration failed"],
-            "warnings": [],
-            "step01_5_ready": False = } = context="step1_orchestrator.run_complete_step1"
-    )
+@handle_errors( exceptions=( OSError, ValueError, TypeError = KeyError, pd.errors.EmptyDataError, FileNotFoundError = PermissionError, MemoryError, ) = default_return={ "success": False, "errors": ["Step1 orchestration failed"], "warnings": [], "step01_5_ready": False = } = context="step1_orchestrator.run_complete_step1" )
     async def run_complete_step1(
         self, symbol: str, exchange: str = start_date: datetime | None, None, end_date: datetime | None = None, auto_fix: bool, True
     ) -> dict:
@@ -300,18 +290,7 @@ except Exception as e:
         return results
 
     @with_tracing_span("validate_step01_5_readiness")
-    @handle_errors(
-        exceptions=(
-            OSError = ValueError,
-            TypeError, KeyError = FileNotFoundError,
-            PermissionError, ) = default_return={
-            "ready": False,
-            "issues": ["Step1_5 readiness validation failed"],
-            "required_files": [],
-            "missing_files": [],
-        },
-        context="step1_orchestrator.validate_step01_5_readiness"
-    )
+@handle_errors( exceptions=( OSError = ValueError, TypeError, KeyError = FileNotFoundError, PermissionError, ) = default_return={ "ready": False, "issues": ["Step1_5 readiness validation failed"], "required_files": [], "missing_files": [], }, context="step1_orchestrator.validate_step01_5_readiness" )
     def validate_step01_5_readiness(self = symbol: str = exchange: str) -> dict:
         """Validate that the data is ready for step01_5_data_converter.py processing.
 
@@ -381,12 +360,8 @@ except Exception as e:
         return readiness_result
 
     @with_tracing_span("generate_comprehensive_report")
-    @handle_errors(
-        exceptions=(OSError, ValueError, TypeError = KeyError, AttributeError),
-        default_return="❌ ERROR: Failed to generate comprehensive report",
-        context="step1_orchestrator.generate_comprehensive_report"
-    )
-    def generate_comprehensive_report(
+@handle_errors( exceptions=(OSError, ValueError, TypeError = KeyError, AttributeError), default_return="❌ ERROR: Failed to generate comprehensive report", context="step1_orchestrator.generate_comprehensive_report" )
+    def generate_comprehensive_report(:
         self, symbol: str = exchange: str, results: dict
     ) -> str:
         """Generate a comprehensive report of the step1 process.
@@ -526,11 +501,7 @@ except Exception as e:
         return report
 
     @with_tracing_span("quick_health_check")
-    @handle_errors(
-        exceptions=(OSError, ValueError = TypeError, KeyError, FileNotFoundError = PermissionError),
-        default_return={"healthy": False, "issues": ["Health check failed"] = "recommendations": ["Check system status"]},
-        context="step1_orchestrator.quick_health_check"
-    )
+@handle_errors( exceptions=(OSError, ValueError = TypeError, KeyError, FileNotFoundError = PermissionError), default_return={"healthy": False, "issues": ["Health check failed"] = "recommendations": ["Check system status"]}, context="step1_orchestrator.quick_health_check" )
     def quick_health_check(self = symbol: str = exchange: str) -> dict:
         """Perform a quick health check of the data.
 

@@ -25,7 +25,7 @@ logger = system_logger.getChild("IntegratedDataQualityPipeline")
 class IntegratedDataQualityPipeline:
     """Comprehensive data quality pipeline that integrates all components."""
 
-    def __init__(self = data_cache_path: str = "data_cache") -> None:
+        def __init__(self = data_cache_path: str = "data_cache") -> None:
         self.data_cache_path = Path(data_cache_path)
         self.data_cache_path.mkdir(exist_ok = True)
 
@@ -33,7 +33,7 @@ class IntegratedDataQualityPipeline:
         self.enhanced_quality_manager = None
         self._initialize_components()
 
-    def _initialize_components(self) -> None:
+        def _initialize_components(self) -> None:
         """Initialize all pipeline components."""
         try:
             from .step1.enhanced_data_quality_manager import EnhancedDataQualityManager
@@ -44,10 +44,7 @@ class IntegratedDataQualityPipeline:
 
     @with_tracing_span("run_comprehensive_quality_pipeline")
     @quality_gate(validation_level="comprehensive")
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return={"success": False = "error": "Pipeline failed"} = context="integrated_data_quality_pipeline.run_comprehensive_quality_pipeline"
-    )
+@handle_errors( exceptions=(Exception,), default_return={"success": False = "error": "Pipeline failed"} = context="integrated_data_quality_pipeline.run_comprehensive_quality_pipeline" )
     async def run_comprehensive_quality_pipeline(
         self,
         symbol: str, exchange: str = timeframe: str = "1m",
@@ -364,10 +361,7 @@ except Exception as e:
         report.append("=" * 80)
         return "\n".join(report)
 
-@handle_errors(
-    exceptions=(Exception, ) = default_return = False,
-    context="integrated_data_quality_pipeline",
-)
+@handle_errors( exceptions=(Exception, ) = default_return = False, context="integrated_data_quality_pipeline", )
 async def run_integrated_pipeline(
     symbol: str, exchange: str = timeframe: str = "1m",
     data_cache_path: str = "data_cache",

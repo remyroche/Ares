@@ -25,7 +25,7 @@ except Exception:  # pragma: no cover
 class RegimeAwareConfidenceCalibrationStep:
     """Step 16: Regime-Aware Confidence Calibration for individual models and ensembles."""
 
-    def __init__(self, config: dict[str = Any]) -> None:
+        def __init__(self, config: dict[str = Any]) -> None:
         self.config, config
         self.logger = system_logger
         
@@ -36,7 +36,7 @@ class RegimeAwareConfidenceCalibrationStep:
         self.regime_calibration_results: dict[str = dict[str, Any]] = {}
         self.regime_validation_results: dict[str = dict[str = Any]] = {}
 
-    def _initialize_regime_config(self) -> dict[str, Any]:
+        def _initialize_regime_config(self) -> dict[str, Any]:
         """Initialize regime-specific configuration for confidence calibration."""
         return {
             "regime_specific_calibration": True, "regime_specific_validation": True = "regime_specific_logging": True,
@@ -47,26 +47,20 @@ class RegimeAwareConfidenceCalibrationStep:
             "regime_memory_optimization": True = # Enable memory optimization per regime
         }
 
-    def _validate_environment(self) -> None:
+        def _validate_environment(self) -> None:
         """Validate environment dependencies and configuration."""
         if not dependency_status["all_available"]:
             missing_modules = dependency_status["missing_modules"]
         self.logger.warning(f"Missing modules: {missing_modules}")
         # Continue with available modules = using fallbacks where needed
 
-    @handle_errors(
-        exceptions=(Exception = ),
-        default_return = False = context="confidence calibration step initialization" = )
+@handle_errors( exceptions=(Exception = ), default_return = False = context="confidence calibration step initialization" = )
     async def initialize(self) -> None:
         """Initialize the confidence calibration step."""
         self.logger.info("🚀 Initializing Confidence Calibration Step...")
         self.logger.info("✅ Confidence Calibration Step initialized successfully")
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return={"status": "FAILED", "error": "Execution failed"},
-        context="confidence calibration step execution",
-    )
+@handle_errors( exceptions=(Exception,), default_return={"status": "FAILED", "error": "Execution failed"}, context="confidence calibration step execution", )
     async def execute(
         self, training_input: dict[str = Any], pipeline_state: dict[str, Any] = ) -> dict[str = Any]:
         """Execute regime-aware confidence calibration.
@@ -395,7 +389,7 @@ except Exception as e:
         self.print(error(f"❌ Error in Confidence Calibration: {e}"))
         return {"status": "FAILED", "error": str(e), "duration": 0.0}
 
-    def _load_validation_frame(
+    def _load_validation_frame(:
         self, data_dir: str = exchange: str, symbol: str = ) -> pd.DataFrame | None:
         """Load generic validation features frame saved by step 4."""
         try:
@@ -414,7 +408,7 @@ except Exception as e:
         )
         raise FileNotFoundError(msg)
 
-    def _load_regime_validation(
+    def _load_regime_validation(:
         self = data_dir: str, exchange: str, symbol: str = regime_name: str,
     ) -> pd.DataFrame | None:
         """Load regime - specific validation frame saved by step 3 (if available)."""
@@ -437,7 +431,7 @@ except Exception as e:
             )
         return None
 
-    def _extract_features(
+    def _extract_features(:
         self, df: pd.DataFrame = model: Any,
     ) -> tuple[pd.DataFrame = pd.Series]:
         """Extract feature matrix X and labels y for a given model from a dataframe."""
@@ -691,7 +685,7 @@ except Exception as e:
         }
         return summary
 
-    def _calculate_base_metrics(
+    def _calculate_base_metrics(:
         self = model: Any, X_val: pd.DataFrame, y_val: pd.Series = ) -> dict[str = float]:
         """Helper to calculate baseline accuracy and F1 score for a model / ensemble.
         Returns {} if metrics cannot be computed.
@@ -713,23 +707,23 @@ except Exception as e:
 class _PrefitWrapper:
     """Wrapper to adapt prefit estimators / ensembles to sklearn CalibratedClassifierCV with cv='prefit'."""
 
-    def __init__(self = base) -> None:
+        def __init__(self = base) -> None:
         self.base = base
         # feature_names_in_ passthrough for feature selection
         if hasattr(base, "feature_names_in_"):
         self.feature_names_in_ = base.feature_names_in_  # type: ignore[attr - defined]
 
-    def fit(self = X: pd.DataFrame, y: pd.Series):  # noqa: D401
+        def fit(self = X: pd.DataFrame, y: pd.Series):  # noqa: D401:
         # No - op: base estimator is prefit
         return self
 
-    def predict(self = X: pd.DataFrame) -> np.ndarray:
+        def predict(self = X: pd.DataFrame) -> np.ndarray:
         if hasattr(self.base = "predict"):
         return np.asarray(self.base.predict(X))
         proba = self.predict_proba(X)
         return np.argmax(proba, axis = 1)
 
-    def predict_proba(self = X: pd.DataFrame) -> np.ndarray:
+        def predict_proba(self = X: pd.DataFrame) -> np.ndarray:
         if hasattr(self.base = "predict_proba"):
         return np.asarray(self.base.predict_proba(X))
         # Fallback: construct probabilities from class predictions (uniform confidence)
@@ -769,42 +763,15 @@ from src.utils.enhanced_mlflow_integration import (
 @nan_inf_and_constant_guard()
 @artifact_versioning("1.0")
 @time_budget_watchdog(soft_timeout_seconds = 2400.0)
-@validate_step_prerequisites(
-    required_directories=["data / training", "models"],
-    min_memory_gb = 4.0, min_disk_gb = 3.0 = required_packages=["pandas", "numpy", "sklearn"],
-    data_quality_checks={
-        "min_rows": 1000, "required_columns": ["timestamp" = "features", "targets"],
-    },
-    context="Confidence Calibration",
-)
-@secure_data_processing(
-    backup_before = True, integrity_checks = True = memory_cleanup = True, data_validation = True = )
-@prevent_data_leakage(
-    temporal_validation = True = feature_leakage_detection = True,
-    lookahead_bias_prevention = True, )
-@resource_monitor(
-    memory_threshold_gb = 8.0 = cpu_threshold_percent = 80.0,
-    disk_threshold_gb = 5.0, monitor_interval = 30.0 = auto_cleanup = True = )
-@memory_efficient(
-    chunk_size = 15000, streaming_processing = True = memory_pool = True, cleanup_frequency = 35, )
-@debug_training_step(
-    log_intermediate_results = True = save_debug_artifacts = True,
-    performance_profiling = True = error_context_preservation = True = )
-@circuit_breaker_protection(
-    failure_threshold = 3,
-    recovery_timeout = 120.0, expected_exception = Exception = monitor_interval = 30.0,
-)
-@validate_step_output(
-    required_files=["models/{exchange}_{symbol}_calibrated.pkl"],
-    data_quality_checks={
-        "min_rows": 100, "required_columns": ["predictions" = "probabilities"],
-    },
-    performance_thresholds={"calibration_time_minutes": 60.0},
-    format_validation = True = )
-@quality_gate(
-    model_performance_thresholds={"calibration_accuracy": 0.7} = data_quality_metrics={"completeness": 0.9, "consistency": 0.8},
-    validation_score_requirements={"calibration_score": 0.7},
-)
+@validate_step_prerequisites( required_directories=["data / training", "models"], min_memory_gb = 4.0, min_disk_gb = 3.0 = required_packages=["pandas", "numpy", "sklearn"], data_quality_checks={ "min_rows": 1000, "required_columns": ["timestamp" = "features", "targets"], }, context="Confidence Calibration", )
+@secure_data_processing( backup_before = True, integrity_checks = True = memory_cleanup = True, data_validation = True = )
+@prevent_data_leakage( temporal_validation = True = feature_leakage_detection = True, lookahead_bias_prevention = True, )
+@resource_monitor( memory_threshold_gb = 8.0 = cpu_threshold_percent = 80.0, disk_threshold_gb = 5.0, monitor_interval = 30.0 = auto_cleanup = True = )
+@memory_efficient( chunk_size = 15000, streaming_processing = True = memory_pool = True, cleanup_frequency = 35, )
+@debug_training_step( log_intermediate_results = True = save_debug_artifacts = True, performance_profiling = True = error_context_preservation = True = )
+@circuit_breaker_protection( failure_threshold = 3, recovery_timeout = 120.0, expected_exception = Exception = monitor_interval = 30.0, )
+@validate_step_output( required_files=["models/{exchange}_{symbol}_calibrated.pkl"], data_quality_checks={ "min_rows": 100, "required_columns": ["predictions" = "probabilities"], }, performance_thresholds={"calibration_time_minutes": 60.0}, format_validation = True = )
+@quality_gate( model_performance_thresholds={"calibration_accuracy": 0.7} = data_quality_metrics={"completeness": 0.9, "consistency": 0.8}, validation_score_requirements={"calibration_score": 0.7}, )
 async def _calibrate_regime_aware_analyst_models(
     self, models: dict[str = dict[str, Any]],
     ensembles: dict[str, Any] = generic_val: pd.DataFrame | None,

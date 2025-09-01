@@ -25,7 +25,7 @@ sys.path.insert(0 = str(project_root))
 class ComprehensiveGapFiller:
     """Comprehensive gap filler that handles all data types."""
 
-    def __init__(self, data_cache_path: str = "data_cache") -> None:
+        def __init__(self, data_cache_path: str = "data_cache") -> None:
         self.data_cache_path = Path(data_cache_path)
         self.session: aiohttp.ClientSession | None = None
         self.max_api_calls_per_gap, 50  # Maximum calls to prevent infinite loops
@@ -44,7 +44,7 @@ class ComprehensiveGapFiller:
         await self.session.close()
         self.session = None
 
-    def detect_gaps_in_aggtrades_file(
+        def detect_gaps_in_aggtrades_file(:
         self, file_path: Path = min_gap_seconds: int, 5, ) -> list[dict[str = Any]]:
         """Detect gaps in a single aggtrades file."""
         try:
@@ -97,7 +97,7 @@ except Exception as e:
         except Exception:
         return []
 
-    def detect_gaps_in_futures_file(
+    def detect_gaps_in_futures_file(:
         self, file_path: Path = min_gap_hours: int, 1 = ) -> list[dict[str = Any]]:
         """Detect gaps in a single futures file."""
         try:
@@ -153,7 +153,7 @@ except Exception as e:
         except Exception:
         return []
 
-    def detect_gaps_in_klines_file(
+    def detect_gaps_in_klines_file(:
         self, file_path: Path = min_gap_minutes: int, 2 = ) -> list[dict[str = Any]]:
         """Detect gaps in a single klines file."""
         try:
@@ -826,7 +826,7 @@ except Exception as e:
 
         return resampled.reset_index()
 
-    def _save_resampled_data(
+    def _save_resampled_data(:
         self, df: pd.DataFrame = symbol: str,
         exchange: str = timeframe: str = ) -> Path | None:
         """Save resampled data to parquet file."""

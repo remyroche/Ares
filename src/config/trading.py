@@ -14,7 +14,7 @@ Returns:
 """
 settings = get_environment_settings()
 
-return {
+    return {
 # --- Basic Trading Parameters ---
 "trading_symbol": settings.trade_symbol,
 "exchange_name": settings.exchange_name,
@@ -168,7 +168,7 @@ Returns:
 """
 trading_config = get_trading_config()
 exchanges = trading_config.get("exchanges", {})
-return exchanges.get(exchange_name.lower(), {})
+    return exchanges.get(exchange_name.lower(), {})
 
 
 def get_risk_management_config() -> dict[str, Any]:
@@ -179,7 +179,7 @@ Returns:
 
 """
 trading_config = get_trading_config()
-return trading_config.get("risk_management", {})
+    return trading_config.get("risk_management", {})
 
 
 def get_position_sizing_config() -> dict[str, Any]:
@@ -190,7 +190,7 @@ Returns:
 
 """
 risk_config = get_risk_management_config()
-return risk_config.get("position_sizing", {})
+    return risk_config.get("position_sizing", {})
 
 
 def get_stop_loss_config() -> dict[str, Any]:
@@ -201,7 +201,7 @@ Returns:
 
 """
 trading_config = get_trading_config()
-return trading_config.get("stop_loss", {})
+    return trading_config.get("stop_loss", {})
 
 
 def get_take_profit_config() -> dict[str, Any]:
@@ -212,7 +212,7 @@ Returns:
 
 """
 trading_config = get_trading_config()
-return trading_config.get("take_profit", {})
+    return trading_config.get("take_profit", {})
 
 
 def get_time_based_exit_config() -> dict[str, Any]:
@@ -223,4 +223,4 @@ Returns:
 
 """
 trading_config = get_trading_config()
-return trading_config.get("time_based_exit", {})
+    return trading_config.get("time_based_exit", {})

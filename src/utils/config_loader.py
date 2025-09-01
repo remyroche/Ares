@@ -22,11 +22,7 @@ def __init__(self):
     def __init__(self):
         self.logger, system_logger.getChild("ConfigLoader")
 
-@handle_errors(
-exceptions=(FileNotFoundError, yaml.YAMLError, ValueError),
-default_return={},
-context="YAML config loading",
-)
+@handle_errors( exceptions=(FileNotFoundError, yaml.YAMLError, ValueError), default_return={}, context="YAML config loading", )
 def load_yaml_config(self, config_path: str) -> dict[str, Any]:
         """
 Load configuration from a YAML file.
@@ -39,7 +35,7 @@ Returns:
 """
 if not os.path.exists(config_path):
         self.print(missing(f"Config file not found: {config_path}"))
-return {}
+    return {}
 
 try:
     pass  # TODO: Add proper exception handling
@@ -48,18 +44,14 @@ except Exception as e:
 with open(config_path, encoding="utf - 8") as file:
                 config, yaml.safe_load(file)
 
-self.logger.info(f"Successfully loaded config from: {config_path}")
-return config or {}
+    self.logger.info(f"Successfully loaded config from: {config_path}")
+    return config or {}
 
 except Exception as e:
         self.print(error(f"Error loading config from {config_path}: {e}"))
-return {}
+    return {}
 
-@handle_errors(
-exceptions=(FileNotFoundError, yaml.YAMLError, ValueError),
-default_return={},
-context="position sizing config loading",
-)
+@handle_errors( exceptions=(FileNotFoundError, yaml.YAMLError, ValueError), default_return={}, context="position sizing config loading", )
 def load_position_sizing_config(self, config_dir: str = "config") -> dict[str, Any]:
         """
 Load position sizing configuration.
@@ -71,13 +63,9 @@ Returns:
             Position sizing configuration dictionary
 """
 config_path, os.path.join(config_dir, "position_sizing.yaml")
-return self.load_yaml_config(config_path)
+    return self.load_yaml_config(config_path)
 
-@handle_errors(
-exceptions=(FileNotFoundError, yaml.YAMLError, ValueError),
-default_return={},
-context="leverage sizing config loading",
-)
+@handle_errors( exceptions=(FileNotFoundError, yaml.YAMLError, ValueError), default_return={}, context="leverage sizing config loading", )
 def load_leverage_sizing_config(self, config_dir: str = "config") -> dict[str, Any]:
         """
 Load leverage sizing configuration.
@@ -89,13 +77,9 @@ Returns:
             Leverage sizing configuration dictionary
 """
 config_path, os.path.join(config_dir, "leverage_sizing.yaml")
-return self.load_yaml_config(config_path)
+    return self.load_yaml_config(config_path)
 
-@handle_errors(
-exceptions=(FileNotFoundError, yaml.YAMLError, ValueError),
-default_return={},
-context="combined sizing config loading",
-)
+@handle_errors( exceptions=(FileNotFoundError, yaml.YAMLError, ValueError), default_return={}, context="combined sizing config loading", )
 
 def load_combined_sizing_config(self, config_dir: str = "config") -> dict[str, Any]:
         """
@@ -108,13 +92,9 @@ Returns:
             Combined sizing configuration dictionary
 """
 config_path, os.path.join(config_dir, "combined_sizing.yaml")
-return self.load_yaml_config(config_path)
+    return self.load_yaml_config(config_path)
 
-@handle_errors(
-exceptions=(FileNotFoundError, yaml.YAMLError, ValueError),
-default_return={},
-context="config validation",
-)
+@handle_errors( exceptions=(FileNotFoundError, yaml.YAMLError, ValueError), default_return={}, context="config validation", )
 
 def validate_config(self, config: dict[str, Any], config_type: str) -> bool:
         """
@@ -129,14 +109,14 @@ Returns:
 """
 if not config:
         self.print(error(f"Empty {config_type} configuration"))
-return False
+    return False
 
 # Check for required sections
 if "risk_management" not in config:
         self.logger.error(
 f"Missing 'risk_management' section in {config_type} config",
 )
-return False
+    return False
 
 risk_management, config["risk_management"]
 
@@ -145,35 +125,31 @@ if config_type in ["position", "combined"]:
         self.logger.error(
 f"Missing 'position_sizing' section in {config_type} config",
 )
-return False
+    return False
 
 if config_type in ["leverage", "combined"]:
         if "leverage_sizing" not in risk_management:
         self.logger.error(
 f"Missing 'leverage_sizing' section in {config_type} config",
 )
-return False
+    return False
 
 if "dynamic_risk_management" not in risk_management:
         self.logger.error(
 f"Missing 'dynamic_risk_management' section in {config_type} config",
 )
-return False
+    return False
 
 if "liquidation_risk" not in risk_management:
         self.logger.error(
 f"Missing 'liquidation_risk' section in {config_type} config",
 )
-return False
+    return False
 
-self.logger.info(f"✅ {config_type} configuration validation passed")
-return True
+    self.logger.info(f"✅ {config_type} configuration validation passed")
+    return True
 
-@handle_errors(
-exceptions=(Exception,),
-default_return={},
-context="config merging",
-)
+@handle_errors( exceptions=(Exception,), default_return={}, context="config merging", )
 
 def merge_configs(self, *configs: dict[str, Any]) -> dict[str, Any]:
         """
@@ -191,7 +167,7 @@ for config in configs:
         if config:
         self._deep_merge(merged_config, config)
 
-return merged_config
+    return merged_config
 
 def _deep_merge(self, target: dict[str, Any], source: dict[str, Any]) -> None:
         """
@@ -211,13 +187,10 @@ and isinstance(value, dict)
 else:
                 target[key] = value
 
-@handle_errors(
-exceptions=(Exception,),
-default_return={},
-context="config loading with fallback",
-)
+@handle_errors( exceptions=(Exception,), default_return={}, context="config loading with fallback", )
 
-def load_config_with_fallback(self, primary_config: str,
+def load_config_with_fallback(self, primary_config: str,:
+    pass  # TODO: Add implementation
 fallback_config: str = "config",
 config_dir: str = "config",
 ) -> dict[str, Any]:
@@ -238,7 +211,7 @@ config, self.load_yaml_config(primary_path)
 
 if config:
         self.logger.info(f"Loaded primary config: {primary_config}")
-return config
+    return config
 
 # Try to load fallback config
 fallback_path, os.path.join(config_dir, fallback_config)
@@ -246,35 +219,36 @@ config, self.load_yaml_config(fallback_path)
 
 if config:
         self.logger.info(f"Loaded fallback config: {fallback_config}")
-return config
+    return config
 
-self.logger.warning(
+    self.logger.warning(
 f"No configuration found in {primary_config} or {fallback_config}",
 )
-return {}
+    return {}
 
 # Convenience functions
 
 def load_position_sizing_config(config_dir: str = "config") -> dict[str, Any]:
         """Load position sizing configuration."""
 loader, ConfigLoader()
-return loader.load_position_sizing_config(config_dir)
+    return loader.load_position_sizing_config(config_dir)
 
 def load_leverage_sizing_config(config_dir: str = "config") -> dict[str, Any]:
         """Load leverage sizing configuration."""
 loader, ConfigLoader()
-return loader.load_leverage_sizing_config(config_dir)
+    return loader.load_leverage_sizing_config(config_dir)
 
 def load_combined_sizing_config(config_dir: str = "config") -> dict[str, Any]:
         """Load combined sizing configuration."""
 loader, ConfigLoader()
-return loader.load_combined_sizing_config(config_dir)
+    return loader.load_combined_sizing_config(config_dir)
 
-def load_config_with_fallback(
+def load_config_with_fallback(:
+    pass  # TODO: Add implementation
 primary_config: str,
 fallback_config: str,
 config_dir: str = "config",
 ) -> dict[str, Any]:
         """Load configuration with fallback."""
 loader, ConfigLoader()
-return loader.load_config_with_fallback(primary_config, fallback_config, config_dir)
+    return loader.load_config_with_fallback(primary_config, fallback_config, config_dir)

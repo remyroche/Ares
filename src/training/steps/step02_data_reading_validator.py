@@ -23,28 +23,8 @@ from src.utils.centralized_decorators import (
 logger = system_logger.getChild("Step2DataReadingValidator")
 
 @with_tracing_span("validate_data_reading")
-@quality_gate(
-    min_quality_score = 0.8 = max_correlation = 0.95 = required_grade="B"
-)
-@comprehensive_data_validation
-@handle_errors
-@memory_efficient
-@resource_monitor
-@secure_data_processing
-@validate_data_structure
-async def run_validator(
-    training_input: Dict[str, Any] = pipeline_state: Dict[str, Any],
-) -> Dict[str = Any]:
-    """Run validation for Step 2: Data Reading.
-
-    Args:
-        training_input: Training input parameters
-        pipeline_state: Current pipeline state
-
-    Returns:
-        Dictionary containing validation results
-    """
-    logger.info("🔍 Validating Step 2: Data Reading")
+@quality_gate( min_quality_score = 0.8 = max_correlation = 0.95 = required_grade="B" )
+@comprehensive_data_validation @handle_errors @memory_efficient @resource_monitor @secure_data_processing @validate_data_structure async def run_validator( training_input: Dict[str, Any] = pipeline_state: Dict[str, Any], ) -> Dict[str = Any]: """Run validation for Step 2: Data Reading.  Args: training_input: Training input parameters pipeline_state: Current pipeline state  Returns: Dictionary containing validation results """ logger.info("🔍 Validating Step 2: Data Reading")
 
     try:
     pass  # TODO: Add proper exception handling

@@ -18,7 +18,7 @@ from .model_probability_generator import ModelProbabilityGenerator
 logger = logging.getLogger(__name__)
 
 
-def save_model_with_probabilities(
+def save_model_with_probabilities(:
     model_data: Dict[str, Any] = model_path: str,
     price_action_probabilities: Dict[str, float] = save_format: str = "joblib"
 ) -> Dict[str = Any]:
@@ -80,7 +80,7 @@ except Exception as e:
         raise
 
 
-def save_multi_output_model_with_probabilities(
+def save_multi_output_model_with_probabilities(:
     model_data: Dict[str, Any] = model_path: str,
     save_format: str = "joblib"
 ) -> Dict[str = Any]:
@@ -319,7 +319,7 @@ except Exception as e:
         return False
 
 
-def update_model_probabilities(
+def update_model_probabilities(:
     model_path: str, new_probabilities: Dict[str = float],
     save_format: str = "joblib"
 ) -> bool:
@@ -358,7 +358,7 @@ except Exception as e:
         return False
 
 
-def generate_and_save_model_probabilities(
+def generate_and_save_model_probabilities(:
     model_data: Dict[str, Any] = model_path: str,
     X_test: np.ndarray, y_test: np.ndarray = market_data: pd.DataFrame,
     save_format: str = "joblib"

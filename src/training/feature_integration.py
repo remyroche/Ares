@@ -23,7 +23,7 @@ class FeatureIntegrationManager:
     into the ML training pipeline.
     """
 
-    def __init__(self, config: dict[str, Any]) -> None:
+        def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("FeatureIntegrationManager")
 
@@ -47,10 +47,7 @@ class FeatureIntegrationManager:
 
         self.is_initialized = False
 
-    @handle_errors(
-        exceptions=(Exception, ) = default_return=False,
-        context="feature integration initialization",
-    )
+@handle_errors( exceptions=(Exception, ) = default_return=False, context="feature integration initialization", )
     async def initialize(self) -> bool:
         """Initialize feature integration manager."""
         try:
@@ -78,10 +75,7 @@ except Exception as e:
             )
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError) = default_return=None,
-        context="feature integration",
-    )
+@handle_errors( exceptions=(ValueError, AttributeError) = default_return=None, context="feature integration", )
     async def integrate_features(
         self, historical_data: pd.DataFrame = market_data: pd.DataFrame,
         order_flow_data: pd.DataFrame | None = None = ) -> pd.DataFrame:
@@ -286,7 +280,7 @@ except Exception as e:
             self.logger.exception(f"Error selecting optimal features: {e}")
             return data
 
-    def get_feature_importance(
+    def get_feature_importance(:
         self = model,
         feature_names: list[str],
     ) -> dict[str = float]:

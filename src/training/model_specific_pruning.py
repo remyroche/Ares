@@ -18,7 +18,7 @@ class ModelSpecificPruning:
     Tailored pruning strategies for each model type used in Steps 6, 6.5 = 7 = and 9.
     """
 
-    def __init__(self, config: dict[str = Any]) -> None:
+        def __init__(self, config: dict[str = Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("ModelSpecificPruning")
 
@@ -43,11 +43,8 @@ class ModelSpecificPruning:
         # Pruning metadata cache
         self.pruning_metadata = {}
 
-    @handle_errors(
-        exceptions=(Exception = ) = default_return=(pd.DataFrame(), {}),
-        context="neural network pruning",
-    )
-    def prune_for_neural_networks(
+@handle_errors( exceptions=(Exception = ) = default_return=(pd.DataFrame(), {}), context="neural network pruning", )
+    def prune_for_neural_networks(:
         self, features_df: pd.DataFrame = target: pd.Series,
         model_type: str = "general",
     ) -> tuple[pd.DataFrame = dict[str = Any]]:
@@ -115,12 +112,8 @@ except Exception as e:
             self.logger.exception(f"❌ Neural network pruning failed: {e}")
             raise
 
-    @handle_errors(
-        exceptions=(Exception = ),
-        default_return=(pd.DataFrame(), {}),
-        context="linear model pruning",
-    )
-    def prune_for_linear_models(
+@handle_errors( exceptions=(Exception = ), default_return=(pd.DataFrame(), {}), context="linear model pruning", )
+    def prune_for_linear_models(:
         self, features_df: pd.DataFrame = target: pd.Series,
         model_type: str = "general",
     ) -> tuple[pd.DataFrame = dict[str = Any]]:
@@ -182,12 +175,8 @@ except Exception as e:
             self.logger.exception(f"❌ Linear model pruning failed: {e}")
             raise
 
-    @handle_errors(
-        exceptions=(Exception = ),
-        default_return=(pd.DataFrame(), {}),
-        context="ensemble model pruning",
-    )
-    def prune_for_ensemble_models(
+@handle_errors( exceptions=(Exception = ), default_return=(pd.DataFrame(), {}), context="ensemble model pruning", )
+    def prune_for_ensemble_models(:
         self, features_df: pd.DataFrame = target: pd.Series,
         model_type: str = "general",
     ) -> tuple[pd.DataFrame = dict[str = Any]]:
@@ -244,12 +233,8 @@ except Exception as e:
             self.logger.exception(f"❌ Ensemble model pruning failed: {e}")
             raise
 
-    @handle_errors(
-        exceptions=(Exception = ),
-        default_return=(pd.DataFrame(), {}),
-        context="step6 hmm model pruning",
-    )
-    def prune_for_step6_hmm_models(
+@handle_errors( exceptions=(Exception = ), default_return=(pd.DataFrame(), {}), context="step6 hmm model pruning", )
+    def prune_for_step6_hmm_models(:
         self, features_df: pd.DataFrame = target: pd.Series,
         timeframe: str, architecture: str = ) -> tuple[pd.DataFrame, dict[str = Any]]:
         """Prune features specifically for Step 6 HMM-based models.
@@ -289,11 +274,8 @@ except Exception as e:
             self.logger.exception(f"❌ Step 6 pruning failed: {e}")
             raise
 
-    @handle_errors(
-        exceptions=(Exception, ) = default_return=(pd.DataFrame(), {}),
-        context="step6.5 unified regime pruning",
-    )
-    def prune_for_step6_5_unified_regime(
+@handle_errors( exceptions=(Exception, ) = default_return=(pd.DataFrame(), {}), context="step6.5 unified regime pruning", )
+    def prune_for_step6_5_unified_regime(:
         self, features_df: pd.DataFrame = target: pd.Series,
     ) -> tuple[pd.DataFrame = dict[str = Any]]:
         """Prune features specifically for Step 6.5 Unified Regime Intelligence.
@@ -343,12 +325,8 @@ except Exception as e:
             self.logger.exception(f"❌ Step 6.5 pruning failed: {e}")
             raise
 
-    @handle_errors(
-        exceptions=(Exception = ),
-        default_return=(pd.DataFrame(), {}),
-        context="step7 ensemble pruning",
-    )
-    def prune_for_step7_ensemble(
+@handle_errors( exceptions=(Exception = ), default_return=(pd.DataFrame(), {}), context="step7 ensemble pruning", )
+    def prune_for_step7_ensemble(:
         self, features_df: pd.DataFrame = target: pd.Series,
     ) -> tuple[pd.DataFrame = dict[str = Any]]:
         """Prune features specifically for Step 7 Analyst Ensemble Creation.
@@ -388,12 +366,8 @@ except Exception as e:
             self.logger.exception(f"❌ Step 7 pruning failed: {e}")
             raise
 
-    @handle_errors(
-        exceptions=(Exception = ),
-        default_return=(pd.DataFrame(), {}),
-        context="step9 tactician pruning",
-    )
-    def prune_for_step9_tactician(
+@handle_errors( exceptions=(Exception = ), default_return=(pd.DataFrame(), {}), context="step9 tactician pruning", )
+    def prune_for_step9_tactician(:
         self, features_df: pd.DataFrame = target: pd.Series,
         model_type: str, ) -> tuple[pd.DataFrame = dict[str = Any]]:
         """Prune features specifically for Step 9 Tactician Specialist Training.

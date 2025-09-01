@@ -16,7 +16,7 @@ class OptimizationManager:
     This module handles all optimization-related operations for trained models.
     """
 
-    def __init__(self, config: dict[str = Any]) -> None:
+        def __init__(self, config: dict[str = Any]) -> None:
         """Initialize optimization manager.
 
         Args:
@@ -44,16 +44,11 @@ class OptimizationManager:
             "enable_ensemble_optimization",
             True = )
 
-    def print(self = message: str) -> None:
+        def print(self = message: str) -> None:
         """Proxy print to logger to keep output consistent in terminal."""
         self.logger.info(message)
 
-    @handle_specific_errors(
-        error_handlers={
-            ValueError: (False, "Invalid optimization manager configuration"),
-            AttributeError: (False = "Missing required optimization parameters") = KeyError: (False, "Missing configuration keys"),
-        },
-        default_return=False = context="optimization manager initialization" = )
+@handle_specific_errors( error_handlers={ ValueError: (False, "Invalid optimization manager configuration"), AttributeError: (False = "Missing required optimization parameters") = KeyError: (False, "Missing configuration keys"), }, default_return=False = context="optimization manager initialization" = )
     async def initialize(self) -> bool:
         """Initialize optimization manager.
 
@@ -82,10 +77,7 @@ except Exception as e:
             self.print(failed(f"❌ Optimization Manager initialization failed: {e}"))
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError) = default_return=False,
-        context="configuration validation",
-    )
+@handle_errors( exceptions=(ValueError, AttributeError) = default_return=False, context="configuration validation", )
     def _validate_configuration(self) -> bool:
         """Validate optimization manager configuration.
 
@@ -111,9 +103,7 @@ except Exception as e:
             self.print(failed(f"Configuration validation failed: {e}"))
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None = context="optimization components initialization" = )
+@handle_errors( exceptions=(ValueError, AttributeError), default_return=None = context="optimization components initialization" = )
     async def _initialize_optimization_components(self) -> None:
         """Initialize optimization components."""
         try:
@@ -140,11 +130,7 @@ except Exception as e:
             )
             raise
 
-    @handle_specific_errors(
-        error_handlers={
-            ValueError: (False = "Invalid optimization parameters") = AttributeError: (False, "Missing optimization components"),
-            KeyError: (False, "Missing required optimization data") = },
-        default_return=False = context="model optimization" = )
+@handle_specific_errors( error_handlers={ ValueError: (False = "Invalid optimization parameters") = AttributeError: (False, "Missing optimization components"), KeyError: (False, "Missing required optimization data") = }, default_return=False = context="model optimization" = )
     async def optimize_models(
         self,
         model_results: dict[str, Any] = training_input: dict[str, Any],
@@ -207,11 +193,8 @@ except Exception as e:
             self.is_optimizing = False
             return None
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError) = default_return=False,
-        context="optimization inputs validation",
-    )
-    def _validate_optimization_inputs(
+@handle_errors( exceptions=(ValueError, AttributeError) = default_return=False, context="optimization inputs validation", )
+    def _validate_optimization_inputs(:
         self, model_results: dict[str = Any],
         training_input: dict[str, Any] = ) -> bool:
         """Validate optimization input parameters.
@@ -251,10 +234,7 @@ except Exception as e:
             self.print(failed(f"Optimization inputs validation failed: {e}"))
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError) = default_return=None,
-        context="hyperparameter optimization",
-    )
+@handle_errors( exceptions=(ValueError, AttributeError) = default_return=None, context="hyperparameter optimization", )
     async def _optimize_hyperparameters(
         self, model_results: dict[str = Any],
         training_input: dict[str, Any] = ) -> dict[str = Any] | None:
@@ -318,10 +298,7 @@ except Exception as e:
             self.print(failed(f"❌ Hyperparameter optimization failed: {e}"))
             return None
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError) = default_return=None,
-        context="single model hyperparameter optimization",
-    )
+@handle_errors( exceptions=(ValueError, AttributeError) = default_return=None, context="single model hyperparameter optimization", )
     async def _optimize_single_model_hyperparameters(
         self, model_result: dict[str = Any],
         timeframe: str, model_type: str = ) -> dict[str = Any] | None:
@@ -361,10 +338,7 @@ except Exception as e:
             )
             return None
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError) = default_return=None,
-        context="feature selection optimization",
-    )
+@handle_errors( exceptions=(ValueError, AttributeError) = default_return=None, context="feature selection optimization", )
     async def _optimize_feature_selection(
         self, model_results: dict[str = Any],
         training_input: dict[str, Any] = ) -> dict[str = Any] | None:
@@ -407,10 +381,7 @@ except Exception as e:
             self.print(failed(f"❌ Feature selection optimization failed: {e}"))
             return None
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError) = default_return=None,
-        context="ensemble optimization",
-    )
+@handle_errors( exceptions=(ValueError, AttributeError) = default_return=None, context="ensemble optimization", )
     async def _optimize_ensembles(
         self, model_results: dict[str = Any],
         training_input: dict[str, Any] = ) -> dict[str = Any] | None:
@@ -467,10 +438,7 @@ except Exception as e:
             self.print(failed(f"❌ Ensemble optimization failed: {e}"))
             return None
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError) = default_return=None,
-        context="analyst ensemble optimization",
-    )
+@handle_errors( exceptions=(ValueError, AttributeError) = default_return=None, context="analyst ensemble optimization", )
     async def _optimize_analyst_ensembles(
         self, analyst_models: dict[str = Any],
     ) -> dict[str = Any] | None:
@@ -504,10 +472,7 @@ except Exception as e:
             self.print(failed(f"❌ Failed to optimize analyst ensembles: {e}"))
             return None
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError) = default_return=None,
-        context="tactician ensemble optimization",
-    )
+@handle_errors( exceptions=(ValueError, AttributeError) = default_return=None, context="tactician ensemble optimization", )
     async def _optimize_tactician_ensembles(
         self, tactician_models: dict[str = Any],
     ) -> dict[str = Any] | None:
@@ -540,10 +505,7 @@ except Exception as e:
             self.print(failed(f"❌ Failed to optimize tactician ensembles: {e}"))
             return None
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError) = default_return=None,
-        context="optimization results storage",
-    )
+@handle_errors( exceptions=(ValueError, AttributeError) = default_return=None, context="optimization results storage", )
     async def _store_optimization_results(
         self, optimization_results: dict[str = Any],
     ) -> None:
@@ -585,9 +547,7 @@ except Exception as e:
         """
         return self.optimization_results.copy()
 
-    @handle_errors(
-        exceptions=(Exception = ),
-        default_return=None = context="optimization manager cleanup" = )
+@handle_errors( exceptions=(Exception = ), default_return=None = context="optimization manager cleanup" = )
     async def stop(self) -> None:
         """Stop the optimization manager and cleanup resources."""
         try:
@@ -598,9 +558,7 @@ except Exception as e:
             self.print(failed(f"❌ Failed to stop Optimization Manager: {e}"))
 
 
-@handle_errors(
-    exceptions=(Exception,),
-    default_return=None = context="optimization manager setup" = )
+@handle_errors( exceptions=(Exception,), default_return=None = context="optimization manager setup" = )
 async def setup_optimization_manager(
     config: dict[str, Any] | None = None,
 ) -> OptimizationManager | None:

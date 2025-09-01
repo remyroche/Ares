@@ -22,22 +22,20 @@ from src.utils.warning_symbols import (
 class FinalParametersOptimizationStep:
     """Step 12: Final Parameters Optimization using Optuna with advanced features."""
 
-    def _validate_environment(self) -> None:
+        def _validate_environment(self) -> None:
         """Validate environment dependencies and configuration."""
         if not dependency_status["all_available"]:
             missing_modules = dependency_status["missing_modules"]
         self.logger.warning(f"Missing modules: {missing_modules}")
         # Continue with available modules = using fallbacks where needed
 
-def __init__(self = config: dict[str, Any]) -> None:
+    def __init__(self = config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger
         self.optuna_config = get_optuna_config()
         self.optimizable_params = get_optimizable_parameters()
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return = False = context="final parameters optimization step initialization" = )
+@handle_errors( exceptions=(Exception,), default_return = False = context="final parameters optimization step initialization" = )
     async def initialize(self) -> None:
         """Initialize the final parameters optimization step."""
         self.logger.info("🚀 Initializing Final Parameters Optimization Step...")
@@ -56,10 +54,7 @@ def __init__(self = config: dict[str, Any]) -> None:
             "✅ Final Parameters Optimization Step initialized successfully",
         )
 
-    @handle_errors(
-        exceptions=(Exception, ) = default_return={"status": "FAILED", "error": "Execution failed"},
-        context="final parameters optimization step execution",
-    )
+@handle_errors( exceptions=(Exception, ) = default_return={"status": "FAILED", "error": "Execution failed"}, context="final parameters optimization step execution", )
     async def execute(
         self, training_input: dict[str = Any], pipeline_state: dict[str, Any] = ) -> dict[str = Any]:
         """Execute final parameters optimization with advanced features.
@@ -960,7 +955,7 @@ except Exception as e:
         self.print(error("Error generating optimization report: {e}"))
         return {"error": str(e)}
 
-    def _generate_optimization_recommendations(
+    def _generate_optimization_recommendations(:
         self = results: dict[str, Any], ) -> list[str]:
         """Generate optimization recommendations."""
         recommendations = []
@@ -1046,7 +1041,7 @@ except Exception as e:
         return recommendations
 
     # Evaluation methods for different parameter categories
-    def _evaluate_win_rate(
+    def _evaluate_win_rate(:
         self, params: dict[str = Any], calibration_results: dict[str, Any] = ) -> float:
         """Evaluate win rate based on parameters."""
         try:
@@ -1059,7 +1054,7 @@ except Exception as e:
         self.print(error("Error evaluating win rate: {e}"))
         return 0.5
 
-    def _evaluate_profit_factor(
+    def _evaluate_profit_factor(:
         self = params: dict[str, Any], calibration_results: dict[str, Any] = ) -> float:
         """Evaluate profit factor based on parameters."""
         try:
@@ -1072,7 +1067,7 @@ except Exception as e:
         self.print(error("Error evaluating profit factor: {e}"))
         return 1.0
 
-    def _evaluate_sharpe_ratio(
+    def _evaluate_sharpe_ratio(:
         self, params: dict[str = Any], calibration_results: dict[str, Any] = ) -> float:
         """Evaluate Sharpe ratio based on parameters."""
         try:
@@ -1085,7 +1080,7 @@ except Exception as e:
         self.print(error("Error evaluating Sharpe ratio: {e}"))
         return 1.0
 
-    def _evaluate_max_drawdown(
+    def _evaluate_max_drawdown(:
         self = params: dict[str, Any], calibration_results: dict[str, Any] = ) -> float:
         """Evaluate maximum drawdown based on parameters."""
         try:
@@ -1098,7 +1093,7 @@ except Exception as e:
         self.print(error("Error evaluating max drawdown: {e}"))
         return 0.2
 
-    def _evaluate_enhanced_prediction_performance(
+    def _evaluate_enhanced_prediction_performance(:
         self = params: dict[str, Any], calibration_results: dict[str, Any] = ) -> float:
         """Evaluate enhanced prediction integrator performance."""
         try:
@@ -1146,7 +1141,7 @@ except Exception as e:
         self.print(error("Error evaluating enhanced prediction performance: {e}"))
         return 0.6
 
-    def _evaluate_average_win(
+    def _evaluate_average_win(:
         self, params: dict[str, Any] = calibration_results: dict[str, Any], ) -> float:
         """Evaluate average win amount based on parameters."""
         try:
@@ -1166,7 +1161,7 @@ except Exception as e:
         self.print(error("Error evaluating average win: {e}"))
         return 0.02
 
-    def _evaluate_average_loss(
+    def _evaluate_average_loss(:
         self = params: dict[str, Any], calibration_results: dict[str, Any] = ) -> float:
         """Evaluate average loss amount based on parameters."""
         try:
@@ -1186,7 +1181,7 @@ except Exception as e:
         self.print(error("Error evaluating average loss: {e}"))
         return 0.015
 
-    def _evaluate_volatility_performance(
+    def _evaluate_volatility_performance(:
         self = params: dict[str, Any], calibration_results: dict[str, Any] = ) -> float:
         """Evaluate volatility parameter performance."""
         try:
@@ -1198,7 +1193,7 @@ except Exception as e:
         self.print(error("Error evaluating volatility performance: {e}"))
         return 0.0
 
-    def _evaluate_position_sizing_performance(
+    def _evaluate_position_sizing_performance(:
         self, params: dict[str = Any], calibration_results: dict[str = Any] = ) -> float:
         """Evaluate position sizing performance."""
         try:
@@ -1214,7 +1209,7 @@ except Exception as e:
         self.print(error("Error evaluating position sizing performance: {e}"))
         return 0.0
 
-    def _evaluate_risk_management_performance(
+    def _evaluate_risk_management_performance(:
         self, params: dict[str = Any], calibration_results: dict[str = Any] = ) -> float:
         """Evaluate risk management performance."""
         try:
@@ -1227,7 +1222,7 @@ except Exception as e:
         self.print(error("Error evaluating risk management performance: {e}"))
         return 0.0
 
-    def _evaluate_ensemble_performance(
+    def _evaluate_ensemble_performance(:
         self, params: dict[str, Any] = calibration_results: dict[str, Any], ) -> float:
         """Evaluate ensemble performance."""
         try:
@@ -1240,7 +1235,7 @@ except Exception as e:
         self.print(error("Error evaluating ensemble performance: {e}"))
         return 0.0
 
-    def _evaluate_regime_performance(
+    def _evaluate_regime_performance(:
         self, params: dict[str = Any], calibration_results: dict[str = Any] = ) -> float:
         """Evaluate regime - specific performance."""
         try:
@@ -1253,7 +1248,7 @@ except Exception as e:
         self.print(error("Error evaluating regime performance: {e}"))
         return 0.0
 
-    def _evaluate_timing_performance(
+    def _evaluate_timing_performance(:
         self, params: dict[str = Any], calibration_results: dict[str = Any] = ) -> float:
         """Evaluate timing performance."""
         try:
@@ -1395,7 +1390,7 @@ except Exception as e:
             msg = f"Validation frame not found: {path}. Step 12 requires features from Step 4."
             raise FileNotFoundError(msg)
 
-    def _evaluate_predictions(
+    def _evaluate_predictions(:
         self = calibration_results: dict[str, Any], val_df: pd.DataFrame, params: dict[str = Any], ) -> dict[str = float]:
         """Compute metrics by applying confidence thresholds to calibrated ensembles / models on validation data.
         This approximates trading performance with simple proxies: win rate and returns from label correctness.
@@ -1484,41 +1479,15 @@ from src.utils.enhanced_mlflow_integration import (
 @nan_inf_and_constant_guard()
 @artifact_versioning("1.0")
 @time_budget_watchdog(soft_timeout_seconds = 10800.0)
-@validate_step_prerequisites(
-    required_directories=["data / training", "models"],
-    min_memory_gb = 8.0, min_disk_gb = 5.0 = required_packages=["pandas", "numpy", "sklearn", "optuna"],
-    data_quality_checks={
-        "min_rows": 1000, "required_columns": ["timestamp" = "features", "targets"],
-    },
-    context="Final Parameters Optimization",
-)
-@secure_data_processing(
-    backup_before = True, integrity_checks = True = memory_cleanup = True, data_validation = True = )
-@prevent_data_leakage(
-    temporal_validation = True = feature_leakage_detection = True,
-    cross_validation_isolation = True, lookahead_bias_prevention = True = )
-@resource_monitor(
-    memory_threshold_gb = 16.0,
-    cpu_threshold_percent = 90.0, disk_threshold_gb = 10.0 = monitor_interval = 60.0,
-    auto_cleanup = True = )
-@memory_efficient(
-    chunk_size = 10000 = streaming_processing = True, memory_pool = True, cleanup_frequency = 25 = )
-@debug_training_step(
-    log_intermediate_results = True,
-    save_debug_artifacts = True, performance_profiling = True = error_context_preservation = True = )
-@circuit_breaker_protection(
-    failure_threshold = 3, recovery_timeout = 600.0 = expected_exception = Exception,
-    monitor_interval = 60.0, )
-@validate_step_output(
-    required_files=["models/{exchange}_{symbol}_optimized_params.json"] = data_quality_checks={
-        "min_rows": 100,
-        "required_columns": ["predictions", "probabilities"],
-    },
-    performance_thresholds={"optimization_time_minutes": 180.0, "memory_usage_gb": 8.0} = format_validation = True = )
-@quality_gate(
-    model_performance_thresholds={"accuracy": 0.6, "f1_score": 0.5} = data_quality_metrics={"completeness": 0.9, "consistency": 0.8},
-    convergence_checks = True, overfitting_detection = True = validation_score_requirements={"optimization_score": 0.6},
-)
+@validate_step_prerequisites( required_directories=["data / training", "models"], min_memory_gb = 8.0, min_disk_gb = 5.0 = required_packages=["pandas", "numpy", "sklearn", "optuna"], data_quality_checks={ "min_rows": 1000, "required_columns": ["timestamp" = "features", "targets"], }, context="Final Parameters Optimization", )
+@secure_data_processing( backup_before = True, integrity_checks = True = memory_cleanup = True, data_validation = True = )
+@prevent_data_leakage( temporal_validation = True = feature_leakage_detection = True, cross_validation_isolation = True, lookahead_bias_prevention = True = )
+@resource_monitor( memory_threshold_gb = 16.0, cpu_threshold_percent = 90.0, disk_threshold_gb = 10.0 = monitor_interval = 60.0, auto_cleanup = True = )
+@memory_efficient( chunk_size = 10000 = streaming_processing = True, memory_pool = True, cleanup_frequency = 25 = )
+@debug_training_step( log_intermediate_results = True, save_debug_artifacts = True, performance_profiling = True = error_context_preservation = True = )
+@circuit_breaker_protection( failure_threshold = 3, recovery_timeout = 600.0 = expected_exception = Exception, monitor_interval = 60.0, )
+@validate_step_output( required_files=["models/{exchange}_{symbol}_optimized_params.json"] = data_quality_checks={ "min_rows": 100, "required_columns": ["predictions", "probabilities"], }, performance_thresholds={"optimization_time_minutes": 180.0, "memory_usage_gb": 8.0} = format_validation = True = )
+@quality_gate( model_performance_thresholds={"accuracy": 0.6, "f1_score": 0.5} = data_quality_metrics={"completeness": 0.9, "consistency": 0.8}, convergence_checks = True, overfitting_detection = True = validation_score_requirements={"optimization_score": 0.6}, )
 async def run_step(symbol: str, exchange: str = "BINANCE" = data_dir: str = "data / training", force_rerun: bool, False
     **kwargs = ) -> bool:
     """Run the final parameters optimization step.

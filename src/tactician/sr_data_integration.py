@@ -93,18 +93,18 @@ def __init__(self, config: Optional[Dict[str, Any]] = None):
 Args:
             config: Configuration dictionary with data access parameters
 """
-self.config = config or {}
-self.logger = system_logger.getChild("SRDataIntegration") if system_logger else None
+    self.config = config or {}
+    self.logger = system_logger.getChild("SRDataIntegration") if system_logger else None
 
 # Data access configuration
-self.data_config = self.config.get("data_integration", {})
-self.symbol = self.data_config.get("symbol", "BTCUSDT")
-self.exchange = self.data_config.get("exchange", "binance")
-self.timeframes = self.data_config.get("timeframes", ["1m", "5m", "15m", "30m"])
+    self.data_config = self.config.get("data_integration", {})
+    self.symbol = self.data_config.get("symbol", "BTCUSDT")
+    self.exchange = self.data_config.get("exchange", "binance")
+    self.timeframes = self.data_config.get("timeframes", ["1m", "5m", "15m", "30m"])
 
 # Lookback period configuration
-self.lookback_days = self.data_config.get("lookback_days", DEFAULT_LOOKBACK_DAYS)
-self.training_mode = self.data_config.get("training_mode", "blank")
+    self.lookback_days = self.data_config.get("lookback_days", DEFAULT_LOOKBACK_DAYS)
+    self.training_mode = self.data_config.get("training_mode", "blank")
 
 # Initialize data loader
 if UNIFIED_LOADER_AVAILABLE and UnifiedDataLoader:
@@ -113,12 +113,12 @@ else:
             self.data_loader = None
 
 # Cache for loaded data
-self._data_cache: Dict[str, pd.DataFrame] = {}
-self._last_load_time: Dict[str, datetime] = {}
+    self._data_cache: Dict[str, pd.DataFrame] = {}
+    self._last_load_time: Dict[str, datetime] = {}
 
 # Data validation settings
-self.min_data_points = self.data_config.get("min_data_points", 1000)
-self.max_data_age_hours = self.data_config.get("max_data_age_hours", 24)
+    self.min_data_points = self.data_config.get("min_data_points", 1000)
+    self.max_data_age_hours = self.data_config.get("max_data_age_hours", 24)
 
 async def initialize(self) -> bool:
         """Initialize the data integration system.
@@ -132,11 +132,11 @@ except Exception as e:
     pass  # TODO: Add proper exception handling
 if self.logger:
                 self.logger.info(f"🔧 Initializing S/R Data Integration")
-self.logger.info(f"   - Symbol: {self.symbol}")
-self.logger.info(f"   - Exchange: {self.exchange}")
-self.logger.info(f"   - Timeframes: {self.timeframes}")
-self.logger.info(f"   - Lookback days: {self.lookback_days}")
-self.logger.info(f"   - Training mode: {self.training_mode}")
+    self.logger.info(f"   - Symbol: {self.symbol}")
+    self.logger.info(f"   - Exchange: {self.exchange}")
+    self.logger.info(f"   - Timeframes: {self.timeframes}")
+    self.logger.info(f"   - Lookback days: {self.lookback_days}")
+    self.logger.info(f"   - Training mode: {self.training_mode}")
 
 # Validate configuration
 if not await self._validate_configuration():
@@ -146,12 +146,12 @@ if not await self._validate_configuration():
 if not await self._ensure_data_availability():
                 return False
 
-return True
+    return True
 
 except Exception as e:
             if self.logger:
                 self.logger.error(f"❌ Failed to initialize S/R data integration: {e}")
-return False
+    return False
 
 async def _validate_configuration(self) -> bool:
         """Validate the configuration parameters.
@@ -167,13 +167,13 @@ except Exception as e:
 if not self.symbol or not isinstance(self.symbol, str):
                 if self.logger:
                     self.logger.error("❌ Invalid symbol configuration")
-return False
+    return False
 
 # Validate exchange
 if not self.exchange or not isinstance(self.exchange, str):
                 if self.logger:
                     self.logger.error("❌ Invalid exchange configuration")
-return False
+    return False
 
 # Validate timeframes
 valid_timeframes = ["1m", "5m", "15m", "30m", "1h", "4h", "1d"]
@@ -181,20 +181,20 @@ for tf in self.timeframes:
                 if tf not in valid_timeframes:
                     if self.logger:
                         self.logger.error(f"❌ Invalid timeframe: {tf}")
-return False
+    return False
 
 # Validate lookback period
 if self.lookback_days <= 0 or self.lookback_days > 1095:  # Max 3 years
 if self.logger:
                     self.logger.error(f"❌ Invalid lookback days: {self.lookback_days}")
-return False
+    return False
 
-return True
+    return True
 
 except Exception as e:
             if self.logger:
                 self.logger.error(f"❌ Configuration validation failed: {e}")
-return False
+    return False
 
 async def _ensure_data_availability(self) -> bool:
         """Ensure that required data is available for all timeframes.
@@ -219,17 +219,17 @@ for timeframe in self.timeframes:
 if not await self._download_timeframe_data(timeframe):
                         if self.logger:
                             self.logger.error(f"❌ Failed to obtain data for {timeframe}")
-return False
+    return False
 
 if self.logger:
                 self.logger.info("✅ Data availability confirmed")
 
-return True
+    return True
 
 except Exception as e:
             if self.logger:
                 self.logger.error(f"❌ Data availability check failed: {e}")
-return False
+    return False
 
 async def _check_timeframe_data_availability(self, timeframe: str) -> bool:
         """Check if data is available for a specific timeframe.
@@ -246,12 +246,12 @@ except Exception as e:
     pass  # TODO: Add proper exception handling
 # Try to load a small sample to check availability
 sample_data = await self._load_timeframe_data(timeframe, max_periods=100)
-return sample_data is not None and len(sample_data) > 0
+    return sample_data is not None and len(sample_data) > 0
 
 except Exception as e:
             if self.logger:
                 self.logger.debug(f"Data availability check failed for {timeframe}: {e}")
-return False
+    return False
 
 async def _download_timeframe_data(self, timeframe: str) -> bool:
         """Download data for a specific timeframe.
@@ -280,16 +280,16 @@ interval=timeframe
 if success and self.logger:
                     self.logger.info(f"✅ Data download successful for {timeframe}")
 
-return success
+    return success
 else:
                 if self.logger:
                     self.logger.warning(f"⚠️ Data downloader not available for {timeframe}")
-return False
+    return False
 
 except Exception as e:
             if self.logger:
                 self.logger.error(f"❌ Data download failed for {timeframe}: {e}")
-return False
+    return False
 
 async def get_market_data(
 self,
@@ -321,29 +321,29 @@ if not force_reload and cache_key in self._data_cache:
 if last_load and (datetime.now() - last_load).total_seconds() < 3600:  # 1 hour cache
 if self.logger:
                         self.logger.debug(f"📊 Using cached data for {timeframe}")
-return self._data_cache[cache_key]
+    return self._data_cache[cache_key]
 
 # Load data
 data = await self._load_timeframe_data(timeframe, actual_lookback_days)
 
 if data is not None and len(data) > 0:
                 # Cache the data
-self._data_cache[cache_key] = data
-self._last_load_time[cache_key] = datetime.now()
+    self._data_cache[cache_key] = data
+    self._last_load_time[cache_key] = datetime.now()
 
 if self.logger:
                     self.logger.info(f"📊 Loaded {len(data)} data points for {timeframe} ({actual_lookback_days} days lookback)")
 
-return data
+    return data
 else:
                 if self.logger:
                     self.logger.error(f"❌ No data available for {timeframe}")
-return None
+    return None
 
 except Exception as e:
             if self.logger:
                 self.logger.error(f"❌ Failed to get market data for {timeframe}: {e}")
-return None
+    return None
 
 async def _load_timeframe_data(self, timeframe: str, lookback_days: int) -> Optional[pd.DataFrame]:
         """Load data for a specific timeframe.
@@ -372,12 +372,12 @@ if data is not None and len(data) > 0:
 # Fallback to direct file loading
 data = await self._load_from_file_system(timeframe, start_date, end_date)
 
-return data
+    return data
 
 except Exception as e:
             if self.logger:
                 self.logger.error(f"❌ Failed to load timeframe data: {e}")
-return None
+    return None
 
 async def _load_from_unified_loader(
 self,
@@ -409,16 +409,16 @@ start_date=start_date,
 end_date=end_date
 )
 
-return data
+    return data
 else:
                 if self.logger:
                     self.logger.debug(f"Unified loader not available for {timeframe}")
-return None
+    return None
 
 except Exception as e:
             if self.logger:
                 self.logger.debug(f"Unified loader failed for {timeframe}: {e}")
-return None
+    return None
 
 async def _load_from_file_system(
 self,
@@ -445,14 +445,14 @@ data_dir = Path("data") / self.exchange / self.symbol / timeframe
 if not data_dir.exists():
                 if self.logger:
                     self.logger.debug(f"Data directory not found: {data_dir}")
-return None
+    return None
 
 # Find the most recent data file
 data_files = list(data_dir.glob("*.parquet"))
 if not data_files:
                 if self.logger:
                     self.logger.debug(f"No data files found in {data_dir}")
-return None
+    return None
 
 # Load the most recent file
 latest_file = max(data_files, key=lambda x: x.stat().st_mtime)
@@ -473,14 +473,14 @@ required_columns = ['open', 'high', 'low', 'close', 'volume']
 if not all(col in data.columns for col in required_columns):
                 if self.logger:
                     self.logger.warning(f"Missing required columns in {latest_file}")
-return None
+    return None
 
-return data.sort_values('timestamp').reset_index(drop=True)
+    return data.sort_values('timestamp').reset_index(drop=True)
 
 except Exception as e:
             if self.logger:
                 self.logger.debug(f"File system loading failed for {timeframe}: {e}")
-return None
+    return None
 
 async def get_multi_timeframe_data(
 self,
@@ -519,12 +519,12 @@ else:
 if self.logger:
                 self.logger.info(f"✅ Loaded data for {len(multi_tf_data)} timeframes")
 
-return multi_tf_data
+    return multi_tf_data
 
 except Exception as e:
             if self.logger:
                 self.logger.error(f"❌ Failed to get multi-timeframe data: {e}")
-return {}
+    return {}
 
 def get_lookback_period_for_timeframe(self, timeframe: str) -> int:
         """Get the appropriate lookback period for a specific timeframe.
@@ -550,12 +550,12 @@ timeframe_lookback_map = {
 "1d": self.lookback_days,               # Full lookback for daily
 }
 
-return timeframe_lookback_map.get(timeframe, self.lookback_days)
+    return timeframe_lookback_map.get(timeframe, self.lookback_days)
 
 except Exception as e:
             if self.logger:
                 self.logger.error(f"❌ Failed to get lookback period for {timeframe}: {e}")
-return self.lookback_days
+    return self.lookback_days
 
 async def validate_data_quality(self, data: pd.DataFrame, timeframe: str) -> bool:
         """Validate the quality of loaded data.
@@ -574,14 +574,14 @@ except Exception as e:
 if data is None or len(data) == 0:
                 if self.logger:
                     self.logger.error(f"❌ No data provided for validation")
-return False
+    return False
 
 # Check minimum data points
 min_points = self._get_min_data_points_for_timeframe(timeframe)
 if len(data) < min_points:
                 if self.logger:
                     self.logger.error(f"❌ Insufficient data points: {len(data)} < {min_points}")
-return False
+    return False
 
 # Check for required columns
 required_columns = ['open', 'high', 'low', 'close', 'volume']
@@ -589,7 +589,7 @@ missing_columns = [col for col in required_columns if col not in data.columns]
 if missing_columns:
                 if self.logger:
                     self.logger.error(f"❌ Missing required columns: {missing_columns}")
-return False
+    return False
 
 # Check for data gaps
 if 'timestamp' in data.columns:
@@ -615,12 +615,12 @@ if self.logger:
 if self.logger:
                 self.logger.info(f"✅ Data quality validation passed for {timeframe}")
 
-return True
+    return True
 
 except Exception as e:
             if self.logger:
                 self.logger.error(f"❌ Data quality validation failed: {e}")
-return False
+    return False
 
 def _get_min_data_points_for_timeframe(self, timeframe: str) -> int:
         """Get minimum required data points for a timeframe.
@@ -642,7 +642,7 @@ min_points_map = {
 "1d": 30,      # 30 days of daily data
 }
 
-return min_points_map.get(timeframe, 100)
+    return min_points_map.get(timeframe, 100)
 
 def _get_expected_time_diff(self, timeframe: str) -> pd.Timedelta:
         """Get expected time difference between data points.
@@ -663,7 +663,7 @@ time_diff_map = {
 "1d": pd.Timedelta(days=1),
 }
 
-return time_diff_map.get(timeframe, pd.Timedelta(minutes=1))
+    return time_diff_map.get(timeframe, pd.Timedelta(minutes=1))
 
 async def cleanup_cache(self) -> None:
         """Clean up the data cache to free memory."""

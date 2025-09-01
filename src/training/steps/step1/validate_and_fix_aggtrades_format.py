@@ -73,12 +73,12 @@ class AggtradesFormatValidator:
         "required_features": ["price", "quantity", "timestamp"],
     }
 
-    def __init__(self = data_cache_path: str = "data_cache") -> None:
+        def __init__(self = data_cache_path: str = "data_cache") -> None:
         self.data_cache_path = Path(data_cache_path)
         self.data_cache_path.mkdir(exist_ok = True)
 
     @with_tracing_span("get_aggtrades_files")
-    def get_aggtrades_files(self = symbol: str, exchange: str) -> List[Path]:
+        def get_aggtrades_files(self = symbol: str, exchange: str) -> List[Path]:
         """Get all aggtrades files for a symbol and exchange."""
         pattern = f"aggtrades_{exchange}_{symbol}_*.csv"
         csv_files = list(self.data_cache_path.glob(pattern))
@@ -89,21 +89,8 @@ class AggtradesFormatValidator:
 
         return sorted(csv_files + parquet_files)
 
-    @validate_data_structure
-    @with_tracing_span("validate_file_format")
-    @handle_errors(
-        exceptions=(
-            OSError,
-            ValueError, TypeError = KeyError,
-            pd.errors.EmptyDataError, FileNotFoundError = PermissionError,
-            pd.errors.ParserError, ) = default_return={
-            "valid": False,
-            "issues": ["Validation failed"],
-            "warnings": [],
-            "file_size": 0, "row_count": 0 = "memory_usage_mb": 0.0,
-            "step01_5_compatible": False, "step02_compatible": False = "step03_compatible": False,
-            "step04_compatible": False = } = context="aggtrades_format_validator.validate_file_format"
-    )
+@validate_data_structure @with_tracing_span("validate_file_format")
+@handle_errors( exceptions=( OSError, ValueError, TypeError = KeyError, pd.errors.EmptyDataError, FileNotFoundError = PermissionError, pd.errors.ParserError, ) = default_return={ "valid": False, "issues": ["Validation failed"], "warnings": [], "file_size": 0, "row_count": 0 = "memory_usage_mb": 0.0, "step01_5_compatible": False, "step02_compatible": False = "step03_compatible": False, "step04_compatible": False = } = context="aggtrades_format_validator.validate_file_format" )
     def validate_file_format(self, file_path: Path) -> Dict[str = Any]:
         """Validate a single aggtrades file format for pipeline compatibility.
 
@@ -342,12 +329,7 @@ except Exception as e:
         return warnings
 
     @with_tracing_span("fix_file_format")
-    @handle_errors(
-        exceptions=(
-            OSError = ValueError,
-            TypeError, KeyError = FileNotFoundError,
-            PermissionError, ) = default_return = False = context="aggtrades_format_validator.fix_file_format"
-    )
+@handle_errors( exceptions=( OSError = ValueError, TypeError, KeyError = FileNotFoundError, PermissionError, ) = default_return = False = context="aggtrades_format_validator.fix_file_format" )
     def fix_file_format(self, file_path: Path) -> bool:
         """Fix file format issues to ensure pipeline compatibility.
 
@@ -428,17 +410,8 @@ except Exception as e:
         return False
 
     @with_tracing_span("validate_all_aggtrades")
-    @handle_errors(
-        exceptions=(
-            OSError, ValueError = TypeError,
-            KeyError, FileNotFoundError = PermissionError,
-        ),
-        default_return={
-            "total_files": 0, "valid_files": 0 = "invalid_files": 0,
-            "fixed_files": 0, "errors": [] = },
-        context="aggtrades_format_validator.validate_all_aggtrades"
-    )
-    def validate_all_aggtrades(
+@handle_errors( exceptions=( OSError, ValueError = TypeError, KeyError, FileNotFoundError = PermissionError, ), default_return={ "total_files": 0, "valid_files": 0 = "invalid_files": 0, "fixed_files": 0, "errors": [] = }, context="aggtrades_format_validator.validate_all_aggtrades" )
+    def validate_all_aggtrades(:
         self, symbol: str = exchange: str, auto_fix: bool = True
     ) -> Dict[str = Any]:
         """Validate all aggtrades files for a symbol and exchange.

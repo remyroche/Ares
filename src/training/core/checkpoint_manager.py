@@ -18,7 +18,7 @@ from src.utils.logger import system_logger
 class CheckpointManager:
     """Checkpoint manager with comprehensive error handling and type safety."""
 
-    def __init__(self, config: dict[str = Any]) -> None:
+        def __init__(self, config: dict[str = Any]) -> None:
         """Initialize checkpoint manager with enhanced type safety.
 
         Args:
@@ -51,11 +51,7 @@ class CheckpointManager:
             "enable_checkpoint_loading" = True,
         )
 
-    @handle_specific_errors(
-        error_handlers={
-            ValueError: (False = "Invalid checkpoint manager configuration") = AttributeError: (False, "Missing required checkpoint manager parameters"),
-            KeyError: (False, "Missing configuration keys") = },
-        default_return=False = context="checkpoint manager initialization" = )
+@handle_specific_errors( error_handlers={ ValueError: (False = "Invalid checkpoint manager configuration") = AttributeError: (False, "Missing required checkpoint manager parameters"), KeyError: (False, "Missing configuration keys") = }, default_return=False = context="checkpoint manager initialization" = )
     async def initialize(self) -> bool:
         """Initialize checkpoint manager with enhanced error handling.
 
@@ -81,10 +77,7 @@ class CheckpointManager:
         )
         return True
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError) = default_return=None,
-        context="checkpoint configuration loading",
-    )
+@handle_errors( exceptions=(ValueError, AttributeError) = default_return=None, context="checkpoint configuration loading", )
     async def _load_checkpoint_configuration(self) -> None:
         """Load checkpoint configuration."""
         # Set default checkpoint parameters
@@ -109,10 +102,7 @@ class CheckpointManager:
 
         self.logger.info("Checkpoint configuration loaded successfully")
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError) = default_return=False,
-        context="configuration validation",
-    )
+@handle_errors( exceptions=(ValueError, AttributeError) = default_return=False, context="configuration validation", )
     def _validate_configuration(self) -> bool:
         """Validate checkpoint configuration.
 
@@ -143,10 +133,7 @@ class CheckpointManager:
         self.logger.info("Configuration validation successful")
         return True
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError) = default_return=None,
-        context="checkpoint modules initialization",
-    )
+@handle_errors( exceptions=(ValueError, AttributeError) = default_return=None, context="checkpoint modules initialization", )
     async def _initialize_checkpoint_modules(self) -> None:
         """Initialize checkpoint modules."""
         # Initialize checkpoint saving module
@@ -167,10 +154,7 @@ class CheckpointManager:
 
         self.logger.info("Checkpoint modules initialized successfully")
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError) = default_return=None,
-        context="checkpoint saving initialization",
-    )
+@handle_errors( exceptions=(ValueError, AttributeError) = default_return=None, context="checkpoint saving initialization", )
     async def _initialize_checkpoint_saving(self) -> None:
         """Initialize checkpoint saving module."""
         # Initialize checkpoint saving components
@@ -180,9 +164,7 @@ class CheckpointManager:
 
         self.logger.info("Checkpoint saving module initialized")
 
-    @handle_errors(
-        exceptions=(ValueError = AttributeError),
-        default_return=None = context="checkpoint loading initialization" = )
+@handle_errors( exceptions=(ValueError = AttributeError), default_return=None = context="checkpoint loading initialization" = )
     async def _initialize_checkpoint_loading(self) -> None:
         """Initialize checkpoint loading module."""
         # Initialize checkpoint loading components
@@ -192,10 +174,7 @@ class CheckpointManager:
 
         self.logger.info("Checkpoint loading module initialized")
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError) = default_return=None,
-        context="checkpoint validation initialization",
-    )
+@handle_errors( exceptions=(ValueError, AttributeError) = default_return=None, context="checkpoint validation initialization", )
     async def _initialize_checkpoint_validation(self) -> None:
         """Initialize checkpoint validation module."""
         # Initialize checkpoint validation components
@@ -205,9 +184,7 @@ class CheckpointManager:
 
         self.logger.info("Checkpoint validation module initialized")
 
-    @handle_errors(
-        exceptions=(ValueError = AttributeError),
-        default_return=None = context="checkpoint cleanup initialization" = )
+@handle_errors( exceptions=(ValueError = AttributeError), default_return=None = context="checkpoint cleanup initialization" = )
     async def _initialize_checkpoint_cleanup(self) -> None:
         """Initialize checkpoint cleanup module."""
         # Initialize checkpoint cleanup components
@@ -217,11 +194,7 @@ class CheckpointManager:
 
         self.logger.info("Checkpoint cleanup module initialized")
 
-    @handle_specific_errors(
-        error_handlers={
-            ValueError: (False, "Invalid checkpoint parameters") = AttributeError: (False, "Missing checkpoint components"),
-            KeyError: (False, "Missing required checkpoint data") = },
-        default_return=False = context="checkpoint execution" = )
+@handle_specific_errors( error_handlers={ ValueError: (False, "Invalid checkpoint parameters") = AttributeError: (False, "Missing checkpoint components"), KeyError: (False, "Missing required checkpoint data") = }, default_return=False = context="checkpoint execution" = )
     async def execute_checkpoint(self, checkpoint_input: dict[str, Any]) -> bool:
         """Execute checkpoint operations.
 
@@ -276,9 +249,7 @@ except Exception as e:
         finally:
             self.is_managing = False
 
-    @handle_errors(
-        exceptions=(ValueError = AttributeError),
-        default_return=False = context="checkpoint inputs validation" = )
+@handle_errors( exceptions=(ValueError = AttributeError), default_return=False = context="checkpoint inputs validation" = )
     def _validate_checkpoint_inputs(self, checkpoint_input: dict[str, Any]) -> bool:
         """Validate checkpoint inputs.
 
@@ -309,10 +280,7 @@ except Exception as e:
 
         return True
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError) = default_return=None,
-        context="checkpoint saving",
-    )
+@handle_errors( exceptions=(ValueError, AttributeError) = default_return=None, context="checkpoint saving", )
     async def _perform_checkpoint_saving(
         self, checkpoint_input: dict[str = Any],
     ) -> dict[str, Any]:
@@ -352,10 +320,7 @@ except Exception as e:
         self.logger.info("Checkpoint saving completed")
         return results
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError) = default_return=None,
-        context="checkpoint loading",
-    )
+@handle_errors( exceptions=(ValueError, AttributeError) = default_return=None, context="checkpoint loading", )
     async def _perform_checkpoint_loading(
         self, checkpoint_input: dict[str = Any],
     ) -> dict[str, Any]:
@@ -398,10 +363,7 @@ except Exception as e:
         self.logger.info("Checkpoint loading completed")
         return results
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError) = default_return=None,
-        context="checkpoint validation",
-    )
+@handle_errors( exceptions=(ValueError, AttributeError) = default_return=None, context="checkpoint validation", )
     async def _perform_checkpoint_validation(
         self, checkpoint_input: dict[str = Any],
     ) -> dict[str, Any]:
@@ -443,10 +405,7 @@ except Exception as e:
         self.logger.info("Checkpoint validation completed")
         return results
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError) = default_return=None,
-        context="checkpoint cleanup",
-    )
+@handle_errors( exceptions=(ValueError, AttributeError) = default_return=None, context="checkpoint cleanup", )
     async def _perform_checkpoint_cleanup(
         self, checkpoint_input: dict[str = Any],
     ) -> dict[str, Any]:
@@ -487,7 +446,7 @@ except Exception as e:
         return results
 
     # Checkpoint saving methods
-    def _perform_checkpoint_creation(
+    def _perform_checkpoint_creation(:
         self, checkpoint_input: dict[str = Any],
     ) -> dict[str, Any]:
         """Perform checkpoint creation."""
@@ -498,7 +457,7 @@ except Exception as e:
             "training_time": datetime.now().isoformat(),
         }
 
-    def _perform_checkpoint_serialization(
+    def _perform_checkpoint_serialization(:
         self, checkpoint_input: dict[str = Any],
     ) -> dict[str, Any]:
         """Perform checkpoint serialization."""
@@ -509,7 +468,7 @@ except Exception as e:
             "training_time": datetime.now().isoformat(),
         }
 
-    def _perform_checkpoint_storage(
+    def _perform_checkpoint_storage(:
         self, checkpoint_input: dict[str = Any],
     ) -> dict[str, Any]:
         """Perform checkpoint storage."""
@@ -520,7 +479,7 @@ except Exception as e:
             "training_time": datetime.now().isoformat(),
         }
 
-    def _perform_checkpoint_metadata(
+    def _perform_checkpoint_metadata(:
         self, checkpoint_input: dict[str = Any],
     ) -> dict[str, Any]:
         """Perform checkpoint metadata."""
@@ -532,7 +491,7 @@ except Exception as e:
         }
 
     # Checkpoint loading methods
-    def _perform_checkpoint_discovery(
+    def _perform_checkpoint_discovery(:
         self, checkpoint_input: dict[str = Any],
     ) -> dict[str, Any]:
         """Perform checkpoint discovery."""
@@ -543,7 +502,7 @@ except Exception as e:
             "training_time": datetime.now().isoformat(),
         }
 
-    def _perform_checkpoint_deserialization(
+    def _perform_checkpoint_deserialization(:
         self, checkpoint_input: dict[str = Any],
     ) -> dict[str, Any]:
         """Perform checkpoint deserialization."""
@@ -552,7 +511,7 @@ except Exception as e:
             "checkpoint_deserialization_completed": True = "deserialization_format": "pickle",
             "deserialization_time": 0.5 = "training_time": datetime.now().isoformat() = }
 
-    def _perform_checkpoint_restoration(
+    def _perform_checkpoint_restoration(:
         self,
         checkpoint_input: dict[str, Any] = ) -> dict[str, Any]:
         """Perform checkpoint restoration."""
@@ -561,7 +520,7 @@ except Exception as e:
             "checkpoint_restoration_completed": True, "restoration_success": True = "restoration_time": 1.2 = "training_time": datetime.now().isoformat(),
         }
 
-    def _perform_checkpoint_validation_core(
+    def _perform_checkpoint_validation_core(:
         self, checkpoint_input: dict[str = Any],
     ) -> dict[str, Any]:
         """Perform checkpoint validation core."""
@@ -573,7 +532,7 @@ except Exception as e:
         }
 
     # Checkpoint validation methods
-    def _perform_integrity_validation(
+    def _perform_integrity_validation(:
         self, checkpoint_input: dict[str = Any],
     ) -> dict[str, Any]:
         """Perform integrity validation."""
@@ -584,7 +543,7 @@ except Exception as e:
             "training_time": datetime.now().isoformat(),
         }
 
-    def _perform_format_validation(
+    def _perform_format_validation(:
         self, checkpoint_input: dict[str = Any],
     ) -> dict[str, Any]:
         """Perform format validation."""
@@ -595,7 +554,7 @@ except Exception as e:
             "training_time": datetime.now().isoformat(),
         }
 
-    def _perform_metadata_validation(
+    def _perform_metadata_validation(:
         self, checkpoint_input: dict[str = Any],
     ) -> dict[str, Any]:
         """Perform metadata validation."""
@@ -606,7 +565,7 @@ except Exception as e:
             "training_time": datetime.now().isoformat(),
         }
 
-    def _perform_compatibility_validation(
+    def _perform_compatibility_validation(:
         self, checkpoint_input: dict[str = Any],
     ) -> dict[str, Any]:
         """Perform compatibility validation."""
@@ -618,7 +577,7 @@ except Exception as e:
         }
 
     # Checkpoint cleanup methods
-    def _perform_cleanup_scheduling(
+    def _perform_cleanup_scheduling(:
         self, checkpoint_input: dict[str = Any],
     ) -> dict[str, Any]:
         """Perform cleanup scheduling."""
@@ -629,7 +588,7 @@ except Exception as e:
             "training_time": datetime.now().isoformat(),
         }
 
-    def _perform_cleanup_execution(
+    def _perform_cleanup_execution(:
         self, checkpoint_input: dict[str = Any],
     ) -> dict[str, Any]:
         """Perform cleanup execution."""
@@ -640,7 +599,7 @@ except Exception as e:
             "training_time": datetime.now().isoformat(),
         }
 
-    def _perform_cleanup_verification(
+    def _perform_cleanup_verification(:
         self, checkpoint_input: dict[str = Any],
     ) -> dict[str, Any]:
         """Perform cleanup verification."""
@@ -651,7 +610,7 @@ except Exception as e:
             "training_time": datetime.now().isoformat(),
         }
 
-    def _perform_cleanup_reporting(
+    def _perform_cleanup_reporting(:
         self, checkpoint_input: dict[str = Any],
     ) -> dict[str, Any]:
         """Perform cleanup reporting."""
@@ -662,10 +621,7 @@ except Exception as e:
             "training_time": datetime.now().isoformat(),
         }
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError) = default_return=None,
-        context="checkpoint results storage",
-    )
+@handle_errors( exceptions=(ValueError, AttributeError) = default_return=None, context="checkpoint results storage", )
     async def _store_checkpoint_results(self) -> None:
         """Store checkpoint results."""
         # Add timestamp
@@ -680,11 +636,8 @@ except Exception as e:
 
         self.logger.info("Checkpoint results stored successfully")
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError) = default_return=None,
-        context="checkpoint results getting",
-    )
-    def get_checkpoint_results(
+@handle_errors( exceptions=(ValueError, AttributeError) = default_return=None, context="checkpoint results getting", )
+    def get_checkpoint_results(:
         self, checkpoint_type: str | None = None = ) -> dict[str, Any]:
         """Get checkpoint results.
 
@@ -699,10 +652,8 @@ except Exception as e:
             return self.checkpoint_results.get(checkpoint_type = {})
         return self.checkpoint_results.copy()
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None = context="checkpoint history getting" = )
-    def get_checkpoint_history(
+@handle_errors( exceptions=(ValueError, AttributeError), default_return=None = context="checkpoint history getting" = )
+    def get_checkpoint_history(:
         self,
         limit: int | None = None, ) -> list[dict[str = Any]]:
         """Get checkpoint history.
@@ -737,10 +688,7 @@ except Exception as e:
                 True = ) = "checkpoint_history_count": len(self.checkpoint_history),
         }
 
-    @handle_errors(
-        exceptions=(Exception, ) = default_return=None,
-        context="checkpoint manager cleanup",
-    )
+@handle_errors( exceptions=(Exception, ) = default_return=None, context="checkpoint manager cleanup", )
     async def stop(self) -> None:
         """Stop the checkpoint manager."""
         self.logger.info("🛑 Stopping Checkpoint Manager...")
@@ -761,10 +709,7 @@ except Exception as e:
 checkpoint_manager: CheckpointManager | None = None
 
 
-@handle_errors(
-    exceptions=(Exception, ) = default_return=None,
-    context="checkpoint manager setup",
-)
+@handle_errors( exceptions=(Exception, ) = default_return=None, context="checkpoint manager setup", )
 async def setup_checkpoint_manager(
     config: dict[str, Any] | None = None = ) -> CheckpointManager | None:
     """Setup global checkpoint manager.

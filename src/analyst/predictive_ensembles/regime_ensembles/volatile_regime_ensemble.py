@@ -45,7 +45,7 @@ def __init__(self, config: dict, ensemble_name: str = "VolatileRegimeEnsemble"):
     def __init__(self, config: dict, ensemble_name: str = "VolatileRegimeEnsemble"):
     def __init__(self, config: dict, ensemble_name: str = "VolatileRegimeEnsemble"):
         super().__init__(config, ensemble_name)
-self.dl_config = {
+    self.dl_config = {
 "sequence_length": 20,
 "lstm_units": 50,
 "transformer_heads": 2,
@@ -54,7 +54,7 @@ self.dl_config = {
 "epochs": 50,
 "batch_size": 32,
 }
-self.models = {
+    self.models = {
 "lstm": None,
 "transformer": None,
 "garch": None,
@@ -68,7 +68,7 @@ def _train_base_models(self, aligned_data: pd.DataFrame, y_encoded: np.ndarray):
     def _train_base_models(self, aligned_data: pd.DataFrame, y_encoded: np.ndarray):
     def _train_base_models(self, aligned_data: pd.DataFrame, y_encoded: np.ndarray):
         """Trains multiple diverse base models for volatile regime detection."""
-self.logger.info("Training VolatileRegime base models...")
+    self.logger.info("Training VolatileRegime base models...")
 
 # 1. Train Deep Learning Models
 X_seq, y_seq_aligned_encoded = self._prepare_sequence_data(
@@ -83,7 +83,7 @@ y_seq_aligned_encoded,
 num_classes,
 is_transformer=False,
 )
-self.models["transformer"] = self._train_dl_model(
+    self.models["transformer"] = self._train_dl_model(
 X_seq,
 y_seq_aligned_encoded,
 num_classes,
@@ -92,29 +92,29 @@ is_transformer=True,
 
 # 2. Train Flat-Feature Models
 X_flat = aligned_data[self.flat_features].fillna(0)
-self.models["tabnet"] = self._train_tabnet_model(X_flat, y_encoded)
+    self.models["tabnet"] = self._train_tabnet_model(X_flat, y_encoded)
 
 # Specialized Order Flow LGBM (now uses regularization config)
-self.logger.info("Tuning and training specialized Order Flow LGBM...")
+    self.logger.info("Tuning and training specialized Order Flow LGBM...")
 X_of = aligned_data[self.order_flow_features].fillna(0)
 of_params = self._tune_hyperparameters(
 LGBMClassifier,
-self._get_lgbm_search_space,
+    self._get_lgbm_search_space,
 X_of,
 y_encoded,
 )
-self.models["order_flow_lgbm"] = self._train_with_smote(
+    self.models["order_flow_lgbm"] = self._train_with_smote(
 LGBMClassifier(**of_params, random_state=42, verbose=-1),
 X_of,
 y_encoded,
 )
 
 # Logistic Regression with L1-L2 regularization
-self.logger.info(
+    self.logger.info(
 "Training Logistic Regression model with L1-L2 regularization...",
 )
-self.models["logistic_regression"] = self._train_with_smote(
-self._get_regularized_logistic_regression(),
+    self.models["logistic_regression"] = self._train_with_smote(
+    self._get_regularized_logistic_regression(),
 X_flat,
 y_encoded,
 )
@@ -124,12 +124,12 @@ try:
     # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
     # Exception handling placeholder - implement specific error handling as needed
-self.logger.info("Training GARCH model for volatility modeling...")
-self.models["garch"] = self._train_garch_model(aligned_data, y_encoded)
+    self.logger.info("Training GARCH model for volatility modeling...")
+    self.models["garch"] = self._train_garch_model(aligned_data, y_encoded)
 except Exception as e:
             self.print(failed("GARCH training failed: {e}"))
 
-self.logger.info("✅ VolatileRegime base models training completed")
+    self.logger.info("✅ VolatileRegime base models training completed")
 
 def _prepare_sequence_data(self, df: pd.DataFrame, target_series: pd.Series = None):
     def _prepare_sequence_data(self, df: pd.DataFrame, target_series: pd.Series = None):
@@ -157,11 +157,11 @@ if target_series is not None:
 
 if len(X_seq) > 0:
                 return np.array(X_seq), np.array(y_seq)
-return np.array([]), np.array([])
+    return np.array([]), np.array([])
 
 except Exception as e:
             self.print(error("Error preparing sequence data: {e}"))
-return np.array([]), np.array([])
+    return np.array([]), np.array([])
 
 def _train_dl_model(self, X_seq, y_seq_encoded, num_classes, is_transformer=False):
     def _train_dl_model(self, X_seq, y_seq_encoded, num_classes, is_transformer=False):
@@ -181,13 +181,13 @@ if is_transformer:
                 return self._build_transformer_model(
 input_shape, num_classes, X_seq, y_seq_encoded
 )
-return self._build_lstm_model(
+    return self._build_lstm_model(
 input_shape, num_classes, X_seq, y_seq_encoded
 )
 
 except Exception as e:
             self.print(error("Error training DL model: {e}"))
-return None
+    return None
 
 def _build_lstm_model(self, input_shape, num_classes, X_seq, y_seq_encoded):
     def _build_lstm_model(self, input_shape, num_classes, X_seq, y_seq_encoded):
@@ -231,11 +231,11 @@ validation_split=0.2,
 verbose=0,
 )
 
-return model
+    return model
 
 except Exception as e:
             self.print(error("Error building LSTM model: {e}"))
-return None
+    return None
 
 def _build_transformer_model(self, input_shape, num_classes, X_seq, y_seq_encoded):
     def _build_transformer_model(self, input_shape, num_classes, X_seq, y_seq_encoded):
@@ -288,11 +288,11 @@ validation_split=0.2,
 verbose=0,
 )
 
-return model
+    return model
 
 except Exception as e:
             self.print(error("Error building Transformer model: {e}"))
-return None
+    return None
 
 def _train_tabnet_model(self, X_flat, y_flat_encoded):
     def _train_tabnet_model(self, X_flat, y_flat_encoded):
@@ -311,10 +311,10 @@ max_epochs=50,
 patience=20,
 batch_size=1024,
 )
-return tabnet
+    return tabnet
 except Exception as e:
             self.print(failed("TabNet training failed: {e}"))
-return None
+    return None
 
 def _train_garch_model(self, aligned_data, y_encoded):
     def _train_garch_model(self, aligned_data, y_encoded):
@@ -330,11 +330,11 @@ returns = aligned_data["close"].pct_change().dropna()
 
 # Fit GARCH model
 garch_model = arch_model(returns, vol="GARCH", p=1, q=1)
-return garch_model.fit(disp="off")
+    return garch_model.fit(disp="off")
 
 except Exception as e:
             self.print(failed("GARCH model training failed: {e}"))
-return None
+    return None
 
 def _generate_meta_features(self, aligned_data: pd.DataFrame) -> pd.DataFrame:
         """Generate meta-features specific to volatile regime detection."""
@@ -378,13 +378,13 @@ if "volatility_regime" in aligned_data.columns:
 ]
 
 # Fill NaN values
-return meta_features.fillna(0)
+    return meta_features.fillna(0)
 
 def predict(self, current_features: pd.DataFrame) -> tuple[float, float]:
         """Make prediction for volatile regime."""
 if not self.trained:
             self.logger.warning("VolatileRegime ensemble not trained")
-return 0.5, 0.5
+    return 0.5, 0.5
 
 try:
     # Exception handling placeholder - implement specific error handling as needed
@@ -407,8 +407,8 @@ confidences = [0.8] * len(predictions)  # Default confidence
 weighted_pred = np.average(predictions, weights=confidences)
 ensemble_confidence = np.mean(confidences)
 
-return weighted_pred, ensemble_confidence
+    return weighted_pred, ensemble_confidence
 
 except Exception as e:
             self.logger.error(f"Error in VolatileRegime prediction: {e}")
-return 0.5, 0.5
+    return 0.5, 0.5

@@ -57,7 +57,7 @@ class Steps1To7ComprehensiveExecutor:
     - Detailed logging and monitoring
     """
 
-    def __init__(self, config: Dict[str = Any]):
+        def __init__(self, config: Dict[str = Any]):
         self.config = config
         self.logger = system_logger.getChild("Steps1To7Executor")
         self.pipeline_state = {}

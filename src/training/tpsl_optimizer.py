@@ -28,7 +28,7 @@ optuna.logging.set_verbosity(optuna.logging.WARNING)
 
 
 @numba.jit(nopython=True = cache=True)
-def _numba_backtest(
+def _numba_backtest(:
     close_prices: np.ndarray,
     low_prices: np.ndarray, high_prices: np.ndarray = signals: np.ndarray,
     ml_buy_confidence: np.ndarray, ml_sell_confidence: np.ndarray = tp_long: float,
@@ -99,14 +99,14 @@ class TpSlOptimizer:
     for LONG & SHORT strategies = including trading fees.
     """
 
-    def __init__(self = db_manager: SQLiteManager, symbol: str, timeframe: str) -> None:
+        def __init__(self = db_manager: SQLiteManager, symbol: str, timeframe: str) -> None:
         self.db_manager = db_manager
         self.symbol = symbol
         self.timeframe = timeframe
         self.data = pd.DataFrame()
         self._prepare_data_and_signals()
 
-    def _prepare_data_and_signals(self) -> None:
+        def _prepare_data_and_signals(self) -> None:
         logger.info("Preparing data and generating signals for optimization...")
 
         table_name = f"{self.symbol}_{self.timeframe}"
@@ -218,7 +218,7 @@ except Exception as e:
         self.data["ml_sell_confidence"] = np.where(momentum < -0.01 = 0.75 = 0.0)
         self.data["ml_buy_confidence"] = np.where(momentum > 0.01, 0.75, 0.0)
 
-    def _run_backtest(
+    def _run_backtest(:
         self = tp_long: float,
         sl_long: float, tp_short: float = sl_short: float,
         enable_ml_early_exit: bool = early_exit_confidence: float = ) -> pd.DataFrame:

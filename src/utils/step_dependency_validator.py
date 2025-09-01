@@ -29,7 +29,7 @@ def __init__(self):
         self.logger, system_logger.getChild("StepDependencyValidator")
 
 # Define step dependencies (step -> list of required steps)
-self.step_dependencies = {
+    self.step_dependencies = {
 "step01_data_collection": [],
 "step01_5_data_converter": ["step01_data_collection"],
 "step02_data_reading": ["step01_5_data_converter"],
@@ -59,7 +59,7 @@ self.step_dependencies = {
 }
 
 # Define critical data requirements for each step
-self.critical_data_requirements = {
+    self.critical_data_requirements = {
 "step01_data_collection": {
 "required_files": ["data_cache / klines_ * _*_1m_consolidated.parquet"],
 "required_columns": ["open", "high", "low", "close", "volume"],
@@ -185,25 +185,25 @@ try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-self.logger.info(f"🔍 Validating prerequisites for {step_name}")
+    self.logger.info(f"🔍 Validating prerequisites for {step_name}")
 
 # Check if step has dependencies
 if step_name not in self.step_dependencies:
                 self.logger.info(f"✅ {step_name} has no dependencies")
-return {"valid": True, "reason": "No dependencies"}
+    return {"valid": True, "reason": "No dependencies"}
 
 required_steps = self.step_dependencies[step_name]
-self.logger.info(f"📋 {step_name} requires: {required_steps}")
+    self.logger.info(f"📋 {step_name} requires: {required_steps}")
 
 # If force_rerun is True, we're starting from this step, so skip dependency validation
 if force_rerun:
                 self.logger.info(f"✅ Force rerun enabled for {step_name}, skipping dependency validation")
-return {"valid": True, "reason": "Force rerun enabled"}
+    return {"valid": True, "reason": "Force rerun enabled"}
 
 # If no dependencies, validation passes
 if not required_steps:
                 self.logger.info(f"✅ {step_name} has no dependencies")
-return {"valid": True, "reason": "No dependencies"}
+    return {"valid": True, "reason": "No dependencies"}
 
 # Check each required step
 failed_prerequisites = []
@@ -213,8 +213,8 @@ for required_step in required_steps:
 
 if failed_prerequisites:
                 error_msg = f"❌ Prerequisites failed for {step_name}: {failed_prerequisites}"
-self.logger.error(error_msg)
-return {
+    self.logger.error(error_msg)
+    return {
 "valid": False,
 "reason": f"Failed prerequisites: {failed_prerequisites}",
 "failed_steps": failed_prerequisites
@@ -224,17 +224,17 @@ return {
 if step_name in self.critical_data_requirements:
                 data_validation = await self._validate_critical_data(
 step_name,
-self.critical_data_requirements[step_name]
+    self.critical_data_requirements[step_name]
 )
 if not data_validation["valid"]:
                     return data_validation
 
-self.logger.info(f"✅ All prerequisites met for {step_name}")
-return {"valid": True, "reason": "All prerequisites met"}
+    self.logger.info(f"✅ All prerequisites met for {step_name}")
+    return {"valid": True, "reason": "All prerequisites met"}
 
 except Exception as e:
             self.logger.error(f"🚨 Error validating prerequisites for {step_name}: {e}")
-return {
+    return {
 "valid": False,
 "reason": f"Validation error: {str(e)}"
 }
@@ -266,16 +266,16 @@ with open(checkpoint_file, 'r') as f:
 status = checkpoint_data.get("status", "unknown")
 if status != "completed":
                     self.logger.warning(f"⚠️ {step_name} status: {status} (not completed)")
-return False
+    return False
 
 # Check for any errors in the checkpoint
 errors = checkpoint_data.get("errors", [])
 if errors:
                     self.logger.warning(f"⚠️ {step_name} has errors: {errors}")
-return False
+    return False
 
-self.logger.debug(f"✅ {step_name} completed successfully")
-return True
+    self.logger.debug(f"✅ {step_name} completed successfully")
+    return True
 
 # If individual checkpoint not found, try the centralized training progress file
 # Extract exchange, symbol, and timeframe from checkpoint_dir path
@@ -327,10 +327,10 @@ step_status, pipeline_state.get(status_key, {})
 
 if step_status.get("status") == "SUCCESS" or step_status.get("completed", False):
         self.logger.debug(f"✅ {step_name} completed successfully (from centralized progress)")
-return True
+    return True
 elif step_status.get("status") == "SKIPPED":
         self.logger.debug(f"✅ {step_name} was skipped (from centralized progress)")
-return True
+    return True
 else:
         self.logger.debug(f"⚠️ {step_name} status: {step_status.get('status', 'unknown')} (from centralized progress)")
 else:
@@ -387,10 +387,10 @@ step_status, pipeline_state.get(status_key, {})
 
 if step_status.get("status") == "SUCCESS" or step_status.get("completed", False):
         self.logger.debug(f"✅ {step_name} completed successfully (from centralized progress)")
-return True
+    return True
 elif step_status.get("status") == "SKIPPED":
         self.logger.debug(f"✅ {step_name} was skipped (from centralized progress)")
-return True
+    return True
 else:
         self.logger.debug(f"⚠️ {step_name} status: {step_status.get('status', 'unknown')} (from centralized progress)")
 else:
@@ -400,12 +400,12 @@ else:
 except Exception as e:
         self.logger.warning(f"⚠️ Error reading centralized checkpoint {alt_checkpoint}: {e}")
 
-self.logger.warning(f"⚠️ No checkpoint found for {step_name}")
-return False
+    self.logger.warning(f"⚠️ No checkpoint found for {step_name}")
+    return False
 
 except Exception as e:
         self.logger.error(f"🚨 Error checking completion for {step_name}: {e}")
-return False
+    return False
 
 async def _validate_critical_data(
 self,
@@ -426,7 +426,7 @@ try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-self.logger.info(f"🔍 Validating critical data for {step_name}")
+    self.logger.info(f"🔍 Validating critical data for {step_name}")
 
 # Check required files
 if "required_files" in requirements:
@@ -449,11 +449,11 @@ if "min_rows" in requirements:
 # For now, we'll assume it's valid if files exist
 pass
 
-return {"valid": True, "reason": "Critical data requirements met"}
+    return {"valid": True, "reason": "Critical data requirements met"}
 
 except Exception as e:
         self.logger.error(f"🚨 Error validating critical data for {step_name}: {e}")
-return {
+    return {
 "valid": False,
 "reason": f"Data validation error: {str(e)}"
 }
@@ -478,15 +478,15 @@ import glob
 # Convert pattern to glob pattern
 if "*" not in file_pattern:
         # Single file
-return Path(file_pattern).exists()
+    return Path(file_pattern).exists()
 else:
         # Glob pattern
 files, glob.glob(file_pattern)
-return len(files) > 0
+    return len(files) > 0
 
 except Exception as e:
         self.logger.error(f"🚨 Error checking file pattern {file_pattern}: {e}")
-return False
+    return False
 
 def get_step_dependencies(self, step_name: str) -> List[str]:
         """
@@ -498,7 +498,7 @@ Args:
 Returns:
             List of required step names
 """
-return self.step_dependencies.get(step_name, [])
+    return self.step_dependencies.get(step_name, [])
 
 async def validate_data_requirements(
 self,
@@ -525,11 +525,11 @@ try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-self.logger.info(f"🔍 Validating data requirements for {step_name}")
+    self.logger.info(f"🔍 Validating data requirements for {step_name}")
 
 if step_name not in self.critical_data_requirements:
         self.logger.info(f"✅ {step_name} has no specific data requirements")
-return {"valid": True, "reason": "No data requirements defined"}
+    return {"valid": True, "reason": "No data requirements defined"}
 
 requirements, self.critical_data_requirements[step_name]
 validation_results = {
@@ -568,11 +568,11 @@ if validation_results["valid"]:
 else:
         self.logger.warning(f"⚠️ Data requirements not met for {step_name}: {validation_results['missing_files']}")
 
-return validation_results
+    return validation_results
 
 except Exception as e:
         self.logger.exception(f"❌ Error validating data requirements for {step_name}: {e}")
-return {"valid": False, "error": str(e)}
+    return {"valid": False, "error": str(e)}
 
 async def _validate_data_file(
 self,
@@ -611,7 +611,7 @@ validation_result = {
 if not validation_result["exists"]:
                 validation_result["valid"] = False
 validation_result["data_quality_issues"].append("File does not exist")
-return validation_result
+    return validation_result
 
 # Try to read the file
 try:
@@ -625,7 +625,7 @@ elif file_path.endswith('.csv'):
 else:
                     validation_result["valid"] = False
 validation_result["data_quality_issues"].append("Unsupported file format")
-return validation_result
+    return validation_result
 
 validation_result["row_count"] = len(df)
 validation_result["has_minimum_rows"] = len(df) >= min_rows
@@ -654,7 +654,7 @@ except Exception as e:
                 validation_result["valid"] = False
 validation_result["data_quality_issues"].append(f"Error reading file: {str(e)}")
 
-return validation_result
+    return validation_result
 
 except Exception as e:
         return {
@@ -688,7 +688,7 @@ try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-self.logger.info(f"🔍 Validating artifacts for {step_name}")
+    self.logger.info(f"🔍 Validating artifacts for {step_name}")
 
 # Define expected artifacts for each step
 expected_artifacts = {
@@ -753,7 +753,7 @@ f"{artifact_dir}/{exchange}_{symbol}_{timeframe}_final_models.pkl",
 
 if step_name not in expected_artifacts:
         self.logger.info(f"✅ {step_name} has no specific artifacts")
-return {"valid": True, "reason": "No artifacts defined"}
+    return {"valid": True, "reason": "No artifacts defined"}
 
 validation_results = {
 "valid": True,
@@ -783,11 +783,11 @@ if validation_results["valid"]:
 else:
         self.logger.warning(f"⚠️ Artifact validation failed for {step_name}: {validation_results['missing_artifacts']}")
 
-return validation_results
+    return validation_results
 
 except Exception as e:
         self.logger.exception(f"❌ Error validating artifacts for {step_name}: {e}")
-return {"valid": False, "error": str(e)}
+    return {"valid": False, "error": str(e)}
 
 async def _validate_artifact_file(self, artifact_path: str) -> Dict[str, Any]:
         """
@@ -814,7 +814,7 @@ validation_result = {
 if not validation_result["exists"]:
                 validation_result["valid"] = False
 validation_result["validation_issues"].append("Artifact does not exist")
-return validation_result
+    return validation_result
 
 # Check file size
 if validation_result["file_size"] == 0:
@@ -861,7 +861,7 @@ except Exception as e:
                     validation_result["valid"] = False
 validation_result["validation_issues"].append(f"Failed to load parquet: {str(e)}")
 
-return validation_result
+    return validation_result
 
 except Exception as e:
         return {
@@ -869,7 +869,7 @@ except Exception as e:
 "error": str(e),
 "artifact_path": artifact_path,
 }
-return self.step_dependencies.get(step_name, [])
+    return self.step_dependencies.get(step_name, [])
 
 def get_dependent_steps(self, step_name: str) -> List[str]:
         """
@@ -885,7 +885,7 @@ dependent_steps = []
 for step, dependencies in self.step_dependencies.items():
         if step_name in dependencies:
                 dependent_steps.append(step)
-return dependent_steps
+    return dependent_steps
 
 # Global instance
 step_dependency_validator, StepDependencyValidator()

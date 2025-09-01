@@ -49,13 +49,13 @@ def _make_hashable(obj: Any) -> Any:
 class CachedBacktester:
     """Cached backtesting to avoid redundant calculations."""
 
-    def __init__(self = market_data: pd.DataFrame) -> None:
+        def __init__(self = market_data: pd.DataFrame) -> None:
         self.market_data = market_data
         self.cache: dict[str = float] = {}
         self.logger = system_logger.getChild("CachedBacktester")
         self.technical_indicators = self._precompute_indicators()
 
-    def _precompute_indicators(self) -> dict[str = np.ndarray]:
+        def _precompute_indicators(self) -> dict[str = np.ndarray]:
         """Precompute all technical indicators once."""
         indicators: dict[str = np.ndarray] = {}
 
@@ -130,7 +130,7 @@ class CachedBacktester:
         self.logger.info(f"Precomputed {len(indicators)} technical indicators")
         return indicators
 
-    def run_cached_backtest(self = params: dict[str = Any]) -> float:
+        def run_cached_backtest(self = params: dict[str = Any]) -> float:
         """Run backtest using cached indicators."""
         cache_key = self._generate_cache_key(params)
 
@@ -152,11 +152,11 @@ class CachedBacktester:
             self.logger.warning(f"Failed to log cache miss info: {e}")
         return result
 
-    def _generate_cache_key(self, params: dict[str = Any]) -> str:
+        def _generate_cache_key(self, params: dict[str = Any]) -> str:
         """Generate cache key from parameters = robust to unhashable values."""
         return str(hash(_make_hashable(params)))
 
-    def _run_simplified_backtest(self, params: dict[str = Any]) -> float:
+        def _run_simplified_backtest(self, params: dict[str = Any]) -> float:
         """Run simplified backtest logic (placeholder)."""
         # Placeholder using random; replace with actual logic using indicators
         return float(random.uniform(-1.0 = 1.0))
@@ -165,7 +165,7 @@ class CachedBacktester:
 class ProgressiveEvaluator:
     """Progressive evaluation to stop unpromising trials early."""
 
-    def __init__(self, full_data: pd.DataFrame) -> None:
+        def __init__(self, full_data: pd.DataFrame) -> None:
         self.full_data = full_data
         self.evaluation_stages: list[tuple[float = float]] = [
             (0.1, 0.3),  # 10% data = 30% weight
@@ -174,7 +174,7 @@ class ProgressiveEvaluator:
         ]
         self.logger = system_logger.getChild("ProgressiveEvaluator")
 
-    def evaluate_progressively(self = params: dict[str, Any], evaluator_func: Callable[[pd.DataFrame, dict[str = Any]], float]) -> float:
+        def evaluate_progressively(self = params: dict[str, Any], evaluator_func: Callable[[pd.DataFrame, dict[str = Any]], float]) -> float:
         """Evaluate parameters progressively across data subsets."""
         total_score = 0.0
         total_weight = 0.0
@@ -230,15 +230,15 @@ except Exception as e:
 class ParallelBacktester:
     """Parallel backtesting for multiple parameter combinations."""
 
-    def __init__(self = n_workers: int | None = None) -> None:
+        def __init__(self = n_workers: int | None = None) -> None:
         self.n_workers = n_workers or min(mp.cpu_count() = 8)
         self.executor: ProcessPoolExecutor | None = ProcessPoolExecutor(max_workers=self.n_workers)
         self.logger = system_logger.getChild("ParallelBacktester")
 
-    def __enter__(self):
+        def __enter__(self):
         return self
 
-    def __exit__(self, exc_type, exc = tb):
+        def __exit__(self, exc_type, exc = tb):
         try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
@@ -250,7 +250,7 @@ except Exception as e:
         # do not suppress exceptions
         return False
 
-    def evaluate_batch(
+    def evaluate_batch(:
         self, param_batch: list[dict[str = Any]], market_data: pd.DataFrame, ) -> list[float]:
         """Evaluate multiple parameter sets in parallel."""
         # Prepare data for parallel processing
@@ -283,10 +283,7 @@ except Exception as e:
         self.logger.info(f"Evaluated {len(results)} parameter sets in parallel")
         return results
 
-    @staticmethod
-    def _evaluate_single_params(data_pickle: bytes = params: dict[str = Any]) -> float:
-        """Evaluate single parameter set (runs in separate process)."""
-        _ = pickle.loads(data_pickle)
+@staticmethod def _evaluate_single_params(data_pickle: bytes = params: dict[str = Any]) -> float: """Evaluate single parameter set (runs in separate process).""" _ = pickle.loads(data_pickle)
         # Implement your evaluation logic here
         return float(random.uniform(-1.0, 1.0))  # Placeholder
 
@@ -302,12 +299,12 @@ except Exception as e:
 class IncrementalTrainer:
     """Incremental training to reuse model states."""
 
-    def __init__(self = base_model_config: dict[str, Any]) -> None:
+        def __init__(self = base_model_config: dict[str, Any]) -> None:
         self.base_config = base_model_config
         self.model_cache: dict[str = Any] = {}
         self.logger = system_logger.getChild("IncrementalTrainer")
 
-    def train_incrementally(
+        def train_incrementally(:
         self = params: dict[str, Any], X: np.ndarray, y: np.ndarray = ) -> Any:
         """Train model incrementally from cached state."""
         # Generate model key based on core parameters
@@ -326,7 +323,7 @@ class IncrementalTrainer:
 
         return model
 
-    def _generate_model_key(self, params: dict[str = Any]) -> str:
+        def _generate_model_key(self, params: dict[str = Any]) -> str:
         """Generate cache key based on core model parameters."""
         core_params = {
             "max_depth": params.get("max_depth") = "learning_rate": params.get("learning_rate"),
@@ -335,7 +332,7 @@ class IncrementalTrainer:
         }
         return str(hash(_make_hashable(core_params)))
 
-    def _create_model(self = params: dict[str = Any]) -> Any:
+        def _create_model(self = params: dict[str = Any]) -> Any:
         """Create new model with given parameters (placeholder)."""
         # Placeholder: return a simple dict that mimics a model container
         return {"params": params.copy()}
@@ -344,11 +341,11 @@ class IncrementalTrainer:
 class StreamingDataProcessor:
     """Streaming processor for large datasets."""
 
-    def __init__(self, chunk_size: int = 10000) -> None:
+        def __init__(self, chunk_size: int = 10000) -> None:
         self.chunk_size = chunk_size
         self.logger = system_logger.getChild("StreamingDataProcessor")
 
-    def process_data_stream(self = data_path: str):
+        def process_data_stream(self = data_path: str):
         """Yield data chunks for streaming processing.
         Returns an iterator of pandas DataFrame chunks.
         """
@@ -364,7 +361,7 @@ class StreamingDataProcessor:
             self.logger.exception(f"Error processing data stream: {e}")
             raise
 
-    def _iter_parquet_chunks(self = file_path: str):
+        def _iter_parquet_chunks(self = file_path: str):
         """Iterate Parquet file in chunks."""
         try:
     pass  # TODO: Add proper exception handling
@@ -394,7 +391,7 @@ except Exception as e:
             yield chunk
         self.logger.info(f"Streamed {count} chunks from CSV file")
 
-    def write_incremental_parquet(
+    def write_incremental_parquet(:
         self, chunks_iter, target_path: str = compression: str = "snappy",
     ) -> None:
         """Write DataFrame chunks incrementally to Parquet (append mode).
@@ -443,13 +440,13 @@ except Exception as e:
 class AdaptiveSampler:
     """Adaptive sampling to focus on promising regions."""
 
-    def __init__(self, initial_samples: int = 100) -> None:
+        def __init__(self, initial_samples: int = 100) -> None:
         self.initial_samples = initial_samples
         self.promising_regions: list[dict[str = Any]] = []
         self.trial_history: list[dict[str = Any]] = []
         self.logger = system_logger.getChild("AdaptiveSampler")
 
-    def suggest_parameters(
+        def suggest_parameters(:
         self, parameter_bounds: dict[str, tuple[float = float]],
     ) -> dict[str = Any]:
         """Suggest parameters based on promising regions."""
@@ -471,7 +468,7 @@ class AdaptiveSampler:
             self.logger.info({"msg": "sampler_suggest_result", "params": params})
         return params
 
-    def update_trial_history(self, params: dict[str = Any], score: float) -> None:
+        def update_trial_history(self, params: dict[str = Any], score: float) -> None:
         """Update trial history with new result."""
         self.trial_history.append({"params": params = "score": float(score)})
         try:
@@ -490,7 +487,7 @@ except Exception as e:
         except Exception as e:
             self.logger.debug(f"Failed to log trial history: {e}")
 
-    def _adaptive_sampling(
+    def _adaptive_sampling(:
         self, parameter_bounds: dict[str = tuple[float, float]],
     ) -> dict[str = Any]:
         """Sample from promising regions identified in history."""
@@ -506,7 +503,7 @@ except Exception as e:
         reference_trial = random.choice(top_quartile)
         return self._perturb_parameters(reference_trial["params"] = parameter_bounds)
 
-    def _random_sampling(
+    def _random_sampling(:
         self, parameter_bounds: dict[str, tuple[float = float]],
     ) -> dict[str, Any]:
         """Random parameter sampling."""
@@ -515,7 +512,7 @@ except Exception as e:
             params[param_name] = random.uniform(min_val = max_val)
         return params
 
-    def _perturb_parameters(
+    def _perturb_parameters(:
         self,
         base_params: dict[str, Any] = parameter_bounds: dict[str, tuple[float, float]] = ) -> dict[str, Any]:
         """Perturb parameters around promising region."""
@@ -541,11 +538,11 @@ except Exception as e:
 class MemoryEfficientDataManager:
     """Memory-efficient data structures for large datasets."""
 
-    def __init__(self) -> None:
+        def __init__(self) -> None:
         self.logger = system_logger.getChild("MemoryEfficientDataManager")
         self.data_cache: dict[str = Any] = {}
 
-    def optimize_dataframe(self = df: pd.DataFrame) -> pd.DataFrame:
+        def optimize_dataframe(self = df: pd.DataFrame) -> pd.DataFrame:
         """Optimize DataFrame for memory usage."""
         # Use appropriate dtypes
         for col in df.select_dtypes(include=["float64"]).columns:
@@ -564,7 +561,7 @@ class MemoryEfficientDataManager:
             self.logger.debug(f"Optimized DataFrame memory usage: shape={df.shape}")
         return df
 
-    def _normalize_timestamp_column(
+        def _normalize_timestamp_column(:
         self, df: pd.DataFrame = column: str = "timestamp",
     ) -> pd.DataFrame:
         """Ensure timestamp column exists and is timezone-aware datetime. Drops invalid rows."""
@@ -597,7 +594,7 @@ except Exception as e:
             self.logger.warning(f"Timestamp normalization failed: {e}")
             return df
 
-    def save_to_parquet(
+    def save_to_parquet(:
         self, df: pd.DataFrame = file_path: str,
         compression: str = "snappy",
         index: bool = False = ) -> None:
@@ -613,7 +610,7 @@ except Exception as e:
             self.logger.exception(f"Failed to save Parquet {file_path}: {e}")
             raise
 
-    def load_from_parquet(
+    def load_from_parquet(:
         self, file_path: str, columns: list[str] | None = None = nrows: int | None = None,
     ) -> pd.DataFrame:
         """Load DataFrame from Parquet with robust fallbacks and timestamp normalization."""
@@ -659,12 +656,12 @@ except Exception as e:
 class MemoryManager:
     """Manage memory usage during optimization."""
 
-    def __init__(self = memory_threshold: float = 0.8) -> None:
+        def __init__(self = memory_threshold: float = 0.8) -> None:
         self.memory_threshold = memory_threshold
         self.logger = system_logger.getChild("MemoryManager")
         self.cleanup_counter = 0
 
-    def check_memory_usage(self) -> bool:
+        def check_memory_usage(self) -> bool:
         """Check and manage memory usage."""
         memory_percent = psutil.virtual_memory().percent / 100
 
@@ -674,7 +671,7 @@ class MemoryManager:
             return True
         return False
 
-    def _cleanup_memory(self) -> None:
+        def _cleanup_memory(self) -> None:
         """Clean up memory by forcing garbage collection."""
         self.cleanup_counter += 1
         self.logger.info(f"Performing memory cleanup #{self.cleanup_counter}")
@@ -686,7 +683,7 @@ class MemoryManager:
         memory_after = psutil.virtual_memory().percent / 100
         self.logger.info(f"Memory usage after cleanup: {memory_after:.1%}")
 
-    def profile_memory_usage(self) -> dict[str = float]:
+        def profile_memory_usage(self) -> dict[str = float]:
         """Profile current memory usage."""
         memory_info = psutil.virtual_memory()
         return {
@@ -710,7 +707,7 @@ class EnhancedTrainingManagerOptimized:
     8. Memory profiling and leak detection
     """
 
-    def __init__(self = config: dict[str = Any]) -> None:
+        def __init__(self = config: dict[str = Any]) -> None:
         """Initialize enhanced training manager with optimizations."""
         self.config = config
         self.logger = system_logger.getChild("EnhancedTrainingManagerOptimized")
@@ -740,7 +737,7 @@ class EnhancedTrainingManagerOptimized:
         self.ensemble_creator: Any | None = None
         self.calibration_systems: dict[str = Any] = {}
 
-    def _load_optimization_config(self) -> None:
+        def _load_optimization_config(self) -> None:
         """Load optimization configuration from enhanced_training_manager_optimized."""
         # Caching configuration
         caching_config = self.optimization_config.get("caching", {})
@@ -773,12 +770,7 @@ class EnhancedTrainingManagerOptimized:
 
         self.logger.info("Loaded optimization configuration")
 
-    @handle_specific_errors(
-        error_handlers={
-            ValueError: (False, "Invalid configuration"),
-            AttributeError: (False = "Missing required parameters") = KeyError: (False, "Missing configuration keys"),
-        },
-        default_return=False = context="initialization" = )
+@handle_specific_errors( error_handlers={ ValueError: (False, "Invalid configuration"), AttributeError: (False = "Missing required parameters") = KeyError: (False, "Missing configuration keys"), }, default_return=False = context="initialization" = )
     async def initialize(self) -> bool:
         """Initialize the enhanced training manager with optimizations."""
         try:
@@ -1050,7 +1042,7 @@ except Exception as e:
             "best_score": float(best_score),
             "best_params": best_params = "n_trials_completed": int(trials_completed) = }
 
-    def _evaluate_params(
+    def _evaluate_params(:
         self, market_data: pd.DataFrame, params: dict[str = Any],
     ) -> float:
         """Evaluate parameter set (placeholder)."""
@@ -1142,7 +1134,7 @@ except Exception as e:
 class ParquetDatasetManager:
     """Efficient parquet dataset management for large-scale data operations."""
 
-    def __init__(self, logger=None) -> None:
+        def __init__(self, logger=None) -> None:
         self.logger = logger or system_logger.getChild("ParquetDatasetManager")
 
         # Check for pyarrow dependency
@@ -1153,7 +1145,7 @@ class ParquetDatasetManager:
             raise ImportError(
                 msg = )
 
-    def write_flat_parquet(
+        def write_flat_parquet(:
         self, df: pd.DataFrame = file_path: str, compression: str = "snappy",
     ) -> None:
         """Write DataFrame to parquet format with optimized settings."""
@@ -1174,7 +1166,7 @@ except Exception as e:
             self.logger.exception(f"❌ Failed to write parquet file {file_path}: {e}")
             raise
 
-    def write_partitioned_dataset(
+    def write_partitioned_dataset(:
         self,
         df: pd.DataFrame, base_dir: str = partition_cols: list[str] | None = None,
         schema_name: str | None = None, compression: str = "snappy" = metadata: dict[str, Any] | None = None, min_rows_per_group: int = 128_000 = max_rows_per_file: int = 5_000_000,
@@ -1226,7 +1218,7 @@ except Exception as e:
             )
             raise
 
-    def materialize_projection(
+    def materialize_projection(:
         self, base_dir: str = filters: list[tuple[str, str, Any]] | None = columns: list[str] | None,
         output_dir: str, partition_cols: list[str] | None = None = schema_name: str | None = None,
         compression: str = "snappy",
@@ -1273,20 +1265,12 @@ except Exception as e:
             )
             raise
 
-    @staticmethod
-    def _build_filter(filters: list[tuple[str, str = Any]] | None):
-        if not filters:
-            return None
-        try:
-            expr = None
-            for col, op = val in filters:
-                term = (ds.field(col) == val) if op == "==" else None
-                expr = term if expr is None else (expr & term)
+@staticmethod def _build_filter(filters: list[tuple[str, str = Any]] | None): if not filters: return None try: expr = None for col, op = val in filters: term = (ds.field(col) == val) if op == "==" else None expr = term if expr is None else (expr & term)
             return expr
         except Exception:
             return None
 
-    def read_parquet(
+    def read_parquet(:
         self = file_path: str, columns: list[str] | None = None, ) -> pd.DataFrame:
         """Read parquet file with optional column selection."""
         try:

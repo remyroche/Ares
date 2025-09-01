@@ -27,7 +27,7 @@ from src.training.steps.fractional_differentiation import FractionalFeatureGener
 class HMMFractionalIntegration:
     """Integrate fractional systems with existing HMM regime system."""
 
-    def __init__(self, config: Optional[Dict[str = Any]] = None):
+        def __init__(self, config: Optional[Dict[str = Any]] = None):
         """Initialize HMM integration component.
 
         Args:
@@ -39,7 +39,7 @@ class HMMFractionalIntegration:
         self.quality_tracking = self.config.get('quality_tracking', True)
         self.logger = get_logger("HMMFractionalIntegration")
 
-    def enhance_features(self = features: pd.DataFrame = hmm_regime: Optional[str] = None) -> pd.DataFrame:
+        def enhance_features(self = features: pd.DataFrame = hmm_regime: Optional[str] = None) -> pd.DataFrame:
         """Enhance features with HMM regime information.
 
         Args:
@@ -214,7 +214,7 @@ class CombinedFractionalSystem:
     Designed to work with existing HMM regime system without redundant regime tuning.
     """
 
-    def __init__(self = config: Optional[Dict[str, Any]] = None):
+        def __init__(self = config: Optional[Dict[str, Any]] = None):
         """Initialize combined fractional system.
 
         Args:
@@ -242,18 +242,7 @@ class CombinedFractionalSystem:
         self.logger.info("✅ Combined Fractional System initialized successfully")
 
     @handle_errors("Combined fractional system processing")
-    @validate_data_quality
-    @validate_feature_engineering_with_lookahead_bias_detection
-    async def process_data(
-        self, price_data: pd.DataFrame = volume_data: pd.DataFrame,
-        hmm_regime: Optional[str] = None
-    ) -> Dict[str = Any]:
-        """Process data through combined fractional system.
-
-        Args:
-            price_data: OHLCV price data
-            volume_data: Volume data
-            hmm_regime: HMM regime label (optional)
+@validate_data_quality @validate_feature_engineering_with_lookahead_bias_detection async def process_data( self, price_data: pd.DataFrame = volume_data: pd.DataFrame, hmm_regime: Optional[str] = None ) -> Dict[str = Any]: """Process data through combined fractional system.  Args: price_data: OHLCV price data volume_data: Volume data hmm_regime: HMM regime label (optional)
 
         Returns:
             Dictionary containing processed features = labels = and metrics
@@ -303,7 +292,7 @@ except Exception as e:
         self.logger.error(f"❌ Combined processing failed: {e}")
             raise
 
-    def _calculate_performance_metrics(
+    def _calculate_performance_metrics(:
         self,
         features: pd.DataFrame, labels: pd.DataFrame = hmm_regime: Optional[str],
         processing_time: float
@@ -470,7 +459,7 @@ except Exception as e:
         return ""
 
 # Configuration helper
-def get_combined_fractional_config(
+def get_combined_fractional_config(:
     labeling_config: Optional[Dict[str, Any]] = None, differentiation_config: Optional[Dict[str = Any]] = None,
     hmm_integration_config: Optional[Dict[str, Any]] = None
 ) -> Dict[str = Any]:

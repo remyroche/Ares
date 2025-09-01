@@ -39,18 +39,18 @@ def __init__(self, config: dict[str, Any] | None = None):
     def __init__(self, config: dict[str, Any] | None = None):
     def __init__(self, config: dict[str, Any] | None = None):
         self.config = config or CONFIG
-self.logger = system_logger.getChild("DIIntegration")
+    self.logger = system_logger.getChild("DIIntegration")
 
 # Initialize DI container
-self.container = DependencyContainer(self.config)
-self.registry = ServiceRegistry(self.container)
+    self.container = DependencyContainer(self.config)
+    self.registry = ServiceRegistry(self.container)
 
 # Initialize factories
-self.factory = TradingSystemFactory(self.container)
+    self.factory = TradingSystemFactory(self.container)
 
 # System state
-self.is_initialized = False
-self.system_components: dict[str, Any] = {}
+    self.is_initialized = False
+    self.system_components: dict[str, Any] = {}
 
 async def demonstrate_full_di_integration(self) -> dict[str, Any]:
         """
@@ -62,7 +62,7 @@ try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-self.logger.info("Demonstrating full dependency injection integration")
+    self.logger.info("Demonstrating full dependency injection integration")
 
 # Step 1: Register all services
 await self._register_all_services()
@@ -86,11 +86,11 @@ complete_system = {
 # Step 6: Initialize all components
 await self._initialize_all_components(complete_system)
 
-self.system_components = complete_system
-self.is_initialized = True
+    self.system_components = complete_system
+    self.is_initialized = True
 
-self.logger.info("Full DI integration demonstration completed")
-return complete_system
+    self.logger.info("Full DI integration demonstration completed")
+    return complete_system
 
 except Exception as e:
             self.logger.exception(f"DI integration demonstration failed: {e}")
@@ -98,31 +98,31 @@ raise
 
 async def _register_all_services(self) -> None:
         """Register all services in the DI container."""
-self.logger.info("Registering all services")
+    self.logger.info("Registering all services")
 
 # Register core infrastructure services
-self.registry.register_all_services(self.config)
+    self.registry.register_all_services(self.config)
 
 # Register custom implementations
-self.container.register(
+    self.container.register(
 IAnalyst,
 DIAnalyst,
 lifetime=ServiceLifetime.SINGLETON,
 config=self.config.get("analyst", {}),
 )
 
-self.container.register(
+    self.container.register(
 DITrainingManager,
 DITrainingManager,
 lifetime=ServiceLifetime.SINGLETON,
 config=self.config.get("training", {}),
 )
 
-self.logger.info("All services registered successfully")
+    self.logger.info("All services registered successfully")
 
 async def _create_infrastructure(self) -> dict[str, Any]:
         """Create core infrastructure components."""
-self.logger.info("Creating infrastructure components")
+    self.logger.info("Creating infrastructure components")
 
 # Create event bus
 event_bus = self.container.resolve(IEventBus)
@@ -132,12 +132,12 @@ infrastructure = {
 "event_bus": event_bus,
 }
 
-self.logger.info("Infrastructure components created")
-return infrastructure
+    self.logger.info("Infrastructure components created")
+    return infrastructure
 
 async def _create_trading_components(self) -> dict[str, Any]:
         """Create trading components using DI."""
-self.logger.info("Creating trading components")
+    self.logger.info("Creating trading components")
 
 # Create trading components through DI
 components = {
@@ -147,12 +147,12 @@ components = {
 "supervisor": self.container.resolve(ISupervisor),
 }
 
-self.logger.info("Trading components created")
-return components
+    self.logger.info("Trading components created")
+    return components
 
 async def _create_specialized_services(self) -> dict[str, Any]:
         """Create specialized services."""
-self.logger.info("Creating specialized services")
+    self.logger.info("Creating specialized services")
 
 # Create training manager
 training_manager = self.container.resolve(DITrainingManager)
@@ -161,12 +161,12 @@ specialized_services = {
 "training_manager": training_manager,
 }
 
-self.logger.info("Specialized services created")
-return specialized_services
+    self.logger.info("Specialized services created")
+    return specialized_services
 
 async def _initialize_all_components(self, components: dict[str, Any]) -> None:
         """Initialize all components."""
-self.logger.info("Initializing all components")
+    self.logger.info("Initializing all components")
 
 for name, component in components.items():
             if hasattr(component, "initialize"):
@@ -182,11 +182,11 @@ else:
 except Exception as e:
                     self.logger.exception(f"Error initializing {name}: {e}")
 
-self.logger.info("Component initialization completed")
+    self.logger.info("Component initialization completed")
 
 def get_integration_status(self) -> dict[str, Any]:
         """Get integration status."""
-return {
+    return {
 "is_initialized": self.is_initialized,
 "components": list(self.system_components.keys()),
 "container_services": list(self.container.get_all_services().keys()),
@@ -194,7 +194,7 @@ return {
 
 async def shutdown(self) -> None:
         """Shutdown the integration."""
-self.logger.info("Shutting down DI integration")
+    self.logger.info("Shutting down DI integration")
 
 for name, component in self.system_components.items():
             if hasattr(component, "shutdown"):
@@ -203,16 +203,16 @@ for name, component in self.system_components.items():
 except Exception as e:
     pass  # TODO: Add proper exception handling
 await component.shutdown()
-self.logger.info(f"Shutdown component: {name}")
+    self.logger.info(f"Shutdown component: {name}")
 except Exception as e:
                     self.logger.exception(f"Error shutting down {name}: {e}")
 
-self.is_initialized = False
-self.logger.info("DI integration shutdown completed")
+    self.is_initialized = False
+    self.logger.info("DI integration shutdown completed")
 
 
 # Convenience function for quick integration demonstration
 async def demonstrate_di_integration(config: dict[str, Any] | None = None) -> dict[str, Any]:
     """Quick demonstration of DI integration."""
 integration = DIIntegration(config)
-return await integration.demonstrate_full_di_integration()
+    return await integration.demonstrate_full_di_integration()

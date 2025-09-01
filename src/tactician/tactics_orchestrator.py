@@ -18,36 +18,7 @@ import pandas as pd
 # Temporary TradeDecision definition to allow imports
 from dataclasses import dataclass
 
-@dataclass
-class PlaceholderDataClass:
-    pass  # TODO: Add implementation
-class TradeDecision:
-    # Implementation placeholder - add actual implementation
-
-    pass
-class TradeDecision:
-    pass  # TODO: Add implementation
-class TradeDecision:
-    action: str
-confidence: float
-position_size: float = 0.0
-leverage: float = 1.0
-price: float = None
-metadata: dict = None
-from src.tactician.enhanced_order_manager import EnhancedOrderManager
-from src.tactician.leverage_sizer import LeverageSizer
-from src.tactician.ml_tactics_manager import MLTacticsManager
-from src.tactician.position_closing import PositionCloser
-from src.tactician.position_division_strategy import PositionDivisionStrategy
-from src.tactician.position_monitor import PositionAction, PositionAssessment, PositionMonitor
-from src.tactician.position_sizer import PositionSizer
-from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
-from src.utils.error_handler import handle_errors
-from src.utils.logger import system_logger
-from src.utils.warning_symbols import (
-failed,
-invalid,
-)
+@dataclass class PlaceholderDataClass: pass  # TODO: Add implementation class TradeDecision: # Implementation placeholder - add actual implementation  pass class TradeDecision: pass  # TODO: Add implementation class TradeDecision: action: str confidence: float position_size: float = 0.0 leverage: float = 1.0 price: float = None metadata: dict = None from src.tactician.enhanced_order_manager import EnhancedOrderManager from src.tactician.leverage_sizer import LeverageSizer from src.tactician.ml_tactics_manager import MLTacticsManager from src.tactician.position_closing import PositionCloser from src.tactician.position_division_strategy import PositionDivisionStrategy from src.tactician.position_monitor import PositionAction, PositionAssessment, PositionMonitor from src.tactician.position_sizer import PositionSizer from src.tactician.sr_breakout_predictor import SRBreakoutPredictor from src.utils.error_handler import handle_errors from src.utils.logger import system_logger from src.utils.warning_symbols import ( failed, invalid, )
 
 class DecisionPolicy:
     # Implementation placeholder - add actual implementation
@@ -71,25 +42,21 @@ Initialize the decision policy.
 Args:
             config: Configuration dictionary
 """
-self.config = config
-self.logger = system_logger.getChild("DecisionPolicy")
+    self.config = config
+    self.logger = system_logger.getChild("DecisionPolicy")
 
 # Configuration
-self.policy_config = config.get("decision_policy", {})
-self.confidence_threshold = self.policy_config.get("confidence_threshold", 0.6)
-self.risk_threshold = self.policy_config.get("risk_threshold", 0.1)
+    self.policy_config = config.get("decision_policy", {})
+    self.confidence_threshold = self.policy_config.get("confidence_threshold", 0.6)
+    self.risk_threshold = self.policy_config.get("risk_threshold", 0.1)
 
 # Component managers
-self.position_sizer: Optional[PositionSizer] = None
-self.leverage_sizer: Optional[LeverageSizer] = None
-self.sr_predictor: Optional[SRBreakoutPredictor] = None
-self.ml_tactics: Optional[MLTacticsManager] = None
+    self.position_sizer: Optional[PositionSizer] = None
+    self.leverage_sizer: Optional[LeverageSizer] = None
+    self.sr_predictor: Optional[SRBreakoutPredictor] = None
+    self.ml_tactics: Optional[MLTacticsManager] = None
 
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=False,
-context="decision policy initialization"
-)
+@handle_errors( exceptions=(ValueError, AttributeError), default_return=False, context="decision policy initialization" )
 async def initialize(self) -> bool:
         """
 Initialize the decision policy.
@@ -103,7 +70,7 @@ try:
 except Exception as e:
     # Log the error and handle gracefully
     pass
-self.logger.info("Initializing Decision Policy...")
+    self.logger.info("Initializing Decision Policy...")
 
 # Initialize component managers
 await self._initialize_components()
@@ -111,14 +78,14 @@ await self._initialize_components()
 # Validate configuration
 if not self._validate_configuration():
                 self.logger.error(invalid("Invalid decision policy configuration"))
-return False
+    return False
 
-self.logger.info("✅ Decision Policy initialized successfully")
-return True
+    self.logger.info("✅ Decision Policy initialized successfully")
+    return True
 
 except Exception as e:
             self.logger.error(failed(f"❌ Decision Policy initialization failed: {e}"))
-return False
+    return False
 
 def refresh_step17_configuration(self, step17_results: dict[str, Any]) -> None:
         """
@@ -137,8 +104,8 @@ except Exception as e:
 # Update decision policy configuration
 if "decision_policy" in step17_results:
                 policy_optimization = step17_results["decision_policy"]
-self.confidence_threshold = policy_optimization.get("confidence_threshold", self.confidence_threshold)
-self.risk_threshold = policy_optimization.get("risk_threshold", self.risk_threshold)
+    self.confidence_threshold = policy_optimization.get("confidence_threshold", self.confidence_threshold)
+    self.risk_threshold = policy_optimization.get("risk_threshold", self.risk_threshold)
 
 # Refresh all component managers
 if self.position_sizer:
@@ -150,7 +117,7 @@ if self.leverage_sizer:
 if self.ml_tactics:
                 self.ml_tactics.refresh_step17_configuration(step17_results)
 
-self.logger.info("✅ Decision policy configuration refreshed from step17 results")
+    self.logger.info("✅ Decision policy configuration refreshed from step17 results")
 
 except Exception as e:
             self.logger.error(f"Error refreshing step17 configuration: {e}")
@@ -164,22 +131,22 @@ except Exception as e:
     # Log the error and handle gracefully
     pass
 # Initialize position sizer
-self.position_sizer = PositionSizer(self.config)
+    self.position_sizer = PositionSizer(self.config)
 await self.position_sizer.initialize()
 
 # Initialize leverage sizer
-self.leverage_sizer = LeverageSizer(self.config)
+    self.leverage_sizer = LeverageSizer(self.config)
 await self.leverage_sizer.initialize()
 
 # Initialize SR breakout predictor with optimized parameters
 sr_config = self.config.copy()
 sr_config["sr_breakout_predictor"] = sr_config.get("sr_breakout_predictor", {})
 sr_config["sr_breakout_predictor"]["use_optimized_params"] = True
-self.sr_predictor = SRBreakoutPredictor(sr_config)
+    self.sr_predictor = SRBreakoutPredictor(sr_config)
 await self.sr_predictor.initialize()
 
 # Initialize ML tactics manager
-self.ml_tactics = MLTacticsManager(self.config)
+    self.ml_tactics = MLTacticsManager(self.config)
 await self.ml_tactics.initialize()
 
 except Exception as e:
@@ -200,23 +167,19 @@ except Exception as e:
     pass
 if not 0 <= self.confidence_threshold <= 1:
                 self.logger.error(invalid("Confidence threshold must be between 0 and 1"))
-return False
+    return False
 
 if not 0 <= self.risk_threshold <= 1:
                 self.logger.error(invalid("Risk threshold must be between 0 and 1"))
-return False
+    return False
 
-return True
+    return True
 
 except Exception as e:
             self.logger.error(failed(f"❌ Configuration validation failed: {e}"))
-return False
+    return False
 
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=None,
-context="trade decision generation"
-)
+@handle_errors( exceptions=(ValueError, AttributeError), default_return=None, context="trade decision generation" )
 async def generate_decision(
 self,
 market_data: pd.DataFrame,
@@ -242,7 +205,7 @@ try:
 except Exception as e:
     # Log the error and handle gracefully
     pass
-self.logger.info("Generating trade decision...")
+    self.logger.info("Generating trade decision...")
 
 # Get component decisions
 sizing_decision = await self._get_sizing_decision(analyst_confidence, tactician_confidence)
@@ -263,11 +226,11 @@ tactician_confidence
 if decision:
                 self.logger.info(f"✅ Trade decision generated: {decision.action}")
 
-return decision
+    return decision
 
 except Exception as e:
             self.logger.error(failed(f"❌ Trade decision generation failed: {e}"))
-return None
+    return None
 
 async def _get_sizing_decision(
 self,
@@ -303,7 +266,7 @@ analyst_confidence=analyst_confidence,
 tactician_confidence=tactician_confidence
 )
 
-return {
+    return {
 "position_size": position_size,
 "confidence": combined_confidence,
 "source": "position_sizer"
@@ -311,7 +274,7 @@ return {
 
 except Exception as e:
             self.logger.error(failed(f"❌ Sizing decision failed: {e}"))
-return None
+    return None
 
 async def _get_leverage_decision(
 self,
@@ -347,7 +310,7 @@ analyst_confidence=analyst_confidence,
 tactician_confidence=tactician_confidence
 )
 
-return {
+    return {
 "leverage": leverage,
 "confidence": combined_confidence,
 "source": "leverage_sizer"
@@ -355,7 +318,7 @@ return {
 
 except Exception as e:
             self.logger.error(failed(f"❌ Leverage decision failed: {e}"))
-return None
+    return None
 
 async def _get_sr_decision(self, market_data: pd.DataFrame) -> Optional[Dict[str, Any]]:
         """
@@ -382,7 +345,7 @@ prediction = await self.sr_predictor.predict_breakout(market_data)
 if not prediction:
                 return None
 
-return {
+    return {
 "breakout_direction": prediction.get("direction"),
 "breakout_confidence": prediction.get("confidence", 0.0),
 "breakout_price": prediction.get("price"),
@@ -393,7 +356,7 @@ return {
 
 except Exception as e:
             self.logger.error(failed(f"❌ SR decision failed: {e}"))
-return None
+    return None
 
 async def _get_ml_decision(
 self,
@@ -428,13 +391,14 @@ analyst_confidence,
 tactician_confidence
 )
 
-return decision
+    return decision
 
 except Exception as e:
             self.logger.error(failed(f"❌ ML decision failed: {e}"))
-return None
+    return None
 
-def _aggregate_decisions(
+def _aggregate_decisions(:
+    pass  # TODO: Add implementation
 self,
 sizing_decision: Optional[Dict[str, Any]],
 leverage_decision: Optional[Dict[str, Any]],
@@ -469,7 +433,7 @@ combined_confidence = (analyst_confidence + tactician_confidence) / 2
 # Check confidence threshold
 if combined_confidence < self.confidence_threshold:
                 self.logger.info(f"Confidence {combined_confidence:.3f} below threshold {self.confidence_threshold}")
-return None
+    return None
 
 # Determine action based on decisions
 action = self._determine_action(sizing_decision, leverage_decision, sr_decision, ml_decision)
@@ -495,13 +459,14 @@ metadata={
 }
 )
 
-return decision
+    return decision
 
 except Exception as e:
             self.logger.error(failed(f"❌ Decision aggregation failed: {e}"))
-return None
+    return None
 
-def _determine_action(
+def _determine_action(:
+    pass  # TODO: Add implementation
 self,
 sizing_decision: Optional[Dict[str, Any]],
 leverage_decision: Optional[Dict[str, Any]],
@@ -549,11 +514,11 @@ if ml_decision:
                     return ml_decision.get("action")
 
 # Default to no action
-return None
+    return None
 
 except Exception as e:
             self.logger.error(failed(f"❌ Action determination failed: {e}"))
-return None
+    return None
 
 async def cleanup(self) -> None:
         """
@@ -565,7 +530,7 @@ try:
 except Exception as e:
     # Log the error and handle gracefully
     pass
-self.logger.info("Cleaning up Decision Policy...")
+    self.logger.info("Cleaning up Decision Policy...")
 
 # Cleanup component managers
 if self.position_sizer:
@@ -580,7 +545,7 @@ if self.sr_predictor:
 if self.ml_tactics:
                 await self.ml_tactics.cleanup()
 
-self.logger.info("✅ Decision Policy cleanup completed")
+    self.logger.info("✅ Decision Policy cleanup completed")
 
 except Exception as e:
             self.logger.error(failed(f"❌ Decision Policy cleanup failed: {e}"))
@@ -606,31 +571,27 @@ Initialize the tactics orchestrator.
 Args:
             config: Configuration dictionary
 """
-self.config = config
-self.logger = system_logger.getChild("TacticsOrchestrator")
+    self.config = config
+    self.logger = system_logger.getChild("TacticsOrchestrator")
 
 # Configuration
-self.orchestrator_config = config.get("tactics_orchestrator", {})
-self.decision_interval = self.orchestrator_config.get("decision_interval", 30)
+    self.orchestrator_config = config.get("tactics_orchestrator", {})
+    self.decision_interval = self.orchestrator_config.get("decision_interval", 30)
 
 # Component managers
-self.decision_policy: Optional[DecisionPolicy] = None
-self.position_monitor: Optional[PositionMonitor] = None
-self.position_closer: Optional[PositionCloser] = None
-self.order_manager: Optional[EnhancedOrderManager] = None
-self.position_strategy: Optional[PositionDivisionStrategy] = None
+    self.decision_policy: Optional[DecisionPolicy] = None
+    self.position_monitor: Optional[PositionMonitor] = None
+    self.position_closer: Optional[PositionCloser] = None
+    self.order_manager: Optional[EnhancedOrderManager] = None
+    self.position_strategy: Optional[PositionDivisionStrategy] = None
 
 # State tracking
-self.active_positions: Dict[str, Dict[str, Any]] = {}
-self.decision_history: List[TradeDecision] = []
-self.orchestrator_task: Optional[asyncio.Task] = None
-self.is_running = False
+    self.active_positions: Dict[str, Dict[str, Any]] = {}
+    self.decision_history: List[TradeDecision] = []
+    self.orchestrator_task: Optional[asyncio.Task] = None
+    self.is_running = False
 
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=False,
-context="tactics orchestrator initialization"
-)
+@handle_errors( exceptions=(ValueError, AttributeError), default_return=False, context="tactics orchestrator initialization" )
 async def initialize(self) -> bool:
         """
 Initialize the tactics orchestrator.
@@ -644,39 +605,39 @@ try:
 except Exception as e:
     # Log the error and handle gracefully
     pass
-self.logger.info("Initializing Tactics Orchestrator...")
+    self.logger.info("Initializing Tactics Orchestrator...")
 
 # Initialize decision policy
-self.decision_policy = DecisionPolicy(self.config)
+    self.decision_policy = DecisionPolicy(self.config)
 await self.decision_policy.initialize()
 
 # Initialize position monitor
-self.position_monitor = PositionMonitor(self.config)
+    self.position_monitor = PositionMonitor(self.config)
 await self.position_monitor.initialize()
 
 # Initialize position closer
-self.position_closer = PositionCloser(self.config)
+    self.position_closer = PositionCloser(self.config)
 await self.position_closer.initialize()
 
 # Initialize order manager
-self.order_manager = EnhancedOrderManager(self.config)
+    self.order_manager = EnhancedOrderManager(self.config)
 await self.order_manager.initialize()
 
 # Initialize position strategy
-self.position_strategy = PositionDivisionStrategy(self.config)
+    self.position_strategy = PositionDivisionStrategy(self.config)
 await self.position_strategy.initialize()
 
 # Validate configuration
 if not self._validate_configuration():
                 self.logger.error(invalid("Invalid tactics orchestrator configuration"))
-return False
+    return False
 
-self.logger.info("✅ Tactics Orchestrator initialized successfully")
-return True
+    self.logger.info("✅ Tactics Orchestrator initialized successfully")
+    return True
 
 except Exception as e:
             self.logger.error(failed(f"❌ Tactics Orchestrator initialization failed: {e}"))
-return False
+    return False
 
 def refresh_step17_configuration(self, step17_results: dict[str, Any]) -> None:
         """
@@ -692,7 +653,7 @@ try:
 except Exception as e:
     # Log the error and handle gracefully
     pass
-self.logger.info("🔄 Refreshing tactics orchestrator configuration from step17 results...")
+    self.logger.info("🔄 Refreshing tactics orchestrator configuration from step17 results...")
 
 # Refresh decision policy
 if self.decision_policy:
@@ -715,7 +676,7 @@ if hasattr(self.order_manager, 'refresh_step17_configuration'):
 if hasattr(self.position_strategy, 'refresh_step17_configuration'):
                 self.position_strategy.refresh_step17_configuration(step17_results)
 
-self.logger.info("✅ Tactics orchestrator configuration refreshed from step17 results")
+    self.logger.info("✅ Tactics orchestrator configuration refreshed from step17 results")
 
 except Exception as e:
             self.logger.error(f"Error refreshing step17 configuration: {e}")
@@ -735,19 +696,15 @@ except Exception as e:
     pass
 if self.decision_interval <= 0:
                 self.logger.error(invalid("Decision interval must be positive"))
-return False
+    return False
 
-return True
+    return True
 
 except Exception as e:
             self.logger.error(failed(f"❌ Configuration validation failed: {e}"))
-return False
+    return False
 
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=None,
-context="tactics orchestration start"
-)
+@handle_errors( exceptions=(ValueError, AttributeError), default_return=None, context="tactics orchestration start" )
 async def start_orchestration(self) -> bool:
         """
 Start tactics orchestration.
@@ -763,23 +720,19 @@ except Exception as e:
     pass
 if self.is_running:
                 self.logger.warning(warning("Tactics orchestration already active"))
-return True
+    return True
 
-self.is_running = True
-self.orchestrator_task = asyncio.create_task(self._orchestration_loop())
+    self.is_running = True
+    self.orchestrator_task = asyncio.create_task(self._orchestration_loop())
 
-self.logger.info("✅ Tactics orchestration started")
-return True
+    self.logger.info("✅ Tactics orchestration started")
+    return True
 
 except Exception as e:
             self.logger.error(failed(f"❌ Failed to start tactics orchestration: {e}"))
-return False
+    return False
 
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=None,
-context="tactics orchestration stop"
-)
+@handle_errors( exceptions=(ValueError, AttributeError), default_return=None, context="tactics orchestration stop" )
 async def stop_orchestration(self) -> bool:
         """
 Stop tactics orchestration.
@@ -795,9 +748,9 @@ except Exception as e:
     pass
 if not self.is_running:
                 self.logger.warning(warning("Tactics orchestration not active"))
-return True
+    return True
 
-self.is_running = False
+    self.is_running = False
 
 if self.orchestrator_task:
                 self.orchestrator_task.cancel()
@@ -811,12 +764,12 @@ await self.orchestrator_task
 except asyncio.CancelledError:
                     pass
 
-self.logger.info("✅ Tactics orchestration stopped")
-return True
+    self.logger.info("✅ Tactics orchestration stopped")
+    return True
 
 except Exception as e:
             self.logger.error(failed(f"❌ Failed to stop tactics orchestration: {e}"))
-return False
+    return False
 
 async def _orchestration_loop(self) -> None:
         """
@@ -906,7 +859,7 @@ market_data, analyst_predictions, tactician_predictions
 
 if decision:
                     self.decision_history.append(decision)
-self.logger.info(f"Generated trade decision: {decision.action} (confidence: {decision.confidence:.3f})")
+    self.logger.info(f"Generated trade decision: {decision.action} (confidence: {decision.confidence:.3f})")
 
 # Check for exit signals on existing positions
 await self._check_exit_signals(tactician_predictions)
@@ -929,11 +882,11 @@ except Exception as e:
     pass
 # This would get actual market data
 # For now, return None to indicate no data available
-return None
+    return None
 
 except Exception as e:
             self.logger.error(failed(f"❌ Error getting market data: {e}"))
-return None
+    return None
 
 async def _get_analyst_predictions(self) -> Optional[Dict[str, Any]]:
         """
@@ -950,11 +903,11 @@ except Exception as e:
     pass
 # This would get actual Analyst predictions
 # For now, return None to indicate no predictions available
-return None
+    return None
 
 except Exception as e:
             self.logger.error(failed(f"❌ Error getting Analyst predictions: {e}"))
-return None
+    return None
 
 async def _generate_tactician_predictions(
 self,
@@ -995,11 +948,11 @@ timeframe="1m",
 analyst_confidence=analyst_confidence
 )
 
-return tactician_predictions
+    return tactician_predictions
 
 except Exception as e:
             self.logger.error(failed(f"❌ Error generating Tactician predictions: {e}"))
-return None
+    return None
 
 def _extract_analyst_barriers(self, analyst_predictions: Dict[str, Any]) -> Dict[str, float]:
         """
@@ -1024,11 +977,11 @@ barriers = {
 "lower_barrier": analyst_predictions.get("lower_barrier", -0.01)
 }
 
-return barriers
+    return barriers
 
 except Exception as e:
             self.logger.error(failed(f"❌ Error extracting Analyst barriers: {e}"))
-return {"upper_barrier": 0.02, "lower_barrier": -0.01}
+    return {"upper_barrier": 0.02, "lower_barrier": -0.01}
 
 async def _create_trade_decision(
 self,
@@ -1081,11 +1034,11 @@ metadata={
 }
 )
 
-return decision
+    return decision
 
 except Exception as e:
             self.logger.error(failed(f"❌ Error creating trade decision: {e}"))
-return None
+    return None
 
 def _determine_action_from_predictions(self, tactician_predictions: Dict[str, Any]) -> Optional[str]:
         """
@@ -1116,7 +1069,7 @@ else:
 
 except Exception as e:
             self.logger.error(failed(f"❌ Error determining action: {e}"))
-return None
+    return None
 
 async def _calculate_position_size(self, tactician_predictions: Dict[str, Any]) -> float:
         """
@@ -1147,11 +1100,11 @@ analyst_confidence=combined_confidence,
 tactician_confidence=combined_confidence
 )
 
-return position_size
+    return position_size
 
 except Exception as e:
             self.logger.error(failed(f"❌ Error calculating position size: {e}"))
-return 0.0
+    return 0.0
 
 async def _calculate_leverage(self, tactician_predictions: Dict[str, Any]) -> float:
         """
@@ -1182,11 +1135,11 @@ analyst_confidence=combined_confidence,
 tactician_confidence=combined_confidence
 )
 
-return leverage
+    return leverage
 
 except Exception as e:
             self.logger.error(failed(f"❌ Error calculating leverage: {e}"))
-return 1.0
+    return 1.0
 
 async def _check_exit_signals(self, tactician_predictions: Dict[str, Any]) -> None:
         """
@@ -1280,7 +1233,7 @@ Get all active positions.
 Returns:
             Dict[str, Dict[str, Any]]: Active positions
 """
-return self.active_positions.copy()
+    return self.active_positions.copy()
 
 def get_decision_history(self, limit: Optional[int] = None) -> List[TradeDecision]:
         """
@@ -1300,11 +1253,11 @@ except Exception as e:
     pass
 if limit:
                 return self.decision_history[-limit:]
-return self.decision_history.copy()
+    return self.decision_history.copy()
 
 except Exception as e:
             self.logger.error(failed(f"❌ Error getting decision history: {e}"))
-return []
+    return []
 
 async def cleanup(self) -> None:
         """
@@ -1316,7 +1269,7 @@ try:
 except Exception as e:
     # Log the error and handle gracefully
     pass
-self.logger.info("Cleaning up Tactics Orchestrator...")
+    self.logger.info("Cleaning up Tactics Orchestrator...")
 
 # Stop orchestration
 await self.stop_orchestration()
@@ -1337,7 +1290,7 @@ if self.order_manager:
 if self.position_strategy:
                 await self.position_strategy.cleanup()
 
-self.logger.info("✅ Tactics Orchestrator cleanup completed")
+    self.logger.info("✅ Tactics Orchestrator cleanup completed")
 
 except Exception as e:
             self.logger.error(failed(f"❌ Tactics Orchestrator cleanup failed: {e}"))

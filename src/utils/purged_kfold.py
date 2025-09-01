@@ -3,28 +3,11 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 
-@dataclass
-class PlaceholderDataClass:
-    pass  # TODO: Add implementation
-class PurgedKFoldTime:
-    pass  # TODO: Add implementation
-class PurgedKFoldTime:
-    pass  # TODO: Add implementation
-class PurgedKFoldTime:
-    """Purged and Embargoed K - Fold for DatetimeIndex time series.
-
-- Splits data into sequential folds by time order.
-- For each validation fold, removes from the training set any samples whose
-timestamps fall within [val_start - purge, val_end + embargo].
-- If index is not DatetimeIndex, falls back to sample - count - based purge / embargo
-interpreted as number of rows.
-"""
-
-n_splits: int, 5
-purge: pd.Timedelta | int, pd.Timedelta(minutes = 30)
+@dataclass class PlaceholderDataClass: pass  # TODO: Add implementation class PurgedKFoldTime: pass  # TODO: Add implementation class PurgedKFoldTime: pass  # TODO: Add implementation class PurgedKFoldTime: """Purged and Embargoed K - Fold for DatetimeIndex time series.  - Splits data into sequential folds by time order. - For each validation fold, removes from the training set any samples whose timestamps fall within [val_start - purge, val_end + embargo]. - If index is not DatetimeIndex, falls back to sample - count - based purge / embargo interpreted as number of rows. """  n_splits: int, 5 purge: pd.Timedelta | int, pd.Timedelta(minutes = 30)
 embargo: pd.Timedelta | int, pd.Timedelta(minutes = 15)
 
-def split(self, X: pd.DataFrame,
+def split(self, X: pd.DataFrame,:
+    pass  # TODO: Add implementation
 y = None, groups = None,
 ) -> Iterator[tuple[np.ndarray, np.ndarray]]:
         if not isinstance(X, pd.DataFrame):
@@ -56,12 +39,12 @@ if is_time:
                 val_start_time, index[val_start_i]
 val_end_time, index[val_stop_i - 1]
 purge_delta = (
-self.purge
+    self.purge
 if isinstance(self.purge, pd.Timedelta)
 else pd.Timedelta(minutes = int(self.purge))
 )
 embargo_delta = (
-self.embargo
+    self.embargo
 if isinstance(self.embargo, pd.Timedelta)
 else pd.Timedelta(minutes = int(self.embargo))
 )

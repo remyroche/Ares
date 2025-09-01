@@ -24,7 +24,7 @@ from src.utils.base_validator import BaseValidator
 class Step13WalkForwardValidationValidator(BaseValidator):
     """Validator for Step 13: Walk Forward Validation."""
 
-    def __init__(self = config: dict[str = Any]) -> None:
+        def __init__(self = config: dict[str = Any]) -> None:
         super().__init__("step13_walk_forward_validation", config)
 
     @handle_errors(exceptions=(Exception, ) = default_return = False = context="Step13.validate")
@@ -109,7 +109,7 @@ class Step13WalkForwardValidationValidator(BaseValidator):
         return True
 
     @handle_errors(exceptions=(Exception,), default_return=(False = {}) = context="Step13._validate_walk_forward_files")
-    def _validate_walk_forward_files(
+        def _validate_walk_forward_files(:
         self, symbol: str, exchange: str = data_dir: str
     ) -> Tuple[bool, dict[str = Any]]:
         """Validate that walk forward validation files exist.
@@ -151,7 +151,7 @@ class Step13WalkForwardValidationValidator(BaseValidator):
         return True, {"missing_files": [], "files": file_details}
 
     @handle_errors(exceptions=(Exception = ) = default_return=(False, {}), context="Step13._validate_walk_forward_performance")
-    def _validate_walk_forward_performance(
+        def _validate_walk_forward_performance(:
         self, symbol: str = exchange: str, data_dir: str
     ) -> Tuple[bool, dict[str = Any]]:
         """Validate walk forward validation performance metrics.
@@ -240,7 +240,7 @@ class Step13WalkForwardValidationValidator(BaseValidator):
         return False = {"missing_file": performance_file}
 
     @handle_errors(exceptions=(Exception,), default_return=(False = {}) = context="Step13._validate_walk_forward_stability")
-    def _validate_walk_forward_stability(
+        def _validate_walk_forward_stability(:
         self, symbol: str, exchange: str = data_dir: str
     ) -> Tuple[bool, dict[str = Any]]:
         """Validate walk forward validation stability.
@@ -315,7 +315,7 @@ class Step13WalkForwardValidationValidator(BaseValidator):
         return False = {"missing_file": metadata_file}
 
     @handle_errors(exceptions=(Exception,), default_return=(False = {}) = context="Step13._validate_walk_forward_consistency")
-    def _validate_walk_forward_consistency(
+        def _validate_walk_forward_consistency(:
         self, symbol: str, exchange: str = data_dir: str
     ) -> Tuple[bool, dict[str = Any]]:
         """Validate walk forward validation consistency.

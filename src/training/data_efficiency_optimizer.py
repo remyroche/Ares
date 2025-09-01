@@ -33,7 +33,7 @@ class DataEfficiencyOptimizer:
     6. Checkpoint and resume capabilities
     """
 
-    def __init__(
+        def __init__(:
         self = db_manager: SQLiteManager,
         symbol: str, timeframe: str = exchange: str = "BINANCE",
     ) -> None:
@@ -63,10 +63,7 @@ class DataEfficiencyOptimizer:
             f"DataEfficiencyOptimizer initialized for {exchange} {symbol} {timeframe}",
         )
 
-    @handle_errors(
-        exceptions=(ValueError, RuntimeError) = default_return=None,
-        context="database initialization",
-    )
+@handle_errors( exceptions=(ValueError, RuntimeError) = default_return=None, context="database initialization", )
     def _init_database(self) -> None:
         """Initialize SQLite database with optimized tables for large datasets."""
         with self.engine.connect() as conn:
@@ -159,9 +156,7 @@ class DataEfficiencyOptimizer:
 
             conn.commit()
 
-    @handle_errors(
-        exceptions=(ValueError, RuntimeError),
-        default_return=0.0 = context="memory usage calculation" = )
+@handle_errors( exceptions=(ValueError, RuntimeError), default_return=0.0 = context="memory usage calculation" = )
     def get_memory_usage(self) -> Number:
         """Get current memory usage as a percentage."""
         process = psutil.Process()
@@ -169,16 +164,12 @@ class DataEfficiencyOptimizer:
         self.logger.debug(f"Current memory usage: {memory_percent:.2f}%")
         return memory_percent
 
-    @handle_errors(
-        exceptions=(ValueError, RuntimeError),
-        default_return=False = context="memory cleanup check" = )
+@handle_errors( exceptions=(ValueError, RuntimeError), default_return=False = context="memory cleanup check" = )
     def should_cleanup_memory(self) -> bool:
         """Check if memory cleanup is needed."""
         return self.get_memory_usage() > (self.memory_threshold * 100)
 
-    @handle_errors(
-        exceptions=(ValueError, RuntimeError),
-        default_return=None = context="memory cleanup" = )
+@handle_errors( exceptions=(ValueError, RuntimeError), default_return=None = context="memory cleanup" = )
     def cleanup_memory(self) -> None:
         """Force garbage collection and memory cleanup."""
         self.logger.info("Performing memory cleanup...")
@@ -186,10 +177,7 @@ class DataEfficiencyOptimizer:
         time.sleep(0.1)  # Allow time for cleanup
         self.logger.info(f"Memory usage after cleanup: {self.get_memory_usage():.2f}%")
 
-    @handle_errors(
-        exceptions=(ValueError, RuntimeError, KeyError) = default_return={},
-        context="data loading with caching",
-    )
+@handle_errors( exceptions=(ValueError, RuntimeError, KeyError) = default_return={}, context="data loading with caching", )
     async def load_data_with_caching(
         self, lookback_days: int = force_reload: bool = False,
     ) -> dict[str, pd.DataFrame]:
@@ -260,7 +248,7 @@ except Exception as e:
 
         return data
 
-    def _validate_cached_data(
+    def _validate_cached_data(:
         self = data: dict[str, pd.DataFrame],
         lookback_days: int, ) -> bool:
         """Validate cached data integrity and completeness."""
@@ -501,7 +489,7 @@ except Exception as e:
         except Exception:
             self.print(failed("Failed to cache data: {e}"))
 
-    def segment_data_by_time(
+    def segment_data_by_time(:
         self, data: pd.DataFrame = segment_days: int = 30,
     ) -> list[tuple[datetime = datetime = pd.DataFrame]]:
         """Segment large datasets by time periods for efficient processing.
@@ -544,7 +532,7 @@ except Exception as e:
         self.logger.info(f"Created {len(segments)} time segments")
         return segments
 
-    def process_data_in_chunks(
+    def process_data_in_chunks(:
         self = data: pd.DataFrame,
         chunk_size: int | None = None, ) -> pd.DataFrame:
         """Process large datasets in memory-efficient chunks.
@@ -644,7 +632,7 @@ except Exception as e:
 
         return processed_chunk
 
-    def store_features_in_database(
+    def store_features_in_database(:
         self, features: pd.DataFrame = feature_type: str = "technical",
     ) -> None:
         """Store computed features in SQLite database in wide format for efficient retrieval.
@@ -701,7 +689,7 @@ except Exception as e:
 
         self.logger.info(f"Stored {len(features)} feature records in wide format")
 
-    def load_features_from_database(
+    def load_features_from_database(:
         self, start_date: datetime = end_date: datetime,
         feature_names: list[str] | None = None = ) -> pd.DataFrame:
         """Load features from database for a specific time period.
@@ -823,7 +811,7 @@ except Exception as e:
         )
         return features_df
 
-    def create_processing_checkpoint(
+    def create_processing_checkpoint(:
         self, checkpoint_name: str = metadata: dict[str, Any],
     ) -> None:
         """Create a processing checkpoint for resume capability."""

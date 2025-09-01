@@ -6,81 +6,10 @@ from typing import Dict, Any, List
 from dataclasses import dataclass, field
 
 
-@dataclass
-class FractionalLabelingConfig:
-    pass  # TODO: Add implementation
-class FractionalLabelingConfig:
-    pass  # TODO: Add implementation
-class FractionalLabelingConfig:
-    """Configuration for fractional triple barrier labeling."""
-
-# Enable/disable fractional labeling
-enable_fractional_labels: bool = True
-
-# Component weights for fractional label calculation
-distance_weight: float = 0.4
-time_weight: float = 0.3
-volatility_weight: float = 0.3
-
-# Confidence thresholds
-min_confidence_threshold: float = 0.1
-max_confidence_threshold: float = 0.95
-
-# Component enablement
-enable_distance_scaling: bool = True
-enable_time_decay: bool = True
-enable_volatility_normalization: bool = True
-enable_regime_scaling: bool = False
-
-# Regime-specific configurations
-regime_specific_configs: Dict[str, Dict[str, Any]] = field(default_factory=lambda: {
-"trending": {
-"distance_weight": 0.5,
-"time_weight": 0.3,
-"volatility_weight": 0.2,
-"min_confidence_threshold": 0.15,
-},
-"ranging": {
-"distance_weight": 0.3,
-"time_weight": 0.4,
-"volatility_weight": 0.3,
-"min_confidence_threshold": 0.1,
-},
-"volatile": {
-"distance_weight": 0.2,
-"time_weight": 0.2,
-"volatility_weight": 0.6,
-"min_confidence_threshold": 0.2,
-}
-})
+@dataclass class FractionalLabelingConfig: pass  # TODO: Add implementation class FractionalLabelingConfig: pass  # TODO: Add implementation class FractionalLabelingConfig: """Configuration for fractional triple barrier labeling."""  # Enable/disable fractional labeling enable_fractional_labels: bool = True  # Component weights for fractional label calculation distance_weight: float = 0.4 time_weight: float = 0.3 volatility_weight: float = 0.3  # Confidence thresholds min_confidence_threshold: float = 0.1 max_confidence_threshold: float = 0.95  # Component enablement enable_distance_scaling: bool = True enable_time_decay: bool = True enable_volatility_normalization: bool = True enable_regime_scaling: bool = False  # Regime-specific configurations regime_specific_configs: Dict[str, Dict[str, Any]] = field(default_factory=lambda: { "trending": { "distance_weight": 0.5, "time_weight": 0.3, "volatility_weight": 0.2, "min_confidence_threshold": 0.15, }, "ranging": { "distance_weight": 0.3, "time_weight": 0.4, "volatility_weight": 0.3, "min_confidence_threshold": 0.1, }, "volatile": { "distance_weight": 0.2, "time_weight": 0.2, "volatility_weight": 0.6, "min_confidence_threshold": 0.2, } })
 
 
-@dataclass
-class FractionalDifferentiationConfig:
-    pass  # TODO: Add implementation
-class FractionalDifferentiationConfig:
-    pass  # TODO: Add implementation
-class FractionalDifferentiationConfig:
-    """Configuration for fractional differentiation."""
-
-# Enable/disable fractional differentiation
-enable_fractional_diff: bool = True
-
-# Default fractional order
-default_d: float = 0.5
-
-# Optimization settings
-optimize_order: bool = True
-min_d: float = 0.1
-max_d: float = 0.9
-optimization_steps: int = 10
-
-# Computational settings
-window: int = 100
-threshold: float = 1e-5
-
-# Column configurations
-price_columns: List[str] = field(default_factory=lambda: ["close", "high", "low", "open"])
+@dataclass class FractionalDifferentiationConfig: pass  # TODO: Add implementation class FractionalDifferentiationConfig: pass  # TODO: Add implementation class FractionalDifferentiationConfig: """Configuration for fractional differentiation."""  # Enable/disable fractional differentiation enable_fractional_diff: bool = True  # Default fractional order default_d: float = 0.5  # Optimization settings optimize_order: bool = True min_d: float = 0.1 max_d: float = 0.9 optimization_steps: int = 10  # Computational settings window: int = 100 threshold: float = 1e-5  # Column configurations price_columns: List[str] = field(default_factory=lambda: ["close", "high", "low", "open"])
 volume_columns: List[str] = field(default_factory=lambda: ["volume"])
 exclude_columns: List[str] = field(default_factory=lambda: ["timestamp", "datetime", "date"])
 
@@ -90,43 +19,7 @@ enable_parallel_processing: bool = True
 max_parallel_workers: int = 4
 
 
-@dataclass
-class FractionalImplementationsConfig:
-    pass  # TODO: Add implementation
-class FractionalImplementationsConfig:
-    pass  # TODO: Add implementation
-class FractionalImplementationsConfig:
-    """Main configuration for fractional implementations."""
-
-# General settings
-enable_fractional_implementations: bool = True
-enable_gradual_rollout: bool = True
-enable_performance_monitoring: bool = True
-
-# Phase settings
-current_phase: str = "phase1"  # phase1, phase2, phase3, phase4
-
-# Performance targets
-target_sharpe_improvement: float = 0.15  # 15%
-target_drawdown_reduction: float = 0.20  # 20%
-target_accuracy_improvement: float = 0.10  # 10%
-
-# Monitoring settings
-performance_check_interval: int = 1000  # samples
-alert_threshold: float = 0.05  # 5% performance degradation
-
-# Logging settings
-enable_detailed_logging: bool = True
-log_performance_metrics: bool = True
-log_feature_statistics: bool = True
-
-# Testing settings
-enable_comprehensive_testing: bool = True
-test_data_size: int = 10000
-validation_split: float = 0.2
-
-# Sub-configurations
-fractional_labeling: FractionalLabelingConfig = field(default_factory=FractionalLabelingConfig)
+@dataclass class FractionalImplementationsConfig: pass  # TODO: Add implementation class FractionalImplementationsConfig: pass  # TODO: Add implementation class FractionalImplementationsConfig: """Main configuration for fractional implementations."""  # General settings enable_fractional_implementations: bool = True enable_gradual_rollout: bool = True enable_performance_monitoring: bool = True  # Phase settings current_phase: str = "phase1"  # phase1, phase2, phase3, phase4  # Performance targets target_sharpe_improvement: float = 0.15  # 15% target_drawdown_reduction: float = 0.20  # 20% target_accuracy_improvement: float = 0.10  # 10%  # Monitoring settings performance_check_interval: int = 1000  # samples alert_threshold: float = 0.05  # 5% performance degradation  # Logging settings enable_detailed_logging: bool = True log_performance_metrics: bool = True log_feature_statistics: bool = True  # Testing settings enable_comprehensive_testing: bool = True test_data_size: int = 10000 validation_split: float = 0.2  # Sub-configurations fractional_labeling: FractionalLabelingConfig = field(default_factory=FractionalLabelingConfig)
 fractional_differentiation: FractionalDifferentiationConfig = field(default_factory=FractionalDifferentiationConfig)
 
 
@@ -165,7 +58,7 @@ if "fractional_differentiation" in config_dict:
             if hasattr(config.fractional_differentiation, key):
                 setattr(config.fractional_differentiation, key, value)
 
-return config
+    return config
 
 
 def validate_fractional_config(config: FractionalImplementationsConfig) -> List[str]:
@@ -218,4 +111,4 @@ if config.target_drawdown_reduction <= 0:
 if config.target_accuracy_improvement <= 0:
         errors.append("target_accuracy_improvement must be positive")
 
-return errors
+    return errors

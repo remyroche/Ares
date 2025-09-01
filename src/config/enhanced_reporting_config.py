@@ -17,7 +17,7 @@ Get comprehensive configuration for enhanced reporting system.
 Returns:
         Dict[str, Any]: Configuration dictionary
 """
-return {
+    return {
 # Enhanced Trading Launcher Configuration
 "enhanced_trading_launcher": {
 "enable_paper_trading": True,
@@ -307,7 +307,7 @@ Returns:
 base_config , get_enhanced_reporting_config()
 
 # Override for paper trading specific settings
-return {
+    return {
 **base_config,
 "enhanced_trading_launcher": {
 **base_config["enhanced_trading_launcher"],
@@ -333,7 +333,7 @@ Returns:
 base_config , get_enhanced_reporting_config()
 
 # Override for backtesting specific settings
-return {
+    return {
 **base_config,
 "enhanced_trading_launcher": {
 **base_config["enhanced_trading_launcher"],
@@ -359,7 +359,7 @@ Returns:
 base_config , get_enhanced_reporting_config()
 
 # Override for live trading specific settings
-return {
+    return {
 **base_config,
 "enhanced_trading_launcher": {
 **base_config["enhanced_trading_launcher"],
@@ -401,7 +401,7 @@ required_sections , [
 for section in required_sections:
             if section not in config:
                 print(f"Missing required configuration section: {section}")
-return False
+    return False
 
 # Validate specific settings
 launcher_config = config["enhanced_trading_launcher"]
@@ -413,13 +413,13 @@ launcher_config.get("enable_backtesting", False),
 ],
 ):
             print("At least one trading mode must be enabled")
-return False
+    return False
 
-return True
+    return True
 
 except Exception as e:
         print(f"Error validating configuration: {e}")
-return False
+    return False
 
 
 def get_minimal_config() -> dict[str, Any]:
@@ -429,7 +429,7 @@ Get minimal configuration for basic enhanced reporting.
 Returns:
         Dict[str, Any]: Minimal configuration
 """
-return {
+    return {
 "enhanced_trading_launcher": {
 "enable_paper_trading": True,
 "enable_backtesting": True,

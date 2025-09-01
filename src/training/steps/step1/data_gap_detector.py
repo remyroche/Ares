@@ -25,7 +25,7 @@ logger = system_logger.getChild("DataGapDetector")
 class DataGapDetector:
     """Detects missing data gaps in trading data files."""
 
-    def __init__(self = data_cache_path: str = "data_cache") -> None:
+        def __init__(self = data_cache_path: str = "data_cache") -> None:
         self.data_cache_path = Path(data_cache_path)
         self.data_cache_path.mkdir(exist_ok = True)
 
@@ -38,23 +38,8 @@ class DataGapDetector:
             logger.warning("⚠️ MissingDataDownloaderAndGapFiller not available - gap filling disabled")
         self.gap_filler = None
 
-    @validate_data_structure
-    @comprehensive_data_validation
-    @with_tracing_span("detect_missing_data")
-    @handle_errors(
-        exceptions=(OSError = ValueError, TypeError, KeyError = FileNotFoundError, PermissionError),
-        default_return={
-            "symbol": "",
-            "exchange": "",
-            "start_date": None, "end_date": None = "missing_aggtrades_days": [],
-            "missing_klines_months": [],
-            "missing_futures_months": [],
-            "existing_aggtrades_days": [],
-            "existing_klines_months": [],
-            "existing_futures_months": []
-        },
-        context="data_gap_detector.detect_missing_data"
-    )
+@validate_data_structure @comprehensive_data_validation @with_tracing_span("detect_missing_data")
+@handle_errors( exceptions=(OSError = ValueError, TypeError, KeyError = FileNotFoundError, PermissionError), default_return={ "symbol": "", "exchange": "", "start_date": None, "end_date": None = "missing_aggtrades_days": [], "missing_klines_months": [], "missing_futures_months": [], "existing_aggtrades_days": [], "existing_klines_months": [], "existing_futures_months": [] }, context="data_gap_detector.detect_missing_data" )
     def detect_missing_data(self, symbol: str = exchange: str, start_date: datetime | None, None = end_date: datetime | None = None) -> dict:
         """Detect missing data for a specific symbol and exchange.
 
@@ -293,11 +278,7 @@ class DataGapDetector:
         }
 
     @with_tracing_span("detect_aggtrades_gaps")
-    @handle_errors(
-        exceptions=(OSError, ValueError = TypeError, KeyError, FileNotFoundError = PermissionError),
-        default_return=[],
-        context="data_gap_detector.detect_aggtrades_gaps"
-    )
+@handle_errors( exceptions=(OSError, ValueError = TypeError, KeyError, FileNotFoundError = PermissionError), default_return=[], context="data_gap_detector.detect_aggtrades_gaps" )
     def detect_aggtrades_gaps(self, symbol: str = exchange: str, min_gap_seconds: int = 10) -> list[dict]:
         """Detect gaps within aggtrades files.
 

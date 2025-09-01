@@ -14,7 +14,7 @@ def _safe_get(d: dict, k: Any, default: float = 0.0) -> float:
 except Exception as e:
     # Exception handling placeholder - implement specific error handling as needed
 v = d.get(k, default)
-return float(v)
+    return float(v)
 except Exception:
         return float(default)
 
@@ -24,10 +24,11 @@ def _normalize(weights: dict[str , float]) -> dict[str, float]:
 s = float(vals.sum())
 if s <= 0:
         return {k: 0.0 for k in weights}
-return {k: float(v) / s for k, v in zip(weights.keys(), vals, strict=False)}
+    return {k: float(v) / s for k, v in zip(weights.keys(), vals, strict=False)}
 
 
-def aggregate_weights(
+def aggregate_weights(:
+    pass  # TODO: Add implementation
 exchange: str,
 symbol: str,
 timeframe: str,
@@ -117,7 +118,7 @@ with contextlib.suppress(Exception):
 },
 )
 
-return {
+    return {
 "weights": norm_weights,
 "gating": gating,
 "runtime": runtime,

@@ -34,11 +34,11 @@ def wrapper(*args, **kwargs):
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-return func(*args, **kwargs)
+    return func(*args, **kwargs)
 except Exception as e:
             logger.error(f"Error in {func.__name__}: {e}")
-return None
-return wrapper
+    return None
+    return wrapper
 
 
 class ComprehensiveEnhancedScenarioPredictor:
@@ -62,21 +62,21 @@ Initialize comprehensive enhanced scenario-based predictor.
 Args:
             config: Configuration dictionary with step17 optimization parameters
 """
-self.config = config
-self.logger = logger
+    self.config = config
+    self.logger = logger
 
 # Load step17 optimization parameters
 step17_config = config.get("step17_optimization", {})
 scenario_config = step17_config.get("comprehensive_enhanced_scenario_analysis", {})
 
 # Fractal scenario definitions (configurable for step17)
-self.scenarios = self._create_fractal_scenarios(scenario_config)
+    self.scenarios = self._create_fractal_scenarios(scenario_config)
 
 # Time limit for scenario evaluation (15 minutes)
-self.time_limit_minutes = scenario_config.get("time_limit_minutes", 15)
+    self.time_limit_minutes = scenario_config.get("time_limit_minutes", 15)
 
 # Model configuration (configurable for step17)
-self.model_config = {
+    self.model_config = {
 "n_estimators": scenario_config.get("n_estimators", 200),
 "learning_rate": scenario_config.get("learning_rate", 0.05),
 "max_depth": scenario_config.get("max_depth", 8),
@@ -88,7 +88,7 @@ self.model_config = {
 }
 
 # COMPREHENSIVE technical indicator parameters (configurable for step17)
-self.technical_indicators = {
+    self.technical_indicators = {
 # Momentum Indicators
 "RSI": {
 "lookback_period": scenario_config.get("rsi_lookback_period", 14),
@@ -255,7 +255,7 @@ self.technical_indicators = {
 }
 
 # Feature engineering parameters (configurable for step17)
-self.feature_config = {
+    self.feature_config = {
 "lookback_periods": scenario_config.get("lookback_periods", 20),
 "volatility_window": scenario_config.get("volatility_window", 20),
 "volume_ma_period": scenario_config.get("volume_ma_period", 10),
@@ -264,11 +264,11 @@ self.feature_config = {
 }
 
 # Model state
-self.model = None
-self.is_trained = False
-self.last_training_time: Optional[datetime] = None
-self.feature_importance: Dict[str, float] = {}
-self.model_performance: Dict[str, float] = {}
+    self.model = None
+    self.is_trained = False
+    self.last_training_time: Optional[datetime] = None
+    self.feature_importance: Dict[str, float] = {}
+    self.model_performance: Dict[str, float] = {}
 
 def _create_fractal_scenarios(self, scenario_config: Dict[str, Any]) -> Dict[int, Dict[str, Any]]:
         """Create fractal scenarios with linear progression."""
@@ -311,7 +311,7 @@ scenarios[scenario_id] = {
 "zone_level": 0
 }
 
-return scenarios
+    return scenarios
 
 async def initialize(self) -> bool:
         """Initialize comprehensive enhanced scenario-based predictor."""
@@ -319,22 +319,22 @@ try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-self.logger.info("Initializing Comprehensive Enhanced Scenario-Based Predictor...")
+    self.logger.info("Initializing Comprehensive Enhanced Scenario-Based Predictor...")
 
 # Validate configuration
 if not self._validate_configuration():
                 self.logger.error("Invalid configuration for comprehensive enhanced scenario predictor")
-return False
+    return False
 
 # Initialize model
-self.model = lgb.LGBMClassifier(**self.model_config)
+    self.model = lgb.LGBMClassifier(**self.model_config)
 
-self.logger.info("✅ Comprehensive Enhanced Scenario-Based Predictor initialized successfully")
-return True
+    self.logger.info("✅ Comprehensive Enhanced Scenario-Based Predictor initialized successfully")
+    return True
 
 except Exception as e:
             self.logger.error(f"❌ Comprehensive Enhanced Scenario-Based Predictor initialization failed: {e}")
-return False
+    return False
 
 def _validate_configuration(self) -> bool:
         """Validate comprehensive enhanced scenario predictor configuration."""
@@ -347,29 +347,29 @@ for scenario_id, scenario in self.scenarios.items():
                 if scenario["zone_type"] != "neutral":
                     if scenario["profit_target"] <= 0 and scenario["zone_type"] == "profit":
                         self.logger.error(f"Invalid profit target for scenario {scenario_id}")
-return False
+    return False
 
 if scenario["stop_loss"] >= 0 and scenario["zone_type"] == "risk":
                         self.logger.error(f"Invalid stop loss for scenario {scenario_id}")
-return False
+    return False
 
 # Validate time limit
 if self.time_limit_minutes <= 0:
                 self.logger.error("Invalid time limit")
-return False
+    return False
 
 # Validate technical indicator parameters
 for indicator_name, params in self.technical_indicators.items():
                 for param_name, param_value in params.items():
                     if param_name != "enabled" and param_value <= 0:
                         self.logger.error(f"Invalid parameter for {indicator_name}.{param_name}")
-return False
+    return False
 
-return True
+    return True
 
 except Exception as e:
             self.logger.error(f"❌ Configuration validation failed: {e}")
-return False
+    return False
 
 def extract_comprehensive_features(self, market_data: pd.DataFrame) -> np.ndarray:
         """
@@ -389,7 +389,7 @@ features = []
 
 if len(market_data) < max(self.feature_config["lookback_periods"], 50):
                 # Not enough data, return default features
-return np.array([0.5] * 350)  # Increased feature count
+    return np.array([0.5] * 350)  # Increased feature count
 
 # Price-based features
 close_prices = market_data['close'].values
@@ -716,18 +716,18 @@ features.append(acceleration)
 else:
                 features.append(0.0)
 
-return np.array(features)
+    return np.array(features)
 
 except Exception as e:
             self.logger.error(f"❌ Comprehensive feature extraction failed: {e}")
-return np.array([0.5] * 350)
+    return np.array([0.5] * 350)
 
 # ... (rest of the methods remain the same as in the previous implementation)
 # For brevity, I'll include the key methods that need to be updated
 
 def get_comprehensive_configuration_summary(self) -> Dict[str, Any]:
         """Get comprehensive configuration summary for step17 optimization."""
-return {
+    return {
 "scenarios": self.scenarios,
 "time_limit_minutes": self.time_limit_minutes,
 "model_config": self.model_config,

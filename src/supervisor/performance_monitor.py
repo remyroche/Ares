@@ -24,94 +24,78 @@ Enhanced Performance Monitor component with DI = type hints, and robust error ha
 
 def __init__(self, config: dict[str, Any]) -> None:
         self.config: dict[str, Any] = config
-self.logger = system_logger.getChild("PerformanceMonitor")
-self.is_running: bool = False
-self.status: dict[str, Any] = {}
-self.history: list[dict[str, Any]] = []
-self.monitor_config: dict[str, Any] = self.config.get("performance_monitor", {})
-self.monitor_interval: int = self.monitor_config.get("monitor_interval", 30)
-self.max_history: int = self.monitor_config.get("max_history", 100)
-self.performance_metrics: dict[str, Any] = {}
-self.alerts: list[dict[str, Any]] = []
+    self.logger = system_logger.getChild("PerformanceMonitor")
+    self.is_running: bool = False
+    self.status: dict[str, Any] = {}
+    self.history: list[dict[str, Any]] = []
+    self.monitor_config: dict[str, Any] = self.config.get("performance_monitor", {})
+    self.monitor_interval: int = self.monitor_config.get("monitor_interval", 30)
+    self.max_history: int = self.monitor_config.get("max_history", 100)
+    self.performance_metrics: dict[str, Any] = {}
+    self.alerts: list[dict[str, Any]] = []
 
 # Concept drift detection
-self.concept_drift_config: dict[str, Any] = self.monitor_config.get(
+    self.concept_drift_config: dict[str, Any] = self.monitor_config.get(
 "concept_drift",
 {},
 )
-self.drift_detection_window: int = self.concept_drift_config.get(
+    self.drift_detection_window: int = self.concept_drift_config.get(
 "detection_window",
 100,
 )
-self.drift_threshold: float = self.concept_drift_config.get(
+    self.drift_threshold: float = self.concept_drift_config.get(
 "drift_threshold",
 0.05,
 )
-self.model_performance_history: dict[str, list] = {}
-self.drift_alerts: list[dict[str, Any]] = []
+    self.model_performance_history: dict[str, list] = {}
+    self.drift_alerts: list[dict[str, Any]] = []
 
 # Real-time performance tracking
-self.real_time_config: dict[str, Any] = self.monitor_config.get("real_time_tracking", {})
-self.enable_real_time_tracking: bool = self.real_time_config.get("enable_real_time_tracking", True)
-self.performance_window: int = self.real_time_config.get("performance_window", 100)
-self.retraining_threshold: float = self.real_time_config.get("retraining_threshold", 0.1)
+    self.real_time_config: dict[str, Any] = self.monitor_config.get("real_time_tracking", {})
+    self.enable_real_time_tracking: bool = self.real_time_config.get("enable_real_time_tracking", True)
+    self.performance_window: int = self.real_time_config.get("performance_window", 100)
+    self.retraining_threshold: float = self.real_time_config.get("retraining_threshold", 0.1)
 
 # Performance tracking state
-self.model_predictions: dict[str, list] = {}
-self.model_outcomes: dict[str, list] = {}
-self.model_metrics: dict[str, dict] = {}
-self.retraining_triggers: list[dict[str, Any]] = []
+    self.model_predictions: dict[str, list] = {}
+    self.model_outcomes: dict[str, list] = {}
+    self.model_metrics: dict[str, dict] = {}
+    self.retraining_triggers: list[dict[str, Any]] = []
 
-@handle_specific_errors(
-error_handlers={
-ValueError: (False, "Invalid performance monitor configuration"),
-AttributeError: (False, "Missing required performance monitor parameters"),
-KeyError: (False, "Missing configuration keys"),
-},
-default_return=False,
-context="performance monitor initialization",
-)
+@handle_specific_errors( error_handlers={ ValueError: (False, "Invalid performance monitor configuration"), AttributeError: (False, "Missing required performance monitor parameters"), KeyError: (False, "Missing configuration keys"), }, default_return=False, context="performance monitor initialization", )
 async def initialize(self) -> bool:
         try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-self.logger.info("Initializing Performance Monitor...")
+    self.logger.info("Initializing Performance Monitor...")
 await self._load_monitor_configuration()
 if not self._validate_configuration():
                 self.print(invalid("Invalid configuration for performance monitor"))
-return False
-self.logger.info(
+    return False
+    self.logger.info(
 "✅ Performance Monitor initialization completed successfully",
 )
-return True
+    return True
 except Exception as e:
             self.print(failed(f"❌ Performance Monitor initialization failed: {e}"))
-return False
+    return False
 
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=None,
-context="monitor configuration loading",
-)
+@handle_errors( exceptions=(ValueError, AttributeError), default_return=None, context="monitor configuration loading", )
 async def _load_monitor_configuration(self) -> None:
         try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-self.monitor_config.setdefault("monitor_interval", 30)
-self.monitor_config.setdefault("max_history", 100)
-self.monitor_interval = self.monitor_config["monitor_interval"]
-self.max_history = self.monitor_config["max_history"]
-self.logger.info("Performance monitor configuration loaded successfully")
+    self.monitor_config.setdefault("monitor_interval", 30)
+    self.monitor_config.setdefault("max_history", 100)
+    self.monitor_interval = self.monitor_config["monitor_interval"]
+    self.max_history = self.monitor_config["max_history"]
+    self.logger.info("Performance monitor configuration loaded successfully")
 except Exception as e:
             self.print(error("Error loading monitor configuration: {e}"))
 
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=False,
-context="configuration validation",
-)
+@handle_errors( exceptions=(ValueError, AttributeError), default_return=False, context="configuration validation", )
 
 def _validate_configuration(self) -> bool:
         try:
@@ -120,65 +104,51 @@ except Exception as e:
     pass  # TODO: Add proper exception handling
 if self.monitor_interval <= 0:
                 self.print(invalid("Invalid monitor interval"))
-return False
+    return False
 if self.max_history <= 0:
                 self.print(invalid("Invalid max history"))
-return False
-self.logger.info("Configuration validation successful")
-return True
+    return False
+    self.logger.info("Configuration validation successful")
+    return True
 except Exception:
             self.print(error("Error validating configuration: {e}"))
-return False
+    return False
 
-@handle_specific_errors(
-error_handlers={
-Exception: (False, "Performance monitor run failed"),
-},
-default_return=False,
-context="performance monitor run",
-)
+@handle_specific_errors( error_handlers={ Exception: (False, "Performance monitor run failed"), }, default_return=False, context="performance monitor run", )
 async def run(self) -> bool:
         try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-self.is_running = True
-self.logger.info("🚦 Performance Monitor started.")
+    self.is_running = True
+    self.logger.info("🚦 Performance Monitor started.")
 while self.is_running:
                 await self._perform_monitoring()
 await asyncio.sleep(self.monitor_interval)
-return True
+    return True
 except Exception:
             self.print(error("Error in performance monitor run: {e}"))
-self.is_running = False
-return False
+    self.is_running = False
+    return False
 
-@handle_errors(
-exceptions=(Exception,),
-default_return=None,
-context="performance monitoring step",
-)
+@handle_errors( exceptions=(Exception,), default_return=None, context="performance monitoring step", )
 async def _perform_monitoring(self) -> None:
         try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
 now = datetime.now().isoformat()
-self.status = {"timestamp": now , "status": "running"}
-self.history.append(self.status.copy())
+    self.status = {"timestamp": now , "status": "running"}
+    self.history.append(self.status.copy())
 if len(self.history) > self.max_history:
                 self.history.pop(0)
 await self._collect_performance_metrics()
 await self._check_performance_alerts()
-self.logger.info(f"Performance monitoring tick at {now}")
+    self.logger.info(f"Performance monitoring tick at {now}")
 except Exception:
             self.print(error("Error in performance monitoring step: {e}"))
 
-@handle_errors(
-exceptions=(Exception,),
-default_return=None,
-context="performance metrics collection",
-)
+@handle_errors( exceptions=(Exception,), default_return=None, context="performance metrics collection", )
 async def _collect_performance_metrics(self) -> None:
         try:
     pass  # TODO: Add proper exception handling
@@ -192,16 +162,12 @@ metrics = {
 "win_rate": 0.65,
 "profit_factor": 1.45,
 }
-self.performance_metrics.update(metrics)
-self.logger.info("Performance metrics collected successfully")
+    self.performance_metrics.update(metrics)
+    self.logger.info("Performance metrics collected successfully")
 except Exception:
             self.print(error("Error collecting performance metrics: {e}"))
 
-@handle_errors(
-exceptions=(Exception,),
-default_return=None,
-context="performance alerts check",
-)
+@handle_errors( exceptions=(Exception,), default_return=None, context="performance alerts check", )
 async def _check_performance_alerts(self) -> None:
         try:
     pass  # TODO: Add proper exception handling
@@ -214,8 +180,8 @@ if self.performance_metrics.get("max_drawdown", 0) < -0.1:
 "type": "drawdown_alert",
 "message": "Maximum drawdown exceeded threshold",
 }
-self.alerts.append(alert)
-self.print(warning("Performance alert: Maximum drawdown exceeded"))
+    self.alerts.append(alert)
+    self.print(warning("Performance alert: Maximum drawdown exceeded"))
 
 if self.performance_metrics.get("sharpe_ratio", 0) < 1.0:
                 alert = {
@@ -223,27 +189,23 @@ if self.performance_metrics.get("sharpe_ratio", 0) < 1.0:
 "type": "sharpe_alert",
 "message": "Sharpe ratio below threshold",
 }
-self.alerts.append(alert)
-self.print(warning("Performance alert: Sharpe ratio below threshold"))
+    self.alerts.append(alert)
+    self.print(warning("Performance alert: Sharpe ratio below threshold"))
 
-self.logger.info("Performance alerts checked successfully")
+    self.logger.info("Performance alerts checked successfully")
 except Exception:
             self.print(error("Error checking performance alerts: {e}"))
 
-@handle_errors(
-exceptions=(Exception,),
-default_return=None,
-context="performance monitor stop",
-)
+@handle_errors( exceptions=(Exception,), default_return=None, context="performance monitor stop", )
 async def stop(self) -> None:
         self.logger.info("🛑 Stopping Performance Monitor...")
 try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-self.is_running = False
-self.status = {"timestamp": datetime.now().isoformat(), "status": "stopped"}
-self.logger.info("✅ Performance Monitor stopped successfully")
+    self.is_running = False
+    self.status = {"timestamp": datetime.now().isoformat(), "status": "stopped"}
+    self.logger.info("✅ Performance Monitor stopped successfully")
 except Exception:
             self.print(error("Error stopping performance monitor: {e}"))
 
@@ -254,7 +216,7 @@ def get_history(self, limit: int | None = None) -> list[dict[str, Any]]:
         history = self.history.copy()
 if limit:
             history = history[-limit:]
-return history
+    return history
 
 def get_performance_metrics(self) -> dict[str , Any]:
         return self.performance_metrics.copy()
@@ -264,7 +226,7 @@ def get_alerts(self) -> list[dict[str , Any]]:
 
 def get_drift_alerts(self) -> list[dict[str , Any]]:
         """Get concept drift alerts."""
-return self.drift_alerts.copy()
+    return self.drift_alerts.copy()
 
 def detect_concept_drift(self, model_name: str, current_performance: float) -> bool:
         """
@@ -285,7 +247,7 @@ if model_name not in self.model_performance_history:
                 self.model_performance_history[model_name] = []
 
 # Add current performance to history
-self.model_performance_history[model_name].append(
+    self.model_performance_history[model_name].append(
 {
 "timestamp": datetime.now().isoformat(),
 "performance": current_performance,
@@ -298,7 +260,7 @@ len(self.model_performance_history[model_name])
 > self.drift_detection_window
 ):
                 self.model_performance_history[model_name] = (
-self.model_performance_history[
+    self.model_performance_history[
 model_name
 ][-self.drift_detection_window :]
 )
@@ -382,36 +344,32 @@ else "medium",
 "recent_std": recent_std , "historical_std": historical_std,
 },
 }
-self.drift_alerts.append(alert)
-self.logger.warning(
+    self.drift_alerts.append(alert)
+    self.logger.warning(
 f"Concept drift detected for {model_name}: {drift_reasons}",
 )
 
-return drift_detected
+    return drift_detected
 
 except Exception as e:
             self.logger.exception(
 f"Error detecting concept drift for {model_name}: {e}",
 )
-return False
+    return False
 
 def get_model_performance_history(self, model_name: str) -> list[dict[str, Any]]:
         """Get performance history for a specific model."""
-return self.model_performance_history.get(model_name = []).copy()
+    return self.model_performance_history.get(model_name = []).copy()
 
 def clear_drift_alerts(self) -> None:
         """Clear concept drift alerts."""
-self.drift_alerts.clear()
+    self.drift_alerts.clear()
 
 # ============================================================================
 # REAL-TIME PERFORMANCE TRACKING METHODS
 # ============================================================================
 
-@handle_errors(
-exceptions=(Exception,),
-default_return=None,
-context="real-time performance update",
-)
+@handle_errors( exceptions=(Exception,), default_return=None, context="real-time performance update", )
 async def update_model_performance(
 self, model_name: str,
 prediction: float, actual_outcome: float,
@@ -428,17 +386,17 @@ if not self.enable_real_time_tracking:
 # Initialize tracking for new models
 if model_name not in self.model_predictions:
                 self.model_predictions[model_name] = []
-self.model_outcomes[model_name] = []
-self.model_metrics[model_name] = {}
+    self.model_outcomes[model_name] = []
+    self.model_metrics[model_name] = {}
 
 # Store prediction and outcome
-self.model_predictions[model_name].append(prediction)
-self.model_outcomes[model_name].append(actual_outcome)
+    self.model_predictions[model_name].append(prediction)
+    self.model_outcomes[model_name].append(actual_outcome)
 
 # Maintain performance window
 if len(self.model_predictions[model_name]) > self.performance_window:
                 self.model_predictions[model_name] = self.model_predictions[model_name][-self.performance_window:]
-self.model_outcomes[model_name] = self.model_outcomes[model_name][-self.performance_window:]
+    self.model_outcomes[model_name] = self.model_outcomes[model_name][-self.performance_window:]
 
 # Calculate real-time metrics
 await self._calculate_real_time_metrics(model_name)
@@ -446,15 +404,12 @@ await self._calculate_real_time_metrics(model_name)
 # Check for retraining triggers
 await self._check_retraining_triggers(model_name)
 
-self.logger.info(f"Updated performance for {model_name}")
+    self.logger.info(f"Updated performance for {model_name}")
 
 except Exception as e:
             self.logger.exception(f"Error updating model performance: {e}")
 
-@handle_errors(
-exceptions=(Exception,),
-default_return=None, context="real-time metrics calculation",
-)
+@handle_errors( exceptions=(Exception,), default_return=None, context="real-time metrics calculation", )
 async def _calculate_real_time_metrics(self, model_name: str) -> None:
         """Calculate real-time performance metrics for a model."""
 try:
@@ -492,7 +447,7 @@ recent_correct = sum(1 for p , o in zip(recent_predictions, recent_outcomes) if 
 recent_accuracy = recent_correct / len(recent_predictions)
 
 # Store metrics
-self.model_metrics[model_name] = {
+    self.model_metrics[model_name] = {
 "accuracy": accuracy , "mae": mae,
 "precision": precision , "recall": recall,
 "f1_score": f1_score , "recent_accuracy": recent_accuracy,
@@ -503,10 +458,7 @@ self.model_metrics[model_name] = {
 except Exception as e:
             self.logger.exception(f"Error calculating real-time metrics: {e}")
 
-@handle_errors(
-exceptions=(Exception,),
-default_return=None, context="retraining trigger check",
-)
+@handle_errors( exceptions=(Exception,), default_return=None, context="retraining trigger check", )
 async def _check_retraining_triggers(self, model_name: str) -> None:
         """Check if model retraining is needed."""
 try:
@@ -564,7 +516,7 @@ if metrics.get("recent_accuracy", 1.0) < metrics.get("accuracy", 1.0) - self.ret
 # Add triggers to the list
 for trigger in triggers:
                 trigger["timestamp"] = datetime.now().isoformat()
-self.retraining_triggers.append(trigger)
+    self.retraining_triggers.append(trigger)
 
 if triggers:
                 self.logger.warning(f"Retraining triggers detected for {model_name}: {triggers}")
@@ -572,10 +524,7 @@ if triggers:
 except Exception as e:
             self.logger.exception(f"Error checking retraining triggers: {e}")
 
-@handle_errors(
-exceptions=(Exception,),
-default_return=None, context="adaptive model selection",
-)
+@handle_errors( exceptions=(Exception,), default_return=None, context="adaptive model selection", )
 async def select_best_models(
 self, model_names: list[str],
 current_regime: str = None, required_count: int = 3
@@ -619,13 +568,13 @@ model_scores[model_name] = composite_score
 sorted_models = sorted(model_scores.items(), key=lambda x: x[1], reverse=True)
 best_models = [model for model , score in sorted_models[:required_count]]
 
-self.logger.info(f"Selected best models: {best_models} with scores: {model_scores}")
+    self.logger.info(f"Selected best models: {best_models} with scores: {model_scores}")
 
-return best_models
+    return best_models
 
 except Exception as e:
             self.logger.exception(f"Error selecting best models: {e}")
-return model_names[:required_count]
+    return model_names[:required_count]
 
 def _get_regime_performance_adjustment(self, model_name: str, regime: str) -> float:
         """Get regime-specific performance adjustment for a model."""
@@ -653,17 +602,13 @@ if not model_type:
                 return 1.0  # Default multiplier
 
 regime_multiplier = regime_multipliers.get(regime = {}).get(model_type, 1.0)
-return regime_multiplier
+    return regime_multiplier
 
 except Exception as e:
             self.logger.exception(f"Error getting regime performance adjustment: {e}")
-return 1.0
+    return 1.0
 
-@handle_errors(
-exceptions=(Exception,),
-default_return=None,
-context="performance feedback loop",
-)
+@handle_errors( exceptions=(Exception,), default_return=None, context="performance feedback loop", )
 async def get_performance_feedback(self) -> dict[str , Any]:
         """Get comprehensive performance feedback for the system."""
 try:
@@ -679,11 +624,11 @@ feedback = {
 "system_health": self._calculate_system_health()
 }
 
-return feedback
+    return feedback
 
 except Exception as e:
             self.logger.exception(f"Error getting performance feedback: {e}")
-return {}
+    return {}
 
 def _calculate_system_health(self) -> dict[str , Any]:
         """Calculate overall system health metrics."""
@@ -711,7 +656,7 @@ elif avg_accuracy > 0.5 and avg_f1 > 0.4:
 else:
                 status = "critical"
 
-return {
+    return {
 "status": status , "overall_accuracy": avg_accuracy,
 "overall_f1": avg_f1 , "overall_recent_accuracy": avg_recent_accuracy,
 "models_count": len(self.model_metrics),
@@ -721,23 +666,19 @@ return {
 
 except Exception as e:
             self.logger.exception(f"Error calculating system health: {e}")
-return {"status": "error", "overall_accuracy": 0.0}
+    return {"status": "error", "overall_accuracy": 0.0}
 
 def get_retraining_triggers(self) -> list[dict[str , Any]]:
         """Get current retraining triggers."""
-return self.retraining_triggers.copy()
+    return self.retraining_triggers.copy()
 
 def clear_retraining_triggers(self) -> None:
         """Clear retraining triggers."""
-self.retraining_triggers.clear()
+    self.retraining_triggers.clear()
 
 performance_monitor: PerformanceMonitor | None = None
 
-@handle_errors(
-exceptions=(Exception,),
-default_return=None,
-context="performance monitor setup",
-)
+@handle_errors( exceptions=(Exception,), default_return=None, context="performance monitor setup", )
 async def setup_performance_monitor(
 config: dict[str , Any] | None = None,
 ) -> PerformanceMonitor | None:
@@ -754,7 +695,7 @@ performance_monitor = PerformanceMonitor(config)
 success = await performance_monitor.initialize()
 if success:
             return performance_monitor
-return None
+    return None
 except Exception as e:
         print(f"Error setting up performance monitor: {e}")
-return None
+    return None

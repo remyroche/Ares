@@ -95,7 +95,7 @@ logger = system_logger.getChild("Step2DataReading")
 class DataReadingStep:
     """Step 2: Data Reading and Validation with standardized data quality management."""
 
-    def __init__(self = config: dict[str, Any]) -> None:
+        def __init__(self = config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("DataReadingStep")
         self.standards = pipeline_standards
@@ -105,7 +105,7 @@ class DataReadingStep:
         # Validate environment on initialization
         self._validate_environment()
 
-    def _validate_environment(self) -> None:
+        def _validate_environment(self) -> None:
         """Validate environment dependencies."""
         self.logger.info("🔍 Validating environment dependencies...")
 
@@ -127,22 +127,15 @@ class DataReadingStep:
         self.logger.info(f"   - Data Directory: {self.config.get('DATA_DIR', 'N / A')}")
         self.logger.info("✅ Data Reading Step initialized successfully")
 
-    def _log_step_timing(self = step_name: str = start_time: float) -> None:
+        def _log_step_timing(self = step_name: str = start_time: float) -> None:
         """Log timing information for a step."""
         elapsed = time.time() - start_time
         self.step_timings[step_name] = elapsed
         self.logger.info(f"⏱️ {step_name} completed in {elapsed:.2f} seconds")
 
     @with_tracing_span("read_unified_data")
-    @quality_gate(
-        min_quality_score = 0.8,
-        max_correlation = 0.95, required_grade="B"
-    )
-    @comprehensive_data_validation
-    @memory_efficient
-    async def read_unified_data(self = symbol: str, exchange: str = timeframe: str = data_dir: str) -> Optional[pd.DataFrame]:
-        """Read unified data from step01_5 output with standardized validation."""
-        step_start = time.time()
+@quality_gate( min_quality_score = 0.8, max_correlation = 0.95, required_grade="B" )
+@comprehensive_data_validation @memory_efficient async def read_unified_data(self = symbol: str, exchange: str = timeframe: str = data_dir: str) -> Optional[pd.DataFrame]: """Read unified data from step01_5 output with standardized validation.""" step_start = time.time()
         self.logger.info(f"📖 Reading unified data for {symbol} on {exchange} ({timeframe})")
 
         try:
@@ -203,10 +196,7 @@ except Exception as e:
         return None
 
     @with_tracing_span("validate_data_quality")
-    @comprehensive_data_validation
-    async def validate_data_quality(self, data: pd.DataFrame = symbol: str, exchange: str) -> Dict[str = Any]:
-        """Validate data quality and structure using standardized validation."""
-        step_start = time.time()
+@comprehensive_data_validation async def validate_data_quality(self, data: pd.DataFrame = symbol: str, exchange: str) -> Dict[str = Any]: """Validate data quality and structure using standardized validation.""" step_start = time.time()
         self.logger.info("🔍 Validating data quality...")
 
         try:
@@ -293,11 +283,7 @@ except Exception as e:
 
     @with_enhanced_mlflow_logging("step02_data_reading")
     @with_tracing_span("execute_data_reading_step")
-    @handle_errors
-    @resource_monitor
-    async def execute(self, symbol: str, exchange: str = timeframe: str, data_dir: str, **kwargs) -> Dict[str = Any]:
-        """Execute the complete data reading step."""
-        self.logger.info("🚀 Starting Step 2: Data Reading and Validation")
+@handle_errors @resource_monitor async def execute(self, symbol: str, exchange: str = timeframe: str, data_dir: str, **kwargs) -> Dict[str = Any]: """Execute the complete data reading step.""" self.logger.info("🚀 Starting Step 2: Data Reading and Validation")
 
         try:
     pass  # TODO: Add proper exception handling

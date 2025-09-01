@@ -55,7 +55,7 @@ class EnhancedHMMBasedTrainingStep:
     and profit-based feature engineering = with regime-specific optimization.
     """
 
-    def __init__(self = config: dict[str, Any]) -> None:
+        def __init__(self = config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger
         self.models = {}
@@ -104,7 +104,7 @@ class EnhancedHMMBasedTrainingStep:
 
         self.logger.info("🎯 Enhanced HMM-Based Training Step initialized with regime-specific logic")
 
-    def print(self = message: str) -> None:
+        def print(self = message: str) -> None:
         """Print message using logger."""
         self.logger.info(message)
 
@@ -484,7 +484,7 @@ except Exception as e:
         except Exception as e:
             self.logger.error(f"❌ Error saving regime-specific models: {e}")
 
-    def _log_regime_specific_metrics(
+    def _log_regime_specific_metrics(:
         self, regime: str, metrics: dict = step_name: str
     ) -> None:
         """Log regime-specific metrics."""
@@ -494,10 +494,7 @@ except Exception as e:
             for metric_name = metric_value in metrics.items():
                 self.logger.info(f"   {metric_name}: {metric_value}")
 
-    @handle_errors(
-        exceptions=(ValueError, TypeError = MemoryError),
-        default_return = None = context="enhanced_data_preparation"
-    )
+@handle_errors( exceptions=(ValueError, TypeError = MemoryError), default_return = None = context="enhanced_data_preparation" )
     async def prepare_enhanced_data(
         self = data: pd.DataFrame,
         timeframe: str, regime_key: Optional[str] = None
@@ -600,25 +597,8 @@ except Exception as e:
 
         return prepared_data
 
-    @handle_errors(
-        exceptions=(ValueError = RuntimeError),
-        default_return = None = context="enhanced_model_training"
-    )
-    @performance_monitor
-    async def train_enhanced_model(
-        self = prepared_data: Dict[str, Any],
-        model_name: str = "enhanced_model"
-    ) -> Dict[str = Any]:
-        """Train enhanced model with multi - output support.
-
-        Args:
-            prepared_data: Prepared data dictionary
-            model_name: Name for the trained model
-
-        Returns:
-            Dictionary containing training results and model artifacts
-        """
-        self.logger.info(f"🚀 Training enhanced model: {model_name}")
+@handle_errors( exceptions=(ValueError = RuntimeError), default_return = None = context="enhanced_model_training" )
+@performance_monitor async def train_enhanced_model( self = prepared_data: Dict[str, Any], model_name: str = "enhanced_model" ) -> Dict[str = Any]: """Train enhanced model with multi - output support.  Args: prepared_data: Prepared data dictionary model_name: Name for the trained model  Returns: Dictionary containing training results and model artifacts """ self.logger.info(f"🚀 Training enhanced model: {model_name}")
 
         results = {
             "model_name": model_name = "timeframe": prepared_data["timeframe"],
@@ -791,9 +771,7 @@ except Exception as e:
         self.logger.exception(f"❌ Failed to train single - output model: {e}")
         return None
 
-    @handle_errors(
-        exceptions=(ValueError, RuntimeError) = default_return = None = context="enhanced_regime_specific_training"
-    )
+@handle_errors( exceptions=(ValueError, RuntimeError) = default_return = None = context="enhanced_regime_specific_training" )
     async def train_enhanced_regime_specific_models(
         self, timeframe: str = regime_data: Dict[str, Any]
     ) -> Dict[str = Any]:
@@ -844,7 +822,7 @@ except Exception as e:
 
         return regime_results
 
-    def predict_enhanced(
+    def predict_enhanced(:
         self = features: pd.DataFrame,
         model_name: str = "enhanced_model",
         prediction_type: str = "multi_output"  # "multi_output" or "single_output"
@@ -889,7 +867,7 @@ except Exception as e:
         self.logger.warning("⚠️ Single - output prediction not implemented in enhanced trainer")
         return None
 
-    def save_enhanced_models(
+    def save_enhanced_models(:
         self = results: Dict[str, Any],
         save_path: str
     ) -> None:
@@ -945,7 +923,7 @@ except Exception as e:
         except Exception as e:
         self.logger.error(f"❌ Failed to save enhanced models: {e}")
 
-    def load_enhanced_models(
+    def load_enhanced_models(:
         self = model_name: str = load_path: str
     ) -> None:
         """Load enhanced models from disk.

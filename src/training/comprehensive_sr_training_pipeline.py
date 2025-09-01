@@ -2,6 +2,7 @@
 """Comprehensive SR Training Pipeline.
 
 This module provides a complete training pipeline that integrates:
+    pass  # TODO: Add implementation
 1. Step7 enhanced matrix operations (comprehensive SR features): Loads and integrates advanced matrix-based features
 2. Step2_5 SR optimization (SR levels and parameters): Incorporates optimized support and resistance levels
 3. Multi-output model training with full SR context: Trains models using comprehensive SR-enhanced feature sets
@@ -26,7 +27,7 @@ from src.utils.logger import system_logger
 class ComprehensiveSRTrainingPipeline:
     """Comprehensive training pipeline with full SR feature integration."""
 
-    def __init__(self = config: dict[str, Any]):
+        def __init__(self = config: dict[str, Any]):
         self.config = config
         self.logger = system_logger.getChild("ComprehensiveSRTrainingPipeline")
 
@@ -45,33 +46,8 @@ class ComprehensiveSRTrainingPipeline:
 
         self.logger.info("🔧 Comprehensive SR Training Pipeline initialized")
 
-    @handle_errors(
-        exceptions=(ValueError, FileNotFoundError = json.JSONDecodeError),
-        default_return=False = context="comprehensive_sr_training_pipeline"
-    )
-    @performance_monitor
-    @memory_efficient
-    async def execute_comprehensive_training(
-        self = training_data: pd.DataFrame,
-        symbol: str, exchange: str = timeframe: str
-    ) -> dict[str = Any]:
-        """
-        Execute comprehensive training with full SR feature integration.
-
-        Args:
-            training_data: Input training data
-            symbol: Trading symbol
-            exchange: Exchange name
-            timeframe: Timeframe
-
-        Returns:
-            dict: Training results and model artifacts
-        """
-        try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-            start_time = datetime.now()
+@handle_errors( exceptions=(ValueError, FileNotFoundError = json.JSONDecodeError), default_return=False = context="comprehensive_sr_training_pipeline" )
+@performance_monitor @memory_efficient async def execute_comprehensive_training( self = training_data: pd.DataFrame, symbol: str, exchange: str = timeframe: str ) -> dict[str = Any]: """ Execute comprehensive training with full SR feature integration.  Args: training_data: Input training data symbol: Trading symbol exchange: Exchange name timeframe: Timeframe  Returns: dict: Training results and model artifacts """ try: pass  # TODO: Add proper exception handling except Exception as e: pass  # TODO: Add proper exception handling start_time = datetime.now()
             self.logger.info(f"🚀 Starting comprehensive SR training for {symbol} on {exchange}")
 
             # Step 1: Load step7 features

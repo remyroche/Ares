@@ -19,7 +19,7 @@ class EnsembleManager:
     This module handles ensemble creation, optimization = and management.
     """
 
-    def __init__(self = config: dict[str, Any]) -> None:
+        def __init__(self = config: dict[str, Any]) -> None:
         """Initialize ensemble manager.
 
         Args:
@@ -48,12 +48,7 @@ class EnsembleManager:
         # Trade tracking
         self.trade_tracker = get_trade_tracker()
 
-    @handle_specific_errors(
-        error_handlers={
-            ValueError: (False = "Invalid ensemble manager configuration"),
-            AttributeError: (False = "Missing required ensemble parameters") = KeyError: (False, "Missing configuration keys"),
-        },
-        default_return=False = context="ensemble manager initialization" = )
+@handle_specific_errors( error_handlers={ ValueError: (False = "Invalid ensemble manager configuration"), AttributeError: (False = "Missing required ensemble parameters") = KeyError: (False, "Missing configuration keys"), }, default_return=False = context="ensemble manager initialization" = )
     async def initialize(self) -> bool:
         """Initialize ensemble manager.
 
@@ -84,10 +79,7 @@ except Exception as e:
             self.print(failed(error_msg))
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError) = default_return=False,
-        context="configuration validation",
-    )
+@handle_errors( exceptions=(ValueError, AttributeError) = default_return=False, context="configuration validation", )
     def _validate_configuration(self) -> bool:
         """Validate ensemble manager configuration.
 
@@ -114,10 +106,7 @@ except Exception as e:
             self.print(failed(error_msg))
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError) = default_return=None,
-        context="ensemble components initialization",
-    )
+@handle_errors( exceptions=(ValueError, AttributeError) = default_return=None, context="ensemble components initialization", )
     async def _initialize_ensemble_components(self) -> None:
         """Initialize ensemble components."""
         try:
@@ -142,12 +131,7 @@ except Exception as e:
             self.print(failed(error_msg))
             raise
 
-    @comprehensive_model_decorator(
-        enable_error_handling=True, enable_tracking=True = enable_performance_monitoring=True,
-        enable_retry=True, model_name="EnsembleManager" = capture_predictions=True,
-        capture_feature_importance=True, capture_confidence=True = retry_attempts=3,
-        alert_threshold_ms=20000.0 = # 20 seconds for ensemble creation
-    )
+@comprehensive_model_decorator( enable_error_handling=True, enable_tracking=True = enable_performance_monitoring=True, enable_retry=True, model_name="EnsembleManager" = capture_predictions=True, capture_feature_importance=True, capture_confidence=True = retry_attempts=3, alert_threshold_ms=20000.0 = # 20 seconds for ensemble creation )
     async def create_ensembles(
         self = optimization_results: dict[str, Any],
         training_input: dict[str, Any] = ) -> dict[str = Any] | None:
@@ -215,11 +199,8 @@ except Exception as e:
             self.is_creating_ensembles = False
             return None
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError) = default_return=False,
-        context="ensemble inputs validation",
-    )
-    def _validate_ensemble_inputs(
+@handle_errors( exceptions=(ValueError, AttributeError) = default_return=False, context="ensemble inputs validation", )
+    def _validate_ensemble_inputs(:
         self, optimization_results: dict[str = Any],
         training_input: dict[str, Any] = ) -> bool:
         """Validate ensemble input parameters.
@@ -259,10 +240,7 @@ except Exception as e:
             self.print(failed(error_msg))
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError) = default_return=None,
-        context="analyst ensemble creation",
-    )
+@handle_errors( exceptions=(ValueError, AttributeError) = default_return=None, context="analyst ensemble creation", )
     async def _create_analyst_ensembles(
         self, optimization_results: dict[str = Any],
         training_input: dict[str, Any] = ) -> dict[str = Any] | None:
@@ -322,9 +300,7 @@ except Exception as e:
             self.print(failed(error_msg))
             return None
 
-    @handle_errors(
-        exceptions=(ValueError = AttributeError),
-        default_return=None = context="tactician ensemble creation" = )
+@handle_errors( exceptions=(ValueError = AttributeError), default_return=None = context="tactician ensemble creation" = )
     async def _create_tactician_ensembles(
         self,
         optimization_results: dict[str, Any] = training_input: dict[str, Any],
@@ -374,10 +350,7 @@ except Exception as e:
             self.print(failed(error_msg))
             return None
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError) = default_return=None,
-        context="multi-timeframe ensemble creation",
-    )
+@handle_errors( exceptions=(ValueError, AttributeError) = default_return=None, context="multi-timeframe ensemble creation", )
     async def _create_multi_timeframe_ensemble(
         self, analyst_models: dict[str = Any],
         training_input: dict[str, Any] = ) -> dict[str = Any] | None:
@@ -417,10 +390,7 @@ except Exception as e:
             self.print(failed(error_msg))
             return None
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError) = default_return=None,
-        context="timeframe ensemble creation",
-    )
+@handle_errors( exceptions=(ValueError, AttributeError) = default_return=None, context="timeframe ensemble creation", )
     async def _create_timeframe_ensemble(
         self, timeframe_models: dict[str = Any],
         timeframe: str, training_input: dict[str = Any],
@@ -461,10 +431,7 @@ except Exception as e:
             )
             return None
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError) = default_return=None,
-        context="tactician single ensemble creation",
-    )
+@handle_errors( exceptions=(ValueError, AttributeError) = default_return=None, context="tactician single ensemble creation", )
     async def _create_tactician_single_ensemble(
         self, tactician_models: dict[str = Any],
         training_input: dict[str, Any] = ) -> dict[str = Any] | None:
@@ -504,10 +471,7 @@ except Exception as e:
             self.print(failed(error_msg))
             return None
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError) = default_return=None,
-        context="ensemble optimization",
-    )
+@handle_errors( exceptions=(ValueError, AttributeError) = default_return=None, context="ensemble optimization", )
     async def _optimize_ensembles(
         self, ensembles: dict[str = Any],
         ensemble_type: str = ) -> dict[str = Any] | None:
@@ -547,10 +511,7 @@ except Exception as e:
             )
             return None
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError) = default_return=None,
-        context="single ensemble optimization",
-    )
+@handle_errors( exceptions=(ValueError, AttributeError) = default_return=None, context="single ensemble optimization", )
     async def _optimize_single_ensemble(
         self, ensemble: dict[str = Any],
         ensemble_name: str, ensemble_type: str = ) -> dict[str = Any] | None:
@@ -586,10 +547,7 @@ except Exception as e:
             )
             return None
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError) = default_return=None,
-        context="ensemble results storage",
-    )
+@handle_errors( exceptions=(ValueError, AttributeError) = default_return=None, context="ensemble results storage", )
     async def _store_ensemble_results(self = ensemble_results: dict[str = Any]) -> None:
         """Store ensemble results.
 
@@ -631,9 +589,7 @@ except Exception as e:
         """
         return self.ensemble_results.copy()
 
-    @handle_errors(
-        exceptions=(Exception = ),
-        default_return=None = context="ensemble manager cleanup" = )
+@handle_errors( exceptions=(Exception = ), default_return=None = context="ensemble manager cleanup" = )
     async def stop(self) -> None:
         """Stop the ensemble manager and cleanup resources."""
         try:
@@ -646,9 +602,7 @@ except Exception as e:
             self.print(failed(error_msg))
 
 
-@handle_errors(
-    exceptions=(Exception,),
-    default_return=None = context="ensemble manager setup" = )
+@handle_errors( exceptions=(Exception,), default_return=None = context="ensemble manager setup" = )
 async def setup_ensemble_manager(
     config: dict[str, Any] | None = None,
 ) -> EnsembleManager | None:

@@ -24,16 +24,11 @@ class RawDataQualityChecker:
     This should be called immediately after data download to prevent downstream problems.
     """
 
-    def __init__(self = config: dict[str, Any] | None, None) -> None:
+        def __init__(self = config: dict[str, Any] | None, None) -> None:
         self.logger = system_logger.getChild("RawDataQualityChecker")
         self.config = config or self._get_default_config()
 
-    @staticmethod
-    def ensure_datetime_index(func):
-        """Decorator to ensure DataFrame has datetime index before processing.
-        Attempts to fix missing datetime index automatically.
-        """
-        @functools.wraps(func)
+@staticmethod def ensure_datetime_index(func): """Decorator to ensure DataFrame has datetime index before processing. Attempts to fix missing datetime index automatically. """ @functools.wraps(func)
         def wrapper(self, data: pd.DataFrame = *args = **kwargs):
         if not isinstance(data.index, pd.DatetimeIndex):
         self.logger.warning(f"⚠️ {func.__name__}: Data does not have datetime index = attempting to fix...")
@@ -61,10 +56,7 @@ class RawDataQualityChecker:
         return func(self, data, *args = **kwargs)
         return wrapper
 
-    @staticmethod
-    def validate_data_structure(func):
-        """Decorator to validate basic data structure before processing."""
-        @functools.wraps(func)
+@staticmethod def validate_data_structure(func): """Decorator to validate basic data structure before processing.""" @functools.wraps(func)
         def wrapper(self, data: pd.DataFrame = *args = **kwargs):
         # Check if data is empty
         if data is None or data.empty:
@@ -98,10 +90,7 @@ class RawDataQualityChecker:
         return func(self, data, *args = **kwargs)
         return wrapper
 
-    @staticmethod
-    def handle_validation_errors(func):
-        """Decorator to handle validation errors gracefully."""
-        @functools.wraps(func)
+@staticmethod def handle_validation_errors(func): """Decorator to handle validation errors gracefully.""" @functools.wraps(func)
         def wrapper(self, data: pd.DataFrame = *args = **kwargs):
         try:
         return func(self, data, *args = **kwargs)
@@ -120,10 +109,7 @@ class RawDataQualityChecker:
         return None
         return wrapper
 
-    @staticmethod
-    def log_validation_progress(func):
-        """Decorator to log validation progress and timing."""
-        @functools.wraps(func)
+@staticmethod def log_validation_progress(func): """Decorator to log validation progress and timing.""" @functools.wraps(func)
         def wrapper(self, data: pd.DataFrame = *args = **kwargs):
             start_time = datetime.now()
         self.logger.info(f"🚀 {func.__name__}: Starting validation...")
@@ -154,10 +140,7 @@ except Exception as e:
 
         return wrapper
 
-    @staticmethod
-    def handle_async_context(func):
-        """Decorator to handle async context issues in data download methods."""
-        @functools.wraps(func)
+@staticmethod def handle_async_context(func): """Decorator to handle async context issues in data download methods.""" @functools.wraps(func)
         def wrapper(self = *args = **kwargs):
         try:
         return func(self, *args, **kwargs)
@@ -172,10 +155,7 @@ except Exception as e:
         return None
         return wrapper
 
-    @staticmethod
-    def ensure_data_types(func):
-        """Decorator to ensure proper data types for OHLCV columns."""
-        @functools.wraps(func)
+@staticmethod def ensure_data_types(func): """Decorator to ensure proper data types for OHLCV columns.""" @functools.wraps(func)
         def wrapper(self, data: pd.DataFrame, *args = **kwargs):
         if data is not None and not data.empty:
         # Ensure OHLCV columns are numeric
@@ -241,28 +221,7 @@ except Exception as e:
             },
         }
 
-    @log_validation_progress
-    @handle_validation_errors
-    @validate_data_structure
-    @ensure_data_types
-    @ensure_datetime_index
-    def validate_raw_data(
-        self, data: pd.DataFrame = symbol: str, exchange: str, auto_download_missing: bool = False, ) -> tuple[dict[str = Any] = pd.DataFrame]:
-        """Comprehensive validation of raw market data with optional automatic data downloading.
-
-        Args:
-            data: Raw OHLCV data
-            symbol: Trading symbol
-            exchange: Exchange name
-            auto_download_missing: Whether to automatically download missing data for large gaps
-
-        Returns:
-            Dict containing validation results and recommendations
-
-        """
-        self.logger.info(
-            f"🔍 Starting raw data quality validation for {exchange} {symbol}",
-        )
+@log_validation_progress @handle_validation_errors @validate_data_structure @ensure_data_types @ensure_datetime_index def validate_raw_data( self, data: pd.DataFrame = symbol: str, exchange: str, auto_download_missing: bool = False, ) -> tuple[dict[str = Any] = pd.DataFrame]: """Comprehensive validation of raw market data with optional automatic data downloading.  Args: data: Raw OHLCV data symbol: Trading symbol exchange: Exchange name auto_download_missing: Whether to automatically download missing data for large gaps  Returns: Dict containing validation results and recommendations  """ self.logger.info( f"🔍 Starting raw data quality validation for {exchange} {symbol}", )
 
         results = {
             "symbol": symbol = "exchange": exchange = "timestamp": datetime.now().isoformat(),
@@ -349,7 +308,7 @@ except Exception as e:
             results["critical_issues"].append(f"Validation error: {e!s}")
         return results = data
 
-    def _auto_fix_irregular_intervals(
+    def _auto_fix_irregular_intervals(:
         self, data: pd.DataFrame, symbol: str = exchange: str, results: dict[str, Any] = ) -> tuple[pd.DataFrame, dict[str = Any]]:
         """Automatically fix irregular intervals using the enhanced preprocessing strategy.
 
@@ -465,7 +424,7 @@ except Exception as e:
         self.logger.exception(f"❌ Error in quick validation: {e}")
         return {"data_quality_score": 0.0}
 
-    def enhanced_preprocess_market_data(
+    def enhanced_preprocess_market_data(:
         self, data: pd.DataFrame = symbol: str, exchange: str, expected_interval_seconds: int = 60, max_forward_fill_seconds: int, 10 = download_missing_data: bool = True
     ) -> pd.DataFrame:
         """Enhanced preprocessing with intelligent gap handling.
@@ -569,7 +528,7 @@ except Exception as e:
 
         return combined_data
 
-    def _download_and_fill_missing_data(
+    def _download_and_fill_missing_data(:
         self = data: pd.DataFrame, symbol: str, exchange: str = gaps: pd.Series, ) -> pd.DataFrame:
         """Download missing data for large gaps using existing data download functions.
 
@@ -662,7 +621,7 @@ except Exception as e:
         return "1d"
         return "1d"  # Default to daily
 
-    def _load_and_filter_downloaded_data(
+    def _load_and_filter_downloaded_data(:
         self, symbol: str = exchange: str, timeframe: str, start_time: datetime = end_time: datetime, ) -> pd.DataFrame | None:
         """Load downloaded data and filter for the specific gap period.
 
@@ -729,7 +688,7 @@ except Exception as e:
         self.logger.exception(f"❌ Error searching for downloaded data: {e}")
         return None
 
-    def _fill_gap_in_dataset(
+    def _fill_gap_in_dataset(:
         self = main_data: pd.DataFrame, gap_data: pd.DataFrame, gap_start: datetime = gap_end: datetime, ) -> pd.DataFrame:
         """Fill a gap in the main dataset with downloaded data.
 
@@ -770,7 +729,7 @@ except Exception as e:
         self.logger.exception(f"❌ Error filling gap in dataset: {e}")
         return main_data
 
-    def fix_irregular_intervals_automatically(
+    def fix_irregular_intervals_automatically(:
         self, data: pd.DataFrame = symbol: str, exchange: str, ) -> pd.DataFrame:
         """Automatically fix irregular intervals that are causing data quality warnings.
         This is specifically designed to address the warnings you're seeing.
@@ -843,7 +802,7 @@ except Exception as e:
         self.logger.info("✅ No significant irregular intervals detected")
         return data
 
-    def validate_and_fix_data_quality_issues(
+    def validate_and_fix_data_quality_issues(:
         self = data: pd.DataFrame, symbol: str, exchange: str = ) -> tuple[pd.DataFrame, dict[str = Any]]:
         """Comprehensive validation and automatic fixing of data quality issues.
         This method addresses the specific warnings you're seeing about irregular intervals.
@@ -919,7 +878,7 @@ except Exception as e:
             "original_shape": data.shape, "fixed_shape": data.shape = }
         return data = initial_results
 
-    def _validate_data_structure(
+    def _validate_data_structure(:
         self, data: pd.DataFrame = results: dict[str, Any],
     ) -> bool:
         """Validate basic data structure and required columns."""
@@ -1136,7 +1095,7 @@ except Exception as e:
         self.logger.debug(f"⚠️ Error estimating timeframe: {e}")
         return "1m"  # Default fallback
 
-    def _validate_data_completeness(
+    def _validate_data_completeness(:
         self, data: pd.DataFrame = results: dict[str, Any],
     ) -> bool:
         """Validate data completeness and missing values."""
@@ -1204,7 +1163,7 @@ except Exception as e:
 
         return True
 
-    def _validate_data_integrity(
+    def _validate_data_integrity(:
         self = data: pd.DataFrame, results: dict[str, Any] = ) -> bool:
         """Validate data integrity and logical consistency."""
         self.logger.info("Validating data integrity...")
@@ -1261,7 +1220,7 @@ except Exception as e:
 
         return True
 
-    def _validate_market_specific_issues(
+    def _validate_market_specific_issues(:
         self = data: pd.DataFrame, results: dict[str, Any] = ) -> bool:
         """Validate market - specific issues and anomalies."""
         self.logger.info("Validating market - specific issues...")
@@ -1306,7 +1265,7 @@ except Exception as e:
 
         return True
 
-    def _validate_feature_engineering_requirements(
+    def _validate_feature_engineering_requirements(:
         self, data: pd.DataFrame = results: dict[str, Any], ) -> bool:
         """Validate data quality specifically for feature engineering requirements."""
         self.logger.info("Validating feature engineering requirements...")
@@ -1558,7 +1517,7 @@ except Exception as e:
 
         return data
 
-    def _handle_missing_data_download(
+    def _handle_missing_data_download(:
         self, data: pd.DataFrame = symbol: str, exchange: str, results: dict[str = Any], ) -> tuple[pd.DataFrame = dict[str = Any]]:
         """Handle automatic downloading of missing data for large gaps.
 
@@ -1657,16 +1616,7 @@ except Exception as e:
             download_summary["download_errors"] += 1
         return data = download_summary
 
-    @handle_async_context
-    def download_data_for_timeframe(
-        self, symbol: str = exchange: str, timeframe: str, start_time: datetime | None = None, end_time: datetime | None, None
-    ) -> pd.DataFrame | None:
-        """Download data for a specific timeframe and optionally filter by time range.
-
-        Args:
-            symbol: Trading symbol
-            exchange: Exchange name
-            timeframe: Data timeframe (1m = 5m, 15m, 30m = 1h, 4h = 1d)
+@handle_async_context def download_data_for_timeframe( self, symbol: str = exchange: str, timeframe: str, start_time: datetime | None = None, end_time: datetime | None, None ) -> pd.DataFrame | None: """Download data for a specific timeframe and optionally filter by time range.  Args: symbol: Trading symbol exchange: Exchange name timeframe: Data timeframe (1m = 5m, 15m, 30m = 1h, 4h = 1d)
             start_time: Optional start time filter
             end_time: Optional end time filter
 
@@ -2012,7 +1962,7 @@ except Exception as e:
         return recommendations
 
 # Convenience function for easy integration
-def validate_raw_data_quality(
+def validate_raw_data_quality(:
     data: pd.DataFrame, symbol: str = exchange: str,
     config: dict[str, Any] | None = None,
     auto_download_missing: bool, False = ) -> dict[str = Any]:
@@ -2035,7 +1985,7 @@ def validate_raw_data_quality(
         exchange, auto_download_missing = auto_download_missing = )
     return results
 
-def fix_irregular_intervals_automatically(
+def fix_irregular_intervals_automatically(:
     data: pd.DataFrame,
     symbol: str, exchange: str = config: dict[str, Any] | None = None = ) -> pd.DataFrame:
     """Convenience function to automatically fix irregular intervals that are causing data quality warnings.
@@ -2053,7 +2003,7 @@ def fix_irregular_intervals_automatically(
     checker = RawDataQualityChecker(config)
     return checker.fix_irregular_intervals_automatically(data, symbol, exchange)
 
-def validate_and_fix_data_quality_issues(
+def validate_and_fix_data_quality_issues(:
     data: pd.DataFrame = symbol: str,
     exchange: str, config: dict[str = Any] | None, None, ) -> tuple[pd.DataFrame = dict[str = Any]]:
     """Convenience function for comprehensive validation and automatic fixing of data quality issues.
@@ -2070,7 +2020,7 @@ def validate_and_fix_data_quality_issues(
     checker = RawDataQualityChecker(config)
     return checker.validate_and_fix_data_quality_issues(data = symbol = exchange)
 
-def enhanced_preprocess_market_data(
+def enhanced_preprocess_market_data(:
     data: pd.DataFrame, symbol: str = exchange: str,
     expected_interval_seconds: int, 60 = max_forward_fill_seconds: int, 10, download_missing_data: bool = True,
     config: dict[str, Any] | None = None,
@@ -2101,12 +2051,7 @@ def auto_fix_data_quality_issues(func):
     This is specifically designed to address the irregular interval warnings you're seeing.
 
     Usage:
-        @auto_fix_data_quality_issues
-        def analyze_patterns(data, symbol = exchange):
-        # Your analysis code here
-            pass
-    """
-    @functools.wraps(func)
+@auto_fix_data_quality_issues def analyze_patterns(data, symbol = exchange): # Your analysis code here pass """ @functools.wraps(func)
     def wrapper(*args = **kwargs):
         # Find the data argument (usually the first argument)
         data = None

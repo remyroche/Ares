@@ -49,7 +49,7 @@ data = {
 'sma_50': [p * 0.999 for p in prices],
 }
 
-return pd.DataFrame(data)
+    return pd.DataFrame(data)
 
 async def demonstrate_directional_analysis():
     # Implementation placeholder - add specific implementation as needed

@@ -25,75 +25,59 @@ Note: Position sizing is handled by the Tactician component
 
 def __init__(self, config: dict[str, Any]) -> None:
         self.config: dict[str, Any] = config
-self.logger = system_logger.getChild("RiskAllocator")
-self.is_running: bool = False
-self.status: dict[str, Any] = {}
-self.history: list[dict[str, Any]] = []
-self.risk_config: dict[str, Any] = self.config.get("risk_allocator", {})
-self.allocation_interval: int = self.risk_config.get("allocation_interval", 60)
-self.max_history: int = self.risk_config.get("max_history", 100)
-self.risk_allocations: dict[str, Any] = {}
-self.risk_limits: dict[str, Any] = {}
+    self.logger = system_logger.getChild("RiskAllocator")
+    self.is_running: bool = False
+    self.status: dict[str, Any] = {}
+    self.history: list[dict[str, Any]] = []
+    self.risk_config: dict[str, Any] = self.config.get("risk_allocator", {})
+    self.allocation_interval: int = self.risk_config.get("allocation_interval", 60)
+    self.max_history: int = self.risk_config.get("max_history", 100)
+    self.risk_allocations: dict[str, Any] = {}
+    self.risk_limits: dict[str, Any] = {}
 
 # VaR and ES monitoring
-self.var_config: dict[str, Any] = self.risk_config.get("var_monitoring", {})
-self.var_confidence_level: float = self.var_config.get("confidence_level", 0.95)
-self.var_time_horizon: int = self.var_config.get("time_horizon", 1)  # days
-self.es_confidence_level: float = self.var_config.get(
+    self.var_config: dict[str, Any] = self.risk_config.get("var_monitoring", {})
+    self.var_confidence_level: float = self.var_config.get("confidence_level", 0.95)
+    self.var_time_horizon: int = self.var_config.get("time_horizon", 1)  # days
+    self.es_confidence_level: float = self.var_config.get(
 "es_confidence_level",
 0.95,
 )
-self.var_history: list[dict[str, Any]] = []
-self.es_history: list[dict[str, Any]] = []
+    self.var_history: list[dict[str, Any]] = []
+    self.es_history: list[dict[str, Any]] = []
 
-@handle_specific_errors(
-error_handlers={
-ValueError: (False, "Invalid risk allocator configuration"),
-AttributeError: (False, "Missing required risk allocator parameters"),
-KeyError: (False, "Missing configuration keys"),
-},
-default_return=False,
-context="risk allocator initialization",
-)
+@handle_specific_errors( error_handlers={ ValueError: (False, "Invalid risk allocator configuration"), AttributeError: (False, "Missing required risk allocator parameters"), KeyError: (False, "Missing configuration keys"), }, default_return=False, context="risk allocator initialization", )
 async def initialize(self) -> bool:
         try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-self.logger.info("Initializing Risk Allocator...")
+    self.logger.info("Initializing Risk Allocator...")
 await self._load_risk_configuration()
 if not self._validate_configuration():
                 self.logger.error("Invalid configuration for risk allocator")
-return False
-self.logger.info("✅ Risk Allocator initialization completed successfully")
-return True
+    return False
+    self.logger.info("✅ Risk Allocator initialization completed successfully")
+    return True
 except Exception as e:
             self.logger.error(f"❌ Risk Allocator initialization failed: {e}")
-return False
+    return False
 
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=None,
-context="risk configuration loading",
-)
+@handle_errors( exceptions=(ValueError, AttributeError), default_return=None, context="risk configuration loading", )
 async def _load_risk_configuration(self) -> None:
         try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-self.risk_config.setdefault("allocation_interval", 60)
-self.risk_config.setdefault("max_history", 100)
-self.allocation_interval = self.risk_config["allocation_interval"]
-self.max_history = self.risk_config["max_history"]
-self.logger.info("Risk allocator configuration loaded successfully")
+    self.risk_config.setdefault("allocation_interval", 60)
+    self.risk_config.setdefault("max_history", 100)
+    self.allocation_interval = self.risk_config["allocation_interval"]
+    self.max_history = self.risk_config["max_history"]
+    self.logger.info("Risk allocator configuration loaded successfully")
 except Exception as e:
             self.logger.error(f"Error loading risk configuration: {e}")
 
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=False,
-context="configuration validation",
-)
+@handle_errors( exceptions=(ValueError, AttributeError), default_return=False, context="configuration validation", )
 def _validate_configuration(self) -> bool:
         try:
     pass  # TODO: Add proper exception handling
@@ -101,65 +85,51 @@ except Exception as e:
     pass  # TODO: Add proper exception handling
 if self.allocation_interval <= 0:
                 self.logger.error("Invalid allocation interval")
-return False
+    return False
 if self.max_history <= 0:
                 self.logger.error("Invalid max history")
-return False
-self.logger.info("Configuration validation successful")
-return True
+    return False
+    self.logger.info("Configuration validation successful")
+    return True
 except Exception as e:
             self.logger.error(f"Error validating configuration: {e}")
-return False
+    return False
 
-@handle_specific_errors(
-error_handlers={
-Exception: (False, "Risk allocator run failed"),
-},
-default_return=False,
-context="risk allocator run",
-)
+@handle_specific_errors( error_handlers={ Exception: (False, "Risk allocator run failed"), }, default_return=False, context="risk allocator run", )
 async def run(self) -> bool:
         try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-self.is_running = True
-self.logger.info("🚦 Risk Allocator started.")
+    self.is_running = True
+    self.logger.info("🚦 Risk Allocator started.")
 while self.is_running:
                 await self._perform_risk_allocation()
 await asyncio.sleep(self.allocation_interval)
-return True
+    return True
 except Exception as e:
             self.logger.error(f"Error in risk allocator run: {e}")
-self.is_running = False
-return False
+    self.is_running = False
+    return False
 
-@handle_errors(
-exceptions=(Exception,),
-default_return=None,
-context="risk allocation step",
-)
+@handle_errors( exceptions=(Exception,), default_return=None, context="risk allocation step", )
 async def _perform_risk_allocation(self) -> None:
         try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
 now = datetime.now().isoformat()
-self.status = {"timestamp": now, "status": "running"}
-self.history.append(self.status.copy())
+    self.status = {"timestamp": now, "status": "running"}
+    self.history.append(self.status.copy())
 if len(self.history) > self.max_history:
                 self.history.pop(0)
 await self._calculate_risk_allocations()
 await self._update_risk_limits()
-self.logger.info(f"Risk allocation tick at {now}")
+    self.logger.info(f"Risk allocation tick at {now}")
 except Exception as e:
             self.logger.error(f"Error in risk allocation step: {e}")
 
-@handle_errors(
-exceptions=(Exception,),
-default_return=None,
-context="risk allocation calculation",
-)
+@handle_errors( exceptions=(Exception,), default_return=None, context="risk allocation calculation", )
 async def _calculate_risk_allocations(self) -> None:
         try:
     pass  # TODO: Add proper exception handling
@@ -172,16 +142,12 @@ allocations = {
 "commodities_allocation": 0.1,
 "risk_score": 0.75,
 }
-self.risk_allocations.update(allocations)
-self.logger.info("Risk allocation calculation completed")
+    self.risk_allocations.update(allocations)
+    self.logger.info("Risk allocation calculation completed")
 except Exception as e:
             self.logger.error(f"Error calculating risk allocations: {e}")
 
-@handle_errors(
-exceptions=(Exception,),
-default_return=None,
-context="risk limits update",
-)
+@handle_errors( exceptions=(Exception,), default_return=None, context="risk limits update", )
 async def _update_risk_limits(self) -> None:
         try:
     pass  # TODO: Add proper exception handling
@@ -194,25 +160,21 @@ limits = {
 "max_leverage": 2.0,
 "stop_loss_threshold": 0.05,
 }
-self.risk_limits.update(limits)
-self.logger.info("Risk limits updated successfully")
+    self.risk_limits.update(limits)
+    self.logger.info("Risk limits updated successfully")
 except Exception as e:
             self.logger.error(f"Error updating risk limits: {e}")
 
-@handle_errors(
-exceptions=(Exception,),
-default_return=None,
-context="risk allocator stop",
-)
+@handle_errors( exceptions=(Exception,), default_return=None, context="risk allocator stop", )
 async def stop(self) -> None:
         self.logger.info("🛑 Stopping Risk Allocator...")
 try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-self.is_running = False
-self.status = {"timestamp": datetime.now().isoformat(), "status": "stopped"}
-self.logger.info("✅ Risk Allocator stopped successfully")
+    self.is_running = False
+    self.status = {"timestamp": datetime.now().isoformat(), "status": "stopped"}
+    self.logger.info("✅ Risk Allocator stopped successfully")
 except Exception as e:
             self.logger.error(f"Error stopping risk allocator: {e}")
 
@@ -223,12 +185,13 @@ def get_history(self, limit: int | None = None) -> list[dict[str, Any]]:
         history = self.history.copy()
 if limit:
             history = history[-limit:]
-return history
+    return history
 
 def get_risk_allocations(self) -> dict[str, Any]:
         return self.risk_allocations.copy()
 
-def calculate_var(
+def calculate_var(:
+    pass  # TODO: Add implementation
 self, returns: list[float],
 confidence_level: float = None
 ) -> float:
@@ -253,13 +216,14 @@ confidence_level = confidence_level or self.var_confidence_level
 percentile = (1 - confidence_level) * 100
 
 var = np.percentile(returns, percentile)
-return abs(var)  # Return absolute value for risk measurement
+    return abs(var)  # Return absolute value for risk measurement
 
 except Exception as e:
             self.logger.error(f"Error calculating VaR: {e}")
-return 0.0
+    return 0.0
 
-def calculate_expected_shortfall(
+def calculate_expected_shortfall(:
+    pass  # TODO: Add implementation
 self, returns: list[float],
 confidence_level: float = None
 ) -> float:
@@ -291,13 +255,14 @@ if len(tail_returns) == 0:
                 return var  # If no tail returns, ES equals VaR
 
 es = np.mean(tail_returns)
-return abs(es)  # Return absolute value
+    return abs(es)  # Return absolute value
 
 except Exception as e:
             self.logger.error(f"Error calculating Expected Shortfall: {e}")
-return 0.0
+    return 0.0
 
-def calculate_multi_timeframe_var(
+def calculate_multi_timeframe_var(:
+    pass  # TODO: Add implementation
 self, portfolio_data: dict[str, Any],
 ) -> dict[str, float]:
         """
@@ -324,13 +289,14 @@ if returns:
                     var = self.calculate_var(returns)
 var_results[f"var_{timeframe}"] = var
 
-return var_results
+    return var_results
 
 except Exception as e:
             self.logger.error(f"Error calculating multi-timeframe VaR: {e}")
-return {}
+    return {}
 
-def monitor_risk_limits(
+def monitor_risk_limits(:
+    pass  # TODO: Add implementation
 self, current_var: float,
 current_es: float
 ) -> dict[str, Any]:
@@ -394,15 +360,15 @@ risk_metrics = {
 "timestamp": datetime.now().isoformat(),
 }
 
-self.var_history.append(risk_metrics)
+    self.var_history.append(risk_metrics)
 if len(self.var_history) > self.max_history:
                 self.var_history.pop(0)
 
-return risk_metrics
+    return risk_metrics
 
 except Exception as e:
             self.logger.error(f"Error monitoring risk limits: {e}")
-return {}
+    return {}
 
 def get_risk_metrics(self, timeframe: str = "all") -> dict[str, Any]:
         """
@@ -428,14 +394,14 @@ if timeframe == "all":
 "summary": self._calculate_risk_summary(),
 }
 # Filter by timeframe (simplified implementation)
-return {
+    return {
 "latest_metrics": self.var_history[-1] if self.var_history else {},
 "timeframe": timeframe
 }
 
 except Exception as e:
             self.logger.error(f"Error getting risk metrics: {e}")
-return {}
+    return {}
 
 def _calculate_risk_summary(self) -> dict[str, Any]:
         """Calculate summary statistics for risk metrics."""
@@ -449,7 +415,7 @@ if not self.var_history:
 var_values = [entry["current_var"] for entry in self.var_history]
 es_values = [entry["current_es"] for entry in self.var_history]
 
-return {
+    return {
 "avg_var": np.mean(var_values),
 "max_var": np.max(var_values),
 "min_var": np.min(var_values),
@@ -469,15 +435,11 @@ if entry["risk_status"] == "elevated"
 
 except Exception as e:
             self.logger.error(f"Error calculating risk summary: {e}")
-return {}
+    return {}
 
 risk_allocator: RiskAllocator | None = None
 
-@handle_errors(
-exceptions=(Exception,),
-default_return=None,
-context="risk allocator setup",
-)
+@handle_errors( exceptions=(Exception,), default_return=None, context="risk allocator setup", )
 async def setup_risk_allocator(
 config: dict[str, Any] | None = None,
 ) -> RiskAllocator | None:
@@ -492,7 +454,7 @@ risk_allocator = RiskAllocator(config)
 success = await risk_allocator.initialize()
 if success:
             return risk_allocator
-return None
+    return None
 except Exception as e:
         print(f"Error setting up risk allocator: {e}")
-return None
+    return None

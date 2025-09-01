@@ -30,24 +30,24 @@ def __init__(self, config: Dict[str, Any]):
     def __init__(self, config: Dict[str, Any]):
     def __init__(self, config: Dict[str, Any]):
         self.config = config
-self.logger = system_logger.getChild("ParameterOptimizer")
+    self.logger = system_logger.getChild("ParameterOptimizer")
 
 # Optimization configuration
-self.n_trials = config.get("optimization", {}).get("n_trials", 100)
-self.timeout = config.get("optimization", {}).get("timeout", 3600)  # 1 hour
-self.study_name = config.get("optimization", {}).get("study_name", "trading_parameters")
+    self.n_trials = config.get("optimization", {}).get("n_trials", 100)
+    self.timeout = config.get("optimization", {}).get("timeout", 3600)  # 1 hour
+    self.study_name = config.get("optimization", {}).get("study_name", "trading_parameters")
 
 # Performance tracking
-self.optimization_history = []
-self.best_params = {}
-self.best_score = float('-inf')
+    self.optimization_history = []
+    self.best_params = {}
+    self.best_score = float('-inf')
 
 # Parameter bounds and constraints
-self.parameter_bounds = self._define_parameter_bounds()
+    self.parameter_bounds = self._define_parameter_bounds()
 
 def _define_parameter_bounds(self) -> Dict[str, Dict[str, Any]]:
         """Define parameter bounds and constraints for optimization."""
-return {
+    return {
 # Strategist Parameters
 "min_confidence_threshold": {"low": 0.3, "high": 0.9, "type": "float"},
 "entry_threshold": {"low": 0.5, "high": 0.9, "type": "float"},
@@ -93,11 +93,7 @@ return {
 "max_risk_leverage": {"low": 25.0, "high": 75.0, "type": "float"},
 }
 
-@handle_errors(
-exceptions=(Exception,),
-default_return=None,
-context="parameter optimization"
-)
+@handle_errors( exceptions=(Exception,), default_return=None, context="parameter optimization" )
 async def optimize_parameters(self) -> Dict[str, Any]:
         """
 Run comprehensive parameter optimization using Optuna.
@@ -105,7 +101,7 @@ Run comprehensive parameter optimization using Optuna.
 Returns:
             Dict containing optimized parameters and performance metrics
 """
-self.logger.info("🚀 Starting comprehensive parameter optimization...")
+    self.logger.info("🚀 Starting comprehensive parameter optimization...")
 
 # Create Optuna study
 study = optuna.create_study(
@@ -131,15 +127,15 @@ show_progress_bar=True
 )
 
 # Store results
-self.best_params = study.best_params
-self.best_score = study.best_value
+    self.best_params = study.best_params
+    self.best_score = study.best_value
 
 # Generate optimization report
 optimization_report = self._generate_optimization_report(study)
 
-self.logger.info(f"✅ Optimization completed. Best score: {self.best_score:.4f}")
+    self.logger.info(f"✅ Optimization completed. Best score: {self.best_score:.4f}")
 
-return {
+    return {
 "optimized_parameters": self.best_params,
 "best_score": self.best_score,
 "optimization_report": optimization_report,
@@ -167,14 +163,14 @@ if not self._validate_parameter_constraints(params):
 performance_score = await self._simulate_trading_performance(params)
 
 # Store trial results
-self.optimization_history.append({
+    self.optimization_history.append({
 "trial_number": trial.number,
 "parameters": params,
 "score": performance_score,
 "timestamp": datetime.now().isoformat()
 })
 
-return performance_score
+    return performance_score
 
 def _suggest_parameters(self, trial: optuna.Trial) -> Dict[str, Any]:
         """Suggest parameters for the current trial."""
@@ -199,7 +195,7 @@ param_name,
 bounds["choices"]
 )
 
-return params
+    return params
 
 def _validate_parameter_constraints(self, params: Dict[str, Any]) -> bool:
         """Validate parameter constraints and relationships."""
@@ -236,11 +232,11 @@ if params["volume_ratio_low"] >= params["volume_ratio_high"]:
 if params["leverage_ml_weight"] + params["liquidation_weight"] > 1.0:
                 return False
 
-return True
+    return True
 
 except Exception as e:
             self.logger.error(f"Parameter validation error: {e}")
-return False
+    return False
 
 async def _simulate_trading_performance(self, params: Dict[str, Any]) -> float:
         """
@@ -262,15 +258,15 @@ from src.optimization.backtesting_evaluator import evaluate_parameters_with_back
 # Use backtesting evaluator for realistic performance simulation
 score = await evaluate_parameters_with_backtesting(params, self.config)
 
-return score
+    return score
 
 except Exception as e:
             self.logger.error(f"Performance simulation error: {e}")
-return 0.0
+    return 0.0
 
 def _generate_optimization_report(self, study: optuna.Study) -> Dict[str, Any]:
         """Generate comprehensive optimization report."""
-return {
+    return {
 "optimization_summary": {
 "total_trials": len(study.trials),
 "best_score": study.best_value,
@@ -290,10 +286,10 @@ try:
 except Exception as e:
     pass  # TODO: Add proper exception handling
 importance = optuna.importance.get_param_importances(study)
-return importance
+    return importance
 except Exception as e:
             self.logger.warning(f"Could not calculate parameter importance: {e}")
-return {}
+    return {}
 
 def _analyze_parameter_distributions(self, study: optuna.Study) -> Dict[str, Any]:
         """Analyze parameter value distributions across trials."""
@@ -310,7 +306,7 @@ if values:
 "median": np.median(values)
 }
 
-return analysis
+    return analysis
 
 def _analyze_convergence(self, study: optuna.Study) -> Dict[str, Any]:
         """Analyze optimization convergence."""
@@ -330,7 +326,7 @@ converged = cv < 0.05  # 5% coefficient of variation threshold
 else:
             converged = False
 
-return {
+    return {
 "converged": converged,
 "total_trials": len(values),
 "best_value": max(values),
@@ -359,14 +355,14 @@ results = {
 with open(output_path, 'w') as f:
                 json.dump(results, f, indent=2)
 
-self.logger.info(f"✅ Optimization results saved to {output_path}")
+    self.logger.info(f"✅ Optimization results saved to {output_path}")
 
 except Exception as e:
             self.logger.error(f"Failed to save optimization results: {e}")
 
 def generate_config_update(self) -> Dict[str, Any]:
         """Generate configuration update with optimized parameters."""
-return {
+    return {
 "strategist": {
 "min_confidence_threshold": self.best_params.get("min_confidence_threshold", 0.6),
 "technical_indicator_thresholds": {
@@ -439,7 +435,7 @@ optimizer.save_optimization_results()
 # Generate config update
 config_update = optimizer.generate_config_update()
 
-return {
+    return {
 "optimization_results": results,
 "config_update": config_update,
 "optimizer": optimizer

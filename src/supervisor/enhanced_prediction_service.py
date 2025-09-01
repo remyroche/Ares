@@ -35,32 +35,28 @@ def __init__(self, config: Optional[Dict[str, Any]] = None):
     def __init__(self, config: Optional[Dict[str, Any]] = None):
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         """Initialize the Enhanced Prediction Service."""
-self.config = config or get_enhanced_prediction_service_config()
-self.logger = get_logger(__name__)
+    self.config = config or get_enhanced_prediction_service_config()
+    self.logger = get_logger(__name__)
 
 # Service state
-self.is_initialized = False
-self.data_dir = self.config.get("data_directory", "data")
+    self.is_initialized = False
+    self.data_dir = self.config.get("data_directory", "data")
 
 # ML model storage
-self.analyst_ml_models: Dict[str, Dict[str, Any]] = {}
-self.tactician_ml_models: Dict[str, Dict[str, Any]] = {}
+    self.analyst_ml_models: Dict[str, Dict[str, Any]] = {}
+    self.tactician_ml_models: Dict[str, Dict[str, Any]] = {}
 
 # Calibration and optimization results
-self.calibration_results: Dict[str, Any] = {}
-self.optimization_results: Dict[str, Any] = {}
+    self.calibration_results: Dict[str, Any] = {}
+    self.optimization_results: Dict[str, Any] = {}
 
 # Configuration parameters
-self.entry_threshold = self.config.get("entry_threshold", 0.6)
-self.max_confidence_threshold = self.config.get("max_confidence_threshold", 0.7)
+    self.entry_threshold = self.config.get("entry_threshold", 0.6)
+    self.max_confidence_threshold = self.config.get("max_confidence_threshold", 0.7)
 
-self.logger.info("Enhanced Prediction Service initialized")
+    self.logger.info("Enhanced Prediction Service initialized")
 
-@handle_errors(
-exceptions=(Exception,),
-default_return=False,
-context="initializing enhanced prediction service",
-)
+@handle_errors( exceptions=(Exception,), default_return=False, context="initializing enhanced prediction service", )
 @with_tracing_span("initialize_enhanced_prediction_service")
 async def initialize(self) -> bool:
         """Initialize the Enhanced Prediction Service."""
@@ -68,7 +64,7 @@ try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-self.logger.info("🚀 Initializing Enhanced Prediction Service...")
+    self.logger.info("🚀 Initializing Enhanced Prediction Service...")
 
 # Load ML models for both Analyst and Tactician
 await self._load_analyst_ml_models()
@@ -78,19 +74,15 @@ await self._load_tactician_ml_models()
 await self._load_calibration_results()
 await self._load_optimization_results()
 
-self.is_initialized = True
-self.logger.info("✅ Enhanced Prediction Service initialized successfully")
-return True
+    self.is_initialized = True
+    self.logger.info("✅ Enhanced Prediction Service initialized successfully")
+    return True
 
 except Exception as e:
             self.logger.error(error(f"❌ Failed to initialize Enhanced Prediction Service: {e}"))
-return False
+    return False
 
-@handle_errors(
-exceptions=(Exception,),
-default_return=False,
-context="loading analyst ML models",
-)
+@handle_errors( exceptions=(Exception,), default_return=False, context="loading analyst ML models", )
 @with_tracing_span("load_analyst_ml_models")
 @intelligent_caching(cache_key="analyst_ml_models")
 async def _load_analyst_ml_models(self) -> None:
@@ -129,8 +121,8 @@ if not self._verify_model_probability_outputs(model_data, f"{model_type}_{model_
                                 self.logger.warning(warning(f"⚠️ Skipping Analyst model {model_name} - missing probability outputs"))
 continue
 
-self.analyst_ml_models[model_type][model_name] = model_data
-self.logger.info(f"✅ Loaded Analyst ML model: {model_type}/{model_name}")
+    self.analyst_ml_models[model_type][model_name] = model_data
+    self.logger.info(f"✅ Loaded Analyst ML model: {model_type}/{model_name}")
 
 except Exception as e:
                             self.logger.warning(warning(f"⚠️ Failed to load Analyst ML model {model_file}: {e}"))
@@ -142,11 +134,7 @@ except Exception as e:
             self.logger.error(error(f"❌ Error loading Analyst ML models: {e}"))
 raise
 
-@handle_errors(
-exceptions=(Exception,),
-default_return=False,
-context="loading tactician ML models",
-)
+@handle_errors( exceptions=(Exception,), default_return=False, context="loading tactician ML models", )
 @with_tracing_span("load_tactician_ml_models")
 @intelligent_caching(cache_key="tactician_ml_models")
 async def _load_tactician_ml_models(self) -> None:
@@ -185,8 +173,8 @@ if not self._verify_model_probability_outputs(model_data, f"{model_type}_{model_
                                 self.logger.warning(warning(f"⚠️ Skipping Tactician model {model_name} - missing probability outputs"))
 continue
 
-self.tactician_ml_models[model_type][model_name] = model_data
-self.logger.info(f"✅ Loaded Tactician ML model: {model_type}/{model_name}")
+    self.tactician_ml_models[model_type][model_name] = model_data
+    self.logger.info(f"✅ Loaded Tactician ML model: {model_type}/{model_name}")
 
 except Exception as e:
                             self.logger.warning(warning(f"⚠️ Failed to load Tactician ML model {model_file}: {e}"))
@@ -198,11 +186,7 @@ except Exception as e:
             self.logger.error(error(f"❌ Error loading Tactician ML models: {e}"))
 raise
 
-@handle_errors(
-exceptions=(Exception,),
-default_return=False,
-context="loading calibration results",
-)
+@handle_errors( exceptions=(Exception,), default_return=False, context="loading calibration results", )
 @with_tracing_span("load_calibration_results")
 async def _load_calibration_results(self) -> None:
         """Load calibration results from step 11 (model performance vs actual reliability)."""
@@ -222,8 +206,8 @@ with open(calibration_file, "r") as f:
                             calibration_data = json.load(f)
 
 key = calibration_file.stem
-self.calibration_results[key] = calibration_data
-self.logger.debug(f"Loaded calibration results: {key}")
+    self.calibration_results[key] = calibration_data
+    self.logger.debug(f"Loaded calibration results: {key}")
 
 except Exception as e:
                         self.logger.warning(warning(f"⚠️ Failed to load calibration file {calibration_file}: {e}"))
@@ -231,11 +215,7 @@ except Exception as e:
 except Exception as e:
             self.logger.error(error(f"❌ Error loading calibration results: {e}"))
 
-@handle_errors(
-exceptions=(Exception,),
-default_return=False,
-context="loading optimization results",
-)
+@handle_errors( exceptions=(Exception,), default_return=False, context="loading optimization results", )
 @with_tracing_span("load_optimization_results")
 async def _load_optimization_results(self) -> None:
         """Load optimization results from step 11 (model performance vs actual reliability)."""
@@ -255,8 +235,8 @@ with open(optimization_file, "r") as f:
                             optimization_data = json.load(f)
 
 key = optimization_file.stem
-self.optimization_results[key] = optimization_data
-self.logger.debug(f"Loaded optimization results: {key}")
+    self.optimization_results[key] = optimization_data
+    self.logger.debug(f"Loaded optimization results: {key}")
 
 except Exception as e:
                         self.logger.warning(warning(f"⚠️ Failed to load optimization file {optimization_file}: {e}"))
@@ -264,29 +244,10 @@ except Exception as e:
 except Exception as e:
             self.logger.error(error(f"❌ Error loading optimization results: {e}"))
 
-@handle_errors(
-exceptions=(ValueError,),
-default_return={},
-context="getting calibrated confidence scores",
-)
+@handle_errors( exceptions=(ValueError,), default_return={}, context="getting calibrated confidence scores", )
 @with_tracing_span("get_calibrated_confidence_scores")
 @validate_data_quality(validation_level="ERROR")
-@performance_monitor
-async def get_calibrated_confidence_scores(
-self,
-market_data: pd.DataFrame,
-regime_info: Dict[str, Any],
-symbol: str,
-exchange: str
-) -> Dict[str, Dict[str, float]]:
-        """
-Provide calibrated confidence scores for BOTH Analyst and Tactician ML models.
-
-This method ONLY provides calibrated confidence scores and fails if calibrated
-confidence doesn't exist for either model set.
-
-ML models should generate probabilities for specific price actions:
-        - Probability of reaching profit target without hitting stop-loss (triple barrier)
+@performance_monitor async def get_calibrated_confidence_scores( self, market_data: pd.DataFrame, regime_info: Dict[str, Any], symbol: str, exchange: str ) -> Dict[str, Dict[str, float]]: """ Provide calibrated confidence scores for BOTH Analyst and Tactician ML models.  This method ONLY provides calibrated confidence scores and fails if calibrated confidence doesn't exist for either model set.  ML models should generate probabilities for specific price actions: - Probability of reaching profit target without hitting stop-loss (triple barrier)
 - Probability of price moving in predicted direction by X%
 - Probability of avoiding adverse price movements
 
@@ -332,20 +293,16 @@ if not tactician_scores:
                 raise ValueError(f"No calibrated Tactician confidence scores available for {symbol} on {exchange}")
 calibrated_scores["tactician_models"] = tactician_scores
 
-self.logger.info(f"✅ Retrieved calibrated confidence scores for {symbol} on {exchange}")
-self.logger.debug(f"Analyst models: {len(analyst_scores)}, Tactician models: {len(tactician_scores)}")
+    self.logger.info(f"✅ Retrieved calibrated confidence scores for {symbol} on {exchange}")
+    self.logger.debug(f"Analyst models: {len(analyst_scores)}, Tactician models: {len(tactician_scores)}")
 
-return calibrated_scores
+    return calibrated_scores
 
 except Exception as e:
             self.logger.error(error(f"❌ Failed to get calibrated confidence scores: {e}"))
 raise
 
-@handle_errors(
-exceptions=(Exception,),
-default_return={},
-context="getting analyst calibrated confidence",
-)
+@handle_errors( exceptions=(Exception,), default_return={}, context="getting analyst calibrated confidence", )
 @with_tracing_span("get_analyst_calibrated_confidence")
 async def _get_analyst_calibrated_confidence(
 self,
@@ -390,17 +347,13 @@ if calibrated_confidence is not None:
 except Exception as e:
                         self.logger.warning(warning(f"⚠️ Failed to get confidence for Analyst model {model_name}: {e}"))
 
-return analyst_scores
+    return analyst_scores
 
 except Exception as e:
             self.logger.error(error(f"❌ Error getting Analyst calibrated confidence: {e}"))
-return {}
+    return {}
 
-@handle_errors(
-exceptions=(Exception,),
-default_return={},
-context="getting tactician calibrated confidence",
-)
+@handle_errors( exceptions=(Exception,), default_return={}, context="getting tactician calibrated confidence", )
 @with_tracing_span("get_tactician_calibrated_confidence")
 async def _get_tactician_calibrated_confidence(
 self,
@@ -445,13 +398,14 @@ if calibrated_confidence is not None:
 except Exception as e:
                         self.logger.warning(warning(f"⚠️ Failed to get confidence for Tactician model {model_name}: {e}"))
 
-return tactician_scores
+    return tactician_scores
 
 except Exception as e:
             self.logger.error(error(f"❌ Error getting Tactician calibrated confidence: {e}"))
-return {}
+    return {}
 
-def _calculate_step11_calibrated_confidence(
+def _calculate_step11_calibrated_confidence(:
+    pass  # TODO: Add implementation
 self,
 price_action_probabilities: Dict[str, Any],
 model_calibration: Dict[str, Any],
@@ -533,23 +487,20 @@ final_confidence = calibrated + confidence_bias
 # Ensure bounds
 final_confidence = max(0.0, min(1.0, final_confidence))
 
-self.logger.debug(f"Step 11 calibration for {model_name}: base={base_confidence:.3f}, "
+    self.logger.debug(f"Step 11 calibration for {model_name}: base={base_confidence:.3f}, "
 f"reliability={reliability_score:.3f}, performance={performance_ratio:.3f}, "
 f"weights={optimized_weights}, final={final_confidence:.3f}")
 
-return final_confidence
+    return final_confidence
 
 except Exception as e:
             self.logger.error(error(f"❌ Error calculating step 11 calibrated confidence for {model_name}: {e}"))
-return None
+    return None
 
-@handle_errors(
-exceptions=(Exception,),
-default_return={},
-context="validating price action probabilities",
-)
+@handle_errors( exceptions=(Exception,), default_return={}, context="validating price action probabilities", )
 @with_tracing_span("validate_price_action_probabilities")
-def _validate_price_action_probabilities(
+def _validate_price_action_probabilities(:
+    pass  # TODO: Add implementation
 self,
 price_action_probabilities: Dict[str, Any],
 model_name: str
@@ -584,12 +535,12 @@ required_probabilities = [
 for prob_name in required_probabilities:
                 if prob_name not in price_action_probabilities:
                     self.logger.warning(warning(f"⚠️ Missing required probability '{prob_name}' for model {model_name}"))
-return False
+    return False
 
 prob_value = price_action_probabilities[prob_name]
 if not isinstance(prob_value, (int, float)) or not (0.0 <= prob_value <= 1.0):
                     self.logger.warning(warning(f"⚠️ Invalid probability value for '{prob_name}' in model {model_name}: {prob_value}"))
-return False
+    return False
 
 # Validate that probabilities make sense together
 triple_barrier = price_action_probabilities["triple_barrier_probability"]
@@ -600,24 +551,20 @@ barrier_avoidance = price_action_probabilities["barrier_avoidance_probability"]
 # Triple barrier probability should be <= direction probability
 if triple_barrier > direction:
                 self.logger.warning(warning(f"⚠️ Triple barrier probability ({triple_barrier}) > direction probability ({direction}) for model {model_name}"))
-return False
+    return False
 
 # Barrier avoidance should be reasonable relative to triple barrier
 if barrier_avoidance < triple_barrier * 0.5:
                 self.logger.warning(warning(f"⚠️ Barrier avoidance probability ({barrier_avoidance}) seems too low relative to triple barrier ({triple_barrier}) for model {model_name}"))
-return False
+    return False
 
-return True
+    return True
 
 except Exception as e:
             self.logger.error(error(f"❌ Error validating price action probabilities for {model_name}: {e}"))
-return False
+    return False
 
-@handle_errors(
-exceptions=(Exception,),
-default_return=False,
-context="verifying model probability outputs",
-)
+@handle_errors( exceptions=(Exception,), default_return=False, context="verifying model probability outputs", )
 @with_tracing_span("verify_model_probability_outputs")
 def _verify_model_probability_outputs(self, model_data: Dict[str, Any], model_name: str) -> bool:
         """
@@ -637,7 +584,7 @@ except Exception as e:
 # Check if model_data has price_action_probabilities
 if "price_action_probabilities" not in model_data:
                 self.logger.warning(warning(f"⚠️ Model {model_name} missing 'price_action_probabilities' key"))
-return False
+    return False
 
 price_action_probabilities = model_data["price_action_probabilities"]
 
@@ -645,18 +592,14 @@ price_action_probabilities = model_data["price_action_probabilities"]
 if not self._validate_price_action_probabilities(price_action_probabilities, model_name):
                 return False
 
-self.logger.debug(f"✅ Model {model_name} has valid probability outputs")
-return True
+    self.logger.debug(f"✅ Model {model_name} has valid probability outputs")
+    return True
 
 except Exception as e:
             self.logger.error(error(f"❌ Error verifying probability outputs for {model_name}: {e}"))
-return False
+    return False
 
-@handle_errors(
-exceptions=(Exception,),
-default_return={},
-context="verifying all models have probability outputs",
-)
+@handle_errors( exceptions=(Exception,), default_return={}, context="verifying all models have probability outputs", )
 @with_tracing_span("verify_all_models_probability_outputs")
 async def verify_all_models_probability_outputs(self) -> Dict[str, Any]:
         """
@@ -719,17 +662,13 @@ if verification_results["summary"]["all_models_verified"]:
 else:
                 self.logger.warning(warning(f"⚠️ Only {models_with_probabilities}/{total_models} models have probability outputs"))
 
-return verification_results
+    return verification_results
 
 except Exception as e:
             self.logger.error(error(f"❌ Error verifying all models probability outputs: {e}"))
-return {"error": str(e)}
+    return {"error": str(e)}
 
-@handle_errors(
-exceptions=(Exception,),
-default_return=False,
-context="checking service health",
-)
+@handle_errors( exceptions=(Exception,), default_return=False, context="checking service health", )
 @with_tracing_span("check_service_health")
 async def check_service_health(self) -> bool:
         """Check if the service is healthy and has loaded models with probability outputs."""
@@ -756,13 +695,13 @@ all_models_verified = verification_results.get("summary", {}).get("all_models_ve
 
 if not all_models_verified:
                 self.logger.warning(warning("⚠️ Not all models have probability outputs"))
-return False
+    return False
 
-return has_analyst_models and has_tactician_models and all_models_verified
+    return has_analyst_models and has_tactician_models and all_models_verified
 
 except Exception as e:
             self.logger.error(error(f"❌ Service health check failed: {e}"))
-return False
+    return False
 
 def get_service_info(self) -> Dict[str, Any]:
         """Get service information and statistics."""
@@ -773,7 +712,7 @@ except Exception as e:
 analyst_model_count = sum(len(models) for models in self.analyst_ml_models.values())
 tactician_model_count = sum(len(models) for models in self.tactician_ml_models.values())
 
-return {
+    return {
 "service_name": "Enhanced Prediction Service",
 "is_initialized": self.is_initialized,
 "analyst_models_loaded": analyst_model_count,
@@ -789,11 +728,11 @@ return {
 
 except Exception as e:
             self.logger.error(error(f"❌ Failed to get service info: {e}"))
-return {"error": str(e)}
+    return {"error": str(e)}
 
 def _get_probability_requirements_info(self) -> Dict[str, Any]:
         """Get information about required probability outputs from ML models."""
-return {
+    return {
 "probability_outputs_location": "ML models in steps 6-14 of enhanced_training_manager",
 "required_probabilities": {
 "triple_barrier_probability": "Probability of reaching profit target without hitting stop-loss",

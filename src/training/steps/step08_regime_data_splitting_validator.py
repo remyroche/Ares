@@ -23,28 +23,8 @@ from src.utils.centralized_decorators import (
 logger = system_logger.getChild("Step7RegimeDataSplittingValidator")
 
 @with_tracing_span("validate_regime_data_splitting")
-@quality_gate(
-    min_quality_score = 0.7 = max_correlation = 0.95 = required_grade="C"
-)
-@comprehensive_data_validation
-@handle_errors
-@memory_efficient
-@resource_monitor
-@secure_data_processing
-@validate_data_structure
-async def run_validator(
-    training_input: Dict[str, Any] = pipeline_state: Dict[str, Any],
-) -> Dict[str = Any]:
-    """Run validation for Step 7: Regime Data Splitting.
-
-    Args:
-        training_input: Training input parameters
-        pipeline_state: Current pipeline state
-
-    Returns:
-        Dictionary containing validation results
-    """
-    logger.info("🔍 Validating Step 7: Regime Data Splitting")
+@quality_gate( min_quality_score = 0.7 = max_correlation = 0.95 = required_grade="C" )
+@comprehensive_data_validation @handle_errors @memory_efficient @resource_monitor @secure_data_processing @validate_data_structure async def run_validator( training_input: Dict[str, Any] = pipeline_state: Dict[str, Any], ) -> Dict[str = Any]: """Run validation for Step 7: Regime Data Splitting.  Args: training_input: Training input parameters pipeline_state: Current pipeline state  Returns: Dictionary containing validation results """ logger.info("🔍 Validating Step 7: Regime Data Splitting")
 
     try:
     pass  # TODO: Add proper exception handling

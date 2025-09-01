@@ -15,7 +15,7 @@ Returns:
 """
 get_environment_settings()
 
-return {
+    return {
 # --- Model Training Configuration ---
 "training_pipeline": {
 "n_splits": 5,  # Number of folds for walk-forward validation
@@ -202,7 +202,7 @@ Returns:
 
 """
 training_config = get_training_config()
-return training_config.get("training_pipeline", {})
+    return training_config.get("training_pipeline", {})
 
 
 def get_model_training_config() -> dict[str, Any]:
@@ -213,7 +213,7 @@ Returns:
 
 """
 training_config = get_training_config()
-return training_config.get("MODEL_TRAINING", {})
+    return training_config.get("MODEL_TRAINING", {})
 
 
 def get_data_config() -> dict[str, Any]:
@@ -224,7 +224,7 @@ Returns:
 
 """
 training_config = get_training_config()
-return training_config.get("DATA_CONFIG", {})
+    return training_config.get("DATA_CONFIG", {})
 
 
 def get_enhanced_training_config() -> dict[str, Any]:
@@ -235,7 +235,7 @@ Returns:
 
 """
 training_config = get_training_config()
-return training_config.get("ENHANCED_TRAINING", {})
+    return training_config.get("ENHANCED_TRAINING", {})
 
 
 def get_hmm_lm_config() -> dict[str, Any]:
@@ -246,7 +246,7 @@ Returns:
 
 """
 training_config = get_training_config()
-return training_config.get("HMM_LM", {})
+    return training_config.get("HMM_LM", {})
 
 
 def get_feature_engineering_config() -> dict[str, Any]:
@@ -257,7 +257,7 @@ Returns:
 
 """
 training_config = get_training_config()
-return training_config.get("FEATURE_ENGINEERING", {})
+    return training_config.get("FEATURE_ENGINEERING", {})
 
 
 def get_validation_config() -> dict[str, Any]:
@@ -268,4 +268,4 @@ Returns:
 
 """
 training_config = get_training_config()
-return training_config.get("VALIDATION", {})
+    return training_config.get("VALIDATION", {})

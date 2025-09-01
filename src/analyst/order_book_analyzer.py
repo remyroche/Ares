@@ -22,11 +22,12 @@ Assumptions:
 
 def __init__(self, config: dict[str, Any] | None = None) -> None:
         self.config = config or {}
-self.logger = system_logger.getChild("OrderBookAnalyzer")
+    self.logger = system_logger.getChild("OrderBookAnalyzer")
 
 @validate_data_quality(validation_level="WARNING")
 @with_tracing_span("wall_identification")
-def identify_walls(
+def identify_walls(:
+    pass  # TODO: Add implementation
 self,
 book_df: pd.DataFrame,
 price_col: str,
@@ -44,18 +45,19 @@ if df.empty:
 # Group by price level if needed; take max size per price
 grouped = df.groupby(price_col, as_index=False)[size_col].sum()
 grouped = grouped.rename(columns={price_col: "price", size_col: "size"})
-return (
+    return (
 grouped.sort_values("size", ascending=False)
 .head(top_k)
 .reset_index(drop=True)
 )
 except Exception as e:
             self.logger.warning(f"identify_walls failed: {e}")
-return pd.DataFrame(columns=["price", "size"])  # empty
+    return pd.DataFrame(columns=["price", "size"])  # empty
 
 @validate_data_quality(validation_level="WARNING")
 @with_tracing_span("wall_features_computation")
-def compute_wall_features(
+def compute_wall_features(:
+    pass  # TODO: Add implementation
 self,
 mid_price: float,
 bid_walls: pd.DataFrame,
@@ -107,10 +109,10 @@ else 0.0
 )
 denom = max(1e-8, total_bid + total_ask)
 features["wall_imbalance"] = (total_bid - total_ask) / denom
-return features
+    return features
 except Exception as e:
             self.logger.warning(f"compute_wall_features failed: {e}")
-return {
+    return {
 "nearest_bid_wall_dist_pct": 1.0,
 "nearest_ask_wall_dist_pct": 1.0,
 "nearest_bid_wall_size": 0.0,
@@ -118,7 +120,8 @@ return {
 "wall_imbalance": 0.0,
 }
 
-def correlate_walls_with_sr(
+def correlate_walls_with_sr(:
+    pass  # TODO: Add implementation
 self,
 wall_prices: list[float],
 sr_centers: list[float],
@@ -140,15 +143,16 @@ for p in wp:
                 dists = np.abs(sc - p) / np.maximum(1e-8, p)
 overlaps.append(float((dists <= tol_pct).any()))
 min_dists.append(float(np.min(dists)))
-return {
+    return {
 "overlap_ratio": float(np.mean(overlaps)),
 "avg_min_dist_to_sr": float(np.mean(min_dists)),
 }
 except Exception as e:
             self.logger.warning(f"correlate_walls_with_sr failed: {e}")
-return {"overlap_ratio": 0.0, "avg_min_dist_to_sr": 1.0}
+    return {"overlap_ratio": 0.0, "avg_min_dist_to_sr": 1.0}
 
-def correlate_from_files(
+def correlate_from_files(:
+    pass  # TODO: Add implementation
 self,
 sr_zones_file: str,
 book_file: str,
@@ -195,8 +199,8 @@ wall_prices.extend(
 ask_walls.get("price", pd.Series([])).astype(float).tolist(),
 )
 metrics = self.correlate_walls_with_sr(wall_prices, centers)
-self.logger.info(f"Order book vs SR correlation: {metrics}")
-return metrics
+    self.logger.info(f"Order book vs SR correlation: {metrics}")
+    return metrics
 except Exception as e:
             self.logger.warning(f"correlate_from_files failed: {e}")
-return {"overlap_ratio": 0.0, "avg_min_dist_to_sr": 1.0}
+    return {"overlap_ratio": 0.0, "avg_min_dist_to_sr": 1.0}

@@ -35,7 +35,7 @@ def get_unified_data_loader_import() -> str:
         "from src.training.steps.unified_data_loader import get_unified_data_loader"
     )
 
-def get_unified_data_loading_code(
+def get_unified_data_loading_code(:
     symbol_var: str = "symbol",
     exchange_var: str = "exchange",
     timeframe_var: str = "timeframe",

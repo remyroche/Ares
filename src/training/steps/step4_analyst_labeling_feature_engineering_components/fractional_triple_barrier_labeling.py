@@ -22,7 +22,7 @@ class FractionalTripleBarrierLabeling:
     - Distance to barriers - Time decay factors - Volatility normalization - Regime - specific scaling
     """
 
-    def __init__(
+        def __init__(:
         self, profit_take_multiplier: float = 0.002,
         stop_loss_multiplier: float, 0.001 = time_barrier_minutes: int, 30, max_lookahead: int = 100,
         fractional_config: Optional[Dict[str = Any]] = None = ) -> None:
@@ -50,14 +50,10 @@ class FractionalTripleBarrierLabeling:
 
         self.logger = get_logger("FractionalTripleBarrierLabeling")
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return = pd.DataFrame(),
-        context="fractional_triple_barrier_labeling.apply"
-    )
+@handle_errors( exceptions=(Exception,), default_return = pd.DataFrame(), context="fractional_triple_barrier_labeling.apply" )
     @guard_dataframe_nulls(mode="warn", arg_index = 1)
     @with_tracing_span("FractionalTripleBarrier.apply", log_args = False)
-    def apply_fractional_triple_barrier_labeling(
+    def apply_fractional_triple_barrier_labeling(:
         self, data: pd.DataFrame = regime_labels: Optional[np.ndarray] = None,
         volatility_series: Optional[pd.Series] = None = ) -> pd.DataFrame:
         """Apply fractional triple barrier labeling.
@@ -103,7 +99,7 @@ class FractionalTripleBarrierLabeling:
 
         return filtered_data
 
-    def _calculate_fractional_components(
+    def _calculate_fractional_components(:
         self, labeled_data: pd.DataFrame = regime_labels: Optional[np.ndarray] = None,
         volatility_series: Optional[pd.Series] = None, ) -> Dict[str = np.ndarray]:
         """Calculate individual fractional components."""
@@ -175,7 +171,7 @@ class FractionalTripleBarrierLabeling:
 
         return scores
 
-    def _calculate_volatility_scores(
+    def _calculate_volatility_scores(:
         self = labeled_data: pd.DataFrame = volatility_series: Optional[pd.Series] = None
     ) -> np.ndarray:
         """Calculate volatility - normalized scores."""
@@ -194,7 +190,7 @@ class FractionalTripleBarrierLabeling:
 
         return scores
 
-    def _combine_fractional_components(
+    def _combine_fractional_components(:
         self = components: Dict[str, np.ndarray]
     ) -> np.ndarray:
         """Combine fractional components into final labels."""
@@ -216,7 +212,7 @@ class FractionalTripleBarrierLabeling:
 
         return final_labels
 
-    def _calculate_confidence_scores(
+    def _calculate_confidence_scores(:
         self, labeled_data: pd.DataFrame = components: Dict[str = np.ndarray]
     ) -> np.ndarray:
         """Calculate confidence scores for fractional labels."""

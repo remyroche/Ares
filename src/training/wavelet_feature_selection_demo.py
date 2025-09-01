@@ -30,7 +30,7 @@ class WaveletFeatureSelectionDemo:
     Demonstrates the complete process from full analysis to optimized live configurations.
     """
 
-    def __init__(self = config_path: str = "src/config/trading.yaml") -> None:
+        def __init__(self = config_path: str = "src/config/trading.yaml") -> None:
         self.config_path = config_path
         self.config = self._load_config()
         self.logger = system_logger.getChild("WaveletFeatureSelectionDemo")
@@ -43,7 +43,7 @@ class WaveletFeatureSelectionDemo:
         self.volume_data = None
         self.labels = None
 
-    def _load_config(self) -> dict:
+        def _load_config(self) -> dict:
         """Load configuration from YAML file."""
         try:
             with open(self.config_path) as f:

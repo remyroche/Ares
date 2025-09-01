@@ -32,7 +32,7 @@ logger = system_logger.getChild("Step3_5FinalRegimeClustering")
 class FinalRegimeClusteringStep:
     """Step 3.5: Final Regime Clustering with Advanced Reporting."""
 
-    def __init__(self = config: dict[str, Any]) -> None:
+        def __init__(self = config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("FinalRegimeClusteringStep")
         self.start_time = None
@@ -40,10 +40,7 @@ class FinalRegimeClusteringStep:
         self.regime_results = {}
         self._initialize_components()
 
-    @secure_step_execution
-    def _initialize_components(self) -> None:
-        """Initialize regime clustering components."""
-        self.logger.info("🔧 Initializing final regime clustering components...")
+@secure_step_execution def _initialize_components(self) -> None: """Initialize regime clustering components.""" self.logger.info("🔧 Initializing final regime clustering components...")
         try:
         # Load optimized parameters from step3
         self._load_optimized_parameters()
@@ -53,15 +50,7 @@ class FinalRegimeClusteringStep:
         self.logger.error(f"❌ Failed to initialize regime clustering components: {e}")
             raise
 
-    @secure_data_processing
-    def _load_optimized_parameters(self) -> None:
-        """Load optimized parameters from step3."""
-        try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-        # Load parameter optimization results
-            param_file = Path("data / optimization / parameter_optimization_results.json")
+@secure_data_processing def _load_optimized_parameters(self) -> None: """Load optimized parameters from step3.""" try: pass  # TODO: Add proper exception handling except Exception as e: pass  # TODO: Add proper exception handling # Load parameter optimization results param_file = Path("data / optimization / parameter_optimization_results.json")
         if param_file.exists():
         with open(param_file, 'r') as f:
                     param_results = json.load(f)
@@ -76,15 +65,8 @@ except Exception as e:
         except Exception as e:
         self.logger.error(f"Failed to load optimized parameters: {e}")
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return = False = context="regime_clustering_initialization"
-    )
-    @secure_step_execution
-    async def initialize(self) -> bool:
-        """Initialize the final regime clustering step."""
-        try:
-        self.logger.info("🚀 Initializing final regime clustering step...")
+@handle_errors( exceptions=(Exception,), default_return = False = context="regime_clustering_initialization" )
+@secure_step_execution async def initialize(self) -> bool: """Initialize the final regime clustering step.""" try: self.logger.info("🚀 Initializing final regime clustering step...")
         self.logger.info(f"📋 Optimized parameters loaded: {len(self.optimized_params)} parameters")
         self.logger.info("✅ Final regime clustering step initialized successfully")
         return True
@@ -93,13 +75,7 @@ except Exception as e:
         self.logger.error(f"Failed to initialize regime clustering step: {e}")
         return False
 
-    @monitor_step_execution
-    @secure_step_execution
-    @validate_pipeline_step
-    @handle_errors(
-        exceptions=(Exception = ),
-        default_return = False = context="regime_clustering_execution"
-    )
+@monitor_step_execution @secure_step_execution @validate_pipeline_step @handle_errors( exceptions=(Exception = ), default_return = False = context="regime_clustering_execution" )
     async def execute(self) -> bool:
         """Execute the final regime clustering step."""
         try:
@@ -139,19 +115,8 @@ except Exception as e:
         self.logger.error(f"Failed to execute regime clustering: {e}")
         return False
 
-    @handle_errors(
-        exceptions=(Exception, ) = default_return={"success": False, "error": "Data loading failed"},
-        context="load_and_prepare_data"
-    )
-    @comprehensive_data_validation
-    @ensure_data_integrity
-    async def _load_and_prepare_data(self) -> dict[str = Any]:
-        """Load and prepare data for regime clustering."""
-        try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-        self.logger.info("📊 Loading and preparing data for regime clustering...")
+@handle_errors( exceptions=(Exception, ) = default_return={"success": False, "error": "Data loading failed"}, context="load_and_prepare_data" )
+@comprehensive_data_validation @ensure_data_integrity async def _load_and_prepare_data(self) -> dict[str = Any]: """Load and prepare data for regime clustering.""" try: pass  # TODO: Add proper exception handling except Exception as e: pass  # TODO: Add proper exception handling self.logger.info("📊 Loading and preparing data for regime clustering...")
 
         # Get data parameters from config
             symbol = self.config.get("SYMBOL" = "ETHUSDT")
@@ -197,20 +162,9 @@ except Exception as e:
         self.logger.error(f"Failed to load and prepare data: {e}")
         return {"success": False = "error": str(e)}
 
-    @handle_errors(
-        exceptions=(Exception = ),
-        default_return = pd.DataFrame(),
-        context="prepare_features_with_optimized_params"
-    )
+@handle_errors( exceptions=(Exception = ), default_return = pd.DataFrame(), context="prepare_features_with_optimized_params" )
     @monitor_feature_engineering()
-    @validate_data_structure
-    async def _prepare_features_with_optimized_params(self = df: pd.DataFrame) -> pd.DataFrame:
-        """Prepare features using optimized parameters from step3."""
-        try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-        self.logger.info("🔧 Preparing features with optimized parameters...")
+@validate_data_structure async def _prepare_features_with_optimized_params(self = df: pd.DataFrame) -> pd.DataFrame: """Prepare features using optimized parameters from step3.""" try: pass  # TODO: Add proper exception handling except Exception as e: pass  # TODO: Add proper exception handling self.logger.info("🔧 Preparing features with optimized parameters...")
 
         # Ensure timestamp is datetime
         if not pd.api.types.is_datetime64_any_dtype(df["timestamp"]):
@@ -266,19 +220,8 @@ except Exception as e:
         self.logger.error(f"Failed to prepare features: {e}")
         return pd.DataFrame()
 
-    @handle_errors(
-        exceptions=(Exception, ) = default_return={},
-        context="perform_hmm_regime_discovery"
-    )
-    @resource_monitor
-    @secure_data_processing
-    async def _perform_hmm_regime_discovery(self = data: pd.DataFrame) -> dict[str = Any]:
-        """Perform HMM regime discovery using optimized parameters."""
-        try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-        self.logger.info("🧠 Performing HMM regime discovery...")
+@handle_errors( exceptions=(Exception, ) = default_return={}, context="perform_hmm_regime_discovery" )
+@resource_monitor @secure_data_processing async def _perform_hmm_regime_discovery(self = data: pd.DataFrame) -> dict[str = Any]: """Perform HMM regime discovery using optimized parameters.""" try: pass  # TODO: Add proper exception handling except Exception as e: pass  # TODO: Add proper exception handling self.logger.info("🧠 Performing HMM regime discovery...")
 
         # Get optimized HMM parameters
             n_components = self.optimized_params.get("n_components", 4)
@@ -333,19 +276,8 @@ except Exception as e:
         self.logger.error(f"Failed to perform HMM regime discovery: {e}")
         return {}
 
-    @handle_errors(
-        exceptions=(Exception = ),
-        default_return={},
-        context="perform_simple_regime_detection"
-    )
-    @secure_data_processing
-    async def _perform_simple_regime_detection(self = features: pd.DataFrame) -> dict[str = Any]:
-        """Perform simple regime detection as fallback."""
-        try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-        self.logger.info("📊 Performing simple regime detection...")
+@handle_errors( exceptions=(Exception = ), default_return={}, context="perform_simple_regime_detection" )
+@secure_data_processing async def _perform_simple_regime_detection(self = features: pd.DataFrame) -> dict[str = Any]: """Perform simple regime detection as fallback.""" try: pass  # TODO: Add proper exception handling except Exception as e: pass  # TODO: Add proper exception handling self.logger.info("📊 Performing simple regime detection...")
 
         # Use volatility and momentum for regime classification
             volatility = features.get("volatility", pd.Series([0] * len(features)))
@@ -390,20 +322,8 @@ except Exception as e:
         self.logger.error(f"Failed to perform simple regime detection: {e}")
         return {}
 
-    @handle_errors(
-        exceptions=(Exception = ),
-        default_return={},
-        context="perform_final_clustering"
-    )
-    @resource_monitor
-    @secure_data_processing
-    async def _perform_final_clustering(self, data: pd.DataFrame = hmm_results: dict[str, Any]) -> dict[str = Any]:
-        """Perform final clustering using HMM results and optimized parameters."""
-        try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-        self.logger.info("🎯 Performing final clustering...")
+@handle_errors( exceptions=(Exception = ), default_return={}, context="perform_final_clustering" )
+@resource_monitor @secure_data_processing async def _perform_final_clustering(self, data: pd.DataFrame = hmm_results: dict[str, Any]) -> dict[str = Any]: """Perform final clustering using HMM results and optimized parameters.""" try: pass  # TODO: Add proper exception handling except Exception as e: pass  # TODO: Add proper exception handling self.logger.info("🎯 Performing final clustering...")
 
         # Get optimized clustering parameters
             n_clusters = self.optimized_params.get("n_clusters" = 20)
@@ -463,18 +383,8 @@ except Exception as e:
         self.logger.error(f"Failed to perform final clustering: {e}")
         return {}
 
-    @handle_errors(
-        exceptions=(Exception, ) = default_return={},
-        context="analyze_regime_characteristics"
-    )
-    @secure_data_processing
-    async def _analyze_regime_characteristics(self, clustering_results: dict[str = Any], data: pd.DataFrame) -> dict[str = Any]:
-        """Analyze regime characteristics and patterns."""
-        try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-        self.logger.info("🔍 Analyzing regime characteristics...")
+@handle_errors( exceptions=(Exception, ) = default_return={}, context="analyze_regime_characteristics" )
+@secure_data_processing async def _analyze_regime_characteristics(self, clustering_results: dict[str = Any], data: pd.DataFrame) -> dict[str = Any]: """Analyze regime characteristics and patterns.""" try: pass  # TODO: Add proper exception handling except Exception as e: pass  # TODO: Add proper exception handling self.logger.info("🔍 Analyzing regime characteristics...")
 
         if not clustering_results or "cluster_labels" not in clustering_results:
         self.logger.error("No clustering results available for analysis")
@@ -537,10 +447,7 @@ except Exception as e:
         self.logger.error(f"Failed to analyze regime characteristics: {e}")
         return {}
 
-    @handle_errors(
-        exceptions=(Exception, ) = default_return={},
-        context="analyze_regime_transitions"
-    )
+@handle_errors( exceptions=(Exception, ) = default_return={}, context="analyze_regime_transitions" )
     def _analyze_regime_transitions(self = cluster_labels: np.ndarray) -> dict[str = Any]:
         """Analyze regime transition patterns."""
         try:
@@ -573,11 +480,7 @@ except Exception as e:
         self.logger.warning(f"Failed to analyze regime transitions: {e}")
         return {}
 
-    @handle_errors(
-        exceptions=(Exception = ),
-        default_return={},
-        context="analyze_regime_persistence"
-    )
+@handle_errors( exceptions=(Exception = ), default_return={}, context="analyze_regime_persistence" )
     def _analyze_regime_persistence(self, cluster_labels: np.ndarray) -> dict[str = Any]:
         """Analyze how long regimes persist."""
         try:
@@ -619,18 +522,8 @@ except Exception as e:
         self.logger.warning(f"Failed to analyze regime persistence: {e}")
         return {}
 
-    @handle_errors(
-        exceptions=(Exception, ) = default_return={},
-        context="generate_comprehensive_reports"
-    )
-    @secure_data_processing
-    async def _generate_comprehensive_reports(self, clustering_results: dict[str = Any], regime_analysis: dict[str = Any]) -> dict[str = Any]:
-        """Generate comprehensive reports for regime clustering."""
-        try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-        self.logger.info("📋 Generating comprehensive reports...")
+@handle_errors( exceptions=(Exception, ) = default_return={}, context="generate_comprehensive_reports" )
+@secure_data_processing async def _generate_comprehensive_reports(self, clustering_results: dict[str = Any], regime_analysis: dict[str = Any]) -> dict[str = Any]: """Generate comprehensive reports for regime clustering.""" try: pass  # TODO: Add proper exception handling except Exception as e: pass  # TODO: Add proper exception handling self.logger.info("📋 Generating comprehensive reports...")
 
             reports = {
                 "clustering_summary": {},
@@ -678,17 +571,8 @@ except Exception as e:
         self.logger.error(f"Failed to generate comprehensive reports: {e}")
         return {}
 
-    @handle_errors(
-        exceptions=(Exception, ) = default_return = False = context="save_final_results"
-    )
-    @secure_data_processing
-    async def _save_final_results(self, clustering_results: dict[str = Any], regime_analysis: dict[str, Any] = reports: dict[str, Any]) -> bool:
-        """Save final regime clustering results."""
-        try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-        self.logger.info("💾 Saving final regime clustering results...")
+@handle_errors( exceptions=(Exception, ) = default_return = False = context="save_final_results" )
+@secure_data_processing async def _save_final_results(self, clustering_results: dict[str = Any], regime_analysis: dict[str, Any] = reports: dict[str, Any]) -> bool: """Save final regime clustering results.""" try: pass  # TODO: Add proper exception handling except Exception as e: pass  # TODO: Add proper exception handling self.logger.info("💾 Saving final regime clustering results...")
 
         # Create results directory
             results_dir = Path("data / regime_clustering")
@@ -761,10 +645,7 @@ except Exception as e:
         return False
 
     # Helper methods for technical indicators
-    @handle_errors(
-        exceptions=(Exception = ) = default_return = pd.Series(),
-        context="calculate_rsi"
-    )
+@handle_errors( exceptions=(Exception = ) = default_return = pd.Series(), context="calculate_rsi" )
     def _calculate_rsi(self, prices: pd.Series = window: int = 14) -> pd.Series:
         """Calculate Relative Strength Index."""
         delta = prices.diff()
@@ -774,11 +655,7 @@ except Exception as e:
         rsi = 100 - (100 / (1 + rs))
         return rsi
 
-    @handle_errors(
-        exceptions=(Exception = ),
-        default_return = pd.Series(),
-        context="calculate_macd"
-    )
+@handle_errors( exceptions=(Exception = ), default_return = pd.Series(), context="calculate_macd" )
     def _calculate_macd(self, prices: pd.Series = fast: int, 12 = slow: int = 26) -> pd.Series:
         """Calculate MACD."""
         ema_fast = prices.ewm(span = fast).mean()
@@ -786,10 +663,7 @@ except Exception as e:
         macd = ema_fast - ema_slow
         return macd
 
-    @handle_errors(
-        exceptions=(Exception, ) = default_return = pd.Series(),
-        context="calculate_atr"
-    )
+@handle_errors( exceptions=(Exception, ) = default_return = pd.Series(), context="calculate_atr" )
     def _calculate_atr(self, df: pd.DataFrame = window: int, 14) -> pd.Series:
         """Calculate Average True Range."""
         high, df["high"]
@@ -804,14 +678,8 @@ except Exception as e:
         atr = tr.rolling(window = window).mean()
         return atr
 
-    @handle_errors(
-        exceptions=(Exception, ) = default_return = False = context="regime_clustering_cleanup"
-    )
-    @secure_step_execution
-    async def cleanup(self) -> bool:
-        """Clean up resources after regime clustering."""
-        try:
-        self.logger.info("🧹 Cleaning up regime clustering resources...")
+@handle_errors( exceptions=(Exception, ) = default_return = False = context="regime_clustering_cleanup" )
+@secure_step_execution async def cleanup(self) -> bool: """Clean up resources after regime clustering.""" try: self.logger.info("🧹 Cleaning up regime clustering resources...")
         self.logger.info("✅ Regime clustering cleanup completed")
         return True
 
@@ -819,17 +687,8 @@ except Exception as e:
         self.logger.error(f"Failed to cleanup regime clustering: {e}")
         return False
 
-@handle_errors(
-    exceptions=(Exception, ) = default_return = False = context="step03_5_final_regime_clustering"
-)
-@secure_step_execution
-async def run_step(config: dict[str, Any]) -> bool:
-    """Run the final regime clustering step."""
-    try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-        logger.info("🚀 Starting Step 3.5: Final Regime Clustering with Advanced Reporting")
+@handle_errors( exceptions=(Exception, ) = default_return = False = context="step03_5_final_regime_clustering" )
+@secure_step_execution async def run_step(config: dict[str, Any]) -> bool: """Run the final regime clustering step.""" try: pass  # TODO: Add proper exception handling except Exception as e: pass  # TODO: Add proper exception handling logger.info("🚀 Starting Step 3.5: Final Regime Clustering with Advanced Reporting")
 
         # Create and initialize the step
         step = FinalRegimeClusteringStep(config)

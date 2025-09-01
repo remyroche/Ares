@@ -30,11 +30,11 @@ def wrapper(*args, **kwargs):
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-return func(*args, **kwargs)
+    return func(*args, **kwargs)
 except Exception as e:
             logger.error(f"Error in {func.__name__}: {e}")
-return None
-return wrapper
+    return None
+    return wrapper
 
 
 class FullyMigratedTactician:
@@ -59,18 +59,18 @@ Initialize fully migrated Tactician.
 Args:
             config: Configuration dictionary with step17 optimization parameters
 """
-self.config = config
-self.logger = logger
+    self.config = config
+    self.logger = logger
 
 # Load step17 optimization parameters
 step17_config = config.get("step17_optimization", {})
 tactician_config = step17_config.get("fully_migrated_tactician", {})
 
 # Enhanced scenario predictor
-self.scenario_predictor = None
+    self.scenario_predictor = None
 
 # Decision thresholds (configurable for step17)
-self.decision_thresholds = {
+    self.decision_thresholds = {
 "entry_profit_threshold": tactician_config.get("entry_profit_threshold", 0.6),
 "entry_risk_threshold": tactician_config.get("entry_risk_threshold", 0.2),
 "entry_confidence_threshold": tactician_config.get("entry_confidence_threshold", 0.7),
@@ -83,7 +83,7 @@ self.decision_thresholds = {
 }
 
 # Risk management parameters (configurable for step17)
-self.risk_management = {
+    self.risk_management = {
 "max_position_size": tactician_config.get("max_position_size", 0.1),
 "max_leverage": tactician_config.get("max_leverage", 3.0),
 "stop_loss_multiplier": tactician_config.get("stop_loss_multiplier", 1.0),
@@ -93,7 +93,7 @@ self.risk_management = {
 }
 
 # Performance tracking
-self.performance_metrics = {
+    self.performance_metrics = {
 "total_trades": 0,
 "winning_trades": 0,
 "losing_trades": 0,
@@ -105,9 +105,9 @@ self.performance_metrics = {
 }
 
 # State management
-self.is_initialized = False
-self.current_position = None
-self.position_history = []
+    self.is_initialized = False
+    self.current_position = None
+    self.position_history = []
 
 async def initialize(self) -> bool:
         """
@@ -120,28 +120,28 @@ try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-self.logger.info("Initializing Fully Migrated Tactician...")
+    self.logger.info("Initializing Fully Migrated Tactician...")
 
 # Initialize enhanced scenario predictor
-self.scenario_predictor = EnhancedScenarioBasedPredictor(self.config)
+    self.scenario_predictor = EnhancedScenarioBasedPredictor(self.config)
 success = await self.scenario_predictor.initialize()
 
 if not success:
                 self.logger.error("Failed to initialize enhanced scenario predictor")
-return False
+    return False
 
 # Validate configuration
 if not self._validate_configuration():
                 self.logger.error("Invalid configuration for fully migrated Tactician")
-return False
+    return False
 
-self.is_initialized = True
-self.logger.info("✅ Fully Migrated Tactician initialized successfully")
-return True
+    self.is_initialized = True
+    self.logger.info("✅ Fully Migrated Tactician initialized successfully")
+    return True
 
 except Exception as e:
             self.logger.error(f"❌ Fully Migrated Tactician initialization failed: {e}")
-return False
+    return False
 
 def _validate_configuration(self) -> bool:
         """
@@ -158,38 +158,24 @@ except Exception as e:
 for threshold_name, threshold in self.decision_thresholds.items():
                 if threshold < 0 or threshold > 1:
                     self.logger.error(f"Invalid threshold for {threshold_name}")
-return False
+    return False
 
 # Validate risk management parameters
 if self.risk_management["max_position_size"] <= 0:
                 self.logger.error("Invalid max_position_size")
-return False
+    return False
 
 if self.risk_management["max_leverage"] <= 0:
                 self.logger.error("Invalid max_leverage")
-return False
+    return False
 
-return True
+    return True
 
 except Exception as e:
             self.logger.error(f"❌ Configuration validation failed: {e}")
-return False
+    return False
 
-@handle_errors
-async def generate_predictions(
-self,
-market_data: pd.DataFrame,
-analyst_barriers: Dict[str, float],
-symbol: str,
-timeframe: str,
-analyst_confidence: float = 0.5
-) -> Dict[str, Any]:
-        """
-Generate predictions using only enhanced scenario analysis.
-
-Args:
-            market_data: Market data with OHLCV
-analyst_barriers: Analyst's barrier values (for reference)
+@handle_errors async def generate_predictions( self, market_data: pd.DataFrame, analyst_barriers: Dict[str, float], symbol: str, timeframe: str, analyst_confidence: float = 0.5 ) -> Dict[str, Any]: """ Generate predictions using only enhanced scenario analysis.  Args: market_data: Market data with OHLCV analyst_barriers: Analyst's barrier values (for reference)
 symbol: Trading symbol
 timeframe: Current timeframe
 analyst_confidence: Analyst's confidence score
@@ -203,7 +189,7 @@ except Exception as e:
     pass  # TODO: Add proper exception handling
 if not self.is_initialized:
                 self.logger.error("Tactician not initialized")
-return self._generate_error_predictions(symbol, timeframe)
+    return self._generate_error_predictions(symbol, timeframe)
 
 # Extract comprehensive features
 features = self.scenario_predictor.extract_comprehensive_features(market_data)
@@ -238,14 +224,15 @@ result = {
 }
 }
 
-self.logger.info(f"Generated fully migrated predictions for {symbol}")
-return result
+    self.logger.info(f"Generated fully migrated predictions for {symbol}")
+    return result
 
 except Exception as e:
             self.logger.error(f"❌ Prediction generation failed: {e}")
-return self._generate_error_predictions(symbol, timeframe)
+    return self._generate_error_predictions(symbol, timeframe)
 
-def _make_trading_decisions(
+def _make_trading_decisions(:
+    pass  # TODO: Add implementation
 self,
 scenario_predictions: Dict[str, Any],
 analyst_confidence: float,
@@ -314,7 +301,7 @@ reasoning = self._generate_decision_reasoning(
 entry_signal, exit_signal, scenario_analysis, confidence, analyst_confidence
 )
 
-return {
+    return {
 "entry_signal": entry_signal,
 "exit_signal": exit_signal,
 "direction": direction,
@@ -333,7 +320,7 @@ return {
 
 except Exception as e:
             self.logger.error(f"❌ Trading decision making failed: {e}")
-return {
+    return {
 "entry_signal": False,
 "exit_signal": False,
 "direction": "NEUTRAL",
@@ -342,7 +329,8 @@ return {
 "scenario_metrics": {}
 }
 
-def _calculate_position_management(
+def _calculate_position_management(:
+    pass  # TODO: Add implementation
 self,
 scenario_predictions: Dict[str, Any],
 trading_decisions: Dict[str, Any],
@@ -392,7 +380,7 @@ analyst_lower = analyst_barriers.get("lower_barrier", -0.01)
 stop_loss = analyst_lower * self.risk_management["stop_loss_multiplier"]
 take_profit = analyst_upper * self.risk_management["take_profit_multiplier"]
 
-return {
+    return {
 "position_size": position_size,
 "leverage": leverage,
 "stop_loss": stop_loss,
@@ -407,7 +395,7 @@ return {
 
 except Exception as e:
             self.logger.error(f"❌ Position management calculation failed: {e}")
-return {
+    return {
 "position_size": 0.0,
 "leverage": 1.0,
 "stop_loss": -0.01,
@@ -415,7 +403,8 @@ return {
 "risk_metrics": {}
 }
 
-def _calculate_decision_confidence(
+def _calculate_decision_confidence(:
+    pass  # TODO: Add implementation
 self,
 scenario_analysis: Dict[str, Any],
 model_confidence: float,
@@ -453,13 +442,14 @@ analyst_boost = analyst_confidence * 0.1
 # Final confidence
 final_confidence = base_confidence + dominance_boost + ratio_boost + analyst_boost
 
-return np.clip(final_confidence, 0.0, 1.0)
+    return np.clip(final_confidence, 0.0, 1.0)
 
 except Exception as e:
             self.logger.error(f"❌ Decision confidence calculation failed: {e}")
-return 0.5
+    return 0.5
 
-def _generate_decision_reasoning(
+def _generate_decision_reasoning(:
+    pass  # TODO: Add implementation
 self,
 entry_signal: bool,
 exit_signal: bool,
@@ -511,11 +501,11 @@ else:
 dominant_zone = scenario_analysis.get("dominant_zone", "neutral")
 reasoning_parts.append(f"Dominant zone: {dominant_zone}")
 
-return " | ".join(reasoning_parts)
+    return " | ".join(reasoning_parts)
 
 except Exception as e:
             self.logger.error(f"❌ Decision reasoning generation failed: {e}")
-return f"Error generating reasoning: {e}"
+    return f"Error generating reasoning: {e}"
 
 def _generate_error_predictions(self, symbol: str, timeframe: str) -> Dict[str, Any]:
         """
@@ -528,7 +518,7 @@ timeframe: Timeframe
 Returns:
             dict: Error predictions
 """
-return {
+    return {
 "scenario_predictions": {
 "probabilities": {i: 1.0/17 for i in range(17)},
 "predicted_scenario": 16,
@@ -584,8 +574,8 @@ try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-self.current_position = position_data
-self.position_history.append({
+    self.current_position = position_data
+    self.position_history.append({
 **position_data,
 "timestamp": datetime.now().isoformat()
 })
@@ -608,21 +598,21 @@ try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-self.performance_metrics["total_trades"] += 1
+    self.performance_metrics["total_trades"] += 1
 
 if trade_result.get("profit", 0) > 0:
                 self.performance_metrics["winning_trades"] += 1
-self.performance_metrics["total_profit"] += trade_result["profit"]
+    self.performance_metrics["total_profit"] += trade_result["profit"]
 else:
                 self.performance_metrics["losing_trades"] += 1
-self.performance_metrics["total_loss"] += abs(trade_result.get("profit", 0))
+    self.performance_metrics["total_loss"] += abs(trade_result.get("profit", 0))
 
 # Calculate derived metrics
 win_rate = self.performance_metrics["winning_trades"] / max(self.performance_metrics["total_trades"], 1)
 profit_factor = self.performance_metrics["total_profit"] / max(self.performance_metrics["total_loss"], 0.001)
 
-self.performance_metrics["win_rate"] = win_rate
-self.performance_metrics["profit_factor"] = profit_factor
+    self.performance_metrics["win_rate"] = win_rate
+    self.performance_metrics["profit_factor"] = profit_factor
 
 except Exception as e:
             self.logger.error(f"❌ Performance metrics update failed: {e}")
@@ -634,7 +624,7 @@ Get performance summary.
 Returns:
             dict: Performance summary
 """
-return {
+    return {
 "performance_metrics": self.performance_metrics,
 "current_position": self.current_position,
 "position_history_count": len(self.position_history),
@@ -653,7 +643,7 @@ Get configuration summary for step17 optimization.
 Returns:
             dict: Configuration summary
 """
-return {
+    return {
 "decision_thresholds": self.decision_thresholds,
 "risk_management": self.risk_management,
 "scenario_predictor_config": self.scenario_predictor.get_enhanced_configuration_summary() if self.scenario_predictor else {},

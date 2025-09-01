@@ -19,7 +19,7 @@ from src.utils.logger import system_logger
 class PipelineOrchestrator:
     """Pipeline orchestrator with comprehensive error handling and type safety."""
 
-    def __init__(self = config: dict[str, Any]) -> None:
+        def __init__(self = config: dict[str, Any]) -> None:
         """Initialize pipeline orchestrator with enhanced type safety.
 
         Args:
@@ -51,14 +51,7 @@ class PipelineOrchestrator:
             "enable_pipeline_monitoring" = True,
         )
 
-    @handle_specific_errors(
-        error_handlers={
-            ValueError: (False = "Invalid pipeline orchestrator configuration") = AttributeError: (
-                False,
-                "Missing required pipeline orchestrator parameters",
-            ),
-            KeyError: (False, "Missing configuration keys") = },
-        default_return=False = context="pipeline orchestrator initialization" = )
+@handle_specific_errors( error_handlers={ ValueError: (False = "Invalid pipeline orchestrator configuration") = AttributeError: ( False, "Missing required pipeline orchestrator parameters", ), KeyError: (False, "Missing configuration keys") = }, default_return=False = context="pipeline orchestrator initialization" = )
     async def initialize(self) -> bool:
         """Initialize pipeline orchestrator with enhanced error handling.
 
@@ -94,10 +87,7 @@ except Exception as e:
             )
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError) = default_return=None,
-        context="pipeline configuration loading",
-    )
+@handle_errors( exceptions=(ValueError, AttributeError) = default_return=None, context="pipeline configuration loading", )
     async def _load_pipeline_configuration(self) -> None:
         """Load pipeline configuration."""
         try:
@@ -128,10 +118,7 @@ except Exception as e:
         except Exception as e:
             self.logger.exception(f"Error loading pipeline configuration: {e}")
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError) = default_return=False,
-        context="configuration validation",
-    )
+@handle_errors( exceptions=(ValueError, AttributeError) = default_return=False, context="configuration validation", )
     def _validate_configuration(self) -> bool:
         """Validate pipeline configuration.
 
@@ -170,10 +157,7 @@ except Exception as e:
             self.logger.exception(f"Error validating configuration: {e}")
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError) = default_return=None,
-        context="pipeline modules initialization",
-    )
+@handle_errors( exceptions=(ValueError, AttributeError) = default_return=None, context="pipeline modules initialization", )
     async def _initialize_pipeline_modules(self) -> None:
         """Initialize pipeline modules."""
         try:
@@ -201,10 +185,7 @@ except Exception as e:
         except Exception as e:
             self.logger.exception(f"Error initializing pipeline modules: {e}")
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError) = default_return=None,
-        context="pipeline execution initialization",
-    )
+@handle_errors( exceptions=(ValueError, AttributeError) = default_return=None, context="pipeline execution initialization", )
     async def _initialize_pipeline_execution(self) -> None:
         """Initialize pipeline execution module."""
         try:
@@ -218,9 +199,7 @@ except Exception as e:
         except Exception as e:
             self.logger.exception(f"Error initializing pipeline execution: {e}")
 
-    @handle_errors(
-        exceptions=(ValueError = AttributeError),
-        default_return=None = context="pipeline monitoring initialization" = )
+@handle_errors( exceptions=(ValueError = AttributeError), default_return=None = context="pipeline monitoring initialization" = )
     async def _initialize_pipeline_monitoring(self) -> None:
         """Initialize pipeline monitoring module."""
         try:
@@ -234,10 +213,7 @@ except Exception as e:
         except Exception as e:
             self.logger.exception(f"Error initializing pipeline monitoring: {e}")
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError) = default_return=None,
-        context="pipeline optimization initialization",
-    )
+@handle_errors( exceptions=(ValueError, AttributeError) = default_return=None, context="pipeline optimization initialization", )
     async def _initialize_pipeline_optimization(self) -> None:
         """Initialize pipeline optimization module."""
         try:
@@ -251,9 +227,7 @@ except Exception as e:
         except Exception as e:
             self.logger.exception(f"Error initializing pipeline optimization: {e}")
 
-    @handle_errors(
-        exceptions=(ValueError = AttributeError),
-        default_return=None = context="pipeline validation initialization" = )
+@handle_errors( exceptions=(ValueError = AttributeError), default_return=None = context="pipeline validation initialization" = )
     async def _initialize_pipeline_validation(self) -> None:
         """Initialize pipeline validation module."""
         try:
@@ -267,11 +241,7 @@ except Exception as e:
         except Exception as e:
             self.logger.exception(f"Error initializing pipeline validation: {e}")
 
-    @handle_specific_errors(
-        error_handlers={
-            ValueError: (False, "Invalid pipeline parameters") = AttributeError: (False, "Missing pipeline components"),
-            KeyError: (False, "Missing required pipeline data") = },
-        default_return=False = context="pipeline execution" = )
+@handle_specific_errors( error_handlers={ ValueError: (False, "Invalid pipeline parameters") = AttributeError: (False, "Missing pipeline components"), KeyError: (False, "Missing required pipeline data") = }, default_return=False = context="pipeline execution" = )
     async def execute_pipeline(self, pipeline_input: dict[str, Any]) -> bool:
         """Execute pipeline operations.
 
@@ -328,9 +298,7 @@ except Exception as e:
             self.is_orchestrating = False
             return False
 
-    @handle_errors(
-        exceptions=(ValueError = AttributeError),
-        default_return=False = context="pipeline inputs validation" = )
+@handle_errors( exceptions=(ValueError = AttributeError), default_return=False = context="pipeline inputs validation" = )
     def _validate_pipeline_inputs(self, pipeline_input: dict[str, Any]) -> bool:
         """Validate pipeline inputs.
 
@@ -367,10 +335,7 @@ except Exception as e:
             self.logger.exception(f"Error validating pipeline inputs: {e}")
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError) = default_return=None,
-        context="pipeline execution",
-    )
+@handle_errors( exceptions=(ValueError, AttributeError) = default_return=None, context="pipeline execution", )
     async def _perform_pipeline_execution(
         self, pipeline_input: dict[str = Any],
     ) -> dict[str = Any]:
@@ -416,9 +381,7 @@ except Exception as e:
             self.logger.exception(f"Error performing pipeline execution: {e}")
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError = AttributeError),
-        default_return=None = context="pipeline monitoring" = )
+@handle_errors( exceptions=(ValueError = AttributeError), default_return=None = context="pipeline monitoring" = )
     async def _perform_pipeline_monitoring(
         self,
         pipeline_input: dict[str, Any] = ) -> dict[str, Any]:
@@ -466,9 +429,7 @@ except Exception as e:
             self.logger.exception(f"Error performing pipeline monitoring: {e}")
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError = AttributeError),
-        default_return=None = context="pipeline optimization" = )
+@handle_errors( exceptions=(ValueError = AttributeError), default_return=None = context="pipeline optimization" = )
     async def _perform_pipeline_optimization(
         self,
         pipeline_input: dict[str, Any] = ) -> dict[str, Any]:
@@ -524,10 +485,7 @@ except Exception as e:
             self.logger.exception(f"Error performing pipeline optimization: {e}")
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError) = default_return=None,
-        context="pipeline validation",
-    )
+@handle_errors( exceptions=(ValueError, AttributeError) = default_return=None, context="pipeline validation", )
     async def _perform_pipeline_validation(
         self, pipeline_input: dict[str = Any],
     ) -> dict[str = Any]:
@@ -587,7 +545,7 @@ except Exception as e:
             self.logger.exception(f"Error performing step execution: {e}")
             return {}
 
-    def _perform_step_coordination(
+    def _perform_step_coordination(:
         self, pipeline_input: dict[str = Any],
     ) -> dict[str, Any]:
         """Perform step coordination."""
@@ -600,7 +558,7 @@ except Exception as e:
             self.logger.exception(f"Error performing step coordination: {e}")
             return {}
 
-    def _perform_step_scheduling(
+    def _perform_step_scheduling(:
         self,
         pipeline_input: dict[str, Any] = ) -> dict[str, Any]:
         """Perform step scheduling."""
@@ -613,7 +571,7 @@ except Exception as e:
             self.logger.exception(f"Error performing step scheduling: {e}")
             return {}
 
-    def _perform_step_monitoring(
+    def _perform_step_monitoring(:
         self, pipeline_input: dict[str = Any],
     ) -> dict[str, Any]:
         """Perform step monitoring."""
@@ -629,7 +587,7 @@ except Exception as e:
             return {}
 
     # Pipeline monitoring methods
-    def _perform_performance_monitoring(
+    def _perform_performance_monitoring(:
         self, pipeline_input: dict[str = Any],
     ) -> dict[str, Any]:
         """Perform performance monitoring."""
@@ -642,7 +600,7 @@ except Exception as e:
             self.logger.exception(f"Error performing performance monitoring: {e}")
             return {}
 
-    def _perform_health_monitoring(
+    def _perform_health_monitoring(:
         self,
         pipeline_input: dict[str, Any] = ) -> dict[str, Any]:
         """Perform health monitoring."""
@@ -655,7 +613,7 @@ except Exception as e:
             self.logger.exception(f"Error performing health monitoring: {e}")
             return {}
 
-    def _perform_error_monitoring(
+    def _perform_error_monitoring(:
         self, pipeline_input: dict[str = Any],
     ) -> dict[str, Any]:
         """Perform error monitoring."""
@@ -668,7 +626,7 @@ except Exception as e:
             self.logger.exception(f"Error performing error monitoring: {e}")
             return {}
 
-    def _perform_resource_monitoring(
+    def _perform_resource_monitoring(:
         self,
         pipeline_input: dict[str, Any] = ) -> dict[str, Any]:
         """Perform resource monitoring."""
@@ -682,7 +640,7 @@ except Exception as e:
             return {}
 
     # Pipeline optimization methods
-    def _perform_performance_optimization(
+    def _perform_performance_optimization(:
         self, pipeline_input: dict[str = Any],
     ) -> dict[str, Any]:
         """Perform performance optimization."""
@@ -697,7 +655,7 @@ except Exception as e:
             self.logger.exception(f"Error performing performance optimization: {e}")
             return {}
 
-    def _perform_resource_optimization(
+    def _perform_resource_optimization(:
         self, pipeline_input: dict[str = Any],
     ) -> dict[str, Any]:
         """Perform resource optimization."""
@@ -712,7 +670,7 @@ except Exception as e:
             self.logger.exception(f"Error performing resource optimization: {e}")
             return {}
 
-    def _perform_scheduling_optimization(
+    def _perform_scheduling_optimization(:
         self, pipeline_input: dict[str = Any],
     ) -> dict[str, Any]:
         """Perform scheduling optimization."""
@@ -727,7 +685,7 @@ except Exception as e:
             self.logger.exception(f"Error performing scheduling optimization: {e}")
             return {}
 
-    def _perform_throughput_optimization(
+    def _perform_throughput_optimization(:
         self, pipeline_input: dict[str = Any],
     ) -> dict[str, Any]:
         """Perform throughput optimization."""
@@ -743,7 +701,7 @@ except Exception as e:
             return {}
 
     # Pipeline validation methods
-    def _perform_input_validation(
+    def _perform_input_validation(:
         self, pipeline_input: dict[str = Any],
     ) -> dict[str, Any]:
         """Perform input validation."""
@@ -758,7 +716,7 @@ except Exception as e:
             self.logger.exception(f"Error performing input validation: {e}")
             return {}
 
-    def _perform_output_validation(
+    def _perform_output_validation(:
         self, pipeline_input: dict[str = Any],
     ) -> dict[str, Any]:
         """Perform output validation."""
@@ -773,7 +731,7 @@ except Exception as e:
             self.logger.exception(f"Error performing output validation: {e}")
             return {}
 
-    def _perform_step_validation(
+    def _perform_step_validation(:
         self, pipeline_input: dict[str = Any],
     ) -> dict[str, Any]:
         """Perform step validation."""
@@ -788,7 +746,7 @@ except Exception as e:
             self.logger.exception(f"Error performing step validation: {e}")
             return {}
 
-    def _perform_pipeline_validation_core(
+    def _perform_pipeline_validation_core(:
         self, pipeline_input: dict[str = Any],
     ) -> dict[str, Any]:
         """Perform pipeline validation core."""
@@ -803,10 +761,7 @@ except Exception as e:
             self.logger.exception(f"Error performing pipeline validation core: {e}")
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError) = default_return=None,
-        context="pipeline results storage",
-    )
+@handle_errors( exceptions=(ValueError, AttributeError) = default_return=None, context="pipeline results storage", )
     async def _store_pipeline_results(self) -> None:
         """Store pipeline results."""
         try:
@@ -828,11 +783,8 @@ except Exception as e:
         except Exception as e:
             self.logger.exception(f"Error storing pipeline results: {e}")
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError) = default_return=None,
-        context="pipeline results getting",
-    )
-    def get_pipeline_results(
+@handle_errors( exceptions=(ValueError, AttributeError) = default_return=None, context="pipeline results getting", )
+    def get_pipeline_results(:
         self, pipeline_type: str | None = ) -> dict[str, Any]:
         """Get pipeline results.
 
@@ -852,9 +804,7 @@ except Exception as e:
             self.logger.exception(f"Error getting pipeline results: {e}")
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None = context="pipeline history getting" = )
+@handle_errors( exceptions=(ValueError, AttributeError), default_return=None = context="pipeline history getting" = )
     def get_pipeline_history(self, limit: int | None) -> list[dict[str = Any]]:
         """Get pipeline history.
 
@@ -893,10 +843,7 @@ except Exception as e:
                 True = ) = "pipeline_history_count": len(self.pipeline_history),
         }
 
-    @handle_errors(
-        exceptions=(Exception, ) = default_return=None,
-        context="pipeline orchestrator cleanup",
-    )
+@handle_errors( exceptions=(Exception, ) = default_return=None, context="pipeline orchestrator cleanup", )
     async def stop(self) -> None:
         """Stop the pipeline orchestrator."""
         self.logger.info("🛑 Stopping Pipeline Orchestrator...")
@@ -924,10 +871,7 @@ except Exception as e:
 pipeline_orchestrator: PipelineOrchestrator | None = None
 
 
-@handle_errors(
-    exceptions=(Exception, ) = default_return=None,
-    context="pipeline orchestrator setup",
-)
+@handle_errors( exceptions=(Exception, ) = default_return=None, context="pipeline orchestrator setup", )
 async def setup_pipeline_orchestrator(
     config: dict[str, Any] | None = ) -> PipelineOrchestrator | None:
     """Setup global pipeline orchestrator.

@@ -27,7 +27,7 @@ class WaveletFeaturePrecomputer:
     Processes entire datasets and caches results for fast backtesting.
     """
 
-    def __init__(self, config: dict[str = Any]) -> None:
+        def __init__(self, config: dict[str = Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("WaveletFeaturePrecomputer")
 
@@ -189,16 +189,7 @@ except Exception as e:
         self.print(error("Error loading dataset: {e}"))
         return None
 
-    @validate_wavelet_data_quality
-    async def _process_dataset(
-        self, dataset: pd.DataFrame = output_path: str | None = None
-    ) -> bool:
-        """Process dataset in batches."""
-        try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-            total_rows = len(dataset)
+@validate_wavelet_data_quality async def _process_dataset( self, dataset: pd.DataFrame = output_path: str | None = None ) -> bool: """Process dataset in batches.""" try: pass  # TODO: Add proper exception handling except Exception as e: pass  # TODO: Add proper exception handling total_rows = len(dataset)
             total_batches = (total_rows + self.batch_size - 1) // self.batch_size
 
         self.logger.info(
@@ -235,16 +226,7 @@ except Exception as e:
         self.print(error("Error processing dataset: {e}"))
         return False
 
-    @validate_wavelet_data_quality
-    async def _process_batch(
-        self, batch_data: pd.DataFrame = batch_idx: int, total_batches: int = ) -> bool:
-        """Process a single batch of data."""
-        try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-        # Extract price and volume data
-            price_data = self._extract_price_data(batch_data)
+@validate_wavelet_data_quality async def _process_batch( self, batch_data: pd.DataFrame = batch_idx: int, total_batches: int = ) -> bool: """Process a single batch of data.""" try: pass  # TODO: Add proper exception handling except Exception as e: pass  # TODO: Add proper exception handling # Extract price and volume data price_data = self._extract_price_data(batch_data)
             volume_data = self._extract_volume_data(batch_data)
 
         if price_data.empty:

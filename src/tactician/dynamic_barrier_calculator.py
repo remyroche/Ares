@@ -24,17 +24,17 @@ both 1m and 5m timeframes with appropriate adjustments.
 
 def __init__(self, config: Dict[str, Any]) -> None:
         """Initialize the dynamic barrier calculator."""
-self.config = config.get("tactician_triple_barrier", {})
-self.logger = get_logger("DynamicBarrierCalculator")
+    self.config = config.get("tactician_triple_barrier", {})
+    self.logger = get_logger("DynamicBarrierCalculator")
 
 # Load Analyst configuration
-self.analyst_config = self._load_analyst_config()
+    self.analyst_config = self._load_analyst_config()
 
 # Load Tactician configuration
-self.tactician_config = self.config
+    self.tactician_config = self.config
 
 # Initialize dynamic barriers
-self._initialize_dynamic_barriers()
+    self._initialize_dynamic_barriers()
 
 def _load_analyst_config(self) -> Dict[str, Any]:
         """Load Analyst triple barrier configuration."""
@@ -84,17 +84,17 @@ except Exception as e:
                         self.logger.warning(f"⚠️ Could not load Analyst config from {config_path}: {e}")
 continue
 
-self.logger.info(f"📊 Loaded Analyst Configuration:")
-self.logger.info(f"   Profit Take: {analyst_config['profit_take_multiplier']:.4f} ({analyst_config['profit_take_multiplier']*100:.3f}%)")
-self.logger.info(f"   Stop Loss: {analyst_config['stop_loss_multiplier']:.4f} ({analyst_config['stop_loss_multiplier']*100:.3f}%)")
-self.logger.info(f"   Time Barrier: {analyst_config['time_barrier_minutes']} minutes")
+    self.logger.info(f"📊 Loaded Analyst Configuration:")
+    self.logger.info(f"   Profit Take: {analyst_config['profit_take_multiplier']:.4f} ({analyst_config['profit_take_multiplier']*100:.3f}%)")
+    self.logger.info(f"   Stop Loss: {analyst_config['stop_loss_multiplier']:.4f} ({analyst_config['stop_loss_multiplier']*100:.3f}%)")
+    self.logger.info(f"   Time Barrier: {analyst_config['time_barrier_minutes']} minutes")
 
-return analyst_config
+    return analyst_config
 
 except Exception as e:
             self.logger.error(f"❌ Error loading Analyst configuration: {e}")
 # Fallback to default values
-return {
+    return {
 "profit_take_multiplier": 0.002,
 "stop_loss_multiplier": 0.001,
 "time_barrier_minutes": 30,
@@ -106,29 +106,26 @@ def _initialize_dynamic_barriers(self) -> None:
         """Initialize dynamic barrier calculation parameters."""
 # Get fractions from configuration - 4 barrier combinations
 fractions = self.tactician_config.get("analyst_barrier_fractions", {})
-self.upper_barrier_50_fraction = fractions.get("upper_barrier_50_fraction", 0.5)
-self.lower_barrier_50_fraction = fractions.get("lower_barrier_50_fraction", 0.5)
-self.upper_barrier_25_fraction = fractions.get("upper_barrier_25_fraction", 0.25)
-self.lower_barrier_25_fraction = fractions.get("lower_barrier_25_fraction", 0.25)
+    self.upper_barrier_50_fraction = fractions.get("upper_barrier_50_fraction", 0.5)
+    self.lower_barrier_50_fraction = fractions.get("lower_barrier_50_fraction", 0.5)
+    self.upper_barrier_25_fraction = fractions.get("upper_barrier_25_fraction", 0.25)
+    self.lower_barrier_25_fraction = fractions.get("lower_barrier_25_fraction", 0.25)
 
 # Get timeframe settings - both timeframes are equal
-self.timeframes = self.tactician_config.get("timeframes", ["1m", "5m"])
-self.primary_timeframe = self.tactician_config.get("primary_timeframe", "1m")
-self.secondary_timeframe = self.tactician_config.get("secondary_timeframe", "5m")
+    self.timeframes = self.tactician_config.get("timeframes", ["1m", "5m"])
+    self.primary_timeframe = self.tactician_config.get("primary_timeframe", "1m")
+    self.secondary_timeframe = self.tactician_config.get("secondary_timeframe", "5m")
 
-self.logger.info(f"🔧 Dynamic Barrier Calculator Initialized:")
-self.logger.info(f"   50% Barriers - Upper: {self.upper_barrier_50_fraction:.2f}, Lower: {self.lower_barrier_50_fraction:.2f}")
-self.logger.info(f"   25% Barriers - Upper: {self.upper_barrier_25_fraction:.2f}, Lower: {self.lower_barrier_25_fraction:.2f}")
-self.logger.info(f"   Timeframes: {self.timeframes} (both equal, ML model decides usage)")
-self.logger.info(f"   Primary: {self.primary_timeframe}, Secondary: {self.secondary_timeframe}")
+    self.logger.info(f"🔧 Dynamic Barrier Calculator Initialized:")
+    self.logger.info(f"   50% Barriers - Upper: {self.upper_barrier_50_fraction:.2f}, Lower: {self.lower_barrier_50_fraction:.2f}")
+    self.logger.info(f"   25% Barriers - Upper: {self.upper_barrier_25_fraction:.2f}, Lower: {self.lower_barrier_25_fraction:.2f}")
+    self.logger.info(f"   Timeframes: {self.timeframes} (both equal, ML model decides usage)")
+    self.logger.info(f"   Primary: {self.primary_timeframe}, Secondary: {self.secondary_timeframe}")
 
-@handle_errors(
-exceptions=(Exception,),
-default_return=(0.001, 0.00025),
-context="dynamic_barrier_calculator.calculate_dynamic_barriers"
-)
+@handle_errors( exceptions=(Exception,), default_return=(0.001, 0.00025), context="dynamic_barrier_calculator.calculate_dynamic_barriers" )
 @with_tracing_span("DynamicBarrier.calculateBarriers")
-def calculate_dynamic_barriers(
+def calculate_dynamic_barriers(:
+    pass  # TODO: Add implementation
 self,
 timeframe: str = "1m"
 ) -> Dict[str, Tuple[float, float]]:
@@ -167,18 +164,18 @@ analyst_lower * self.lower_barrier_25_fraction   # 25% lower
 )
 }
 
-self.logger.info(f"🎯 2 Dynamic Barrier Combinations Calculated for {timeframe}:")
-self.logger.info(f"   Analyst Base - Upper: {analyst_upper:.4f}, Lower: {analyst_lower:.4f}")
+    self.logger.info(f"🎯 2 Dynamic Barrier Combinations Calculated for {timeframe}:")
+    self.logger.info(f"   Analyst Base - Upper: {analyst_upper:.4f}, Lower: {analyst_lower:.4f}")
 for name, (upper, lower) in barriers.items():
                 self.logger.info(f"   {name}: Upper={upper:.4f}, Lower={lower:.4f}")
-self.logger.info(f"   Note: Both barrier combinations will be used - position only opens if confidence is high enough for both")
+    self.logger.info(f"   Note: Both barrier combinations will be used - position only opens if confidence is high enough for both")
 
-return barriers
+    return barriers
 
 except Exception as e:
             self.logger.error(f"❌ Error calculating dynamic barriers: {e}")
 # Return fallback values
-return {
+    return {
 "barrier_50_50": (0.001, 0.0005),
 "barrier_25_25": (0.0005, 0.00025)
 }
@@ -189,7 +186,7 @@ return {
 def get_timeframe_weights(self, timeframe: str) -> Tuple[float, float]:
         """Get execution and confirmation weights for a timeframe."""
 # Both timeframes are equal - let the ML model decide usage
-return 0.5, 0.5
+    return 0.5, 0.5
 
 def calculate_multi_timeframe_barriers(self) -> Dict[str, Dict[str, Tuple[float, float]]]:
         """Calculate 2 barrier combinations for both 1m and 5m timeframes."""
@@ -207,22 +204,22 @@ if "1m" in self.timeframes:
 if "5m" in self.timeframes:
                 barriers["5m"] = self.calculate_dynamic_barriers(timeframe="5m")
 
-self.logger.info(f"📊 Multi-timeframe barriers calculated (2 combinations each):")
+    self.logger.info(f"📊 Multi-timeframe barriers calculated (2 combinations each):")
 for tf, combinations in barriers.items():
                 self.logger.info(f"   {tf}:")
 for name, (upper, lower) in combinations.items():
                     self.logger.info(f"     {name}: Upper={upper:.4f}, Lower={lower:.4f}")
-self.logger.info(f"   Note: Both barrier combinations will be used for each timeframe")
+    self.logger.info(f"   Note: Both barrier combinations will be used for each timeframe")
 
-return barriers
+    return barriers
 
 except Exception as e:
             self.logger.error(f"❌ Error calculating multi-timeframe barriers: {e}")
-return {}
+    return {}
 
 def get_analyst_barrier_info(self) -> Dict[str, Any]:
         """Get information about Analyst barriers for comparison."""
-return {
+    return {
 "upper_barrier_multiplier": self.analyst_config["profit_take_multiplier"],
 "lower_barrier_multiplier": self.analyst_config["stop_loss_multiplier"],
 "fractions": {
@@ -289,7 +286,7 @@ validation_results[barrier_name] = {
 "is_valid": upper_fraction_error < 0.1 and lower_fraction_error < 0.1
 }
 
-return {
+    return {
 "timeframe": timeframe,
 "barrier_combinations": validation_results,
 "overall_valid": all(result["is_valid"] for result in validation_results.values())
@@ -297,7 +294,7 @@ return {
 
 except Exception as e:
             self.logger.error(f"❌ Error validating barrier calculation: {e}")
-return {
+    return {
 "timeframe": timeframe,
 "error": str(e),
 "is_valid": False

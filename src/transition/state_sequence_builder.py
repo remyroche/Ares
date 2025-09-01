@@ -9,38 +9,9 @@ import os
 from dataclasses import dataclass
 import pandas as pd
 
-@dataclass
-class PlaceholderDataClass:
-    pass  # TODO: Add implementation
-class StateBuilderConfig:
-    pass  # TODO: Add implementation
-class StateBuilderConfig:
-    pass  # TODO: Add implementation
-class StateBuilderConfig:
-    hmm_n_states: int
-use_existing_urc_models: bool
-cache_dir: str | None
-
-class StateSequenceBuilder:
-    pass  # TODO: Add implementation
-class StateSequenceBuilder:
-    pass  # TODO: Add implementation
-class StateSequenceBuilder:
-    """
-Build per-timestep state sequences for pre/post windows using the existing
-UnifiedRegimeClassifier (HMM) and its mapping to coarse regimes.
-"""
-
-def __init__(
-self,
-config: dict[str, Any],
-exchange: str = "UNKNOWN",
-symbol: str = "UNKNOWN",
-) -> None:
-        self.config = config
-self.logger = system_logger.getChild("StateSequenceBuilder")
+@dataclass class PlaceholderDataClass: pass  # TODO: Add implementation class StateBuilderConfig: pass  # TODO: Add implementation class StateBuilderConfig: pass  # TODO: Add implementation class StateBuilderConfig: hmm_n_states: int use_existing_urc_models: bool cache_dir: str | None  class StateSequenceBuilder: pass  # TODO: Add implementation class StateSequenceBuilder: pass  # TODO: Add implementation class StateSequenceBuilder: """ Build per-timestep state sequences for pre/post windows using the existing UnifiedRegimeClassifier (HMM) and its mapping to coarse regimes. """  def __init__( self, config: dict[str, Any], exchange: str = "UNKNOWN", symbol: str = "UNKNOWN", ) -> None: self.config = config self.logger = system_logger.getChild("StateSequenceBuilder")
 tm_cfg = (config or {}).get("TRANSITION_MODELING", {})
-self.sb_cfg = StateBuilderConfig(
+    self.sb_cfg = StateBuilderConfig(
 hmm_n_states=int(tm_cfg.get("hmm_n_states", 5)),
 use_existing_urc_models=bool(tm_cfg.get("use_existing_urc_models", True)),
 cache_dir=str(
@@ -50,9 +21,9 @@ cache_dir=str(
 ),
 ),
 )
-self.exchange = exchange
-self.symbol = symbol
-self.urc = UnifiedRegimeClassifier(config, exchange=exchange, symbol=symbol)
+    self.exchange = exchange
+    self.symbol = symbol
+    self.urc = UnifiedRegimeClassifier(config, exchange=exchange, symbol=symbol)
 
 async def initialize(self) -> bool:
         try:
@@ -61,7 +32,7 @@ except Exception as e:
     pass  # TODO: Add proper exception handling
 await self.urc.initialize()
 # If not trained or different n_states, we trigger training with current data later
-return True
+    return True
 except Exception:
             return False
 
@@ -73,7 +44,7 @@ except Exception as e:
     pass  # TODO: Add proper exception handling
 desired_states = self.sb_cfg.hmm_n_states
 # Force n_states if available
-self.urc.n_states = max(3, int(desired_states))
+    self.urc.n_states = max(3, int(desired_states))
 if not getattr(self.urc, "trained", False):
                 # Minimal training using available history
 loop = asyncio.get_event_loop()
@@ -106,7 +77,7 @@ if os.path.exists(path):
 except Exception:
             pass
 # Ensure trained
-self._ensure_trained(klines_df)
+    self._ensure_trained(klines_df)
 try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
@@ -162,7 +133,7 @@ if cache_dir:
                     out.to_parquet(os.path.join(cache_dir, key))
 except Exception:
                 pass
-return out
+    return out
 except Exception as e:
             self.logger.warning(f"State inference failed: {e}")
-return pd.DataFrame(index=klines_df.index)
+    return pd.DataFrame(index=klines_df.index)

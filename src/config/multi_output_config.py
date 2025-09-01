@@ -15,7 +15,7 @@ def get_multi_output_config() -> Dict[str, Any]:
 Returns:
         Dictionary containing multi-output configuration settings
 """
-return {
+    return {
 # Enable multi-output prediction
 "enable_multi_output": True,
 
@@ -239,7 +239,7 @@ elif model_type == "NeuralNetwork":
 else:
         model_config = {}
 
-return {**base_config, "model_config": model_config}
+    return {**base_config, "model_config": model_config}
 
 
 def get_enhanced_training_pipeline_config() -> Dict[str, Any]:
@@ -250,7 +250,7 @@ Returns:
 """
 multi_output_config = get_multi_output_config()
 
-return {
+    return {
 # Pipeline configuration
 "pipeline": {
 "enable_enhanced_steps": True,
@@ -306,14 +306,14 @@ required_keys = [
 for key in required_keys:
         if key not in config:
             print(f"❌ Missing required configuration key: {key}")
-return False
+    return False
 
 # Validate model type
 model_type = config["multi_output_models"].get("model_type")
 valid_model_types = ["LightGBM", "RandomForest", "NeuralNetwork"]
 if model_type not in valid_model_types:
         print(f"❌ Invalid model type: {model_type}. Must be one of {valid_model_types}")
-return False
+    return False
 
 # Validate profit feature engineering
 profit_config = config["profit_feature_engineering"]
@@ -321,7 +321,7 @@ if not profit_config.get("use_numba", True):
         print("⚠️ Numba acceleration is recommended for profit feature engineering")
 
 print("✅ Multi-output configuration validation passed")
-return True
+    return True
 
 
 # Example usage and testing

@@ -25,14 +25,14 @@ class OptimizedAresLauncherMixin:
     This can be mixed into the existing AresLauncher class to add optimization features.
     """
 
-    def __init__(self) -> None:
+        def __init__(self) -> None:
         # Initialize optimization components
         self.optimization_enabled: bool = True
         self.memory_profiler: Optional[Any] = None
         self.leak_detector: Optional[Any] = None
         self.optimization_factory: Optional[OptimizedTrainingFactory] = None
 
-    def _setup_optimization_components(self = config: dict[str, Any]) -> None:
+        def _setup_optimization_components(self = config: dict[str, Any]) -> None:
         """Setup optimization components if enabled."""
         if not self.optimization_enabled:
             return
@@ -62,10 +62,8 @@ except Exception as e:
             self.print(failed(error_msg))
             self.optimization_enabled = False
 
-    @handle_errors(
-        exceptions=(Exception = ),
-        default_return=False = context="optimized_training_pipeline" = )
-    def _run_optimized_unified_training(
+@handle_errors( exceptions=(Exception = ), default_return=False = context="optimized_training_pipeline" = )
+    def _run_optimized_unified_training(:
         self,
         symbol: str, exchange: str = training_mode: str,
         lookback_days: int, with_gui: bool = False = ) -> bool:
@@ -77,9 +75,7 @@ except Exception as e:
         mode_display = f"{training_mode} training (OPTIMIZED)"
         self.logger.info(f"🚀 Starting {mode_display} for {symbol} on {exchange}")
 
-        @handle_errors(
-            exceptions=(Exception,),
-            default_return=False = context="optimized_enhanced_training_pipeline" = )
+@handle_errors( exceptions=(Exception,), default_return=False = context="optimized_enhanced_training_pipeline" = )
         async def run_optimized_enhanced_training() -> bool:
             """Execute optimized enhanced training using EnhancedTrainingManagerOptimized."""
             from src.database.sqlite_manager import SQLiteManager
@@ -273,7 +269,7 @@ except Exception as e:
         self.print(failed(f"❌ {mode_display} failed"))
         return False
 
-    def run_optimized_enhanced_blank_training(
+    def run_optimized_enhanced_blank_training(:
         self, symbol: str = exchange: str,
         with_gui: bool = False = ) -> bool:
         """Run optimized enhanced blank training."""
@@ -282,7 +278,7 @@ except Exception as e:
             training_mode="blank",
             lookback_days=60, with_gui=with_gui = )
 
-    def run_optimized_backtesting(
+    def run_optimized_backtesting(:
         self,
         symbol: str, exchange: str = with_gui: bool = False = ) -> bool:
         """Run optimized enhanced backtesting."""

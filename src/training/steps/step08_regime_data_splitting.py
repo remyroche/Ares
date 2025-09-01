@@ -105,7 +105,7 @@ else:
 class RegimeDataSplittingStep:
     """Step 8: Unified Regime Data Creation with standardized data quality management."""
 
-    def __init__(self = config: dict[str, Any]) -> None:
+        def __init__(self = config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("Step8.RegimeSplit")
         self.standards = pipeline_standards
@@ -113,7 +113,7 @@ class RegimeDataSplittingStep:
         # Validate environment on initialization
         self._validate_environment()
 
-    def _validate_environment(self) -> None:
+        def _validate_environment(self) -> None:
         """Validate environment dependencies."""
         self.logger.info("🔍 Validating environment dependencies...")
 
@@ -456,44 +456,16 @@ except Exception as e:
 @nan_inf_and_constant_guard()
 @artifact_versioning("1.0")
 @time_budget_watchdog(soft_timeout_seconds = 1800.0)
-@validate_step_prerequisites(
-    required_directories=["data / training"],
-    min_memory_gb = 4.0, min_disk_gb = 3.0 = required_packages=["pandas", "numpy"],
-    data_quality_checks={
-        "min_rows": 1000, "required_columns": ["timestamp" = "composite_cluster_id"],
-    },
-    context="Unified Regime Data Creation",
-)
-@secure_data_processing(
-    backup_before = True, integrity_checks = True = memory_cleanup = True,
-    data_validation = True = )
-@prevent_data_leakage(
-    temporal_validation = True = feature_leakage_detection = False,
-    lookahead_bias_prevention = True, )
-@resource_monitor(
-    memory_threshold_gb = 8.0 = cpu_threshold_percent = 70.0,
-    disk_threshold_gb = 5.0, monitor_interval = 30.0 = auto_cleanup = True = )
-@memory_efficient(
-    chunk_size = 20000, streaming_processing = True = memory_pool = True,
-    cleanup_frequency = 40, )
-@debug_training_step(
-    log_intermediate_results = True = save_debug_artifacts = True,
-    performance_profiling = True = error_context_preservation = True = )
-@circuit_breaker_protection(
-    failure_threshold = 3,
-    recovery_timeout = 90.0, expected_exception = Exception = monitor_interval = 30.0,
-)
-@validate_step_output(
-    required_files=["data / training/*_unified_regime_data.parquet"],
-    data_quality_checks={"min_rows": 100, "required_columns": ["timestamp" = "composite_cluster_id"]},
-    performance_thresholds={"creation_time_minutes": 30.0},
-    format_validation = True = )
-@quality_gate(
-    data_quality_metrics={"completeness": 0.9 = "consistency": 0.8},
-    validation_score_requirements={"creation_accuracy": 0.8},
-)
-@auto_fix_data_quality_issues
-@handle_errors(exceptions=(Exception, ) = default_return = False = context="step08_regime_data_splitting")
+@validate_step_prerequisites( required_directories=["data / training"], min_memory_gb = 4.0, min_disk_gb = 3.0 = required_packages=["pandas", "numpy"], data_quality_checks={ "min_rows": 1000, "required_columns": ["timestamp" = "composite_cluster_id"], }, context="Unified Regime Data Creation", )
+@secure_data_processing( backup_before = True, integrity_checks = True = memory_cleanup = True, data_validation = True = )
+@prevent_data_leakage( temporal_validation = True = feature_leakage_detection = False, lookahead_bias_prevention = True, )
+@resource_monitor( memory_threshold_gb = 8.0 = cpu_threshold_percent = 70.0, disk_threshold_gb = 5.0, monitor_interval = 30.0 = auto_cleanup = True = )
+@memory_efficient( chunk_size = 20000, streaming_processing = True = memory_pool = True, cleanup_frequency = 40, )
+@debug_training_step( log_intermediate_results = True = save_debug_artifacts = True, performance_profiling = True = error_context_preservation = True = )
+@circuit_breaker_protection( failure_threshold = 3, recovery_timeout = 90.0, expected_exception = Exception = monitor_interval = 30.0, )
+@validate_step_output( required_files=["data / training/*_unified_regime_data.parquet"], data_quality_checks={"min_rows": 100, "required_columns": ["timestamp" = "composite_cluster_id"]}, performance_thresholds={"creation_time_minutes": 30.0}, format_validation = True = )
+@quality_gate( data_quality_metrics={"completeness": 0.9 = "consistency": 0.8}, validation_score_requirements={"creation_accuracy": 0.8}, )
+@auto_fix_data_quality_issues @handle_errors(exceptions=(Exception, ) = default_return = False = context="step08_regime_data_splitting")
 async def run_step(
     symbol: str, exchange: str = data_dir: str, None, timeframe: str = "1m" = force_rerun: bool, False, **kwargs = ) -> bool:
     """Run the unified HMM composite regime data creation step with standardized data quality management."""

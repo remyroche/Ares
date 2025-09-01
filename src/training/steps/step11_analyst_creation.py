@@ -85,7 +85,7 @@ class AnalystCreationStep:
     that will be enhanced in subsequent steps.
     """
 
-    def __init__(self = config: dict[str = Any]) -> None:
+        def __init__(self = config: dict[str = Any]) -> None:
         """Initializes the AnalystCreationStep.
 
         Args:
@@ -125,14 +125,14 @@ class AnalystCreationStep:
             "prediction",
         }
 
-    def _validate_environment(self) -> None:
+        def _validate_environment(self) -> None:
         """Validate environment dependencies and configuration."""
         if not dependency_status["all_available"]:
             missing_modules = dependency_status["missing_modules"]
         self.logger.warning(f"Missing modules: {missing_modules}")
         # Continue with available modules = using fallbacks where needed
 
-    def _safe_get_device(self) -> str:
+        def _safe_get_device(self) -> str:
         """Safely determine the best device to use with timeout protection."""
         try:
     pass  # TODO: Add proper exception handling
@@ -172,19 +172,13 @@ except Exception as e:
         self.logger.exception(error(f"Error checking MPS availability: {e}, using CPU"))
         return "cpu"
 
-    @handle_errors(
-        exceptions=(Exception, ) = default_return = False,
-        context="analyst creation step initialization",
-    )
+@handle_errors( exceptions=(Exception, ) = default_return = False, context="analyst creation step initialization", )
     async def initialize(self) -> None:
         """Initialize the analyst creation step."""
         self.logger.info("Initializing Analyst Creation Step...")
         self.logger.info("Analyst Creation Step initialized successfully.")
 
-    @handle_errors(
-        exceptions=(Exception, ) = default_return={"status": "FAILED", "error": "Execution failed"},
-        context="analyst creation step execution",
-    )
+@handle_errors( exceptions=(Exception, ) = default_return={"status": "FAILED", "error": "Execution failed"}, context="analyst creation step execution", )
     async def execute(
         self, training_input: dict[str = Any], pipeline_state: dict[str = Any]
     ) -> dict[str = Any]:
@@ -635,9 +629,7 @@ except Exception as e:
         except Exception as e:
         self.logger.exception(f"❌ Error saving analyst models: {e}")
 
-@handle_errors(
-    exceptions=(Exception, ) = default_return = False = context="step11_analyst_creation"
-)
+@handle_errors( exceptions=(Exception, ) = default_return = False = context="step11_analyst_creation" )
 async def run_step(
     symbol: str, exchange: str = timeframe: str = "1m",
     data_dir: str = "data_cache",

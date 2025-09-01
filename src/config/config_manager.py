@@ -29,26 +29,26 @@ class ConfigManager:
 class ConfigManager:
     """Unified configuration manager for the Ares trading system."""
 
-def __init__(self):
     def __init__(self):
-    def __init__(self):
-    def __init__(self):
+        def __init__(self):
+        def __init__(self):
+        def __init__(self):
         """Initialize the configuration manager."""
-self._static_config = None
-self._optimizable_configs = {}
-self._search_spaces = {}
-self._load_configurations()
+    self._static_config = None
+    self._optimizable_configs = {}
+    self._search_spaces = {}
+    self._load_configurations()
 
-def _load_configurations(self):
     def _load_configurations(self):
-    def _load_configurations(self):
-    def _load_configurations(self):
+        def _load_configurations(self):
+        def _load_configurations(self):
+        def _load_configurations(self):
         """Load all configurations."""
 # Load static (non-optimizable) configuration
-self._static_config = get_static_config()
+    self._static_config = get_static_config()
 
 # Load optimizable configurations
-self._optimizable_configs = {
+    self._optimizable_configs = {
 "confidence": get_confidence_config(),
 "position_sizing": get_position_sizing_config(),
 "leverage": get_leverage_config(),
@@ -63,7 +63,7 @@ self._optimizable_configs = {
 }
 
 # Load search spaces for optimization
-self._search_spaces = {
+    self._search_spaces = {
 "confidence": get_confidence_search_space(),
 "position_sizing": get_position_sizing_search_space(),
 "leverage": get_leverage_search_space(),
@@ -79,23 +79,23 @@ self._search_spaces = {
 
 def get_static_config(self) -> Dict[str, Any]:
         """Get static (non-optimizable) configuration."""
-return self._static_config
+    return self._static_config
 
 def get_optimizable_config(self, category: str) -> Any:
         """Get optimizable configuration for a specific category."""
-return self._optimizable_configs.get(category)
+    return self._optimizable_configs.get(category)
 
 def get_all_optimizable_configs(self) -> Dict[str, Any]:
         """Get all optimizable configurations."""
-return self._optimizable_configs.copy()
+    return self._optimizable_configs.copy()
 
 def get_search_space(self, category: str) -> Dict[str, Dict[str, Any]]:
         """Get search space for a specific category."""
-return self._search_spaces.get(category, {})
+    return self._search_spaces.get(category, {})
 
 def get_all_search_spaces(self) -> Dict[str, Dict[str, Dict[str, Any]]]:
         """Get all search spaces."""
-return self._search_spaces.copy()
+    return self._search_spaces.copy()
 
 def get_complete_config(self) -> Dict[str, Any]:
         """Get complete configuration including both static and optimizable parameters."""
@@ -108,7 +108,7 @@ for category, config in self._optimizable_configs.items():
 else:
                 complete_config[category] = config
 
-return complete_config
+    return complete_config
 
 def update_optimizable_config(self, category: str, updates: Dict[str, Any]) -> bool:
         """Update optimizable configuration for a specific category."""
@@ -121,7 +121,7 @@ for key, value in updates.items():
             if hasattr(config, key):
                 setattr(config, key, value)
 
-return True
+    return True
 
 def get_parameter_value(self, param_path: str) -> Any:
         """Get parameter value using dot notation (e.g., 'confidence.base_entry_threshold')."""
@@ -144,11 +144,11 @@ if category in self._optimizable_configs:
 if hasattr(config, param_name):
                 return getattr(config, param_name)
 
-return None
+    return None
 
 def get_optimizable_parameters(self) -> Dict[str, Dict[str, Dict[str, Any]]]:
         """Get all optimizable parameters organized by category."""
-return self._search_spaces.copy()
+    return self._search_spaces.copy()
 
 def validate_config(self) -> tuple[bool, list[str]]:
         """Validate the complete configuration."""
@@ -168,7 +168,7 @@ for category, search_space in self._search_spaces.items():
             if not search_space:
                 errors.append(f"Search space for {category} is missing")
 
-return len(errors) == 0, errors
+    return len(errors) == 0, errors
 
 
 # Global configuration manager instance
@@ -180,54 +180,54 @@ def get_config_manager() -> ConfigManager:
 global _config_manager
 if _config_manager is None:
         _config_manager = ConfigManager()
-return _config_manager
+    return _config_manager
 
 
 def get_static_config_global() -> Dict[str, Any]:
     """Get static configuration."""
-return get_config_manager().get_static_config()
+    return get_config_manager().get_static_config()
 
 
 def get_optimizable_config(category: str) -> Any:
     """Get optimizable configuration for a specific category."""
-return get_config_manager().get_optimizable_config(category)
+    return get_config_manager().get_optimizable_config(category)
 
 
 def get_all_optimizable_configs() -> Dict[str, Any]:
     """Get all optimizable configurations."""
-return get_config_manager().get_all_optimizable_configs()
+    return get_config_manager().get_all_optimizable_configs()
 
 
 def get_search_space(category: str) -> Dict[str, Dict[str, Any]]:
     """Get search space for a specific category."""
-return get_config_manager().get_search_space(category)
+    return get_config_manager().get_search_space(category)
 
 
 def get_all_search_spaces() -> Dict[str, Dict[str, Dict[str, Any]]]:
     """Get all search spaces."""
-return get_config_manager().get_all_search_spaces()
+    return get_config_manager().get_all_search_spaces()
 
 
 def get_complete_config() -> Dict[str, Any]:
     """Get complete configuration."""
-return get_config_manager().get_complete_config()
+    return get_config_manager().get_complete_config()
 
 
 def get_parameter_value(param_path: str) -> Any:
     """Get parameter value using dot notation."""
-return get_config_manager().get_parameter_value(param_path)
+    return get_config_manager().get_parameter_value(param_path)
 
 
 def get_optimizable_parameters() -> Dict[str, Dict[str, Dict[str, Any]]]:
     """Get all optimizable parameters."""
-return get_config_manager().get_optimizable_parameters()
+    return get_config_manager().get_optimizable_parameters()
 
 
 def update_optimizable_config(category: str, updates: Dict[str, Any]) -> bool:
     """Update optimizable configuration for a specific category."""
-return get_config_manager().update_optimizable_config(category, updates)
+    return get_config_manager().update_optimizable_config(category, updates)
 
 
 def validate_config() -> tuple[bool, list[str]]:
     """Validate the complete configuration."""
-return get_config_manager().validate_config()
+    return get_config_manager().validate_config()

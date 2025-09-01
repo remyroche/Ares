@@ -12,30 +12,13 @@ from celery.schedules import crontab
 # Configure Celery
 app = Celery("ares_tasks", broker="redis://localhost:6379/0")
 
-@app.task
-def run_trading_bot_instance(symbol: str, exchange: str) -> None:
-    """
-Celery task to run a single trading bot instance.
-This is now called by the main pipeline, not directly by the user.
-"""
-# Import locally to avoid circular dependencies
-
-# Set environment variables for this specific instance
-os.environ["ARES_SYMBOL"] = symbol
-os.environ["ARES_EXCHANGE"] = exchange
-
-pipeline = AresPipeline()
+@app.task def run_trading_bot_instance(symbol: str, exchange: str) -> None: """ Celery task to run a single trading bot instance. This is now called by the main pipeline, not directly by the user. """ # Import locally to avoid circular dependencies  # Set environment variables for this specific instance os.environ["ARES_SYMBOL"] = symbol os.environ["ARES_EXCHANGE"] = exchange  pipeline = AresPipeline()
 # The pipeline's run_async method will be called by the worker
 # We assume the pipeline is designed to run indefinitely.
 
 asyncio.run(pipeline.run_async())
 
-@app.task
-def run_monthly_training_pipeline() -> None:
-    """
-Celery task to run the monthly retraining and validation pipeline using TrainingManager.
-"""
-print("Celery Task: Kicking off monthly training pipeline...")
+@app.task def run_monthly_training_pipeline() -> None: """ Celery task to run the monthly retraining and validation pipeline using TrainingManager. """ print("Celery Task: Kicking off monthly training pipeline...")
 try:
     pass  # TODO: Add proper exception handling
 except Exception as e:

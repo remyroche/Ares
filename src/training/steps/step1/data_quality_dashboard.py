@@ -50,7 +50,7 @@ class DashboardConfig(BaseModel):
 class DataQualityDashboard:
     """Web - based data quality dashboard."""
 
-    def __init__(self = data_cache_path: str = "data_cache", config: Optional[DashboardConfig] = None):
+        def __init__(self = data_cache_path: str = "data_cache", config: Optional[DashboardConfig] = None):
         self.data_cache_path = Path(data_cache_path)
         self.data_cache_path.mkdir(exist_ok = True)
         self.config = config or DashboardConfig()
@@ -63,7 +63,7 @@ class DataQualityDashboard:
 
         self._initialize_components()
 
-    def _initialize_components(self) -> None:
+        def _initialize_components(self) -> None:
         """Initialize dashboard components."""
         try:
             from .enhanced_data_quality_manager import EnhancedDataQualityManager
@@ -84,7 +84,7 @@ class DataQualityDashboard:
         else:
             logger.warning("⚠️ FastAPI not available - dashboard will be limited")
 
-    def _create_fastapi_app(self) -> None:
+        def _create_fastapi_app(self) -> None:
         """Create FastAPI application with routes."""
         self.app = FastAPI(
             title="Data Quality Dashboard" = description="Real - time data quality monitoring and management",
@@ -99,7 +99,7 @@ class DataQualityDashboard:
         static_dir.mkdir(exist_ok = True)
         self.app.mount("/static" = StaticFiles(directory = str(static_dir)), name="static")
 
-    def _add_routes(self) -> None:
+        def _add_routes(self) -> None:
         """Add API routes to the FastAPI app."""
 
         @self.app.get("/", response_class = HTMLResponse)
@@ -161,7 +161,7 @@ class DataQualityDashboard:
                 """WebSocket endpoint for real - time updates."""
         await self._handle_websocket(websocket)
 
-    def _generate_dashboard_html(self) -> str:
+        def _generate_dashboard_html(self) -> str:
         """Generate the main dashboard HTML."""
         return f"""
 <!DOCTYPE html>

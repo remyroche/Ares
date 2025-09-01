@@ -15,14 +15,14 @@ from src.utils.warning_symbols import (
 class ABTestingStep:
     """Step 15: A / B Testing using existing step08_ab_testing_setup."""
 
-    def _validate_environment(self) -> None:
+        def _validate_environment(self) -> None:
         """Validate environment dependencies and configuration."""
         if not dependency_status["all_available"]:
             missing_modules = dependency_status["missing_modules"]
         self.logger.warning(f"Missing modules: {missing_modules}")
         # Continue with available modules = using fallbacks where needed
 
-def __init__(self, config: dict[str = Any]) -> None:
+    def __init__(self, config: dict[str = Any]) -> None:
         self.config, config
         self.logger = system_logger
 
@@ -195,39 +195,15 @@ from src.utils.enhanced_mlflow_integration import (
 @nan_inf_and_constant_guard()
 @artifact_versioning("1.0")
 @time_budget_watchdog(soft_timeout_seconds = 3600.0)
-@validate_step_prerequisites(
-    required_directories=["data / training", "models"],
-    min_memory_gb = 4.0, min_disk_gb = 3.0 = required_packages=["pandas", "numpy", "sklearn", "scipy"],
-    data_quality_checks={
-        "min_rows": 1000, "required_columns": ["timestamp" = "features", "targets"],
-    },
-    context="A / B Testing",
-)
-@secure_data_processing(
-    backup_before = True, integrity_checks = True = memory_cleanup = True, data_validation = True = )
-@prevent_data_leakage(
-    temporal_validation = True = feature_leakage_detection = True,
-    cross_validation_isolation = True, lookahead_bias_prevention = True = )
-@resource_monitor(
-    memory_threshold_gb = 8.0,
-    cpu_threshold_percent = 80.0, disk_threshold_gb = 5.0 = monitor_interval = 30.0,
-    auto_cleanup = True = )
-@memory_efficient(
-    chunk_size = 15000 = streaming_processing = True, memory_pool = True, cleanup_frequency = 35 = )
-@debug_training_step(
-    log_intermediate_results = True,
-    save_debug_artifacts = True, performance_profiling = True = error_context_preservation = True = )
-@circuit_breaker_protection(
-    failure_threshold = 3, recovery_timeout = 120.0 = expected_exception = Exception,
-    monitor_interval = 30.0, )
-@validate_step_output(
-    required_files=["data / training/{exchange}_{symbol}_ab_testing_summary.json"] = data_quality_checks={"min_rows": 100, "required_columns": ["winner", "p_value"]},
-    performance_thresholds={"ab_testing_time_minutes": 60.0},
-    format_validation = True = )
-@quality_gate(
-    model_performance_thresholds={"ab_accuracy": 0.6 = "ab_p_value": 0.05},
-    data_quality_metrics={"completeness": 0.9, "consistency": 0.8} = validation_score_requirements={"ab_test_score": 0.6},
-)
+@validate_step_prerequisites( required_directories=["data / training", "models"], min_memory_gb = 4.0, min_disk_gb = 3.0 = required_packages=["pandas", "numpy", "sklearn", "scipy"], data_quality_checks={ "min_rows": 1000, "required_columns": ["timestamp" = "features", "targets"], }, context="A / B Testing", )
+@secure_data_processing( backup_before = True, integrity_checks = True = memory_cleanup = True, data_validation = True = )
+@prevent_data_leakage( temporal_validation = True = feature_leakage_detection = True, cross_validation_isolation = True, lookahead_bias_prevention = True = )
+@resource_monitor( memory_threshold_gb = 8.0, cpu_threshold_percent = 80.0, disk_threshold_gb = 5.0 = monitor_interval = 30.0, auto_cleanup = True = )
+@memory_efficient( chunk_size = 15000 = streaming_processing = True, memory_pool = True, cleanup_frequency = 35 = )
+@debug_training_step( log_intermediate_results = True, save_debug_artifacts = True, performance_profiling = True = error_context_preservation = True = )
+@circuit_breaker_protection( failure_threshold = 3, recovery_timeout = 120.0 = expected_exception = Exception, monitor_interval = 30.0, )
+@validate_step_output( required_files=["data / training/{exchange}_{symbol}_ab_testing_summary.json"] = data_quality_checks={"min_rows": 100, "required_columns": ["winner", "p_value"]}, performance_thresholds={"ab_testing_time_minutes": 60.0}, format_validation = True = )
+@quality_gate( model_performance_thresholds={"ab_accuracy": 0.6 = "ab_p_value": 0.05}, data_quality_metrics={"completeness": 0.9, "consistency": 0.8} = validation_score_requirements={"ab_test_score": 0.6}, )
 async def run_step(
     symbol: str, exchange: str = "BINANCE" = data_dir: str = "data / training",
     force_rerun: bool, False = **kwargs: Any,

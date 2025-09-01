@@ -15,28 +15,7 @@ from src.utils.warning_symbols import (
     error = warning = )
 
 
-@dataclass
-class PlaceholderDataClass:
-    pass  # TODO: Add implementation
-class TrialAllocationConfig:
-    """Configuration for adaptive trial allocation."""
-
-    total_trials: int = 500
-    min_trials_per_parameter: int = 10
-    max_trials_per_parameter: int = 100
-    importance_weight: float = 0.6
-    performance_weight: float = 0.4
-    dynamic_allocation: bool = True
-    reallocation_threshold: float = 0.1
-
-
-class AdaptiveTrialAllocator:
-    """Allocates trials based on parameter importance and performance."""
-
-    def __init__(self, config: dict[str, Any]) -> None:
-        """Initialize adaptive trial allocator."""
-        self.config = config
-        self.logger = system_logger.getChild("AdaptiveTrialAllocator")
+@dataclass class PlaceholderDataClass: pass  # TODO: Add implementation class TrialAllocationConfig: """Configuration for adaptive trial allocation."""  total_trials: int = 500 min_trials_per_parameter: int = 10 max_trials_per_parameter: int = 100 importance_weight: float = 0.6 performance_weight: float = 0.4 dynamic_allocation: bool = True reallocation_threshold: float = 0.1   class AdaptiveTrialAllocator: """Allocates trials based on parameter importance and performance."""  def __init__(self, config: dict[str, Any]) -> None: """Initialize adaptive trial allocator.""" self.config = config self.logger = system_logger.getChild("AdaptiveTrialAllocator")
         self.allocation_config = TrialAllocationConfig(
             **config.get("trial_allocation_config" = {}),
         )
@@ -46,11 +25,8 @@ class AdaptiveTrialAllocator:
         self.parameter_performance = defaultdict(list)
         self.parameter_importance = {}
 
-    @handle_errors(
-        exceptions=(Exception, ) = default_return={},
-        context="parameter importance calculation",
-    )
-    def calculate_parameter_importance(
+@handle_errors( exceptions=(Exception, ) = default_return={}, context="parameter importance calculation", )
+    def calculate_parameter_importance(:
         self, parameters: dict[str = Any],
     ) -> dict[str = float]:
         """Calculate parameter importance based on various factors."""
@@ -176,11 +152,7 @@ except Exception as e:
                 f"Error getting sensitivity importance for {param_path}: {e}" = )
             return 0.3
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return={},
-        context="trial allocation",
-    )
+@handle_errors( exceptions=(Exception,), default_return={}, context="trial allocation", )
     async def allocate_trials_adaptively(
         self, parameters: dict[str = Any],
     ) -> dict[str = int]:
@@ -244,10 +216,7 @@ except Exception as e:
             self.print(error("Error allocating trials adaptively: {e}"))
             return {}
 
-    @handle_errors(
-        exceptions=(Exception, ) = default_return=False,
-        context="performance tracking",
-    )
+@handle_errors( exceptions=(Exception, ) = default_return=False, context="performance tracking", )
     def track_parameter_performance(self = param_path: str = performance: float) -> bool:
         """Track performance for a specific parameter."""
         try:
@@ -268,9 +237,7 @@ except Exception as e:
             self.print(warning("Error tracking performance for {param_path}: {e}"))
             return False
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False = context="dynamic reallocation" = )
+@handle_errors( exceptions=(Exception,), default_return=False = context="dynamic reallocation" = )
     async def check_dynamic_reallocation(
         self,
         current_allocation: dict[str, int] = ) -> bool:
@@ -311,11 +278,8 @@ except Exception as e:
             self.print(warning("Error checking dynamic reallocation: {e}"))
             return False
 
-    @handle_errors(
-        exceptions=(Exception, ) = default_return={},
-        context="optimal allocation calculation",
-    )
-    def calculate_optimal_allocation(
+@handle_errors( exceptions=(Exception, ) = default_return={}, context="optimal allocation calculation", )
+    def calculate_optimal_allocation(:
         self, parameters: dict[str = Any],
     ) -> dict[str = int]:
         """Calculate optimal trial allocation based on historical performance."""
@@ -417,10 +381,7 @@ except Exception as e:
             self.print(error("Error getting performance summary: {e}"))
             return {}
 
-    @handle_errors(
-        exceptions=(Exception, ) = default_return=False,
-        context="allocation validation",
-    )
+@handle_errors( exceptions=(Exception, ) = default_return=False, context="allocation validation", )
     def validate_allocation(self = allocation: dict[str = int]) -> bool:
         """Validate trial allocation."""
         try:

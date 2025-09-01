@@ -23,61 +23,48 @@ Enhanced Monitoring component with DI, type hints, and robust error handling.
 
 def __init__(self, config: dict[str, Any]) -> None:
         self.config: dict[str, Any] = config
-self.logger = system_logger.getChild("Monitoring")
-self.is_running: bool = False
-self.status: dict[str, Any] = {}
-self.history: list[dict[str, Any]] = []
-self.monitoring_config: dict[str, Any] = self.config.get("monitoring", {})
-self.check_interval: int = self.monitoring_config.get("check_interval", 30)
-self.max_history: int = self.monitoring_config.get("max_history", 100)
-self.alerts: list[dict[str, Any]] = []
-self.metrics: dict[str, Any] = {}
+    self.logger = system_logger.getChild("Monitoring")
+    self.is_running: bool = False
+    self.status: dict[str, Any] = {}
+    self.history: list[dict[str, Any]] = []
+    self.monitoring_config: dict[str, Any] = self.config.get("monitoring", {})
+    self.check_interval: int = self.monitoring_config.get("check_interval", 30)
+    self.max_history: int = self.monitoring_config.get("max_history", 100)
+    self.alerts: list[dict[str, Any]] = []
+    self.metrics: dict[str, Any] = {}
 
-@handle_specific_errors(
-error_handlers={
-ValueError: (False, "Invalid monitoring configuration"),
-AttributeError: (False, "Missing required monitoring parameters"),
-KeyError: (False, "Missing configuration keys"),
-},
-default_return=False, context="monitoring initialization",
-)
+@handle_specific_errors( error_handlers={ ValueError: (False, "Invalid monitoring configuration"), AttributeError: (False, "Missing required monitoring parameters"), KeyError: (False, "Missing configuration keys"), }, default_return=False, context="monitoring initialization", )
 async def initialize(self) -> bool:
         try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-self.logger.info("Initializing Monitoring...")
+    self.logger.info("Initializing Monitoring...")
 await self._load_monitoring_configuration()
 if not self._validate_configuration():
                 print(invalid("Invalid configuration for monitoring"))
-return False
-self.logger.info("✅ Monitoring initialization completed successfully")
-return True
+    return False
+    self.logger.info("✅ Monitoring initialization completed successfully")
+    return True
 except Exception:
             print(failed("❌ Monitoring initialization failed: {e}"))
-return False
+    return False
 
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=None, context="monitoring configuration loading",
-)
+@handle_errors( exceptions=(ValueError, AttributeError), default_return=None, context="monitoring configuration loading", )
 async def _load_monitoring_configuration(self) -> None:
         try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-self.monitoring_config.setdefault("check_interval", 30)
-self.monitoring_config.setdefault("max_history", 100)
-self.check_interval = self.monitoring_config["check_interval"]
-self.max_history = self.monitoring_config["max_history"]
-self.logger.info("Monitoring configuration loaded successfully")
+    self.monitoring_config.setdefault("check_interval", 30)
+    self.monitoring_config.setdefault("max_history", 100)
+    self.check_interval = self.monitoring_config["check_interval"]
+    self.max_history = self.monitoring_config["max_history"]
+    self.logger.info("Monitoring configuration loaded successfully")
 except Exception:
             print(error("Error loading monitoring configuration: {e}"))
 
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=False, context="configuration validation",
-)
+@handle_errors( exceptions=(ValueError, AttributeError), default_return=False, context="configuration validation", )
 def _validate_configuration(self) -> bool:
         try:
     pass  # TODO: Add proper exception handling
@@ -85,62 +72,51 @@ except Exception as e:
     pass  # TODO: Add proper exception handling
 if self.check_interval <= 0:
                 print(invalid("Invalid check interval"))
-return False
+    return False
 if self.max_history <= 0:
                 print(invalid("Invalid max history"))
-return False
-self.logger.info("Configuration validation successful")
-return True
+    return False
+    self.logger.info("Configuration validation successful")
+    return True
 except Exception:
             print(error("Error validating configuration: {e}"))
-return False
+    return False
 
-@handle_specific_errors(
-error_handlers={
-Exception: (False, "Monitoring run failed"),
-},
-default_return=False, context="monitoring run",
-)
+@handle_specific_errors( error_handlers={ Exception: (False, "Monitoring run failed"), }, default_return=False, context="monitoring run", )
 async def run(self) -> bool:
         try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-self.is_running = True
-self.logger.info("🚦 Monitoring started.")
+    self.is_running = True
+    self.logger.info("🚦 Monitoring started.")
 while self.is_running:
                 await self._perform_monitoring()
 await asyncio.sleep(self.check_interval)
-return True
+    return True
 except Exception:
             print(error("Error in monitoring run: {e}"))
-self.is_running = False
-return False
+    self.is_running = False
+    return False
 
-@handle_errors(
-exceptions=(Exception,),
-default_return=None, context="monitoring step",
-)
+@handle_errors( exceptions=(Exception,), default_return=None, context="monitoring step", )
 async def _perform_monitoring(self) -> None:
         try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
 now = datetime.now().isoformat()
-self.status = {"timestamp": now, "status": "running"}
-self.history.append(self.status.copy())
+    self.status = {"timestamp": now, "status": "running"}
+    self.history.append(self.status.copy())
 if len(self.history) > self.max_history:
                 self.history.pop(0)
 await self._check_system_health()
 await self._update_metrics()
-self.logger.info(f"Monitoring tick at {now}")
+    self.logger.info(f"Monitoring tick at {now}")
 except Exception:
             print(error("Error in monitoring step: {e}"))
 
-@handle_errors(
-exceptions=(Exception,),
-default_return=None, context="system health check",
-)
+@handle_errors( exceptions=(Exception,), default_return=None, context="system health check", )
 async def _check_system_health(self) -> None:
         try:
     pass  # TODO: Add proper exception handling
@@ -153,40 +129,34 @@ health_status = {
 "disk_usage": 23.1,
 "network_status": "healthy",
 }
-self.metrics["system_health"] = health_status
-self.logger.info("System health check completed")
+    self.metrics["system_health"] = health_status
+    self.logger.info("System health check completed")
 except Exception:
             print(error("Error checking system health: {e}"))
 
-@handle_errors(
-exceptions=(Exception,),
-default_return=None, context="metrics update",
-)
+@handle_errors( exceptions=(Exception,), default_return=None, context="metrics update", )
 async def _update_metrics(self) -> None:
         try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
 # Update various metrics
-self.metrics["last_update"] = datetime.now().isoformat()
-self.metrics["uptime"] = "2h 15m 30s"
-self.logger.info("Metrics updated successfully")
+    self.metrics["last_update"] = datetime.now().isoformat()
+    self.metrics["uptime"] = "2h 15m 30s"
+    self.logger.info("Metrics updated successfully")
 except Exception:
             print(error("Error updating metrics: {e}"))
 
-@handle_errors(
-exceptions=(Exception,),
-default_return=None, context="monitoring stop",
-)
+@handle_errors( exceptions=(Exception,), default_return=None, context="monitoring stop", )
 async def stop(self) -> None:
         self.logger.info("🛑 Stopping Monitoring...")
 try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-self.is_running = False
-self.status = {"timestamp": datetime.now().isoformat(), "status": "stopped"}
-self.logger.info("✅ Monitoring stopped successfully")
+    self.is_running = False
+    self.status = {"timestamp": datetime.now().isoformat(), "status": "stopped"}
+    self.logger.info("✅ Monitoring stopped successfully")
 except Exception:
             print(error("Error stopping monitoring: {e}"))
 
@@ -197,7 +167,7 @@ def get_history(self, limit: int | None = None) -> list[dict[str, Any]]:
         history = self.history.copy()
 if limit:
             history = history[-limit:]
-return history
+    return history
 
 def get_metrics(self) -> dict[str, Any]:
         return self.metrics.copy()
@@ -207,10 +177,7 @@ def get_alerts(self) -> list[dict[str, Any]]:
 
 monitoring: Monitoring | None = None
 
-@handle_errors(
-exceptions=(Exception,),
-default_return=None, context="monitoring setup",
-)
+@handle_errors( exceptions=(Exception,), default_return=None, context="monitoring setup", )
 async def setup_monitoring(
 config: dict[str, Any] | None = None,
 ) -> Monitoring | None:
@@ -225,7 +192,7 @@ monitoring = Monitoring(config)
 success = await monitoring.initialize()
 if success:
             return monitoring
-return None
+    return None
 except Exception as e:
         print(f"Error setting up monitoring: {e}")
-return None
+    return None

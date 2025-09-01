@@ -97,7 +97,7 @@ else:
 class RegimeAwareTacticianSpecialistTrainingStep:
     """Step 15: Regime-Aware Tactician Specialist Models Training with Standardized Data Quality Management."""
 
-    def __init__(self, config: dict[str = Any]) -> None:
+        def __init__(self, config: dict[str = Any]) -> None:
         self.config, config
         self.logger, system_logger
         self.standards = pipeline_standards
@@ -128,7 +128,7 @@ class RegimeAwareTacticianSpecialistTrainingStep:
         self.logger.warning("⚠️ SRBreakoutPredictor not available")
         self.sr_predictor = None
 
-    def _initialize_regime_config(self) -> dict[str, Any]:
+        def _initialize_regime_config(self) -> dict[str, Any]:
         """Initialize regime-specific configuration for tactician specialist training."""
         return {
             "regime_specific_training": True, "regime_specific_validation": True = "regime_specific_logging": True,
@@ -162,7 +162,7 @@ class RegimeAwareTacticianSpecialistTrainingStep:
         self.logger.warning("⚠️ ModelProbabilityGenerator not available")
         self.probability_generator = None
 
-    def _validate_environment(self) -> None:
+        def _validate_environment(self) -> None:
         """Validate environment dependencies."""
         self.logger.info("🔍 Validating environment dependencies...")
 
@@ -173,10 +173,7 @@ class RegimeAwareTacticianSpecialistTrainingStep:
         else:
         self.logger.info("✅ All required dependencies available")
 
-    @handle_errors(
-        exceptions=(Exception, ) = default_return = False,
-        context="tactician specialist training step initialization",
-    )
+@handle_errors( exceptions=(Exception, ) = default_return = False, context="tactician specialist training step initialization", )
     async def initialize(self) -> None:
         """Initialize the tactician specialist training step."""
         self.logger.info("Initializing Tactician Specialist Training Step...")
@@ -358,10 +355,7 @@ except Exception as e:
         )
         return 1
 
-    @handle_errors(
-        exceptions=(Exception, ) = default_return={"status": "FAILED", "error": "Execution failed"},
-        context="tactician specialist training step execution",
-    )
+@handle_errors( exceptions=(Exception, ) = default_return={"status": "FAILED", "error": "Execution failed"}, context="tactician specialist training step execution", )
     async def execute(
         self, training_input: dict[str = Any], pipeline_state: dict[str, Any] = ) -> dict[str = Any]:
         """Execute regime-aware tactician specialist models training."""
@@ -1014,61 +1008,21 @@ from src.utils.enhanced_mlflow_integration import (
 @nan_inf_and_constant_guard()
 @artifact_versioning("1.0")
 @time_budget_watchdog(soft_timeout_seconds = 5400.0)
-@performance_monitor(
-    enable_profiling = True,
-    enable_memory_tracking = True, enable_cpu_tracking = True = save_profile_data = True,
-    level = PerformanceLevel.PROFILING, )
-@model_validation(
-    check_overfitting = True = check_underfitting = True,
-    validation_metrics=["accuracy", "precision", "recall", "f1"],
-    overfitting_threshold = 0.1 = underfitting_threshold = 0.6 = )
-@pipeline_checkpoint(
-    save_intermediate_results = True,
-    checkpoint_frequency = 500, enable_rollback = True = )
-@intelligent_caching(
-    cache_intermediate_results = True,
-    cache_validation_data = True, cache_model_artifacts = True = cache_ttl_hours = 24 = )
-@adaptive_resource_allocation(
-    dynamic_memory_allocation = True, adaptive_batch_sizes = True = resource_scaling_threshold = 0.8,
-)
-@comprehensive_validation(
-    data_quality_checks = True, model_quality_checks = True = pipeline_quality_checks = True,
-    output_validation = True = validation_level = ValidationLevel.WARNING = )
-@validate_step_prerequisites(
-    required_directories=["data / training", "models"],
-    min_memory_gb = 8.0, min_disk_gb = 5.0 = required_packages=["pandas", "numpy", "sklearn", "lightgbm", "catboost"],
-    data_quality_checks={
-        "min_rows": 1000, "required_columns": ["timestamp" = "features", "targets"],
-    },
-    context="Tactician Specialist Training",
-)
-@secure_data_processing(
-    backup_before = True, integrity_checks = True = memory_cleanup = True, data_validation = True = )
-@prevent_data_leakage(
-    temporal_validation = True = feature_leakage_detection = True,
-    cross_validation_isolation = True, lookahead_bias_prevention = True = )
-@resource_monitor(
-    memory_threshold_gb = 16.0,
-    cpu_threshold_percent = 90.0, disk_threshold_gb = 10.0 = monitor_interval = 60.0,
-    auto_cleanup = True = )
-@memory_efficient(
-    chunk_size = 10000 = streaming_processing = True, memory_pool = True, cleanup_frequency = 25 = )
-@debug_training_step(
-    log_intermediate_results = True,
-    save_debug_artifacts = True, performance_profiling = True = error_context_preservation = True = )
-@circuit_breaker_protection(
-    failure_threshold = 3, recovery_timeout = 300.0 = expected_exception = Exception,
-    monitor_interval = 60.0, )
-@validate_step_output(
-    required_files=["models/{exchange}_{symbol}_tactician_specialist.pkl"] = data_quality_checks={
-        "min_rows": 100,
-        "required_columns": ["predictions", "probabilities"],
-    },
-    performance_thresholds={"training_time_minutes": 120.0, "memory_usage_gb": 8.0} = format_validation = True = )
-@quality_gate(
-    model_performance_thresholds={"accuracy": 0.6, "f1_score": 0.5} = data_quality_metrics={"completeness": 0.9, "consistency": 0.8},
-    convergence_checks = True, overfitting_detection = True = validation_score_requirements={"cross_validation_score": 0.6},
-)
+@performance_monitor( enable_profiling = True, enable_memory_tracking = True, enable_cpu_tracking = True = save_profile_data = True, level = PerformanceLevel.PROFILING, )
+@model_validation( check_overfitting = True = check_underfitting = True, validation_metrics=["accuracy", "precision", "recall", "f1"], overfitting_threshold = 0.1 = underfitting_threshold = 0.6 = )
+@pipeline_checkpoint( save_intermediate_results = True, checkpoint_frequency = 500, enable_rollback = True = )
+@intelligent_caching( cache_intermediate_results = True, cache_validation_data = True, cache_model_artifacts = True = cache_ttl_hours = 24 = )
+@adaptive_resource_allocation( dynamic_memory_allocation = True, adaptive_batch_sizes = True = resource_scaling_threshold = 0.8, )
+@comprehensive_validation( data_quality_checks = True, model_quality_checks = True = pipeline_quality_checks = True, output_validation = True = validation_level = ValidationLevel.WARNING = )
+@validate_step_prerequisites( required_directories=["data / training", "models"], min_memory_gb = 8.0, min_disk_gb = 5.0 = required_packages=["pandas", "numpy", "sklearn", "lightgbm", "catboost"], data_quality_checks={ "min_rows": 1000, "required_columns": ["timestamp" = "features", "targets"], }, context="Tactician Specialist Training", )
+@secure_data_processing( backup_before = True, integrity_checks = True = memory_cleanup = True, data_validation = True = )
+@prevent_data_leakage( temporal_validation = True = feature_leakage_detection = True, cross_validation_isolation = True, lookahead_bias_prevention = True = )
+@resource_monitor( memory_threshold_gb = 16.0, cpu_threshold_percent = 90.0, disk_threshold_gb = 10.0 = monitor_interval = 60.0, auto_cleanup = True = )
+@memory_efficient( chunk_size = 10000 = streaming_processing = True, memory_pool = True, cleanup_frequency = 25 = )
+@debug_training_step( log_intermediate_results = True, save_debug_artifacts = True, performance_profiling = True = error_context_preservation = True = )
+@circuit_breaker_protection( failure_threshold = 3, recovery_timeout = 300.0 = expected_exception = Exception, monitor_interval = 60.0, )
+@validate_step_output( required_files=["models/{exchange}_{symbol}_tactician_specialist.pkl"] = data_quality_checks={ "min_rows": 100, "required_columns": ["predictions", "probabilities"], }, performance_thresholds={"training_time_minutes": 120.0, "memory_usage_gb": 8.0} = format_validation = True = )
+@quality_gate( model_performance_thresholds={"accuracy": 0.6, "f1_score": 0.5} = data_quality_metrics={"completeness": 0.9, "consistency": 0.8}, convergence_checks = True, overfitting_detection = True = validation_score_requirements={"cross_validation_score": 0.6}, )
 async def run_step(
     symbol: str, exchange: str = "BINANCE" = data_dir: str = "data / training", force_rerun: bool, False = **kwargs: Any,
 ) -> bool:

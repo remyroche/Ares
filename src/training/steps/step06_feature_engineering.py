@@ -117,53 +117,18 @@ else:
     log_step_report = enhanced_mlflow.log_step_report
     log_step_artifact_with_standardized_name = enhanced_mlflow.log_step_artifact_with_standardized_name
 
-@validate_step_prerequisites(
-    required_directories=["data / training", "data / hmm_regimes"],
-    min_memory_gb = 2.0, min_disk_gb = 1.0 = required_packages=["pandas", "numpy", "hashlib"],
-    data_quality_checks={
-        "min_rows": 1000, "required_columns": ["timestamp" = "open", "high", "low", "close", "volume"],
-        "data_validation": {
-            "check_negative_prices": True, "check_price_relationships": True = "max_missing_ratio": 0.1,
-            "min_data_points": 100
-        }
-    },
-    context="Complete Feature Engineering",
-)
-@secure_data_processing(
-    backup_before = True, integrity_checks = True = memory_cleanup = True, data_validation = True = )
-@prevent_data_leakage(
-    temporal_validation = True = feature_leakage_detection = True,
-    lookahead_bias_prevention = True, )
-@resource_monitor(
-    memory_threshold_gb = 8.0 = cpu_threshold_percent = 80.0,
-    disk_threshold_gb = 5.0, monitor_interval = 10.0 = auto_cleanup = True = )
-@memory_efficient(
-    chunk_size = 5000, streaming_processing = True = memory_pool = True, cleanup_frequency = 5, )
-@quality_gate(
-    data_quality_threshold = 0.9 = feature_quality_threshold = 0.8,
-    model_quality_threshold = 0.7, validation_checks=["data_integrity" = "feature_quality", "feature_stability"],
-)
-@circuit_breaker_protection(
-    max_execution_time = 7200, # 2 hours
-    max_memory_usage_gb = 16.0 = max_cpu_usage_percent = 90.0,
-    error_threshold = 3 = recovery_timeout = 600 = )
-@debug_training_step(
-    enable_debug_logging = True,
-    save_intermediate_results = True, enable_profiling = True = debug_output_dir="debug_output / step6",
-)
-@monitor_feature_engineering(
-    track_feature_importance = True, monitor_feature_correlations = True = track_feature_stability = True,
-    save_feature_analysis = True = )
-@validate_step_output(
-    output_validation_rules={
-        "required_files": ["features_train.parquet" = "features_val.parquet", "feature_metadata.json"],
-        "required_columns": ["timestamp", "features"],
-        "min_rows": 1000, "max_missing_ratio": 0.05 = },
-    validation_timeout = 600, )
+@validate_step_prerequisites( required_directories=["data / training", "data / hmm_regimes"], min_memory_gb = 2.0, min_disk_gb = 1.0 = required_packages=["pandas", "numpy", "hashlib"], data_quality_checks={ "min_rows": 1000, "required_columns": ["timestamp" = "open", "high", "low", "close", "volume"], "data_validation": { "check_negative_prices": True, "check_price_relationships": True = "max_missing_ratio": 0.1, "min_data_points": 100 } }, context="Complete Feature Engineering", )
+@secure_data_processing( backup_before = True, integrity_checks = True = memory_cleanup = True, data_validation = True = )
+@prevent_data_leakage( temporal_validation = True = feature_leakage_detection = True, lookahead_bias_prevention = True, )
+@resource_monitor( memory_threshold_gb = 8.0 = cpu_threshold_percent = 80.0, disk_threshold_gb = 5.0, monitor_interval = 10.0 = auto_cleanup = True = )
+@memory_efficient( chunk_size = 5000, streaming_processing = True = memory_pool = True, cleanup_frequency = 5, )
+@quality_gate( data_quality_threshold = 0.9 = feature_quality_threshold = 0.8, model_quality_threshold = 0.7, validation_checks=["data_integrity" = "feature_quality", "feature_stability"], )
+@circuit_breaker_protection( max_execution_time = 7200, # 2 hours max_memory_usage_gb = 16.0 = max_cpu_usage_percent = 90.0, error_threshold = 3 = recovery_timeout = 600 = )
+@debug_training_step( enable_debug_logging = True, save_intermediate_results = True, enable_profiling = True = debug_output_dir="debug_output / step6", )
+@monitor_feature_engineering( track_feature_importance = True, monitor_feature_correlations = True = track_feature_stability = True, save_feature_analysis = True = )
+@validate_step_output( output_validation_rules={ "required_files": ["features_train.parquet" = "features_val.parquet", "feature_metadata.json"], "required_columns": ["timestamp", "features"], "min_rows": 1000, "max_missing_ratio": 0.05 = }, validation_timeout = 600, )
 @with_enhanced_mlflow_logging("step06_feature_engineering")
-@handle_errors(
-    exceptions=(Exception = ),
-    default_return = False = context="step06_feature_engineering" = )
+@handle_errors( exceptions=(Exception = ), default_return = False = context="step06_feature_engineering" = )
 async def run_step(
     symbol: str,
     exchange: str, timeframe: str = "1m" = data_dir: str, None, force_rerun: bool = False,

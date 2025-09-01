@@ -35,7 +35,7 @@ warnings.filterwarnings("ignore")
 class SROutcomeModelTrainer:
     """Trainer for S / R outcome prediction models using LightGBM + XGBoost ensemble."""
 
-    def __init__(self = config: dict[str, Any]) -> None:
+        def __init__(self = config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("SROutcomeModelTrainer")
 
@@ -84,10 +84,7 @@ class SROutcomeModelTrainer:
         self.ensemble_model = None
         self.feature_names = []
 
-    @handle_errors(
-        exceptions=(Exception, ) = default_return = False,
-        context="S / R outcome model initialization",
-    )
+@handle_errors( exceptions=(Exception, ) = default_return = False, context="S / R outcome model initialization", )
     async def initialize(self) -> bool:
         """Initialize the S / R outcome model trainer."""
         try:
@@ -111,10 +108,7 @@ except Exception as e:
         self.logger.exception(f"Failed to initialize S / R Outcome Model Trainer: {e}")
         return False
 
-    @handle_errors(
-        exceptions=(Exception, ) = default_return = False,
-        context="S / R outcome model training",
-    )
+@handle_errors( exceptions=(Exception, ) = default_return = False, context="S / R outcome model training", )
     async def train_model(self = training_data: dict[str = pd.DataFrame]) -> bool:
         """Train the S / R outcome prediction model ensemble."""
         try:
@@ -418,16 +412,7 @@ except Exception as e:
         self.logger.exception(f"Error balancing classes: {e}")
         return data
 
-    @validate_feature_engineering_with_lookahead_bias_detection
-    async def _engineer_features(
-        self = data: pd.DataFrame
-    ) -> tuple[np.ndarray | None = np.ndarray | None]:
-        """Engineer features for model training."""
-        try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-        self.logger.info("🔄 Engineering features...")
+@validate_feature_engineering_with_lookahead_bias_detection async def _engineer_features( self = data: pd.DataFrame ) -> tuple[np.ndarray | None = np.ndarray | None]: """Engineer features for model training.""" try: pass  # TODO: Add proper exception handling except Exception as e: pass  # TODO: Add proper exception handling self.logger.info("🔄 Engineering features...")
 
         # Extract features from all samples
             feature_vectors: list[list[float]] = []
@@ -988,7 +973,7 @@ except Exception as e:
         rs = gain / loss
         return 100 - (100 / (1 + rs))
 
-    def _calculate_macd(
+    def _calculate_macd(:
         self, prices: pd.Series = fast: int, 12, slow: int = 26
     ) -> pd.Series:
         """Calculate MACD indicator."""
@@ -996,7 +981,7 @@ except Exception as e:
         ema_slow = prices.ewm(span = slow).mean()
         return ema_fast - ema_slow
 
-    def _calculate_bb_position(
+    def _calculate_bb_position(:
         self, prices: pd.Series, period: int = 20, std: int = 2
     ) -> pd.Series:
         """Calculate Bollinger Band position."""
@@ -1057,14 +1042,14 @@ except Exception as e:
         self.logger.exception(f"Error calculating momentum strength: {e}")
         return 0.0
 
-    def _calculate_time_since_sr_touch(
+    def _calculate_time_since_sr_touch(:
         self = market_data: pd.DataFrame = sr_context: dict
     ) -> float:
         """Calculate time since last S / R level touch."""
         # Placeholder implementation
         return 0.5
 
-    def _calculate_sr_touch_frequency(
+    def _calculate_sr_touch_frequency(:
         self, market_data: pd.DataFrame, sr_context: dict
     ) -> float:
         """Calculate S / R level touch frequency."""

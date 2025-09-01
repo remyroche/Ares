@@ -9,61 +9,12 @@ from typing import Any
 from dataclasses import dataclass
 
 
-@dataclass
-class TrainingOptimizationConfig:
-    pass  # TODO: Add implementation
-class TrainingOptimizationConfig:
-    pass  # TODO: Add implementation
-class TrainingOptimizationConfig:
-    """Optimizable training optimization parameters from other steps."""
-
-# Step 3: HMM Regime Discovery
-min_quality_score: float = 0.7
-max_correlation: float = 0.95
-progress_interval: int = 10
-
-# Step 4: Processing & Labeling
-completeness_threshold: float = 0.95
-min_data_points: int = 100
-min_labeled_rows: int = 1000
-min_label_balance: float = 0.05
-max_label_balance: float = 0.95
-splitting_time_minutes: float = 30.0
-labeling_time_minutes: float = 45.0
-
-# Step 5: HMM-Based Training
-architecture_optimization_enabled: bool = False
-
-# Step 6: Analyst Enhancement
-stability_threshold: float = 0.7
-mi_threshold: float = 0.01
-feature_selection_threshold: float = 0.2
-
-# Step 11: Confidence Calibration
-calibration_accuracy: float = 0.7
-calibration_time_minutes: float = 60.0
-
-# Performance thresholds
-model_performance_threshold: float = 0.7
-data_quality_threshold: float = 0.95
-artifact_completeness_threshold: float = 0.9
-
-# Memory and performance
-memory_threshold_gb: float = 8.0
-cpu_threshold_percent: float = 80.0
-disk_threshold_gb: float = 5.0
-monitor_interval: float = 30.0
-failure_threshold: int = 3
-
-
-def get_training_optimization_config() -> TrainingOptimizationConfig:
-    """Get training optimization configuration."""
-return TrainingOptimizationConfig()
+@dataclass class TrainingOptimizationConfig: pass  # TODO: Add implementation class TrainingOptimizationConfig: pass  # TODO: Add implementation class TrainingOptimizationConfig: """Optimizable training optimization parameters from other steps."""  # Step 3: HMM Regime Discovery min_quality_score: float = 0.7 max_correlation: float = 0.95 progress_interval: int = 10  # Step 4: Processing & Labeling completeness_threshold: float = 0.95 min_data_points: int = 100 min_labeled_rows: int = 1000 min_label_balance: float = 0.05 max_label_balance: float = 0.95 splitting_time_minutes: float = 30.0 labeling_time_minutes: float = 45.0  # Step 5: HMM-Based Training architecture_optimization_enabled: bool = False  # Step 6: Analyst Enhancement stability_threshold: float = 0.7 mi_threshold: float = 0.01 feature_selection_threshold: float = 0.2  # Step 11: Confidence Calibration calibration_accuracy: float = 0.7 calibration_time_minutes: float = 60.0  # Performance thresholds model_performance_threshold: float = 0.7 data_quality_threshold: float = 0.95 artifact_completeness_threshold: float = 0.9  # Memory and performance memory_threshold_gb: float = 8.0 cpu_threshold_percent: float = 80.0 disk_threshold_gb: float = 5.0 monitor_interval: float = 30.0 failure_threshold: int = 3   def get_training_optimization_config() -> TrainingOptimizationConfig: """Get training optimization configuration.""" return TrainingOptimizationConfig()
 
 
 def get_training_optimization_search_space() -> dict[str, dict[str, Any]]:
     """Get search space for training optimization."""
-return {
+    return {
 # Step 3: HMM Regime Discovery
 "min_quality_score": {"min": 0.6, "max": 0.9, "type": "float"},
 "max_correlation": {"min": 0.9, "max": 0.98, "type": "float"},

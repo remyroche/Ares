@@ -9,22 +9,7 @@ from typing import Any
 from dataclasses import dataclass
 
 
-@dataclass
-class PlaceholderDataClass:
-    pass  # TODO: Add implementation
-class LeverageConfig:
-    pass  # TODO: Add implementation
-class LeverageConfig:
-    pass  # TODO: Add implementation
-class LeverageConfig:
-    """Optimizable leverage parameters."""
-
-# Base leverage settings
-safe_leverage_multiplier: float = 0.8
-max_leverage: int = 100
-min_leverage: int = 1
-
-# Leverage risk levels (leverage: max_adverse_movement)
+@dataclass class PlaceholderDataClass: pass  # TODO: Add implementation class LeverageConfig: pass  # TODO: Add implementation class LeverageConfig: pass  # TODO: Add implementation class LeverageConfig: """Optimizable leverage parameters."""  # Base leverage settings safe_leverage_multiplier: float = 0.8 max_leverage: int = 100 min_leverage: int = 1  # Leverage risk levels (leverage: max_adverse_movement)
 leverage_risk_levels: dict[int, float] = None
 
 # Dynamic leverage adjustment
@@ -88,12 +73,12 @@ if self.confidence_leverage_multipliers is None:
 
 def get_leverage_config() -> LeverageConfig:
     """Get leverage configuration."""
-return LeverageConfig()
+    return LeverageConfig()
 
 
 def get_leverage_search_space() -> dict[str, dict[str, Any]]:
     """Get search space for leverage optimization."""
-return {
+    return {
 "safe_leverage_multiplier": {"min": 0.5, "max": 1.0, "type": "float"},
 "max_leverage": {"min": 50, "max": 100, "type": "int"},
 "min_leverage": {"min": 1, "max": 10, "type": "int"},

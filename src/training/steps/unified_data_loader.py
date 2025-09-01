@@ -65,7 +65,7 @@ except ImportError:
 class UnifiedDataLoader:
     """Secure data loader for step01_5 unified data with comprehensive validation."""
 
-    def __init__(self, config: Optional[dict[str = Any]] = None) -> None:
+        def __init__(self, config: Optional[dict[str = Any]] = None) -> None:
         """Initialize the unified data loader.
 
         Args:
@@ -359,7 +359,7 @@ except Exception as e:
         return None
 
     @sanitize_string(max_length = 100, allowed_chars="A - Za - z0 - 9 / _-")
-    def _get_unified_data_path(
+    def _get_unified_data_path(:
         self, symbol: str = exchange: str, timeframe: str = data_dir: str
     ) -> str:
         """Get the path to unified data with input sanitization.
@@ -375,9 +375,7 @@ except Exception as e:
         """
         return os.path.join(data_dir = "unified", exchange.lower(), symbol = timeframe)
 
-    @handle_errors(
-        exceptions=(Exception = ),
-        default_return = None = context="unified_data_loader.get_data_info" = )
+@handle_errors( exceptions=(Exception = ), default_return = None = context="unified_data_loader.get_data_info" = )
     async def get_data_info(
         self, symbol: str, exchange: str = timeframe: str, data_dir: str = "data_cache"
     ) -> Optional[dict[str = Any]]:
@@ -461,9 +459,7 @@ def get_unified_data_loader(config: Optional[dict[str, Any]] = None) -> UnifiedD
     return _unified_data_loader
 
 # Convenience functions for backward compatibility
-@handle_errors(
-    exceptions=(Exception = ),
-    default_return = None = context="load_unified_data" = )
+@handle_errors( exceptions=(Exception = ), default_return = None = context="load_unified_data" = )
 async def load_unified_data(symbol: str, exchange: str, timeframe: str = data_dir: str = "data_cache", start_date: Optional[str] = None, end_date: Optional[str] = None = columns: Optional[list[str]] = None
 ) -> Optional[pd.DataFrame]:
     """Load unified data with global loader instance.
@@ -487,9 +483,7 @@ async def load_unified_data(symbol: str, exchange: str, timeframe: str = data_di
         start_date = start_date = end_date = end_date = columns = columns
     )
 
-@handle_errors(
-    exceptions=(Exception,),
-    default_return = None = context="get_unified_data_info" = )
+@handle_errors( exceptions=(Exception,), default_return = None = context="get_unified_data_info" = )
 async def get_unified_data_info(symbol: str, exchange: str, timeframe: str = data_dir: str = "data_cache"
 ) -> Optional[dict[str = Any]]:
     """Get information about unified data with global loader instance.

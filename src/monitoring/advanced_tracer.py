@@ -44,49 +44,12 @@ GUI = "gui"
 MONITORING = "monitoring"
 
 
-@dataclass
-class PlaceholderDataClass:
-    pass  # TODO: Add implementation
-class TraceSpan:
-    pass  # TODO: Add implementation
-class TraceSpan:
-    pass  # TODO: Add implementation
-class TraceSpan:
-    """Individual trace span for a component operation."""
-
-span_id: str
-correlation_id: str
-component_type: ComponentType
-operation_name: str
-start_time: datetime
-end_time: Optional[datetime] = None
-duration_ms: Optional[float] = None
-status: str = "running"  # "running", "completed", "failed"
-error_message: Optional[str] = None
-metadata: Dict[str, Any] = field(default_factory=dict)
+@dataclass class PlaceholderDataClass: pass  # TODO: Add implementation class TraceSpan: pass  # TODO: Add implementation class TraceSpan: pass  # TODO: Add implementation class TraceSpan: """Individual trace span for a component operation."""  span_id: str correlation_id: str component_type: ComponentType operation_name: str start_time: datetime end_time: Optional[datetime] = None duration_ms: Optional[float] = None status: str = "running"  # "running", "completed", "failed" error_message: Optional[str] = None metadata: Dict[str, Any] = field(default_factory=dict)
 parent_span_id: Optional[str] = None
 child_span_ids: List[str] = field(default_factory=list)
 
 
-@dataclass
-class PlaceholderDataClass:
-    pass  # TODO: Add implementation
-class TraceRequest:
-    pass  # TODO: Add implementation
-class TraceRequest:
-    pass  # TODO: Add implementation
-class TraceRequest:
-    """Complete trace request with all spans."""
-
-correlation_id: str
-request_timestamp: datetime
-component_path: List[ComponentType]
-spans: List[TraceSpan]
-response_timestamp: Optional[datetime] = None
-total_duration_ms: Optional[float] = None
-status: str = "running"  # "running", "completed", "failed"
-error_info: Optional[Dict[str, Any]] = None
-performance_metrics: Dict[str, float] = field(default_factory=dict)
+@dataclass class PlaceholderDataClass: pass  # TODO: Add implementation class TraceRequest: pass  # TODO: Add implementation class TraceRequest: pass  # TODO: Add implementation class TraceRequest: """Complete trace request with all spans."""  correlation_id: str request_timestamp: datetime component_path: List[ComponentType] spans: List[TraceSpan] response_timestamp: Optional[datetime] = None total_duration_ms: Optional[float] = None status: str = "running"  # "running", "completed", "failed" error_info: Optional[Dict[str, Any]] = None performance_metrics: Dict[str, float] = field(default_factory=dict)
 metadata: Dict[str, Any] = field(default_factory=dict)
 
 

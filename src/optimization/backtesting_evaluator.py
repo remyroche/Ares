@@ -26,15 +26,15 @@ def __init__(self, config: Dict[str, Any]):
     def __init__(self, config: Dict[str, Any]):
     def __init__(self, config: Dict[str, Any]):
         self.config = config
-self.logger = system_logger.getChild("BacktestingEvaluator")
+    self.logger = system_logger.getChild("BacktestingEvaluator")
 
 # Backtesting configuration
-self.initial_capital = config.get("backtesting", {}).get("initial_capital", 10000)
-self.commission_rate = config.get("backtesting", {}).get("commission_rate", 0.001)
-self.slippage = config.get("backtesting", {}).get("slippage", 0.0005)
+    self.initial_capital = config.get("backtesting", {}).get("initial_capital", 10000)
+    self.commission_rate = config.get("backtesting", {}).get("commission_rate", 0.001)
+    self.slippage = config.get("backtesting", {}).get("slippage", 0.0005)
 
 # Performance metrics weights
-self.metric_weights = {
+    self.metric_weights = {
 "sharpe_ratio": 0.3,
 "profit_factor": 0.25,
 "max_drawdown": 0.2,
@@ -43,7 +43,7 @@ self.metric_weights = {
 }
 
 # Mock market data (in practice, load real data)
-self.market_data = self._generate_mock_market_data()
+    self.market_data = self._generate_mock_market_data()
 
 def _generate_mock_market_data(self) -> pd.DataFrame:
         """Generate mock market data for backtesting."""
@@ -81,13 +81,9 @@ data.append({
 'volume': volume
 })
 
-return pd.DataFrame(data)
+    return pd.DataFrame(data)
 
-@handle_errors(
-exceptions=(Exception,),
-default_return=0.0,
-context="backtesting evaluation"
-)
+@handle_errors( exceptions=(Exception,), default_return=0.0, context="backtesting evaluation" )
 async def evaluate_parameters(self, params: Dict[str, Any]) -> float:
         """
 Evaluate parameters using backtesting simulation.
@@ -111,11 +107,11 @@ metrics = self._calculate_performance_metrics(backtest_results)
 # Calculate weighted score
 score = self._calculate_weighted_score(metrics)
 
-return score
+    return score
 
 except Exception as e:
             self.logger.error(f"Backtesting evaluation error: {e}")
-return 0.0
+    return 0.0
 
 async def _run_backtest(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Run backtesting simulation with given parameters."""
@@ -196,7 +192,7 @@ equity_curve.append({
 'in_position': in_position
 })
 
-return {
+    return {
 'trades': trades,
 'equity_curve': equity_curve,
 'final_capital': capital,
@@ -205,7 +201,7 @@ return {
 
 except Exception as e:
             self.logger.error(f"Backtesting error: {e}")
-return {'trades': [], 'equity_curve': [], 'final_capital': self.initial_capital, 'total_return': 0.0}
+    return {'trades': [], 'equity_curve': [], 'final_capital': self.initial_capital, 'total_return': 0.0}
 
 def _generate_signal(self, row: pd.Series, params: Dict[str, Any], index: int) -> str:
         """Generate trading signal based on parameters and market data."""
@@ -220,7 +216,7 @@ params.get('sma_slow_window', 50),
 20
 )
 if index < min_idx:  # Need enough data
-return 'HOLD'
+    return 'HOLD'
 
 # Parameterized moving averages
 sma_fast_window = int(params.get('sma_fast_window', 20))
@@ -286,11 +282,11 @@ if confidence >= threshold:
 elif -confidence >= threshold:
                 return 'SELL'
 
-return 'HOLD'
+    return 'HOLD'
 
 except Exception as e:
             self.logger.error(f"Signal generation error: {e}")
-return 'HOLD'
+    return 'HOLD'
 
 def _calculate_rsi(self, prices: pd.Series, period: int = 14) -> float:
         """Calculate RSI indicator."""
@@ -306,7 +302,7 @@ gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
 loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
 rs = gain / loss
 rsi = 100 - (100 / (1 + rs))
-return rsi.iloc[-1] if not pd.isna(rsi.iloc[-1]) else 50.0
+    return rsi.iloc[-1] if not pd.isna(rsi.iloc[-1]) else 50.0
 except Exception:
             return 50.0
 
@@ -334,11 +330,11 @@ min_position_size = params.get('min_position_size', 0.01)
 
 position_fraction = max(min_position_size, min(position_fraction, max_position_size))
 
-return position_fraction
+    return position_fraction
 
 except Exception as e:
             self.logger.error(f"Position size calculation error: {e}")
-return 0.01
+    return 0.01
 
 def _calculate_leverage(self, params: Dict[str, Any], price: float) -> float:
         """Calculate leverage based on parameters."""
@@ -367,11 +363,11 @@ leverage *= risk_adjustment
 max_risk_leverage = params.get('max_risk_leverage', 50.0)
 leverage = min(leverage, max_risk_leverage)
 
-return max(min_leverage, min(leverage, max_leverage))
+    return max(min_leverage, min(leverage, max_leverage))
 
 except Exception as e:
             self.logger.error(f"Leverage calculation error: {e}")
-return 10.0
+    return 10.0
 
 def _calculate_performance_metrics(self, backtest_results: Dict[str, Any]) -> Dict[str, float]:
         """Calculate performance metrics from backtest results."""
@@ -423,7 +419,7 @@ win_rate = len(winning_trades) / len(trades) if trades else 0.0
 # Total return
 total_return = (final_capital - self.initial_capital) / self.initial_capital
 
-return {
+    return {
 'sharpe_ratio': sharpe_ratio,
 'profit_factor': profit_factor,
 'max_drawdown': max_drawdown,
@@ -433,7 +429,7 @@ return {
 
 except Exception as e:
             self.logger.error(f"Performance metrics calculation error: {e}")
-return {
+    return {
 'sharpe_ratio': 0.0,
 'profit_factor': 0.0,
 'max_drawdown': 0.0,
@@ -464,11 +460,11 @@ score += self.metric_weights['win_rate'] * metrics['win_rate']
 # Total return (higher is better)
 score += self.metric_weights['total_return'] * min(metrics['total_return'], 2.0) / 2.0
 
-return score
+    return score
 
 except Exception as e:
             self.logger.error(f"Weighted score calculation error: {e}")
-return 0.0
+    return 0.0
 
 def get_detailed_analysis(self, backtest_results: Dict[str, Any]) -> Dict[str, Any]:
         """Get detailed analysis of backtest results."""
@@ -514,11 +510,11 @@ analysis = {
 }
 }
 
-return analysis
+    return analysis
 
 except Exception as e:
             self.logger.error(f"Detailed analysis error: {e}")
-return {"error": str(e)}
+    return {"error": str(e)}
 
 def _calculate_max_consecutive_losses(self, trades: List[Dict[str, Any]]) -> int:
         """Calculate maximum consecutive losing trades."""
@@ -536,7 +532,7 @@ max_consecutive = max(max_consecutive, current_consecutive)
 else:
                     current_consecutive = 0
 
-return max_consecutive
+    return max_consecutive
 
 except Exception:
             return 0
@@ -555,4 +551,4 @@ Returns:
         float: Performance score
 """
 evaluator = BacktestingEvaluator(config)
-return await evaluator.evaluate_parameters(params)
+    return await evaluator.evaluate_parameters(params)

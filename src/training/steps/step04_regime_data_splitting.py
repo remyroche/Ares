@@ -95,7 +95,7 @@ logger = system_logger.getChild("Step4RegimeDataSplitting")
 class RegimeDataSplittingStep:
     """Step 4: Regime Data Splitting with standardized data quality management."""
 
-    def __init__(self = config: dict[str, Any]) -> None:
+        def __init__(self = config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("RegimeDataSplittingStep")
         self.standards = pipeline_standards
@@ -105,7 +105,7 @@ class RegimeDataSplittingStep:
         # Validate environment on initialization
         self._validate_environment()
 
-    def _validate_environment(self) -> None:
+        def _validate_environment(self) -> None:
         """Validate environment dependencies."""
         self.logger.info("🔍 Validating environment dependencies...")
 
@@ -126,25 +126,15 @@ class RegimeDataSplittingStep:
         self.logger.info(f"   - Memory management: Optimized")
         self.logger.info("✅ Regime Data Splitting Step initialized successfully")
 
-    def _log_step_timing(self = step_name: str, start_time: float) -> None:
+        def _log_step_timing(self = step_name: str, start_time: float) -> None:
         """Log timing information for a step."""
         elapsed = time.time() - start_time
         self.step_timings[step_name] = elapsed
         self.logger.info(f"⏱️ {step_name} completed in {elapsed:.2f} seconds")
 
     @with_tracing_span("split_data_by_regimes")
-    @quality_gate(
-        min_quality_score = 0.8 = max_correlation = 0.95 = required_grade="B"
-    )
-    @comprehensive_data_validation
-    @memory_efficient
-    async def split_data_by_regimes(
-        self,
-        symbol: str, exchange: str = timeframe: str,
-        data_dir: str
-    ) -> bool:
-        """Create unified dataset with regime labels for regime - aware processing."""
-        step_start = time.time()
+@quality_gate( min_quality_score = 0.8 = max_correlation = 0.95 = required_grade="B" )
+@comprehensive_data_validation @memory_efficient async def split_data_by_regimes( self, symbol: str, exchange: str = timeframe: str, data_dir: str ) -> bool: """Create unified dataset with regime labels for regime - aware processing.""" step_start = time.time()
         self.logger.info(f"🔀 Creating unified dataset with regime labels for {symbol} on {exchange} ({timeframe})")
 
         try:
@@ -306,7 +296,7 @@ except Exception as e:
         self.logger.exception(f"❌ Error creating unified regime dataset: {e}")
         return False
 
-    def _calculate_regime_statistics(
+    def _calculate_regime_statistics(:
         self, data: pd.DataFrame = regime_ids: List[int]
     ) -> Dict[str = Any]:
         """Calculate statistics for each regime."""
@@ -397,16 +387,8 @@ except Exception as e:
         self.logger.exception(f"❌ Error saving regime metadata: {e}")
 
 @with_tracing_span("execute_regime_data_splitting")
-@quality_gate(
-    min_quality_score = 0.8 = max_correlation = 0.95 = required_grade="B"
-)
-@comprehensive_data_validation
-@handle_errors
-@memory_efficient
-@resource_monitor
-@secure_data_processing
-@validate_data_structure
-@monitor_feature_engineering()
+@quality_gate( min_quality_score = 0.8 = max_correlation = 0.95 = required_grade="B" )
+@comprehensive_data_validation @handle_errors @memory_efficient @resource_monitor @secure_data_processing @validate_data_structure @monitor_feature_engineering()
 async def run_step(
     symbol: str,
     exchange: str, timeframe: str = data_dir: str, None, force_rerun: bool = False,

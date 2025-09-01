@@ -48,85 +48,77 @@ Initialize analyst with enhanced type safety.
 Args:
             config: Configuration dictionary
 """
-self.config: dict[str, Any] = config
-self.logger = system_logger.getChild("Analyst")
+    self.config: dict[str, Any] = config
+    self.logger = system_logger.getChild("Analyst")
 
 # Analyst state
-self.is_analyzing: bool = False
-self.analysis_results: dict[str, Any] = {}
-self.analysis_history: list[dict[str, Any]] = []
+    self.is_analyzing: bool = False
+    self.analysis_results: dict[str, Any] = {}
+    self.analysis_history: list[dict[str, Any]] = []
 
 # Configuration
-self.analyst_config: dict[str, Any] = self.config.get("analyst", {})
-self.analysis_interval: int = self.analyst_config.get("analysis_interval", 3600)
-self.max_analysis_history: int = self.analyst_config.get(
+    self.analyst_config: dict[str, Any] = self.config.get("analyst", {})
+    self.analysis_interval: int = self.analyst_config.get("analysis_interval", 3600)
+    self.max_analysis_history: int = self.analyst_config.get(
 "max_analysis_history",
 100,
 )
-self.enable_technical_analysis: bool = self.analyst_config.get(
+    self.enable_technical_analysis: bool = self.analyst_config.get(
 "enable_technical_analysis",
 True,
 )
 
 # Dual Model System integration
-self.dual_model_system: DualModelSystem | None = None
-self.enable_dual_model_system: bool = self.analyst_config.get(
+    self.dual_model_system: DualModelSystem | None = None
+    self.enable_dual_model_system: bool = self.analyst_config.get(
 "enable_dual_model_system",
 True,
 )
 
 # Market Health Analyzer integration
-self.market_health_analyzer: MarketHealthAnalyzer | None = None
-self.enable_market_health_analysis: bool = self.analyst_config.get(
+    self.market_health_analyzer: MarketHealthAnalyzer | None = None
+    self.enable_market_health_analysis: bool = self.analyst_config.get(
 "enable_market_health_analysis",
 True,
 )
 
 # Liquidation Risk Model integration
-self.liquidation_risk_model: LiquidationRiskModel | None = None
-self.enable_liquidation_risk_analysis: bool = self.analyst_config.get(
+    self.liquidation_risk_model: LiquidationRiskModel | None = None
+    self.enable_liquidation_risk_analysis: bool = self.analyst_config.get(
 "enable_liquidation_risk_analysis",
 True,
 )
 
 # Feature Engineering Orchestrator integration
-self.feature_engineering_orchestrator: FeatureEngineeringOrchestrator | None = (
+    self.feature_engineering_orchestrator: FeatureEngineeringOrchestrator | None = (
 None
 )
-self.enable_feature_engineering: bool = self.analyst_config.get(
+    self.enable_feature_engineering: bool = self.analyst_config.get(
 "enable_feature_engineering",
 True,
 )
 
 # ML Confidence Predictor integration
-self.ml_confidence_predictor = None
-self.enable_ml_predictions: bool = self.analyst_config.get(
+    self.ml_confidence_predictor = None
+    self.enable_ml_predictions: bool = self.analyst_config.get(
 "enable_ml_predictions",
 True,
 )
 
 # Enhanced predictions from supervisor
-self.enable_enhanced_predictions: bool = self.analyst_config.get(
+    self.enable_enhanced_predictions: bool = self.analyst_config.get(
 "enable_enhanced_predictions",
 True,
 )
 
 # Unified Regime Classifier integration
-self.regime_classifier = None
-self.enable_regime_classification: bool = self.analyst_config.get(
+    self.regime_classifier = None
+    self.enable_regime_classification: bool = self.analyst_config.get(
 "enable_regime_classification",
 True,
 )
 
-@handle_specific_errors(
-error_handlers={
-ValueError: (False, "Invalid analyst configuration"),
-AttributeError: (False, "Missing required analyst parameters"),
-KeyError: (False, "Missing configuration keys"),
-},
-default_return=False,
-context="analyst initialization",
-)
+@handle_specific_errors( error_handlers={ ValueError: (False, "Invalid analyst configuration"), AttributeError: (False, "Missing required analyst parameters"), KeyError: (False, "Missing configuration keys"), }, default_return=False, context="analyst initialization", )
 async def initialize(self) -> bool:
         """
 Initialize analyst with enhanced error handling.
@@ -134,7 +126,7 @@ Initialize analyst with enhanced error handling.
 Returns:
             bool: True if initialization successful, False otherwise
 """
-self.logger.info("Initializing Analyst...")
+    self.logger.info("Initializing Analyst...")
 
 # Load analyst configuration
 await self._load_analyst_configuration()
@@ -142,7 +134,7 @@ await self._load_analyst_configuration()
 # Validate configuration
 if not self._validate_configuration():
             self.logger.error("Invalid configuration for analyst")
-return False
+    return False
 
 # Initialize analyst modules
 await self._initialize_analyst_modules()
@@ -174,26 +166,18 @@ if self.enable_ml_predictions:
 if self.enable_regime_classification:
             await self._initialize_regime_classifier()
 
-self.logger.info("✅ Analyst initialization completed successfully")
-return True
+    self.logger.info("✅ Analyst initialization completed successfully")
+    return True
 
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=None,
-context="analyst configuration loading",
-)
+@handle_errors( exceptions=(ValueError, AttributeError), default_return=None, context="analyst configuration loading", )
 async def _load_analyst_configuration(self) -> None:
         """Load analyst configuration."""
-self.logger.info("Loading analyst configuration...")
+    self.logger.info("Loading analyst configuration...")
 
 # Additional configuration can be loaded here
-self.logger.info("Analyst configuration loaded successfully")
+    self.logger.info("Analyst configuration loaded successfully")
 
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=False,
-context="configuration validation",
-)
+@handle_errors( exceptions=(ValueError, AttributeError), default_return=False, context="configuration validation", )
 def _validate_configuration(self) -> bool:
         """Validate analyst configuration."""
 try:
@@ -202,23 +186,19 @@ except Exception as e:
     # Exception handling placeholder - implement specific error handling as needed
 if self.analysis_interval <= 0:
                 self.logger.error("analysis_interval must be positive")
-return False
+    return False
 
-self.logger.info("Analyst configuration validation passed")
-return True
+    self.logger.info("Analyst configuration validation passed")
+    return True
 
 except Exception:
             self.logger.exception("Configuration validation failed")
-return False
+    return False
 
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=None,
-context="analyst modules initialization",
-)
+@handle_errors( exceptions=(ValueError, AttributeError), default_return=None, context="analyst modules initialization", )
 async def _initialize_analyst_modules(self) -> None:
         """Initialize analyst modules."""
-self.logger.info("Initializing analyst modules...")
+    self.logger.info("Initializing analyst modules...")
 
 if self.enable_technical_analysis:
             await self._initialize_technical_analysis()
@@ -226,35 +206,23 @@ if self.enable_technical_analysis:
 if self.enable_risk_analysis:
             await self._initialize_risk_analysis()
 
-self.logger.info("Analyst modules initialized successfully")
+    self.logger.info("Analyst modules initialized successfully")
 
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=None,
-context="technical analysis initialization",
-)
+@handle_errors( exceptions=(ValueError, AttributeError), default_return=None, context="technical analysis initialization", )
 async def _initialize_technical_analysis(self) -> None:
         """Initialize technical analysis module."""
-self.logger.info("Initializing technical analysis...")
+    self.logger.info("Initializing technical analysis...")
 # Technical analysis initialization logic here
-self.logger.info("Technical analysis initialized successfully")
+    self.logger.info("Technical analysis initialized successfully")
 
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=None,
-context="risk analysis initialization",
-)
+@handle_errors( exceptions=(ValueError, AttributeError), default_return=None, context="risk analysis initialization", )
 async def _initialize_risk_analysis(self) -> None:
         """Initialize risk analysis module."""
-self.logger.info("Initializing risk analysis...")
+    self.logger.info("Initializing risk analysis...")
 # Risk analysis initialization logic here
-self.logger.info("Risk analysis initialized successfully")
+    self.logger.info("Risk analysis initialized successfully")
 
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=None,
-context="dual model system initialization",
-)
+@handle_errors( exceptions=(ValueError, AttributeError), default_return=None, context="dual model system initialization", )
 async def _initialize_dual_model_system(self) -> None:
         """Initialize Dual Model System."""
 try:
@@ -263,7 +231,7 @@ except Exception as e:
     # Exception handling placeholder - implement specific error handling as needed
 from src.training.dual_model_system import setup_dual_model_system
 
-self.dual_model_system = await setup_dual_model_system(self.config)
+    self.dual_model_system = await setup_dual_model_system(self.config)
 if self.dual_model_system:
                 self.logger.info("✅ Dual Model System initialized successfully")
 else:
@@ -273,11 +241,7 @@ except Exception:
 initialization_error("Error initializing Dual Model System: {e}"),
 )
 
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=None,
-context="market health analyzer initialization",
-)
+@handle_errors( exceptions=(ValueError, AttributeError), default_return=None, context="market health analyzer initialization", )
 async def _initialize_market_health_analyzer(self) -> None:
         """Initialize Market Health Analyzer."""
 try:
@@ -286,8 +250,8 @@ except Exception as e:
     # Exception handling placeholder - implement specific error handling as needed
 from src.analyst.market_health_analyzer import setup_market_health_analyzer
 
-self.market_health_analyzer = await setup_market_health_analyzer(
-self.config,
+    self.market_health_analyzer = await setup_market_health_analyzer(
+    self.config,
 )
 if self.market_health_analyzer:
                 self.logger.info("✅ Market Health Analyzer initialized successfully")
@@ -298,11 +262,7 @@ except Exception:
 initialization_error("Error initializing Market Health Analyzer: {e}"),
 )
 
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=None,
-context="liquidation risk model initialization",
-)
+@handle_errors( exceptions=(ValueError, AttributeError), default_return=None, context="liquidation risk model initialization", )
 async def _initialize_liquidation_risk_model(self) -> None:
         """Initialize Liquidation Risk Model."""
 try:
@@ -311,8 +271,8 @@ except Exception as e:
     # Exception handling placeholder - implement specific error handling as needed
 from src.analyst.liquidation_risk_model import setup_liquidation_risk_model
 
-self.liquidation_risk_model = await setup_liquidation_risk_model(
-self.config,
+    self.liquidation_risk_model = await setup_liquidation_risk_model(
+    self.config,
 )
 if self.liquidation_risk_model:
                 self.logger.info("✅ Liquidation Risk Model initialized successfully")
@@ -323,21 +283,17 @@ except Exception:
 initialization_error("Error initializing Liquidation Risk Model: {e}"),
 )
 
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=None,
-context="feature engineering orchestrator initialization",
-)
+@handle_errors( exceptions=(ValueError, AttributeError), default_return=None, context="feature engineering orchestrator initialization", )
 async def _initialize_feature_engineering_orchestrator(self) -> None:
         """Initialize Feature Engineering Orchestrator."""
 try:
     # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
     # Exception handling placeholder - implement specific error handling as needed
-self.feature_engineering_orchestrator = FeatureEngineeringOrchestrator(
-self.config,
+    self.feature_engineering_orchestrator = FeatureEngineeringOrchestrator(
+    self.config,
 )
-self.logger.info(
+    self.logger.info(
 "✅ Feature Engineering Orchestrator initialized successfully",
 )
 except Exception as e:
@@ -347,41 +303,25 @@ f"Error initializing Feature Engineering Orchestrator: {e}",
 
 # Legacy S/R analyzer initialization method removed
 
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=None,
-context="ML confidence predictor initialization",
-)
+@handle_errors( exceptions=(ValueError, AttributeError), default_return=None, context="ML confidence predictor initialization", )
 async def _initialize_ml_confidence_predictor(self) -> None:
         """Initialize ML Confidence Predictor."""
-self.logger.info("Initializing ML Confidence Predictor...")
+    self.logger.info("Initializing ML Confidence Predictor...")
 # ML confidence predictor initialization logic here
-self.logger.info("ML Confidence Predictor initialized successfully")
+    self.logger.info("ML Confidence Predictor initialized successfully")
 
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=None,
-context="regime classifier initialization",
-)
+@handle_errors( exceptions=(ValueError, AttributeError), default_return=None, context="regime classifier initialization", )
 async def _initialize_regime_classifier(self) -> None:
         """Initialize Unified Regime Classifier."""
-self.logger.info("Initializing Unified Regime Classifier...")
-self.regime_classifier = UnifiedRegimeClassifier(
-self.config,
+    self.logger.info("Initializing Unified Regime Classifier...")
+    self.regime_classifier = UnifiedRegimeClassifier(
+    self.config,
 "UNKNOWN",
 "UNKNOWN",
 )
-self.logger.info("Unified Regime Classifier initialized successfully")
+    self.logger.info("Unified Regime Classifier initialized successfully")
 
-@handle_specific_errors(
-error_handlers={
-ValueError: (False, "Invalid analysis parameters"),
-AttributeError: (False, "Missing analysis components"),
-KeyError: (False, "Missing required analysis data"),
-},
-default_return=False,
-context="analysis execution",
-)
+@handle_specific_errors( error_handlers={ ValueError: (False, "Invalid analysis parameters"), AttributeError: (False, "Missing analysis components"), KeyError: (False, "Missing required analysis data"), }, default_return=False, context="analysis execution", )
 async def execute_analysis(self, analysis_input: dict[str, Any]) -> bool:
         """
 Execute comprehensive analysis with dual model system integration.
@@ -398,10 +338,10 @@ except Exception as e:
     # Exception handling placeholder - implement specific error handling as needed
 if not self._validate_analysis_inputs(analysis_input):
                 self.logger.error("Invalid analysis inputs")
-return False
+    return False
 
-self.is_analyzing = True
-self.logger.info("Starting comprehensive analysis...")
+    self.is_analyzing = True
+    self.logger.info("Starting comprehensive analysis...")
 
 # Extract market data
 market_data = analysis_input.get("market_data")
@@ -412,7 +352,7 @@ current_position = analysis_input.get("current_position")
 if self.feature_engineering_orchestrator:
                 self.logger.info("Generating features...")
 features_df = (
-self.feature_engineering_orchestrator.generate_all_features(
+    self.feature_engineering_orchestrator.generate_all_features(
 market_data,
 analysis_input.get("agg_trades_df"),
 analysis_input.get("futures_df"),
@@ -434,7 +374,7 @@ await self.market_health_analyzer.execute_market_health_analysis(
 health_input,
 )
 market_health_results = (
-self.market_health_analyzer.get_analysis_results()
+    self.market_health_analyzer.get_analysis_results()
 )
 
 # 3. Perform liquidation risk analysis
@@ -473,7 +413,7 @@ features_df, regime_info, symbol, exchange, timeframe
 )
 
 # 6. Compile comprehensive analysis results
-self.analysis_results = {
+    self.analysis_results = {
 "timestamp": datetime.now().isoformat(),
 "market_health": market_health_results,
 "liquidation_risk": liquidation_risk_results,
@@ -489,20 +429,16 @@ else None,
 # Store analysis results
 await self._store_analysis_results()
 
-self.is_analyzing = False
-self.logger.info("✅ Comprehensive analysis completed successfully")
-return True
+    self.is_analyzing = False
+    self.logger.info("✅ Comprehensive analysis completed successfully")
+    return True
 
 except Exception:
             self.is_analyzing = False
-self.print(failed("❌ Analysis failed: {e}"))
-return False
+    self.print(failed("❌ Analysis failed: {e}"))
+    return False
 
-@handle_errors(
-exceptions=(Exception,),
-default_return={},
-context="ML predictions",
-)
+@handle_errors( exceptions=(Exception,), default_return={}, context="ML predictions", )
 async def _get_ml_predictions(
 self,
 features_df: pd.DataFrame,
@@ -515,17 +451,13 @@ features_df,
 current_price,
 )
 # Fallback predictions
-return {
+    return {
 "confidence": 0.5,
 "increase_probabilities": {0.1: 0.3, 0.2: 0.2, 0.3: 0.1},
 "decrease_probabilities": {0.1: 0.3, 0.2: 0.2, 0.3: 0.1},
 }
 
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=False,
-context="analysis inputs validation",
-)
+@handle_errors( exceptions=(ValueError, AttributeError), default_return=False, context="analysis inputs validation", )
 def _validate_analysis_inputs(self, analysis_input: dict[str, Any]) -> bool:
         """Validate analysis input data."""
 try:
@@ -536,29 +468,25 @@ required_keys = ["market_data", "current_price"]
 for key in required_keys:
                 if key not in analysis_input:
                     self.logger.error("Missing required analysis input: %s", key)
-return False
+    return False
 
 market_data = analysis_input.get("market_data")
 if not isinstance(market_data, pd.DataFrame) or market_data.empty:
                 self.logger.error("Invalid market data provided")
-return False
+    return False
 
 current_price = analysis_input.get("current_price")
 if not isinstance(current_price, (int, float)) or current_price <= 0:
                 self.logger.error("Invalid current price provided")
-return False
+    return False
 
-return True
+    return True
 
 except Exception:
             self.logger.exception("Analysis inputs validation failed")
-return False
+    return False
 
-@handle_errors(
-exceptions=(Exception,),
-default_return={},
-context="technical analysis",
-)
+@handle_errors( exceptions=(Exception,), default_return={}, context="technical analysis", )
 async def _perform_technical_analysis(
 self,
 analysis_input: dict[str, Any],
@@ -588,8 +516,8 @@ technical_results = {
 "timestamp": datetime.now().isoformat(),
 }
 
-self.logger.info("Technical analysis completed successfully")
-return technical_results
+    self.logger.info("Technical analysis completed successfully")
+    return technical_results
 
 @validate_data_quality(validation_level="WARNING")
 @with_tracing_span("price_analysis")
@@ -603,7 +531,7 @@ market_data = analysis_input.get("market_data")
 current_price = analysis_input.get("current_price")
 
 # Simple price analysis
-return {
+    return {
 "current_price": current_price,
 "price_change_1h": market_data["close"].pct_change(1).iloc[-1]
 if len(market_data) > 0
@@ -618,11 +546,12 @@ else "bearish",
 
 except Exception:
             self.print(error("Error performing price analysis: {e}"))
-return {}
+    return {}
 
 @validate_data_quality(validation_level="WARNING")
 @with_tracing_span("volume_analysis")
-def _perform_volume_analysis(
+def _perform_volume_analysis(:
+    pass  # TODO: Add implementation
 self,
 analysis_input: dict[str, Any],
 ) -> dict[str, Any]:
@@ -636,7 +565,7 @@ market_data = analysis_input.get("market_data")
 if "volume" not in market_data.columns:
                 return {}
 
-return {
+    return {
 "current_volume": market_data["volume"].iloc[-1],
 "volume_ma": market_data["volume"].rolling(window=20).mean().iloc[-1],
 "volume_ratio": market_data["volume"].iloc[-1]
@@ -649,11 +578,12 @@ else "low",
 
 except Exception:
             self.print(error("Error performing volume analysis: {e}"))
-return {}
+    return {}
 
 @validate_data_quality(validation_level="WARNING")
 @with_tracing_span("indicator_analysis")
-def _perform_indicator_analysis(
+def _perform_indicator_analysis(:
+    pass  # TODO: Add implementation
 self,
 analysis_input: dict[str, Any],
 ) -> dict[str, Any]:
@@ -664,7 +594,7 @@ except Exception as e:
     # Exception handling placeholder - implement specific error handling as needed
 market_data = analysis_input.get("market_data")
 
-return {
+    return {
 "rsi": market_data.get("rsi", {}).iloc[-1]
 if "rsi" in market_data.columns
 else None,
@@ -685,11 +615,12 @@ else None,
 
 except Exception:
             self.print(error("Error performing indicator analysis: {e}"))
-return {}
+    return {}
 
 @validate_data_quality(validation_level="WARNING")
 @with_tracing_span("pattern_analysis")
-def _perform_pattern_analysis(
+def _perform_pattern_analysis(:
+    pass  # TODO: Add implementation
 self,
 analysis_input: dict[str, Any],
 ) -> dict[str, Any]:
@@ -699,18 +630,19 @@ try:
 except Exception as e:
     # Exception handling placeholder - implement specific error handling as needed
 # Simple pattern analysis
-return {
+    return {
 "patterns_detected": [],
 "pattern_confidence": 0.0,
 }
 
 except Exception:
             self.print(error("Error performing pattern analysis: {e}"))
-return {}
+    return {}
 
 @validate_data_quality(validation_level="WARNING")
 @with_tracing_span("volatility_analysis")
-def _perform_volatility_analysis(
+def _perform_volatility_analysis(:
+    pass  # TODO: Add implementation
 self,
 analysis_input: dict[str, Any],
 ) -> dict[str, Any]:
@@ -722,7 +654,7 @@ except Exception as e:
 market_data = analysis_input.get("market_data")
 
 returns = market_data["close"].pct_change()
-return {
+    return {
 "current_volatility": returns.rolling(window=20).std().iloc[-1],
 "volatility_regime": "high"
 if returns.rolling(window=20).std().iloc[-1] > 0.04
@@ -735,11 +667,12 @@ else "decreasing",
 
 except Exception:
             self.print(error("Error performing volatility analysis: {e}"))
-return {}
+    return {}
 
 @validate_data_quality(validation_level="WARNING")
 @with_tracing_span("correlation_analysis")
-def _perform_correlation_analysis(
+def _perform_correlation_analysis(:
+    pass  # TODO: Add implementation
 self,
 analysis_input: dict[str, Any],
 ) -> dict[str, Any]:
@@ -749,18 +682,19 @@ try:
 except Exception as e:
     # Exception handling placeholder - implement specific error handling as needed
 # Simple correlation analysis
-return {
+    return {
 "price_volume_correlation": 0.0,
 "correlation_regime": "normal",
 }
 
 except Exception:
             self.print(error("Error performing correlation analysis: {e}"))
-return {}
+    return {}
 
 @validate_data_quality(validation_level="WARNING")
 @with_tracing_span("drawdown_analysis")
-def _perform_drawdown_analysis(
+def _perform_drawdown_analysis(:
+    pass  # TODO: Add implementation
 self,
 analysis_input: dict[str, Any],
 ) -> dict[str, Any]:
@@ -773,7 +707,7 @@ market_data = analysis_input.get("market_data")
 
 rolling_max = market_data["close"].rolling(window=20).max()
 drawdown = (market_data["close"] - rolling_max) / rolling_max
-return {
+    return {
 "current_drawdown": drawdown.iloc[-1],
 "max_drawdown": drawdown.min(),
 "drawdown_regime": "high"
@@ -783,7 +717,7 @@ else "normal",
 
 except Exception:
             self.print(error("Error performing drawdown analysis: {e}"))
-return {}
+    return {}
 
 @validate_data_quality(validation_level="WARNING")
 @with_tracing_span("risk_scoring")
@@ -794,7 +728,7 @@ try:
 except Exception as e:
     # Exception handling placeholder - implement specific error handling as needed
 # Simple risk scoring
-return {
+    return {
 "overall_risk_score": 0.5,
 "risk_level": "medium",
 "risk_factors": [],
@@ -802,13 +736,9 @@ return {
 
 except Exception:
             self.print(error("Error performing risk scoring: {e}"))
-return {}
+    return {}
 
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=None,
-context="ML predictions",
-)
+@handle_errors( exceptions=(ValueError, AttributeError), default_return=None, context="ML predictions", )
 async def _perform_ml_predictions(
 self,
 analysis_input: dict[str, Any],
@@ -844,23 +774,15 @@ ml_results = {
 "timestamp": datetime.now().isoformat(),
 }
 
-self.logger.info("ML predictions completed successfully")
-return ml_results
+    self.logger.info("ML predictions completed successfully")
+    return ml_results
 
 except Exception:
             self.print(error("Error performing ML predictions: {e}"))
-return {}
+    return {}
 
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=None,
-context="SR analysis",
-)
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=None,
-context="regime classification",
-)
+@handle_errors( exceptions=(ValueError, AttributeError), default_return=None, context="SR analysis", )
+@handle_errors( exceptions=(ValueError, AttributeError), default_return=None, context="regime classification", )
 async def _perform_regime_classification(
 self,
 analysis_input: dict[str, Any],
@@ -884,7 +806,7 @@ analysis_input.get("current_price")
 if self.regime_classifier:
                 # Use the new unified regime classifier for both regime and location
 regime, location, confidence, additional_info = (
-self.regime_classifier.predict_regime_and_location(market_data)
+    self.regime_classifier.predict_regime_and_location(market_data)
 )
 
 regime_results = {
@@ -915,44 +837,36 @@ regime_results = {
 "timestamp": datetime.now().isoformat(),
 }
 
-self.logger.info(
+    self.logger.info(
 f"Regime and location classification completed: {regime_results['regime']} at {regime_results['location']}",
 )
-return regime_results
+    return regime_results
 
 except Exception:
             self.print(error("Error performing regime classification: {e}"))
-return {}
+    return {}
 
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=None,
-context="analysis results storage",
-)
+@handle_errors( exceptions=(ValueError, AttributeError), default_return=None, context="analysis results storage", )
 async def _store_analysis_results(self) -> None:
         """Store analysis results."""
 try:
     # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
     # Exception handling placeholder - implement specific error handling as needed
-self.logger.info("Storing analysis results...")
+    self.logger.info("Storing analysis results...")
 
 # Add to history
-self.analysis_history.append(self.analysis_results.copy())
+    self.analysis_history.append(self.analysis_results.copy())
 
 # Limit history size
 if len(self.analysis_history) > self.max_analysis_history:
                 self.analysis_history.pop(0)
 
-self.logger.info("Analysis results stored successfully")
+    self.logger.info("Analysis results stored successfully")
 except Exception:
             self.print(error("Error storing analysis results: {e}"))
 
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=None,
-context="analysis results getting",
-)
+@handle_errors( exceptions=(ValueError, AttributeError), default_return=None, context="analysis results getting", )
 def get_analysis_results(self, analysis_type: str | None = None) -> dict[str, Any]:
         """
 Get analysis results.
@@ -969,17 +883,13 @@ except Exception as e:
     # Exception handling placeholder - implement specific error handling as needed
 if analysis_type is None:
                 return self.analysis_results
-return self.analysis_results.get(analysis_type, {})
+    return self.analysis_results.get(analysis_type, {})
 
 except Exception:
             self.print(error("Error getting analysis results: {e}"))
-return {}
+    return {}
 
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=None,
-context="analysis history getting",
-)
+@handle_errors( exceptions=(ValueError, AttributeError), default_return=None, context="analysis history getting", )
 def get_analysis_history(self, limit: int | None = None) -> list[dict[str, Any]]:
         """
 Get analysis history.
@@ -996,15 +906,15 @@ except Exception as e:
     # Exception handling placeholder - implement specific error handling as needed
 if limit is None:
                 return self.analysis_history
-return self.analysis_history[-limit:]
+    return self.analysis_history[-limit:]
 
 except Exception:
             self.print(error("Error getting analysis history: {e}"))
-return []
+    return []
 
 def get_analysis_status(self) -> dict[str, Any]:
         """Get analysis status."""
-return {
+    return {
 "is_analyzing": self.is_analyzing,
 "last_analysis": self.analysis_results.get("timestamp"),
 "analysis_count": len(self.analysis_history),
@@ -1020,19 +930,15 @@ is not None,
 # Enhanced predictions are now handled by the supervisor
 # No local methods needed
 
-@handle_errors(
-exceptions=(Exception,),
-default_return=None,
-context="analyst cleanup",
-)
+@handle_errors( exceptions=(Exception,), default_return=None, context="analyst cleanup", )
 async def stop(self) -> None:
         """Clean up analyst resources."""
 try:
     # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
     # Exception handling placeholder - implement specific error handling as needed
-self.logger.info("Stopping Analyst...")
-self.is_analyzing = False
+    self.logger.info("Stopping Analyst...")
+    self.is_analyzing = False
 
 # Stop sub-components
 if self.dual_model_system:
@@ -1044,19 +950,15 @@ if self.market_health_analyzer:
 if self.liquidation_risk_model:
                 await self.liquidation_risk_model.stop()
 
-self.analysis_results = {}
-self.analysis_history = []
+    self.analysis_results = {}
+    self.analysis_history = []
 
-self.logger.info("✅ Analyst stopped successfully")
+    self.logger.info("✅ Analyst stopped successfully")
 except Exception:
             self.print(error("❌ Error stopping Analyst: {e}"))
 
 
-@handle_errors(
-exceptions=(Exception,),
-default_return=None,
-context="analyst setup",
-)
+@handle_errors( exceptions=(Exception,), default_return=None, context="analyst setup", )
 async def setup_analyst(config: dict[str, Any] | None = None) -> Analyst | None:
     """
 Setup and initialize Analyst.
@@ -1078,10 +980,10 @@ analyst = Analyst(config)
 
 if await analyst.initialize():
             system_logger.info("✅ Analyst setup completed successfully")
-return analyst
+    return analyst
 system_logger.error("❌ Analyst setup failed")
-return None
+    return None
 
 except Exception:
         system_logger.exception("❌ Error setting up Analyst")
-return None
+    return None

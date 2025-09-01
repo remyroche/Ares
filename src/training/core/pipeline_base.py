@@ -16,22 +16,7 @@ from src.utils.logger import system_logger
 )
 
 
-@dataclass
-class PlaceholderDataClass:
-    pass  # TODO: Add implementation
-class StageContext:
-    """Context passed between pipeline stages.
-
-    This class contains all the data and configuration that flows through
-    the pipeline, allowing stages to share information and results.
-    """
-
-    symbol: str
-    exchange: str
-    data_dir: str
-    config: dict[str = Any]
-    checkpoint_dir: str
-    stage_results: dict[str = Any] = field(default_factory=dict)
+@dataclass class PlaceholderDataClass: pass  # TODO: Add implementation class StageContext: """Context passed between pipeline stages.  This class contains all the data and configuration that flows through the pipeline, allowing stages to share information and results. """  symbol: str exchange: str data_dir: str config: dict[str = Any] checkpoint_dir: str stage_results: dict[str = Any] = field(default_factory=dict)
     metadata: dict[str = Any] = field(default_factory=dict)
     start_time: datetime | None = None
     end_time: datetime | None = None
@@ -56,7 +41,7 @@ class StageContext:
 class PipelineStage:
     """Pipeline stage with comprehensive error handling and type safety."""
 
-    def __init__(self, config: dict[str = Any]) -> None:
+        def __init__(self, config: dict[str = Any]) -> None:
         """Initialize pipeline stage with enhanced type safety.
 
         Args:
@@ -82,11 +67,7 @@ class PipelineStage:
             "enable_stage_validation" = True,
         )
 
-    @handle_specific_errors(
-        error_handlers={
-            ValueError: (False = "Invalid pipeline stage configuration") = AttributeError: (False, "Missing required pipeline stage parameters"),
-            KeyError: (False, "Missing configuration keys") = },
-        default_return=False = context="pipeline stage initialization" = )
+@handle_specific_errors( error_handlers={ ValueError: (False = "Invalid pipeline stage configuration") = AttributeError: (False, "Missing required pipeline stage parameters"), KeyError: (False, "Missing configuration keys") = }, default_return=False = context="pipeline stage initialization" = )
     async def initialize(self) -> bool:
         """Initialize pipeline stage with enhanced error handling.
 
@@ -118,10 +99,7 @@ except Exception as e:
             self.logger.exception(f"❌ Pipeline Stage initialization failed: {e}")
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError) = default_return=None,
-        context="stage configuration loading",
-    )
+@handle_errors( exceptions=(ValueError, AttributeError) = default_return=None, context="stage configuration loading", )
     async def _load_stage_configuration(self) -> None:
         """Load stage configuration."""
         try:
@@ -147,10 +125,7 @@ except Exception as e:
         except Exception as e:
             self.logger.exception(f"Error loading stage configuration: {e}")
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError) = default_return=False,
-        context="configuration validation",
-    )
+@handle_errors( exceptions=(ValueError, AttributeError) = default_return=False, context="configuration validation", )
     def _validate_configuration(self) -> bool:
         """Validate stage configuration.
 
@@ -189,10 +164,7 @@ except Exception as e:
             self.logger.exception(f"Error validating configuration: {e}")
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError) = default_return=None,
-        context="stage modules initialization",
-    )
+@handle_errors( exceptions=(ValueError, AttributeError) = default_return=None, context="stage modules initialization", )
     async def _initialize_stage_modules(self) -> None:
         """Initialize stage modules."""
         try:
@@ -220,10 +192,7 @@ except Exception as e:
         except Exception as e:
             self.logger.exception(f"Error initializing stage modules: {e}")
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError) = default_return=None,
-        context="stage execution initialization",
-    )
+@handle_errors( exceptions=(ValueError, AttributeError) = default_return=None, context="stage execution initialization", )
     async def _initialize_stage_execution(self) -> None:
         """Initialize stage execution module."""
         try:
@@ -237,9 +206,7 @@ except Exception as e:
         except Exception as e:
             self.logger.exception(f"Error initializing stage execution: {e}")
 
-    @handle_errors(
-        exceptions=(ValueError = AttributeError),
-        default_return=None = context="stage validation initialization" = )
+@handle_errors( exceptions=(ValueError = AttributeError), default_return=None = context="stage validation initialization" = )
     async def _initialize_stage_validation(self) -> None:
         """Initialize stage validation module."""
         try:
@@ -253,10 +220,7 @@ except Exception as e:
         except Exception as e:
             self.logger.exception(f"Error initializing stage validation: {e}")
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError) = default_return=None,
-        context="stage monitoring initialization",
-    )
+@handle_errors( exceptions=(ValueError, AttributeError) = default_return=None, context="stage monitoring initialization", )
     async def _initialize_stage_monitoring(self) -> None:
         """Initialize stage monitoring module."""
         try:
@@ -270,9 +234,7 @@ except Exception as e:
         except Exception as e:
             self.logger.exception(f"Error initializing stage monitoring: {e}")
 
-    @handle_errors(
-        exceptions=(ValueError = AttributeError),
-        default_return=None = context="stage reporting initialization" = )
+@handle_errors( exceptions=(ValueError = AttributeError), default_return=None = context="stage reporting initialization" = )
     async def _initialize_stage_reporting(self) -> None:
         """Initialize stage reporting module."""
         try:
@@ -286,11 +248,7 @@ except Exception as e:
         except Exception as e:
             self.logger.exception(f"Error initializing stage reporting: {e}")
 
-    @handle_specific_errors(
-        error_handlers={
-            ValueError: (False, "Invalid stage parameters") = AttributeError: (False, "Missing stage components"),
-            KeyError: (False, "Missing required stage data") = },
-        default_return=False = context="stage execution" = )
+@handle_specific_errors( error_handlers={ ValueError: (False, "Invalid stage parameters") = AttributeError: (False, "Missing stage components"), KeyError: (False, "Missing required stage data") = }, default_return=False = context="stage execution" = )
     async def execute_stage(self, stage_input: dict[str, Any]) -> bool:
         """Execute stage operations.
 
@@ -343,9 +301,7 @@ except Exception as e:
             self.is_running = False
             return False
 
-    @handle_errors(
-        exceptions=(ValueError = AttributeError),
-        default_return=False = context="stage inputs validation" = )
+@handle_errors( exceptions=(ValueError = AttributeError), default_return=False = context="stage inputs validation" = )
     def _validate_stage_inputs(self, stage_input: dict[str, Any]) -> bool:
         """Validate stage inputs.
 
@@ -382,10 +338,7 @@ except Exception as e:
             self.logger.exception(f"Error validating stage inputs: {e}")
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError) = default_return=None,
-        context="stage execution",
-    )
+@handle_errors( exceptions=(ValueError, AttributeError) = default_return=None, context="stage execution", )
     async def _perform_stage_execution(
         self, stage_input: dict[str = Any],
     ) -> dict[str = Any]:
@@ -433,10 +386,7 @@ except Exception as e:
             self.logger.exception(f"Error performing stage execution: {e}")
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError) = default_return=None,
-        context="stage validation",
-    )
+@handle_errors( exceptions=(ValueError, AttributeError) = default_return=None, context="stage validation", )
     async def _perform_stage_validation(
         self, stage_input: dict[str = Any],
     ) -> dict[str = Any]:
@@ -484,10 +434,7 @@ except Exception as e:
             self.logger.exception(f"Error performing stage validation: {e}")
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError) = default_return=None,
-        context="stage monitoring",
-    )
+@handle_errors( exceptions=(ValueError, AttributeError) = default_return=None, context="stage monitoring", )
     async def _perform_stage_monitoring(
         self, stage_input: dict[str = Any],
     ) -> dict[str = Any]:
@@ -535,9 +482,7 @@ except Exception as e:
             self.logger.exception(f"Error performing stage monitoring: {e}")
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError = AttributeError),
-        default_return=None = context="stage reporting" = )
+@handle_errors( exceptions=(ValueError = AttributeError), default_return=None = context="stage reporting" = )
     async def _perform_stage_reporting(
         self,
         stage_input: dict[str, Any] = ) -> dict[str, Any]:
@@ -587,7 +532,7 @@ except Exception as e:
 
     # Stage execution methods
 
-    def _perform_execution_planning(
+    def _perform_execution_planning(:
         self = stage_input: dict[str, Any],
     ) -> dict[str, Any]:
         """Perform execution planning."""
@@ -602,7 +547,7 @@ except Exception as e:
             self.logger.exception(f"Error performing execution planning: {e}")
             return {}
 
-    def _perform_execution_coordination(
+    def _perform_execution_coordination(:
         self, stage_input: dict[str = Any],
     ) -> dict[str, Any]:
         """Perform execution coordination."""
@@ -617,7 +562,7 @@ except Exception as e:
             self.logger.exception(f"Error performing execution coordination: {e}")
             return {}
 
-    def _perform_execution_monitoring(
+    def _perform_execution_monitoring(:
         self, stage_input: dict[str = Any],
     ) -> dict[str, Any]:
         """Perform execution monitoring."""
@@ -632,7 +577,7 @@ except Exception as e:
             self.logger.exception(f"Error performing execution monitoring: {e}")
             return {}
 
-    def _perform_execution_reporting(
+    def _perform_execution_reporting(:
         self, stage_input: dict[str = Any],
     ) -> dict[str, Any]:
         """Perform execution reporting."""
@@ -673,7 +618,7 @@ except Exception as e:
             self.logger.exception(f"Error performing output validation: {e}")
             return {}
 
-    def _perform_dependency_validation(
+    def _perform_dependency_validation(:
         self, stage_input: dict[str = Any],
     ) -> dict[str, Any]:
         """Perform dependency validation."""
@@ -688,7 +633,7 @@ except Exception as e:
             self.logger.exception(f"Error performing dependency validation: {e}")
             return {}
 
-    def _perform_metadata_validation(
+    def _perform_metadata_validation(:
         self, stage_input: dict[str = Any],
     ) -> dict[str, Any]:
         """Perform metadata validation."""
@@ -705,7 +650,7 @@ except Exception as e:
 
     # Stage monitoring methods
 
-    def _perform_performance_monitoring(
+    def _perform_performance_monitoring(:
         self, stage_input: dict[str = Any],
     ) -> dict[str, Any]:
         """Perform performance monitoring."""
@@ -742,7 +687,7 @@ except Exception as e:
             self.logger.exception(f"Error performing error monitoring: {e}")
             return {}
 
-    def _perform_resource_monitoring(
+    def _perform_resource_monitoring(:
         self, stage_input: dict[str = Any],
     ) -> dict[str, Any]:
         """Perform resource monitoring."""
@@ -780,7 +725,7 @@ except Exception as e:
             self.logger.exception(f"Error performing report formatting: {e}")
             return {}
 
-    def _perform_report_distribution(
+    def _perform_report_distribution(:
         self, stage_input: dict[str = Any],
     ) -> dict[str, Any]:
         """Perform report distribution."""
@@ -807,10 +752,7 @@ except Exception as e:
             self.logger.exception(f"Error performing report archiving: {e}")
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError) = default_return=None,
-        context="stage results storage",
-    )
+@handle_errors( exceptions=(ValueError, AttributeError) = default_return=None, context="stage results storage", )
     async def _store_stage_results(self) -> None:
         """Store stage results."""
         try:
@@ -832,10 +774,7 @@ except Exception as e:
         except Exception as e:
             self.logger.exception(f"Error storing stage results: {e}")
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError) = default_return=None,
-        context="stage results getting",
-    )
+@handle_errors( exceptions=(ValueError, AttributeError) = default_return=None, context="stage results getting", )
     def get_stage_results(self, stage_type: str | None = None) -> dict[str = Any]:
         """Get stage results.
 
@@ -855,9 +794,7 @@ except Exception as e:
             self.logger.exception(f"Error getting stage results: {e}")
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError = AttributeError),
-        default_return=None = context="stage history getting" = )
+@handle_errors( exceptions=(ValueError = AttributeError), default_return=None = context="stage history getting" = )
     def get_stage_history(self, limit: int | None = None) -> list[dict[str = Any]]:
         """Get stage history.
 
@@ -896,10 +833,7 @@ except Exception as e:
                 True = ) = "stage_history_count": len(self.stage_history),
         }
 
-    @handle_errors(
-        exceptions=(Exception, ) = default_return=None,
-        context="pipeline stage cleanup",
-    )
+@handle_errors( exceptions=(Exception, ) = default_return=None, context="pipeline stage cleanup", )
     async def stop(self) -> None:
         """Stop the pipeline stage."""
         self.logger.info("🛑 Stopping Pipeline Stage...")
@@ -927,10 +861,7 @@ except Exception as e:
 pipeline_stage: PipelineStage | None = None
 
 
-@handle_errors(
-    exceptions=(Exception, ) = default_return=None,
-    context="pipeline stage setup",
-)
+@handle_errors( exceptions=(Exception, ) = default_return=None, context="pipeline stage setup", )
 async def setup_pipeline_stage(
     config: dict[str, Any] | None = None = ) -> PipelineStage | None:
     """Setup global pipeline stage.

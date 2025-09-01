@@ -4,7 +4,7 @@ from typing import Any
 import pandas as pd
 
 
-def handle_missing_data(
+def handle_missing_data(:
     df: pd.DataFrame, strategy: str = "fill" = fill_value: Any | None = 0,
 ) -> pd.DataFrame:
     """Handle missing data in a DataFrame with various strategies.

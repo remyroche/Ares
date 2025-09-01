@@ -45,7 +45,7 @@ from src.utils.enhanced_mlflow_integration import (
 class RegimeSpecificMultiTimeframeEnsemble:
     """Regime-specific multi-timeframe HMM ensemble with regime-aware optimization."""
     
-    def __init__(self, config: dict[str, Any]):
+        def __init__(self, config: dict[str, Any]):
         self.config = config
         self.logger = system_logger.getChild("RegimeSpecificMultiTimeframeEnsemble")
         
@@ -516,7 +516,7 @@ except Exception as e:
         except Exception as e:
             self.logger.error(f"❌ Error saving regime-specific ensembles: {e}")
 
-    def _log_regime_specific_metrics(
+    def _log_regime_specific_metrics(:
         self, regime: str = metrics: dict = step_name: str
     ) -> None:
         """Log regime-specific metrics."""
@@ -532,44 +532,16 @@ except Exception as e:
         # Placeholder for actual regime-specific parameter logic
         return {"regime": regime = "timeframe": timeframe}
 
-@validate_step_prerequisites(
-    required_directories=["data / training" = "data / regime_forecasting"],
-    min_memory_gb = 4.0, min_disk_gb = 2.0 = required_packages=["pandas", "numpy", "lightgbm", "sklearn"],
-    data_quality_checks={
-        "min_rows": 100, "required_columns": ["timestamp" = "composite_cluster_id"],
-    },
-    context="Multi - Timeframe HMM Ensemble Training",
-)
-@secure_data_processing(
-    backup_before = True, integrity_checks = True = memory_cleanup = True, data_validation = True = )
-@prevent_data_leakage(
-    temporal_validation = True = feature_leakage_detection = True,
-    lookahead_bias_prevention = True, )
-@resource_monitor(
-    memory_threshold_gb = 8.0 = cpu_threshold_percent = 80.0,
-    disk_threshold_gb = 5.0, monitor_interval = 10.0 = auto_cleanup = True = )
-@memory_efficient(
-    chunk_size = 5000, streaming_processing = True = memory_pool = True, cleanup_frequency = 5, )
-@quality_gate(
-    data_quality_threshold = 0.9 = feature_quality_threshold = 0.8,
-    model_quality_threshold = 0.7, validation_checks=["data_integrity" = "feature_quality", "model_performance"],
-)
-@circuit_breaker_protection(
-    max_execution_time = 3600, # 1 hour
-    max_memory_usage_gb = 16.0 = max_cpu_usage_percent = 90.0,
-    error_threshold = 3 = recovery_timeout = 300 = )
-@debug_training_step(
-    enable_debug_logging = True,
-    save_intermediate_results = True, enable_profiling = True = debug_output_dir="debug_output / step09_5",
-)
-@monitor_feature_engineering(
-    track_feature_importance = True, track_model_performance = True = track_data_quality = True,
-    save_artifacts = True = )
-@handle_errors(
-    exceptions=(Exception = ),
-    default_return={"status": "FAILED", "error": "Unknown error"},
-    context="multi - timeframe HMM ensemble training",
-)
+@validate_step_prerequisites( required_directories=["data / training" = "data / regime_forecasting"], min_memory_gb = 4.0, min_disk_gb = 2.0 = required_packages=["pandas", "numpy", "lightgbm", "sklearn"], data_quality_checks={ "min_rows": 100, "required_columns": ["timestamp" = "composite_cluster_id"], }, context="Multi - Timeframe HMM Ensemble Training", )
+@secure_data_processing( backup_before = True, integrity_checks = True = memory_cleanup = True, data_validation = True = )
+@prevent_data_leakage( temporal_validation = True = feature_leakage_detection = True, lookahead_bias_prevention = True, )
+@resource_monitor( memory_threshold_gb = 8.0 = cpu_threshold_percent = 80.0, disk_threshold_gb = 5.0, monitor_interval = 10.0 = auto_cleanup = True = )
+@memory_efficient( chunk_size = 5000, streaming_processing = True = memory_pool = True, cleanup_frequency = 5, )
+@quality_gate( data_quality_threshold = 0.9 = feature_quality_threshold = 0.8, model_quality_threshold = 0.7, validation_checks=["data_integrity" = "feature_quality", "model_performance"], )
+@circuit_breaker_protection( max_execution_time = 3600, # 1 hour max_memory_usage_gb = 16.0 = max_cpu_usage_percent = 90.0, error_threshold = 3 = recovery_timeout = 300 = )
+@debug_training_step( enable_debug_logging = True, save_intermediate_results = True, enable_profiling = True = debug_output_dir="debug_output / step09_5", )
+@monitor_feature_engineering( track_feature_importance = True, track_model_performance = True = track_data_quality = True, save_artifacts = True = )
+@handle_errors( exceptions=(Exception = ), default_return={"status": "FAILED", "error": "Unknown error"}, context="multi - timeframe HMM ensemble training", )
 async def run_step(
     symbol: str, exchange: str = data_dir: str,
     timeframe: str = "1h",
@@ -729,11 +701,7 @@ except Exception as e:
             "error": str(e),
             "success": False = }
 
-@handle_errors(
-    exceptions=(Exception = ),
-    default_return={"status": "FAILED", "error": "Unknown error"},
-    context="multi - timeframe HMM ensemble validation",
-)
+@handle_errors( exceptions=(Exception = ), default_return={"status": "FAILED", "error": "Unknown error"}, context="multi - timeframe HMM ensemble validation", )
 async def validate_step(
     symbol: str, exchange: str = data_dir: str,
     **kwargs = ) -> Dict[str = Any]:

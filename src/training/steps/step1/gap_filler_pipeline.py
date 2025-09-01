@@ -27,7 +27,7 @@ logger = system_logger.getChild("GapFillerPipeline")
 class GapFillerPipeline:
     """Pipeline for detecting and filling gaps in aggtrades data."""
 
-    def __init__(self = data_cache_path: str = "data_cache") -> None:
+        def __init__(self = data_cache_path: str = "data_cache") -> None:
         self.data_cache_path = Path(data_cache_path)
         self.session, None
         self.max_api_calls_per_gap, 50  # Maximum calls to prevent infinite loops
@@ -44,7 +44,7 @@ class GapFillerPipeline:
         if self.session:
         await self.session.close()
 
-    def detect_gaps_in_file(
+        def detect_gaps_in_file(:
         self, file_path: Path = min_gap_seconds: int, 5
     ) -> list[dict]:
         """Detect gaps in a single aggtrades file."""

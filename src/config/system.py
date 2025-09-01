@@ -15,7 +15,7 @@ Returns:
 """
 settings = get_environment_settings()
 
-return {
+    return {
 # --- Logging Configuration ---
 "logging": {
 "level": settings.log_level,
@@ -105,7 +105,7 @@ Returns:
 
 """
 system_config = get_system_config()
-return system_config.get("logging", {})
+    return system_config.get("logging", {})
 
 
 def get_database_config() -> dict[str, Any]:
@@ -116,7 +116,7 @@ Returns:
 
 """
 system_config = get_system_config()
-return system_config.get("database", {})
+    return system_config.get("database", {})
 
 
 def get_checkpointing_config() -> dict[str, Any]:
@@ -127,7 +127,7 @@ Returns:
 
 """
 system_config = get_system_config()
-return system_config.get("checkpointing", {})
+    return system_config.get("checkpointing", {})
 
 
 def get_reporting_config() -> dict[str, Any]:
@@ -138,7 +138,7 @@ Returns:
 
 """
 system_config = get_system_config()
-return system_config.get("reporting", {})
+    return system_config.get("reporting", {})
 
 
 def get_mlflow_config() -> dict[str, Any]:
@@ -149,7 +149,7 @@ Returns:
 
 """
 system_config = get_system_config()
-return system_config.get("mlflow", {})
+    return system_config.get("mlflow", {})
 
 
 def get_version_info() -> dict[str, Any]:
@@ -160,4 +160,4 @@ Returns:
 
 """
 system_config = get_system_config()
-return system_config.get("version", {})
+    return system_config.get("version", {})

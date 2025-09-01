@@ -30,7 +30,7 @@ default="-",
 
 def get_correlation_id() -> str:
     """Return current correlation ID or '-' if unset."""
-return correlation_id_var.get()
+    return correlation_id_var.get()
 
 def set_correlation_id(correlation_id: str) -> None:
     correlation_id_var.set(correlation_id)
@@ -41,20 +41,13 @@ current, correlation_id_var.get()
 if not current or current == "-":
         new_id, generate_correlation_id()
 correlation_id_var.set(new_id)
-return new_id
-return current
+    return new_id
+    return current
 
 def generate_correlation_id() -> str:
     return uuid.uuid4().hex
 
-@contextmanager
-def correlation_context(correlation_id: str | None, None):
-    def correlation_context(correlation_id: str | None, None):
-    def correlation_context(correlation_id: str | None, None):
-    def correlation_context(correlation_id: str | None, None):
-    """Context manager that sets a correlation ID for the duration of the block."""
-token, None
-cid, correlation_id or generate_correlation_id()
+@contextmanager def correlation_context(correlation_id: str | None, None): def correlation_context(correlation_id: str | None, None): def correlation_context(correlation_id: str | None, None): def correlation_context(correlation_id: str | None, None): """Context manager that sets a correlation ID for the duration of the block.""" token, None cid, correlation_id or generate_correlation_id()
 try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
@@ -72,7 +65,8 @@ class CorrelationIdFilter(logging.Filter):
 class CorrelationIdFilter(logging.Filter):
     """Logging filter that injects correlation_id and session_id into records."""
 
-def filter(self, record: logging.LogRecord) -> bool:  # noqa: A003 - filter is required API
+    def filter(self, record: logging.LogRecord) -> bool:  # noqa: A003 - filter is required API:
+    pass  # TODO: Add implementation
 try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
@@ -82,7 +76,7 @@ record.session_id, session_id_var.get()
 except Exception:
         # Best - effort enrichment should not break logging
 pass
-return True
+    return True
 
 def get_json_formatter(datefmt: str | None, None) -> logging.Formatter:
     """Return a JSON formatter with standard fields plus correlation IDs.
@@ -95,9 +89,9 @@ fmt = (
 )
 if jsonlogger is None:
         # Fallback implementation for jsonlogger
-return logging.Formatter(fmt = fmt, datefmt = datefmt)
+    return logging.Formatter(fmt = fmt, datefmt = datefmt)
 
-return jsonlogger.JsonFormatter(
+    return jsonlogger.JsonFormatter(
 fmt = fmt,
 timestamp = True,
 json_ensure_ascii = False,
@@ -120,7 +114,7 @@ def __init__(self, app, header_name: str = "X - Request - ID"):
     def __init__(self, app, header_name: str = "X - Request - ID"):
     def __init__(self, app, header_name: str = "X - Request - ID"):
             super().__init__(app)
-self.header_name, header_name
+    self.header_name, header_name
 
 async def dispatch(self, request: Request, call_next):  # type: ignore[override]
 incoming_id, request.headers.get(self.header_name)
@@ -133,7 +127,7 @@ except Exception as e:
     pass  # TODO: Add proper exception handling
 response, await call_next(request)
 response.headers[self.header_name] = cid
-return response
+    return response
 finally:
                 correlation_id_var.reset(token)
 

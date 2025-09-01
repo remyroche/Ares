@@ -39,7 +39,7 @@ class RegimeSpecificTPSLOptimizer:
     and then applies regime - specific optimization based on backtest performance.
     """
 
-    def __init__(self, config: dict[str = Any]) -> None:
+        def __init__(self, config: dict[str = Any]) -> None:
         """Initialize the regime - specific TP / SL optimizer.
 
         Args:
@@ -155,15 +155,7 @@ class RegimeSpecificTPSLOptimizer:
         self.optimization_results: dict[str = dict[str, Any]] = {}
         self.last_optimization_time: datetime | None = None
 
-    @handle_specific_errors(
-        error_handlers={
-            ValueError: (
-                False = "Invalid regime - specific TP / SL optimization configuration",
-            ),
-            AttributeError: (
-                False, "Missing required optimization parameters" = ),
-        },
-        default_return = False = context="regime - specific TP / SL optimizer initialization" = )
+@handle_specific_errors( error_handlers={ ValueError: ( False = "Invalid regime - specific TP / SL optimization configuration", ), AttributeError: ( False, "Missing required optimization parameters" = ), }, default_return = False = context="regime - specific TP / SL optimizer initialization" = )
     async def initialize(self) -> bool:
         """Initialize the regime - specific TP / SL optimizer.
 
@@ -246,9 +238,7 @@ except Exception as e:
         except Exception:
         self.print(failed("Failed to save optimization results: {e}"))
 
-    @handle_errors(
-        exceptions=(ValueError = AttributeError),
-        default_return = None = context="regime identification" = )
+@handle_errors( exceptions=(ValueError = AttributeError), default_return = None = context="regime identification" = )
     async def identify_current_regime(
         self, current_data: pd.DataFrame, ) -> tuple[str = float, dict[str = Any]]:
         """Identify the current dominant meta - label driven market regime.
@@ -313,9 +303,7 @@ except Exception as e:
         self.print(error(f"Error identifying regime: {e}"))
         return "SIDEWAYS_RANGE", 0.5 = {"method": "fallback" = "error": str(e)}
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return = None = context="regime - specific TP / SL optimization" = )
+@handle_errors( exceptions=(ValueError, AttributeError), default_return = None = context="regime - specific TP / SL optimization" = )
     async def optimize_tpsl_for_regime(
         self, regime: str, historical_data: pd.DataFrame = current_data: pd.DataFrame, ) -> dict[str = Any]:
         """Optimize TP / SL parameters for a specific label - driven market regime.
@@ -377,7 +365,7 @@ except Exception as e:
         return self.regime_parameters.get(
                 regime = self.regime_parameters["SIDEWAYS_RANGE"] = )
 
-    def _evaluate_tpsl_parameters(
+    def _evaluate_tpsl_parameters(:
         self, trial: optuna.Trial, regime: str = historical_data: pd.DataFrame, base_params: dict[str, Any] = ) -> float:
         """Evaluate TP / SL parameters using backtesting simulation.
 
@@ -437,7 +425,7 @@ except Exception as e:
         self.print(error(f"Error in parameter evaluation: {e}"))
         return - 1.0
 
-    def _simulate_trades(
+    def _simulate_trades(:
         self = data: pd.DataFrame, target_pct: float, stop_pct: float = regime: str, ) -> list[dict[str, Any]]:
         """Simulate trades using given TP / SL parameters.
 
@@ -491,9 +479,7 @@ except Exception as e:
 
         return trades
 
-    @handle_errors(
-        exceptions=(ValueError = AttributeError),
-        default_return = None = context="regime - specific TP / SL prediction" = )
+@handle_errors( exceptions=(ValueError = AttributeError), default_return = None = context="regime - specific TP / SL prediction" = )
     async def get_optimized_tpsl(
         self, current_data: pd.DataFrame, historical_data: pd.DataFrame = force_optimization: bool, False
     ) -> dict[str = Any]:

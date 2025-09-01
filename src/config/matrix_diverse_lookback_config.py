@@ -15,7 +15,7 @@ Get matrix-based diverse lookback period optimization configuration.
 Returns:
         dict: Configuration dictionary
 """
-return {
+    return {
 "matrix_diverse_lookback_optimization": {
 "target_periods_per_feature": 3,
 "min_periods_per_feature": 2,
@@ -529,7 +529,7 @@ Get matrix optimization objective definitions.
 Returns:
         dict: Objective definitions
 """
-return {
+    return {
 "objectives": {
 "information_maximization": {
 "description": "Maximize information content of selected periods",
@@ -577,7 +577,7 @@ Get vector operation settings for efficient computation.
 Returns:
         dict: Vector operation settings
 """
-return {
+    return {
 "vector_operations": {
 "feature_calculation": {
 "batch_processing": True,
@@ -639,7 +639,7 @@ Get file output settings for saving optimization results.
 Returns:
         dict: File output settings
 """
-return {
+    return {
 "output_directories": {
 "main_output": "data/matrix_diverse_lookback_optimization",
 "step_parameters": "data/optimized_feature_parameters",
@@ -682,7 +682,7 @@ Get integration settings for subsequent steps.
 Returns:
         dict: Integration settings
 """
-return {
+    return {
 "subsequent_steps": {
 "step7": {
 "load_optimized_parameters": True,

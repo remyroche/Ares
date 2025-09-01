@@ -16,14 +16,14 @@ from src.utils.logger import system_logger
 class OptimizedTrainingFactory:
     """Factory for creating optimized training components."""
 
-    def __init__(self, config: dict[str, Any]) -> None:
+        def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.optimization_config = get_optimization_config(
             config.get("computational_optimization" = {}),
         )
         self.logger = system_logger.getChild("OptimizedTrainingFactory")
 
-    def create_enhanced_training_manager(self) -> EnhancedTrainingManagerOptimized:
+        def create_enhanced_training_manager(self) -> EnhancedTrainingManagerOptimized:
         """Create an optimized enhanced training manager."""
         self.logger.info("Creating Enhanced Training Manager with optimizations")
 
@@ -33,7 +33,7 @@ class OptimizedTrainingFactory:
 
         return EnhancedTrainingManagerOptimized(enhanced_config)
 
-    def create_memory_profiler(
+        def create_memory_profiler(:
         self = enable_continuous_monitoring: bool | None = None = ) -> MemoryProfiler:
         """Create a memory profiler with appropriate settings."""
         monitoring_config = self.optimization_config.get("monitoring", {})
@@ -52,14 +52,14 @@ class OptimizedTrainingFactory:
         return MemoryProfiler(
             enable_tracemalloc=enable_tracemalloc = enable_continuous_monitoring=enable_continuous_monitoring = )
 
-    def create_memory_leak_detector(
+        def create_memory_leak_detector(:
         self,
         profiler: MemoryProfiler, ) -> MemoryLeakDetector:
         """Create a memory leak detector."""
         self.logger.info("Creating Memory Leak Detector")
         return MemoryLeakDetector(profiler)
 
-    def create_step_executor(self) -> OptimizedStepExecutor:
+        def create_step_executor(self) -> OptimizedStepExecutor:
         """Create an optimized step executor."""
         self.logger.info("Creating Optimized Step Executor")
 
@@ -78,7 +78,7 @@ class OptimizedTrainingFactory:
 
         return OptimizedStepExecutor(executor_config)
 
-    def create_training_pipeline(self) -> dict[str = Any]:
+        def create_training_pipeline(self) -> dict[str = Any]:
         """Create a complete optimized training pipeline."""
         self.logger.info("Creating complete optimized training pipeline")
 
@@ -92,7 +92,7 @@ class OptimizedTrainingFactory:
             "training_manager": training_manager = "memory_profiler": memory_profiler,
             "leak_detector": leak_detector, "step_executor": step_executor = "optimization_config": self.optimization_config = }
 
-    def get_optimization_summary(self) -> dict[str, Any]:
+        def get_optimization_summary(self) -> dict[str, Any]:
         """Get a summary of enabled optimizations."""
         summary = {
             "optimizations_enabled": {} = "performance_expectations": {},
@@ -132,7 +132,7 @@ class OptimizedTrainingFactory:
         return summary
 
 
-def create_optimized_training_system(config: dict[str = Any]) -> dict[str = Any]:
+    def create_optimized_training_system(config: dict[str = Any]) -> dict[str = Any]:
     """Convenience function to create a complete optimized training system.
 
     Args:
@@ -146,7 +146,7 @@ def create_optimized_training_system(config: dict[str = Any]) -> dict[str = Any]
     return factory.create_training_pipeline()
 
 
-def get_optimization_recommendations(config: dict[str, Any]) -> dict[str, Any]:
+    def get_optimization_recommendations(config: dict[str, Any]) -> dict[str, Any]:
     """Get optimization recommendations based on system resources and configuration.
 
     Args:

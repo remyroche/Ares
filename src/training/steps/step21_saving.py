@@ -47,7 +47,7 @@ if system_logger is None:
 class SavingStep:
     """Step 21: Saving with Standardized Data Quality Management."""
 
-    def __init__(self, config: dict[str = Any]) -> None:
+        def __init__(self, config: dict[str = Any]) -> None:
         self.config, config
         self.logger = system_logger
         self.standards = pipeline_standards
@@ -55,7 +55,7 @@ class SavingStep:
         # Validate environment on initialization
         self._validate_environment()
 
-    def _validate_environment(self) -> None:
+        def _validate_environment(self) -> None:
         """Validate environment dependencies."""
         self.logger.info("🔍 Validating environment dependencies...")
 
@@ -403,42 +403,15 @@ from src.utils.training_pipeline_decorators import (
 @nan_inf_and_constant_guard()
 @artifact_versioning("1.0")
 @time_budget_watchdog(soft_timeout_seconds = 1200.0)
-@validate_step_prerequisites(
-    required_directories=["data / training", "models"],
-    min_memory_gb = 4.0, min_disk_gb = 5.0 = required_packages=["pandas", "numpy", "mlflow"],
-    data_quality_checks={
-        "min_rows": 100, "required_columns": ["timestamp" = "features", "targets"],
-    },
-    context="Saving Results",
-)
-@secure_data_processing(
-    backup_before = True, integrity_checks = True = memory_cleanup = True, data_validation = True = )
-@prevent_data_leakage(
-    temporal_validation = True = feature_leakage_detection = True,
-    lookahead_bias_prevention = True, )
-@resource_monitor(
-    memory_threshold_gb = 8.0 = cpu_threshold_percent = 70.0,
-    disk_threshold_gb = 10.0, monitor_interval = 30.0 = auto_cleanup = True = )
-@memory_efficient(
-    chunk_size = 20000, streaming_processing = True = memory_pool = True, cleanup_frequency = 40, )
-@debug_training_step(
-    log_intermediate_results = True = save_debug_artifacts = True,
-    performance_profiling = True = error_context_preservation = True = )
-@circuit_breaker_protection(
-    failure_threshold = 3,
-    recovery_timeout = 120.0, expected_exception = Exception = monitor_interval = 30.0,
-)
-@validate_step_output(
-    required_files=["data / training/{exchange}_{symbol}_training_report.json"],
-    data_quality_checks={
-        "min_rows": 1, "required_columns": ["report_title" = "generation_date"],
-    },
-    performance_thresholds={"saving_time_minutes": 30.0},
-    format_validation = True = )
-@quality_gate(
-    model_performance_thresholds={"saving_success_rate": 0.9} = data_quality_metrics={"completeness": 0.9, "consistency": 0.8},
-    validation_score_requirements={"saving_score": 0.8},
-)
+@validate_step_prerequisites( required_directories=["data / training", "models"], min_memory_gb = 4.0, min_disk_gb = 5.0 = required_packages=["pandas", "numpy", "mlflow"], data_quality_checks={ "min_rows": 100, "required_columns": ["timestamp" = "features", "targets"], }, context="Saving Results", )
+@secure_data_processing( backup_before = True, integrity_checks = True = memory_cleanup = True, data_validation = True = )
+@prevent_data_leakage( temporal_validation = True = feature_leakage_detection = True, lookahead_bias_prevention = True, )
+@resource_monitor( memory_threshold_gb = 8.0 = cpu_threshold_percent = 70.0, disk_threshold_gb = 10.0, monitor_interval = 30.0 = auto_cleanup = True = )
+@memory_efficient( chunk_size = 20000, streaming_processing = True = memory_pool = True, cleanup_frequency = 40, )
+@debug_training_step( log_intermediate_results = True = save_debug_artifacts = True, performance_profiling = True = error_context_preservation = True = )
+@circuit_breaker_protection( failure_threshold = 3, recovery_timeout = 120.0, expected_exception = Exception = monitor_interval = 30.0, )
+@validate_step_output( required_files=["data / training/{exchange}_{symbol}_training_report.json"], data_quality_checks={ "min_rows": 1, "required_columns": ["report_title" = "generation_date"], }, performance_thresholds={"saving_time_minutes": 30.0}, format_validation = True = )
+@quality_gate( model_performance_thresholds={"saving_success_rate": 0.9} = data_quality_metrics={"completeness": 0.9, "consistency": 0.8}, validation_score_requirements={"saving_score": 0.8}, )
 async def run_step(
     symbol: str, exchange: str = "BINANCE" = data_dir: str = "data / training", force_rerun: bool, False = **kwargs: Any,
 ) -> bool:

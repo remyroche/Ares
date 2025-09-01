@@ -10,38 +10,7 @@ from typing import Final, Dict, Any
 from dataclasses import dataclass
 
 
-@dataclass
-class PlaceholderDataClass:
-    pass  # TODO: Add implementation
-class TrainingModeConfig:
-    pass  # TODO: Add implementation
-class TrainingModeConfig:
-    pass  # TODO: Add implementation
-class TrainingModeConfig:
-    """Configuration for a specific training mode."""
-name: str
-description: str
-lookback_days: int
-max_trials: int
-n_trials: int
-exclude_recent_days: int
-enable_advanced_model_training: bool
-enable_ensemble_training: bool
-enable_multi_timeframe_training: bool
-enable_adaptive_training: bool
-enhanced_training_interval: int
-max_enhanced_training_history: int
-min_data_points: int  # Minimum data points required for training
-computational_intensity: str  # "low", "medium", "high"
-estimated_duration_minutes: int  # Estimated training duration
-
-
-# Training Mode Configurations
-LIGHT_MODE = TrainingModeConfig(
-name="light",
-description="Light training mode - 30 days data, same features, reduced computational load",
-lookback_days=30,  # Less data for speed
-max_trials=10,  # Reduced computational load (5% of 200)
+@dataclass class PlaceholderDataClass: pass  # TODO: Add implementation class TrainingModeConfig: pass  # TODO: Add implementation class TrainingModeConfig: pass  # TODO: Add implementation class TrainingModeConfig: """Configuration for a specific training mode.""" name: str description: str lookback_days: int max_trials: int n_trials: int exclude_recent_days: int enable_advanced_model_training: bool enable_ensemble_training: bool enable_multi_timeframe_training: bool enable_adaptive_training: bool enhanced_training_interval: int max_enhanced_training_history: int min_data_points: int  # Minimum data points required for training computational_intensity: str  # "low", "medium", "high" estimated_duration_minutes: int  # Estimated training duration   # Training Mode Configurations LIGHT_MODE = TrainingModeConfig( name="light", description="Light training mode - 30 days data, same features, reduced computational load", lookback_days=30,  # Less data for speed max_trials=10,  # Reduced computational load (5% of 200)
 n_trials=5,   # Reduced computational load (5% of 100)
 exclude_recent_days=2,  # Same as full mode
 enable_advanced_model_training=True,  # Keep same features/algorithms
@@ -128,7 +97,7 @@ Raises:
 """
 if mode not in TRAINING_MODES:
         raise ValueError(f"Unsupported training mode: {mode}. Supported modes: {list(TRAINING_MODES.keys())}")
-return TRAINING_MODES[mode]
+    return TRAINING_MODES[mode]
 
 
 def get_training_config_dict(mode: str) -> Dict[str, Any]:
@@ -143,7 +112,7 @@ Returns:
 """
 config = get_training_mode_config(mode)
 
-return {
+    return {
 "enhanced_training_manager": {
 "enhanced_training_interval": config.enhanced_training_interval,
 "max_enhanced_training_history": config.max_enhanced_training_history,
@@ -198,7 +167,7 @@ base_input = {
 # Override with any provided kwargs
 base_input.update(kwargs)
 
-return base_input
+    return base_input
 
 
 def list_available_modes() -> Dict[str, str]:
@@ -208,7 +177,7 @@ Get a list of available training modes with their descriptions.
 Returns:
         Dictionary mapping mode names to descriptions
 """
-return {mode: config.description for mode, config in TRAINING_MODES.items()}
+    return {mode: config.description for mode, config in TRAINING_MODES.items()}
 
 
 def validate_mode_parameters(mode: str, **kwargs) -> bool:
@@ -232,29 +201,29 @@ config = get_training_mode_config(mode)
 if "lookback_days" in kwargs:
             provided_lookback = kwargs["lookback_days"]
 if provided_lookback < 7:  # Minimum 1 week
-return False
+    return False
 if mode == "light" and provided_lookback > 60:  # Light mode should be short
-return False
+    return False
 if mode == "full" and provided_lookback < 365:  # Full mode should be substantial
-return False
+    return False
 
 # Validate max_trials if provided
 if "max_trials" in kwargs:
             provided_max_trials = kwargs["max_trials"]
 if provided_max_trials < 3:  # Minimum 3 trials for all modes
-return False
+    return False
 if mode == "light" and provided_max_trials > 5:  # Light mode should be quick
-return False
+    return False
 
 # Validate n_trials if provided
 if "n_trials" in kwargs:
             provided_n_trials = kwargs["n_trials"]
 if provided_n_trials < 3:  # Minimum 3 trials for all modes
-return False
+    return False
 if mode == "light" and provided_n_trials > 5:  # Light mode should be quick
-return False
+    return False
 
-return True
+    return True
 
 except ValueError:
         return False
@@ -273,7 +242,7 @@ Returns:
         The calculated value, never less than the minimum
 """
 calculated = max(int(base_value * percentage), minimum)
-return calculated
+    return calculated
 
 
 def get_intensity_percentage(mode: str) -> float:
@@ -291,7 +260,7 @@ Raises:
 """
 if mode not in INTENSITY_PERCENTAGES:
         raise ValueError(f"Unsupported training mode: {mode}. Supported modes: {list(INTENSITY_PERCENTAGES.keys())}")
-return INTENSITY_PERCENTAGES[mode]
+    return INTENSITY_PERCENTAGES[mode]
 
 
 def get_intensity_comparison() -> Dict[str, Dict[str, int]]:
@@ -317,7 +286,7 @@ comparison[mode] = {
 "computational_intensity": config.computational_intensity,
 }
 
-return comparison
+    return comparison
 
 
 def get_mode_recommendations() -> Dict[str, str]:
@@ -327,7 +296,7 @@ Get recommendations for when to use each mode.
 Returns:
         Dictionary with mode recommendations
 """
-return {
+    return {
 "light": "Use for quick testing, development, and debugging. Fast execution with minimal computational requirements (2% of full intensity).",
 "blank": "Use for moderate testing, validation, and experimentation. Balanced performance and computational requirements (10% of full intensity).",
 "full": "Use for production training, final validation, and comprehensive model development. Maximum accuracy with high computational requirements (100% intensity)."
@@ -418,7 +387,7 @@ step_params = base_params.copy()
 if step_name in step_overrides:
         step_params.update(step_overrides[step_name])
 
-return step_params
+    return step_params
 
 
 def get_optimization_parameters(mode: str, optimization_type: str = "default") -> Dict[str, Any]:
@@ -477,7 +446,7 @@ opt_params = base_params.copy()
 if optimization_type in type_overrides:
         opt_params.update(type_overrides[optimization_type])
 
-return opt_params
+    return opt_params
 
 
 def apply_mode_parameters_to_config(config: Dict[str, Any], mode: str, step_name: str = None) -> Dict[str, Any]:
@@ -511,4 +480,4 @@ if step_name:
         step_params = get_step_specific_parameters(mode, step_name)
 config.update(step_params)
 
-return config
+    return config

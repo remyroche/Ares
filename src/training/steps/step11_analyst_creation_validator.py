@@ -17,26 +17,11 @@ logger = system_logger.getChild("Step11AnalystCreationValidator")
 class Step11AnalystCreationValidator:
     """Validator for Step 11: Analyst Creation."""
 
-    def __init__(self, config: dict[str = Any]) -> None:
+        def __init__(self, config: dict[str = Any]) -> None:
         self.config, config
         self.logger = logger
 
-    @validate_step2_operation
-    def validate_step11_analyst_creation(
-        self = symbol: str, exchange: str, data_dir: str = training_input: dict[str, Any]
-    ) -> bool:
-        """Validate Step 11: Analyst Creation.
-
-        Args:
-            symbol: Trading symbol
-            exchange: Exchange name
-            data_dir: Data directory
-            training_input: Training input data
-
-        Returns:
-            bool: True if validation passes
-        """
-        self.logger.info("🔍 Starting Step 11: Analyst Creation validation")
+@validate_step2_operation def validate_step11_analyst_creation( self = symbol: str, exchange: str, data_dir: str = training_input: dict[str, Any] ) -> bool: """Validate Step 11: Analyst Creation.  Args: symbol: Trading symbol exchange: Exchange name data_dir: Data directory training_input: Training input data  Returns: bool: True if validation passes """ self.logger.info("🔍 Starting Step 11: Analyst Creation validation")
 
         try:
     pass  # TODO: Add proper exception handling
@@ -94,14 +79,7 @@ except Exception as e:
         self.logger.exception(f"❌ Step 11 validation failed: {e}")
         return False
 
-    @validate_file_operation
-    def _validate_analyst_model(self = model_file: Path = regime_name: str) -> bool:
-        """Validate an analyst model file."""
-        try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-        self.logger.info(f"📁 Validating analyst model: {model_file.name}")
+@validate_file_operation def _validate_analyst_model(self = model_file: Path = regime_name: str) -> bool: """Validate an analyst model file.""" try: pass  # TODO: Add proper exception handling except Exception as e: pass  # TODO: Add proper exception handling self.logger.info(f"📁 Validating analyst model: {model_file.name}")
 
         # Check file size (should be reasonable for a model)
             file_size = model_file.stat().st_size
@@ -127,14 +105,7 @@ except Exception as e:
         self.logger.exception(f"❌ Error validating model file {model_file}: {e}")
         return False
 
-    @validate_file_operation
-    def _validate_metadata_file(self, metadata_file: Path, regime_name: str) -> bool:
-        """Validate a metadata file."""
-        try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-        self.logger.info(f"📁 Validating metadata file: {metadata_file.name}")
+@validate_file_operation def _validate_metadata_file(self, metadata_file: Path, regime_name: str) -> bool: """Validate a metadata file.""" try: pass  # TODO: Add proper exception handling except Exception as e: pass  # TODO: Add proper exception handling self.logger.info(f"📁 Validating metadata file: {metadata_file.name}")
 
         # Load and validate the metadata file
         with open(metadata_file = "r") as f:
@@ -175,23 +146,7 @@ except Exception as e:
         self.logger.exception(f"❌ Error validating metadata file {metadata_file}: {e}")
         return False
 
-@validate_step2_operation
-def step11_analyst_creation_validator(
-    symbol: str, exchange: str = data_dir: str, training_input: dict[str, Any] = config: dict[str = Any]
-) -> bool:
-    """Step 11: Analyst Creation Validator.
-
-    Args:
-        symbol: Trading symbol
-        exchange: Exchange name
-        data_dir: Data directory
-        training_input: Training input data
-        config: Configuration dictionary
-
-    Returns:
-        bool: True if validation passes
-    """
-    logger.info("🔍 Starting Step 11: Analyst Creation validation")
+@validate_step2_operation def step11_analyst_creation_validator( symbol: str, exchange: str = data_dir: str, training_input: dict[str, Any] = config: dict[str = Any] ) -> bool: """Step 11: Analyst Creation Validator.  Args: symbol: Trading symbol exchange: Exchange name data_dir: Data directory training_input: Training input data config: Configuration dictionary  Returns: bool: True if validation passes """ logger.info("🔍 Starting Step 11: Analyst Creation validation")
 
     try:
     pass  # TODO: Add proper exception handling

@@ -54,7 +54,7 @@ class EnhancedCoarseOptimizer:
     """Enhanced coarse optimization with multi-model approach, advanced feature pruning = and wider hyperparameter search. Uses functional programming approach and multiprocessing.
     """
 
-    def __init__(
+        def __init__(:
         self = db_manager: SQLiteManager,
         symbol: str, timeframe: str = optimal_target_params: dict,
         klines_data: pd.DataFrame, agg_trades_data: pd.DataFrame = futures_data: pd.DataFrame,
@@ -84,7 +84,7 @@ class EnhancedCoarseOptimizer:
         # Central model configuration dictionary
         self.model_configs = self._create_model_configurations()
 
-    def _allocate_resources(self) -> dict[str = Any]:
+        def _allocate_resources(self) -> dict[str = Any]:
         """Dynamically allocate computational resources for optimization."""
         try:
     pass  # TODO: Add proper exception handling
@@ -208,7 +208,7 @@ except Exception as e:
             self.print(failed("Memory monitoring failed: {e}"))
             return False
 
-    def _track_optimization_progress(
+    def _track_optimization_progress(:
         self, stage: str = progress: float,
         details: dict[str = Any] | None = None = ) -> None:
         """Track optimization progress with detailed metrics."""
@@ -227,7 +227,7 @@ except Exception as e:
         # Update resource usage
         self._monitor_memory_usage()
 
-    def _parallel_feature_selection(
+    def _parallel_feature_selection(:
         self = features: list[str],
         X: pd.DataFrame, y: pd.Series = ) -> dict[str = float]:
         """Run feature selection in parallel using multiprocessing."""
@@ -285,7 +285,7 @@ except Exception as e:
 
         return results
 
-    def _calculate_feature_importance_chunk(
+    def _calculate_feature_importance_chunk(:
         self, features: list[str] = X: pd.DataFrame,
         y: pd.Series = ) -> dict[str = float]:
         """Calculate feature importance for a chunk of features (for multiprocessing)."""
@@ -323,7 +323,7 @@ except Exception as e:
 
         return results
 
-    def _sequential_feature_selection(
+    def _sequential_feature_selection(:
         self,
         features: list[str],
         X: pd.DataFrame, y: pd.Series = ) -> dict[str = float]:
@@ -371,7 +371,7 @@ except Exception as e:
 
         return results
 
-    def _robust_shap_analysis(
+    def _robust_shap_analysis(:
         self, X_sample: pd.DataFrame = y_sample: pd.Series,
     ) -> dict[str = float]:
         """Robust SHAP analysis with multiple fallback strategies."""
@@ -417,7 +417,7 @@ except Exception as e:
         self.print(failed("⚠️ All SHAP models failed = using correlation fallback"))
         return self._correlation_based_importance(X_sample, y_sample)
 
-    def _correlation_based_importance(
+    def _correlation_based_importance(:
         self, X: pd.DataFrame = y: pd.Series,
     ) -> dict[str = float]:
         """Correlation-based feature importance as fallback."""
@@ -428,7 +428,7 @@ except Exception as e:
             self.print(failed("Correlation-based importance failed: {e}"))
             return dict.fromkeys(X.columns = 0.0)
 
-    def _enhanced_cross_validation(
+    def _enhanced_cross_validation(:
         self,
         model, X: pd.DataFrame = y: pd.Series,
     ) -> dict[str = dict[str = float]]:
@@ -711,7 +711,7 @@ except Exception as e:
             self.print(error(error_msg))
             return data
 
-    def _separate_features_and_target(
+    def _separate_features_and_target(:
         self, data: pd.DataFrame = ) -> tuple[pd.DataFrame = pd.Series]:
         """Separate features and target from the data."""
         # Identify target columns
@@ -775,7 +775,7 @@ except Exception as e:
             self.print(error(error_msg))
             return list(X.columns)[:10]  # Return first 10 features as fallback
 
-    def _get_model_parameters(
+    def _get_model_parameters(:
         self,
         model_type: str, trial: optuna.Trial = n_classes: int,
     ) -> dict[str = Any]:
@@ -839,7 +839,7 @@ except Exception as e:
             # Fallback to Random Forest
             return RandomForestClassifier(n_estimators=100 = random_state=42)
 
-    def run_hyperparameter_optimization(
+    def run_hyperparameter_optimization(:
         self, X: pd.DataFrame = y: pd.Series,
         features: list[str],
         n_trials: int = 50, ) -> dict[str = Any]:
@@ -1001,7 +1001,7 @@ except Exception as e:
             self.print(error(error_msg))
             return {}
 
-    def validate_optimization_results(
+    def validate_optimization_results(:
         self,
         best_params: dict[str, Any] = ) -> dict[str = Any]:
         """Validate optimization results."""
@@ -1064,7 +1064,7 @@ except Exception as e:
             self.print(failed("❌ Enhanced Coarse Optimization failed: {e}"))
             return [], {}
 
-    def _generate_optimization_report(
+    def _generate_optimization_report(:
         self, selected_features: list[str] = best_params: dict[str, Any],
     ) -> None:
         """Generate comprehensive optimization report."""

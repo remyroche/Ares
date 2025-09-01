@@ -15,7 +15,7 @@ class DatabaseMigrationUtils:
     Handles export, import, validation, and backup operations.
     """
 
-    def __init__(self, db_manager: SQLiteManager):
+        def __init__(self, db_manager: SQLiteManager):
         self.db_manager = db_manager
         self.logger = system_logger.getChild("MigrationUtils")
 

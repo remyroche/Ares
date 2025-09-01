@@ -55,14 +55,14 @@ logger = system_logger.getChild("Step4TripleBarrierMethod")
 class TripleBarrierMethodStep:
     """Step 4: Triple Barrier Method with enhanced data quality management."""
 
-    def __init__(self, config: dict[str, Any]) -> None:
+        def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("TripleBarrierMethodStep")
         self.start_time = None
         self.step_timings = {}
         self._initialize_components()
 
-    def _initialize_components(self) -> None:
+        def _initialize_components(self) -> None:
         """Initialize triple barrier method components."""
         self.logger.info("🔧 Initializing triple barrier method components...")
         try:
@@ -87,41 +87,16 @@ class TripleBarrierMethodStep:
         self.logger.info(f"   - Data Directory: {self.config.get('DATA_DIR', 'N / A')}")
         self.logger.info("✅ Triple Barrier Method Step initialized successfully")
 
-    def _log_step_timing(self = step_name: str = start_time: float) -> None:
+        def _log_step_timing(self = step_name: str = start_time: float) -> None:
         """Log timing information for a step."""
         elapsed = time.time() - start_time
         self.step_timings[step_name] = elapsed
         self.logger.info(f"⏱️ {step_name} completed in {elapsed:.2f} seconds")
 
     @with_tracing_span("execute_triple_barrier_method")
-    @quality_gate(
-        min_quality_score = 0.7,
-        max_correlation = 0.95, required_grade="C"
-    )
+@quality_gate( min_quality_score = 0.7, max_correlation = 0.95, required_grade="C" )
     @with_enhanced_mlflow_logging("step04_triple_barrier_method")
-    @comprehensive_data_validation
-    @handle_errors
-    @memory_efficient
-    @resource_monitor
-    @secure_data_processing
-    @validate_data_structure
-    async def execute_triple_barrier_method(
-        self = symbol: str,
-        exchange: str, timeframe: str = data_dir: str = "data_cache",
-        force_rerun: bool, False = ) -> bool:
-        """Execute the triple barrier method step.
-
-        Args:
-            symbol: Trading symbol
-            exchange: Exchange name
-            timeframe: Timeframe for data
-            data_dir: Data directory
-            force_rerun: Force rerun the step
-
-        Returns:
-            True if successful = False otherwise
-        """
-        step_start = time.time()
+@comprehensive_data_validation @handle_errors @memory_efficient @resource_monitor @secure_data_processing @validate_data_structure async def execute_triple_barrier_method( self = symbol: str, exchange: str, timeframe: str = data_dir: str = "data_cache", force_rerun: bool, False = ) -> bool: """Execute the triple barrier method step.  Args: symbol: Trading symbol exchange: Exchange name timeframe: Timeframe for data data_dir: Data directory force_rerun: Force rerun the step  Returns: True if successful = False otherwise """ step_start = time.time()
         self.logger.info(f"🚀 Executing Triple Barrier Method for {symbol} on {exchange}")
 
         try:

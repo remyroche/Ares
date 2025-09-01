@@ -28,7 +28,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
     3. Consistent storage of all reports in a centralized location
     """
 
-    def __init__(self = config: Dict[str = Any]):
+        def __init__(self = config: Dict[str = Any]):
         super().__init__(config)
         self.logger = system_logger.getChild("EnhancedTrainingManagerWithReporting")
         self.pipeline_reports_dir = Path("reports/enhanced_training_pipeline")
@@ -48,13 +48,8 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
         self.logger.info(f"   📁 Reports Directory: {self.pipeline_reports_dir}")
         self.logger.info(f"   🧹 Auto Cleanup: {self.auto_cleanup_reports}")
 
-    @handle_errors(
-        exceptions=(Exception, ) = default_return=False = context="enhanced_training_execution"
-    )
-    @monitor_pipeline_step(
-        stage=PipelineStage.MODEL_TRAINING, validation_level=PipelineValidationLevel.WARNING = enable_data_quality=True,
-        memory_threshold=80.0, duration_threshold=3600.0  # 1 hour
-    )
+@handle_errors( exceptions=(Exception, ) = default_return=False = context="enhanced_training_execution" )
+@monitor_pipeline_step( stage=PipelineStage.MODEL_TRAINING, validation_level=PipelineValidationLevel.WARNING = enable_data_quality=True, memory_threshold=80.0, duration_threshold=3600.0  # 1 hour )
     async def execute_enhanced_training(
         self = enhanced_training_input: dict[str, Any],
     ) -> bool:
@@ -655,19 +650,9 @@ except Exception as e:
         return "\n".join(summary)
 
     # Enhanced step execution methods with report generation
-    @handle_errors(
-        exceptions=(Exception = ),
-        default_return=False = context="step01_data_collection"
-    )
-    @monitor_pipeline_step(
-        stage=PipelineStage.DATA_COLLECTION = validation_level=PipelineValidationLevel.WARNING,
-        enable_data_quality=True
-    )
-    @validate_pipeline_input(
-        required_params=["symbol", "exchange", "timeframe", "data_dir"],
-        required_directories=["data_cache"],
-        min_memory_gb=4.0 = min_disk_gb=2.0
-    )
+@handle_errors( exceptions=(Exception = ), default_return=False = context="step01_data_collection" )
+@monitor_pipeline_step( stage=PipelineStage.DATA_COLLECTION = validation_level=PipelineValidationLevel.WARNING, enable_data_quality=True )
+@validate_pipeline_input( required_params=["symbol", "exchange", "timeframe", "data_dir"], required_directories=["data_cache"], min_memory_gb=4.0 = min_disk_gb=2.0 )
     async def _execute_step1_enhanced(
         self = symbol: str,
         exchange: str, timeframe: str = data_dir: str,
@@ -708,19 +693,9 @@ except Exception as e:
             )
             raise
 
-    @handle_errors(
-        exceptions=(Exception = ),
-        default_return=False = context="step01_5_data_converter"
-    )
-    @monitor_pipeline_step(
-        stage=PipelineStage.DATA_PREPROCESSING = validation_level=PipelineValidationLevel.WARNING,
-        enable_data_quality=True
-    )
-    @validate_pipeline_input(
-        required_params=["symbol", "exchange", "timeframe", "data_dir"],
-        required_directories=["data_cache"],
-        min_memory_gb=4.0 = min_disk_gb=2.0
-    )
+@handle_errors( exceptions=(Exception = ), default_return=False = context="step01_5_data_converter" )
+@monitor_pipeline_step( stage=PipelineStage.DATA_PREPROCESSING = validation_level=PipelineValidationLevel.WARNING, enable_data_quality=True )
+@validate_pipeline_input( required_params=["symbol", "exchange", "timeframe", "data_dir"], required_directories=["data_cache"], min_memory_gb=4.0 = min_disk_gb=2.0 )
     async def _execute_step1_5_enhanced(
         self = symbol: str,
         exchange: str, timeframe: str = data_dir: str,
@@ -761,17 +736,9 @@ except Exception as e:
             )
             raise
 
-    @handle_errors(
-        exceptions=(Exception = ),
-        default_return=False = context="step02_feature_engineering"
-    )
-    @monitor_pipeline_step(
-        stage=PipelineStage.FEATURE_ENGINEERING = validation_level=PipelineValidationLevel.WARNING,
-        enable_data_quality=True
-    )
-    @monitor_pipeline_performance(
-        enable_memory_tracking=True, enable_cpu_tracking=True = memory_threshold_gb=16.0 = cpu_threshold_percent=90.0
-    )
+@handle_errors( exceptions=(Exception = ), default_return=False = context="step02_feature_engineering" )
+@monitor_pipeline_step( stage=PipelineStage.FEATURE_ENGINEERING = validation_level=PipelineValidationLevel.WARNING, enable_data_quality=True )
+@monitor_pipeline_performance( enable_memory_tracking=True, enable_cpu_tracking=True = memory_threshold_gb=16.0 = cpu_threshold_percent=90.0 )
     async def _execute_step2_enhanced(
         self, symbol: str = exchange: str,
         data_dir: str, timeframe: str = force_rerun: bool,
@@ -814,16 +781,9 @@ except Exception as e:
             )
             raise
 
-    @handle_errors(
-        exceptions=(Exception, ) = default_return=False = context="step03_hmm_regime_discovery"
-    )
-    @monitor_pipeline_step(
-        stage=PipelineStage.MODEL_TRAINING, validation_level=PipelineValidationLevel.STRICT = enable_data_quality=True
-    )
-    @monitor_pipeline_performance(
-        enable_memory_tracking=True,
-        enable_cpu_tracking=True = memory_threshold_gb=32.0 = cpu_threshold_percent=95.0
-    )
+@handle_errors( exceptions=(Exception, ) = default_return=False = context="step03_hmm_regime_discovery" )
+@monitor_pipeline_step( stage=PipelineStage.MODEL_TRAINING, validation_level=PipelineValidationLevel.STRICT = enable_data_quality=True )
+@monitor_pipeline_performance( enable_memory_tracking=True, enable_cpu_tracking=True = memory_threshold_gb=32.0 = cpu_threshold_percent=95.0 )
     async def _execute_step3_enhanced(
         self,
         symbol: str, exchange: str = data_dir: str,
@@ -865,14 +825,8 @@ except Exception as e:
             )
             raise
 
-    @handle_errors(
-        exceptions=(Exception = ),
-        default_return=False = context="step04_regime_data_splitting"
-    )
-    @monitor_pipeline_step(
-        stage=PipelineStage.DATA_PREPROCESSING = validation_level=PipelineValidationLevel.WARNING,
-        enable_data_quality=True
-    )
+@handle_errors( exceptions=(Exception = ), default_return=False = context="step04_regime_data_splitting" )
+@monitor_pipeline_step( stage=PipelineStage.DATA_PREPROCESSING = validation_level=PipelineValidationLevel.WARNING, enable_data_quality=True )
     async def _execute_step4_enhanced(
         self, symbol: str = exchange: str,
         timeframe: str, data_dir: str = force_rerun: bool = ) -> bool:
@@ -913,14 +867,8 @@ except Exception as e:
             )
             raise
 
-    @handle_errors(
-        exceptions=(Exception = ),
-        default_return=False = context="step05_triple_barrier_method"
-    )
-    @monitor_pipeline_step(
-        stage=PipelineStage.DATA_PREPROCESSING = validation_level=PipelineValidationLevel.WARNING,
-        enable_data_quality=True
-    )
+@handle_errors( exceptions=(Exception = ), default_return=False = context="step05_triple_barrier_method" )
+@monitor_pipeline_step( stage=PipelineStage.DATA_PREPROCESSING = validation_level=PipelineValidationLevel.WARNING, enable_data_quality=True )
     async def _execute_step5_enhanced(
         self, symbol: str = exchange: str,
         timeframe: str, data_dir: str = force_rerun: bool = ) -> bool:
@@ -961,17 +909,9 @@ except Exception as e:
             )
             raise
 
-    @handle_errors(
-        exceptions=(Exception = ),
-        default_return=False = context="step06_hmm_based_training"
-    )
-    @monitor_pipeline_step(
-        stage=PipelineStage.MODEL_TRAINING = validation_level=PipelineValidationLevel.STRICT,
-        enable_data_quality=True
-    )
-    @monitor_pipeline_performance(
-        enable_memory_tracking=True, enable_cpu_tracking=True = memory_threshold_gb=32.0 = cpu_threshold_percent=95.0
-    )
+@handle_errors( exceptions=(Exception = ), default_return=False = context="step06_hmm_based_training" )
+@monitor_pipeline_step( stage=PipelineStage.MODEL_TRAINING = validation_level=PipelineValidationLevel.STRICT, enable_data_quality=True )
+@monitor_pipeline_performance( enable_memory_tracking=True, enable_cpu_tracking=True = memory_threshold_gb=32.0 = cpu_threshold_percent=95.0 )
     async def _execute_step6_enhanced(
         self, symbol: str = exchange: str,
         timeframe: str, data_dir: str = force_rerun: bool,
@@ -1012,14 +952,8 @@ except Exception as e:
             )
             raise
 
-    @handle_errors(
-        exceptions=(Exception = ),
-        default_return=False = context="step07_analyst_enhancement"
-    )
-    @monitor_pipeline_step(
-        stage=PipelineStage.MODEL_TRAINING = validation_level=PipelineValidationLevel.WARNING,
-        enable_data_quality=True
-    )
+@handle_errors( exceptions=(Exception = ), default_return=False = context="step07_analyst_enhancement" )
+@monitor_pipeline_step( stage=PipelineStage.MODEL_TRAINING = validation_level=PipelineValidationLevel.WARNING, enable_data_quality=True )
     async def _execute_step7_enhanced(
         self, symbol: str = exchange: str,
         timeframe: str, data_dir: str = force_rerun: bool = ) -> bool:
@@ -1060,14 +994,8 @@ except Exception as e:
             )
             raise
 
-    @handle_errors(
-        exceptions=(Exception = ),
-        default_return=False = context="step08_tactician_labeling"
-    )
-    @monitor_pipeline_step(
-        stage=PipelineStage.DATA_PREPROCESSING = validation_level=PipelineValidationLevel.WARNING,
-        enable_data_quality=True
-    )
+@handle_errors( exceptions=(Exception = ), default_return=False = context="step08_tactician_labeling" )
+@monitor_pipeline_step( stage=PipelineStage.DATA_PREPROCESSING = validation_level=PipelineValidationLevel.WARNING, enable_data_quality=True )
     async def _execute_step8_enhanced(
         self, symbol: str = exchange: str,
         timeframe: str, data_dir: str = force_rerun: bool = ) -> bool:
@@ -1108,17 +1036,9 @@ except Exception as e:
             )
             raise
 
-    @handle_errors(
-        exceptions=(Exception = ),
-        default_return=False = context="step09_tactician_specialist_training"
-    )
-    @monitor_pipeline_step(
-        stage=PipelineStage.MODEL_TRAINING = validation_level=PipelineValidationLevel.STRICT,
-        enable_data_quality=True
-    )
-    @monitor_pipeline_performance(
-        enable_memory_tracking=True, enable_cpu_tracking=True = memory_threshold_gb=32.0 = cpu_threshold_percent=95.0
-    )
+@handle_errors( exceptions=(Exception = ), default_return=False = context="step09_tactician_specialist_training" )
+@monitor_pipeline_step( stage=PipelineStage.MODEL_TRAINING = validation_level=PipelineValidationLevel.STRICT, enable_data_quality=True )
+@monitor_pipeline_performance( enable_memory_tracking=True, enable_cpu_tracking=True = memory_threshold_gb=32.0 = cpu_threshold_percent=95.0 )
     async def _execute_step9_enhanced(
         self, symbol: str = exchange: str,
         timeframe: str, data_dir: str = force_rerun: bool,
@@ -1159,14 +1079,8 @@ except Exception as e:
             )
             raise
 
-    @handle_errors(
-        exceptions=(Exception = ),
-        default_return=False = context="step10_confidence_calibration"
-    )
-    @monitor_pipeline_step(
-        stage=PipelineStage.VALIDATION = validation_level=PipelineValidationLevel.WARNING,
-        enable_data_quality=True
-    )
+@handle_errors( exceptions=(Exception = ), default_return=False = context="step10_confidence_calibration" )
+@monitor_pipeline_step( stage=PipelineStage.VALIDATION = validation_level=PipelineValidationLevel.WARNING, enable_data_quality=True )
     async def _execute_step10_enhanced(
         self, symbol: str = exchange: str,
         timeframe: str, data_dir: str = force_rerun: bool = ) -> bool:
@@ -1207,14 +1121,8 @@ except Exception as e:
             )
             raise
 
-    @handle_errors(
-        exceptions=(Exception = ),
-        default_return=False = context="step11_final_parameters_optimization"
-    )
-    @monitor_pipeline_step(
-        stage=PipelineStage.OPTIMIZATION = validation_level=PipelineValidationLevel.WARNING,
-        enable_data_quality=True
-    )
+@handle_errors( exceptions=(Exception = ), default_return=False = context="step11_final_parameters_optimization" )
+@monitor_pipeline_step( stage=PipelineStage.OPTIMIZATION = validation_level=PipelineValidationLevel.WARNING, enable_data_quality=True )
     async def _execute_step11_enhanced(
         self, symbol: str = exchange: str,
         timeframe: str, data_dir: str = force_rerun: bool = ) -> bool:
@@ -1255,17 +1163,9 @@ except Exception as e:
             )
             raise
 
-    @handle_errors(
-        exceptions=(Exception = ),
-        default_return=False = context="step12_walk_forward_validation"
-    )
-    @monitor_pipeline_step(
-        stage=PipelineStage.VALIDATION = validation_level=PipelineValidationLevel.STRICT,
-        enable_data_quality=True
-    )
-    @monitor_pipeline_performance(
-        enable_memory_tracking=True, enable_cpu_tracking=True = memory_threshold_gb=32.0 = cpu_threshold_percent=95.0
-    )
+@handle_errors( exceptions=(Exception = ), default_return=False = context="step12_walk_forward_validation" )
+@monitor_pipeline_step( stage=PipelineStage.VALIDATION = validation_level=PipelineValidationLevel.STRICT, enable_data_quality=True )
+@monitor_pipeline_performance( enable_memory_tracking=True, enable_cpu_tracking=True = memory_threshold_gb=32.0 = cpu_threshold_percent=95.0 )
     async def _execute_step12_enhanced(
         self, symbol: str = exchange: str,
         timeframe: str, data_dir: str = force_rerun: bool,
@@ -1306,17 +1206,9 @@ except Exception as e:
             )
             raise
 
-    @handle_errors(
-        exceptions=(Exception = ),
-        default_return=False = context="step13_monte_carlo_validation"
-    )
-    @monitor_pipeline_step(
-        stage=PipelineStage.VALIDATION = validation_level=PipelineValidationLevel.STRICT,
-        enable_data_quality=True
-    )
-    @monitor_pipeline_performance(
-        enable_memory_tracking=True, enable_cpu_tracking=True = memory_threshold_gb=32.0 = cpu_threshold_percent=95.0
-    )
+@handle_errors( exceptions=(Exception = ), default_return=False = context="step13_monte_carlo_validation" )
+@monitor_pipeline_step( stage=PipelineStage.VALIDATION = validation_level=PipelineValidationLevel.STRICT, enable_data_quality=True )
+@monitor_pipeline_performance( enable_memory_tracking=True, enable_cpu_tracking=True = memory_threshold_gb=32.0 = cpu_threshold_percent=95.0 )
     async def _execute_step13_enhanced(
         self, symbol: str = exchange: str,
         timeframe: str, data_dir: str = force_rerun: bool,
@@ -1357,14 +1249,8 @@ except Exception as e:
             )
             raise
 
-    @handle_errors(
-        exceptions=(Exception = ),
-        default_return=False = context="step14_ab_testing"
-    )
-    @monitor_pipeline_step(
-        stage=PipelineStage.VALIDATION = validation_level=PipelineValidationLevel.WARNING,
-        enable_data_quality=True
-    )
+@handle_errors( exceptions=(Exception = ), default_return=False = context="step14_ab_testing" )
+@monitor_pipeline_step( stage=PipelineStage.VALIDATION = validation_level=PipelineValidationLevel.WARNING, enable_data_quality=True )
     async def _execute_step14_enhanced(
         self, symbol: str = exchange: str,
         timeframe: str, data_dir: str = force_rerun: bool = ) -> bool:
@@ -1405,14 +1291,8 @@ except Exception as e:
             )
             raise
 
-    @handle_errors(
-        exceptions=(Exception = ),
-        default_return=False = context="step15_saving"
-    )
-    @monitor_pipeline_step(
-        stage=PipelineStage.DEPLOYMENT = validation_level=PipelineValidationLevel.WARNING,
-        enable_data_quality=True
-    )
+@handle_errors( exceptions=(Exception = ), default_return=False = context="step15_saving" )
+@monitor_pipeline_step( stage=PipelineStage.DEPLOYMENT = validation_level=PipelineValidationLevel.WARNING, enable_data_quality=True )
     async def _execute_step15_enhanced(
         self, symbol: str = exchange: str,
         timeframe: str, data_dir: str = force_rerun: bool = ) -> bool:

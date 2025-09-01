@@ -33,7 +33,7 @@ class Strategist:
     Note: Position sizing is handled by the Tactician component
     """
 
-    def __init__(self, config: dict[str, Any]) -> None:
+        def __init__(self, config: dict[str, Any]) -> None:
         """
         Initialize strategist with enhanced type safety.
 
@@ -72,15 +72,7 @@ class Strategist:
         self.analyst: Analyst | None = None
         self.tactician: Tactician | None = None
 
-    @handle_specific_errors(
-        error_handlers={
-            ValueError: (False, "Invalid strategist configuration"),
-            AttributeError: (False, "Missing required strategist parameters"),
-            KeyError: (False, "Missing configuration keys"),
-        },
-        default_return=False,
-        context="strategist initialization",
-    )
+@handle_specific_errors( error_handlers={ ValueError: (False, "Invalid strategist configuration"), AttributeError: (False, "Missing required strategist parameters"), KeyError: (False, "Missing configuration keys"), }, default_return=False, context="strategist initialization", )
     async def initialize(self) -> bool:
         """
         Initialize strategist with enhanced error handling.
@@ -101,11 +93,7 @@ class Strategist:
         self.logger.info("✅ Strategist initialized successfully")
         return True
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="strategy components initialization",
-    )
+@handle_errors( exceptions=(ValueError, AttributeError), default_return=None, context="strategy components initialization", )
     async def _initialize_strategy_components(self) -> None:
         """Initialize strategy components."""
         # Initialize risk management
@@ -117,11 +105,7 @@ class Strategist:
 
         self.logger.info("✅ Strategy components initialized successfully")
 
-    @handle_errors(
-        exceptions=(ValueError, TypeError),
-        default_return=False,
-        context="configuration validation",
-    )
+@handle_errors( exceptions=(ValueError, TypeError), default_return=False, context="configuration validation", )
     def _validate_configuration(self) -> bool:
         """Validate strategist configuration."""
         required_keys = ["strategy_interval", "max_strategy_history"]
@@ -139,15 +123,7 @@ class Strategist:
 
         return True
 
-    @handle_specific_errors(
-        error_handlers={
-            ValueError: (None, "Invalid market data for strategy generation"),
-            AttributeError: (None, "Missing required market data fields"),
-            KeyError: (None, "Missing required market data keys"),
-        },
-        default_return=None,
-        context="strategy generation",
-    )
+@handle_specific_errors( error_handlers={ ValueError: (None, "Invalid market data for strategy generation"), AttributeError: (None, "Missing required market data fields"), KeyError: (None, "Missing required market data keys"), }, default_return=None, context="strategy generation", )
     async def generate_strategy(
         self,
         market_data: pd.DataFrame,
@@ -194,11 +170,7 @@ class Strategist:
         self.logger.info("✅ Strategy generation completed successfully")
         return base_strategy
 
-    @handle_errors(
-        exceptions=(ValueError, TypeError),
-        default_return=False,
-        context="market data validation",
-    )
+@handle_errors( exceptions=(ValueError, TypeError), default_return=False, context="market data validation", )
     def _validate_market_data(self, market_data: pd.DataFrame) -> bool:
         """Validate market data for strategy generation."""
         if market_data is None or market_data.empty:
@@ -218,11 +190,7 @@ class Strategist:
 
         return True
 
-    @handle_errors(
-        exceptions=(ValueError, TypeError),
-        default_return={},
-        context="market indicators extraction",
-    )
+@handle_errors( exceptions=(ValueError, TypeError), default_return={}, context="market indicators extraction", )
     def _extract_market_indicators(self, market_data: pd.DataFrame, current_price: float) -> dict[str, Any]:
         """Extract key market indicators from market data."""
         indicators = {}
@@ -255,11 +223,7 @@ class Strategist:
 
         return indicators
 
-    @handle_errors(
-        exceptions=(ValueError, TypeError),
-        default_return=0.0,
-        context="RSI calculation",
-    )
+@handle_errors( exceptions=(ValueError, TypeError), default_return=0.0, context="RSI calculation", )
     def _calculate_rsi(self, prices: pd.Series, period: int = 14) -> float:
         """Calculate Relative Strength Index."""
         delta = prices.diff()
@@ -269,11 +233,7 @@ class Strategist:
         rsi = 100 - (100 / (1 + rs))
         return rsi.iloc[-1] if not pd.isna(rsi.iloc[-1]) else 50.0
 
-    @handle_errors(
-        exceptions=(ValueError, TypeError),
-        default_return={},
-        context="base strategy generation",
-    )
+@handle_errors( exceptions=(ValueError, TypeError), default_return={}, context="base strategy generation", )
     async def _generate_base_strategy(self, indicators: dict[str, Any], current_price: float) -> dict[str, Any]:
         """Generate base trading strategy from market indicators."""
         strategy = {
@@ -306,11 +266,7 @@ class Strategist:
 
         return strategy
 
-    @handle_errors(
-        exceptions=(ValueError, TypeError),
-        default_return={},
-        context="analysis results integration",
-    )
+@handle_errors( exceptions=(ValueError, TypeError), default_return={}, context="analysis results integration", )
     async def _integrate_analysis_results(self, strategy: dict[str, Any], analysis_results: dict[str, Any]) -> dict[str, Any]:
         """Integrate analysis results from Step 1 into strategy."""
         if not analysis_results:
@@ -348,11 +304,7 @@ class Strategist:
 
         return strategy
 
-    @handle_errors(
-        exceptions=(ValueError, TypeError),
-        default_return={},
-        context="risk management application",
-    )
+@handle_errors( exceptions=(ValueError, TypeError), default_return={}, context="risk management application", )
     async def _apply_risk_management(self, strategy: dict[str, Any], current_price: float) -> dict[str, Any]:
         """Apply risk management to strategy."""
         if strategy["direction"] == "HOLD":
@@ -383,11 +335,7 @@ class Strategist:
     # Position sizing is handled by the Tactician component
     # This method has been removed to avoid overlap with Tactician responsibilities
 
-    @handle_errors(
-        exceptions=(ValueError, TypeError),
-        default_return=None,
-        context="strategy results storage",
-    )
+@handle_errors( exceptions=(ValueError, TypeError), default_return=None, context="strategy results storage", )
     async def _store_strategy_results(self, strategy: dict[str, Any]) -> None:
         """Store strategy results in history."""
         # Store current strategy
@@ -440,11 +388,7 @@ class Strategist:
             history = history[-limit:]
         return history
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="strategist stop",
-    )
+@handle_errors( exceptions=(Exception,), default_return=None, context="strategist stop", )
     async def stop(self) -> None:
         """Stop the strategist and cleanup resources."""
         self.logger.info("🛑 Stopping Strategist...")

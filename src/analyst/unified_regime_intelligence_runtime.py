@@ -30,71 +30,67 @@ class UnifiedRegimeIntelligenceRuntime:
 class UnifiedRegimeIntelligenceRuntime:
     """Runtime for unified regime intelligence with S/R level monitoring."""
 
-def __init__(self, config: dict[str, Any]):
     def __init__(self, config: dict[str, Any]):
-    def __init__(self, config: dict[str, Any]):
-    def __init__(self, config: dict[str, Any]):
+        def __init__(self, config: dict[str, Any]):
+        def __init__(self, config: dict[str, Any]):
+        def __init__(self, config: dict[str, Any]):
         self.config = config
-self.logger = logger
+    self.logger = logger
 
 # Initialize SRBreakoutPredictor for S/R monitoring with optimized parameters
 sr_config = config.copy()
 sr_config["sr_breakout_predictor"] = sr_config.get("sr_breakout_predictor", {})
 sr_config["sr_breakout_predictor"]["use_optimized_params"] = True
-self.sr_predictor = SRBreakoutPredictor(sr_config)
-self.sr_outcome_model = None
+    self.sr_predictor = SRBreakoutPredictor(sr_config)
+    self.sr_outcome_model = None
 
 # S/R monitoring configuration
-self.sr_monitoring_config = config.get("sr_monitoring", {})
-self.enable_sr_monitoring = self.sr_monitoring_config.get(
+    self.sr_monitoring_config = config.get("sr_monitoring", {})
+    self.enable_sr_monitoring = self.sr_monitoring_config.get(
 "enable_sr_monitoring", True
 )
-self.sr_alert_threshold = self.sr_monitoring_config.get(
+    self.sr_alert_threshold = self.sr_monitoring_config.get(
 "sr_alert_threshold", 0.7
 )
 
 # Initialize unified step for integrated predictions
-self.unified_step = UnifiedRegimeIntelligenceStep(config)
+    self.unified_step = UnifiedRegimeIntelligenceStep(config)
 
 # Model components
-self.model = None
-self.label_encoders = {}
-self.scaler = None
+    self.model = None
+    self.label_encoders = {}
+    self.scaler = None
 
 # Configuration
-self.timeframes = config.get(
+    self.timeframes = config.get(
 "timeframes", ["5m", "15m", "30m"]
 )  # Less noisy for regime detection
-self.sequence_length = config.get("sequence_length", 20)
-self.artifacts_dir = config.get(
+    self.sequence_length = config.get("sequence_length", 20)
+    self.artifacts_dir = config.get(
 "artifacts_dir", "checkpoints/unified_regime_intelligence"
 )
 
 # Runtime state
-self.is_initialized = False
-self.current_regime = None
-self.regime_history = []
-self.transition_probability = 0.0
-self.tpsl_direction = None
+    self.is_initialized = False
+    self.current_regime = None
+    self.regime_history = []
+    self.transition_probability = 0.0
+    self.tpsl_direction = None
 
 # Expert activation thresholds
-self.regime_confidence_threshold = config.get(
+    self.regime_confidence_threshold = config.get(
 "regime_confidence_threshold", 0.7
 )
-self.transition_threshold = config.get("transition_threshold", 0.6)
+    self.transition_threshold = config.get("transition_threshold", 0.6)
 
-@handle_errors(
-exceptions=(Exception,),
-default_return=False,
-context="unified regime intelligence initialization",
-)
+@handle_errors( exceptions=(Exception,), default_return=False, context="unified regime intelligence initialization", )
 async def initialize(self) -> bool:
         """Initialize the unified regime intelligence runtime."""
 try:
     # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
     # Exception handling placeholder - implement specific error handling as needed
-self.logger.info("Initializing Unified Regime Intelligence Runtime...")
+    self.logger.info("Initializing Unified Regime Intelligence Runtime...")
 
 # Initialize SR predictor
 sr_init_success = await self.sr_predictor.initialize()
@@ -107,34 +103,34 @@ await self._load_sr_outcome_model()
 # Initialize unified step (includes SRBreakoutPredictor)
 if not await self.unified_step.initialize():
                 self.logger.error("Failed to initialize unified step")
-return False
+    return False
 
 # Load model
 if not await self._load_model():
                 self.logger.error("Failed to load unified regime intelligence model")
-return False
+    return False
 
 # Load label encoders
 if not await self._load_label_encoders():
                 self.logger.error("Failed to load label encoders")
-return False
+    return False
 
 # Load configuration
 if not await self._load_configuration():
                 self.logger.error("Failed to load configuration")
-return False
+    return False
 
-self.is_initialized = True
-self.logger.info(
+    self.is_initialized = True
+    self.logger.info(
 "✅ Unified Regime Intelligence Runtime initialized successfully"
 )
-return True
+    return True
 
 except Exception as e:
             self.logger.error(
 f"Failed to initialize Unified Regime Intelligence Runtime: {e}"
 )
-return False
+    return False
 
 async def _load_model(self) -> bool:
         """Load the trained unified regime intelligence model."""
@@ -145,7 +141,7 @@ except Exception as e:
 model_path = os.path.join(self.artifacts_dir, "final_model.pth")
 if not os.path.exists(model_path):
                 self.logger.error(f"Model file not found: {model_path}")
-return False
+    return False
 
 # Load model configuration
 config_path = os.path.join(self.artifacts_dir, "config.json")
@@ -156,20 +152,20 @@ else:
                 model_config = self.config
 
 # Initialize model
-self.model = MultiTimeframeHMMEncoder(model_config)
+    self.model = MultiTimeframeHMMEncoder(model_config)
 
 # Load trained weights
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-self.model.load_state_dict(torch.load(model_path, map_location=device))
-self.model.to(device)
-self.model.eval()
+    self.model.load_state_dict(torch.load(model_path, map_location=device))
+    self.model.to(device)
+    self.model.eval()
 
-self.logger.info("Unified regime intelligence model loaded successfully")
-return True
+    self.logger.info("Unified regime intelligence model loaded successfully")
+    return True
 
 except Exception as e:
             self.logger.error(f"Error loading model: {e}")
-return False
+    return False
 
 async def _load_label_encoders(self) -> bool:
         """Load label encoders for regime, transition, and TPSL predictions."""
@@ -184,15 +180,15 @@ for name in encoder_names:
 if os.path.exists(encoder_path):
                     with open(encoder_path, "rb") as f:
                         self.label_encoders[name] = pickle.load(f)
-self.logger.info(f"Loaded {name} label encoder")
+    self.logger.info(f"Loaded {name} label encoder")
 else:
                     self.logger.warning(f"Label encoder not found: {encoder_path}")
 
-return True
+    return True
 
 except Exception as e:
             self.logger.error(f"Error loading label encoders: {e}")
-return False
+    return False
 
 async def _load_configuration(self) -> bool:
         """Load runtime configuration."""
@@ -206,18 +202,18 @@ if os.path.exists(config_path):
                     saved_config = json.load(f)
 
 # Update configuration with saved values
-self.timeframes = saved_config.get("timeframes", self.timeframes)
-self.sequence_length = saved_config.get(
+    self.timeframes = saved_config.get("timeframes", self.timeframes)
+    self.sequence_length = saved_config.get(
 "sequence_length", self.sequence_length
 )
 
-self.logger.info("Runtime configuration loaded successfully")
+    self.logger.info("Runtime configuration loaded successfully")
 
-return True
+    return True
 
 except Exception as e:
             self.logger.error(f"Error loading configuration: {e}")
-return False
+    return False
 
 async def _load_sr_outcome_model(self) -> None:
         """Load the trained S/R outcome model."""
@@ -252,18 +248,14 @@ if os.path.exists(encoder_path):
                     with open(encoder_path, "rb") as f:
                         self.sr_encoder = pickle.load(f)
 
-self.logger.info("✅ S/R outcome model loaded successfully")
+    self.logger.info("✅ S/R outcome model loaded successfully")
 else:
                 self.logger.warning(f"S/R outcome model not found at {model_path}")
 
 except Exception as e:
             self.logger.error(f"Error loading S/R outcome model: {e}")
 
-@handle_errors(
-exceptions=(Exception,),
-default_return={},
-context="market analysis with S/R monitoring",
-)
+@handle_errors( exceptions=(Exception,), default_return={}, context="market analysis with S/R monitoring", )
 async def analyze_market_with_sr_monitoring(
 self,
 market_data: pd.DataFrame,
@@ -345,11 +337,11 @@ else:
 "recommendation": "No S/R opportunity - not near significant levels",
 }
 
-return analysis_result
+    return analysis_result
 
 except Exception as e:
             self.logger.error(f"Error in market analysis with S/R monitoring: {e}")
-return {
+    return {
 **regime_analysis,
 "sr_monitoring": {
 "error": f"S/R monitoring failed: {e}",
@@ -359,7 +351,8 @@ return {
 "sr_opportunity_detected": False,
 }
 
-def _generate_sr_recommendation(
+def _generate_sr_recommendation(:
+    pass  # TODO: Add implementation
 self, sr_outcome: dict[str, Any], sr_proximity_details: dict[str, Any]
 ) -> str:
         """Generate S/R recommendation for the Tactician."""
@@ -408,11 +401,9 @@ else:
 
 except Exception as e:
             self.logger.error(f"Error generating S/R recommendation: {e}")
-return "ERROR_GENERATING_RECOMMENDATION"
+    return "ERROR_GENERATING_RECOMMENDATION"
 
-@handle_errors(
-exceptions=(Exception,), default_return={}, context="S/R opportunity alert"
-)
+@handle_errors( exceptions=(Exception,), default_return={}, context="S/R opportunity alert" )
 async def get_sr_opportunity_alert(
 self, market_data: pd.DataFrame, current_price: float
 ) -> dict[str, Any]:
@@ -471,13 +462,14 @@ sr_outcome, sr_context
 ),
 }
 
-return alert
+    return alert
 
 except Exception as e:
             self.logger.error(f"Error getting S/R opportunity alert: {e}")
-return {"opportunity_detected": False, "error": str(e)}
+    return {"opportunity_detected": False, "error": str(e)}
 
-def _generate_tactician_recommendations(
+def _generate_tactician_recommendations(:
+    pass  # TODO: Add implementation
 self, sr_outcome: dict[str, Any], sr_context: dict[str, Any]
 ) -> dict[str, Any]:
         """Generate specific recommendations for the Tactician."""
@@ -592,17 +584,13 @@ elif outcome == "consolidation" and confidence >= 0.7:
 }
 )
 
-return recommendations
+    return recommendations
 
 except Exception as e:
             self.logger.error(f"Error generating Tactician recommendations: {e}")
-return {"action": "MONITOR", "position_direction": "NONE"}
+    return {"action": "MONITOR", "position_direction": "NONE"}
 
-@handle_errors(
-exceptions=(Exception,),
-default_return=None,
-context="unified regime intelligence prediction",
-)
+@handle_errors( exceptions=(Exception,), default_return=None, context="unified regime intelligence prediction", )
 async def predict(
 self,
 hmm_states: Dict[str, np.ndarray],
@@ -630,7 +618,7 @@ except Exception as e:
     # Exception handling placeholder - implement specific error handling as needed
 if not self.is_initialized:
                 self.logger.error("Runtime not initialized")
-return None
+    return None
 
 # Use unified step for integrated predictions (includes S/R analysis)
 integrated_prediction = await self.unified_step.predict_with_sr_integration(
@@ -639,7 +627,7 @@ hmm_states, market_features, market_data, current_price
 
 if not integrated_prediction:
                 self.logger.error("Failed to get integrated prediction")
-return None
+    return None
 
 # Enhance predictions with intensity analysis
 enhanced_prediction = await self._enhance_predictions(
@@ -649,11 +637,11 @@ integrated_prediction, current_price, timestamp
 # Update runtime state
 await self._update_runtime_state(enhanced_prediction)
 
-return enhanced_prediction
+    return enhanced_prediction
 
 except Exception as e:
             self.logger.error(f"Error making prediction: {e}")
-return None
+    return None
 
 async def _prepare_inputs(
 self, hmm_states: Dict[str, np.ndarray], market_features: np.ndarray
@@ -668,7 +656,7 @@ if market_features.shape[0] < self.sequence_length:
                 self.logger.warning(
 f"Insufficient features: {market_features.shape[0]} < {self.sequence_length}"
 )
-return None
+    return None
 
 # Take the most recent sequence
 recent_features = market_features[-self.sequence_length :]
@@ -682,13 +670,13 @@ if len(tf_states) >= self.sequence_length:
                         prepared_hmm_states[tf] = tf_states[-self.sequence_length :]
 else:
                         self.logger.warning(f"Insufficient HMM states for {tf}")
-return None
+    return None
 
-return {"hmm_states": prepared_hmm_states, "features": recent_features}
+    return {"hmm_states": prepared_hmm_states, "features": recent_features}
 
 except Exception as e:
             self.logger.error(f"Error preparing inputs: {e}")
-return None
+    return None
 
 async def _enhance_predictions(
 self, prediction: Dict[str, Any], current_price: float, timestamp: datetime
@@ -748,11 +736,11 @@ enhanced
 # Add timestamp
 enhanced["timestamp"] = timestamp.isoformat()
 
-return enhanced
+    return enhanced
 
 except Exception as e:
             self.logger.error(f"Error enhancing predictions: {e}")
-return prediction
+    return prediction
 
 async def _determine_expert_activation(
 self, prediction: Dict[str, Any]
@@ -862,11 +850,11 @@ if tpsl_direction != "hold":
 f" + TPSL direction: {tpsl_direction}"
 )
 
-return activation
+    return activation
 
 except Exception as e:
             self.logger.error(f"Error determining expert activation: {e}")
-return {
+    return {
 "primary_expert": None,
 "secondary_experts": [],
 "activation_reason": "Error",
@@ -885,10 +873,10 @@ if regime_name != self.current_regime:
                 self.logger.info(
 f"Regime change detected: {self.current_regime} -> {regime_name}"
 )
-self.current_regime = regime_name
+    self.current_regime = regime_name
 
 # Update regime history
-self.regime_history.append(
+    self.regime_history.append(
 {
 "regime": regime_name,
 "confidence": prediction.get("regime", {}).get("confidence", 0.0),
@@ -903,19 +891,19 @@ if len(self.regime_history) > 100:
                 self.regime_history = self.regime_history[-100:]
 
 # Update transition probability
-self.transition_probability = prediction.get("transition", {}).get(
+    self.transition_probability = prediction.get("transition", {}).get(
 "probability", 0.0
 )
 
 # Update TPSL direction
-self.tpsl_direction = prediction.get("tpsl", {}).get("direction", "hold")
+    self.tpsl_direction = prediction.get("tpsl", {}).get("direction", "hold")
 
 except Exception as e:
             self.logger.error(f"Error updating runtime state: {e}")
 
 def get_current_state(self) -> Dict[str, Any]:
         """Get current runtime state."""
-return {
+    return {
 "current_regime": self.current_regime,
 "transition_probability": self.transition_probability,
 "tpsl_direction": self.tpsl_direction,
@@ -946,7 +934,7 @@ avg_confidence = np.mean(
 [entry["confidence"] for entry in self.regime_history[-20:]]
 )
 
-return {
+    return {
 "regime_stability": stability_score,
 "average_confidence": avg_confidence,
 "total_predictions": len(self.regime_history),
@@ -955,7 +943,7 @@ return {
 
 except Exception as e:
             self.logger.error(f"Error calculating performance metrics: {e}")
-return {"error": str(e)}
+    return {"error": str(e)}
 
 def _calculate_regime_duration(self) -> int:
         """Calculate how long the current regime has been active."""
@@ -969,4 +957,4 @@ for entry in reversed(self.regime_history):
 else:
                 break
 
-return duration
+    return duration

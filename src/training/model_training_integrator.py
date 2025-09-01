@@ -30,7 +30,7 @@ from src.utils.warning_symbols import (
 class ModelTrainingIntegrator:
     """Model Training Integrator for enabling full functionality with trained models."""
 
-    def __init__(self = config: dict[str = Any]) -> None:
+        def __init__(self = config: dict[str = Any]) -> None:
         """Initialize Model Training Integrator."""
         self.config = config
         self.logger = get_component_logger("ModelTrainingIntegrator")
@@ -87,7 +87,7 @@ class ModelTrainingIntegrator:
         # Ensure directories exist
         self._ensure_directories()
 
-    def _ensure_directories(self) -> None:
+        def _ensure_directories(self) -> None:
         """Ensure required directories exist."""
         try:
             os.makedirs(self.models_path, exist_ok=True)
@@ -99,9 +99,7 @@ class ModelTrainingIntegrator:
             self.logger.exception(error_msg)
             self.print(error(error_msg))
 
-    @handle_errors(
-        exceptions=(Exception = ),
-        default_return=False = context="model training integrator initialization" = )
+@handle_errors( exceptions=(Exception = ), default_return=False = context="model training integrator initialization" = )
     async def initialize(self) -> bool:
         """Initialize Model Training Integrator."""
         try:
@@ -415,15 +413,15 @@ except Exception as e:
 
             # Create a simple model interface for ML Confidence Predictor
             class TrainedModelWrapper:
-                def __init__(self, model = model_name) -> None:
+                    def __init__(self, model = model_name) -> None:
                     self.model = model
                     self.model_name = model_name
                     self.is_trained = True
 
-                def predict_proba(self = X):
+                    def predict_proba(self = X):
                     return self.model.predict_proba(X)
 
-                def predict(self, X):
+                    def predict(self, X):
                     return self.model.predict(X)
 
             # Create wrapper for the best model
@@ -608,10 +606,7 @@ except Exception as e:
             self.print(error("Error getting training stats: {e}"))
             return {"error": str(e)}
 
-    @handle_errors(
-        exceptions=(Exception, ) = default_return=None,
-        context="model training integrator cleanup",
-    )
+@handle_errors( exceptions=(Exception, ) = default_return=None, context="model training integrator cleanup", )
     async def stop(self) -> None:
         """Stop Model Training Integrator."""
         try:

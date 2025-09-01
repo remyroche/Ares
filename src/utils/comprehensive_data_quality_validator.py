@@ -47,19 +47,19 @@ def __init__(self, config: Optional[Dict[str, Any]] = None):
     def __init__(self, config: Optional[Dict[str, Any]] = None):
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         self.config, config or {}
-self.logger, system_logger.getChild("ComprehensiveDataQualityValidator")
+    self.logger, system_logger.getChild("ComprehensiveDataQualityValidator")
 
 # Quality thresholds - Updated with zero tolerance for NaN and infinite values
-self.max_nan_ratio, self.config.get("max_nan_ratio", 0.0)  # 0% NaN (zero tolerance)
-self.max_infinite_count, self.config.get("max_infinite_count", 0)  # 0 infinite values (zero tolerance)
-self.min_unique_values, self.config.get("min_unique_values", 2)  # 2 + unique values
-self.max_constant_ratio, self.config.get("max_constant_ratio", 0.95)
-self.min_feature_count, self.config.get("min_feature_count", 40)
-self.max_correlation_threshold, self.config.get("max_correlation_threshold", 0.95)
+    self.max_nan_ratio, self.config.get("max_nan_ratio", 0.0)  # 0% NaN (zero tolerance)
+    self.max_infinite_count, self.config.get("max_infinite_count", 0)  # 0 infinite values (zero tolerance)
+    self.min_unique_values, self.config.get("min_unique_values", 2)  # 2 + unique values
+    self.max_constant_ratio, self.config.get("max_constant_ratio", 0.95)
+    self.min_feature_count, self.config.get("min_feature_count", 40)
+    self.max_correlation_threshold, self.config.get("max_correlation_threshold", 0.95)
 
 # Validation results storage
-self.validation_results = {}
-self.quality_issues = {}
+    self.validation_results = {}
+    self.quality_issues = {}
 
 def validate_step1_data_quality(self, symbol: str, exchange: str, data_dir: str = "data_cache") -> Dict[str, Any]:
         """
@@ -73,7 +73,7 @@ data_dir: Data directory
 Returns:
             Dict with validation results
 """
-self.logger.info("🔍 Validating Step1 data collection quality...")
+    self.logger.info("🔍 Validating Step1 data collection quality...")
 
 results = {
 "step": "step01_data_collection",
@@ -125,8 +125,8 @@ except Exception as e:
 results["issues"].append(f"Validation error: {str(e)}")
 results["validation_passed"] = False
 
-self.validation_results["step1"] = results
-return results
+    self.validation_results["step1"] = results
+    return results
 
 def validate_step1_5_data_quality(self, symbol: str, exchange: str, data_dir: str = "data_cache") -> Dict[str, Any]:
         """
@@ -140,7 +140,7 @@ data_dir: Data directory
 Returns:
             Dict with validation results
 """
-self.logger.info("🔍 Validating Step1.5 data converter quality...")
+    self.logger.info("🔍 Validating Step1.5 data converter quality...")
 
 results = {
 "step": "step01_5_data_converter",
@@ -197,8 +197,8 @@ except Exception as e:
 results["issues"].append(f"Validation error: {str(e)}")
 results["validation_passed"] = False
 
-self.validation_results["step01_5"] = results
-return results
+    self.validation_results["step01_5"] = results
+    return results
 
 def validate_step2_data_quality(self, symbol: str, exchange: str, data_dir: str = "data / training") -> Dict[str, Any]:
         """
@@ -212,7 +212,7 @@ data_dir: Data directory
 Returns:
             Dict with validation results
 """
-self.logger.info("🔍 Validating Step2 feature engineering quality...")
+    self.logger.info("🔍 Validating Step2 feature engineering quality...")
 
 results = {
 "step": "step02_feature_engineering",
@@ -268,7 +268,7 @@ else:
 results["validation_passed"] = len(results["issues"]) == 0
 
 # Log detailed feature quality report
-self._log_feature_quality_report(results)
+    self._log_feature_quality_report(results)
 
 if results["validation_passed"]:
         self.logger.info("✅ Step2 feature quality validation passed")
@@ -280,8 +280,8 @@ except Exception as e:
 results["issues"].append(f"Validation error: {str(e)}")
 results["validation_passed"] = False
 
-self.validation_results["step2"] = results
-return results
+    self.validation_results["step2"] = results
+    return results
 
 def _validate_file_structure(self, file_path: str, file_name: str) -> Dict[str, Any]:
         """Validate file structure and basic properties."""
@@ -313,7 +313,7 @@ else:
 except Exception as e:
             result["issues"].append(f"Error checking file: {str(e)}")
 
-return result
+    return result
 
 def _validate_dataframe_quality(self, file_path: str, file_name: str) -> Dict[str, Any]:
         """Validate DataFrame quality including NaN, infinite, and constant values."""
@@ -343,7 +343,7 @@ if not isinstance(df, pd.DataFrame):
                         df, pd.DataFrame(df)
 else:
                 result["issues"].append("Unsupported file format")
-return result
+    return result
 
 result["shape"] = df.shape
 result["memory_usage_mb"] = df.memory_usage(deep = True).sum() / (1024 * 1024)
@@ -406,7 +406,7 @@ result["passed"] = len(result["issues"]) == 0
 except Exception as e:
             result["issues"].append(f"Error loading file: {str(e)}")
 
-return result
+    return result
 
 def _validate_data_structure(self, df: pd.DataFrame, file_name: str) -> List[str]:
         """
@@ -424,7 +424,7 @@ issues = []
 # Check if DataFrame is empty
 if df.empty:
             issues.append(f"{file_name}: DataFrame is empty")
-return issues
+    return issues
 
 # Check for required columns based on file type
 if "klines" in file_name.lower():
@@ -502,7 +502,7 @@ elif col == "volume":
 if range_issues:
             issues.append(f"{file_name}: Data range issues: {range_issues}")
 
-return issues
+    return issues
 
 def _is_boolean_feature(self, series: pd.Series) -> bool:
         """
@@ -539,7 +539,7 @@ for pattern in boolean_patterns:
         if unique_set == pattern:
         return True
 
-return False
+    return False
 
 def _validate_feature_quality(self, file_path: str, file_name: str) -> Dict[str, Any]:
         """Comprehensive feature quality validation for Step2."""
@@ -569,7 +569,7 @@ if not isinstance(df, pd.DataFrame):
                         df, pd.DataFrame(df)
 else:
                 result["issues"].append("Unsupported file format")
-return result
+    return result
 
 result["shape"] = df.shape
 result["feature_count"] = len(df.columns)
@@ -669,13 +669,13 @@ result["passed"] = len(result["issues"]) == 0
 except Exception as e:
             result["issues"].append(f"Error validating features: {str(e)}")
 
-return result
+    return result
 
 def _log_feature_quality_report(self, results: Dict[str, Any]) -> None:
         """Log detailed feature quality report with comprehensive information about problematic values."""
-self.logger.info("=" * 80)
-self.logger.info("📊 STEP2 FEATURE QUALITY REPORT")
-self.logger.info("=" * 80)
+    self.logger.info("=" * 80)
+    self.logger.info("📊 STEP2 FEATURE QUALITY REPORT")
+    self.logger.info("=" * 80)
 
 problematic, results["problematic_features"]
 
@@ -683,53 +683,53 @@ problematic, results["problematic_features"]
 if problematic["nan_features"]:
         self.logger.warning(f"⚠️ Features with NaN values ({len(problematic['nan_features'])}):")
 for feature in problematic["nan_features"][:10]:  # Show first 10
-self.logger.warning(f"   - {feature}")
+    self.logger.warning(f"   - {feature}")
 if len(problematic["nan_features"]) > 10:
         self.logger.warning(f"   ... and {len(problematic['nan_features']) - 10} more")
 
 # Log detailed NaN statistics
-self.logger.warning("📊 NaN Statistics:")
+    self.logger.warning("📊 NaN Statistics:")
 for feature in problematic["nan_features"][:5]:  # Show detailed info for first 5
-self.logger.warning(f"   • {feature}: NaN count and percentage details available in validation results")
+    self.logger.warning(f"   • {feature}: NaN count and percentage details available in validation results")
 
 # Log infinite features with detailed information
 if problematic["infinite_features"]:
         self.logger.warning(f"⚠️ Features with infinite values ({len(problematic['infinite_features'])}):")
 for feature in problematic["infinite_features"][:10]:  # Show first 10
-self.logger.warning(f"   - {feature}")
+    self.logger.warning(f"   - {feature}")
 if len(problematic["infinite_features"]) > 10:
         self.logger.warning(f"   ... and {len(problematic['infinite_features']) - 10} more")
 
 # Log detailed infinite statistics
-self.logger.warning("📊 Infinite Value Statistics:")
+    self.logger.warning("📊 Infinite Value Statistics:")
 for feature in problematic["infinite_features"][:5]:  # Show detailed info for first 5
-self.logger.warning(f"   • {feature}: Infinite count and percentage details available in validation results")
+    self.logger.warning(f"   • {feature}: Infinite count and percentage details available in validation results")
 
 # Log constant features with detailed information
 if problematic["constant_features"]:
         self.logger.warning(f"⚠️ Constant features ({len(problematic['constant_features'])}):")
 for feature in problematic["constant_features"][:10]:  # Show first 10
-self.logger.warning(f"   - {feature}")
+    self.logger.warning(f"   - {feature}")
 if len(problematic["constant_features"]) > 10:
         self.logger.warning(f"   ... and {len(problematic['constant_features']) - 10} more")
 
 # Log detailed constant feature information
-self.logger.warning("📊 Constant Feature Details:")
+    self.logger.warning("📊 Constant Feature Details:")
 for feature in problematic["constant_features"][:5]:  # Show detailed info for first 5
-self.logger.warning(f"   • {feature}: Unique values and counts available in validation results")
+    self.logger.warning(f"   • {feature}: Unique values and counts available in validation results")
 
 # Log high correlation pairs with detailed information
 if problematic["high_correlation_pairs"]:
         self.logger.warning(f"⚠️ Highly correlated feature pairs ({len(problematic['high_correlation_pairs'])}):")
 for pair in problematic["high_correlation_pairs"][:5]:  # Show first 5
-self.logger.warning(f"   - {pair[0]} ↔ {pair[1]}")
+    self.logger.warning(f"   - {pair[0]} ↔ {pair[1]}")
 if len(problematic["high_correlation_pairs"]) > 5:
         self.logger.warning(f"   ... and {len(problematic['high_correlation_pairs']) - 5} more")
 
 # Log detailed correlation information
-self.logger.warning("📊 Correlation Details:")
+    self.logger.warning("📊 Correlation Details:")
 for pair in problematic["high_correlation_pairs"][:3]:  # Show detailed info for first 3
-self.logger.warning(f"   • {pair[0]} ↔ {pair[1]}: Correlation coefficient available in validation results")
+    self.logger.warning(f"   • {pair[0]} ↔ {pair[1]}: Correlation coefficient available in validation results")
 
 # Summary with detailed breakdown
 total_issues = (
@@ -743,14 +743,14 @@ if total_issues == 0:
         self.logger.info("✅ No feature quality issues detected")
 else:
         self.logger.warning(f"⚠️ Total feature quality issues: {total_issues}")
-self.logger.warning("📋 Issue Breakdown:")
-self.logger.warning(f"   • NaN features: {len(problematic['nan_features'])}")
-self.logger.warning(f"   • Infinite features: {len(problematic['infinite_features'])}")
-self.logger.warning(f"   • Constant features: {len(problematic['constant_features'])}")
-self.logger.warning(f"   • High correlation pairs: {len(problematic['high_correlation_pairs'])}")
-self.logger.warning("💡 For detailed information about each problematic value, check the validation results")
+    self.logger.warning("📋 Issue Breakdown:")
+    self.logger.warning(f"   • NaN features: {len(problematic['nan_features'])}")
+    self.logger.warning(f"   • Infinite features: {len(problematic['infinite_features'])}")
+    self.logger.warning(f"   • Constant features: {len(problematic['constant_features'])}")
+    self.logger.warning(f"   • High correlation pairs: {len(problematic['high_correlation_pairs'])}")
+    self.logger.warning("💡 For detailed information about each problematic value, check the validation results")
 
-self.logger.info("=" * 80)
+    self.logger.info("=" * 80)
 
 def save_validation_report(self, output_path: str) -> None:
         """Save comprehensive validation report to file."""
@@ -772,7 +772,7 @@ report = {
 with open(output_path, 'w') as f:
                 json.dump(report, f, indent = 2, default = str)
 
-self.logger.info(f"✅ Validation report saved to: {output_path}")
+    self.logger.info(f"✅ Validation report saved to: {output_path}")
 
 except Exception as e:
         self.logger.exception(f"❌ Error saving validation report: {e}")
@@ -781,14 +781,14 @@ except Exception as e:
 def validate_step1_quality(symbol: str, exchange: str, data_dir: str = "data_cache") -> Dict[str, Any]:
     """Convenience function to validate Step1 data quality."""
 validator, ComprehensiveDataQualityValidator()
-return validator.validate_step1_data_quality(symbol, exchange, data_dir)
+    return validator.validate_step1_data_quality(symbol, exchange, data_dir)
 
 def validate_step1_5_quality(symbol: str, exchange: str, data_dir: str = "data_cache") -> Dict[str, Any]:
     """Convenience function to validate Step1.5 data quality."""
 validator, ComprehensiveDataQualityValidator()
-return validator.validate_step1_5_data_quality(symbol, exchange, data_dir)
+    return validator.validate_step1_5_data_quality(symbol, exchange, data_dir)
 
 def validate_step2_quality(symbol: str, exchange: str, data_dir: str = "data / training") -> Dict[str, Any]:
     """Convenience function to validate Step2 data quality."""
 validator, ComprehensiveDataQualityValidator()
-return validator.validate_step2_data_quality(symbol, exchange, data_dir)
+    return validator.validate_step2_data_quality(symbol, exchange, data_dir)

@@ -20,17 +20,17 @@ class StandardizedConfigManager:
 class StandardizedConfigManager:
     """Centralized configuration manager with validation and versioning."""
 
-def __init__(self, base_config_path: str = "config"):
     def __init__(self, base_config_path: str = "config"):
-    def __init__(self, base_config_path: str = "config"):
-    def __init__(self, base_config_path: str = "config"):
+        def __init__(self, base_config_path: str = "config"):
+        def __init__(self, base_config_path: str = "config"):
+        def __init__(self, base_config_path: str = "config"):
         self.base_config_path, Path(base_config_path)
-self.logger, pipeline_standards.get_logger(__name__)
-self.config_cache = {}
-self.config_versions = {}
+    self.logger, pipeline_standards.get_logger(__name__)
+    self.config_cache = {}
+    self.config_versions = {}
 
 # Standard configuration schemas
-self.schemas = {
+    self.schemas = {
 "pipeline": {
 "required": ["symbol", "exchange", "timeframe"],
 "optional": ["data_dir", "force_rerun", "enable_mlflow"],
@@ -87,7 +87,7 @@ except Exception as e:
     pass  # TODO: Add proper exception handling
 with open(config_path, 'r') as f:
                     config, json.load(f)
-self.logger.info(f"✅ Loaded config: {config_path}")
+    self.logger.info(f"✅ Loaded config: {config_path}")
 except Exception as e:
         self.logger.error(f"❌ Error loading config {config_path}: {e}")
 config, self._get_default_config(config_type)
@@ -96,21 +96,21 @@ config, self._get_default_config(config_type)
 validated_config, self._validate_config(config, config_type)
 
 # Cache the result
-self.config_cache[cache_key] = validated_config
+    self.config_cache[cache_key] = validated_config
 
-return validated_config
+    return validated_config
 
 def _get_default_config(self, config_type: str) -> Dict[str, Any]:
         """Get default configuration for a given type."""
 if config_type in self.schemas:
         return self.schemas[config_type]["defaults"].copy()
-return {}
+    return {}
 
 def _validate_config(self, config: Dict[str, Any], config_type: str) -> Dict[str, Any]:
         """Validate configuration against schema and apply defaults."""
 if config_type not in self.schemas:
         self.logger.warning(f"⚠️ Unknown config type: {config_type}")
-return config
+    return config
 
 schema, self.schemas[config_type]
 validated_config, schema["defaults"].copy()
@@ -132,7 +132,7 @@ if missing_required:
         self.logger.error(f"❌ Missing required config keys: {missing_required}")
 raise ValueError(f"Missing required configuration keys: {missing_required}")
 
-return validated_config
+    return validated_config
 
 def create_step_config(self, step_name: str, base_config: Dict[str, Any]) -> Dict[str, Any]:
         """Create standardized configuration for a specific step.
@@ -163,7 +163,7 @@ if step_name.startswith("step"):
 "enable_mlflow": step_config.get("enable_mlflow", True)
 })
 
-return step_config
+    return step_config
 
 def save_config(self, config: Dict[str, Any], config_type: str, config_name: str) -> bool:
         """Save configuration to file.
@@ -198,12 +198,12 @@ config_with_metadata = {
 with open(config_path, 'w') as f:
                 json.dump(config_with_metadata, f, indent = 2)
 
-self.logger.info(f"✅ Saved config: {config_path}")
-return True
+    self.logger.info(f"✅ Saved config: {config_path}")
+    return True
 
 except Exception as e:
         self.logger.error(f"❌ Error saving config: {e}")
-return False
+    return False
 
 def get_standardized_paths(self, exchange: str, symbol: str) -> Dict[str, str]:
         """Get standardized paths for a given exchange and symbol.
@@ -215,7 +215,7 @@ symbol: Trading symbol
 Returns:
             Dictionary of standardized paths
 """
-return {
+    return {
 "raw_data": pipeline_standards.build_path("raw_data", exchange, symbol),
 "processed_data": pipeline_standards.build_path("processed_data", exchange, symbol),
 "unified_data": pipeline_standards.build_path("unified_data", exchange, symbol),
@@ -244,7 +244,7 @@ for file_path in required_files:
             file_path_obj, Path(file_path)
 validation_results[f"file_{file_path}"] = file_path_obj.exists()
 
-return validation_results
+    return validation_results
 
 # Global instance
 config_manager, StandardizedConfigManager()
@@ -269,7 +269,7 @@ if config_overrides:
 # Create step - specific config
 step_config, config_manager.create_step_config(step_name, base_config)
 
-return step_config
+    return step_config
 
 def validate_step_config(step_config: Dict[str, Any], step_name: str) -> bool:
     """Validate step configuration.
@@ -286,6 +286,6 @@ required_keys = ["symbol", "exchange", "timeframe"]
 for key in required_keys:
         if key not in step_config:
             config_manager.logger.error(f"❌ Missing required config key for {step_name}: {key}")
-return False
+    return False
 
-return True
+    return True

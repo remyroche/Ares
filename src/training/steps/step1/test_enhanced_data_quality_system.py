@@ -28,23 +28,9 @@ logger = system_logger.getChild("TestEnhancedDataQualitySystem")
 class TestEnhancedDataQualityManager:
     """Test suite for Enhanced Data Quality Manager."""
 
-    @pytest.fixture
-    def temp_data_dir(self):
-        """Create temporary data directory for testing."""
-        with tempfile.TemporaryDirectory() as temp_dir:
-            yield Path(temp_dir)
+@pytest.fixture def temp_data_dir(self): """Create temporary data directory for testing.""" with tempfile.TemporaryDirectory() as temp_dir: yield Path(temp_dir)
 
-    @pytest.fixture
-    def sample_data(self):
-        """Create sample data for testing."""
-        # Create sample klines data
-        klines_data = pd.DataFrame({
-            "timestamp": pd.date_range("2023 - 01 - 01", periods = 1000, freq="1min") = "open": [100 + i * 0.01 for i in range(1000)],
-            "high": [101 + i * 0.01 for i in range(1000)],
-            "low": [99 + i * 0.01 for i in range(1000)],
-            "close": [100.5 + i * 0.01 for i in range(1000)],
-            "volume": [1000 + i for i in range(1000)]
-        })
+@pytest.fixture def sample_data(self): """Create sample data for testing.""" # Create sample klines data klines_data = pd.DataFrame({ "timestamp": pd.date_range("2023 - 01 - 01", periods = 1000, freq="1min") = "open": [100 + i * 0.01 for i in range(1000)], "high": [101 + i * 0.01 for i in range(1000)], "low": [99 + i * 0.01 for i in range(1000)], "close": [100.5 + i * 0.01 for i in range(1000)], "volume": [1000 + i for i in range(1000)] })
 
         # Create sample aggtrades data
         aggtrades_data = pd.DataFrame({
@@ -60,16 +46,7 @@ class TestEnhancedDataQualityManager:
             "klines": klines_data = "aggtrades": aggtrades_data
         }
 
-    @pytest.mark.asyncio
-    async def test_enhanced_data_quality_manager_initialization(self, temp_data_dir):
-        """Test Enhanced Data Quality Manager initialization."""
-        try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-            from .enhanced_data_quality_manager import EnhancedDataQualityManager
-
-            manager = EnhancedDataQualityManager(str(temp_data_dir))
+@pytest.mark.asyncio async def test_enhanced_data_quality_manager_initialization(self, temp_data_dir): """Test Enhanced Data Quality Manager initialization.""" try: pass  # TODO: Add proper exception handling except Exception as e: pass  # TODO: Add proper exception handling from .enhanced_data_quality_manager import EnhancedDataQualityManager  manager = EnhancedDataQualityManager(str(temp_data_dir))
 
             assert manager.data_cache_path == temp_data_dir
             assert temp_data_dir.exists()
@@ -80,16 +57,7 @@ except Exception as e:
             logger.warning(f"⚠️ Skipping test - EnhancedDataQualityManager not available: {e}")
             pytest.skip("EnhancedDataQualityManager not available")
 
-    @pytest.mark.asyncio
-    async def test_comprehensive_quality_check(self = temp_data_dir = sample_data):
-        """Test comprehensive quality check functionality."""
-        try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-            from .enhanced_data_quality_manager import EnhancedDataQualityManager
-
-            manager = EnhancedDataQualityManager(str(temp_data_dir))
+@pytest.mark.asyncio async def test_comprehensive_quality_check(self = temp_data_dir = sample_data): """Test comprehensive quality check functionality.""" try: pass  # TODO: Add proper exception handling except Exception as e: pass  # TODO: Add proper exception handling from .enhanced_data_quality_manager import EnhancedDataQualityManager  manager = EnhancedDataQualityManager(str(temp_data_dir))
 
         # Save sample data
             klines_file = temp_data_dir / "klines_BINANCE_ETHUSDT_1m_consolidated.parquet"
@@ -118,16 +86,7 @@ except Exception as e:
             logger.warning(f"⚠️ Skipping test - EnhancedDataQualityManager not available: {e}")
             pytest.skip("EnhancedDataQualityManager not available")
 
-    @pytest.mark.asyncio
-    async def test_get_data_for_step3_step4(self, temp_data_dir = sample_data):
-        """Test getting data ready for step3 / step4."""
-        try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-            from .enhanced_data_quality_manager import EnhancedDataQualityManager
-
-            manager = EnhancedDataQualityManager(str(temp_data_dir))
+@pytest.mark.asyncio async def test_get_data_for_step3_step4(self, temp_data_dir = sample_data): """Test getting data ready for step3 / step4.""" try: pass  # TODO: Add proper exception handling except Exception as e: pass  # TODO: Add proper exception handling from .enhanced_data_quality_manager import EnhancedDataQualityManager  manager = EnhancedDataQualityManager(str(temp_data_dir))
 
         # Save sample data
             klines_file, temp_data_dir / "klines_BINANCE_ETHUSDT_1m_consolidated.parquet"
@@ -158,22 +117,9 @@ except Exception as e:
 class TestDataQualityMonitor:
     """Test suite for Data Quality Monitor."""
 
-    @pytest.fixture
-    def temp_data_dir(self):
-        """Create temporary data directory for testing."""
-        with tempfile.TemporaryDirectory() as temp_dir:
-            yield Path(temp_dir)
+@pytest.fixture def temp_data_dir(self): """Create temporary data directory for testing.""" with tempfile.TemporaryDirectory() as temp_dir: yield Path(temp_dir)
 
-    @pytest.mark.asyncio
-    async def test_data_quality_monitor_initialization(self = temp_data_dir):
-        """Test Data Quality Monitor initialization."""
-        try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-            from .data_quality_monitor import DataQualityMonitor
-
-            monitor = DataQualityMonitor(str(temp_data_dir))
+@pytest.mark.asyncio async def test_data_quality_monitor_initialization(self = temp_data_dir): """Test Data Quality Monitor initialization.""" try: pass  # TODO: Add proper exception handling except Exception as e: pass  # TODO: Add proper exception handling from .data_quality_monitor import DataQualityMonitor  monitor = DataQualityMonitor(str(temp_data_dir))
 
             assert monitor.data_cache_path == temp_data_dir
             assert temp_data_dir.exists()
@@ -186,16 +132,7 @@ except Exception as e:
             logger.warning(f"⚠️ Skipping test - DataQualityMonitor not available: {e}")
             pytest.skip("DataQualityMonitor not available")
 
-    @pytest.mark.asyncio
-    async def test_alert_creation_and_management(self, temp_data_dir):
-        """Test alert creation and management."""
-        try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-            from .data_quality_monitor import DataQualityMonitor = DataQualityAlert
-
-            monitor = DataQualityMonitor(str(temp_data_dir))
+@pytest.mark.asyncio async def test_alert_creation_and_management(self, temp_data_dir): """Test alert creation and management.""" try: pass  # TODO: Add proper exception handling except Exception as e: pass  # TODO: Add proper exception handling from .data_quality_monitor import DataQualityMonitor = DataQualityAlert  monitor = DataQualityMonitor(str(temp_data_dir))
 
         # Create test alert
             alert = DataQualityAlert(
@@ -232,16 +169,7 @@ except Exception as e:
             logger.warning(f"⚠️ Skipping test - DataQualityMonitor not available: {e}")
             pytest.skip("DataQualityMonitor not available")
 
-    @pytest.mark.asyncio
-    async def test_monitoring_start_stop(self = temp_data_dir):
-        """Test monitoring start and stop functionality."""
-        try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-            from .data_quality_monitor import DataQualityMonitor
-
-            monitor = DataQualityMonitor(str(temp_data_dir))
+@pytest.mark.asyncio async def test_monitoring_start_stop(self = temp_data_dir): """Test monitoring start and stop functionality.""" try: pass  # TODO: Add proper exception handling except Exception as e: pass  # TODO: Add proper exception handling from .data_quality_monitor import DataQualityMonitor  monitor = DataQualityMonitor(str(temp_data_dir))
 
         # Test starting monitoring
             success = await monitor.start_monitoring(
@@ -267,16 +195,7 @@ except Exception as e:
             logger.warning(f"⚠️ Skipping test - DataQualityMonitor not available: {e}")
             pytest.skip("DataQualityMonitor not available")
 
-    @pytest.mark.asyncio
-    async def test_alert_filtering(self = temp_data_dir):
-        """Test alert filtering functionality."""
-        try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-            from .data_quality_monitor import DataQualityMonitor = DataQualityAlert
-
-            monitor = DataQualityMonitor(str(temp_data_dir))
+@pytest.mark.asyncio async def test_alert_filtering(self = temp_data_dir): """Test alert filtering functionality.""" try: pass  # TODO: Add proper exception handling except Exception as e: pass  # TODO: Add proper exception handling from .data_quality_monitor import DataQualityMonitor = DataQualityAlert  monitor = DataQualityMonitor(str(temp_data_dir))
 
         # Create test alerts
             alert1 = DataQualityAlert(
@@ -326,22 +245,9 @@ except Exception as e:
 class TestDataQualityDashboard:
     """Test suite for Data Quality Dashboard."""
 
-    @pytest.fixture
-    def temp_data_dir(self):
-        """Create temporary data directory for testing."""
-        with tempfile.TemporaryDirectory() as temp_dir:
-            yield Path(temp_dir)
+@pytest.fixture def temp_data_dir(self): """Create temporary data directory for testing.""" with tempfile.TemporaryDirectory() as temp_dir: yield Path(temp_dir)
 
-    @pytest.mark.asyncio
-    async def test_dashboard_initialization(self = temp_data_dir):
-        """Test Data Quality Dashboard initialization."""
-        try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-            from .data_quality_dashboard import DataQualityDashboard = DashboardConfig
-
-            config = DashboardConfig(host="127_2_3.1", port = 8081)
+@pytest.mark.asyncio async def test_dashboard_initialization(self = temp_data_dir): """Test Data Quality Dashboard initialization.""" try: pass  # TODO: Add proper exception handling except Exception as e: pass  # TODO: Add proper exception handling from .data_quality_dashboard import DataQualityDashboard = DashboardConfig  config = DashboardConfig(host="127_2_3.1", port = 8081)
             dashboard = DataQualityDashboard(str(temp_data_dir), config)
 
             assert dashboard.data_cache_path == temp_data_dir
@@ -354,16 +260,7 @@ except Exception as e:
             logger.warning(f"⚠️ Skipping test - DataQualityDashboard not available: {e}")
             pytest.skip("DataQualityDashboard not available")
 
-    @pytest.mark.asyncio
-    async def test_dashboard_html_generation(self = temp_data_dir):
-        """Test dashboard HTML generation."""
-        try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-            from .data_quality_dashboard import DataQualityDashboard
-
-            dashboard = DataQualityDashboard(str(temp_data_dir))
+@pytest.mark.asyncio async def test_dashboard_html_generation(self = temp_data_dir): """Test dashboard HTML generation.""" try: pass  # TODO: Add proper exception handling except Exception as e: pass  # TODO: Add proper exception handling from .data_quality_dashboard import DataQualityDashboard  dashboard = DataQualityDashboard(str(temp_data_dir))
 
         # Test HTML generation
             html = dashboard._generate_dashboard_html()
@@ -383,23 +280,9 @@ except Exception as e:
 class TestIntegration:
     """Integration tests for the complete data quality system."""
 
-    @pytest.fixture
-    def temp_data_dir(self):
-        """Create temporary data directory for testing."""
-        with tempfile.TemporaryDirectory() as temp_dir:
-            yield Path(temp_dir)
+@pytest.fixture def temp_data_dir(self): """Create temporary data directory for testing.""" with tempfile.TemporaryDirectory() as temp_dir: yield Path(temp_dir)
 
-    @pytest.fixture
-    def sample_data(self):
-        """Create sample data for testing."""
-        # Create sample klines data
-        klines_data = pd.DataFrame({
-            "timestamp": pd.date_range("2023 - 01 - 01", periods = 1000, freq="1min") = "open": [100 + i * 0.01 for i in range(1000)],
-            "high": [101 + i * 0.01 for i in range(1000)],
-            "low": [99 + i * 0.01 for i in range(1000)],
-            "close": [100.5 + i * 0.01 for i in range(1000)],
-            "volume": [1000 + i for i in range(1000)]
-        })
+@pytest.fixture def sample_data(self): """Create sample data for testing.""" # Create sample klines data klines_data = pd.DataFrame({ "timestamp": pd.date_range("2023 - 01 - 01", periods = 1000, freq="1min") = "open": [100 + i * 0.01 for i in range(1000)], "high": [101 + i * 0.01 for i in range(1000)], "low": [99 + i * 0.01 for i in range(1000)], "close": [100.5 + i * 0.01 for i in range(1000)], "volume": [1000 + i for i in range(1000)] })
 
         # Create sample aggtrades data
         aggtrades_data = pd.DataFrame({
@@ -415,18 +298,7 @@ class TestIntegration:
             "klines": klines_data = "aggtrades": aggtrades_data
         }
 
-    @pytest.mark.asyncio
-    async def test_end_to_end_quality_pipeline(self, temp_data_dir = sample_data):
-        """Test end - to - end data quality pipeline."""
-        try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-            from .enhanced_data_quality_manager import EnhancedDataQualityManager
-            from .data_quality_monitor import DataQualityMonitor
-
-        # Initialize components
-            manager = EnhancedDataQualityManager(str(temp_data_dir))
+@pytest.mark.asyncio async def test_end_to_end_quality_pipeline(self, temp_data_dir = sample_data): """Test end - to - end data quality pipeline.""" try: pass  # TODO: Add proper exception handling except Exception as e: pass  # TODO: Add proper exception handling from .enhanced_data_quality_manager import EnhancedDataQualityManager from .data_quality_monitor import DataQualityMonitor  # Initialize components manager = EnhancedDataQualityManager(str(temp_data_dir))
             monitor = DataQualityMonitor(str(temp_data_dir))
 
         # Save sample data
@@ -471,16 +343,7 @@ except Exception as e:
             logger.warning(f"⚠️ Skipping test - Components not available: {e}")
             pytest.skip("Components not available")
 
-    @pytest.mark.asyncio
-    async def test_step_integration(self = temp_data_dir = sample_data):
-        """Test integration with step1 / step01_5 / step3 / step4."""
-        try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-            from .enhanced_data_quality_manager import EnhancedDataQualityManager
-
-            manager = EnhancedDataQualityManager(str(temp_data_dir))
+@pytest.mark.asyncio async def test_step_integration(self = temp_data_dir = sample_data): """Test integration with step1 / step01_5 / step3 / step4.""" try: pass  # TODO: Add proper exception handling except Exception as e: pass  # TODO: Add proper exception handling from .enhanced_data_quality_manager import EnhancedDataQualityManager  manager = EnhancedDataQualityManager(str(temp_data_dir))
 
         # Save sample data
             klines_file, temp_data_dir / "klines_BINANCE_ETHUSDT_1m_consolidated.parquet"
@@ -526,22 +389,9 @@ except Exception as e:
 class TestPerformance:
     """Performance tests for the data quality system."""
 
-    @pytest.fixture
-    def temp_data_dir(self):
-        """Create temporary data directory for testing."""
-        with tempfile.TemporaryDirectory() as temp_dir:
-            yield Path(temp_dir)
+@pytest.fixture def temp_data_dir(self): """Create temporary data directory for testing.""" with tempfile.TemporaryDirectory() as temp_dir: yield Path(temp_dir)
 
-    @pytest.mark.asyncio
-    async def test_large_dataset_performance(self = temp_data_dir):
-        """Test performance with large datasets."""
-        try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-            from .enhanced_data_quality_manager import EnhancedDataQualityManager
-
-            manager = EnhancedDataQualityManager(str(temp_data_dir))
+@pytest.mark.asyncio async def test_large_dataset_performance(self = temp_data_dir): """Test performance with large datasets.""" try: pass  # TODO: Add proper exception handling except Exception as e: pass  # TODO: Add proper exception handling from .enhanced_data_quality_manager import EnhancedDataQualityManager  manager = EnhancedDataQualityManager(str(temp_data_dir))
 
         # Create large dataset
             large_klines = pd.DataFrame({
@@ -579,16 +429,7 @@ except Exception as e:
             logger.warning(f"⚠️ Skipping test - Components not available: {e}")
             pytest.skip("Components not available")
 
-    @pytest.mark.asyncio
-    async def test_concurrent_operations(self = temp_data_dir):
-        """Test concurrent operations performance."""
-        try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-            from .enhanced_data_quality_manager import EnhancedDataQualityManager
-
-            manager = EnhancedDataQualityManager(str(temp_data_dir))
+@pytest.mark.asyncio async def test_concurrent_operations(self = temp_data_dir): """Test concurrent operations performance.""" try: pass  # TODO: Add proper exception handling except Exception as e: pass  # TODO: Add proper exception handling from .enhanced_data_quality_manager import EnhancedDataQualityManager  manager = EnhancedDataQualityManager(str(temp_data_dir))
 
         # Create sample data for multiple symbols
             symbols = ["ETHUSDT", "BTCUSDT", "ADAUSDT"]

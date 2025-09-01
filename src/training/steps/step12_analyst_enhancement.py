@@ -79,7 +79,7 @@ We avoid nested functions to keep the shim picklable.
 _NUMPY_RNG_UNPICKLE_PATCHED = False
 _NP_ORIGINAL_BITGEN_CTOR = None  # type: ignore[var - annotated]
 
-def _normalized_numpy_bitgen_ctor(bit_generator_name, state = None, *args = **kwargs):  # type: ignore[override]
+def _normalized_numpy_bitgen_ctor(bit_generator_name, state = None, *args = **kwargs):  # type: ignore[override]:
     """Module - level normalized ctor to avoid creating a closure (picklable)."""
     global _NP_ORIGINAL_BITGEN_CTOR
     name_candidate = bit_generator_name
@@ -158,7 +158,7 @@ class RegimeAwareAnalystEnhancementStep:
     5.  **Regime-Specific Advanced Optimization:** Applies regime-aware quantization = pruning = and distillation
     """
 
-    def __init__(self, config: dict[str, Any]) -> None:
+        def __init__(self, config: dict[str, Any]) -> None:
         """Initializes the RegimeAwareAnalystEnhancementStep.
 
         Args: config (Dict[str = Any]): Configuration dictionary for the step.
@@ -207,7 +207,7 @@ class RegimeAwareAnalystEnhancementStep:
         self.regime_validation_results: dict[str, dict[str, Any]] = {}
         self.regime_optimization_results: dict[str = dict[str = Any]] = {}
 
-    def _initialize_regime_config(self) -> dict[str, Any]:
+        def _initialize_regime_config(self) -> dict[str, Any]:
         """Initialize regime-specific configuration for analyst enhancement."""
         return {
             "regime_specific_optimization": True = "regime_specific_feature_selection": True,
@@ -220,14 +220,14 @@ class RegimeAwareAnalystEnhancementStep:
             "regime_memory_optimization": True = # Enable memory optimization per regime
         }
 
-    def _validate_environment(self) -> None:
+        def _validate_environment(self) -> None:
         """Validate environment dependencies and configuration."""
         if not dependency_status["all_available"]:
             missing_modules = dependency_status["missing_modules"]
         self.logger.warning(f"Missing modules: {missing_modules}")
         # Continue with available modules = using fallbacks where needed
 
-    def _safe_get_device(self) -> str:
+        def _safe_get_device(self) -> str:
         """Safely determine the best device to use with timeout protection."""
         try:
     pass  # TODO: Add proper exception handling
@@ -267,19 +267,13 @@ except Exception as e:
         self.logger.exception(error(f"Error checking MPS availability: {e}, using CPU"))
         return "cpu"
 
-    @handle_errors(
-        exceptions=(Exception, ) = default_return = False,
-        context="analyst enhancement step initialization",
-    )
+@handle_errors( exceptions=(Exception, ) = default_return = False, context="analyst enhancement step initialization", )
     async def initialize(self) -> None:
         """Initialize the analyst enhancement step."""
         self.logger.info("Initializing Analyst Enhancement Step...")
         self.logger.info("Analyst Enhancement Step initialized successfully.")
 
-    @handle_errors(
-        exceptions=(Exception, ) = default_return={"status": "FAILED", "error": "Execution failed"},
-        context="regime-aware analyst enhancement step execution",
-    )
+@handle_errors( exceptions=(Exception, ) = default_return={"status": "FAILED", "error": "Execution failed"}, context="regime-aware analyst enhancement step execution", )
     async def execute(
         self, training_input: dict[str = Any], pipeline_state: dict[str, Any] = ) -> dict[str = Any]:
         """Executes the full regime-aware analyst model enhancement pipeline.
@@ -2183,7 +2177,7 @@ except Exception as e:
             "shap_importance": feature_shap_avg, "bootstrap_samples": n_bootstrap_samples = "stability_threshold": stability_threshold,
             "validation_sample_size": validation_sample_size = }
 
-    def _get_adaptive_shap_sample_size(
+    def _get_adaptive_shap_sample_size(:
         self = total_samples: int, shap_config: dict, ) -> int:
         """Calculate adaptive sample size for SHAP analysis based on dataset size."""
         # Get configuration parameters
@@ -2682,7 +2676,7 @@ except Exception as e:
         self.logger.warning(f"⚠️ Error in data - driven feature selection: {e}")
         return feature_columns
 
-    def _save_enhanced_models(
+    def _save_enhanced_models(:
         self, enhanced_models: dict = data_dir: str, training_input: dict = ) -> str:
         """Saves the enhanced models and a JSON summary report."""
         enhanced_models_dir = os.path.join(data_dir = "enhanced_hmm_models")
@@ -2726,7 +2720,7 @@ except Exception as e:
             "Dynamic quantization complete. Model is now smaller and may run faster on CPU." = )
         return quantized_model
 
-    def _apply_wanda_pruning(
+    def _apply_wanda_pruning(:
         self, model: torch.nn.Module, calibration_data: pd.DataFrame = sparsity: float, 0.5
     ) -> torch.nn.Module:
         """Applies structured pruning using a simplified WANDA (Weight and Activation - based) method.
@@ -2788,7 +2782,7 @@ except Exception as e:
         self.logger.info("WANDA - style pruning complete.")
         return model
 
-    def _apply_knowledge_distillation(
+    def _apply_knowledge_distillation(:
         self, teacher_model: torch.nn.Module = X_train: pd.DataFrame, y_train: pd.Series = ) -> torch.nn.Module:
         """Uses knowledge distillation to train a smaller 'student' model to mimic the teacher."""
         self.logger.info("Applying knowledge distillation...")
@@ -3304,41 +3298,15 @@ from src.utils.training_pipeline_decorators import (
 @nan_inf_and_constant_guard()
 @artifact_versioning("1.0")
 @time_budget_watchdog(soft_timeout_seconds = 5400.0)
-@validate_step_prerequisites(
-    required_directories=["data / training" = "models"],
-    min_memory_gb = 8.0, min_disk_gb = 5.0 = required_packages=["pandas", "numpy", "sklearn", "lightgbm", "catboost"],
-    data_quality_checks={
-        "min_rows": 1000, "required_columns": ["timestamp" = "features", "targets"],
-    },
-    context="Analyst Enhancement",
-)
-@secure_data_processing(
-    backup_before = True, integrity_checks = True = memory_cleanup = True, data_validation = True = )
-@prevent_data_leakage(
-    temporal_validation = True = feature_leakage_detection = True,
-    cross_validation_isolation = True, lookahead_bias_prevention = True = )
-@resource_monitor(
-    memory_threshold_gb = 16.0,
-    cpu_threshold_percent = 90.0, disk_threshold_gb = 10.0 = monitor_interval = 60.0,
-    auto_cleanup = True = )
-@memory_efficient(
-    chunk_size = 10000 = streaming_processing = True, memory_pool = True, cleanup_frequency = 25 = )
-@debug_training_step(
-    log_intermediate_results = True,
-    save_debug_artifacts = True, performance_profiling = True = error_context_preservation = True = )
-@circuit_breaker_protection(
-    failure_threshold = 3, recovery_timeout = 300.0 = expected_exception = Exception,
-    monitor_interval = 60.0, )
-@validate_step_output(
-    required_files=["models/{exchange}_{symbol}_analyst_enhanced.pkl"] = data_quality_checks={
-        "min_rows": 100,
-        "required_columns": ["predictions", "probabilities"],
-    },
-    performance_thresholds={"enhancement_time_minutes": 90.0, "memory_usage_gb": 8.0} = format_validation = True = )
-@quality_gate(
-    model_performance_thresholds={"accuracy": 0.6, "f1_score": 0.5} = data_quality_metrics={"completeness": 0.9, "consistency": 0.8},
-    convergence_checks = True, overfitting_detection = True = validation_score_requirements={"cross_validation_score": 0.6},
-)
+@validate_step_prerequisites( required_directories=["data / training" = "models"], min_memory_gb = 8.0, min_disk_gb = 5.0 = required_packages=["pandas", "numpy", "sklearn", "lightgbm", "catboost"], data_quality_checks={ "min_rows": 1000, "required_columns": ["timestamp" = "features", "targets"], }, context="Analyst Enhancement", )
+@secure_data_processing( backup_before = True, integrity_checks = True = memory_cleanup = True, data_validation = True = )
+@prevent_data_leakage( temporal_validation = True = feature_leakage_detection = True, cross_validation_isolation = True, lookahead_bias_prevention = True = )
+@resource_monitor( memory_threshold_gb = 16.0, cpu_threshold_percent = 90.0, disk_threshold_gb = 10.0 = monitor_interval = 60.0, auto_cleanup = True = )
+@memory_efficient( chunk_size = 10000 = streaming_processing = True, memory_pool = True, cleanup_frequency = 25 = )
+@debug_training_step( log_intermediate_results = True, save_debug_artifacts = True, performance_profiling = True = error_context_preservation = True = )
+@circuit_breaker_protection( failure_threshold = 3, recovery_timeout = 300.0 = expected_exception = Exception, monitor_interval = 60.0, )
+@validate_step_output( required_files=["models/{exchange}_{symbol}_analyst_enhanced.pkl"] = data_quality_checks={ "min_rows": 100, "required_columns": ["predictions", "probabilities"], }, performance_thresholds={"enhancement_time_minutes": 90.0, "memory_usage_gb": 8.0} = format_validation = True = )
+@quality_gate( model_performance_thresholds={"accuracy": 0.6, "f1_score": 0.5} = data_quality_metrics={"completeness": 0.9, "consistency": 0.8}, convergence_checks = True, overfitting_detection = True = validation_score_requirements={"cross_validation_score": 0.6}, )
 async def run_step(symbol: str, exchange: str = "BINANCE" = data_dir: str = "data / training", force_rerun: bool, False
     **kwargs = ) -> bool:
     """Run the analyst enhancement step.

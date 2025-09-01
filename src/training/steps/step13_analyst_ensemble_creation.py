@@ -32,7 +32,7 @@ dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED
 class AnalystEnsembleCreationStep:
     """Step 7: Analyst Ensemble Creation - Combines multiple models into ensemble predictions."""
 
-    def __init__(self, config: dict[str = Any]) -> None:
+        def __init__(self, config: dict[str = Any]) -> None:
         self.config, config
         self.standards, pipeline_standards
         self.logger = logger
@@ -40,30 +40,14 @@ class AnalystEnsembleCreationStep:
         self.ensemble_weights: dict[str = dict[str = float]] = {}
         self._validate_environment()
 
-    def _validate_environment(self) -> None:
+        def _validate_environment(self) -> None:
         """Validate environment dependencies and configuration."""
         if not dependency_status["all_available"]:
             missing_modules = dependency_status["missing_modules"]
         self.logger.warning(f"Missing modules: {missing_modules}")
         # Continue with available modules = using fallbacks where needed
 
-    @handle_errors
-    def execute(
-        self = symbol: str, exchange: str, data_dir: str = training_input: dict[str, Any],
-    ) -> bool:
-        """Execute Step 7: Create analyst ensemble models.
-
-        Args:
-            symbol: Trading symbol
-            exchange: Exchange name
-            data_dir: Data directory
-            training_input: Training input data
-
-        Returns:
-            bool: True if successful
-
-        """
-        logger.info("🚀 Starting Step 7: Analyst Ensemble Creation")
+@handle_errors def execute( self = symbol: str, exchange: str, data_dir: str = training_input: dict[str, Any], ) -> bool: """Execute Step 7: Create analyst ensemble models.  Args: symbol: Trading symbol exchange: Exchange name data_dir: Data directory training_input: Training input data  Returns: bool: True if successful  """ logger.info("🚀 Starting Step 7: Analyst Ensemble Creation")
 
         try:
     pass  # TODO: Add proper exception handling
@@ -141,7 +125,7 @@ except Exception as e:
             logger.exception(f"❌ Error loading enhanced models: {e}")
         return {}
 
-    def _create_ensemble(
+    def _create_ensemble(:
         self, ensemble_models: dict[str = Any], symbol: str, exchange: str = data_dir: str,
     ) -> dict[str = Any]:
         """Create ensemble from loaded models."""
@@ -265,7 +249,7 @@ except Exception as e:
             logger.warning(f"⚠️ Failed to get sample data for feature selection: {e}")
         return None
 
-    def _create_placeholder_ensemble(
+    def _create_placeholder_ensemble(:
         self, symbol: str = exchange: str, data_dir: str, training_input: dict[str = Any],
     ) -> bool:
         """Create a placeholder ensemble when no enhanced models are available."""
@@ -294,7 +278,7 @@ except Exception as e:
             logger.exception(f"❌ Error creating placeholder ensemble: {e}")
         return False
 
-    def _save_ensemble_summary(
+    def _save_ensemble_summary(:
         self = ensemble_result: dict[str, Any], symbol: str, exchange: str = data_dir: str,
     ) -> None:
         """Save ensemble summary to file."""
@@ -327,7 +311,7 @@ except Exception as e:
         except Exception as e:
             logger.exception(f"❌ Error saving ensemble summary: {e}")
 
-def step07_analyst_ensemble_creation(
+def step07_analyst_ensemble_creation(:
     symbol: str,
     exchange: str, data_dir: str = training_input: dict[str, Any],
     config: dict[str = Any] = ) -> bool:

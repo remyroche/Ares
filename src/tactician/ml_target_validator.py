@@ -32,30 +32,26 @@ Initialize the ML Target Validator.
 Args:
             config: Configuration dictionary
 """
-self.config = config
-self.logger = system_logger.getChild("MLTargetValidator")
+    self.config = config
+    self.logger = system_logger.getChild("MLTargetValidator")
 
 # State tracking
-self.is_running: bool = False
-self.status: Dict[str, Any] = {}
-self.history: List[Dict[str, Any]] = []
+    self.is_running: bool = False
+    self.status: Dict[str, Any] = {}
+    self.history: List[Dict[str, Any]] = []
 
 # Configuration
-self.validator_config: Dict[str, Any] = self.config.get("ml_target_validator", {})
-self.validation_interval: int = self.validator_config.get("validation_interval", 60)
-self.max_history: int = self.validator_config.get("max_history", 100)
+    self.validator_config: Dict[str, Any] = self.config.get("ml_target_validator", {})
+    self.validation_interval: int = self.validator_config.get("validation_interval", 60)
+    self.max_history: int = self.validator_config.get("max_history", 100)
 
 # Validation thresholds
-self.min_confidence_threshold = self.validator_config.get("min_confidence_threshold", 0.1)
-self.max_confidence_threshold = self.validator_config.get("max_confidence_threshold", 0.9)
-self.min_target_value = self.validator_config.get("min_target_value", -1.0)
-self.max_target_value = self.validator_config.get("max_target_value", 1.0)
+    self.min_confidence_threshold = self.validator_config.get("min_confidence_threshold", 0.1)
+    self.max_confidence_threshold = self.validator_config.get("max_confidence_threshold", 0.9)
+    self.min_target_value = self.validator_config.get("min_target_value", -1.0)
+    self.max_target_value = self.validator_config.get("max_target_value", 1.0)
 
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=False,
-context="ML target validator initialization"
-)
+@handle_errors( exceptions=(ValueError, AttributeError), default_return=False, context="ML target validator initialization" )
 async def initialize(self) -> bool:
         """
 Initialize the ML Target Validator.
@@ -67,23 +63,23 @@ try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-self.logger.info("Initializing ML Target Validator...")
+    self.logger.info("Initializing ML Target Validator...")
 
 # Validate configuration
 if not self._validate_configuration():
                 self.logger.error(invalid("Invalid ML target validator configuration"))
-return False
+    return False
 
 # Clear history
-self.history.clear()
-self.status.clear()
+    self.history.clear()
+    self.status.clear()
 
-self.logger.info("✅ ML Target Validator initialized successfully")
-return True
+    self.logger.info("✅ ML Target Validator initialized successfully")
+    return True
 
 except Exception as e:
             self.logger.error(failed(f"❌ ML Target Validator initialization failed: {e}"))
-return False
+    return False
 
 def _validate_configuration(self) -> bool:
         """
@@ -98,47 +94,36 @@ except Exception as e:
     pass  # TODO: Add proper exception handling
 if self.validation_interval <= 0:
                 self.logger.error(invalid("Validation interval must be positive"))
-return False
+    return False
 
 if self.max_history <= 0:
                 self.logger.error(invalid("Max history must be positive"))
-return False
+    return False
 
 if not 0 <= self.min_confidence_threshold <= 1:
                 self.logger.error(invalid("Min confidence threshold must be between 0 and 1"))
-return False
+    return False
 
 if not 0 <= self.max_confidence_threshold <= 1:
                 self.logger.error(invalid("Max confidence threshold must be between 0 and 1"))
-return False
+    return False
 
 if self.min_confidence_threshold >= self.max_confidence_threshold:
                 self.logger.error(invalid("Min confidence threshold must be less than max confidence threshold"))
-return False
+    return False
 
 if self.min_target_value >= self.max_target_value:
                 self.logger.error(invalid("Min target value must be less than max target value"))
-return False
+    return False
 
-return True
+    return True
 
 except Exception as e:
             self.logger.error(failed(f"❌ Configuration validation failed: {e}"))
-return False
+    return False
 
-@validate_data_quality(
-required_columns=None,  # This method validates dict input, not DataFrame
-min_rows=1,
-max_null_ratio=0.0,
-check_duplicates=False,
-check_timestamps=False,
-context="ML target validation"
-)
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=False,
-context="target validation"
-)
+@validate_data_quality( required_columns=None,  # This method validates dict input, not DataFrame min_rows=1, max_null_ratio=0.0, check_duplicates=False, check_timestamps=False, context="ML target validation" )
+@handle_errors( exceptions=(ValueError, AttributeError), default_return=False, context="target validation" )
 async def validate_target(self, target_data: Dict[str, Any]) -> bool:
         """
 Validate a target value and its associated metadata.
@@ -153,7 +138,7 @@ try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-self.logger.info("Validating ML target...")
+    self.logger.info("Validating ML target...")
 
 # Extract target components
 target_value = target_data.get("target_value")
@@ -164,11 +149,11 @@ symbol = target_data.get("symbol", "unknown")
 # Validate target value
 if target_value is None:
                 self.logger.error(validation_error("Target value is missing"))
-return False
+    return False
 
 if not isinstance(target_value, (int, float)):
                 self.logger.error(validation_error("Target value must be numeric"))
-return False
+    return False
 
 if not self.min_target_value <= target_value <= self.max_target_value:
                 self.logger.error(
@@ -176,16 +161,16 @@ validation_error(
 f"Target value {target_value} outside valid range [{self.min_target_value}, {self.max_target_value}]"
 )
 )
-return False
+    return False
 
 # Validate confidence
 if not isinstance(confidence, (int, float)):
                 self.logger.error(validation_error("Confidence must be numeric"))
-return False
+    return False
 
 if not 0 <= confidence <= 1:
                 self.logger.error(validation_error("Confidence must be between 0 and 1"))
-return False
+    return False
 
 if not self.min_confidence_threshold <= confidence <= self.max_confidence_threshold:
                 self.logger.warning(
@@ -202,7 +187,7 @@ if isinstance(timestamp, str):
                         datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
 except ValueError:
                     self.logger.error(validation_error("Invalid timestamp format"))
-return False
+    return False
 
 # Record validation
 validation_record = {
@@ -214,10 +199,10 @@ validation_record = {
 "validation_notes": "Target validation passed"
 }
 
-self._add_to_history(validation_record)
+    self._add_to_history(validation_record)
 
-self.logger.info(f"✅ Target validation passed for {symbol}: {target_value:.4f} (confidence: {confidence:.3f})")
-return True
+    self.logger.info(f"✅ Target validation passed for {symbol}: {target_value:.4f} (confidence: {confidence:.3f})")
+    return True
 
 except Exception as e:
             self.logger.error(failed(f"❌ Target validation failed: {e}"))
@@ -232,22 +217,11 @@ validation_record = {
 "validation_notes": f"Validation failed: {e}"
 }
 
-self._add_to_history(validation_record)
-return False
+    self._add_to_history(validation_record)
+    return False
 
-@validate_data_quality(
-required_columns=None,  # This method validates dict input, not DataFrame
-min_rows=1,
-max_null_ratio=0.0,
-check_duplicates=False,
-check_timestamps=False,
-context="ML prediction validation"
-)
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=False,
-context="prediction validation"
-)
+@validate_data_quality( required_columns=None,  # This method validates dict input, not DataFrame min_rows=1, max_null_ratio=0.0, check_duplicates=False, check_timestamps=False, context="ML prediction validation" )
+@handle_errors( exceptions=(ValueError, AttributeError), default_return=False, context="prediction validation" )
 async def validate_prediction(self, prediction_data: Dict[str, Any]) -> bool:
         """
 Validate a prediction and its associated metadata.
@@ -262,7 +236,7 @@ try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-self.logger.info("Validating ML prediction...")
+    self.logger.info("Validating ML prediction...")
 
 # Extract prediction components
 prediction_value = prediction_data.get("prediction_value")
@@ -273,11 +247,11 @@ symbol = prediction_data.get("symbol", "unknown")
 # Validate prediction value
 if prediction_value is None:
                 self.logger.error(validation_error("Prediction value is missing"))
-return False
+    return False
 
 if not isinstance(prediction_value, (int, float)):
                 self.logger.error(validation_error("Prediction value must be numeric"))
-return False
+    return False
 
 if not self.min_target_value <= prediction_value <= self.max_target_value:
                 self.logger.error(
@@ -285,21 +259,21 @@ validation_error(
 f"Prediction value {prediction_value} outside valid range [{self.min_target_value}, {self.max_target_value}]"
 )
 )
-return False
+    return False
 
 # Validate confidence
 if not isinstance(confidence, (int, float)):
                 self.logger.error(validation_error("Confidence must be numeric"))
-return False
+    return False
 
 if not 0 <= confidence <= 1:
                 self.logger.error(validation_error("Confidence must be between 0 and 1"))
-return False
+    return False
 
 # Validate model name
 if not model_name or not isinstance(model_name, str):
                 self.logger.error(validation_error("Model name is required"))
-return False
+    return False
 
 # Record validation
 validation_record = {
@@ -312,12 +286,12 @@ validation_record = {
 "validation_notes": "Prediction validation passed"
 }
 
-self._add_to_history(validation_record)
+    self._add_to_history(validation_record)
 
-self.logger.info(
+    self.logger.info(
 f"✅ Prediction validation passed for {symbol} ({model_name}): {prediction_value:.4f} (confidence: {confidence:.3f})"
 )
-return True
+    return True
 
 except Exception as e:
             self.logger.error(failed(f"❌ Prediction validation failed: {e}"))
@@ -333,8 +307,8 @@ validation_record = {
 "validation_notes": f"Validation failed: {e}"
 }
 
-self._add_to_history(validation_record)
-return False
+    self._add_to_history(validation_record)
+    return False
 
 def _add_to_history(self, record: Dict[str, Any]) -> None:
         """
@@ -347,7 +321,7 @@ try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-self.history.append(record)
+    self.history.append(record)
 
 # Maintain history size limit
 if len(self.history) > self.max_history:
@@ -372,11 +346,11 @@ except Exception as e:
     pass  # TODO: Add proper exception handling
 if limit:
                 return self.history[-limit:]
-return self.history.copy()
+    return self.history.copy()
 
 except Exception as e:
             self.logger.error(failed(f"❌ Error getting validation history: {e}"))
-return []
+    return []
 
 def get_validation_statistics(self) -> Dict[str, Any]:
         """
@@ -407,7 +381,7 @@ success_rate = valid_count / total_validations if total_validations > 0 else 0.0
 confidences = [record.get("confidence", 0.0) for record in self.history if record.get("confidence") is not None]
 average_confidence = sum(confidences) / len(confidences) if confidences else 0.0
 
-return {
+    return {
 "total_validations": total_validations,
 "valid_count": valid_count,
 "invalid_count": invalid_count,
@@ -417,7 +391,7 @@ return {
 
 except Exception as e:
             self.logger.error(failed(f"❌ Error calculating validation statistics: {e}"))
-return {}
+    return {}
 
 def get_status(self) -> Dict[str, Any]:
         """
@@ -426,7 +400,7 @@ Get current status.
 Returns:
             Dict[str, Any]: Current status
 """
-return {
+    return {
 "is_running": self.is_running,
 "validation_interval": self.validation_interval,
 "history_size": len(self.history),
@@ -442,13 +416,13 @@ try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-self.logger.info("Cleaning up ML Target Validator...")
+    self.logger.info("Cleaning up ML Target Validator...")
 
 # Clear history
-self.history.clear()
-self.status.clear()
+    self.history.clear()
+    self.status.clear()
 
-self.logger.info("✅ ML Target Validator cleanup completed")
+    self.logger.info("✅ ML Target Validator cleanup completed")
 
 except Exception as e:
             self.logger.error(failed(f"❌ ML Target Validator cleanup failed: {e}"))

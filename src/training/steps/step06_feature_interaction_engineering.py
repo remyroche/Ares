@@ -35,7 +35,7 @@ class FeatureInteractionEngine:
     Integrates with DiverseLookbackOptimizer to ensure optimal = non - correlated lookback periods.
     """
 
-    def __init__(self, config: Dict[str, Any]):
+        def __init__(self, config: Dict[str, Any]):
         """
         Initialize feature interaction engine.
 
@@ -684,7 +684,7 @@ except Exception as e:
 
         return np.column_stack(interactions) if interactions else np.zeros((features.shape[0], 0))
 
-    def _create_pattern_specific_interactions(self, features: np.ndarray = pattern_indices: List[int],
+    def _create_pattern_specific_interactions(self, features: np.ndarray = pattern_indices: List[int],:
                                             pattern_name: str, weight: float) -> List[np.ndarray]:
         """
         Create pattern - specific interactions.

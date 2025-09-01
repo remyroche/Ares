@@ -18,46 +18,17 @@ class BaseValidator(ABC):
 class BaseValidator(ABC):
     """Base class for all step validators."""
 
-def __init__(self, step_name: str, config: dict[str, Any]) -> None:
+    def __init__(self, step_name: str, config: dict[str, Any]) -> None:
         self.step_name: str, step_name
-self.config: dict[str, Any] = config
-self.logger, logging.getLogger(f"AresGlobal.{self.__class__.__name__}")
-self.validation_results: dict[str, dict[str, Any]] = {}
+    self.config: dict[str, Any] = config
+    self.logger, logging.getLogger(f"AresGlobal.{self.__class__.__name__}")
+    self.validation_results: dict[str, dict[str, Any]] = {}
 
-def print(self, message: str) -> None:
+    def print(self, message: str) -> None:
         """Proxy print to logger to keep output consistent in terminal."""
-self.logger.info(message)
+    self.logger.info(message)
 
-@abstractmethod
-async def validate(
-self,
-training_input: dict[str, Any],
-pipeline_state: dict[str, Any],
-) -> bool:
-        """
-Validate a training step.
-
-Args:
-            training_input: Training input parameters
-pipeline_state: Current pipeline state
-
-Returns:
-            bool: True if validation passed, False otherwise
-"""
-raise NotImplementedError
-
-def validate_error_absence(
-self,
-step_result: dict[str, Any],
-) -> Tuple[bool, Dict[str, Any]]:
-        """
-Validate that the step completed without errors.
-
-Args:
-            step_result: Step result dictionary
-
-Returns:
-            (passed, metrics)
+@abstractmethod async def validate( self, training_input: dict[str, Any], pipeline_state: dict[str, Any], ) -> bool: """ Validate a training step.  Args: training_input: Training input parameters pipeline_state: Current pipeline state  Returns: bool: True if validation passed, False otherwise """ raise NotImplementedError  def validate_error_absence( self, step_result: dict[str, Any], ) -> Tuple[bool, Dict[str, Any]]: """ Validate that the step completed without errors.  Args: step_result: Step result dictionary  Returns: (passed, metrics)
 """
 try:
     pass  # TODO: Add proper exception handling
@@ -85,13 +56,14 @@ if not passed:
 f"⚠️ Step {self.step_name} has {len(critical_errors)} critical errors",
 )
 
-return passed, metrics
+    return passed, metrics
 
 except Exception as e:  # pragma: no cover - defensive logging
-self.print(validation_error(f"❌ Error in error absence validation: {e}"))
-return False, {"error": str(e)}
+    self.print(validation_error(f"❌ Error in error absence validation: {e}"))
+    return False, {"error": str(e)}
 
-def validate_file_exists(
+def validate_file_exists(:
+    pass  # TODO: Add implementation
 self,
 file_path: str,
 file_type: str = "file",
@@ -122,13 +94,14 @@ if not exists:
 missing(f"⚠️ {file_type} not found: {file_path}"),
 )
 
-return exists, metrics
+    return exists, metrics
 
 except Exception as e:  # pragma: no cover - defensive logging
-self.print(validation_error(f"❌ Error checking file existence: {e}"))
-return False, {"error": str(e)}
+    self.print(validation_error(f"❌ Error checking file existence: {e}"))
+    return False, {"error": str(e)}
 
-def validate_dataframe_quality(
+def validate_dataframe_quality(:
+    pass  # TODO: Add implementation
 self,
 df: pd.DataFrame,
 min_rows: int, 100,
@@ -261,13 +234,14 @@ and (not required_columns or not metrics["missing_columns"])
 and len(metrics["critical_issues"]) == 0
 )
 
-return passed, metrics
+    return passed, metrics
 
 except Exception as e:  # pragma: no cover - defensive logging
-self.print(validation_error(f"❌ Error in DataFrame validation: {e}"))
-return False, {"error": str(e)}
+    self.print(validation_error(f"❌ Error in DataFrame validation: {e}"))
+    return False, {"error": str(e)}
 
-def validate_model_artifacts(
+def validate_model_artifacts(:
+    pass  # TODO: Add implementation
 self,
 model_path: str,
 required_files: Optional[list[str]] = None,
@@ -300,7 +274,7 @@ metrics: dict[str, Any] = {
 
 if not metrics["exists"]:
         self.logger.warning(missing(f"⚠️ Model path does not exist: {model_path}"))
-return False, metrics
+    return False, metrics
 
 # Check required files if model is a directory
 if metrics["is_directory"] and required_files:
@@ -339,13 +313,14 @@ and (not required_files or not metrics["missing_files"])
 and (not check_model_integrity or not metrics["integrity_issues"])
 )
 
-return passed, metrics
+    return passed, metrics
 
 except Exception as e:
         self.print(validation_error(f"❌ Error in model artifacts validation: {e}"))
-return False, {"error": str(e)}
+    return False, {"error": str(e)}
 
-def validate_configuration(
+def validate_configuration(:
+    pass  # TODO: Add implementation
 self,
 config: dict[str, Any],
 required_keys: Optional[list[str]] = None,
@@ -378,7 +353,7 @@ metrics: dict[str, Any] = {
 
 if not isinstance(config, dict):
                 metrics["critical_issues"].append("Configuration is not a dictionary")
-return False, metrics
+    return False, metrics
 
 # Check required keys
 if required_keys:
@@ -424,13 +399,14 @@ and (not required_keys or not metrics["missing_keys"])
 and len(metrics["critical_issues"]) == 0
 )
 
-return passed, metrics
+    return passed, metrics
 
 except Exception as e:
         self.print(validation_error(f"❌ Error in configuration validation: {e}"))
-return False, {"error": str(e)}
+    return False, {"error": str(e)}
 
-def validate_pipeline_state(
+def validate_pipeline_state(:
+    pass  # TODO: Add implementation
 self,
 pipeline_state: dict[str, Any],
 required_steps: Optional[list[str]] = None,
@@ -461,7 +437,7 @@ metrics: dict[str, Any] = {
 
 if not isinstance(pipeline_state, dict):
                 metrics["critical_issues"].append("Pipeline state is not a dictionary")
-return False, metrics
+    return False, metrics
 
 # Check required steps
 if required_steps:
@@ -488,13 +464,14 @@ and (not required_steps or not metrics["missing_steps"])
 and len(metrics["critical_issues"]) == 0
 )
 
-return passed, metrics
+    return passed, metrics
 
 except Exception as e:
         self.print(validation_error(f"❌ Error in pipeline state validation: {e}"))
-return False, {"error": str(e)}
+    return False, {"error": str(e)}
 
-def validate_directory_structure(
+def validate_directory_structure(:
+    pass  # TODO: Add implementation
 self,
 directory: str,
 required_files: Optional[list[str]] = None,
@@ -530,14 +507,14 @@ if not exists:
         self.logger.warning(
 missing(f"⚠️ Directory not found: {directory}"),
 )
-return False, metrics
+    return False, metrics
 
 # Check if it's actually a directory
 if not is_directory:
         self.logger.warning(
 f"⚠️ Path exists but is not a directory: {directory}",
 )
-return False, metrics
+    return False, metrics
 
 # Check required files
 if required_files:
@@ -572,13 +549,14 @@ and not metrics["missing_files"]
 and not metrics["missing_dirs"]
 )
 
-return passed, metrics
+    return passed, metrics
 
 except Exception as e:  # pragma: no cover - defensive logging
-self.print(validation_error(f"❌ Error in directory validation: {e}"))
-return False, {"error": str(e)}
+    self.print(validation_error(f"❌ Error in directory validation: {e}"))
+    return False, {"error": str(e)}
 
-def log_validation_result(
+def log_validation_result(:
+    pass  # TODO: Add implementation
 self,
 validation_name: str,
 passed: bool,
@@ -600,7 +578,8 @@ else:
 if metrics:
         self.logger.debug(f"📊 {validation_name} metrics: {metrics}")
 
-def add_validation_result(
+def add_validation_result(:
+    pass  # TODO: Add implementation
 self,
 validation_name: str,
 passed: bool,
@@ -614,10 +593,10 @@ Args:
 passed: Whether validation passed
 metrics: Validation metrics
 """
-self.validation_results[validation_name] = {
+    self.validation_results[validation_name] = {
 "passed": passed,
 "metrics": metrics or {},
 }
 
 # Also log the result
-self.log_validation_result(validation_name, passed, metrics)
+    self.log_validation_result(validation_name, passed, metrics)

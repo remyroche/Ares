@@ -50,7 +50,7 @@ def validate_call(*args, **kwargs):
     def validate_call(*args, **kwargs):
     """Deprecated: Use validate_call_or_runtime_types instead."""
 _deprecation_warning("validate_call", "validate_call_or_runtime_types")
-return validate_call_or_runtime_types(*args, **kwargs)
+    return validate_call_or_runtime_types(*args, **kwargs)
 
 def check_input(*args, **kwargs):
     def check_input(*args, **kwargs):
@@ -58,7 +58,7 @@ def check_input(*args, **kwargs):
     def check_input(*args, **kwargs):
     """Deprecated: Use pa_check_input instead."""
 _deprecation_warning("check_input", "pa_check_input")
-return pa_check_input(*args, **kwargs)
+    return pa_check_input(*args, **kwargs)
 
 def check_output(*args, **kwargs):
     def check_output(*args, **kwargs):
@@ -66,7 +66,7 @@ def check_output(*args, **kwargs):
     def check_output(*args, **kwargs):
     """Deprecated: Use pa_check_output instead."""
 _deprecation_warning("check_output", "pa_check_output")
-return pa_check_output(*args, **kwargs)
+    return pa_check_output(*args, **kwargs)
 
 def check_io(*args, **kwargs):
     def check_io(*args, **kwargs):
@@ -74,7 +74,7 @@ def check_io(*args, **kwargs):
     def check_io(*args, **kwargs):
     """Deprecated: Use pa_check_io instead."""
 _deprecation_warning("check_io", "pa_check_io")
-return pa_check_io(*args, **kwargs)
+    return pa_check_io(*args, **kwargs)
 
 def vectorize(*args, **kwargs):
     def vectorize(*args, **kwargs):
@@ -82,7 +82,7 @@ def vectorize(*args, **kwargs):
     def vectorize(*args, **kwargs):
     """Deprecated: Use auto_vectorize instead."""
 _deprecation_warning("vectorize", "auto_vectorize")
-return auto_vectorize(*args, **kwargs)
+    return auto_vectorize(*args, **kwargs)
 
 def guard_nan_inf(*args, **kwargs):
     def guard_nan_inf(*args, **kwargs):
@@ -90,7 +90,7 @@ def guard_nan_inf(*args, **kwargs):
     def guard_nan_inf(*args, **kwargs):
     """Deprecated: Use guard_array_nan_inf instead."""
 _deprecation_warning("guard_nan_inf", "guard_array_nan_inf")
-return guard_array_nan_inf(*args, **kwargs)
+    return guard_array_nan_inf(*args, **kwargs)
 
 def guard_nulls(*args, **kwargs):
     def guard_nulls(*args, **kwargs):
@@ -98,7 +98,7 @@ def guard_nulls(*args, **kwargs):
     def guard_nulls(*args, **kwargs):
     """Deprecated: Use guard_dataframe_nulls instead."""
 _deprecation_warning("guard_nulls", "guard_dataframe_nulls")
-return guard_dataframe_nulls(*args, **kwargs)
+    return guard_dataframe_nulls(*args, **kwargs)
 
 def error_handler(*args, **kwargs):
     def error_handler(*args, **kwargs):
@@ -106,7 +106,7 @@ def error_handler(*args, **kwargs):
     def error_handler(*args, **kwargs):
     """Deprecated: Use normalize_errors instead."""
 _deprecation_warning("error_handler", "normalize_errors")
-return normalize_errors(*args, **kwargs)
+    return normalize_errors(*args, **kwargs)
 
 def tracing(*args, **kwargs):
     def tracing(*args, **kwargs):
@@ -114,7 +114,7 @@ def tracing(*args, **kwargs):
     def tracing(*args, **kwargs):
     """Deprecated: Use with_tracing_span instead."""
 _deprecation_warning("tracing", "with_tracing_span")
-return with_tracing_span(*args, **kwargs)
+    return with_tracing_span(*args, **kwargs)
 
 # Enhanced decorator aliases for easier access
 def smart_recovery(*args, **kwargs):
@@ -122,28 +122,28 @@ def smart_recovery(*args, **kwargs):
     def smart_recovery(*args, **kwargs):
     def smart_recovery(*args, **kwargs):
     """Alias for smart_error_recovery."""
-return smart_error_recovery(*args, **kwargs)
+    return smart_error_recovery(*args, **kwargs)
 
 def cached(*args, **kwargs):
     def cached(*args, **kwargs):
     def cached(*args, **kwargs):
     def cached(*args, **kwargs):
     """Alias for cached_validation."""
-return cached_validation(*args, **kwargs)
+    return cached_validation(*args, **kwargs)
 
 def validation(*args, **kwargs):
     def validation(*args, **kwargs):
     def validation(*args, **kwargs):
     def validation(*args, **kwargs):
     """Alias for enhanced_validation."""
-return enhanced_validation(*args, **kwargs)
+    return enhanced_validation(*args, **kwargs)
 
 def performance(*args, **kwargs):
     def performance(*args, **kwargs):
     def performance(*args, **kwargs):
     def performance(*args, **kwargs):
     """Alias for performance_monitor_v2."""
-return performance_monitor_v2(*args, **kwargs)
+    return performance_monitor_v2(*args, **kwargs)
 
 # Configuration helpers for backwards compatibility
 def get_decorator_config():
@@ -151,7 +151,7 @@ def get_decorator_config():
     def get_decorator_config():
     def get_decorator_config():
     """Get global decorator configuration."""
-return global_config
+    return global_config
 
 def set_decorator_config(**kwargs):
     def set_decorator_config(**kwargs):
@@ -169,21 +169,21 @@ def list_available_decorators(include_deprecated: bool, False):
     def list_available_decorators(include_deprecated: bool, False):
     def list_available_decorators(include_deprecated: bool, False):
     """List all available decorators."""
-return decorator_registry.list_decorators(include_deprecated = include_deprecated)
+    return decorator_registry.list_decorators(include_deprecated = include_deprecated)
 
 def get_decorator_usage_stats():
     def get_decorator_usage_stats():
     def get_decorator_usage_stats():
     def get_decorator_usage_stats():
     """Get usage statistics for all decorators."""
-return decorator_registry.get_usage_stats()
+    return decorator_registry.get_usage_stats()
 
 def search_decorators(query: str):
     def search_decorators(query: str):
     def search_decorators(query: str):
     def search_decorators(query: str):
     """Search decorators by name, description, or tags."""
-return decorator_registry.search(query)
+    return decorator_registry.search(query)
 
 # Legacy decorator factory for easy migration
 def legacy_decorator_factory(legacy_name: str, new_name: str):
@@ -210,8 +210,8 @@ else:
 import importlib
 decorators_module, importlib.import_module("src.utils.decorators")
 new_decorator, getattr(decorators_module, new_name)
-return new_decorator(*args, **kwargs)
-return decorator
+    return new_decorator(*args, **kwargs)
+    return decorator
 
 # Register legacy decorators in the registry for discovery
 decorator_registry.register(

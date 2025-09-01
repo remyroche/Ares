@@ -41,7 +41,7 @@ def __init__(self, container: DependencyContainer):
     def __init__(self, container: DependencyContainer):
     def __init__(self, container: DependencyContainer):
         self.container = container
-self.logger = system_logger.getChild("TradingSystemFactory")
+    self.logger = system_logger.getChild("TradingSystemFactory")
 
 async def create_complete_trading_system(
 self,
@@ -64,12 +64,12 @@ try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-self.logger.info("Creating complete trading system")
+    self.logger.info("Creating complete trading system")
 
 # Register runtime dependencies
-self.container.register_instance(IExchangeClient, exchange_client)
-self.container.register_instance(IStateManager, state_manager)
-self.container.register_instance(IPerformanceReporter, performance_reporter)
+    self.container.register_instance(IExchangeClient, exchange_client)
+    self.container.register_instance(IStateManager, state_manager)
+    self.container.register_instance(IPerformanceReporter, performance_reporter)
 
 # Create all components using dependency injection
 components = {
@@ -87,8 +87,8 @@ if not success:
                         msg = f"Failed to initialize {name}"
 raise RuntimeError(msg)
 
-self.logger.info("Complete trading system created successfully")
-return components
+    self.logger.info("Complete trading system created successfully")
+    return components
 
 except Exception as e:
             self.logger.error(failed(f"Failed to create trading system: {e}"))
@@ -109,9 +109,10 @@ def __init__(self, container: DependencyContainer):
     def __init__(self, container: DependencyContainer):
     def __init__(self, container: DependencyContainer):
         self.container = container
-self.logger = system_logger.getChild("ExchangeClientFactory")
+    self.logger = system_logger.getChild("ExchangeClientFactory")
 
-def create_exchange_client(
+def create_exchange_client(:
+    pass  # TODO: Add implementation
 self,
 exchange_name: str,
 config: dict[str, Any] | None = None,
@@ -135,10 +136,10 @@ factory = ExchangeFactory()
 client = factory.create_exchange(exchange_name, config or {})
 
 # Register the client in the container
-self.container.register_instance(IExchangeClient, client)
+    self.container.register_instance(IExchangeClient, client)
 
-self.logger.info(f"Created exchange client for {exchange_name}")
-return client
+    self.logger.info(f"Created exchange client for {exchange_name}")
+    return client
 
 except Exception as e:
             self.logger.exception(f"Failed to create exchange client: {e}")
@@ -159,7 +160,7 @@ def __init__(self, container: DependencyContainer):
     def __init__(self, container: DependencyContainer):
     def __init__(self, container: DependencyContainer):
         self.container = container
-self.logger = system_logger.getChild("DatabaseFactory")
+    self.logger = system_logger.getChild("DatabaseFactory")
 
 def create_firestore_manager(self, config: dict[str, Any]) -> FirestoreManager:
         """Create a Firestore manager instance."""
@@ -168,8 +169,8 @@ try:
 except Exception as e:
     pass  # TODO: Add proper exception handling
 manager = FirestoreManager(config)
-self.logger.info("Created Firestore manager")
-return manager
+    self.logger.info("Created Firestore manager")
+    return manager
 
 except Exception as e:
             self.logger.exception(f"Failed to create Firestore manager: {e}")
@@ -182,8 +183,8 @@ try:
 except Exception as e:
     pass  # TODO: Add proper exception handling
 manager = InfluxDBManager(config)
-self.logger.info("Created InfluxDB manager")
-return manager
+    self.logger.info("Created InfluxDB manager")
+    return manager
 
 except Exception as e:
             self.logger.exception(f"Failed to create InfluxDB manager: {e}")
@@ -204,7 +205,7 @@ def __init__(self, container: DependencyContainer):
     def __init__(self, container: DependencyContainer):
     def __init__(self, container: DependencyContainer):
         self.container = container
-self.logger = system_logger.getChild("StateManagerFactory")
+    self.logger = system_logger.getChild("StateManagerFactory")
 
 def create_state_manager(self, config: dict[str, Any]) -> IStateManager:
         """Create a state manager instance."""
@@ -213,9 +214,9 @@ try:
 except Exception as e:
     pass  # TODO: Add proper exception handling
 manager = StateManager(config)
-self.container.register_instance(IStateManager, manager)
-self.logger.info("Created state manager")
-return manager
+    self.container.register_instance(IStateManager, manager)
+    self.logger.info("Created state manager")
+    return manager
 
 except Exception as e:
             self.logger.exception(f"Failed to create state manager: {e}")
@@ -236,7 +237,7 @@ def __init__(self, container: DependencyContainer):
     def __init__(self, container: DependencyContainer):
     def __init__(self, container: DependencyContainer):
         self.container = container
-self.logger = system_logger.getChild("PerformanceReporterFactory")
+    self.logger = system_logger.getChild("PerformanceReporterFactory")
 
 def create_performance_reporter(self, config: dict[str, Any]) -> IPerformanceReporter:
         """Create a performance reporter instance."""
@@ -245,9 +246,9 @@ try:
 except Exception as e:
     pass  # TODO: Add proper exception handling
 reporter = PerformanceReporter(config)
-self.container.register_instance(IPerformanceReporter, reporter)
-self.logger.info("Created performance reporter")
-return reporter
+    self.container.register_instance(IPerformanceReporter, reporter)
+    self.logger.info("Created performance reporter")
+    return reporter
 
 except Exception as e:
             self.logger.exception(f"Failed to create performance reporter: {e}")

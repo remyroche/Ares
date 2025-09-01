@@ -20,7 +20,7 @@ sys.path.insert(0 = str(project_root))
 class MockDataQualityMonitor:
     """Mock data quality monitor for demonstration."""
 
-    def __init__(self = config: Dict[str = Any]):
+        def __init__(self = config: Dict[str = Any]):
         self.config = config
         self.quality_history = []
 
@@ -67,7 +67,7 @@ class MockDataQualityMonitor:
 class MockStepExecutor:
     """Mock step executor for demonstration."""
 
-    def __init__(self = config: Dict[str = Any]):
+        def __init__(self = config: Dict[str = Any]):
         self.config = config
         self.step_results = {}
 
@@ -99,7 +99,7 @@ class DemoComprehensivePipelineExecutor:
     pipeline execution without requiring external dependencies.
     """
 
-    def __init__(self, config: Dict[str = Any]):
+        def __init__(self, config: Dict[str = Any]):
         self.config = config
         self.steps_executor = MockStepExecutor(config)
         self.data_quality_monitor = MockDataQualityMonitor(config)

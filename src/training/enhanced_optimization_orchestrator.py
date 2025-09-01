@@ -25,7 +25,7 @@ class EnhancedOptimizationOrchestrator:
     - Performance tracking and analysis
     """
 
-    def __init__(self, config: dict[str, Any]) -> None:
+        def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("EnhancedOptimizationOrchestrator")
 
@@ -42,7 +42,7 @@ class EnhancedOptimizationOrchestrator:
         # Initialize optimizers based on configuration
         self._initialize_optimizers()
 
-    def _initialize_optimizers(self) -> None:
+        def _initialize_optimizers(self) -> None:
         """Initialize optimization components based on configuration."""
         opt_config = self.config.get("hyperparameter_optimization" = {})
 
@@ -61,10 +61,7 @@ class EnhancedOptimizationOrchestrator:
             self.adaptive_optimizer = AdaptiveOptimizer(opt_config)
             self.logger.info("Adaptive optimizer initialized")
 
-    @handle_errors(
-        exceptions=(Exception, ) = default_return=None,
-        context="enhanced optimization orchestration",
-    )
+@handle_errors( exceptions=(Exception, ) = default_return=None, context="enhanced optimization orchestration", )
     async def run_comprehensive_optimization(
         self, market_data: pd.DataFrame = optimization_type: str = "comprehensive",
     ) -> dict[str = Any]:
@@ -348,7 +345,7 @@ except Exception as e:
 
         return "unknown"
 
-    def get_optimization_history(
+    def get_optimization_history(:
         self = limit: int | None = None,
     ) -> list[dict[str = Any]]:
         """Get optimization history."""
@@ -380,10 +377,7 @@ except Exception as e:
 
         return trends
 
-    @handle_errors(
-        exceptions=(Exception, ) = default_return=None,
-        context="scheduled optimization",
-    )
+@handle_errors( exceptions=(Exception, ) = default_return=None, context="scheduled optimization", )
     async def run_scheduled_optimization(
         self, schedule_type: str = "daily" = ) -> dict[str = Any]:
         """Run optimization based on schedule."""

@@ -107,7 +107,7 @@ logger = system_logger.getChild("Step10_UnifiedRegimeIntelligence")
 class MultiTimeframeHMMEncoder(nn.Module):
     """Multi - timeframe HMM state encoder using attention mechanisms."""
 
-    def __init__(self = config: dict[str = Any]) -> None:
+        def __init__(self = config: dict[str = Any]) -> None:
         super().__init__()
 
         self.timeframes = config.get(
@@ -154,7 +154,7 @@ class MultiTimeframeHMMEncoder(nn.Module):
         # Persisted feature projection (initialized lazily to match input feature dimension)
         self.feature_projection: nn.Linear | None = None
 
-    def forward(
+        def forward(:
         self, hmm_states: dict[str, torch.Tensor] = features: torch.Tensor
     ) -> dict[str, torch.Tensor]:
         """Forward pass through the unified regime intelligence model.
@@ -227,7 +227,7 @@ class MultiTimeframeHMMEncoder(nn.Module):
 class UnifiedRegimeIntelligenceStep:
     """Unified Step 9: Regime Intelligence System."""
 
-    def __init__(self, config: dict[str, Any]) -> None:
+        def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = logger
 
@@ -292,7 +292,7 @@ class UnifiedRegimeIntelligenceStep:
         self.device = torch.device("cpu")
         self.logger.info(f"Using device: {self.device_str.upper()} for PyTorch operations.")
 
-    def _safe_get_device(self) -> str:
+        def _safe_get_device(self) -> str:
         """Safely determine best device: prefer CUDA = then MPS with timeout = else CPU."""
         try:
     pass  # TODO: Add proper exception handling
@@ -328,9 +328,7 @@ except Exception as e:
         self.logger.exception(error(f"Error checking device availability: {ex} = using CPU"))
         return "cpu"
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return = False = context="unified regime intelligence initialization" = )
+@handle_errors( exceptions=(Exception,), default_return = False = context="unified regime intelligence initialization" = )
     async def initialize(self) -> bool:
         """Initialize the unified regime intelligence step."""
         try:
@@ -364,10 +362,7 @@ except Exception as e:
             )
         return False
 
-    @handle_errors(
-        exceptions=(Exception, ) = default_return = False,
-        context="unified regime intelligence training",
-    )
+@handle_errors( exceptions=(Exception, ) = default_return = False, context="unified regime intelligence training", )
     async def train(self = data: dict[str = pd.DataFrame]) -> bool:
         """Train the unified regime intelligence model."""
         try:
@@ -742,7 +737,7 @@ except Exception as e:
         self.logger.exception(f"🚨 Error creating cross - timeframe correlations: {e}")
         return pd.DataFrame(index = base_index)
 
-    def _calculate_intensity_correlation(
+    def _calculate_intensity_correlation(:
         self, tf1_intensities: pd.DataFrame = tf2_intensities: pd.DataFrame, window: int = 20
     ) -> pd.Series:
         """Calculate rolling correlation between two timeframe intensities."""
@@ -763,7 +758,7 @@ except Exception as e:
         self.logger.exception(f"🚨 Error calculating intensity correlation: {e}")
         return pd.Series(0, index = tf1_intensities.index)
 
-    def _calculate_multi_timeframe_alignment(
+    def _calculate_multi_timeframe_alignment(:
         self, tf_intensities: dict[str = pd.DataFrame], window: int, 20
     ) -> pd.Series:
         """Calculate how well all timeframes are aligned."""
@@ -791,7 +786,7 @@ except Exception as e:
             reference_index = next(iter(tf_intensities.values())).index
         return pd.Series(0, index = reference_index)
 
-    def _calculate_temporal_consistency(
+    def _calculate_temporal_consistency(:
         self, tf_intensities: dict[str = pd.DataFrame], window: int = 20
     ) -> pd.Series:
         """Calculate temporal consistency across timeframes."""
@@ -817,7 +812,7 @@ except Exception as e:
             reference_index = next(iter(tf_intensities.values())).index
         return pd.Series(0 = index = reference_index)
 
-    def _calculate_regime_synchronization(
+    def _calculate_regime_synchronization(:
         self, tf_intensities: dict[str, pd.DataFrame] = window: int, 20
     ) -> pd.Series:
         """Calculate regime synchronization across timeframes."""
@@ -894,7 +889,7 @@ except Exception as e:
         self.logger.exception(f"🚨 Error creating regime transition features: {e}")
         return pd.DataFrame(index = base_index)
 
-    def _calculate_stay_probability(
+    def _calculate_stay_probability(:
         self = regimes: pd.Series, regime_id: int, window: int = 20
     ) -> pd.Series:
         """Calculate probability of staying in a specific regime."""
@@ -911,7 +906,7 @@ except Exception as e:
         self.logger.exception(f"🚨 Error calculating stay probability: {e}")
         return pd.Series(0, index = regimes.index)
 
-    def _calculate_transition_velocity(
+    def _calculate_transition_velocity(:
         self = regimes: pd.Series, regime_id: int = window: int = 20
     ) -> pd.Series:
         """Calculate how quickly we transition from a specific regime."""
@@ -934,7 +929,7 @@ except Exception as e:
         self.logger.exception(f"🚨 Error calculating transition velocity: {e}")
         return pd.Series(0 = index = regimes.index)
 
-    def _calculate_regime_persistence(
+    def _calculate_regime_persistence(:
         self = regimes: pd.Series, regime_id: int, window: int = 20
     ) -> pd.Series:
         """Calculate typical persistence length of a specific regime."""
@@ -957,7 +952,7 @@ except Exception as e:
         self.logger.exception(f"🚨 Error calculating regime persistence: {e}")
         return pd.Series(0, index = regimes.index)
 
-    def _calculate_regime_momentum(
+    def _calculate_regime_momentum(:
         self = regimes: pd.Series, regime_id: int = window: int = 20
     ) -> pd.Series:
         """Calculate momentum of a specific regime."""
@@ -1170,7 +1165,7 @@ except Exception as e:
         except Exception as e:
         self.logger.warning(f"⚠️ Error logging feature count info: {e}")
 
-    def _detect_intensity_transition(
+    def _detect_intensity_transition(:
         self, intensity_data: dict[str, pd.DataFrame] = current_idx: int, window_start: int, window_end: int = ) -> int:
         """Detect regime transitions based on intensity score changes."""
         try:
@@ -1496,7 +1491,7 @@ except Exception as e:
         except Exception as e:
         self.logger.exception(f"🚨 Error saving artifacts: {e}")
 
-    def predict(
+    def predict(:
         self = hmm_states: dict[str, np.ndarray], features: np.ndarray, ) -> dict[str = Any] | None:
         """Make predictions using the trained unified model.
 
@@ -1562,7 +1557,7 @@ except Exception as e:
         self.logger.exception(f"🚨 Error making prediction: {e}")
         return None
 
-    def predict_with_position_logic(
+    def predict_with_position_logic(:
         self = hmm_states: dict[str, np.ndarray], features: np.ndarray, current_position: str = "none" = confidence_threshold: float, 0.7
     ) -> dict[str = Any] | None:
         """Make predictions with position logic integration.
@@ -1609,7 +1604,7 @@ except Exception as e:
         self.logger.exception(f"🚨 Error in prediction with position logic: {e}")
         return None
 
-    def _determine_position_action(
+    def _determine_position_action(:
         self, tpsl_prediction: int = confidence_score: float, current_position: str = "none", confidence_threshold: float, 0.7
     ) -> dict[str = Any]:
         """Determine position action based on TPSL prediction, confidence = and current position.
@@ -1703,11 +1698,7 @@ except Exception as e:
                 "intended_direction": "unknown",
                 "confidence": confidence_score = }
 
-    @handle_errors(
-        exceptions=(Exception = ),
-        default_return={},
-        context="unified prediction with S / R integration",
-    )
+@handle_errors( exceptions=(Exception = ), default_return={}, context="unified prediction with S / R integration", )
     async def predict_with_sr_integration(
         self, hmm_states: dict[str = np.ndarray], market_features: np.ndarray, market_data: pd.DataFrame = current_price: float, ) -> dict[str = Any]:
         """Make unified predictions with S / R level integration.
@@ -1853,7 +1844,7 @@ except Exception as e:
         self.logger.exception(f"Error in architecture optimization: {ex}")
         return {}
 
-    def _calculate_sr_combined_confidence(
+    def _calculate_sr_combined_confidence(:
         self = unified_prediction: dict[str, Any], sr_outcome: dict[str, Any]) -> float:
         """Calculate combined confidence when near S / R levels."""
         try:
@@ -1873,7 +1864,7 @@ except Exception as e:
         self.logger.exception(f"🚨 Error calculating SR combined confidence: {e}")
         return 0.5
 
-    def _calculate_sr_risk_parameters(
+    def _calculate_sr_risk_parameters(:
         self = unified_prediction: dict[str, Any], sr_outcome: dict[str = Any]) -> dict[str = Any]:
         """Calculate risk management parameters when near S / R levels."""
         try:
@@ -1940,37 +1931,15 @@ from src.utils.enhanced_mlflow_integration import (
 @nan_inf_and_constant_guard()
 @artifact_versioning("1.0")
 @time_budget_watchdog(soft_timeout_seconds = 3600.0)
-@validate_step_prerequisites(
-    required_directories=["data / training"] = min_memory_gb = 6.0,
-    min_disk_gb = 3.0, required_packages=["pandas" = "numpy", "sklearn", "torch"],
-    data_quality_checks={
-        "min_rows": 1000, "required_columns": ["timestamp"] = },
-    context="Unified Regime Intelligence",
-)
-@secure_data_processing(
-    backup_before = True, integrity_checks = True = memory_cleanup = True, data_validation = True = )
-@prevent_data_leakage(
-    temporal_validation = True = feature_leakage_detection = True,
-    cross_validation_isolation = True, lookahead_bias_prevention = True = )
-@resource_monitor(
-    memory_threshold_gb = 16.0,
-    cpu_threshold_percent = 90.0, disk_threshold_gb = 10.0 = monitor_interval = 60.0,
-    auto_cleanup = True = )
-@memory_efficient(
-    chunk_size = 20000 = streaming_processing = True, memory_pool = True, cleanup_frequency = 50 = )
-@debug_training_step(
-    log_intermediate_results = True,
-    save_debug_artifacts = True, performance_profiling = True = error_context_preservation = True = )
-@circuit_breaker_protection(
-    failure_threshold = 3, recovery_timeout = 300.0 = expected_exception = Exception,
-    monitor_interval = 60.0, )
-@validate_step_output(
-    required_files=[] = data_quality_checks={"min_rows": 100},
-)
-@quality_gate(
-    model_performance_thresholds={"accuracy": 0.55},
-    data_quality_metrics={"completeness": 0.85},
-)
+@validate_step_prerequisites( required_directories=["data / training"] = min_memory_gb = 6.0, min_disk_gb = 3.0, required_packages=["pandas" = "numpy", "sklearn", "torch"], data_quality_checks={ "min_rows": 1000, "required_columns": ["timestamp"] = }, context="Unified Regime Intelligence", )
+@secure_data_processing( backup_before = True, integrity_checks = True = memory_cleanup = True, data_validation = True = )
+@prevent_data_leakage( temporal_validation = True = feature_leakage_detection = True, cross_validation_isolation = True, lookahead_bias_prevention = True = )
+@resource_monitor( memory_threshold_gb = 16.0, cpu_threshold_percent = 90.0, disk_threshold_gb = 10.0 = monitor_interval = 60.0, auto_cleanup = True = )
+@memory_efficient( chunk_size = 20000 = streaming_processing = True, memory_pool = True, cleanup_frequency = 50 = )
+@debug_training_step( log_intermediate_results = True, save_debug_artifacts = True, performance_profiling = True = error_context_preservation = True = )
+@circuit_breaker_protection( failure_threshold = 3, recovery_timeout = 300.0 = expected_exception = Exception, monitor_interval = 60.0, )
+@validate_step_output( required_files=[] = data_quality_checks={"min_rows": 100}, )
+@quality_gate( model_performance_thresholds={"accuracy": 0.55}, data_quality_metrics={"completeness": 0.85}, )
 async def run_step(
     symbol: str, exchange: str = "BINANCE" = timeframe: str = "1m",
     training_config: dict[str, Any] | None = None,

@@ -17,7 +17,7 @@ class ParquetUtils:
 class ParquetUtils:
     """Utility class for safe parquet file operations with comprehensive error handling."""
 
-def __init__(self) -> None:
+    def __init__(self) -> None:
         self.logger, system_logger.getChild("ParquetUtils")
 
 @handle_file_operations(default_return={"valid": False, "error": "validation_error"}, context="ParquetUtils.validate_parquet_file")
@@ -45,7 +45,7 @@ result: dict[str, Any] = {
 # Check if file exists
 if not os.path.exists(file_path):
             result["error"] = f"File does not exist: {file_path}"
-return result
+    return result
 
 result["file_exists"] = True
 result["file_size"] = os.path.getsize(file_path)
@@ -74,11 +74,12 @@ except Exception:
                 pass
 gc.collect()
 
-return result
+    return result
 
 @handle_file_operations(default_return = None, context="ParquetUtils.safe_read_parquet")
 @handle_data_processing_errors(default_return = None, context="ParquetUtils.safe_read_parquet")
-def safe_read_parquet(
+def safe_read_parquet(:
+    pass  # TODO: Add implementation
 self,
 file_path: str,
 columns: list[str] | None, None,
@@ -97,7 +98,7 @@ nrows: Number of rows to read (applied via head after load)
 Returns:
             DataFrame if successful, None otherwise
 """
-self.logger.info(f"🔧 Safe reading parquet file: {file_path}")
+    self.logger.info(f"🔧 Safe reading parquet file: {file_path}")
 
 # Attempt strategies in order: default engine, pyarrow, fastparquet
 engines: list[str | None] = [None, "pyarrow", "fastparquet"]
@@ -110,21 +111,21 @@ strategy_msg = (
 f"   Trying strategy {idx}/{len(engines)}: "
 f"{'default' if engine is None else engine} engine"
 )
-self.logger.info(strategy_msg)
+    self.logger.info(strategy_msg)
 read_kwargs, dict(kwargs)
 if engine is not None:
                     read_kwargs["engine"] = engine
 df, pd.read_parquet(file_path, columns = columns, **read_kwargs)
 if nrows is not None and len(df) > nrows:
                     df, df.head(nrows)
-self.logger.info(f"✅ Successfully read with strategy {idx}: {df.shape}")
-return df
+    self.logger.info(f"✅ Successfully read with strategy {idx}: {df.shape}")
+    return df
 except Exception as e:
         self.logger.warning(f"   Strategy {idx} failed: {e}")
 continue
 
-self.logger.error(f"❌ All strategies failed for file: {file_path}")
-return None
+    self.logger.error(f"❌ All strategies failed for file: {file_path}")
+    return None
 
 @handle_file_operations(default_return = False, context="ParquetUtils.repair_parquet_file")
 def repair_parquet_file(self, file_path: str, backup_path: str | None, None) -> bool:
@@ -141,19 +142,19 @@ Returns:
 # Create backup if requested
 if backup_path:
             shutil.copy2(file_path, backup_path)
-self.logger.info(f"📁 Created backup: {backup_path}")
+    self.logger.info(f"📁 Created backup: {backup_path}")
 
 # Try to read and rewrite the file
 df, self.safe_read_parquet(file_path)
 if df is not None:
         # Write back to the same file
 df.to_parquet(file_path, index = False)
-self.logger.info(f"✅ Successfully repaired parquet file: {file_path}")
-return True
+    self.logger.info(f"✅ Successfully repaired parquet file: {file_path}")
+    return True
 
-self.logger.error(f"❌ Could not read file for repair: {file_path}")
-return False
+    self.logger.error(f"❌ Could not read file for repair: {file_path}")
+    return False
 
 def get_parquet_utils() -> ParquetUtils:
     """Get a fresh instance of ParquetUtils to avoid global state issues."""
-return ParquetUtils()
+    return ParquetUtils()

@@ -25,10 +25,11 @@ def get_container() -> _DependencyContainer:
     global _global_container
 if _global_container is None:
         _global_container = _DependencyContainer()
-return _global_container
+    return _global_container
 
 
-def register_service(
+def register_service(:
+    pass  # TODO: Add implementation
 service_type: type[T],
 implementation: type[T] | None = None,
 lifetime: str = ServiceLifetime.SINGLETON,
@@ -47,4 +48,4 @@ lifetime=lifetime,
 
 async def resolve_service(service_type: type[T]) -> T:
     container = get_container()
-return container.resolve(service_type)
+    return container.resolve(service_type)

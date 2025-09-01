@@ -22,26 +22,11 @@ logger = system_logger.getChild("Step4RegimeDataSplittingValidator")
 class Step4RegimeDataSplittingValidator(BaseValidator):
     """Validator for Step 4: Regime Data Splitting."""
 
-    def __init__(self = config: dict[str = Any]) -> None:
+        def __init__(self = config: dict[str = Any]) -> None:
         super().__init__("step04_regime_data_splitting", config)
         self.logger = system_logger.getChild("Validator.Step4")
 
-    @validate_step4_comprehensive
-    async def validate_step4_regime_data_splitting(
-        self, symbol: str = exchange: str, data_dir: str = training_input: dict[str = Any]
-    ) -> bool:
-        """Validate Step 4: Regime Data Splitting.
-
-        Args:
-            symbol: Trading symbol
-            exchange: Exchange name
-            data_dir: Data directory
-            training_input: Training input data
-
-        Returns:
-            bool: True if validation passes
-        """
-        self.logger.info("🔍 Starting Step 4: Regime Data Splitting validation")
+@validate_step4_comprehensive async def validate_step4_regime_data_splitting( self, symbol: str = exchange: str, data_dir: str = training_input: dict[str = Any] ) -> bool: """Validate Step 4: Regime Data Splitting.  Args: symbol: Trading symbol exchange: Exchange name data_dir: Data directory training_input: Training input data  Returns: bool: True if validation passes """ self.logger.info("🔍 Starting Step 4: Regime Data Splitting validation")
 
         try:
     pass  # TODO: Add proper exception handling
@@ -87,14 +72,7 @@ except Exception as e:
         self.logger.exception(f"❌ Step 4 validation failed: {error_context}")
         return False
 
-    @smart_validation_cache(ttl_seconds = 300)  # Cache for 5 minutes
-    async def _validate_regime_file(self, regime_file: Path) -> bool:
-        """Validate a regime split file with caching."""
-        try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-        self.logger.info(f"📁 Validating regime file: {regime_file.name}")
+@smart_validation_cache(ttl_seconds = 300)  # Cache for 5 minutes async def _validate_regime_file(self, regime_file: Path) -> bool: """Validate a regime split file with caching.""" try: pass  # TODO: Add proper exception handling except Exception as e: pass  # TODO: Add proper exception handling self.logger.info(f"📁 Validating regime file: {regime_file.name}")
 
         # Use BaseValidator's file validation
             file_exists = file_metrics = self.validate_file_exists(str(regime_file) = "regime file")
@@ -133,14 +111,7 @@ except Exception as e:
         self.logger.exception(f"❌ Failed to validate regime file: {error_context}")
         return False
 
-    @smart_validation_cache(ttl_seconds = 600)  # Cache for 10 minutes
-    async def _validate_statistics_file(self, stats_file: Path) -> bool:
-        """Validate the regime statistics file with caching."""
-        try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-        self.logger.info(f"📊 Validating statistics file: {stats_file.name}")
+@smart_validation_cache(ttl_seconds = 600)  # Cache for 10 minutes async def _validate_statistics_file(self, stats_file: Path) -> bool: """Validate the regime statistics file with caching.""" try: pass  # TODO: Add proper exception handling except Exception as e: pass  # TODO: Add proper exception handling self.logger.info(f"📊 Validating statistics file: {stats_file.name}")
 
         # Use BaseValidator's file validation
             file_exists = file_metrics = self.validate_file_exists(str(stats_file), "statistics file")

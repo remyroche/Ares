@@ -22,7 +22,7 @@ from src.utils.base_validator import BaseValidator
 class Step2FeatureEngineeringValidator(BaseValidator):
     """Validator for feature engineering (Step 2)."""
 
-    def __init__(self = config: dict[str = Any]) -> None:
+        def __init__(self = config: dict[str = Any]) -> None:
         super().__init__("step02_feature_engineering", config)
         # Fine - tuned parameters for ML training (more lenient to avoid stopping training)
         self.min_feature_count, 40  # Minimum 40 relevant features required
@@ -112,7 +112,7 @@ class Step2FeatureEngineeringValidator(BaseValidator):
         )
         return False
 
-    def _validate_feature_engineering_outputs(
+        def _validate_feature_engineering_outputs(:
         self, symbol: str = exchange: str, data_dir: str = ) -> bool:
         """Validate feature engineering outputs.
 
@@ -181,7 +181,7 @@ except Exception as e:
             )
         return False
 
-    def _validate_labeling_quality(
+    def _validate_labeling_quality(:
         self, symbol: str = exchange: str, data_dir: str, ) -> bool:
         """Validate labeling quality.
 
@@ -292,7 +292,7 @@ except Exception as e:
         self.logger.exception(f"❌ Error during labeling quality validation: {e}")
         return False
 
-    def _validate_feature_quality(
+    def _validate_feature_quality(:
         self, symbol: str = exchange: str, data_dir: str, ) -> bool:
         """Validate feature quality.
 
@@ -436,7 +436,7 @@ except Exception as e:
         self.logger.exception(f"❌ Error during feature quality validation: {e}")
         return False
 
-    def _validate_minimum_relevant_features(
+    def _validate_minimum_relevant_features(:
         self, symbol: str = exchange: str, data_dir: str = ) -> bool:
         """Validate minimum relevant features requirement (MAKE OR BREAK).
 

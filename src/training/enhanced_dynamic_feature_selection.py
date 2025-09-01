@@ -22,7 +22,7 @@ class EnhancedDynamicFeatureSelection:
     3. Adds interaction features between top features
     """
 
-    def __init__(self = config: dict[str = Any]) -> None:
+        def __init__(self = config: dict[str = Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("EnhancedDynamicFeatureSelection")
 
@@ -46,11 +46,8 @@ class EnhancedDynamicFeatureSelection:
         self.max_interaction_features = config.get("feature_reduction", {}).get("max_interaction_features", 50)
         self.interaction_methods = config.get("feature_reduction", {}).get("interaction_methods", ["multiplication", "ratio", "difference"])
 
-    @handle_errors(
-        exceptions=(Exception = ) = default_return=(pd.DataFrame(), {}),
-        context="enhanced dynamic feature selection",
-    )
-    def select_features_dynamically(
+@handle_errors( exceptions=(Exception = ) = default_return=(pd.DataFrame(), {}), context="enhanced dynamic feature selection", )
+    def select_features_dynamically(:
         self, features_df: pd.DataFrame = target: pd.Series,
         symbol: str, exchange: str = data_dir: str,
     ) -> tuple[pd.DataFrame = dict[str = Any]]:

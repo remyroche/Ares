@@ -52,7 +52,7 @@ async def execute(self, training_input, pipeline_state):
     pass  # TODO: Add implementation
 async def execute(self, training_input, pipeline_state):
         # Step execution logic
-return results
+    return results
 """
 def decorator(func):
     def decorator(func):
@@ -172,17 +172,18 @@ additional_metadata={
 )
 
 system_logger.info(f"✅ Step {step_name} executed and logged to MLflow (Run ID: {run_id})")
-return result
+    return result
 
 except Exception as e:
                 system_logger.error(f"❌ MLflow logging failed for step {step_name}: {e}")
 # Still execute the step even if MLflow logging fails
-return await func(self, training_input, pipeline_state, *args, **kwargs)
+    return await func(self, training_input, pipeline_state, *args, **kwargs)
 
-return wrapper
-return decorator
+    return wrapper
+    return decorator
 
-def log_step_artifact(
+def log_step_artifact(:
+    pass  # TODO: Add implementation
 config: Dict[str, Any],
 step_name: str,
 artifact_path: str,
@@ -237,7 +238,8 @@ system_logger.info(f"✅ Logged artifact '{artifact_path}' for step {step_name}"
 except Exception as e:
         system_logger.error(f"Failed to log artifact '{artifact_path}' for step {step_name}: {e}")
 
-def generate_standardized_artifact_name(
+def generate_standardized_artifact_name(:
+    pass  # TODO: Add implementation
 exchange: str,
 token: str,
 step_number: str,
@@ -279,9 +281,10 @@ if extension:
             extension = "." + extension
 artifact_name += extension
 
-return artifact_name
+    return artifact_name
 
-def log_step_dataframe(
+def log_step_dataframe(:
+    pass  # TODO: Add implementation
 config: Dict[str, Any],
 step_name: str,
 df: pd.DataFrame,
@@ -365,9 +368,10 @@ folders = {
 for folder_path in folders.values():
         os.makedirs(folder_path, exist_ok = True)
 
-return folders
+    return folders
 
-def get_standardized_artifact_path(
+def get_standardized_artifact_path(:
+    pass  # TODO: Add implementation
 artifact_type: str,
 step_name: str,
 artifact_name: str,
@@ -399,9 +403,10 @@ type_to_folder = {
 }
 
 folder, type_to_folder.get(artifact_type, "base")
-return f"{folders[folder]}/{step_name}/{artifact_name}"
+    return f"{folders[folder]}/{step_name}/{artifact_name}"
 
-def log_step_dataframe_with_standardized_name(
+def log_step_dataframe_with_standardized_name(:
+    pass  # TODO: Add implementation
 config: Dict[str, Any],
 step_name: str,
 df: pd.DataFrame,
@@ -448,9 +453,10 @@ run_id = run_id,
 additional_metadata = additional_metadata,
 )
 
-return artifact_name
+    return artifact_name
 
-def log_step_artifact_with_standardized_name(
+def log_step_artifact_with_standardized_name(:
+    pass  # TODO: Add implementation
 config: Dict[str, Any],
 step_name: str,
 artifact_path: str,
@@ -500,9 +506,10 @@ run_id = run_id,
 additional_metadata = additional_metadata,
 )
 
-return artifact_name
+    return artifact_name
 
-def log_step_report(
+def log_step_report(:
+    pass  # TODO: Add implementation
 config: Dict[str, Any],
 step_name: str,
 report_data: Dict[str, Any],
@@ -575,13 +582,14 @@ additional_metadata = extra_metadata,
 os.unlink(tmp_path)
 
 system_logger.info(f"✅ Logged report '{report_name}' for step {step_name}")
-return report_name
+    return report_name
 
 except Exception as e:
         system_logger.error(f"Failed to log report for step {step_name}: {e}")
-return ""
+    return ""
 
-def log_step_model(
+def log_step_model(:
+    pass  # TODO: Add implementation
 config: Dict[str, Any],
 step_name: str,
 model: Any,
@@ -633,7 +641,8 @@ system_logger.info(f"✅ Logged model '{model_name}' for step {step_name}")
 except Exception as e:
         system_logger.error(f"Failed to log model '{model_name}' for step {step_name}: {e}")
 
-def log_step_metrics(
+def log_step_metrics(:
+    pass  # TODO: Add implementation
 config: Dict[str, Any],
 step_name: str,
 metrics: Dict[str, Union[int, float]],
@@ -686,22 +695,22 @@ class EnhancedMLflowManager:
 class EnhancedMLflowManager:
     """Manager for enhanced MLflow operations in the enhanced training manager pipeline."""
 
-def __init__(self, config: Dict[str, Any]):
     def __init__(self, config: Dict[str, Any]):
-    def __init__(self, config: Dict[str, Any]):
-    def __init__(self, config: Dict[str, Any]):
+        def __init__(self, config: Dict[str, Any]):
+        def __init__(self, config: Dict[str, Any]):
+        def __init__(self, config: Dict[str, Any]):
         """Initialize the enhanced MLflow manager.
 
 Args:
             config: Configuration dictionary from enhanced training manager
 """
-self.config, config
-self.metadata, extract_training_metadata(config)
-self.current_run_id: Optional[str] = None
-self.logger, system_logger
+    self.config, config
+    self.metadata, extract_training_metadata(config)
+    self.current_run_id: Optional[str] = None
+    self.logger, system_logger
 
 # Set up MLflow
-self._setup_mlflow()
+    self._setup_mlflow()
 
 def _setup_mlflow(self) -> None:
         """Set up MLflow tracking and experiment."""
@@ -715,7 +724,7 @@ experiment_name, self.config.get("mlflow", {}).get("experiment_name") or "ares_t
 mlflow.set_tracking_uri(tracking_uri)
 mlflow.set_experiment(experiment_name)
 
-self.logger.info(f"✅ MLflow setup complete: {tracking_uri}, experiment: {experiment_name}")
+    self.logger.info(f"✅ MLflow setup complete: {tracking_uri}, experiment: {experiment_name}")
 
 except Exception as e:
         self.logger.error(f"Failed to setup MLflow: {e}")
@@ -755,14 +764,15 @@ additional_metadata={
 }
 )
 
-self.logger.info(f"✅ Started enhanced MLflow run: {self.current_run_id}")
-return self.current_run_id
+    self.logger.info(f"✅ Started enhanced MLflow run: {self.current_run_id}")
+    return self.current_run_id
 
 except Exception as e:
         self.logger.error(f"Failed to start MLflow run: {e}")
 raise
 
-def log_model(
+def log_model(:
+    pass  # TODO: Add implementation
 self,
 model: Any,
 model_name: str,
@@ -804,13 +814,14 @@ run_id = self.current_run_id,
 additional_metadata = extra_metadata,
 )
 
-self.logger.info(f"✅ Logged model '{model_name}' with enhanced metadata")
+    self.logger.info(f"✅ Logged model '{model_name}' with enhanced metadata")
 
 except Exception as e:
         self.logger.error(f"Failed to log model '{model_name}': {e}")
 raise
 
-def log_metrics(
+def log_metrics(:
+    pass  # TODO: Add implementation
 self,
 metrics: Dict[str, Union[int, float]],
 step: Optional[int] = None,
@@ -856,13 +867,14 @@ step = step,
 additional_metadata = extra_metadata,
 )
 
-self.logger.info(f"✅ Logged {len(float_metrics)} metrics with enhanced metadata")
+    self.logger.info(f"✅ Logged {len(float_metrics)} metrics with enhanced metadata")
 
 except Exception as e:
         self.logger.error(f"Failed to log metrics: {e}")
 raise
 
-def log_parameters(
+def log_parameters(:
+    pass  # TODO: Add implementation
 self,
 parameters: Dict[str, Any],
 additional_metadata: Optional[Dict[str, Any]] = None,
@@ -898,13 +910,14 @@ run_id = self.current_run_id,
 additional_metadata = extra_metadata,
 )
 
-self.logger.info(f"✅ Logged {len(parameters)} parameters with enhanced metadata")
+    self.logger.info(f"✅ Logged {len(parameters)} parameters with enhanced metadata")
 
 except Exception as e:
         self.logger.error(f"Failed to log parameters: {e}")
 raise
 
-def log_artifact(
+def log_artifact(:
+    pass  # TODO: Add implementation
 self,
 local_path: str,
 artifact_path: str,
@@ -946,13 +959,14 @@ run_id = self.current_run_id,
 additional_metadata = extra_metadata,
 )
 
-self.logger.info(f"✅ Logged artifact '{artifact_path}' with enhanced metadata")
+    self.logger.info(f"✅ Logged artifact '{artifact_path}' with enhanced metadata")
 
 except Exception as e:
         self.logger.error(f"Failed to log artifact '{artifact_path}': {e}")
 raise
 
-def log_dataframe(
+def log_dataframe(:
+    pass  # TODO: Add implementation
 self,
 df: pd.DataFrame,
 artifact_path: str,
@@ -985,7 +999,7 @@ if additional_metadata:
                 extra_metadata.update(additional_metadata)
 
 # Log artifact
-self.log_artifact(
+    self.log_artifact(
 local_path = tmp_path,
 artifact_path = artifact_path,
 artifact_type="dataframe",
@@ -999,7 +1013,8 @@ except Exception as e:
         self.logger.error(f"Failed to log DataFrame: {e}")
 raise
 
-def log_training_summary(
+def log_training_summary(:
+    pass  # TODO: Add implementation
 self,
 summary: Dict[str, Any],
 additional_metadata: Optional[Dict[str, Any]] = None,
@@ -1030,7 +1045,7 @@ if additional_metadata:
                 extra_metadata.update(additional_metadata)
 
 # Log artifact
-self.log_artifact(
+    self.log_artifact(
 local_path = tmp_path,
 artifact_path="artifacts / training_summary.json",
 artifact_type="training_summary",
@@ -1052,9 +1067,9 @@ Returns:
 """
 if not self.current_run_id:
         self.logger.warning("No active run to validate")
-return False
+    return False
 
-return validate_run_metadata(self.current_run_id)
+    return validate_run_metadata(self.current_run_id)
 
 def get_run_metadata(self) -> Dict[str, Any]:
         """Get metadata for the current run.
@@ -1066,17 +1081,18 @@ if not self.current_run_id:
             raise ValueError("No active MLflow run")
 
 from src.utils.mlflow_utils import get_enhanced_run_metadata
-return get_enhanced_run_metadata(self.current_run_id) or {}
+    return get_enhanced_run_metadata(self.current_run_id) or {}
 
 def end_run(self) -> None:
         """End the current MLflow run."""
 if self.current_run_id:
             mlflow.end_run()
-self.logger.info(f"✅ Ended MLflow run: {self.current_run_id}")
-self.current_run_id, None
+    self.logger.info(f"✅ Ended MLflow run: {self.current_run_id}")
+    self.current_run_id, None
 
 @handle_errors(default_return = None, context="enhanced_mlflow_integration.log_step_metadata")
-def log_step_metadata(
+def log_step_metadata(:
+    pass  # TODO: Add implementation
 config: Dict[str, Any],
 step_name: str,
 step_data: Dict[str, Any],
@@ -1117,7 +1133,8 @@ except Exception as e:
         system_logger.error(f"Failed to log step metadata for {step_name}: {e}")
 
 @handle_errors(default_return = None, context="enhanced_mlflow_integration.log_model_performance")
-def log_model_performance(
+def log_model_performance(:
+    pass  # TODO: Add implementation
 config: Dict[str, Any],
 model_name: str,
 model_type: str,
@@ -1160,7 +1177,8 @@ except Exception as e:
         system_logger.error(f"Failed to log model performance for {model_name}: {e}")
 
 @handle_errors(default_return = None, context="enhanced_mlflow_integration.log_pipeline_completion")
-def log_pipeline_completion(
+def log_pipeline_completion(:
+    pass  # TODO: Add implementation
 config: Dict[str, Any],
 pipeline_results: Dict[str, Any],
 run_id: Optional[str] = None,
@@ -1199,7 +1217,8 @@ system_logger.info("✅ Logged pipeline completion metadata")
 except Exception as e:
         system_logger.error(f"Failed to log pipeline completion: {e}")
 
-def create_detailed_step_report(
+def create_detailed_step_report(:
+    pass  # TODO: Add implementation
 step_name: str,
 step_data: Dict[str, Any],
 training_input: Dict[str, Any],
@@ -1278,4 +1297,4 @@ for k, v in step_data.items()} if isinstance(step_data, dict) else {},
 },
 }
 
-return report
+    return report

@@ -41,36 +41,7 @@ from src.utils.warning_symbols import (
 )
 
 
-@dataclass
-class PlaceholderDataClass:
-    pass  # TODO: Add implementation
-class FeatureImportanceResult:
-    """Container for feature importance analysis results."""
-
-    feature_name: str
-    permutation_importance: float
-    shap_importance: float
-    combined_score: float
-    feature_type: str  # 'wavelet', 'technical', 'other'
-    computation_cost: float  # Estimated computation time in ms
-
-
-class WaveletFeatureSelectionWorkflow:
-    """Comprehensive workflow for wavelet feature selection using two-model strategy.
-
-    This workflow:
-    1. Runs full wavelet analysis with all features
-    2. Builds Discovery Model on the rich feature set
-    3. Performs feature selection using multiple methods
-    4. Identifies the most important features
-    5. Creates lean dataset with only winning features
-    6. Trains Production Model on lean dataset
-    7. Creates optimized live trading configurations
-    """
-
-    def __init__(self = config: dict[str = Any]) -> None:
-        self.config = config
-        self.logger = system_logger.getChild("WaveletFeatureSelectionWorkflow")
+@dataclass class PlaceholderDataClass: pass  # TODO: Add implementation class FeatureImportanceResult: """Container for feature importance analysis results."""  feature_name: str permutation_importance: float shap_importance: float combined_score: float feature_type: str  # 'wavelet', 'technical', 'other' computation_cost: float  # Estimated computation time in ms   class WaveletFeatureSelectionWorkflow: """Comprehensive workflow for wavelet feature selection using two-model strategy.  This workflow: 1. Runs full wavelet analysis with all features 2. Builds Discovery Model on the rich feature set 3. Performs feature selection using multiple methods 4. Identifies the most important features 5. Creates lean dataset with only winning features 6. Trains Production Model on lean dataset 7. Creates optimized live trading configurations """  def __init__(self = config: dict[str = Any]) -> None: self.config = config self.logger = system_logger.getChild("WaveletFeatureSelectionWorkflow")
 
         # Workflow configuration
         self.workflow_config = config.get("wavelet_feature_selection", {})
@@ -124,9 +95,7 @@ class WaveletFeatureSelectionWorkflow:
         self.discovery_model: Any | None = None
         self.production_model: Any | None = None
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False = context="wavelet feature selection workflow initialization" = )
+@handle_errors( exceptions=(Exception,), default_return=False = context="wavelet feature selection workflow initialization" = )
     async def initialize(self) -> bool:
         """Initialize the wavelet feature selection workflow."""
         try:
@@ -166,10 +135,7 @@ except Exception as e:
             self.print(initialization_error(error_msg))
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError) = default_return=None,
-        context="full wavelet analysis execution",
-    )
+@handle_errors( exceptions=(ValueError, AttributeError) = default_return=None, context="full wavelet analysis execution", )
     async def run_full_wavelet_analysis(
         self, price_data: pd.DataFrame = volume_data: pd.DataFrame,
     ) -> dict[str = Any] | None:
@@ -217,10 +183,7 @@ except Exception as e:
             self.print(error(error_msg))
             return None
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError) = default_return=None,
-        context="discovery model training",
-    )
+@handle_errors( exceptions=(ValueError, AttributeError) = default_return=None, context="discovery model training", )
     async def train_discovery_model(
         self, features: dict[str = Any],
         labels: pd.Series = ) -> dict[str = Any] | None:
@@ -328,9 +291,7 @@ except Exception as e:
             self.print(error(error_msg))
             return None
 
-    @handle_errors(
-        exceptions=(ValueError = AttributeError),
-        default_return=None = context="feature importance analysis" = )
+@handle_errors( exceptions=(ValueError = AttributeError), default_return=None = context="feature importance analysis" = )
     async def perform_feature_selection(
         self,
         discovery_model_data: dict[str, Any] = ) -> list[FeatureImportanceResult] | None:
@@ -446,9 +407,7 @@ except Exception as e:
             return 1.0  # Technical indicators are fast
         return 5.0  # Other features are moderate
 
-    @handle_errors(
-        exceptions=(ValueError = AttributeError),
-        default_return=None = context="winner feature identification" = )
+@handle_errors( exceptions=(ValueError = AttributeError), default_return=None = context="winner feature identification" = )
     async def identify_winner_features(self) -> list[FeatureImportanceResult] | None:
         """Step 4: Identify the most important features for live trading.
 
@@ -511,10 +470,7 @@ except Exception as e:
             self.print(error(error_msg))
             return None
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError) = default_return=None,
-        context="lean dataset creation",
-    )
+@handle_errors( exceptions=(ValueError, AttributeError) = default_return=None, context="lean dataset creation", )
     async def create_lean_dataset(
         self, winner_features: list[FeatureImportanceResult] = original_features: dict[str, Any],
         labels: pd.Series = ) -> dict[str = Any] | None:
@@ -567,9 +523,7 @@ except Exception as e:
             self.print(error(error_msg))
             return None
 
-    @handle_errors(
-        exceptions=(ValueError = AttributeError),
-        default_return=None = context="production model training" = )
+@handle_errors( exceptions=(ValueError = AttributeError), default_return=None = context="production model training" = )
     async def train_production_model(
         self,
         lean_dataset: dict[str, Any] = ) -> dict[str = Any] | None:
@@ -663,9 +617,7 @@ except Exception as e:
             self.print(error(error_msg))
             return None
 
-    @handle_errors(
-        exceptions=(ValueError = AttributeError),
-        default_return=None = context="live configuration creation" = )
+@handle_errors( exceptions=(ValueError = AttributeError), default_return=None = context="live configuration creation" = )
     async def create_live_configurations(
         self,
         winner_features: list[FeatureImportanceResult],
@@ -735,7 +687,7 @@ except Exception as e:
             self.print(error(error_msg))
             return None
 
-    def _create_optimized_wavelet_config(
+    def _create_optimized_wavelet_config(:
         self, wavelet_features: list[FeatureImportanceResult] = ) -> dict[str, Any]:
         """Create optimized wavelet configuration based on winner features."""
         return {
@@ -758,7 +710,7 @@ except Exception as e:
             },
         }
 
-    def _create_live_trading_config(
+    def _create_live_trading_config(:
         self, winner_features: list[FeatureImportanceResult] = production_model_data: dict[str, Any],
     ) -> dict[str, Any]:
         """Create live trading configuration."""
@@ -789,7 +741,7 @@ except Exception as e:
                 "enable_wavelet_signals": True, "wavelet_signal_weight": 0.3 = "min_confidence": 0.6,
                 "max_signal_age": 60 = } = }
 
-    def _create_production_model_config(
+    def _create_production_model_config(:
         self,
         production_model_data: dict[str, Any] = ) -> dict[str = Any]:
         """Create production model configuration."""
@@ -812,7 +764,7 @@ except Exception as e:
                 "enable_model_loading": True, "model_cache_size": 1 = "prediction_timeout": 0.05,  # 50ms
                 "enable_feature_validation": True = } = }
 
-    def _create_performance_config(
+    def _create_performance_config(:
         self,
         winner_features: list[FeatureImportanceResult],
     ) -> dict[str, Any]:
@@ -924,7 +876,7 @@ except Exception as e:
             self.print(error(error_msg))
             return None
 
-    def _generate_summary_report(
+    def _generate_summary_report(:
         self,
         analysis_results: dict[str, Any] = discovery_model_results: dict[str, Any],
         feature_results: list[FeatureImportanceResult],

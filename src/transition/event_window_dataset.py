@@ -10,44 +10,9 @@ import numpy as np
 import pandas as pd
 
 
-@dataclass
-class PlaceholderDataClass:
-    pass  # TODO: Add implementation
-class WindowDatasetConfig:
-    pass  # TODO: Add implementation
-class WindowDatasetConfig:
-    pass  # TODO: Add implementation
-class WindowDatasetConfig:
-    pre_window: int
-post_window: int
-max_events_per_label: int
-duplicate_similarity_threshold: float
-downsample_near_duplicates: bool
-
-
-class EventWindowDatasetBuilder:
-    pass  # TODO: Add implementation
-class EventWindowDatasetBuilder:
-    pass  # TODO: Add implementation
-class EventWindowDatasetBuilder:
-    """
-Creates a dataset of pre/post windows centered on event triggers.
-- Builds per-timestep HMM states and coarse regimes
-- Preserves secondary labels as a multi-hot vector at t , 0
-- Early pruning: drop incomplete windows; optional down-sampling of near-duplicate X_pre
-- Produces tensors and RF-friendly pooled features
-"""
-
-def __init__(
-self,
-config: dict[str, Any],
-exchange: str = "UNKNOWN",
-symbol: str = "UNKNOWN",
-) -> None:
-        self.config = config
-self.logger = system_logger.getChild("EventWindowDatasetBuilder")
+@dataclass class PlaceholderDataClass: pass  # TODO: Add implementation class WindowDatasetConfig: pass  # TODO: Add implementation class WindowDatasetConfig: pass  # TODO: Add implementation class WindowDatasetConfig: pre_window: int post_window: int max_events_per_label: int duplicate_similarity_threshold: float downsample_near_duplicates: bool   class EventWindowDatasetBuilder: pass  # TODO: Add implementation class EventWindowDatasetBuilder: pass  # TODO: Add implementation class EventWindowDatasetBuilder: """ Creates a dataset of pre/post windows centered on event triggers. - Builds per-timestep HMM states and coarse regimes - Preserves secondary labels as a multi-hot vector at t , 0 - Early pruning: drop incomplete windows; optional down-sampling of near-duplicate X_pre - Produces tensors and RF-friendly pooled features """  def __init__( self, config: dict[str, Any], exchange: str = "UNKNOWN", symbol: str = "UNKNOWN", ) -> None: self.config = config self.logger = system_logger.getChild("EventWindowDatasetBuilder")
 tm_cfg = (config or {}).get("TRANSITION_MODELING", {})
-self.ds_cfg = WindowDatasetConfig(
+    self.ds_cfg = WindowDatasetConfig(
 pre_window=int(tm_cfg.get("pre_window", 60)),
 post_window=int(tm_cfg.get("post_window", 20)),
 max_events_per_label=int(tm_cfg.get("max_events_per_label", 10000)),
@@ -64,20 +29,20 @@ True,
 ),
 ),
 )
-self.state_builder = StateSequenceBuilder(
+    self.state_builder = StateSequenceBuilder(
 config, exchange=exchange,
 symbol=symbol,
 )
-self.cache_dir = str(
+    self.cache_dir = str(
 (tm_cfg.get("cache", {}) or {}).get(
 "cache_dir",
 "checkpoints/transition_cache",
 ),
 )
 bcfg = tm_cfg.get("barriers", {}) or {}
-self.pt_mult = float(bcfg.get("profit_take_multiplier", 0.002))
-self.sl_mult = float(bcfg.get("stop_loss_multiplier", 0.001))
-self.ctx_cfg = tm_cfg.get("context_features", {}) or {}
+    self.pt_mult = float(bcfg.get("profit_take_multiplier", 0.002))
+    self.sl_mult = float(bcfg.get("stop_loss_multiplier", 0.001))
+    self.ctx_cfg = tm_cfg.get("context_features", {}) or {}
 
 async def initialize(self) -> bool:
         return await self.state_builder.initialize()
@@ -87,7 +52,7 @@ def _cosine_sim(self, a: np.ndarray, b: np.ndarray) -> float:
 nb = np.linalg.norm(b)
 if na == 0 or nb == 0:
             return 0.0
-return float(np.dot(a, b) / (na * nb))
+    return float(np.dot(a, b) / (na * nb))
 
 def _rf_pooled_features(self, seq_df: pd.DataFrame) -> dict[str, float]:
         # Summaries for RandomForest: mean/std of key numeric features
@@ -110,9 +75,10 @@ for col in [
                 s = pd.to_numeric(seq_df[col], errors="coerce")
 out[f"mean_{col}"] = float(np.nanmean(s.values))
 out[f"std_{col}"] = float(np.nanstd(s.values))
-return out
+    return out
 
-def build(
+def build(:
+    pass  # TODO: Add implementation
 self,
 klines_df: pd.DataFrame,
 combined_df: pd.DataFrame,
@@ -347,7 +313,7 @@ f,
 )
 except Exception:
             pass
-return {
+    return {
 "samples": samples,
 "label_index": all_labels,
 "numeric_feature_names": present_numeric,

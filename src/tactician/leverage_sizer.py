@@ -25,64 +25,56 @@ to set leverage between 10x and 100x.
 
 def __init__(self, config: dict[str, Any]) -> None:
         self.config: dict[str, Any] = config
-self.logger = system_logger.getChild("LeverageSizer")
+    self.logger = system_logger.getChild("LeverageSizer")
 # Backward-compatibility shim for legacy self.print calls
 if not hasattr(self, "print"):
             def _shim_print(message: str) -> None:
                 with contextlib.suppress(Exception):
                     self.logger.error(str(message))
 
-self.print = _shim_print  # type: ignore[attr-defined]
+    self.print = _shim_print  # type: ignore[attr-defined]
 
 # Load configuration from step17 optimization results
-self.leverage_config: dict[str, Any] = self.config.get("leverage_sizing", {})
+    self.leverage_config: dict[str, Any] = self.config.get("leverage_sizing", {})
 
 # Load step17 optimized parameters
 step17_config = self.config.get("step17_optimization", {})
 leverage_optimization = step17_config.get("leverage", {})
 
 # Load optimized leverage parameters
-self.min_leverage: float = leverage_optimization.get("min_leverage", 10.0)
-self.max_leverage: float = leverage_optimization.get("max_leverage", 100.0)
-self.confidence_threshold: float = leverage_optimization.get("confidence_threshold", 0.6)
-self.liquidation_buffer: float = leverage_optimization.get("liquidation_buffer", 0.05)
+    self.min_leverage: float = leverage_optimization.get("min_leverage", 10.0)
+    self.max_leverage: float = leverage_optimization.get("max_leverage", 100.0)
+    self.confidence_threshold: float = leverage_optimization.get("confidence_threshold", 0.6)
+    self.liquidation_buffer: float = leverage_optimization.get("liquidation_buffer", 0.05)
 
 # NEW: Combined confidence threshold for leverage sizing (optimizable in step17)
-self.leverage_combined_threshold: float = leverage_optimization.get("leverage_combined_threshold", 0.75)
+    self.leverage_combined_threshold: float = leverage_optimization.get("leverage_combined_threshold", 0.75)
 
 # Load optimized component weights
-self.ml_weight: float = leverage_optimization.get("ml_weight", 0.6)
-self.liquidation_weight: float = leverage_optimization.get("liquidation_weight", 0.4)
+    self.ml_weight: float = leverage_optimization.get("ml_weight", 0.6)
+    self.liquidation_weight: float = leverage_optimization.get("liquidation_weight", 0.4)
 
 # Load additional optimized parameters
-self.leverage_multiplier: float = leverage_optimization.get("leverage_multiplier", 1.0)
-self.risk_adjustment_factor: float = leverage_optimization.get("risk_adjustment_factor", 1.0)
-self.confidence_boost_threshold: float = leverage_optimization.get("confidence_boost_threshold", 0.8)
-self.max_risk_leverage: float = leverage_optimization.get("max_risk_leverage", 50.0)
+    self.leverage_multiplier: float = leverage_optimization.get("leverage_multiplier", 1.0)
+    self.risk_adjustment_factor: float = leverage_optimization.get("risk_adjustment_factor", 1.0)
+    self.confidence_boost_threshold: float = leverage_optimization.get("confidence_boost_threshold", 0.8)
+    self.max_risk_leverage: float = leverage_optimization.get("max_risk_leverage", 50.0)
 
-self.is_initialized: bool = False
-self.leverage_sizing_history: list[dict[str, Any]] = []
+    self.is_initialized: bool = False
+    self.leverage_sizing_history: list[dict[str, Any]] = []
 
-@handle_specific_errors(
-error_handlers={
-ValueError: (False, "Invalid leverage sizer configuration"),
-AttributeError: (False, "Missing required leverage parameters"),
-KeyError: (False, "Missing configuration keys"),
-},
-default_return=False,
-context="leverage sizer initialization",
-)
+@handle_specific_errors( error_handlers={ ValueError: (False, "Invalid leverage sizer configuration"), AttributeError: (False, "Missing required leverage parameters"), KeyError: (False, "Missing configuration keys"), }, default_return=False, context="leverage sizer initialization", )
 async def initialize(self) -> bool:
         """Initialize the leverage sizer."""
-self.logger.info("Initializing leverage sizer...")
+    self.logger.info("Initializing leverage sizer...")
 
 # Validate configuration
 if not self._validate_configuration():
             return False
 
-self.is_initialized = True
-self.logger.info("✅ Leverage sizer initialized successfully")
-return True
+    self.is_initialized = True
+    self.logger.info("✅ Leverage sizer initialized successfully")
+    return True
 
 def _validate_configuration(self) -> bool:
         """Validate leverage sizer configuration."""
@@ -99,22 +91,22 @@ required_keys = [
 for key in required_keys:
                 if not hasattr(self, key):
                     self.logger.error(f"Missing required configuration key: {key}")
-return False
+    return False
 
 # Validate values
 if self.min_leverage <= 0 or self.min_leverage >= self.max_leverage:
                 self.logger.error("Invalid leverage range configuration")
-return False
+    return False
 
 if self.liquidation_buffer <= 0 or self.liquidation_buffer >= 1:
                 self.logger.error("Invalid liquidation_buffer configuration")
-return False
+    return False
 
-return True
+    return True
 
 except Exception as e:
             self.logger.error(f"Configuration validation failed: {e}")
-return False
+    return False
 
 def refresh_step17_configuration(self, step17_results: dict[str, Any]) -> None:
         """
@@ -132,34 +124,27 @@ if "leverage" in step17_results:
                 leverage_optimization = step17_results["leverage"]
 
 # Update leverage parameters
-self.min_leverage = leverage_optimization.get("min_leverage", self.min_leverage)
-self.max_leverage = leverage_optimization.get("max_leverage", self.max_leverage)
-self.confidence_threshold = leverage_optimization.get("confidence_threshold", self.confidence_threshold)
-self.liquidation_buffer = leverage_optimization.get("liquidation_buffer", self.liquidation_buffer)
+    self.min_leverage = leverage_optimization.get("min_leverage", self.min_leverage)
+    self.max_leverage = leverage_optimization.get("max_leverage", self.max_leverage)
+    self.confidence_threshold = leverage_optimization.get("confidence_threshold", self.confidence_threshold)
+    self.liquidation_buffer = leverage_optimization.get("liquidation_buffer", self.liquidation_buffer)
 
 # Update component weights
-self.ml_weight = leverage_optimization.get("ml_weight", self.ml_weight)
-self.liquidation_weight = leverage_optimization.get("liquidation_weight", self.liquidation_weight)
+    self.ml_weight = leverage_optimization.get("ml_weight", self.ml_weight)
+    self.liquidation_weight = leverage_optimization.get("liquidation_weight", self.liquidation_weight)
 
 # Update additional parameters
-self.leverage_multiplier = leverage_optimization.get("leverage_multiplier", self.leverage_multiplier)
-self.risk_adjustment_factor = leverage_optimization.get("risk_adjustment_factor", self.risk_adjustment_factor)
-self.confidence_boost_threshold = leverage_optimization.get("confidence_boost_threshold", self.confidence_boost_threshold)
-self.max_risk_leverage = leverage_optimization.get("max_risk_leverage", self.max_risk_leverage)
+    self.leverage_multiplier = leverage_optimization.get("leverage_multiplier", self.leverage_multiplier)
+    self.risk_adjustment_factor = leverage_optimization.get("risk_adjustment_factor", self.risk_adjustment_factor)
+    self.confidence_boost_threshold = leverage_optimization.get("confidence_boost_threshold", self.confidence_boost_threshold)
+    self.max_risk_leverage = leverage_optimization.get("max_risk_leverage", self.max_risk_leverage)
 
-self.logger.info("✅ Leverage sizer configuration refreshed from step17 results")
+    self.logger.info("✅ Leverage sizer configuration refreshed from step17 results")
 
 except Exception as e:
             self.logger.error(f"Error refreshing step17 configuration: {e}")
 
-@handle_specific_errors(
-error_handlers={
-ValueError: (None, "Invalid input data for leverage sizing"),
-AttributeError: (None, "Sizer not properly initialized"),
-},
-default_return={},
-context="leverage sizing calculation",
-)
+@handle_specific_errors( error_handlers={ ValueError: (None, "Invalid input data for leverage sizing"), AttributeError: (None, "Sizer not properly initialized"), }, default_return={}, context="leverage sizing calculation", )
 async def calculate_leverage(
 self,
 ml_predictions: dict[str, Any],
@@ -187,7 +172,7 @@ Returns:
 """
 if not self.is_initialized:
             self.logger.error("Leverage sizer not initialized")
-return {}
+    return {}
 
 try:
     pass  # TODO: Add proper exception handling
@@ -256,18 +241,19 @@ combined_confidence,
 }
 
 # Store in history
-self.leverage_sizing_history.append(leverage_analysis)
+    self.leverage_sizing_history.append(leverage_analysis)
 if len(self.leverage_sizing_history) > 100:  # Keep last 100 entries
-self.leverage_sizing_history = self.leverage_sizing_history[-100:]
+    self.leverage_sizing_history = self.leverage_sizing_history[-100:]
 
-self.logger.info(f"✅ Leverage calculated: {final_leverage:.1f}x")
-return leverage_analysis
+    self.logger.info(f"✅ Leverage calculated: {final_leverage:.1f}x")
+    return leverage_analysis
 
 except Exception as e:
             self.logger.error(f"Error calculating leverage: {e}")
-return {}
+    return {}
 
-def _calculate_ml_leverage(
+def _calculate_ml_leverage(:
+    pass  # TODO: Add implementation
 self,
 price_target_confidences: dict[str, float],
 adversarial_confidences: dict[str, float],
@@ -310,22 +296,23 @@ risk_factor = 1.0 - avg_adverse_risk
 
 # Base leverage calculation
 base_leverage = (
-self.min_leverage
+    self.min_leverage
 + (self.max_leverage - self.min_leverage)
 * confidence_factor
 * risk_factor
 )
 
 # Ensure within bounds
-return max(
-self.min_leverage, min(self.max_leverage, base_leverage),
+    return max(
+    self.min_leverage, min(self.max_leverage, base_leverage),
 )
 
 except (ValueError, TypeError, KeyError) as e:
             self.logger.exception(f"Error calculating ML leverage: {e}")
-return self.min_leverage
+    return self.min_leverage
 
-def _calculate_liquidation_safe_leverage(
+def _calculate_liquidation_safe_leverage(:
+    pass  # TODO: Add implementation
 self,
 current_price: float,
 account_balance: float,
@@ -355,15 +342,16 @@ elif current_vol > 0.02:
 safe_leverage = (1.0 - self.liquidation_buffer) / worst_case_move
 
 # Ensure within bounds
-return max(
-self.min_leverage, min(self.max_leverage, safe_leverage),
+    return max(
+    self.min_leverage, min(self.max_leverage, safe_leverage),
 )
 
 except (ValueError, TypeError) as e:
             self.logger.exception(f"Error calculating liquidation safe leverage: {e}")
-return self.min_leverage
+    return self.min_leverage
 
-def _calculate_weighted_leverage(
+def _calculate_weighted_leverage(:
+    pass  # TODO: Add implementation
 self,
 ml_leverage: float,
 liquidation_leverage: float,
@@ -380,15 +368,16 @@ ml_leverage * self.ml_weight
 ) / (self.ml_weight + self.liquidation_weight)
 
 # Ensure within bounds
-return max(
-self.min_leverage, min(self.max_leverage, weighted_leverage),
+    return max(
+    self.min_leverage, min(self.max_leverage, weighted_leverage),
 )
 
 except Exception as e:
             self.logger.exception(f"Error calculating weighted leverage: {e}")
-return self.min_leverage
+    return self.min_leverage
 
-def _apply_leverage_modifiers(
+def _apply_leverage_modifiers(:
+    pass  # TODO: Add implementation
 self,
 base_leverage: float,
 *,
@@ -422,15 +411,16 @@ confidence_modifier = (analyst_confidence + tactician_confidence) / 2
 adjusted *= confidence_modifier
 
 # Ensure within bounds
-return max(
-self.min_leverage, min(self.max_leverage, adjusted),
+    return max(
+    self.min_leverage, min(self.max_leverage, adjusted),
 )
 
 except Exception as e:
             self.logger.exception(f"Error applying leverage modifiers: {e}")
-return base_leverage
+    return base_leverage
 
-def _generate_leverage_reason(
+def _generate_leverage_reason(:
+    pass  # TODO: Add implementation
 self,
 final_leverage: float,
 ml_leverage: float,
@@ -469,7 +459,7 @@ f"Leverage: {final_leverage:.1f}x (minimum due to low combined confidence "
 f"{combined_confidence:.2f} below threshold {self.leverage_combined_threshold:.2f})"
 )
 
-return (
+    return (
 f"Leverage: {final_leverage:.1f}x "
 f"(ML: {ml_leverage:.1f}x, Liquidation: {liquidation_leverage:.1f}x, "
 f"Combined Confidence: {combined_confidence:.3f}, Risk: {avg_risk:.3f})"
@@ -477,58 +467,47 @@ f"Combined Confidence: {combined_confidence:.3f}, Risk: {avg_risk:.3f})"
 
 except Exception as e:
             self.logger.exception(f"Error generating leverage reason: {e}")
-return f"Leverage: {final_leverage:.1f}x (Error generating reason)"
+    return f"Leverage: {final_leverage:.1f}x (Error generating reason)"
 
-def get_leverage_sizing_history(
+def get_leverage_sizing_history(:
+    pass  # TODO: Add implementation
 self,
 limit: int | None = None,
 ) -> list[dict[str, Any]]:
         """Get leverage sizing history."""
 if limit:
             return self.leverage_sizing_history[-limit:]
-return self.leverage_sizing_history.copy()
+    return self.leverage_sizing_history.copy()
 
-@handle_errors(
-exceptions=(Exception,),
-default_return=None,
-context="leverage sizer cleanup",
-)
+@handle_errors( exceptions=(Exception,), default_return=None, context="leverage sizer cleanup", )
 async def stop(self) -> None:
         """Stop the leverage sizer."""
 try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-self.logger.info("Stopping leverage sizer...")
-self.is_initialized = False
-self.logger.info("✅ Leverage sizer stopped successfully")
+    self.logger.info("Stopping leverage sizer...")
+    self.is_initialized = False
+    self.logger.info("✅ Leverage sizer stopped successfully")
 except Exception as e:
             self.logger.error(f"❌ Failed to stop leverage sizer: {e}")
 
-@handle_errors(
-exceptions=(Exception,),
-default_return=None,
-context="leverage sizer cleanup",
-)
+@handle_errors( exceptions=(Exception,), default_return=None, context="leverage sizer cleanup", )
 async def cleanup(self) -> None:
         """Cleanup leverage sizer resources."""
 try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-self.logger.info("Cleaning up leverage sizer...")
+    self.logger.info("Cleaning up leverage sizer...")
 await self.stop()
-self.leverage_sizing_history.clear()
-self.logger.info("✅ Leverage sizer cleanup completed")
+    self.leverage_sizing_history.clear()
+    self.logger.info("✅ Leverage sizer cleanup completed")
 except Exception as e:
             self.logger.error(f"Error cleaning up leverage sizer: {e}")
 
 
-@handle_errors(
-exceptions=(Exception,),
-default_return=None,
-context="leverage sizer setup",
-)
+@handle_errors( exceptions=(Exception,), default_return=None, context="leverage sizer setup", )
 async def setup_leverage_sizer(
 config: dict[str, Any] | None = None,
 ) -> LeverageSizer | None:
@@ -551,7 +530,7 @@ if config is None:
 leverage_sizer = LeverageSizer(config)
 if await leverage_sizer.initialize():
             return leverage_sizer
-return None
+    return None
 except Exception as e:
         system_logger.exception(f"Failed to setup leverage sizer: {e}")
-return None
+    return None

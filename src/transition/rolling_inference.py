@@ -9,42 +9,10 @@ import numpy as np
 import pandas as pd
 
 
-@dataclass
-class PlaceholderDataClass:
-    pass  # TODO: Add implementation
-class RollingInferenceConfig:
-    pass  # TODO: Add implementation
-class RollingInferenceConfig:
-    pass  # TODO: Add implementation
-class RollingInferenceConfig:
-    pre_window: int
-horizons: list[int]
-path_class_priority: list[str]
-
-
-class RollingMTInference:
-    pass  # TODO: Add implementation
-class RollingMTInference:
-    pass  # TODO: Add implementation
-class RollingMTInference:
-    """
-Runtime helper for the rolling MultiTask RF.
-- Loads per-head models, thresholds, and reliability
-- Builds a single-row feature vector for the latest pre-window
-- Produces entry/exit decisions and supporting probabilities
-"""
-
-def __init__(
-self,
-config: dict[str, Any],
-models_dir: str,
-symbol: str,
-timeframe: str,
-) -> None:
-        self.logger = system_logger.getChild("RollingMTInference")
+@dataclass class PlaceholderDataClass: pass  # TODO: Add implementation class RollingInferenceConfig: pass  # TODO: Add implementation class RollingInferenceConfig: pass  # TODO: Add implementation class RollingInferenceConfig: pre_window: int horizons: list[int] path_class_priority: list[str]   class RollingMTInference: pass  # TODO: Add implementation class RollingMTInference: pass  # TODO: Add implementation class RollingMTInference: """ Runtime helper for the rolling MultiTask RF. - Loads per-head models, thresholds, and reliability - Builds a single-row feature vector for the latest pre-window - Produces entry/exit decisions and supporting probabilities """  def __init__( self, config: dict[str, Any], models_dir: str, symbol: str, timeframe: str, ) -> None: self.logger = system_logger.getChild("RollingMTInference")
 tm = (config or {}).get("TRANSITION_MODELING", {})
 r = tm.get("rolling", {}) if isinstance(tm.get("rolling", {}), dict) else {}
-self.cfg = RollingInferenceConfig(
+    self.cfg = RollingInferenceConfig(
 pre_window=int(r.get("pre_window", tm.get("pre_window", 60))),
 horizons=list(r.get("direction_horizons", [5, 15])),
 path_class_priority=[
@@ -54,12 +22,12 @@ path_class_priority=[
 "end_of_trend",
 ],
 )
-self.models_dir = models_dir
-self.prefix = f"{symbol}_{timeframe}_rolling_mtrf"
-self.models: dict[str, Any] = {}
-self.thresholds: dict[str, Any] = {}
-self.reliability: dict[str, Any] = {}
-self.feature_names: list[str] = []
+    self.models_dir = models_dir
+    self.prefix = f"{symbol}_{timeframe}_rolling_mtrf"
+    self.models: dict[str, Any] = {}
+    self.thresholds: dict[str, Any] = {}
+    self.reliability: dict[str, Any] = {}
+    self.feature_names: list[str] = []
 
 def load(self) -> bool:
         try:
@@ -67,19 +35,19 @@ def load(self) -> bool:
 except Exception as e:
     pass  # TODO: Add proper exception handling
 models, meta, feat = MultiTaskRandomForest.load(
-self.models_dir, prefix=self.prefix,
+    self.models_dir, prefix=self.prefix,
 )
-self.models = models
-self.thresholds = meta.get("thresholds", {})
-self.reliability = meta.get("reliability", {})
-self.feature_names = feat
+    self.models = models
+    self.thresholds = meta.get("thresholds", {})
+    self.reliability = meta.get("reliability", {})
+    self.feature_names = feat
 if not self.models:
                 self.logger.warning("No models loaded for rolling inference")
-return False
-return True
+    return False
+    return True
 except Exception as e:
             self.logger.warning(f"Failed to load rolling models: {e}")
-return False
+    return False
 
 def _rf_pooled_features(self, seq_df: pd.DataFrame) -> dict[str, float]:
         out: dict[str, float] = {}
@@ -101,7 +69,7 @@ for col in [
                 s = pd.to_numeric(seq_df[col], errors="coerce")
 out[f"mean_{col}"] = float(np.nanmean(s.values))
 out[f"std_{col}"] = float(np.nanstd(s.values))
-return out
+    return out
 
 def _build_X_last(self, combined_df: pd.DataFrame) -> pd.DataFrame:
         if combined_df is None or combined_df.empty:
@@ -113,9 +81,10 @@ seq = combined_df.iloc[-pre:]
 rf = self._rf_pooled_features(seq)
 # Build DataFrame with known feature columns; fill missing
 x = {name: float(rf.get(name, 0.0)) for name in self.feature_names}
-return pd.DataFrame([x])
+    return pd.DataFrame([x])
 
-def _apply_reliability(
+def _apply_reliability(:
+    pass  # TODO: Add implementation
 self,
 head: str,
 value: float,
@@ -127,13 +96,14 @@ except Exception as e:
     pass  # TODO: Add proper exception handling
 if head == "path_class" and cls is not None:
                 scale = float(self.reliability.get("path_class", {}).get(cls, 1.0))
-return float(np.clip(value * scale, 0.0, 1.0))
+    return float(np.clip(value * scale, 0.0, 1.0))
 scale = float(self.reliability.get(head, {}).get("positive_scale", 1.0))
-return float(np.clip(value * scale, 0.0, 1.0))
+    return float(np.clip(value * scale, 0.0, 1.0))
 except Exception:
             return float(np.clip(value, 0.0, 1.0))
 
-def _get_threshold(
+def _get_threshold(:
+    pass  # TODO: Add implementation
 self,
 head: str,
 cls: str | None = None,
@@ -145,7 +115,7 @@ except Exception as e:
     pass  # TODO: Add proper exception handling
 if head == "path_class" and cls is not None:
                 return float(self.thresholds.get("path_class", {}).get(cls, default))
-return float(self.thresholds.get(head, default))
+    return float(self.thresholds.get(head, default))
 except Exception:
             return float(default)
 
@@ -298,4 +268,4 @@ exit_flag = bool(p_rev >= thr_rev or p_end >= thr_end or exit_bias > 0)
 out["exit_flag"] = exit_flag
 out["exit_bias"] = exit_bias
 
-return out
+    return out

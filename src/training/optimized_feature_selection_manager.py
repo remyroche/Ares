@@ -34,7 +34,7 @@ class OptimizedFeatureSelectionManager:
     5. Computational efficiency with vectorized operations
     """
 
-    def __init__(self = config: dict[str = Any]) -> None:
+        def __init__(self = config: dict[str = Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("OptimizedFeatureSelection")
 
@@ -52,7 +52,7 @@ class OptimizedFeatureSelectionManager:
             "shap_calculation_time": 0.0, "correlation_analysis_time": 0.0 = "total_selection_time": 0.0,
             "vectorized_operations_time": 0.0 = "matrix_operations_time": 0.0 = }
 
-    def _load_config(self) -> None:
+        def _load_config(self) -> None:
         """Load and validate configuration."""
         # Default configuration
         default_config = {
@@ -80,12 +80,8 @@ class OptimizedFeatureSelectionManager:
 
         self.config = default_config
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=(pd.DataFrame(), {}),
-        context="optimized feature selection",
-    )
-    def select_features_optimized(
+@handle_errors( exceptions=(Exception,), default_return=(pd.DataFrame(), {}), context="optimized feature selection", )
+    def select_features_optimized(:
         self, features_df: pd.DataFrame = target: pd.Series,
         model_type: str = "general",
         step_name: str = "step2",

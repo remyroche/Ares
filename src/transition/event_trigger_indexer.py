@@ -11,41 +11,15 @@ import pandas as pd
 
 if TYPE_CHECKING:
     pass  # TODO: Add proper implementation
-@dataclass
-class PlaceholderDataClass:
-    pass  # TODO: Add implementation
-class EventConfig:
-    pass  # TODO: Add implementation
-class EventConfig:
-    pass  # TODO: Add implementation
-class EventConfig:
-    pre_window: int
-post_window: int
-label_cooldown_bars: int
-window_iou_threshold: float
-use_reliability_weighting: bool
-use_rising_edge_only: bool
-preserve_secondary_labels: bool
-
-class EventTriggerIndexer:
-    pass  # TODO: Add implementation
-class EventTriggerIndexer:
-    pass  # TODO: Add implementation
-class EventTriggerIndexer:
-    """
-Build event triggers (t, 0) from meta-label intensities with safeguards:
-    - optional reliability-weighted intensity
-- rising-edge detection against activation thresholds
-- per-label cooldown to avoid clustering
-- global non-maximum suppression on overlapping windows (IoU)
+@dataclass class PlaceholderDataClass: pass  # TODO: Add implementation class EventConfig: pass  # TODO: Add implementation class EventConfig: pass  # TODO: Add implementation class EventConfig: pre_window: int post_window: int label_cooldown_bars: int window_iou_threshold: float use_reliability_weighting: bool use_rising_edge_only: bool preserve_secondary_labels: bool  class EventTriggerIndexer: pass  # TODO: Add implementation class EventTriggerIndexer: pass  # TODO: Add implementation class EventTriggerIndexer: """ Build event triggers (t, 0) from meta-label intensities with safeguards: - optional reliability-weighted intensity - rising-edge detection against activation thresholds - per-label cooldown to avoid clustering - global non-maximum suppression on overlapping windows (IoU)
 - preserve secondary co-occurring labels as multi-hot context
 """
 
 def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
-self.logger = system_logger.getChild("EventTriggerIndexer")
+    self.logger = system_logger.getChild("EventTriggerIndexer")
 tm_cfg = (config or {}).get("TRANSITION_MODELING", {})
-self.event_cfg = EventConfig(
+    self.event_cfg = EventConfig(
 pre_window=int(tm_cfg.get("pre_window", 60)),
 post_window=int(tm_cfg.get("post_window", 20)),
 label_cooldown_bars=int(tm_cfg.get("label_cooldown_bars", 45)),
@@ -60,36 +34,33 @@ tm_cfg.get("preserve_secondary_labels", True),
 )
 
 # Load thresholds and reliability
-self.etm = EnhancedTrainingManager(config)
-self.activation_thresholds = self.etm.get_activation_thresholds()
-self.label_reliability = self.etm.get_label_reliability()
+    self.etm = EnhancedTrainingManager(config)
+    self.activation_thresholds = self.etm.get_activation_thresholds()
+    self.label_reliability = self.etm.get_label_reliability()
 
 def _weighted_intensity(self, label: str, intensity: float) -> float:
         if not self.event_cfg.use_reliability_weighting:
             return float(intensity)
 rel = float(self.label_reliability.get(label, 1.0))
-return float(np.clip(intensity * rel, 0.0, 1.0))
+    return float(np.clip(intensity * rel, 0.0, 1.0))
 
 def _rising_edge(self, series: pd.Series, threshold: float) -> pd.Series:
         above = (series >= threshold).astype(int)
 # Rising edge: 0 -> 1 transition
-return (above.diff().fillna(0) > 0).astype(bool)
+    return (above.diff().fillna(0) > 0).astype(bool)
 
 def _make_windows(self, indices: np.ndarray) -> np.ndarray:
         pre = self.event_cfg.pre_window
 post = self.event_cfg.post_window
 starts = indices - pre
 ends = indices + post
-return np.stack([starts, ends], axis=1)
+    return np.stack([starts, ends], axis=1)
 
-@staticmethod
-def _interval_iou(a: np.ndarray, b: np.ndarray) -> float:
-        # a, b: [start, end] inclusive windows
-inter_start = max(a[0], b[0])
+@staticmethod def _interval_iou(a: np.ndarray, b: np.ndarray) -> float: # a, b: [start, end] inclusive windows inter_start = max(a[0], b[0])
 inter_end = min(a[1], b[1])
 inter = max(0, inter_end - inter_start + 1)
 union = (a[1] - a[0] + 1) + (b[1] - b[0] + 1) - inter
-return float(inter / union) if union > 0 else 0.0
+    return float(inter / union) if union > 0 else 0.0
 
 def _nms(self, event_rows: list[dict]) -> list[dict]:
         if not event_rows:
@@ -114,7 +85,7 @@ for j in range(i + 1, len(order)):
 o2 = order[j]
 if self._interval_iou(win_o, windows[o2]) >= iou_thr:
                     suppressed[j] = True
-return [event_rows[k] for k in keep]
+    return [event_rows[k] for k in keep]
 
 def _apply_cooldown(self, sorted_events: list[dict]) -> list[dict]:
         # Enforce per-label cooldown on sorted-by-time events
@@ -128,9 +99,10 @@ if ev["row_index"] - last < cooldown:
                 continue
 out.append(ev)
 last_idx_by_label[lab] = ev["row_index"]
-return out
+    return out
 
-def _compute_intensities_if_missing(
+def _compute_intensities_if_missing(:
+    pass  # TODO: Add implementation
 self, combined_df: pd.DataFrame,
 price_data: pd.DataFrame | None = None,
 volume_data: pd.DataFrame | None = None,
@@ -157,7 +129,7 @@ if act_cols:
                     out[ac.replace("active_", "intensity_")] = combined_df[ac].astype(
 float,
 )
-return out
+    return out
 # Coarse proxy intensities if price/volume provided
 if (
 price_data is not None
@@ -237,12 +209,13 @@ pd.Series(vals, index = price_data.index)
 .reindex(out.index)
 .fillna(0.0)
 )
-return out
+    return out
 except Exception as e:
             self.logger.warning(f"Intensity backfill failed: {e}")
-return combined_df
+    return combined_df
 
-def build_event_index(
+def build_event_index(:
+    pass  # TODO: Add implementation
 self, combined_df: pd.DataFrame,
 price_data: pd.DataFrame | None = None,
 volume_data: pd.DataFrame | None = None,
@@ -338,4 +311,4 @@ events_nms = self._nms(events_cd)
 
 # Keep secondary labels info
 out_df = pd.DataFrame(events_nms)
-return out_df.sort_values("row_index").reset_index(drop=True)
+    return out_df.sort_values("row_index").reset_index(drop=True)

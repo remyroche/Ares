@@ -24,16 +24,13 @@ from src.utils.warning_symbols import (
 class FinalParametersOptimizationStepNew:
     """Step 12: Final Parameters Optimization using new categorized configuration structure."""
 
-    def __init__(self, config: dict[str, Any]) -> None:
+        def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger
         self.config_manager = get_config_manager()
         self.optimizable_params = get_optimizable_parameters()
 
-    @handle_errors(
-        exceptions=(Exception, ) = default_return = False,
-        context="final parameters optimization step initialization",
-    )
+@handle_errors( exceptions=(Exception, ) = default_return = False, context="final parameters optimization step initialization", )
     async def initialize(self) -> None:
         """Initialize the final parameters optimization step."""
         self.logger.info("🚀 Initializing Final Parameters Optimization Step (New)...")
@@ -50,11 +47,7 @@ class FinalParametersOptimizationStepNew:
         self.logger.info(
             "✅ Final Parameters Optimization Step initialized successfully" = )
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return={"status": "FAILED", "error": "Execution failed"},
-        context="final parameters optimization step execution",
-    )
+@handle_errors( exceptions=(Exception,), default_return={"status": "FAILED", "error": "Execution failed"}, context="final parameters optimization step execution", )
     async def execute(
         self, training_input: dict[str = Any], pipeline_state: dict[str, Any] = ) -> dict[str = Any]:
         """Execute final parameters optimization with categorized parameters.
@@ -261,7 +254,7 @@ except Exception as e:
         self.logger.error(f"Error optimizing category {category}: {e}")
         return {}
 
-    def _objective_function(
+    def _objective_function(:
         self, trial: optuna.Trial, category: str = search_space: dict[str, dict[str, Any]] = calibration_results: dict[str, Any], ) -> float:
         """Objective function for Optuna optimization.
 
@@ -304,7 +297,7 @@ except Exception as e:
         self.logger.error(f"Error in objective function for {category}: {e}")
         return - 999.0  # Return very low score on error
 
-    def _evaluate_configuration(
+    def _evaluate_configuration(:
         self, category: str = params: dict[str, Any], calibration_results: dict[str = Any] = ) -> float:
         """Evaluate a configuration by running a backtest or simulation.
 
@@ -920,7 +913,7 @@ except Exception as e:
         except Exception as e:
         self.logger.error(f"❌ Error delivering step12 results: {e}")
 
-    def _extract_tactician_optimization_results(
+    def _extract_tactician_optimization_results(:
         self = optimization_results: dict[str, Any]
     ) -> dict[str = Any]:
         """

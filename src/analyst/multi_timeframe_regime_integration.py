@@ -67,61 +67,51 @@ Initialize the multi-timeframe regime integration.
 Args:
             config: Configuration dictionary
 """
-self.config = config
-self.logger = system_logger.getChild("MultiTimeframeRegimeIntegration")
+    self.config = config
+    self.logger = system_logger.getChild("MultiTimeframeRegimeIntegration")
 
 # Initialize Unified regime classifier (1h only)
-self.regime_classifier = UnifiedRegimeClassifier(config)
+    self.regime_classifier = UnifiedRegimeClassifier(config)
 
 # Initialize regime-specific TP/SL optimizer
-self.regime_tpsl_optimizer = RegimeSpecificTPSLOptimizer(config)
+    self.regime_tpsl_optimizer = RegimeSpecificTPSLOptimizer(config)
 
 # Timeframe configuration
-self.timeframes = CONFIG.get("TIMEFRAMES", {})
-self.timeframe_set = CONFIG.get("DEFAULT_TIMEFRAME_SET", "intraday")
-self.active_timeframes = CONFIG.get("TIMEFRAME_SETS", {}).get(
-self.timeframe_set,
+    self.timeframes = CONFIG.get("TIMEFRAMES", {})
+    self.timeframe_set = CONFIG.get("DEFAULT_TIMEFRAME_SET", "intraday")
+    self.active_timeframes = CONFIG.get("TIMEFRAME_SETS", {}).get(
+    self.timeframe_set,
 [],
 )
 
 # Regime cache
-self.current_regime: str | None = None
-self.regime_confidence: float = 0.0
-self.regime_info: dict[str, Any] = {}
-self.last_regime_update: datetime | None = None
-self.regime_cache_duration = timedelta(
+    self.current_regime: str | None = None
+    self.regime_confidence: float = 0.0
+    self.regime_info: dict[str, Any] = {}
+    self.last_regime_update: datetime | None = None
+    self.regime_cache_duration = timedelta(
 minutes=15,
 )  # Cache regime for 15 minutes
 
 # Regime propagation settings
-self.regime_propagation_config = config.get(
+    self.regime_propagation_config = config.get(
 "multi_timeframe_regime_integration",
 {},
 )
-self.enable_regime_propagation = self.regime_propagation_config.get(
+    self.enable_regime_propagation = self.regime_propagation_config.get(
 "enable_propagation",
 True,
 )
-self.regime_smoothing_window = self.regime_propagation_config.get(
+    self.regime_smoothing_window = self.regime_propagation_config.get(
 "smoothing_window",
 5,
 )
 
-self.logger.info("🚀 Initialized MultiTimeframeRegimeIntegration")
-self.logger.info(f"📊 Active timeframes: {self.active_timeframes}")
-self.logger.info("⏰ Strategic timeframe: 1h (regime classification only)")
+    self.logger.info("🚀 Initialized MultiTimeframeRegimeIntegration")
+    self.logger.info(f"📊 Active timeframes: {self.active_timeframes}")
+    self.logger.info("⏰ Strategic timeframe: 1h (regime classification only)")
 
-@handle_specific_errors(
-error_handlers={
-ValueError: (
-False,
-"Invalid multi-timeframe regime integration configuration",
-),
-AttributeError: (False, "Missing required integration parameters"),
-},
-default_return=False,
-context="multi-timeframe regime integration initialization",
-)
+@handle_specific_errors( error_handlers={ ValueError: ( False, "Invalid multi-timeframe regime integration configuration", ), AttributeError: (False, "Missing required integration parameters"), }, default_return=False, context="multi-timeframe regime integration initialization", )
 async def initialize(self) -> bool:
         """
 Initialize the multi-timeframe regime integration.
@@ -133,30 +123,30 @@ try:
     # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
     # Exception handling placeholder - implement specific error handling as needed
-self.logger.info("Initializing Multi-Timeframe Regime Integration...")
+    self.logger.info("Initializing Multi-Timeframe Regime Integration...")
 
 # Initialize HMM classifier
 if not await self._initialize_regime_classifier():
                 self.print(failed("Failed to initialize HMM classifier"))
-return False
+    return False
 
 # Initialize regime-specific TP/SL optimizer
 if not await self.regime_tpsl_optimizer.initialize():
                 self.logger.error(
 "Failed to initialize regime-specific TP/SL optimizer",
 )
-return False
+    return False
 
-self.logger.info(
+    self.logger.info(
 "✅ Multi-Timeframe Regime Integration initialized successfully",
 )
-return True
+    return True
 
 except Exception as e:
             self.logger.exception(
 f"❌ Failed to initialize Multi-Timeframe Regime Integration: {e}",
 )
-return False
+    return False
 
 async def _initialize_regime_classifier(self) -> bool:
         """
@@ -179,23 +169,19 @@ CONFIG["CHECKPOINT_DIR"],
 if os.path.exists(model_path):
                 if self.regime_classifier.load_models():
                     self.logger.info("✅ Loaded existing HMM regime classifier")
-return True
-self.print(failed("Failed to load existing HMM model"))
+    return True
+    self.print(failed("Failed to load existing HMM model"))
 
-self.logger.info(
+    self.logger.info(
 "HMM classifier not trained yet, will be trained when 1h data is available",
 )
-return True
+    return True
 
 except Exception:
             self.print(initialization_error("Error initializing HMM classifier: {e}"))
-return False
+    return False
 
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=None,
-context="regime classification",
-)
+@handle_errors( exceptions=(ValueError, AttributeError), default_return=None, context="regime classification", )
 async def classify_regime_1h(
 self,
 data_1h: pd.DataFrame,
@@ -218,7 +204,7 @@ if not self._validate_1h_data(data_1h):
                 self.logger.warning(
 "Invalid 1h data provided for regime classification",
 )
-return (
+    return (
 "SIDEWAYS_RANGE",
 0.5,
 {"method": "fallback", "reason": "invalid_data"},
@@ -231,12 +217,12 @@ data_1h,
 )
 
 # Update cache
-self.current_regime = regime
-self.regime_confidence = confidence
-self.regime_info = info
-self.last_regime_update = datetime.now()
+    self.current_regime = regime
+    self.regime_confidence = confidence
+    self.regime_info = info
+    self.last_regime_update = datetime.now()
 
-self.logger.info(
+    self.logger.info(
 f"🔄 Updated regime classification: {regime} (confidence: {confidence:.2f})",
 )
 else:
@@ -244,11 +230,11 @@ else:
 f"📋 Using cached regime: {self.current_regime} (confidence: {self.regime_confidence:.2f})",
 )
 
-return self.current_regime, self.regime_confidence, self.regime_info
+    return self.current_regime, self.regime_confidence, self.regime_info
 
 except Exception as e:
             self.print(error("Error in regime classification: {e}"))
-return "SIDEWAYS_RANGE", 0.5, {"method": "fallback", "error": str(e)}
+    return "SIDEWAYS_RANGE", 0.5, {"method": "fallback", "error": str(e)}
 
 def _validate_1h_data(self, data: pd.DataFrame) -> bool:
         """
@@ -274,7 +260,7 @@ time_diff = data.index[1] - data.index[0]
 hours_diff = time_diff.total_seconds() / 3600
 
 # Allow tolerance (0.8 to 1.2 hours)
-return 0.8 <= hours_diff <= 1.2
+    return 0.8 <= hours_diff <= 1.2
 
 def _should_update_regime(self) -> bool:
         """
@@ -287,13 +273,9 @@ if self.last_regime_update is None:
             return True
 
 time_since_update = datetime.now() - self.last_regime_update
-return time_since_update > self.regime_cache_duration
+    return time_since_update > self.regime_cache_duration
 
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=None,
-context="regime propagation",
-)
+@handle_errors( exceptions=(ValueError, AttributeError), default_return=None, context="regime propagation", )
 async def get_regime_for_timeframe(
 self,
 timeframe: str,
@@ -344,16 +326,16 @@ regime,
 },
 )
 
-self.logger.info(
+    self.logger.info(
 f"📊 Regime for {timeframe}: {regime} (confidence: {confidence:.2f})",
 )
-return timeframe_regime_info
+    return timeframe_regime_info
 
 except Exception as e:
             self.logger.exception(
 f"Error getting regime for timeframe {timeframe}: {e}",
 )
-return {
+    return {
 "regime": "SIDEWAYS_RANGE",
 "confidence": 0.5,
 "regime_info": {"method": "fallback", "error": str(e)},
@@ -425,16 +407,12 @@ adjustments = {
 },
 }
 
-return adjustments.get(timeframe, {}).get(
+    return adjustments.get(timeframe, {}).get(
 regime,
 {"volatility_multiplier": 1.0, "momentum_threshold": 0.5},
 )
 
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=None,
-context="regime-specific optimization",
-)
+@handle_errors( exceptions=(ValueError, AttributeError), default_return=None, context="regime-specific optimization", )
 async def get_regime_specific_optimization(
 self,
 timeframe: str,
@@ -479,16 +457,16 @@ optimization_params = {
 "optimization_timestamp": datetime.now().isoformat(),
 }
 
-self.logger.info(
+    self.logger.info(
 f"🎯 Regime-specific optimization for {timeframe}: {regime_info['regime']}",
 )
-return optimization_params
+    return optimization_params
 
 except Exception as e:
             self.logger.exception(
 f"Error getting regime-specific optimization for {timeframe}: {e}",
 )
-return {
+    return {
 "regime": "SIDEWAYS_RANGE",
 "confidence": 0.5,
 "timeframe": timeframe,
@@ -513,11 +491,11 @@ try:
     # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
     # Exception handling placeholder - implement specific error handling as needed
-self.logger.info("🎓 Training HMM regime classifier with 1h data...")
+    self.logger.info("🎓 Training HMM regime classifier with 1h data...")
 
 if not self._validate_1h_data(historical_data_1h):
                 self.print(invalid("Invalid 1h data provided for training"))
-return False
+    return False
 
 success = await self.regime_classifier.train_complete_system(
 historical_data_1h,
@@ -527,13 +505,13 @@ if success:
                 self.logger.info("✅ HMM regime classifier trained successfully")
 # Save the model
 # Model saving is handled automatically by UnifiedRegimeClassifier
-return True
-self.print(failed("❌ Failed to train HMM regime classifier"))
-return False
+    return True
+    self.print(failed("❌ Failed to train HMM regime classifier"))
+    return False
 
 except Exception:
             self.print(error("Error training HMM classifier: {e}"))
-return False
+    return False
 
 def get_integration_statistics(self) -> dict[str, Any]:
         """
@@ -542,7 +520,7 @@ Get statistics about the multi-timeframe regime integration.
 Returns:
             Dictionary with integration statistics
 """
-return {
+    return {
 "current_regime": self.current_regime,
 "regime_confidence": self.regime_confidence,
 "last_regime_update": self.last_regime_update,

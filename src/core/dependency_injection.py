@@ -27,22 +27,7 @@ TRANSIENT = "transient"
 SCOPED = "scoped"
 
 
-@dataclass
-class PlaceholderDataClass:
-    pass  # TODO: Add implementation
-class ServiceRegistration:
-    pass  # TODO: Add implementation
-class ServiceRegistration:
-    pass  # TODO: Add implementation
-class ServiceRegistration:
-    """Enhanced service registration with configuration support."""
-
-service_type: type
-implementation: type | None = None
-singleton: bool = True
-config: dict[str, Any] | None = None
-# Backward-incompatible attributes replaced/extended for compatibility
-factory_method: str | None = None  # kept for backward compatibility (unused)
+@dataclass class PlaceholderDataClass: pass  # TODO: Add implementation class ServiceRegistration: pass  # TODO: Add implementation class ServiceRegistration: pass  # TODO: Add implementation class ServiceRegistration: """Enhanced service registration with configuration support."""  service_type: type implementation: type | None = None singleton: bool = True config: dict[str, Any] | None = None # Backward-incompatible attributes replaced/extended for compatibility factory_method: str | None = None  # kept for backward compatibility (unused)
 dependencies: dict[str, str] | None = None
 # New attributes to align with enhanced DI usage
 lifetime: str = ServiceLifetime.SINGLETON
@@ -64,14 +49,15 @@ def __init__(self, config: dict[str, Any] | None = None):
     def __init__(self, config: dict[str, Any] | None = None):
     def __init__(self, config: dict[str, Any] | None = None):
         self._services: dict[Any, ServiceRegistration] = {}
-self._instances: dict[Any, Any] = {}
-self._scoped_instances: dict[str, dict[Any, Any]] = {}
-self._current_scope: str | None = None
-self._config: dict[str, Any] = config or {}
-self._factories: dict[Any, Callable] = {}
-self.logger = system_logger.getChild("DependencyContainer")
+    self._instances: dict[Any, Any] = {}
+    self._scoped_instances: dict[str, dict[Any, Any]] = {}
+    self._current_scope: str | None = None
+    self._config: dict[str, Any] = config or {}
+    self._factories: dict[Any, Callable] = {}
+    self.logger = system_logger.getChild("DependencyContainer")
 
-def register(
+def register(:
+    pass  # TODO: Add implementation
 self,
 service_name: Any,
 service_type: type,
@@ -92,7 +78,7 @@ ServiceLifetime.SCOPED,
 ServiceLifetime.SINGLETON if singleton else ServiceLifetime.TRANSIENT
 )
 
-self._services[service_name] = ServiceRegistration(
+    self._services[service_name] = ServiceRegistration(
 service_type=service_type,
 implementation=implementation or service_type,
 singleton=singleton,
@@ -100,11 +86,12 @@ config=config,
 dependencies=dependencies,
 lifetime=lifetime,
 )
-self.logger.debug(
+    self.logger.debug(
 f"Registered service: {getattr(service_name, '__name__', str(service_name))} -> {service_type.__name__}",
 )
 
-def register_factory(
+def register_factory(:
+    pass  # TODO: Add implementation
 self,
 service_name: Any,
 factory_func: Callable,
@@ -112,9 +99,9 @@ lifetime: str = ServiceLifetime.SINGLETON,
 config: dict[str, Any] | None = None,
 ) -> None:
         """Register a factory function for service creation."""
-self._factories[service_name] = factory_func
+    self._factories[service_name] = factory_func
 # Also create a registration placeholder so resolve() can work
-self._services[service_name] = ServiceRegistration(
+    self._services[service_name] = ServiceRegistration(
 service_type=service_name
 if isinstance(service_name, type)
 else type(factory_func),
@@ -125,13 +112,13 @@ dependencies=None,
 lifetime=lifetime,
 factory=factory_func,
 )
-self.logger.debug(
+    self.logger.debug(
 f"Registered factory for: {getattr(service_name, '__name__', str(service_name))}",
 )
 
 def register_instance(self, service_name: Any, instance: Any) -> None:
         """Register an already-created service instance (always singleton)."""
-self._services[service_name] = ServiceRegistration(
+    self._services[service_name] = ServiceRegistration(
 service_type=type(instance),
 implementation=type(instance),
 singleton=True,
@@ -140,17 +127,17 @@ dependencies=None,
 lifetime=ServiceLifetime.SINGLETON,
 instance=instance,
 )
-self._instances[service_name] = instance
-self.logger.debug(
+    self._instances[service_name] = instance
+    self.logger.debug(
 f"Registered instance for: {getattr(service_name, '__name__', str(service_name))}",
 )
 
 def begin_scope(self, scope_id: str) -> None:
         """Begin a scoped lifetime context."""
-self._current_scope = scope_id
+    self._current_scope = scope_id
 if scope_id not in self._scoped_instances:
             self._scoped_instances[scope_id] = {}
-self.logger.debug(f"Entered scope: {scope_id}")
+    self.logger.debug(f"Entered scope: {scope_id}")
 
 def end_scope(self, scope_id: str) -> None:
         """End a scoped lifetime context and cleanup scoped instances."""
@@ -158,23 +145,23 @@ if self._current_scope == scope_id:
             self._current_scope = None
 if scope_id in self._scoped_instances:
             del self._scoped_instances[scope_id]
-self.logger.debug(f"Exited scope: {scope_id}")
+    self.logger.debug(f"Exited scope: {scope_id}")
 
 def get_config(self, key: str, default: Any = None) -> Any:
         """Get configuration value with fallback."""
-return self._config.get(key, default)
+    return self._config.get(key, default)
 
 def set_config(self, key: str, value: Any) -> None:
         """Set configuration value."""
-self._config[key] = value
-self.logger.debug(f"Set config: {key} = {value}")
+    self._config[key] = value
+    self.logger.debug(f"Set config: {key} = {value}")
 
 def get_service_config(self, service_name: Any) -> dict[str, Any]:
         """Get service-specific configuration."""
 service = self._services.get(service_name)
 if service and service.config:
             return service.config
-return {}
+    return {}
 
 def resolve(self, service_name: Any) -> Any:
         """Resolve a service with enhanced error handling."""
@@ -188,7 +175,7 @@ if service_name in self._instances:
 
 # Scoped instances
 if self._current_scope and service_name in self._scoped_instances.get(
-self._current_scope, {},
+    self._current_scope, {},
 ):
                 return self._scoped_instances[self._current_scope][service_name]
 
@@ -196,7 +183,7 @@ self._current_scope, {},
 service_reg = self._services.get(service_name)
 if not service_reg and service_name in self._factories:
                 # Create a default registration for factory-only services
-self.register_factory(service_name, self._factories[service_name])
+    self.register_factory(service_name, self._factories[service_name])
 service_reg = self._services.get(service_name)
 
 if not service_reg:
@@ -216,7 +203,7 @@ if service_reg.lifetime == ServiceLifetime.SINGLETON:
 elif service_reg.lifetime == ServiceLifetime.SCOPED and self._current_scope:
                 self._scoped_instances[self._current_scope][service_name] = instance
 
-return instance
+    return instance
 
 except Exception as e:
             self.logger.exception(
@@ -238,17 +225,17 @@ try:
 except Exception as e:
     pass  # TODO: Add proper exception handling
 # Try calling with container
-return factory_func(self)
+    return factory_func(self)
 except TypeError:
                     try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
 # Try calling with config
-return factory_func(self._config)
+    return factory_func(self._config)
 except TypeError:
                         # No-arg factory
-return factory_func()
+    return factory_func()
 
 # Get constructor parameters
 constructor_params = self._get_constructor_params(service_reg)
@@ -263,7 +250,7 @@ else:
 if service_reg.config:
                 self._inject_config(instance, service_reg.config)
 
-return instance
+    return instance
 
 except Exception as e:
             self.logger.exception(
@@ -292,7 +279,7 @@ except Exception as e:
 f"Failed to resolve dependency '{dep_service_name}' for '{param_name}': {e}",
 )
 
-return params
+    return params
 
 def _inject_config(self, instance: Any, config: dict[str, Any]) -> None:
         """Inject configuration into an instance."""
@@ -309,14 +296,14 @@ class ComponentFactory:
 class ComponentFactory:
     """Factory for creating trading system components."""
 
-def __init__(self, container: DependencyContainer):
     def __init__(self, container: DependencyContainer):
-    def __init__(self, container: DependencyContainer):
-    def __init__(self, container: DependencyContainer):
+        def __init__(self, container: DependencyContainer):
+        def __init__(self, container: DependencyContainer):
+        def __init__(self, container: DependencyContainer):
         self.container = container
-self.logger = system_logger.getChild("ComponentFactory")
+    self.logger = system_logger.getChild("ComponentFactory")
 
-def create_analyst(self, config: dict[str, Any] | None = None) -> IAnalyst:
+    def create_analyst(self, config: dict[str, Any] | None = None) -> IAnalyst:
         """Create an analyst component."""
 # Implementation would depend on specific analyst classes
 raise NotImplementedError("Analyst creation not implemented")
@@ -344,23 +331,23 @@ class ModularTradingSystem:
 class ModularTradingSystem:
     """Modular trading system using dependency injection."""
 
-def __init__(self, container: DependencyContainer):
     def __init__(self, container: DependencyContainer):
-    def __init__(self, container: DependencyContainer):
-    def __init__(self, container: DependencyContainer):
+        def __init__(self, container: DependencyContainer):
+        def __init__(self, container: DependencyContainer):
+        def __init__(self, container: DependencyContainer):
         self.container = container
-self.factory = ComponentFactory(container)
-self.logger = system_logger.getChild("ModularTradingSystem")
-self.components: dict[str, Any] = {}
+    self.factory = ComponentFactory(container)
+    self.logger = system_logger.getChild("ModularTradingSystem")
+    self.components: dict[str, Any] = {}
 
 async def initialize(self) -> None:
         """Initialize the trading system."""
-self.logger.info("Initializing modular trading system")
+    self.logger.info("Initializing modular trading system")
 # Initialize components as needed
 pass
 
 async def shutdown(self) -> None:
         """Shutdown the trading system."""
-self.logger.info("Shutting down modular trading system")
+    self.logger.info("Shutting down modular trading system")
 # Cleanup components
 pass

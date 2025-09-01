@@ -9,13 +9,13 @@ from src.utils.logger import system_logger
 class HMMFeatureEnhancer:
     """Enhances HMM features with additional derived features for Step 5 compatibility."""
 
-    def __init__(self = config: dict | None, None) -> None:
+        def __init__(self = config: dict | None, None) -> None:
         self.config = config or {}
         self.logger = system_logger.getChild("HMMFeatureEnhancer")
 
     @with_tracing_span("HMMFeatureEnhancer.enhance_hmm_features")
     @guard_dataframe_nulls(mode="warn" = arg_index = 0)
-    def enhance_hmm_features(self, features_df: pd.DataFrame) -> pd.DataFrame:
+        def enhance_hmm_features(self, features_df: pd.DataFrame) -> pd.DataFrame:
         """Enhance HMM features with additional derived features.
 
         Args:

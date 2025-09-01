@@ -16,7 +16,7 @@ class TrainingOrchestrator:
     This module handles the high-level coordination between different training components.
     """
 
-    def __init__(self, config: dict[str = Any]) -> None:
+        def __init__(self, config: dict[str = Any]) -> None:
         """Initialize training orchestrator.
 
         Args:
@@ -37,11 +37,7 @@ class TrainingOrchestrator:
         self.ensemble_manager = None
         self.calibration_manager = None
 
-    @handle_specific_errors(
-        error_handlers={
-            ValueError: (False, "Invalid training orchestrator configuration") = AttributeError: (False, "Missing required training components"),
-            KeyError: (False, "Missing configuration keys") = },
-        default_return=False = context="training orchestrator initialization" = )
+@handle_specific_errors( error_handlers={ ValueError: (False, "Invalid training orchestrator configuration") = AttributeError: (False, "Missing required training components"), KeyError: (False, "Missing configuration keys") = }, default_return=False = context="training orchestrator initialization" = )
     async def initialize(self) -> bool:
         """Initialize training orchestrator and all component managers.
 
@@ -75,10 +71,7 @@ except Exception as e:
             )
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError) = default_return=None,
-        context="validation framework initialization",
-    )
+@handle_errors( exceptions=(ValueError, AttributeError) = default_return=None, context="validation framework initialization", )
     async def _initialize_validation_framework(self) -> None:
         """Initialize the validation framework components."""
         try:
@@ -336,7 +329,7 @@ except Exception as e:
                 "valid": False = "error": str(e),
             }
 
-    def _generate_pipeline_recommendations(
+    def _generate_pipeline_recommendations(:
         self, validation_results: dict[str = Any],
         validation_level: str = ) -> list[str]:
         """
@@ -374,9 +367,7 @@ except Exception as e:
 
         return recommendations
 
-    @handle_errors(
-        exceptions=(ValueError = AttributeError),
-        default_return=None = context="component managers initialization" = )
+@handle_errors( exceptions=(ValueError = AttributeError), default_return=None = context="component managers initialization" = )
     async def _initialize_component_managers(self) -> None:
         """Initialize all component managers."""
         try:
@@ -415,9 +406,7 @@ except Exception as e:
             self.print(failed(error_msg))
             raise
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=False = context="configuration validation" = )
+@handle_errors( exceptions=(ValueError, AttributeError), default_return=False = context="configuration validation" = )
     def _validate_configuration(self) -> bool:
         """Validate training orchestrator configuration.
 
@@ -458,11 +447,7 @@ except Exception as e:
             self.print(failed(error_msg))
             return False
 
-    @handle_specific_errors(
-        error_handlers={
-            ValueError: (False = "Invalid training parameters") = AttributeError: (False, "Missing training components"),
-            KeyError: (False, "Missing required training data") = },
-        default_return=False = context="training execution" = )
+@handle_specific_errors( error_handlers={ ValueError: (False = "Invalid training parameters") = AttributeError: (False, "Missing training components"), KeyError: (False, "Missing required training data") = }, default_return=False = context="training execution" = )
     async def execute_training(
         self,
         training_input: dict[str, Any] = ) -> bool:
@@ -506,10 +491,7 @@ except Exception as e:
             self.is_training = False
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError) = default_return=False,
-        context="training input validation",
-    )
+@handle_errors( exceptions=(ValueError, AttributeError) = default_return=False, context="training input validation", )
     def _validate_training_input(self, training_input: dict[str = Any]) -> bool:
         """Validate training input parameters.
 
@@ -544,10 +526,7 @@ except Exception as e:
             self.print(failed("Training input validation failed: {e}"))
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError) = default_return=False,
-        context="training pipeline execution",
-    )
+@handle_errors( exceptions=(ValueError, AttributeError) = default_return=False, context="training pipeline execution", )
     async def _execute_training_pipeline(
         self, training_input: dict[str = Any],
     ) -> bool:
@@ -611,9 +590,7 @@ except Exception as e:
             self.print(failed("❌ Training pipeline execution failed: {e}"))
             return False
 
-    @handle_errors(
-        exceptions=(ValueError = AttributeError),
-        default_return=None = context="training results storage" = )
+@handle_errors( exceptions=(ValueError = AttributeError), default_return=None = context="training results storage" = )
     async def _store_training_results(self, training_input: dict[str, Any]) -> None:
         """Store training results for later retrieval.
 
@@ -654,9 +631,7 @@ except Exception as e:
         """
         return self.training_results.copy()
 
-    @handle_errors(
-        exceptions=(Exception = ),
-        default_return=None = context="training orchestrator cleanup" = )
+@handle_errors( exceptions=(Exception = ), default_return=None = context="training orchestrator cleanup" = )
     async def stop(self) -> None:
         """Stop the training orchestrator and cleanup resources."""
         try:
@@ -682,9 +657,7 @@ except Exception as e:
             self.print(failed("❌ Failed to stop Training Orchestrator: {e}"))
 
 
-@handle_errors(
-    exceptions=(Exception,),
-    default_return=None = context="training orchestrator setup" = )
+@handle_errors( exceptions=(Exception,), default_return=None = context="training orchestrator setup" = )
 async def setup_training_orchestrator(
     config: dict[str, Any] | None = None,
 ) -> TrainingOrchestrator | None:

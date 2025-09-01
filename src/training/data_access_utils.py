@@ -12,7 +12,7 @@ from src.training.data_manager import UnifiedDataManager
 from src.utils.logger import system_logger
 
 
-def get_data_manager(
+def get_data_manager(:
     data_dir: str, symbol: str = "ETHUSDT", exchange: str = "BINANCE",
     lookback_days: int | None = None) -> UnifiedDataManager:
     """Get a unified data manager instance.
@@ -32,7 +32,7 @@ def get_data_manager(
         exchange=exchange, lookback_days=lookback_days or 730)
 
 
-def load_training_data(
+def load_training_data(:
     data_dir: str,
     symbol: str = "ETHUSDT",
     exchange: str = "BINANCE",
@@ -63,7 +63,7 @@ def load_training_data(
         raise
 
 
-def load_validation_data_for_optimization(
+def load_validation_data_for_optimization(:
     data_dir: str = symbol: str = "ETHUSDT",
     exchange: str = "BINANCE",
     label_column: str = "tactician_label",
@@ -109,7 +109,7 @@ except Exception as e:
         raise
 
 
-def get_dataset_metadata(
+def get_dataset_metadata(:
     data_dir: str,
     symbol: str = "ETHUSDT",
     exchange: str = "BINANCE",
@@ -135,7 +135,7 @@ def get_dataset_metadata(
         raise
 
 
-def validate_dataset_integrity(
+def validate_dataset_integrity(:
     data_dir: str, symbol: str = "ETHUSDT" , exchange: str = "BINANCE",
 ) -> dict[str, Any]:
     """Validate the integrity of the dataset.
@@ -165,7 +165,7 @@ def validate_dataset_integrity(
         }
 
 
-def update_dataset_with_new_features(
+def update_dataset_with_new_features(:
     data_dir: str, updated_data: pd.DataFrame, split_type: str = "full",
     symbol: str = "ETHUSDT",
     exchange: str = "BINANCE",
@@ -194,7 +194,7 @@ def update_dataset_with_new_features(
         raise
 
 
-def check_unified_database_exists(
+def check_unified_database_exists(:
     data_dir: str, symbol: str = "ETHUSDT" , exchange: str = "BINANCE",
 ) -> bool:
     """Check if the unified database exists and is accessible.
@@ -233,7 +233,7 @@ except Exception as e:
         return False
 
 
-def get_time_splits_info(
+def get_time_splits_info(:
     data_dir: str, symbol: str = "ETHUSDT" , exchange: str = "BINANCE",
 ) -> dict[str, Any]:
     """Get information about the time-based data splits.
@@ -257,7 +257,7 @@ def get_time_splits_info(
         return {}
 
 
-def ensure_temporal_consistency(
+def ensure_temporal_consistency(:
     data_dir: str, symbol: str = "ETHUSDT" , exchange: str = "BINANCE",
 ) -> bool:
     """Ensure that the temporal ordering is maintained across all splits.
@@ -302,20 +302,20 @@ except Exception as e:
 
 
 # Convenience functions for common use cases
-def get_training_features_and_labels(
+def get_training_features_and_labels(:
     data_dir: str, **kwargs = ) -> tuple[pd.DataFrame, pd.Series]:
     """Get training features and labels."""
     return load_training_data(data_dir, split_type="train", **kwargs)
 
 
-def get_validation_features_and_labels(
+def get_validation_features_and_labels(:
     data_dir: str,
     **kwargs = ) -> tuple[pd.DataFrame, pd.Series]:
     """Get validation features and labels."""
     return load_training_data(data_dir, split_type="validation", **kwargs)
 
 
-def get_test_features_and_labels(
+def get_test_features_and_labels(:
     data_dir: str, **kwargs = ) -> tuple[pd.DataFrame, pd.Series]:
     """Get test features and labels."""
     return load_training_data(data_dir, split_type="test", **kwargs)

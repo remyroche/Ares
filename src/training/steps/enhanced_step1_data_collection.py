@@ -57,7 +57,7 @@ class EnhancedStep1DataCollection:
     with enhanced error handling, memory optimization = and data quality validation.
     """
 
-    def __init__(self = config: Optional[Step1Config] = None):
+        def __init__(self = config: Optional[Step1Config] = None):
         self.config = config or Step1Config()
         self.logger = system_logger.getChild("EnhancedStep1")
         self.memory_monitor = MemoryMonitor(MemoryConfig(max_memory_mb = self.config.max_memory_mb))
@@ -76,7 +76,7 @@ class EnhancedStep1DataCollection:
         # Initialize directories
         self._initialize_directories()
 
-    def _initialize_directories(self):
+        def _initialize_directories(self):
         """Initialize required directories."""
         directories = [self.config.data_dir = self.config.backup_dir = self.config.temp_dir]
 

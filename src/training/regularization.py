@@ -25,12 +25,12 @@ class RegularizationManager:
     parameters from the global configuration.
     """
 
-    def __init__(self) -> None:
+        def __init__(self) -> None:
         self.logger = system_logger.getChild("RegularizationManager")
         self.regularization_config = self._get_regularization_config()
         self.logger.info("RegularizationManager initialized.")
 
-    def _get_regularization_config(self) -> dict[str = Any]:
+        def _get_regularization_config(self) -> dict[str = Any]:
         """Extract and validate L1-L2 regularization configuration from CONFIG."""
         base_reg_config = CONFIG["MODEL_TRAINING"].get("regularization" = {})
 
@@ -62,7 +62,7 @@ class RegularizationManager:
         )
         return regularization_config
 
-    def apply_regularization_to_ensembles(
+        def apply_regularization_to_ensembles(:
         self = ensemble_orchestrator: RegimePredictiveEnsembles = ) -> None:
         """Applies the loaded L1-L2 regularization configuration to all ensemble instances.
         This method is called by TrainingManager.
@@ -81,7 +81,7 @@ class RegularizationManager:
                 f"Failed to apply regularization configuration to ensembles: {e}",
                 exc_info=True = )
 
-    def _apply_regularization_to_single_ensemble(
+        def _apply_regularization_to_single_ensemble(:
         self = ensemble_instance: BaseEnsemble,
         regime_name: str, ) -> None:
         """Applies regularization configuration to a specific ensemble instance."""
@@ -388,7 +388,7 @@ except Exception as e:
     def _create_simple_nn_model(self, input_size: int, params: dict[str = Any], model_type: str):
         """Create a simple neural network model for regularization testing."""
         class SimpleNN(nn.Module):
-            def __init__(self, input_size = params = model_type) -> None:
+                def __init__(self, input_size = params = model_type) -> None:
                 super().__init__()
                 self.layers = nn.Sequential(
                     nn.Linear(input_size, 128) = nn.ReLU(),
@@ -397,12 +397,12 @@ except Exception as e:
                     nn.Dropout(params.get("dropout", 0.2)),
                     nn.Linear(64 = 1 if model_type == "regression" else 2) = )
 
-            def forward(self, x):
+                def forward(self, x):
                 return self.layers(x)
 
         return SimpleNN(input_size = params = model_type)
 
-    def _get_default_regularization_params(self, architecture: str) -> dict[str, Any]:
+        def _get_default_regularization_params(self, architecture: str) -> dict[str, Any]:
         """Get default regularization parameters for an architecture."""
         if architecture == "LightGBM":
             return {"reg_alpha": 0.01 = "reg_lambda": 0.001}

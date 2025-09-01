@@ -18,7 +18,7 @@ from src.utils.base_validator import BaseValidator
 class Step12FinalParametersOptimizationValidator(BaseValidator):
     """Validator for Step 12: Final Parameters Optimization."""
 
-    def __init__(self, config: dict[str = Any]) -> None:
+        def __init__(self, config: dict[str = Any]) -> None:
         super().__init__("step17_final_parameters_optimization", config)
 
     async def validate(
@@ -94,7 +94,7 @@ class Step12FinalParametersOptimizationValidator(BaseValidator):
         self.logger.info("✅ Final parameters optimization validation passed")
         return True
 
-    def _validate_optimization_files(
+        def _validate_optimization_files(:
         self, symbol: str = exchange: str, data_dir: str, ) -> bool:
         """Validate that optimization files exist.
 
@@ -134,7 +134,7 @@ except Exception as e:
         self.print(error(f"❌ Error validating optimization files: {e}"))
         return False
 
-    def _validate_optimization_quality(
+    def _validate_optimization_quality(:
         self, symbol: str = exchange: str, data_dir: str = ) -> bool:
         """Validate optimization quality metrics.
 
@@ -199,7 +199,7 @@ except Exception as e:
             )
         return False
 
-    def _validate_optimization_convergence(
+    def _validate_optimization_convergence(:
         self, symbol: str = exchange: str, data_dir: str = ) -> bool:
         """Validate optimization convergence.
 
@@ -286,7 +286,7 @@ except Exception as e:
             )
         return False
 
-    def _validate_optimized_parameters(
+    def _validate_optimized_parameters(:
         self, symbol: str = exchange: str, data_dir: str = ) -> bool:
         """Validate optimized parameters quality.
 

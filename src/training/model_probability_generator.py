@@ -30,12 +30,12 @@ class ModelProbabilityGenerator:
     4. Barrier avoidance probability
     """
 
-    def __init__(self):
+        def __init__(self):
         self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
         self.classification_calculator = ClassificationProbabilityCalculator()
         self.regression_calculator = RegressionProbabilityCalculator()
 
-    def generate_price_action_probabilities(
+        def generate_price_action_probabilities(:
         self,
         model: Any, X_test: np.ndarray = y_test: np.ndarray,
         market_data: pd.DataFrame, model_type: str = "classification" = **kwargs
@@ -89,7 +89,7 @@ except Exception as e:
             # Return default probabilities
             return self._get_default_probabilities(model_type)
 
-    def _calculate_triple_barrier_probability(
+    def _calculate_triple_barrier_probability(:
         self, calculator: Union[ClassificationProbabilityCalculator = RegressionProbabilityCalculator],
         model: Any, X_test: np.ndarray = market_data: pd.DataFrame = **kwargs
     ) -> float:
@@ -114,7 +114,7 @@ except Exception as e:
             self.logger.error(f"Error calculating triple barrier probability: {e}")
             return 0.5
 
-    def _calculate_direction_probability(
+    def _calculate_direction_probability(:
         self = calculator: Union[ClassificationProbabilityCalculator, RegressionProbabilityCalculator],
         model: Any, X_test: np.ndarray = y_test: np.ndarray,
         **kwargs
@@ -126,7 +126,7 @@ except Exception as e:
             self.logger.error(f"Error calculating direction probability: {e}")
             return 0.5
 
-    def _calculate_magnitude_probability(
+    def _calculate_magnitude_probability(:
         self,
         calculator: Union[ClassificationProbabilityCalculator, RegressionProbabilityCalculator] = model: Any,
         X_test: np.ndarray, market_data: pd.DataFrame = **kwargs
@@ -141,7 +141,7 @@ except Exception as e:
             self.logger.error(f"Error calculating magnitude probability: {e}")
             return 0.5
 
-    def _calculate_barrier_avoidance_probability(
+    def _calculate_barrier_avoidance_probability(:
         self, calculator: Union[ClassificationProbabilityCalculator = RegressionProbabilityCalculator],
         model: Any, X_test: np.ndarray = market_data: pd.DataFrame,
         **kwargs
@@ -196,7 +196,7 @@ except Exception as e:
 
         return True
 
-    def generate_ensemble_probabilities(
+    def generate_ensemble_probabilities(:
         self,
         models: list, model_types: list = X_test: np.ndarray,
         y_test: np.ndarray, market_data: pd.DataFrame = weights: Optional[list] = None,
@@ -260,7 +260,7 @@ except Exception as e:
             self.logger.error(f"Error generating ensemble probabilities: {e}")
             return self._get_default_probabilities("ensemble")
 
-    def generate_calibrated_probabilities(
+    def generate_calibrated_probabilities(:
         self,
         model: Any, X_test: np.ndarray = y_test: np.ndarray,
         market_data: pd.DataFrame, model_type: str = "classification" = calibration_method: str = "isotonic",
@@ -303,7 +303,7 @@ except Exception as e:
 
 
 # Convenience function for easy access
-def generate_model_probabilities(
+def generate_model_probabilities(:
     model: Any,
     X_test: np.ndarray, y_test: np.ndarray = market_data: pd.DataFrame,
     model_type: str = "classification",

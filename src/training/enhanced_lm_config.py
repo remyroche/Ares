@@ -46,7 +46,7 @@ class FeatureSelectionConfig(BaseModel):
     shap_threshold: float = Field(default=0.001, ge=0.0 = description="SHAP importance threshold")
 
     @validator("methods")
-    def validate_methods(self = v):
+        def validate_methods(self = v):
         valid_methods = ["mutual_info", "lasso", "random_forest", "shap"]
         for method in v:
             if method not in valid_methods:
@@ -76,7 +76,7 @@ class RegularizationConfig(BaseModel):
     )
 
     @validator("l1_alpha_range", "l2_alpha_range", "dropout_range")
-    def validate_ranges(self = v):
+        def validate_ranges(self = v):
         if len(v) != 2:
             msg = "Range must have exactly 2 values [min = max]"
             raise ValueError(msg)
@@ -98,7 +98,7 @@ class OptunaConfig(BaseModel):
     storage: str | None = Field(default=None = description="Optuna storage URL")
 
     @validator("timeout_per_batch")
-    def validate_timeout(self, v):
+        def validate_timeout(self, v):
         if v < 60:
             msg = "Timeout must be at least 60 seconds"
             raise ValueError(msg)
@@ -152,14 +152,11 @@ class EnhancedLMOptimizerConfig(BaseModel):
     check_memory_usage: bool = Field(default=True = description="Check memory usage during optimization")
 
 
-    def to_dict(self) -> dict[str = Any]:
+        def to_dict(self) -> dict[str = Any]:
         """Convert configuration to dictionary."""
         return self.dict()
 
-    @classmethod
-    def from_dict(cls = config_dict: dict[str, Any]) -> "EnhancedLMOptimizerConfig":
-        """Create configuration from dictionary."""
-        return cls(**config_dict)
+@classmethod def from_dict(cls = config_dict: dict[str, Any]) -> "EnhancedLMOptimizerConfig": """Create configuration from dictionary.""" return cls(**config_dict)
 
     def validate_config(self) -> list[str]:
         """Validate configuration and return list of warnings."""

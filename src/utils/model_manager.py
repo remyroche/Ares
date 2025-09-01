@@ -36,7 +36,8 @@ warning as eh_warning,
 _NUMPY_RNG_UNPICKLE_PATCHED, False
 _NP_ORIGINAL_BITGEN_CTOR, None  # type: ignore[var - annotated]
 
-def _normalized_numpy_bitgen_ctor(bit_generator_name: Any, state: Any, *args: Any, **kwargs: Any) -> Any:  # type: ignore[override]
+def _normalized_numpy_bitgen_ctor(bit_generator_name: Any, state: Any, *args: Any, **kwargs: Any) -> Any:  # type: ignore[override]:
+    pass  # TODO: Add implementation
 """Normalized ctor to keep picklable; avoids closures.
 
 Attempts to resolve the bit generator by name / class and call the original constructor
@@ -61,10 +62,10 @@ try:
 except Exception as e:
     pass  # TODO: Add proper exception handling
 # Newer numpy expects (name, state)
-return _NP_ORIGINAL_BITGEN_CTOR(name_candidate, effective_state)  # type: ignore[misc]
+    return _NP_ORIGINAL_BITGEN_CTOR(name_candidate, effective_state)  # type: ignore[misc]
 except (TypeError, ValueError):
         # Some versions expect only name
-return _NP_ORIGINAL_BITGEN_CTOR(name_candidate)  # type: ignore[misc]
+    return _NP_ORIGINAL_BITGEN_CTOR(name_candidate)  # type: ignore[misc]
 except Exception:
         # Last resort: try resolving class directly
 bitgen_cls, getattr(np.random, str(name_candidate), None)
@@ -129,33 +130,25 @@ Initialize model manager with enhanced type safety.
 Args:
             config: Configuration dictionary
 """
-self.config: dict[str, Any] = config
-self.logger, system_logger.getChild("ModelManager")
+    self.config: dict[str, Any] = config
+    self.logger, system_logger.getChild("ModelManager")
 
 # Model management
-self.models: dict[str, dict[str, Any]] = {}
-self.model_metadata: dict[str, Any] = {}
-self.active_model: str | None, None
+    self.models: dict[str, dict[str, Any]] = {}
+    self.model_metadata: dict[str, Any] = {}
+    self.active_model: str | None, None
 
 # Configuration
-self.model_config: dict[str, Any] = self.config.get("model_manager", {})
-self.models_dir: str, self.model_config.get("models_directory", "models")
-self.metadata_file: str, self.model_config.get(
+    self.model_config: dict[str, Any] = self.config.get("model_manager", {})
+    self.models_dir: str, self.model_config.get("models_directory", "models")
+    self.metadata_file: str, self.model_config.get(
 "metadata_file",
 "model_metadata.json",
 )
-self.auto_backup: bool, bool(self.model_config.get("auto_backup", True))
-self.max_models: int, int(self.model_config.get("max_models", 10))
+    self.auto_backup: bool, bool(self.model_config.get("auto_backup", True))
+    self.max_models: int, int(self.model_config.get("max_models", 10))
 
-@handle_specific_errors(
-error_handlers={
-ValueError: (False, "Invalid model manager configuration"),
-AttributeError: (False, "Missing required model parameters"),
-KeyError: (False, "Missing configuration keys"),
-},
-default_return = False,
-context="model manager initialization",
-)
+@handle_specific_errors( error_handlers={ ValueError: (False, "Invalid model manager configuration"), AttributeError: (False, "Missing required model parameters"), KeyError: (False, "Missing configuration keys"), }, default_return = False, context="model manager initialization", )
 async def initialize(self) -> bool:
         """
 Initialize model manager with enhanced error handling.
@@ -163,7 +156,7 @@ Initialize model manager with enhanced error handling.
 Returns:
             bool: True if initialization successful, False otherwise
 """
-self.logger.info("Initializing Model Manager...")
+    self.logger.info("Initializing Model Manager...")
 
 # Load model configuration
 await self._load_model_configuration()
@@ -171,7 +164,7 @@ await self._load_model_configuration()
 # Validate configuration
 if not self._validate_configuration():
         self.logger.error(invalid("Invalid configuration for model manager"))
-return False
+    return False
 
 # Initialize directories
 await self._initialize_directories()
@@ -179,40 +172,32 @@ await self._initialize_directories()
 # Load existing models
 await self._load_existing_models()
 
-self.logger.info("✅ Model Manager initialization completed successfully")
-return True
+    self.logger.info("✅ Model Manager initialization completed successfully")
+    return True
 
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return = None,
-context="model configuration loading",
-)
+@handle_errors( exceptions=(ValueError, AttributeError), default_return = None, context="model configuration loading", )
 async def _load_model_configuration(self) -> None:
         """Load model configuration."""
 # Set default model parameters
-self.model_config.setdefault("models_directory", "models")
-self.model_config.setdefault("metadata_file", "model_metadata.json")
-self.model_config.setdefault("auto_backup", True)
-self.model_config.setdefault("max_models", 10)
-self.model_config.setdefault(
+    self.model_config.setdefault("models_directory", "models")
+    self.model_config.setdefault("metadata_file", "model_metadata.json")
+    self.model_config.setdefault("auto_backup", True)
+    self.model_config.setdefault("max_models", 10)
+    self.model_config.setdefault(
 "supported_formats",
 [".joblib", ".pkl", ".h5"],
 )
-self.model_config.setdefault("compression_enabled", True)
+    self.model_config.setdefault("compression_enabled", True)
 
 # Update configuration
-self.models_dir, str(self.model_config["models_directory"])
-self.metadata_file, str(self.model_config["metadata_file"])
-self.auto_backup, bool(self.model_config["auto_backup"])
-self.max_models, int(self.model_config["max_models"])
+    self.models_dir, str(self.model_config["models_directory"])
+    self.metadata_file, str(self.model_config["metadata_file"])
+    self.auto_backup, bool(self.model_config["auto_backup"])
+    self.max_models, int(self.model_config["max_models"])
 
-self.logger.info("Model configuration loaded successfully")
+    self.logger.info("Model configuration loaded successfully")
 
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return = False,
-context="configuration validation",
-)
+@handle_errors( exceptions=(ValueError, AttributeError), default_return = False, context="configuration validation", )
 def _validate_configuration(self) -> bool:
         """
 Validate model configuration.
@@ -223,31 +208,28 @@ Returns:
 # Validate models directory
 if not self.models_dir:
         self.logger.error(invalid("Invalid models directory"))
-return False
+    return False
 
 # Validate metadata file
 if not self.metadata_file:
         self.logger.error(invalid("Invalid metadata file"))
-return False
+    return False
 
 # Validate max models
 if self.max_models <= 0:
         self.logger.error(invalid("Invalid max models"))
-return False
+    return False
 
-self.logger.info("Configuration validation successful")
-return True
+    self.logger.info("Configuration validation successful")
+    return True
 
-@handle_file_operations(
-default_return = None,
-context="directory initialization",
-)
+@handle_file_operations( default_return = None, context="directory initialization", )
 async def _initialize_directories(self) -> None:
         """Initialize directories."""
 # Create models directory
 if not os.path.exists(self.models_dir):
             os.makedirs(self.models_dir, exist_ok = True)
-self.logger.info(f"Created models directory: {self.models_dir}")
+    self.logger.info(f"Created models directory: {self.models_dir}")
 
 # Create subdirectories
 subdirs = ["champion", "challenger", "backups", "archives"]
@@ -255,14 +237,11 @@ for subdir in subdirs:
             subdir_path, os.path.join(self.models_dir, subdir)
 if not os.path.exists(subdir_path):
                 os.makedirs(subdir_path, exist_ok = True)
-self.logger.info(f"Created subdirectory: {subdir_path}")
+    self.logger.info(f"Created subdirectory: {subdir_path}")
 
-self.logger.info("Directories initialized successfully")
+    self.logger.info("Directories initialized successfully")
 
-@handle_file_operations(
-default_return = None,
-context="existing models loading",
-)
+@handle_file_operations( default_return = None, context="existing models loading", )
 async def _load_existing_models(self) -> None:
         """Load existing models and metadata."""
 # Load metadata if exists
@@ -270,7 +249,7 @@ metadata_path, os.path.join(self.models_dir, self.metadata_file)
 if os.path.exists(metadata_path):
         with open(metadata_path) as f:
         self.model_metadata, json.load(f)
-self.logger.info(f"Loaded model metadata from: {metadata_path}")
+    self.logger.info(f"Loaded model metadata from: {metadata_path}")
 else:
         self.model_metadata = {
 "models": {},
@@ -278,7 +257,7 @@ else:
 "last_updated": datetime.now().isoformat(),
 "version": "1_2_3",
 }
-self.logger.info("Created new model metadata")
+    self.logger.info("Created new model metadata")
 
 # Load existing model files
 supported_formats: list[str] = self.model_config.get(
@@ -293,7 +272,7 @@ model_path, os.path.join(self.models_dir, file)
 
 # Get file info
 stat, os.stat(model_path)
-self.models[model_name] = {
+    self.models[model_name] = {
 "path": model_path,
 "size": stat.st_size,
 "created": datetime.fromtimestamp(stat.st_ctime).isoformat(),
@@ -301,19 +280,11 @@ self.models[model_name] = {
 }
 
 # Set active model
-self.active_model, self.model_metadata.get("active_model")
+    self.active_model, self.model_metadata.get("active_model")
 
-self.logger.info(f"Loaded {len(self.models)} existing models")
+    self.logger.info(f"Loaded {len(self.models)} existing models")
 
-@handle_specific_errors(
-error_handlers={
-ValueError: (False, "Invalid model parameters"),
-AttributeError: (False, "Missing model components"),
-KeyError: (False, "Missing required model data"),
-},
-default_return = False,
-context="model registration",
-)
+@handle_specific_errors( error_handlers={ ValueError: (False, "Invalid model parameters"), AttributeError: (False, "Missing model components"), KeyError: (False, "Missing required model data"), }, default_return = False, context="model registration", )
 async def register_model(
 self,
 model_name: str,
@@ -333,11 +304,11 @@ Returns:
 """
 if not model_name or not model_path:
         self.logger.error(invalid("Invalid model name or path"))
-return False
+    return False
 
 if not os.path.exists(model_path):
         self.logger.error(missing(f"Model file not found: {model_path}"))
-return False
+    return False
 
 # Check if model already exists
 if model_name in self.models:
@@ -347,7 +318,7 @@ if model_name in self.models:
 stat, os.stat(model_path)
 
 # Register model
-self.models[model_name] = {
+    self.models[model_name] = {
 "path": model_path,
 "size": stat.st_size,
 "created": datetime.fromtimestamp(stat.st_ctime).isoformat(),
@@ -366,19 +337,15 @@ else:
 }
 
 # Update metadata
-self.model_metadata["last_updated"] = datetime.now().isoformat()
+    self.model_metadata["last_updated"] = datetime.now().isoformat()
 
 # Save metadata
 await self._save_metadata()
 
-self.logger.info(f"Model {model_name} registered successfully")
-return True
+    self.logger.info(f"Model {model_name} registered successfully")
+    return True
 
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return = None,
-context="model loading",
-)
+@handle_errors( exceptions=(ValueError, AttributeError), default_return = None, context="model loading", )
 async def load_model(self, model_name: str) -> Any | None:
         """
 Load a model.
@@ -393,7 +360,7 @@ Returns:
 _enable_numpy_rng_unpickle_compat(self.logger)
 if model_name not in self.models:
         self.logger.error(missing(f"Model {model_name} not found"))
-return None
+    return None
 
 model_path, self.models[model_name]["path"]
 
@@ -408,16 +375,12 @@ elif model_path.endswith(".h5"):
             model, h5py.File(model_path, "r")
 else:
         self.logger.error(error(f"Unsupported model format: {model_path}"))
-return None
+    return None
 
-self.logger.info(f"Model {model_name} loaded successfully")
-return model
+    self.logger.info(f"Model {model_name} loaded successfully")
+    return model
 
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return = False,
-context="model saving",
-)
+@handle_errors( exceptions=(ValueError, AttributeError), default_return = False, context="model saving", )
 async def save_model(
 self,
 model: Any,
@@ -437,7 +400,7 @@ Returns:
 """
 if not model_name:
         self.logger.error(invalid("Invalid model name"))
-return False
+    return False
 
 # Determine file extension
 if format == "joblib":
@@ -448,7 +411,7 @@ elif format == "h5":
             extension = ".h5"
 else:
         self.logger.error(error(f"Unsupported format: {format}"))
-return False
+    return False
 
 # Create model path
 model_path, os.path.join(self.models_dir, f"{model_name}{extension}")
@@ -468,14 +431,10 @@ f.create_dataset("model", data = str(model))
 # Register model
 await self.register_model(model_name, model_path)
 
-self.logger.info(f"Model {model_name} saved successfully")
-return True
+    self.logger.info(f"Model {model_name} saved successfully")
+    return True
 
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return = False,
-context="active model setting",
-)
+@handle_errors( exceptions=(ValueError, AttributeError), default_return = False, context="active model setting", )
 async def set_active_model(self, model_name: str) -> bool:
         """
 Set the active model.
@@ -488,23 +447,19 @@ Returns:
 """
 if model_name not in self.models:
         self.logger.error(missing(f"Model {model_name} not found"))
-return False
+    return False
 
-self.active_model, model_name
-self.model_metadata["active_model"] = model_name
-self.model_metadata["last_updated"] = datetime.now().isoformat()
+    self.active_model, model_name
+    self.model_metadata["active_model"] = model_name
+    self.model_metadata["last_updated"] = datetime.now().isoformat()
 
 # Save metadata
 await self._save_metadata()
 
-self.logger.info(f"Active model set to: {model_name}")
-return True
+    self.logger.info(f"Active model set to: {model_name}")
+    return True
 
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return = None,
-context="active model getting",
-)
+@handle_errors( exceptions=(ValueError, AttributeError), default_return = None, context="active model getting", )
 async def get_active_model(self) -> str | None:
         """
 Get the active model name.
@@ -512,12 +467,9 @@ Get the active model name.
 Returns:
             Optional[str]: Active model name or None
 """
-return self.active_model
+    return self.active_model
 
-@handle_file_operations(
-default_return = None,
-context="metadata saving",
-)
+@handle_file_operations( default_return = None, context="metadata saving", )
 async def _save_metadata(self) -> None:
         """Save model metadata to file."""
 metadata_path, os.path.join(self.models_dir, self.metadata_file)
@@ -525,12 +477,9 @@ os.makedirs(self.models_dir, exist_ok = True)
 with open(metadata_path, "w") as f:
             json.dump(self.model_metadata, f, indent = 2, default = str)
 
-self.logger.info(f"Model metadata saved to: {metadata_path}")
+    self.logger.info(f"Model metadata saved to: {metadata_path}")
 
-@handle_file_operations(
-default_return = None,
-context="model backup creation",
-)
+@handle_file_operations( default_return = None, context="model backup creation", )
 async def create_backup(self, model_name: str) -> None:
         """
 Create backup of a model.
@@ -559,7 +508,7 @@ f"{model_name}_backup_{timestamp}{os.path.splitext(model_path)[1]}",
 # Copy model file
 shutil.copy2(model_path, backup_path)
 
-self.logger.info(f"Model backup created: {backup_path}")
+    self.logger.info(f"Model backup created: {backup_path}")
 
 def get_model_status(self) -> dict[str, Any]:
         """
@@ -568,7 +517,7 @@ Get model manager status information.
 Returns:
             Dict[str, Any]: Model manager status
 """
-return {
+    return {
 "total_models": len(self.models),
 "active_model": self.active_model,
 "models_directory": self.models_dir,
@@ -578,28 +527,20 @@ return {
 "last_updated": self.model_metadata.get("last_updated"),
 }
 
-@handle_errors(
-exceptions=(Exception,),
-default_return = None,
-context="model manager cleanup",
-)
+@handle_errors( exceptions=(Exception,), default_return = None, context="model manager cleanup", )
 async def stop(self) -> None:
         """Stop the model manager."""
-self.logger.info("🛑 Stopping Model Manager...")
+    self.logger.info("🛑 Stopping Model Manager...")
 
 # Save final metadata
 await self._save_metadata()
 
-self.logger.info("✅ Model Manager stopped successfully")
+    self.logger.info("✅ Model Manager stopped successfully")
 
 # Global model manager instance
 model_manager: ModelManager | None, None
 
-@handle_errors(
-exceptions=(Exception,),
-default_return = None,
-context="model manager setup",
-)
+@handle_errors( exceptions=(Exception,), default_return = None, context="model manager setup", )
 async def setup_model_manager(
 config: dict[str, Any] | None, None,
 ) -> ModelManager | None:
@@ -634,4 +575,4 @@ model_manager, ModelManager(config)
 success, await model_manager.initialize()
 if success:
         return model_manager
-return None
+    return None

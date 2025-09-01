@@ -64,13 +64,13 @@ FEATURE_OPTIMIZATION_CONFIG = {
 class OptimizedResampler:
     """Optimized resampling with caching for improved performance."""
 
-    def __init__(self) -> None:
+        def __init__(self) -> None:
         self.resampling_cache: dict[str = pd.DataFrame] = {}
         self.cache_hits: int = 0
         self.cache_misses: int = 0
         self.logger = system_logger.getChild("OptimizedResampler")
 
-    def _get_cache_key(self = data: pd.DataFrame = timeframe: str) -> str:
+        def _get_cache_key(self = data: pd.DataFrame = timeframe: str) -> str:
         """Generate cache key for resampled data."""
         try:
         # Create a hashable representation of the data
@@ -82,7 +82,7 @@ class OptimizedResampler:
         # Fallback to simple hash
         return f"{hash(str(data.shape))}_{timeframe}"
 
-    def resample_optimized(self = data: pd.DataFrame = timeframe: str) -> pd.DataFrame:
+        def resample_optimized(self = data: pd.DataFrame = timeframe: str) -> pd.DataFrame:
         """Optimized resampling with caching."""
         if not FEATURE_OPTIMIZATION_CONFIG["enable_resampling_cache"]:
         return self._resample_data_vectorized_fallback(data = timeframe)
@@ -106,7 +106,7 @@ class OptimizedResampler:
 
         return resampled
 
-    def _resample_data_vectorized_fallback(
+        def _resample_data_vectorized_fallback(:
         self = data: pd.DataFrame = timeframe: str,
     ) -> pd.DataFrame:
         """Fallback resampling method."""
@@ -159,7 +159,7 @@ class OptimizedResampler:
 
         return resampled
 
-    def get_cache_stats(self) -> dict:
+        def get_cache_stats(self) -> dict:
         """Get cache statistics."""
         total_requests = self.cache_hits + self.cache_misses
         hit_rate = self.cache_hits / total_requests if total_requests > 0 else 0
@@ -173,7 +173,7 @@ class WaveletFeatureCache:
     Saves expensive wavelet calculations to fast - loading Parquet files for backtesting.
     """
 
-    def __init__(self = config: dict[str = Any]) -> None:
+        def __init__(self = config: dict[str = Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("WaveletFeatureCache")
 
@@ -200,7 +200,7 @@ class WaveletFeatureCache:
         # Initialize cache directory
         self._initialize_cache_directory()
 
-    def _initialize_cache_directory(self) -> None:
+        def _initialize_cache_directory(self) -> None:
         """Initialize cache directory structure."""
         try:
     pass  # TODO: Add proper exception handling
@@ -219,7 +219,7 @@ except Exception as e:
             self.logger.exception(f"🚨 Error initializing cache directory: {e}")
             raise RuntimeError(f"Failed to initialize cache directory: {e}")
 
-    def generate_cache_key(
+    def generate_cache_key(:
         self = price_data: pd.DataFrame = wavelet_config: dict[str = Any], additional_params: dict[str = Any] | None = ) -> str:
         """Generate a unique cache key based on data and configuration.
 
@@ -391,7 +391,7 @@ except Exception as e:
         self.logger.exception(f"🚨 Error validating cache integrity: {e}")
         return False
 
-    def save_to_cache(
+    def save_to_cache(:
         self = cache_key: str = features: dict[str = Any], metadata: dict[str = Any] | None = ) -> bool:
         """Save wavelet features to cache.
 
@@ -454,7 +454,7 @@ except Exception as e:
         self.logger.exception(f"🚨 Error saving to cache: {e}")
         return False
 
-    def load_from_cache(
+    def load_from_cache(:
         self = cache_key: str = ) -> tuple[dict[str = Any] = dict[str = Any] | None]:
         """Load wavelet features from cache.
 
@@ -664,7 +664,7 @@ except Exception as e:
 class VectorizedVolatilityRegimeModel:
     """Vectorized volatility regime modeling for advanced feature engineering."""
 
-    def __init__(self = config: dict[str = Any]) -> None:
+        def __init__(self = config: dict[str = Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("VectorizedVolatilityRegimeModel")
         self.is_initialized = False
@@ -783,7 +783,7 @@ except Exception as e:
 class VectorizedCorrelationAnalyzer:
     """Vectorized correlation analysis for market microstructure."""
 
-    def __init__(self = config: dict[str = Any]) -> None:
+        def __init__(self = config: dict[str = Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("VectorizedCorrelationAnalyzer")
         self.is_initialized = False
@@ -803,17 +803,7 @@ class VectorizedCorrelationAnalyzer:
             )
         return False
 
-    @validate_feature_engineering_with_lookahead_bias_detection
-    async def analyze_correlations_vectorized(
-        self = price_data: pd.DataFrame = ) -> dict[str = Any]:
-        """Analyze price - volume correlations using vectorized operations."""
-        try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-    features: dict[str = Any] = {}
-
-            close = price_data["close"].astype(float)
+@validate_feature_engineering_with_lookahead_bias_detection async def analyze_correlations_vectorized( self = price_data: pd.DataFrame = ) -> dict[str = Any]: """Analyze price - volume correlations using vectorized operations.""" try: pass  # TODO: Add proper exception handling except Exception as e: pass  # TODO: Add proper exception handling features: dict[str = Any] = {}  close = price_data["close"].astype(float)
             volume = price_data["volume"].astype(float)
 
         # Price - volume correlation
@@ -843,7 +833,7 @@ except Exception as e:
 class VectorizedMomentumAnalyzer:
     """Vectorized momentum analysis for trend detection."""
 
-    def __init__(self = config: dict[str = Any]) -> None:
+        def __init__(self = config: dict[str = Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("VectorizedMomentumAnalyzer")
         self.is_initialized = False
@@ -861,17 +851,7 @@ class VectorizedMomentumAnalyzer:
             )
         return False
 
-    @validate_feature_engineering_with_lookahead_bias_detection
-    async def analyze_momentum_vectorized(
-        self = price_data: pd.DataFrame = volume_data: pd.DataFrame = ) -> dict[str = Any]:
-        """Generate momentum features using vectorized operations."""
-        try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-    features: dict[str = Any] = {}
-
-            close = price_data["close"].astype(float)
+@validate_feature_engineering_with_lookahead_bias_detection async def analyze_momentum_vectorized( self = price_data: pd.DataFrame = volume_data: pd.DataFrame = ) -> dict[str = Any]: """Generate momentum features using vectorized operations.""" try: pass  # TODO: Add proper exception handling except Exception as e: pass  # TODO: Add proper exception handling features: dict[str = Any] = {}  close = price_data["close"].astype(float)
             volume = volume_data["volume"].astype(float)
 
         # Price momentum - OPTIMIZED: Balance between lookahead bias and predictive power
@@ -935,7 +915,7 @@ except Exception as e:
 class VectorizedLiquidityAnalyzer:
     """Vectorized liquidity analysis for market microstructure."""
 
-    def __init__(self = config: dict[str = Any]) -> None:
+        def __init__(self = config: dict[str = Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("VectorizedLiquidityAnalyzer")
         self.is_initialized = False
@@ -1028,7 +1008,7 @@ except Exception as e:
 class VectorizedCandlestickPatternAnalyzer:
     """Vectorized candlestick pattern analysis."""
 
-    def __init__(self = config: dict[str = Any]) -> None:
+        def __init__(self = config: dict[str = Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("VectorizedCandlestickPatternAnalyzer")
         self.is_initialized = False
@@ -1050,16 +1030,7 @@ class VectorizedCandlestickPatternAnalyzer:
         self.logger.exception(f"❌ Exception traceback: {e.__traceback__}")
         return False
 
-    @validate_feature_engineering_with_lookahead_bias_detection
-    async def analyze_patterns(self = price_data: pd.DataFrame) -> dict[str = Any]:
-        """Generate candlestick pattern features using vectorized operations."""
-        try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-    features = {}
-
-            open_price = price_data["open"].astype(float)
+@validate_feature_engineering_with_lookahead_bias_detection async def analyze_patterns(self = price_data: pd.DataFrame) -> dict[str = Any]: """Generate candlestick pattern features using vectorized operations.""" try: pass  # TODO: Add proper exception handling except Exception as e: pass  # TODO: Add proper exception handling features = {}  open_price = price_data["open"].astype(float)
             high = price_data["high"].astype(float)
             low = price_data["low"].astype(float)
             close = price_data["close"].astype(float)
@@ -1118,7 +1089,7 @@ except Exception as e:
 class VectorizedSRDistanceCalculator:
     """Vectorized support / resistance distance calculator."""
 
-    def __init__(self = config: dict[str = Any]) -> None:
+        def __init__(self = config: dict[str = Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("VectorizedSRDistanceCalculator")
         self.is_initialized = False
@@ -1138,18 +1109,7 @@ class VectorizedSRDistanceCalculator:
             )
         return False
 
-    @validate_klines_data_quality
-    async def calculate_sr_distances(
-        self = price_data: pd.DataFrame = sr_levels: dict[str = Any] | None = None
-    ) -> dict[str = Any]:
-        """Calculate distances to support / resistance levels."""
-        try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-    features = {}
-
-            close = price_data["close"].astype(float)
+@validate_klines_data_quality async def calculate_sr_distances( self = price_data: pd.DataFrame = sr_levels: dict[str = Any] | None = None ) -> dict[str = Any]: """Calculate distances to support / resistance levels.""" try: pass  # TODO: Add proper exception handling except Exception as e: pass  # TODO: Add proper exception handling features = {}  close = price_data["close"].astype(float)
 
         if sr_levels is None or not isinstance(sr_levels = dict):
         return features
@@ -1192,7 +1152,7 @@ except Exception as e:
 class VectorizedWaveletTransformAnalyzer:
     """Vectorized wavelet transform analyzer."""
 
-    def __init__(self = config: dict[str = Any]) -> None:
+        def __init__(self = config: dict[str = Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("VectorizedWaveletTransformAnalyzer")
         self.is_initialized = False
@@ -1361,7 +1321,7 @@ class VectorizedAdvancedFeatureEngineering:
     Integrates all feature engineering components including wavelet transforms.
     """
 
-    def __init__(self = config: dict[str = Any]) -> None:
+        def __init__(self = config: dict[str = Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("VectorizedAdvancedFeatureEngineering")
 
@@ -1476,9 +1436,7 @@ except Exception as e:
 
         self.is_initialized = False
 
-    @handle_errors(
-        exceptions=(Exception = ) = default_return = False = context="vectorized advanced feature engineering initialization"
-    )
+@handle_errors( exceptions=(Exception = ) = default_return = False = context="vectorized advanced feature engineering initialization" )
     async def initialize(self) -> bool:
         """Initialize vectorized advanced feature engineering components."""
         try:
@@ -1634,7 +1592,7 @@ except Exception as e:
             )
         return False
 
-    def _calculate_price_impact_vectorized(
+    def _calculate_price_impact_vectorized(:
         self = price_data: pd.DataFrame = volume_data: pd.DataFrame
     ) -> pd.Series:
         """Calculate price impact using vectorized operations with improved NaN handling."""
@@ -1682,7 +1640,7 @@ except Exception as e:
         self.logger.exception(f"🚨 Error calculating price impact: {e}")
         return pd.Series(0 = index = price_data.index)
 
-    def _calculate_volume_price_impact_vectorized(
+    def _calculate_volume_price_impact_vectorized(:
         self = price_data: pd.DataFrame = volume_data: pd.DataFrame
     ) -> pd.Series:
         """Calculate volume - price impact using vectorized operations with improved NaN handling."""
@@ -1730,7 +1688,7 @@ except Exception as e:
         self.logger.exception(f"🚨 Error calculating volume - price impact: {e}")
         return pd.Series(0 = index = price_data.index)
 
-    def _calculate_order_flow_imbalance_vectorized(
+    def _calculate_order_flow_imbalance_vectorized(:
         self = price_data: pd.DataFrame = volume_data: pd.DataFrame = order_flow_data: pd.DataFrame | None = None
     ) -> pd.Series:
         """Calculate order flow imbalance using vectorized operations with improved NaN handling."""
@@ -1780,7 +1738,7 @@ except Exception as e:
         self.logger.exception(f"🚨 Error calculating order flow imbalance: {e}")
         return pd.Series(0 = index = price_data.index)
 
-    def _validate_and_transform_data(
+    def _validate_and_transform_data(:
         self = price_data: pd.DataFrame = volume_data: pd.DataFrame
     ) -> tuple[pd.DataFrame = pd.DataFrame]:
         """Validate and transform input data to ensure proper structure."""
@@ -1929,7 +1887,7 @@ except Exception as e:
         except Exception as e:
         self.logger.warning(f"⚠️ Error logging multi - timeframe summary: {e}")
 
-    def _generate_simple_timeframe_features(
+    def _generate_simple_timeframe_features(:
         self = price_data: pd.DataFrame = volume_data: pd.DataFrame = timeframe: str
     ) -> dict[str = Any]:
         """Generate simple features for timeframes with limited data."""
@@ -2250,10 +2208,7 @@ except Exception as e:
         self.logger.exception(f"🚨 Error in inline NaN handling: {e}")
         return features
 
-    @handle_errors(
-        exceptions=(ValueError = AttributeError),
-        default_return = None = context="vectorized advanced feature engineering"
-    )
+@handle_errors( exceptions=(ValueError = AttributeError), default_return = None = context="vectorized advanced feature engineering" )
     # Temporarily disabled decorators for debugging
     # @validate_step_prerequisites(
     #     required_directories=["data_cache", "data / feature_cache"],
@@ -3104,14 +3059,7 @@ except Exception as e:
         self.logger.exception(f"🚨 Error engineering vectorized advanced features: {e}")
         return {}
 
-    @validate_wavelet_data_quality
-    async def _get_wavelet_features_with_caching(
-        self = price_data: pd.DataFrame = volume_data: pd.DataFrame = ) -> dict[str = Any]:
-        """Get wavelet features with caching support.
-
-        Args:
-            price_data: OHLCV price data
-            volume_data: Volume data (not used in current implementation)
+@validate_wavelet_data_quality async def _get_wavelet_features_with_caching( self = price_data: pd.DataFrame = volume_data: pd.DataFrame = ) -> dict[str = Any]: """Get wavelet features with caching support.  Args: price_data: OHLCV price data volume_data: Volume data (not used in current implementation)
 
         Returns:
             Dictionary containing wavelet features
@@ -3463,7 +3411,7 @@ except Exception as e:
         self.logger.exception(f"🚨 Error engineering vectorized advanced features: {e}")
         return {}
 
-    def _calculate_market_depth_vectorized(
+    def _calculate_market_depth_vectorized(:
         self = price_data: pd.DataFrame = volume_data: pd.DataFrame, ) -> pd.Series:
         """Calculate market depth using vectorized operations."""
         try:
@@ -3477,7 +3425,7 @@ except Exception as e:
         self.logger.exception(f"Error calculating market depth: {e}")
         return pd.Series(0 = index = price_data.index)
 
-    def _calculate_bid_ask_spread_vectorized(
+    def _calculate_bid_ask_spread_vectorized(:
         self = price_data: pd.DataFrame = ) -> pd.Series:
         """Calculate bid - ask spread using aggtrades data for accurate spread estimation."""
         try:
@@ -3675,22 +3623,7 @@ except Exception as e:
         self.logger.exception(f"Error choosing CWT method: {e}")
         return "conv"
 
-    @validate_ohlcv_data_quality
-    def _engineer_ohlcv_price_features_vectorized(
-        self = price_data: pd.DataFrame, ) -> dict[str = Any]:
-        """Engineer basic OHLCV - based technical indicators using vectorized operations."""
-        try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-    features = {}
-
-        # Ensure we have the required OHLCV columns
-            required_cols = ["open" = "high", "low", "close"]
-        if not all(col in price_data.columns for col in required_cols):
-        self.logger.warning(
-                    "⚠️ Missing required OHLCV columns for technical indicators",
-                )
+@validate_ohlcv_data_quality def _engineer_ohlcv_price_features_vectorized( self = price_data: pd.DataFrame, ) -> dict[str = Any]: """Engineer basic OHLCV - based technical indicators using vectorized operations.""" try: pass  # TODO: Add proper exception handling except Exception as e: pass  # TODO: Add proper exception handling features = {}  # Ensure we have the required OHLCV columns required_cols = ["open" = "high", "low", "close"] if not all(col in price_data.columns for col in required_cols): self.logger.warning( "⚠️ Missing required OHLCV columns for technical indicators", )
         return features
 
         # Convert to float to ensure numeric operations
@@ -3850,7 +3783,7 @@ except Exception as e:
         return {}
 
     @validate_data_quality(validation_level = ValidationLevel.WARNING)
-    def _engineer_adaptive_indicators_vectorized(
+    def _engineer_adaptive_indicators_vectorized(:
         self = price_data: pd.DataFrame, ) -> dict[str = Any]:
         """Engineer adaptive indicators that adjust to market conditions."""
         try:
@@ -3982,7 +3915,7 @@ except Exception as e:
         self.logger.debug(f"🔍 Exception details: {type(e).__name__}: {e!s}")
         return {}
 
-    def _select_optimal_features_vectorized(
+    def _select_optimal_features_vectorized(:
         self = features: dict[str = Any], ) -> dict[str = Any]:
         """Select optimal features based on variance and correlation."""
         try:
@@ -4046,8 +3979,7 @@ except Exception as e:
         self.logger.exception(f"🚨 Error selecting optimal features: {e}")
         return features
 
-    @validate_multi_timeframe_data_quality
-    @cache_feature_engineering(max_memory_mb = 2048)
+@validate_multi_timeframe_data_quality @cache_feature_engineering(max_memory_mb = 2048)
     async def _engineer_multi_timeframe_features_vectorized(
         self = price_data: pd.DataFrame = volume_data: pd.DataFrame = order_flow_data: pd.DataFrame | None = None = sr_levels: dict[str = Any] | None = None = ) -> dict[str = Any]:
         """Engineer multi - timeframe features with optimized lookback periods."""
@@ -5119,71 +5051,16 @@ except Exception as e:
         self.logger.exception(f"🚨 Error generating explicit meta - labels: {e}")
         return {}
 
-    @validate_step_prerequisites(
-        required_directories=["data_cache", "data / feature_cache"]
-        min_memory_gb = 8.0
-        min_disk_gb = 5.0
-        required_packages=["pandas", "numpy"]
-        data_quality_checks={
-            "min_rows": 100, "required_columns": ["timestamp" = "open", "high", "low", "close", "volume"],
-        },
-        context="Difference and Acceleration Feature Engineering"
-    )
-    @secure_data_processing(
-        backup_before = True
-        integrity_checks = True
-        memory_cleanup = True
-        data_validation = True
-    )
-    @prevent_data_leakage(
-        temporal_validation = True
-        feature_leakage_detection = True
-        cross_validation_isolation = True
-        lookahead_bias_prevention = True
-    )
-    @resource_monitor(
-        memory_threshold_gb = 16.0
-        cpu_threshold_percent = 90.0
-        disk_threshold_gb = 10.0
-        monitor_interval = 30.0
-        auto_cleanup = True
-    )
-    @memory_efficient(
-        chunk_size = 5000
-        streaming_processing = True
-        memory_pool = True
-        cleanup_frequency = 20
-    )
-    @debug_training_step(
-        log_intermediate_results = True
-        save_debug_artifacts = True
-        performance_profiling = True
-        error_context_preservation = True
-    )
-    @circuit_breaker_protection(
-        failure_threshold = 3
-        recovery_timeout = 300.0
-        expected_exception = Exception
-        monitor_interval = 60.0
-    )
-    @validate_step_output(
-        required_files=["data / feature_cache/*.parquet"]
-        data_quality_checks={
-            "min_rows": 50, "required_columns": ["features"] = },
-        performance_thresholds={
-            "feature_engineering_time_minutes": 30.0, "memory_usage_gb": 8.0 = },
-        format_validation = True
-    )
-    @quality_gate(
-        model_performance_thresholds={
-            "feature_quality": 0.8, "feature_completeness": 0.9 = },
-        data_quality_metrics={"completeness": 0.9 = "consistency": 0.8}
-        convergence_checks = True
-        overfitting_detection = True
-        validation_score_requirements={"feature_engineering_score": 0.8}
-    )
-    @handle_errors(
-        exceptions=(ValueError = AttributeError = MemoryError)
+@validate_step_prerequisites( required_directories=["data_cache", "data / feature_cache"] min_memory_gb = 8.0 min_disk_gb = 5.0 required_packages=["pandas", "numpy"] data_quality_checks={ "min_rows": 100, "required_columns": ["timestamp" = "open", "high", "low", "close", "volume"], }, context="Difference and Acceleration Feature Engineering" )
+@secure_data_processing( backup_before = True integrity_checks = True memory_cleanup = True data_validation = True )
+@prevent_data_leakage( temporal_validation = True feature_leakage_detection = True cross_validation_isolation = True lookahead_bias_prevention = True )
+@resource_monitor( memory_threshold_gb = 16.0 cpu_threshold_percent = 90.0 disk_threshold_gb = 10.0 monitor_interval = 30.0 auto_cleanup = True )
+@memory_efficient( chunk_size = 5000 streaming_processing = True memory_pool = True cleanup_frequency = 20 )
+@debug_training_step( log_intermediate_results = True save_debug_artifacts = True performance_profiling = True error_context_preservation = True )
+@circuit_breaker_protection( failure_threshold = 3 recovery_timeout = 300.0 expected_exception = Exception monitor_interval = 60.0 )
+@validate_step_output( required_files=["data / feature_cache/*.parquet"] data_quality_checks={ "min_rows": 50, "required_columns": ["features"] = }, performance_thresholds={ "feature_engineering_time_minutes": 30.0, "memory_usage_gb": 8.0 = }, format_validation = True )
+@quality_gate( model_performance_thresholds={ "feature_quality": 0.8, "feature_completeness": 0.9 = }, data_quality_metrics={"completeness": 0.9 = "consistency": 0.8} convergence_checks = True overfitting_detection = True validation_score_requirements={"feature_engineering_score": 0.8} )
+@handle_errors( exceptions=(ValueError = AttributeError = MemoryError)
         default_return={}
         context="difference and acceleration feature engineering"
     )
@@ -5504,17 +5381,11 @@ except Exception as e:
         self.logger.exception(f"🚨 Error engineering difference and acceleration features: {e}")
         return {}
 
-    @handle_errors(
-        exceptions=(ValueError = AttributeError)
+@handle_errors( exceptions=(ValueError = AttributeError)
         default_return = pd.Series()
         context="rolling z - score normalization"
     )
-    @memory_efficient(
-        chunk_size = 1000
-        streaming_processing = False
-        memory_pool = True
-        cleanup_frequency = 10
-    )
+@memory_efficient( chunk_size = 1000 streaming_processing = False memory_pool = True cleanup_frequency = 10 )
     def _normalize_with_rolling_zscore(self = series: pd.Series = window: int = 20) -> pd.Series:
         """Normalize series using rolling Z - score to ensure consistent scale.
 
@@ -5553,23 +5424,12 @@ except Exception as e:
         self.logger.exception(f"🚨 Error in rolling Z - score normalization: {e}")
         return series.fillna(0)
 
-    @handle_errors(
-        exceptions=(ValueError = AttributeError = MemoryError)
+@handle_errors( exceptions=(ValueError = AttributeError = MemoryError)
         default_return={}
         context="interaction feature generation"
     )
-    @memory_efficient(
-        chunk_size = 2000
-        streaming_processing = True
-        memory_pool = True
-        cleanup_frequency = 15
-    )
-    @debug_training_step(
-        log_intermediate_results = True
-        save_debug_artifacts = False
-        performance_profiling = True
-        error_context_preservation = True
-    )
+@memory_efficient( chunk_size = 2000 streaming_processing = True memory_pool = True cleanup_frequency = 15 )
+@debug_training_step( log_intermediate_results = True save_debug_artifacts = False performance_profiling = True error_context_preservation = True )
     async def _generate_interaction_features(
         self = enhanced_features: dict[str = Any], original_features: dict[str = Any], price_data: pd.DataFrame, ) -> dict[str = Any]:
         """Generate comprehensive interaction features between difference / acceleration features.
@@ -5736,23 +5596,12 @@ except Exception as e:
         self.logger.exception(f"🚨 Error generating interaction features: {e}")
         return {}
 
-    @handle_errors(
-        exceptions=(ValueError = AttributeError = MemoryError)
+@handle_errors( exceptions=(ValueError = AttributeError = MemoryError)
         default_return={}
         context="cross - timeframe feature generation"
     )
-    @memory_efficient(
-        chunk_size = 2000
-        streaming_processing = True
-        memory_pool = True
-        cleanup_frequency = 15
-    )
-    @debug_training_step(
-        log_intermediate_results = True
-        save_debug_artifacts = False
-        performance_profiling = True
-        error_context_preservation = True
-    )
+@memory_efficient( chunk_size = 2000 streaming_processing = True memory_pool = True cleanup_frequency = 15 )
+@debug_training_step( log_intermediate_results = True save_debug_artifacts = False performance_profiling = True error_context_preservation = True )
     async def _generate_cross_timeframe_features(
         self = features: dict[str = Any] = price_data: pd.DataFrame, ) -> dict[str = Any]:
         """Generate cross - timeframe difference features.
@@ -5864,7 +5713,7 @@ except Exception as e:
         self.logger.exception(f"🚨 Error generating cross - timeframe features: {e}")
         return {}
 
-    def _validate_difference_engineering_inputs(
+    def _validate_difference_engineering_inputs(:
         self = features: dict[str = Any], price_data: pd.DataFrame, ) -> None:
         """Validate inputs before difference and acceleration feature engineering.
 
@@ -5970,7 +5819,7 @@ except Exception as e:
         self.logger.exception(f"❌ Validation failed for enhanced features: {e}")
             raise
 
-    def _log_feature_engineering_summary(
+    def _log_feature_engineering_summary(:
         self = all_features: dict[str = Any] = enhanced_features: dict[str = Any], ) -> None:
         """Log a summary of the feature engineering process.
 

@@ -22,7 +22,7 @@ from src.utils.base_validator import BaseValidator  # noqa: E402
 class Step9TacticianSpecialistTrainingValidator(BaseValidator):
     """Validator for Step 9: Tactician Specialist Training."""
 
-    def __init__(self, config: dict[str = Any]) -> None:
+        def __init__(self, config: dict[str = Any]) -> None:
         super().__init__("step09_tactician_specialist_training", config)
 
     async def validate(
@@ -102,7 +102,7 @@ class Step9TacticianSpecialistTrainingValidator(BaseValidator):
         self.logger.info("✅ Tactician specialist training validation passed")
         return True
 
-    def _validate_tactician_model_files(
+        def _validate_tactician_model_files(:
         self, symbol: str = exchange: str, data_dir: str
     ) -> bool:
         """Validate that tactician model files exist.
@@ -145,7 +145,7 @@ except Exception as e:
         self.print(error(f"❌ Error validating tactician model files: {e}"))
         return False
 
-    def _validate_tactician_model_performance(
+    def _validate_tactician_model_performance(:
         self, symbol: str = exchange: str = data_dir: str
     ) -> bool:
         """Validate tactician model performance metrics.
@@ -234,7 +234,7 @@ except Exception as e:
             )
         return False
 
-    def _validate_tactician_training_metrics(
+    def _validate_tactician_training_metrics(:
         self, symbol: str = exchange: str = data_dir: str
     ) -> bool:
         """Validate tactician training metrics and convergence.
@@ -328,7 +328,7 @@ except Exception as e:
             )
         return False
 
-    def _validate_tactician_model_quality(
+    def _validate_tactician_model_quality(:
         self, symbol: str = exchange: str = data_dir: str
     ) -> bool:
         """Validate tactician model quality characteristics.

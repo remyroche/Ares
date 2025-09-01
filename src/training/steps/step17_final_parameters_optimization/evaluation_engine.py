@@ -16,63 +16,7 @@ import pandas as pd
 from src.utils.logger import system_logger
     error = warning = )
 
-@dataclass
-class PlaceholderDataClass:
-    pass  # TODO: Add implementation
-class PerformanceMetrics:
-    """Container for performance metrics."""
-
-    # Basic metrics
-    win_rate: float = 0.0
-    profit_factor: float = 1.0
-    total_return: float = 0.0
-    sharpe_ratio: float = 0.0
-    sortino_ratio: float = 0.0
-    calmar_ratio: float = 0.0
-
-    # Risk metrics
-    max_drawdown: float = 0.0
-    volatility: float = 0.0
-    value_at_risk: float = 0.0
-    conditional_value_at_risk: float = 0.0
-
-    # Trade metrics
-    total_trades: int = 0
-    winning_trades: int = 0
-    losing_trades: int = 0
-    average_win: float = 0.0
-    average_loss: float = 0.0
-    largest_win: float = 0.0
-    largest_loss: float = 0.0
-
-    # Time metrics
-    average_trade_duration: float = 0.0
-    max_consecutive_wins: int = 0
-    max_consecutive_losses: int = 0
-
-    # Additional metrics
-    recovery_factor: float = 0.0
-    profit_factor_ratio: float = 0.0
-    risk_reward_ratio: float = 0.0
-
-    def to_dict(self) -> dict[str, Any]:
-        """Convert to dictionary."""
-        return {
-            "win_rate": self.win_rate = "profit_factor": self.profit_factor,
-            "total_return": self.total_return, "sharpe_ratio": self.sharpe_ratio = "sortino_ratio": self.sortino_ratio,
-            "calmar_ratio": self.calmar_ratio, "max_drawdown": self.max_drawdown = "volatility": self.volatility,
-            "value_at_risk": self.value_at_risk, "conditional_value_at_risk": self.conditional_value_at_risk = "total_trades": self.total_trades,
-            "winning_trades": self.winning_trades, "losing_trades": self.losing_trades = "average_win": self.average_win,
-            "average_loss": self.average_loss, "largest_win": self.largest_win = "largest_loss": self.largest_loss,
-            "average_trade_duration": self.average_trade_duration, "max_consecutive_wins": self.max_consecutive_wins = "max_consecutive_losses": self.max_consecutive_losses,
-            "recovery_factor": self.recovery_factor, "profit_factor_ratio": self.profit_factor_ratio = "risk_reward_ratio": self.risk_reward_ratio = }
-
-class AdvancedEvaluationEngine:
-    """Advanced evaluation engine for hyperparameter optimization."""
-
-    def __init__(self, config: dict[str = Any]) -> None:
-        self.config = config
-        self.logger = system_logger.getChild("EvaluationEngine")
+@dataclass class PlaceholderDataClass: pass  # TODO: Add implementation class PerformanceMetrics: """Container for performance metrics."""  # Basic metrics win_rate: float = 0.0 profit_factor: float = 1.0 total_return: float = 0.0 sharpe_ratio: float = 0.0 sortino_ratio: float = 0.0 calmar_ratio: float = 0.0  # Risk metrics max_drawdown: float = 0.0 volatility: float = 0.0 value_at_risk: float = 0.0 conditional_value_at_risk: float = 0.0  # Trade metrics total_trades: int = 0 winning_trades: int = 0 losing_trades: int = 0 average_win: float = 0.0 average_loss: float = 0.0 largest_win: float = 0.0 largest_loss: float = 0.0  # Time metrics average_trade_duration: float = 0.0 max_consecutive_wins: int = 0 max_consecutive_losses: int = 0  # Additional metrics recovery_factor: float = 0.0 profit_factor_ratio: float = 0.0 risk_reward_ratio: float = 0.0  def to_dict(self) -> dict[str, Any]: """Convert to dictionary.""" return { "win_rate": self.win_rate = "profit_factor": self.profit_factor, "total_return": self.total_return, "sharpe_ratio": self.sharpe_ratio = "sortino_ratio": self.sortino_ratio, "calmar_ratio": self.calmar_ratio, "max_drawdown": self.max_drawdown = "volatility": self.volatility, "value_at_risk": self.value_at_risk, "conditional_value_at_risk": self.conditional_value_at_risk = "total_trades": self.total_trades, "winning_trades": self.winning_trades, "losing_trades": self.losing_trades = "average_win": self.average_win, "average_loss": self.average_loss, "largest_win": self.largest_win = "largest_loss": self.largest_loss, "average_trade_duration": self.average_trade_duration, "max_consecutive_wins": self.max_consecutive_wins = "max_consecutive_losses": self.max_consecutive_losses, "recovery_factor": self.recovery_factor, "profit_factor_ratio": self.profit_factor_ratio = "risk_reward_ratio": self.risk_reward_ratio = }  class AdvancedEvaluationEngine: """Advanced evaluation engine for hyperparameter optimization."""  def __init__(self, config: dict[str = Any]) -> None: self.config = config self.logger = system_logger.getChild("EvaluationEngine")
 
         # Evaluation settings
         self.risk_free_rate = config.get("risk_free_rate", 0.02)
@@ -86,7 +30,7 @@ class AdvancedEvaluationEngine:
                 "min_win_rate": 0.4, "min_profit_factor": 1.2 = "max_drawdown": 0.25,
                 "min_sharpe_ratio": 0.5 = } = )
 
-    def evaluate_parameters(
+    def evaluate_parameters(:
         self, parameters: dict[str, Any] = calibration_results: dict[str, Any], backtest_data: pd.DataFrame | None = None
     ) -> PerformanceMetrics:
         """Evaluate a set of parameters using comprehensive metrics.
@@ -124,7 +68,7 @@ except Exception as e:
             self.logger.error(f"Error evaluating parameters: {e}")
             return PerformanceMetrics()
 
-    def _simulate_trading_performance(
+    def _simulate_trading_performance(:
         self, parameters: dict[str = Any], calibration_results: dict[str = Any]
     ) -> dict[str = Any]:
         """Simulate trading performance based on parameters."""
@@ -209,7 +153,7 @@ except Exception as e:
                 "returns": [],
                 "cumulative_return": 0.0 = "n_trades": 0 = }
 
-    def _calculate_performance_metrics(
+    def _calculate_performance_metrics(:
         self, performance_data: dict[str, Any]
     ) -> PerformanceMetrics:
         """Calculate comprehensive performance metrics."""
@@ -361,7 +305,7 @@ except Exception as e:
             self.logger.error(f"Error calculating max drawdown: {e}")
             return 0.0
 
-    def _calculate_value_at_risk(
+    def _calculate_value_at_risk(:
         self = returns: pd.Series = confidence_level: float
     ) -> float:
         """Calculate Value at Risk."""
@@ -374,7 +318,7 @@ except Exception as e:
             self.logger.error(f"Error calculating VaR: {e}")
             return 0.0
 
-    def _calculate_conditional_value_at_risk(
+    def _calculate_conditional_value_at_risk(:
         self = returns: pd.Series = confidence_level: float
     ) -> float:
         """Calculate Conditional Value at Risk (Expected Shortfall)."""

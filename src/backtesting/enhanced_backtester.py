@@ -47,45 +47,38 @@ class EnhancedBacktester:
 		Args:
 			config: Configuration dictionary
 		"""
-		self.config = config
-		self.logger = system_logger.getChild("EnhancedBacktester")
+    		self.config = config
+    		self.logger = system_logger.getChild("EnhancedBacktester")
 
 		# Backtesting state
-		self.is_running: bool = False
-		self.current_position: dict[str, Any] = {}
-		self.trade_history: list[dict[str, Any]] = []
-		self.portfolio_value: float = 10000.0
-		self.initial_balance: float = 10000.0
+    		self.is_running: bool = False
+    		self.current_position: dict[str, Any] = {}
+    		self.trade_history: list[dict[str, Any]] = []
+    		self.portfolio_value: float = 10000.0
+    		self.initial_balance: float = 10000.0
 
 		# Configuration
-		self.backtest_config = config.get("enhanced_backtester", {})
-		self.initial_balance = float(self.backtest_config.get("initial_balance", 10000.0))
-		self.commission_rate = float(self.backtest_config.get("commission_rate", 0.001))
-		self.slippage_rate = float(self.backtest_config.get("slippage_rate", 0.0005))
-		self.max_position_size = float(self.backtest_config.get("max_position_size", 0.1))
+    		self.backtest_config = config.get("enhanced_backtester", {})
+    		self.initial_balance = float(self.backtest_config.get("initial_balance", 10000.0))
+    		self.commission_rate = float(self.backtest_config.get("commission_rate", 0.001))
+    		self.slippage_rate = float(self.backtest_config.get("slippage_rate", 0.0005))
+    		self.max_position_size = float(self.backtest_config.get("max_position_size", 0.1))
 
 		# Enhanced reporting
-		self.reporter: PaperTradingReporter | None = None
-		self.enable_detailed_reporting = bool(
-			self.backtest_config.get("enable_detailed_reporting", True),
+    		self.reporter: PaperTradingReporter | None = None
+    		self.enable_detailed_reporting = bool(
+    			self.backtest_config.get("enable_detailed_reporting", True),
 		)
 
 		# Performance tracking
-		self.performance_metrics: dict[str, Any] = {}
-		self.equity_curve: list[float] = []
-		self.drawdown_curve: list[float] = []
+    		self.performance_metrics: dict[str, Any] = {}
+    		self.equity_curve: list[float] = []
+    		self.drawdown_curve: list[float] = []
 
 		# Trade tracking
-		self.trade_tracker = get_trade_tracker()
+    		self.trade_tracker = get_trade_tracker()
 
-	@handle_specific_errors(
-		error_handlers={
-			ValueError: (False, "Invalid backtester configuration"),
-			AttributeError: (False, "Missing required backtester parameters"),
-		},
-		default_return=False,
-		context="backtester initialization",
-	)
+@handle_specific_errors( error_handlers={ ValueError: (False, "Invalid backtester configuration"), AttributeError: (False, "Missing required backtester parameters"), }, default_return=False, context="backtester initialization", )
 	async def initialize(self) -> bool:
 		"""
 		Initialize enhanced backtester with reporting capabilities.
@@ -97,15 +90,15 @@ class EnhancedBacktester:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-			self.logger.info("Initializing Enhanced Backtester...")
+    			self.logger.info("Initializing Enhanced Backtester...")
 
 			# Load backtester configuration
 			await self._load_backtester_configuration()
 
 			# Validate configuration
 			if not self._validate_configuration():
-				self.logger.error(invalid("Invalid configuration for enhanced backtester"))
-				return False
+    				self.logger.error(invalid("Invalid configuration for enhanced backtester"))
+    				return False
 
 			# Initialize backtesting state
 			await self._initialize_backtesting_state()
@@ -114,20 +107,16 @@ except Exception as e:
 			if self.enable_detailed_reporting:
 				await self._initialize_detailed_reporting()
 
-			self.logger.info(
+    			self.logger.info(
 				"✅ Enhanced Backtester initialization completed successfully",
 			)
-			return True
+    			return True
 
 		except Exception as e:  # pragma: no cover - safety
-			self.logger.error(failed(f"❌ Enhanced Backtester initialization failed: {e}"))
-			return False
+    			self.logger.error(failed(f"❌ Enhanced Backtester initialization failed: {e}"))
+    			return False
 
-	@handle_errors(
-		exceptions=(ValueError, AttributeError),
-		default_return=None,
-		context="backtester configuration loading",
-	)
+@handle_errors( exceptions=(ValueError, AttributeError), default_return=None, context="backtester configuration loading", )
 	async def _load_backtester_configuration(self) -> None:
 		"""Load backtester configuration."""
 		try:
@@ -135,29 +124,25 @@ except Exception as e:
 except Exception as e:
     pass  # TODO: Add proper exception handling
 			# Set default parameters
-			self.backtest_config.setdefault("initial_balance", 10000.0)
-			self.backtest_config.setdefault("commission_rate", 0.001)
-			self.backtest_config.setdefault("slippage_rate", 0.0005)
-			self.backtest_config.setdefault("max_position_size", 0.1)
-			self.backtest_config.setdefault("enable_detailed_reporting", True)
+    			self.backtest_config.setdefault("initial_balance", 10000.0)
+    			self.backtest_config.setdefault("commission_rate", 0.001)
+    			self.backtest_config.setdefault("slippage_rate", 0.0005)
+    			self.backtest_config.setdefault("max_position_size", 0.1)
+    			self.backtest_config.setdefault("enable_detailed_reporting", True)
 
 			# Update configuration
-			self.initial_balance = float(self.backtest_config["initial_balance"])
-			self.commission_rate = float(self.backtest_config["commission_rate"])
-			self.slippage_rate = float(self.backtest_config["slippage_rate"])
-			self.max_position_size = float(self.backtest_config["max_position_size"])
-			self.enable_detailed_reporting = bool(
-				self.backtest_config["enable_detailed_reporting"],
+    			self.initial_balance = float(self.backtest_config["initial_balance"])
+    			self.commission_rate = float(self.backtest_config["commission_rate"])
+    			self.slippage_rate = float(self.backtest_config["slippage_rate"])
+    			self.max_position_size = float(self.backtest_config["max_position_size"])
+    			self.enable_detailed_reporting = bool(
+    				self.backtest_config["enable_detailed_reporting"],
 			)
 
 		except Exception as e:  # pragma: no cover - safety
-			self.logger.error(error(f"Error loading backtester configuration: {e}"))
+    			self.logger.error(error(f"Error loading backtester configuration: {e}"))
 
-	@handle_errors(
-		exceptions=(ValueError, AttributeError),
-		default_return=False,
-		context="configuration validation",
-	)
+@handle_errors( exceptions=(ValueError, AttributeError), default_return=False, context="configuration validation", )
 	def _validate_configuration(self) -> bool:
 		"""Validate backtester configuration."""
 		try:
@@ -165,58 +150,50 @@ except Exception as e:
 except Exception as e:
     pass  # TODO: Add proper exception handling
 			if self.initial_balance <= 0:
-				self.logger.error(initialization_error("Initial balance must be positive"))
-				return False
+    				self.logger.error(initialization_error("Initial balance must be positive"))
+    				return False
 
 			if self.commission_rate < 0 or self.commission_rate > 0.1:
-				self.logger.error(error("Commission rate must be between 0 and 0.1"))
-				return False
+    				self.logger.error(error("Commission rate must be between 0 and 0.1"))
+    				return False
 
 			if self.slippage_rate < 0 or self.slippage_rate > 0.1:
-				self.logger.error(error("Slippage rate must be between 0 and 0.1"))
-				return False
+    				self.logger.error(error("Slippage rate must be between 0 and 0.1"))
+    				return False
 
 			if self.max_position_size <= 0 or self.max_position_size > 1.0:
-				self.logger.error(error("Max position size must be between 0 and 1"))
-				return False
+    				self.logger.error(error("Max position size must be between 0 and 1"))
+    				return False
 
-			return True
+    			return True
 
 		except Exception as e:  # pragma: no cover - safety
-			self.logger.error(error(f"Error validating configuration: {e}"))
-			return False
+    			self.logger.error(error(f"Error validating configuration: {e}"))
+    			return False
 
-	@handle_errors(
-		exceptions=(ValueError, AttributeError),
-		default_return=None,
-		context="backtesting state initialization",
-	)
+@handle_errors( exceptions=(ValueError, AttributeError), default_return=None, context="backtesting state initialization", )
 	async def _initialize_backtesting_state(self) -> None:
 		"""Initialize backtesting state."""
 		try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-			self.portfolio_value = float(self.initial_balance)
-			self.current_position = {}
-			self.trade_history = []
-			self.equity_curve = [self.initial_balance]
-			self.drawdown_curve = [0.0]
+    			self.portfolio_value = float(self.initial_balance)
+    			self.current_position = {}
+    			self.trade_history = []
+    			self.equity_curve = [self.initial_balance]
+    			self.drawdown_curve = [0.0]
 
-			self.logger.info(
+    			self.logger.info(
 				f"✅ Backtesting state initialized with balance: ${self.portfolio_value:.2f}",
 			)
 
 		except Exception as e:  # pragma: no cover - safety
-			self.logger.error(
+    			self.logger.error(
 				initialization_error(f"Error initializing backtesting state: {e}"),
 			)
 
-	@handle_errors(
-		exceptions=(ValueError, AttributeError),
-		default_return=None,
-		context="detailed reporting initialization",
-	)
+@handle_errors( exceptions=(ValueError, AttributeError), default_return=None, context="detailed reporting initialization", )
 	async def _initialize_detailed_reporting(self) -> None:
 		"""Initialize detailed reporting system."""
 		try:
@@ -232,33 +209,29 @@ except Exception as e:
 					setup_paper_trading_reporter as _setup_reporter,
 				)
 			except Exception as e:  # pragma: no cover - safety
-				self.logger.warning(
+    				self.logger.warning(
 					warning(
 						f"Detailed reporter unavailable, continuing without it: {e}",
 					),
 				)
-				self.enable_detailed_reporting = False
+    				self.enable_detailed_reporting = False
 				return
 
-			self.reporter = await _setup_reporter(self.config)
+    			self.reporter = await _setup_reporter(self.config)
 			if self.reporter:
-				self.logger.info("✅ Detailed reporting initialized successfully")
+    				self.logger.info("✅ Detailed reporting initialized successfully")
 			else:
-				self.logger.warning(
+    				self.logger.warning(
 					warning("Failed to initialize detailed reporting; continuing"),
 				)
-				self.enable_detailed_reporting = False
+    				self.enable_detailed_reporting = False
 
 		except Exception as e:  # pragma: no cover - safety
-			self.logger.error(
+    			self.logger.error(
 				initialization_error(f"Error initializing detailed reporting: {e}"),
 			)
 
-	@handle_errors(
-		exceptions=(Exception,),
-		default_return={},
-		context="backtest run",
-	)
+@handle_errors( exceptions=(Exception,), default_return={}, context="backtest run", )
 	async def run_backtest(
 		self,
 		historical_data: pd.DataFrame,
@@ -276,8 +249,8 @@ except Exception as e:
 		Returns:
 			Dict[str, Any]: Backtest results with detailed metrics
 		"""
-		self.logger.info("Starting enhanced backtest...")
-		self.is_running = True
+    		self.logger.info("Starting enhanced backtest...")
+    		self.is_running = True
 
 		# Initialize results
 		results: dict[str, Any] = {
@@ -331,7 +304,7 @@ except Exception as e:
 						pass
 
 			# Update equity curve per iteration
-			self._update_equity_curve()
+    			self._update_equity_curve()
 
 		# Calculate final performance metrics
 		results["performance_metrics"] = self._calculate_performance_metrics()
@@ -348,7 +321,7 @@ except Exception as e:
 			except Exception:
 				results["detailed_analysis"] = {}
 
-		self.logger.info("✅ Enhanced backtest completed successfully")
+    		self.logger.info("✅ Enhanced backtest completed successfully")
 		try:  # pragma: no cover - best-effort logging
     pass  # TODO: Add proper exception handling
 except Exception as e:
@@ -364,7 +337,7 @@ except Exception as e:
 		except Exception:
 			pass
 
-		return results
+    		return results
 
 	async def _execute_backtest_trade(
 		self,
@@ -390,11 +363,11 @@ except Exception as e:
 		# Position sizing
 		position_size = float(self.portfolio_value * self.max_position_size)
 		if price <= 0:
-			return None
+    			return None
 		quantity = position_size / price
 
 		if signal == 1:  # Buy
-			return await self._execute_buy_trade(
+    			return await self._execute_buy_trade(
 				symbol=symbol,
 				quantity=quantity,
 				price=price,
@@ -408,7 +381,7 @@ except Exception as e:
 				risk_metrics=risk_metrics,
 			)
 		if signal == -1:  # Sell
-			return await self._execute_sell_trade(
+    			return await self._execute_sell_trade(
 				symbol=symbol,
 				quantity=quantity,
 				price=price,
@@ -421,7 +394,7 @@ except Exception as e:
 				market_conditions=market_conditions,
 				risk_metrics=risk_metrics,
 			)
-		return None
+    		return None
 
 	async def _execute_buy_trade(
 		self,
@@ -446,17 +419,17 @@ except Exception as e:
 
 		# Check balance
 		if total_with_fees > self.portfolio_value:
-			self.logger.warning(
+    			self.logger.warning(
 				f"Insufficient balance for buy trade: ${total_with_fees:.2f} > ${self.portfolio_value:.2f}",
 			)
-			return None
+    			return None
 
 		# Execute the trade: deduct cash
-		self.portfolio_value -= total_with_fees
+    		self.portfolio_value -= total_with_fees
 
 		# Update position aggregate
 		if symbol not in self.current_position:
-			self.current_position[symbol] = {
+    			self.current_position[symbol] = {
 				"quantity": 0.0,
 				"avg_price": 0.0,
 				"total_cost": 0.0,
@@ -496,7 +469,7 @@ except Exception as e:
 			"market_conditions": market_conditions,
 			"risk_metrics": risk_metrics,
 		}
-		self.trade_history.append(trade_record)
+    		self.trade_history.append(trade_record)
 
 		# Record detailed trade if reporting is enabled
 		if self.enable_detailed_reporting and self.reporter:
@@ -520,7 +493,7 @@ except Exception as e:
 				slippage=slippage,
 			)
 
-		return trade_record
+    		return trade_record
 
 	async def _execute_sell_trade(
 		self,
@@ -542,10 +515,10 @@ except Exception as e:
 			symbol not in self.current_position
 			or self.current_position[symbol]["quantity"] < quantity
 		):
-			self.logger.warning(
+    			self.logger.warning(
 				f"Insufficient position for sell trade: {quantity} > {self.current_position.get(symbol, {}).get('quantity', 0)}",
 			)
-			return None
+    			return None
 
 		# Snapshot current position for PnL calc
 		position = self.current_position[symbol]
@@ -560,7 +533,7 @@ except Exception as e:
 		net_proceeds = total_proceeds - commission - slippage
 
 		# Execute the trade: add cash
-		self.portfolio_value += net_proceeds
+    		self.portfolio_value += net_proceeds
 
 		# Update position after selling
 		new_quantity = old_quantity - quantity
@@ -609,7 +582,7 @@ except Exception as e:
 			"market_conditions": market_conditions,
 			"risk_metrics": risk_metrics,
 		}
-		self.trade_history.append(trade_record)
+    		self.trade_history.append(trade_record)
 
 		# Record detailed trade if reporting is enabled
 		if self.enable_detailed_reporting and self.reporter:
@@ -628,13 +601,9 @@ except Exception as e:
 				slippage=slippage,
 			)
 
-		return trade_record
+    		return trade_record
 
-	@handle_errors(
-		exceptions=(Exception,),
-		default_return=None,
-		context="detailed backtest trade recording",
-	)
+@handle_errors( exceptions=(Exception,), default_return=None, context="detailed backtest trade recording", )
 	async def _record_detailed_backtest_trade(
 		self,
 		symbol: str,
@@ -724,17 +693,17 @@ except Exception as e:
 				# Simplified: assume current price equals avg_price for unrealized
 				current_value += float(position["quantity"]) * float(position["avg_price"])
 
-		self.equity_curve.append(current_value)
+    		self.equity_curve.append(current_value)
 
 		# Calculate drawdown
 		peak = max(self.equity_curve) if self.equity_curve else current_value
 		current_drawdown = (peak - current_value) / peak if peak > 0 else 0.0
-		self.drawdown_curve.append(float(current_drawdown))
+    		self.drawdown_curve.append(float(current_drawdown))
 
 	def _calculate_performance_metrics(self) -> dict[str, Any]:
 		"""Calculate comprehensive performance metrics."""
 		if not self.trade_history:
-			return {
+    			return {
 				"total_trades": 0,
 				"win_rate": 0.0,
 				"total_pnl": 0.0,
@@ -783,7 +752,7 @@ except Exception as e:
 			else 0.0
 		)
 
-		return {
+    		return {
 			"total_trades": total_trades,
 			"sell_trades": len(sell_trades),
 			"win_rate": win_rate,
@@ -797,11 +766,7 @@ except Exception as e:
 			"final_equity": self.equity_curve[-1] if self.equity_curve else float(self.initial_balance),
 		}
 
-	@handle_errors(
-		exceptions=(Exception,),
-		default_return={},
-		context="detailed analysis generation",
-	)
+@handle_errors( exceptions=(Exception,), default_return={}, context="detailed analysis generation", )
 	async def _generate_detailed_analysis(self) -> dict[str, Any]:
 		"""Generate detailed analysis of backtest results."""
 		try:
@@ -809,15 +774,15 @@ except Exception as e:
 except Exception as e:
     pass  # TODO: Add proper exception handling
 			if self.reporter:
-				return await self.reporter.generate_detailed_report("backtest_analysis")  # type: ignore[attr-defined]
-			return {}
+    				return await self.reporter.generate_detailed_report("backtest_analysis")  # type: ignore[attr-defined]
+    			return {}
 		except Exception as e:  # pragma: no cover - safety
-			self.logger.error(error(f"Error generating detailed analysis: {e}"))
-			return {}
+    			self.logger.error(error(f"Error generating detailed analysis: {e}"))
+    			return {}
 
 	def get_backtest_results(self) -> dict[str, Any]:
 		"""Get comprehensive backtest results."""
-		return {
+    		return {
 			"performance_metrics": self._calculate_performance_metrics(),
 			"equity_curve": self.equity_curve,
 			"drawdown_curve": self.drawdown_curve,
@@ -826,11 +791,7 @@ except Exception as e:
 			"final_portfolio_value": float(self.portfolio_value),
 		}
 
-	@handle_errors(
-		exceptions=(Exception,),
-		default_return={},
-		context="backtest report generation",
-	)
+@handle_errors( exceptions=(Exception,), default_return={}, context="backtest report generation", )
 	async def generate_backtest_report(
 		self,
 		report_type: str = "comprehensive",
@@ -845,17 +806,13 @@ except Exception as e:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-				return await self.reporter.generate_detailed_report(report_type, export_formats)  # type: ignore[attr-defined]
+    				return await self.reporter.generate_detailed_report(report_type, export_formats)  # type: ignore[attr-defined]
 			except Exception:
 				pass
 		# Fallback to basic report
-		return await self._generate_basic_backtest_report(report_type, export_formats)
+    		return await self._generate_basic_backtest_report(report_type, export_formats)
 
-	@handle_errors(
-		exceptions=(Exception,),
-		default_return={},
-		context="basic backtest report generation",
-	)
+@handle_errors( exceptions=(Exception,), default_return={}, context="basic backtest report generation", )
 	async def _generate_basic_backtest_report(
 		self,
 		report_type: str,
@@ -888,21 +845,17 @@ except Exception as e:
 				filepath = os.path.join(report_dir, filename)
 				with open(filepath, "w", encoding="utf-8") as f:
 					json.dump(report_data, f, indent=2, default=str)
-				self.logger.info(f"✅ Exported backtest JSON report: {filepath}")
+    				self.logger.info(f"✅ Exported backtest JSON report: {filepath}")
 
-		return report_data
+    		return report_data
 
 	def stop(self) -> None:
 		"""Stop backtesting."""
-		self.is_running = False
-		self.logger.info("✅ Enhanced Backtester stopped")
+    		self.is_running = False
+    		self.logger.info("✅ Enhanced Backtester stopped")
 
 
-@handle_errors(
-	exceptions=(Exception,),
-	default_return=None,
-	context="enhanced backtester setup",
-)
+@handle_errors( exceptions=(Exception,), default_return=None, context="enhanced backtester setup", )
 async def setup_enhanced_backtester(
 	config: dict[str, Any] | None = None,
 ) -> EnhancedBacktester | None:
@@ -926,9 +879,9 @@ except Exception as e:
 		success = await backtester.initialize()
 
 		if success:
-			return backtester
-		return None
+    			return backtester
+    		return None
 
 	except Exception as e:  # pragma: no cover - safety
 		system_logger.exception(error(f"Error setting up enhanced backtester: {e}"))
-		return None
+    		return None

@@ -25,7 +25,7 @@ from src.utils.base_validator import BaseValidator  # noqa: E402
 class Step8TacticianLabelingValidator(BaseValidator):
     """Validator for Step 8: Tactician Labeling."""
 
-    def __init__(self = config: dict[str, Any]) -> None:
+        def __init__(self = config: dict[str, Any]) -> None:
         super().__init__("step08_tactician_labeling", config)
 
     async def validate(
@@ -103,7 +103,7 @@ class Step8TacticianLabelingValidator(BaseValidator):
         self.logger.info("✅ Tactician labeling validation passed")
         return True
 
-    def _validate_labeling_files_existence(
+        def _validate_labeling_files_existence(:
         self, symbol: str = exchange: str, data_dir: str, ) -> bool:
         """Validate that tactician labeling files exist.
 
@@ -147,7 +147,7 @@ except Exception as e:
         self.print(error(f"❌ Error validating tactician labeling files: {e}"))
         return False
 
-    def _validate_signal_quality(
+    def _validate_signal_quality(:
         self, symbol: str = exchange: str, data_dir: str = ) -> bool:
         """Validate the quality of generated trading signals.
 
@@ -312,7 +312,7 @@ except Exception as e:
             )
         return False
 
-    def _validate_labeling_consistency(
+    def _validate_labeling_consistency(:
         self, symbol: str = exchange: str, data_dir: str = ) -> bool:
         """Validate consistency of tactician labeling.
 
@@ -503,7 +503,7 @@ except Exception as e:
             )
         return False
 
-    def _validate_signal_distribution(
+    def _validate_signal_distribution(:
         self, symbol: str = exchange: str, data_dir: str = ) -> bool:
         """Validate the distribution of trading signals.
 

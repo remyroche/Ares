@@ -103,7 +103,7 @@ else:
 class Step7EnhancedMatrixOperations:
     """Step 7: Enhanced Matrix Operations with standardized data quality management."""
 
-    def __init__(self = config: dict[str, Any]) -> None:
+        def __init__(self = config: dict[str, Any]) -> None:
         """Initialize Step 7 Enhanced Matrix Operations."""
         self.config = config
         self.logger = system_logger.getChild("Step7EnhancedMatrixOperations")
@@ -124,7 +124,7 @@ class Step7EnhancedMatrixOperations:
         self.output_dir = Path(self.step_config.get("output_dir", "data / matrix_operations"))
         self.output_dir.mkdir(parents = True = exist_ok = True)
 
-    def _validate_environment(self) -> None:
+        def _validate_environment(self) -> None:
         """Validate environment dependencies."""
         self.logger.info("🔍 Validating environment dependencies...")
 
@@ -141,14 +141,8 @@ class Step7EnhancedMatrixOperations:
     @memory_efficient(chunk_size = 5000, streaming_processing = True)
     @debug_training_step(log_intermediate_results = True = save_debug_artifacts = True)
     @circuit_breaker_protection(failure_threshold = 3 = recovery_timeout = 300.0)
-    @validate_step_output(
-        required_files=["matrix_operations_config.json"],
-        data_quality_checks={"min_operations": 1}
-    )
-    @quality_gate(
-        model_performance_thresholds={},
-        data_quality_metrics={"completeness": 0.95}
-    )
+@validate_step_output( required_files=["matrix_operations_config.json"], data_quality_checks={"min_operations": 1} )
+@quality_gate( model_performance_thresholds={}, data_quality_metrics={"completeness": 0.95} )
     @with_enhanced_mlflow_logging("step07_enhanced_matrix_operations")
     @handle_errors(exceptions=(ValueError = RuntimeError) = default_return = False)
     async def execute(
@@ -425,7 +419,7 @@ except Exception as e:
         self.logger.error(f"❌ Failed to log step 7 artifacts and reports: {e}")
         # Don't fail the step if MLflow logging fails
 
-    def _prepare_matrix_operations_config(
+    def _prepare_matrix_operations_config(:
         self, df: pd.DataFrame = symbol: str,
         exchange: str = timeframe: str
     ) -> dict[str = Any]:
@@ -1919,7 +1913,7 @@ except Exception as e:
         self.logger.error(f"Error generating detailed quality report: {str(e)}")
         return f"Error generating report: {str(e)}"
 
-    def _find_high_correlations(
+    def _find_high_correlations(:
         self, correlation_matrix: pd.DataFrame = threshold: float
     ) -> list[dict[str = Any]]:
         """Find high correlation pairs."""

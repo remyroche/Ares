@@ -12,7 +12,7 @@ Returns:
         dict: Computational optimization configuration
 
 """
-return {
+    return {
 "computational_optimization": {
 # Caching configuration
 "enable_caching": True, "max_cache_size": 1000,
@@ -112,7 +112,7 @@ Returns:
 """
 config = get_computational_optimization_config()
 phases = config["computational_optimization"]["phases"]
-return phases.get(phase, {})
+    return phases.get(phase, {})
 
 
 def get_backtesting_optimization_config() -> dict[str, Any]:
@@ -123,7 +123,7 @@ Returns:
 
 """
 config = get_computational_optimization_config()
-return config["computational_optimization"]["backtesting"]
+    return config["computational_optimization"]["backtesting"]
 
 
 def get_model_training_optimization_config() -> dict[str, Any]:
@@ -134,7 +134,7 @@ Returns:
 
 """
 config = get_computational_optimization_config()
-return config["computational_optimization"]["model_training"]
+    return config["computational_optimization"]["model_training"]
 
 
 def get_feature_engineering_optimization_config() -> dict[str, Any]:
@@ -145,7 +145,7 @@ Returns:
 
 """
 config = get_computational_optimization_config()
-return config["computational_optimization"]["feature_engineering"]
+    return config["computational_optimization"]["feature_engineering"]
 
 
 def get_multi_objective_optimization_config() -> dict[str, Any]:
@@ -156,7 +156,7 @@ Returns:
 
 """
 config = get_computational_optimization_config()
-return config["computational_optimization"]["multi_objective"]
+    return config["computational_optimization"]["multi_objective"]
 
 
 def get_memory_management_config() -> dict[str, Any]:
@@ -167,7 +167,7 @@ Returns:
 
 """
 config = get_computational_optimization_config()
-return config["computational_optimization"]["memory_management"]
+    return config["computational_optimization"]["memory_management"]
 
 
 def get_performance_monitoring_config() -> dict[str, Any]:
@@ -178,7 +178,7 @@ Returns:
 
 """
 config = get_computational_optimization_config()
-return config["computational_optimization"]["performance_monitoring"]
+    return config["computational_optimization"]["performance_monitoring"]
 
 
 def get_expected_improvements() -> dict[str, float]:
@@ -189,7 +189,7 @@ Returns:
 
 """
 config = get_computational_optimization_config()
-return config["computational_optimization"]["expected_improvements"]
+    return config["computational_optimization"]["expected_improvements"]
 
 
 def is_optimization_enabled(optimization_type: str) -> bool:
@@ -219,7 +219,7 @@ if optimization_type == "progressive_evaluation":
         return optimization_config.get("enable_progressive_evaluation", False)
 if optimization_type == "adaptive_complexity":
         return optimization_config.get("enable_adaptive_complexity", False)
-return False
+    return False
 
 
 def get_optimization_statistics() -> dict[str, Any]:
@@ -237,7 +237,7 @@ for key, value in optimization_config.items():
         if key.startswith("enable_") and value:
             enabled_optimizations.append(key.replace("enable_", ""))
 
-return {
+    return {
 "enabled_optimizations": enabled_optimizations, "total_optimizations": len(enabled_optimizations),
 "expected_improvements": get_expected_improvements(),
 "configuration": optimization_config}

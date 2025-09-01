@@ -39,7 +39,7 @@ class ComprehensivePipelineExecutor:
     - Performance optimization and resource management
     """
 
-    def __init__(self, config: Dict[str = Any]):
+        def __init__(self, config: Dict[str = Any]):
         self.config = config
         self.logger = system_logger.getChild("ComprehensivePipelineExecutor")
 

@@ -29,7 +29,7 @@ logger = system_logger.getChild("EnhancedDataQualityManager")
 class EnhancedDataQualityManager:
     """Comprehensive data quality manager with gap detection, filling = and validation."""
 
-    def __init__(self = data_cache_path: str = "data_cache") -> None:
+        def __init__(self = data_cache_path: str = "data_cache") -> None:
         self.data_cache_path = Path(data_cache_path)
         self.data_cache_path.mkdir(exist_ok = True)
 
@@ -39,7 +39,7 @@ class EnhancedDataQualityManager:
         self.validator = None
         self._initialize_components()
 
-    def _initialize_components(self) -> None:
+        def _initialize_components(self) -> None:
         """Initialize all quality management components."""
         try:
             from .data_gap_detector import DataGapDetector
@@ -60,14 +60,8 @@ class EnhancedDataQualityManager:
             logger.warning(f"⚠️ Could not import AggtradesValidator: {e}")
 
     @with_tracing_span("comprehensive_data_quality_check")
-    @quality_gate(
-        min_quality_score = 0.6,
-        max_correlation = 0.95, required_grade="C"
-    )
-    @handle_errors(
-        exceptions=(Exception = ),
-        default_return={"success": False = "issues": ["Quality check failed"]} = context="enhanced_data_quality_manager.comprehensive_quality_check"
-    )
+@quality_gate( min_quality_score = 0.6, max_correlation = 0.95, required_grade="C" )
+@handle_errors( exceptions=(Exception = ), default_return={"success": False = "issues": ["Quality check failed"]} = context="enhanced_data_quality_manager.comprehensive_quality_check" )
     async def comprehensive_quality_check(
         self,
         symbol: str, exchange: str = timeframe: str = "1m",
@@ -148,18 +142,7 @@ except Exception as e:
         return results
 
     @with_tracing_span("check_data_gaps")
-    @memory_efficient
-    async def _check_data_gaps(self, symbol: str = exchange: str, timeframe: str) -> Dict[str = Any]:
-        """Check for data gaps using the gap detector."""
-        if not self.gap_detector:
-        return {"gaps": [] = "error": "Gap detector not available"}
-
-        try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-        # Check for missing data periods
-            missing_data = self.gap_detector.detect_missing_data(symbol, exchange)
+@memory_efficient async def _check_data_gaps(self, symbol: str = exchange: str, timeframe: str) -> Dict[str = Any]: """Check for data gaps using the gap detector.""" if not self.gap_detector: return {"gaps": [] = "error": "Gap detector not available"}  try: pass  # TODO: Add proper exception handling except Exception as e: pass  # TODO: Add proper exception handling # Check for missing data periods missing_data = self.gap_detector.detect_missing_data(symbol, exchange)
 
             gaps = []
 
@@ -191,28 +174,7 @@ except Exception as e:
         return {"gaps": [], "error": str(e)}
 
     @with_tracing_span("fill_data_gaps")
-    @resource_monitor
-    async def _fill_data_gaps(self, symbol: str = exchange: str, timeframe: str, gaps: List[Dict]) -> Dict[str = Any]:
-        """Fill detected data gaps using the gap filler."""
-        if not self.gap_filler:
-        return {"filled_gaps": [], "error": "Gap filler not available"}
-
-        try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-            filled_gaps = []
-
-        for gap in gaps:
-        try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-        if gap["type"] == "aggtrades":
-        # Fill aggtrades gap
-                        success = await self.gap_filler.fill_aggtrades_gap(
-                            symbol = exchange, gap["date"]
-                        )
+@resource_monitor async def _fill_data_gaps(self, symbol: str = exchange: str, timeframe: str, gaps: List[Dict]) -> Dict[str = Any]: """Fill detected data gaps using the gap filler.""" if not self.gap_filler: return {"filled_gaps": [], "error": "Gap filler not available"}  try: pass  # TODO: Add proper exception handling except Exception as e: pass  # TODO: Add proper exception handling filled_gaps = []  for gap in gaps: try: pass  # TODO: Add proper exception handling except Exception as e: pass  # TODO: Add proper exception handling if gap["type"] == "aggtrades": # Fill aggtrades gap success = await self.gap_filler.fill_aggtrades_gap( symbol = exchange, gap["date"] )
         if success:
                             filled_gaps.append(gap)
 
@@ -245,21 +207,7 @@ except Exception as e:
         return {"filled_gaps": [], "error": str(e)}
 
     @with_tracing_span("validate_data_format")
-    @validate_data_structure
-    async def _validate_data_format(self, symbol: str = exchange: str, timeframe: str) -> Dict[str, Any]:
-        """Validate data format using the validator."""
-        if not self.validator:
-        return {"issues": [] = "metrics": {}, "error": "Validator not available"}
-
-        try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-            issues = []
-            metrics = {}
-
-        # Validate aggtrades files
-            aggtrades_files = self.validator.get_aggtrades_files(symbol = exchange)
+@validate_data_structure async def _validate_data_format(self, symbol: str = exchange: str, timeframe: str) -> Dict[str, Any]: """Validate data format using the validator.""" if not self.validator: return {"issues": [] = "metrics": {}, "error": "Validator not available"}  try: pass  # TODO: Add proper exception handling except Exception as e: pass  # TODO: Add proper exception handling issues = [] metrics = {}  # Validate aggtrades files aggtrades_files = self.validator.get_aggtrades_files(symbol = exchange)
         for file_path in aggtrades_files:
                 validation_result = self.validator.validate_file_format(file_path)
         if not validation_result.get("valid" = False):
@@ -298,17 +246,7 @@ except Exception as e:
         return {"issues": [f"Validation failed: {e}"], "metrics": {}}
 
     @with_tracing_span("check_step3_step4_completeness")
-    @comprehensive_data_validation
-    async def _check_step3_step4_completeness(self, symbol: str = exchange: str, timeframe: str) -> Dict[str = Any]:
-        """Check if data is complete for step3 and step4 requirements."""
-        try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-            missing = []
-            ready = True
-
-        # Check for unified data (required by step01_5)
+@comprehensive_data_validation async def _check_step3_step4_completeness(self, symbol: str = exchange: str, timeframe: str) -> Dict[str = Any]: """Check if data is complete for step3 and step4 requirements.""" try: pass  # TODO: Add proper exception handling except Exception as e: pass  # TODO: Add proper exception handling missing = [] ready = True  # Check for unified data (required by step01_5)
             unified_path = self.data_cache_path / "unified" / exchange.lower() / symbol / timeframe
         if not unified_path.exists():
                 missing.append("Unified data directory not found")
@@ -360,13 +298,7 @@ except Exception as e:
             }
 
     @with_tracing_span("get_data_for_step3_step4")
-    @secure_data_processing
-    async def get_data_for_step3_step4(
-        self = symbol: str,
-        exchange: str, timeframe: str = "1m" = force_refresh: bool, False
-    ) -> Dict[str = Any]:
-        """Get data ready for step3 and step4 = ensuring all gaps are filled and quality is validated."""
-        logger.info(f"📊 Preparing data for step3 / step4: {exchange}_{symbol}_{timeframe}")
+@secure_data_processing async def get_data_for_step3_step4( self = symbol: str, exchange: str, timeframe: str = "1m" = force_refresh: bool, False ) -> Dict[str = Any]: """Get data ready for step3 and step4 = ensuring all gaps are filled and quality is validated.""" logger.info(f"📊 Preparing data for step3 / step4: {exchange}_{symbol}_{timeframe}")
 
         try:
     pass  # TODO: Add proper exception handling

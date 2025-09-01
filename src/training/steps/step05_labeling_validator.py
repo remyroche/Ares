@@ -22,26 +22,11 @@ logger = system_logger.getChild("Step5LabelingValidator")
 class Step5LabelingValidator(BaseValidator):
     """Validator for Step 5: Labeling."""
 
-    def __init__(self = config: dict[str = Any]) -> None:
+        def __init__(self = config: dict[str = Any]) -> None:
         super().__init__("step05_labeling", config)
         self.logger = system_logger.getChild("Validator.Step5")
 
-    @validate_step5_comprehensive
-    async def validate_step5_labeling(
-        self, symbol: str = exchange: str, data_dir: str = training_input: dict[str = Any]
-    ) -> bool:
-        """Validate Step 5: Labeling.
-
-        Args:
-            symbol: Trading symbol
-            exchange: Exchange name
-            data_dir: Data directory
-            training_input: Training input data
-
-        Returns:
-            bool: True if validation passes
-        """
-        self.logger.info("🔍 Starting Step 5: Labeling validation")
+@validate_step5_comprehensive async def validate_step5_labeling( self, symbol: str = exchange: str, data_dir: str = training_input: dict[str = Any] ) -> bool: """Validate Step 5: Labeling.  Args: symbol: Trading symbol exchange: Exchange name data_dir: Data directory training_input: Training input data  Returns: bool: True if validation passes """ self.logger.info("🔍 Starting Step 5: Labeling validation")
 
         try:
     pass  # TODO: Add proper exception handling
@@ -87,14 +72,7 @@ except Exception as e:
         self.logger.exception(f"❌ Step 5 validation failed: {error_context}")
         return False
 
-    @smart_validation_cache(ttl_seconds = 300)  # Cache for 5 minutes
-    async def _validate_labeled_file(self, labeled_file: Path) -> bool:
-        """Validate a labeled data file with caching."""
-        try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-        self.logger.info(f"📁 Validating labeled file: {labeled_file.name}")
+@smart_validation_cache(ttl_seconds = 300)  # Cache for 5 minutes async def _validate_labeled_file(self, labeled_file: Path) -> bool: """Validate a labeled data file with caching.""" try: pass  # TODO: Add proper exception handling except Exception as e: pass  # TODO: Add proper exception handling self.logger.info(f"📁 Validating labeled file: {labeled_file.name}")
 
         # Use BaseValidator's file validation
             file_exists = file_metrics = self.validate_file_exists(str(labeled_file) = "labeled file")
@@ -139,14 +117,7 @@ except Exception as e:
         self.logger.exception(f"❌ Failed to validate labeled file: {error_context}")
         return False
 
-    @smart_validation_cache(ttl_seconds = 600)  # Cache for 10 minutes
-    async def _validate_metadata_file(self = metadata_file: Path) -> bool:
-        """Validate the labeling metadata file with caching."""
-        try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-        self.logger.info(f"📊 Validating metadata file: {metadata_file.name}")
+@smart_validation_cache(ttl_seconds = 600)  # Cache for 10 minutes async def _validate_metadata_file(self = metadata_file: Path) -> bool: """Validate the labeling metadata file with caching.""" try: pass  # TODO: Add proper exception handling except Exception as e: pass  # TODO: Add proper exception handling self.logger.info(f"📊 Validating metadata file: {metadata_file.name}")
 
         # Use BaseValidator's file validation
             file_exists = file_metrics = self.validate_file_exists(str(metadata_file), "metadata file")

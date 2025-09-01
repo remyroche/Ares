@@ -104,7 +104,7 @@ logger = system_logger.getChild("Step5Labeling")
 class LabelingStep:
     """Step 5: Labeling with standardized data quality management."""
 
-    def __init__(self = config: dict[str, Any]) -> None:
+        def __init__(self = config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("LabelingStep")
         self.standards = pipeline_standards
@@ -115,7 +115,7 @@ class LabelingStep:
         self._validate_environment()
         self._initialize_components()
 
-    def _validate_environment(self) -> None:
+        def _validate_environment(self) -> None:
         """Validate environment dependencies."""
         self.logger.info("🔍 Validating environment dependencies...")
 
@@ -126,7 +126,7 @@ class LabelingStep:
         else:
         self.logger.info("✅ All required dependencies available")
 
-    def _initialize_components(self) -> None:
+        def _initialize_components(self) -> None:
         """Initialize labeling components."""
         self.logger.info("🔧 Initializing labeling components...")
 
@@ -153,41 +153,16 @@ class LabelingStep:
         self.logger.info(f"   - Data Directory: {self.config.get('DATA_DIR', 'N / A')}")
         self.logger.info("✅ Labeling Step initialized successfully")
 
-    def _log_step_timing(self = step_name: str = start_time: float) -> None:
+        def _log_step_timing(self = step_name: str = start_time: float) -> None:
         """Log timing information for a step."""
         elapsed = time.time() - start_time
         self.step_timings[step_name] = elapsed
         self.logger.info(f"⏱️ {step_name} completed in {elapsed:.2f} seconds")
 
     @with_tracing_span("execute_labeling")
-    @quality_gate(
-        min_quality_score = 0.7,
-        max_correlation = 0.95, required_grade="C"
-    )
+@quality_gate( min_quality_score = 0.7, max_correlation = 0.95, required_grade="C" )
     @with_enhanced_mlflow_logging("step05_labeling")
-    @comprehensive_data_validation
-    @handle_errors
-    @memory_efficient
-    @resource_monitor
-    @secure_data_processing
-    @validate_data_structure
-    async def execute_labeling(
-        self = symbol: str,
-        exchange: str, timeframe: str = data_dir: str = "data_cache",
-        force_rerun: bool, False = ) -> bool:
-        """Execute the labeling step.
-
-        Args:
-            symbol: Trading symbol
-            exchange: Exchange name
-            timeframe: Timeframe for data
-            data_dir: Data directory
-            force_rerun: Force rerun the step
-
-        Returns:
-            True if successful = False otherwise
-        """
-        step_start = time.time()
+@comprehensive_data_validation @handle_errors @memory_efficient @resource_monitor @secure_data_processing @validate_data_structure async def execute_labeling( self = symbol: str, exchange: str, timeframe: str = data_dir: str = "data_cache", force_rerun: bool, False = ) -> bool: """Execute the labeling step.  Args: symbol: Trading symbol exchange: Exchange name timeframe: Timeframe for data data_dir: Data directory force_rerun: Force rerun the step  Returns: True if successful = False otherwise """ step_start = time.time()
         self.logger.info(f"🚀 Executing Labeling for {symbol} on {exchange}")
 
         try:

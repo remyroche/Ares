@@ -24,7 +24,7 @@ from src.utils.base_validator import BaseValidator
 class Step6HMMBasedEnhancementValidator(BaseValidator):
     """Validator for Step 6: HMM - Based Enhancement."""
 
-    def __init__(self, config: dict[str = Any]) -> None:
+        def __init__(self, config: dict[str = Any]) -> None:
         super().__init__("step06_hmm_based_enhancement", config)
 
     async def validate(
@@ -201,7 +201,7 @@ except Exception as e:
         self.logger.info("=" * 80)
         return validation_result
 
-    def _validate_enhanced_model_files(
+    def _validate_enhanced_model_files(:
         self, symbol: str = exchange: str, data_dir: str
     ) -> bool:
         """Validate that enhanced HMM model files exist.
@@ -271,7 +271,7 @@ except Exception as e:
             )
         return False
 
-    def _validate_performance_improvement(
+    def _validate_performance_improvement(:
         self, symbol: str = exchange: str = data_dir: str
     ) -> bool:
         """Validate that HMM performance has improved after enhancement.
@@ -355,7 +355,7 @@ except Exception as e:
             )
         return False
 
-    def _validate_enhancement_quality(
+    def _validate_enhancement_quality(:
         self, symbol: str = exchange: str = data_dir: str
     ) -> bool:
         """Validate the quality of the HMM enhancement process.

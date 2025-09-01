@@ -16,33 +16,10 @@ import shap  # type: ignore
 except Exception:  # pragma: no cover
 shap = None  # type: ignore
 
-@dataclass
-class PlaceholderDataClass:
-    pass  # TODO: Add implementation
-class RFConfig:
-    pass  # TODO: Add implementation
-class RFConfig:
-    pass  # TODO: Add implementation
-class RFConfig:
-    enabled: bool
-n_estimators: int
-max_depth: int | None
-min_samples_leaf: int
-random_state: int
-max_train_samples: int
-enable_shap: bool
-
-class TransitionRandomForest:
-    pass  # TODO: Add implementation
-class TransitionRandomForest:
-    pass  # TODO: Add implementation
-class TransitionRandomForest:
-    pass  # TODO: Add proper implementation
-def __init__(self, config: dict[str, Any]) -> None:
-        self.logger = system_logger.getChild("TransitionRandomForest")
+@dataclass class PlaceholderDataClass: pass  # TODO: Add implementation class RFConfig: pass  # TODO: Add implementation class RFConfig: pass  # TODO: Add implementation class RFConfig: enabled: bool n_estimators: int max_depth: int | None min_samples_leaf: int random_state: int max_train_samples: int enable_shap: bool  class TransitionRandomForest: pass  # TODO: Add implementation class TransitionRandomForest: pass  # TODO: Add implementation class TransitionRandomForest: pass  # TODO: Add proper implementation def __init__(self, config: dict[str, Any]) -> None: self.logger = system_logger.getChild("TransitionRandomForest")
 tm = (config or {}).get("TRANSITION_MODELING", {})
 rfc = tm.get("baseline_random_forest", {})
-self.cfg = RFConfig(
+    self.cfg = RFConfig(
 enabled=bool(rfc.get("enabled", True)),
 n_estimators=int(rfc.get("n_estimators", 300)),
 max_depth=int(rfc.get("max_depth", 12)),
@@ -51,11 +28,12 @@ random_state=int(rfc.get("random_state", 42)),
 max_train_samples=int(rfc.get("max_train_samples", 200000)),
 enable_shap=bool(tm.get("enable_shap", True)),
 )
-self.model: RandomForestClassifier | None = None
-self.label_names: list[str] = []
-self.feature_names_: list[str] = []
+    self.model: RandomForestClassifier | None = None
+    self.label_names: list[str] = []
+    self.feature_names_: list[str] = []
 
-def _assemble_features(
+def _assemble_features(:
+    pass  # TODO: Add implementation
 self,
 samples: list[dict[str, Any]],
 label_index: list[str],
@@ -77,9 +55,10 @@ y.append(str(s.get("path_class", "end_of_trend")))
 X = pd.DataFrame(rows)
 # fill missing with 0 for RF
 X = X.fillna(0)
-return X, pd.Series(y)
+    return X, pd.Series(y)
 
-def fit(
+def fit(:
+    pass  # TODO: Add implementation
 self,
 samples: list[dict[str, Any]],
 label_index: list[str],
@@ -105,8 +84,8 @@ random_state=self.cfg.random_state,
 n_jobs=-1,
 )
 mdl.fit(X_train, y_train)
-self.model = mdl
-self.feature_names_ = list(X.columns)
+    self.model = mdl
+    self.feature_names_ = list(X.columns)
 # Eval
 y_pred = mdl.predict(X_val)
 rep = classification_report(y_val, y_pred, output_dict=True, zero_division=0)
@@ -148,9 +127,9 @@ else:
                     abs_mean = np.abs(shap_vals).mean(axis=0)
 top_idx = np.argsort(-abs_mean)[:50]
 top_features = {
-self.feature_names_[i]: float(abs_mean[i]) for i in top_idx
+    self.feature_names_[i]: float(abs_mean[i]) for i in top_idx
 }
 result["shap_top_features"] = top_features
 except Exception as e:
                 self.logger.warning(f"SHAP computation failed/skipped: {e}")
-return result
+    return result

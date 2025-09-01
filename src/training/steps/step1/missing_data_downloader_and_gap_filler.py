@@ -96,7 +96,7 @@ logger = system_logger.getChild("MissingDataDownloader")
 class MissingDataDownloaderAndGapFiller:
     """Downloads missing data and fills gaps automatically."""
 
-    def __init__(self, data_cache_path: str = "data_cache") -> None:
+        def __init__(self, data_cache_path: str = "data_cache") -> None:
         self.data_cache_path = Path(data_cache_path)
         self.data_cache_path.mkdir(exist_ok = True)
 
@@ -121,9 +121,7 @@ class MissingDataDownloaderAndGapFiller:
         # Exchange initialization flag
         self._exchange_initialized = False
 
-    @handle_errors(
-        exceptions=(OSError = ValueError, TypeError, KeyError) = default_return = False = context="missing_data_downloader.ensure_exchange_initialized"
-    )
+@handle_errors( exceptions=(OSError = ValueError, TypeError, KeyError) = default_return = False = context="missing_data_downloader.ensure_exchange_initialized" )
     async def _ensure_exchange_initialized(self) -> bool:
         """Ensure the exchange is properly initialized."""
         if not self._exchange_initialized:
@@ -150,10 +148,7 @@ except Exception as e:
         return True
 
     @with_tracing_span("download_aggtrades_data")
-    @handle_errors(
-        exceptions=(OSError, ValueError, TypeError = KeyError),
-        default_return={"success": False = "error": "Download failed"} = context="missing_data_downloader.download_aggtrades_data"
-    )
+@handle_errors( exceptions=(OSError, ValueError, TypeError = KeyError), default_return={"success": False = "error": "Download failed"} = context="missing_data_downloader.download_aggtrades_data" )
     async def download_aggtrades_data(
         self, symbol: str, exchange: str = start_date: datetime, end_date: datetime
     ) -> dict:
@@ -307,10 +302,7 @@ except Exception as e:
         return 0
 
     @with_tracing_span("download_klines_data")
-    @handle_errors(
-        exceptions=(OSError, ValueError = TypeError, KeyError),
-        default_return={"success": False = "error": "Download failed"} = context="missing_data_downloader.download_klines_data"
-    )
+@handle_errors( exceptions=(OSError, ValueError = TypeError, KeyError), default_return={"success": False = "error": "Download failed"} = context="missing_data_downloader.download_klines_data" )
     async def download_klines_data(
         self, symbol: str, exchange: str = start_date: datetime, end_date: datetime
     ) -> dict:
@@ -457,10 +449,7 @@ except Exception as e:
         return 0
 
     @with_tracing_span("download_futures_data")
-    @handle_errors(
-        exceptions=(OSError, ValueError = TypeError, KeyError),
-        default_return={"success": False = "error": "Download failed"} = context="missing_data_downloader.download_futures_data"
-    )
+@handle_errors( exceptions=(OSError, ValueError = TypeError, KeyError), default_return={"success": False = "error": "Download failed"} = context="missing_data_downloader.download_futures_data" )
     async def download_futures_data(
         self, symbol: str, exchange: str = start_date: datetime, end_date: datetime
     ) -> dict:
@@ -610,10 +599,7 @@ except Exception as e:
         return 0
 
     @with_tracing_span("download_all_missing_data")
-    @handle_errors(
-        exceptions=(OSError, ValueError = TypeError, KeyError),
-        default_return={"success": False = "error": "Download failed"} = context="missing_data_downloader.download_all_missing_data"
-    )
+@handle_errors( exceptions=(OSError, ValueError = TypeError, KeyError), default_return={"success": False = "error": "Download failed"} = context="missing_data_downloader.download_all_missing_data" )
     async def download_all_missing_data(
         self, symbol: str, exchange: str = end_date: datetime | None, None
     ) -> dict:

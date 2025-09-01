@@ -19,53 +19,53 @@ class FractionalPerformanceTracker:
 class FractionalPerformanceTracker:
     """Comprehensive performance tracking for fractional implementations."""
 
-def __init__(self, config: FractionalImplementationsConfig, output_dir: str = "data/fractional_performance"):
     def __init__(self, config: FractionalImplementationsConfig, output_dir: str = "data/fractional_performance"):
-    def __init__(self, config: FractionalImplementationsConfig, output_dir: str = "data/fractional_performance"):
-    def __init__(self, config: FractionalImplementationsConfig, output_dir: str = "data/fractional_performance"):
+        def __init__(self, config: FractionalImplementationsConfig, output_dir: str = "data/fractional_performance"):
+        def __init__(self, config: FractionalImplementationsConfig, output_dir: str = "data/fractional_performance"):
+        def __init__(self, config: FractionalImplementationsConfig, output_dir: str = "data/fractional_performance"):
         """Initialize performance tracker.
 
 Args:
             config: Fractional implementations configuration
 output_dir: Directory to store performance data
 """
-self.config = config
-self.output_dir = Path(output_dir)
-self.output_dir.mkdir(parents=True, exist_ok=True)
+    self.config = config
+    self.output_dir = Path(output_dir)
+    self.output_dir.mkdir(parents=True, exist_ok=True)
 
-self.logger = get_logger("FractionalPerformanceTracker")
+    self.logger = get_logger("FractionalPerformanceTracker")
 
 # Performance storage
-self.baseline_metrics = {}
-self.current_metrics = {}
-self.historical_metrics = []
-self.performance_alerts = []
+    self.baseline_metrics = {}
+    self.current_metrics = {}
+    self.historical_metrics = []
+    self.performance_alerts = []
 
 # Tracking state
-self.start_time = datetime.now()
-self.last_check = None
-self.check_count = 0
+    self.start_time = datetime.now()
+    self.last_check = None
+    self.check_count = 0
 
 # Initialize tracking
-self._initialize_tracking()
+    self._initialize_tracking()
 
 def _initialize_tracking(self):
     def _initialize_tracking(self):
     def _initialize_tracking(self):
     def _initialize_tracking(self):
         """Initialize performance tracking."""
-self.logger.info("Initializing fractional performance tracking")
+    self.logger.info("Initializing fractional performance tracking")
 
 # Create performance files
-self.metrics_file = self.output_dir / "performance_metrics.json"
-self.alerts_file = self.output_dir / "performance_alerts.json"
-self.dashboard_file = self.output_dir / "performance_dashboard.html"
+    self.metrics_file = self.output_dir / "performance_metrics.json"
+    self.alerts_file = self.output_dir / "performance_alerts.json"
+    self.dashboard_file = self.output_dir / "performance_dashboard.html"
 
 # Load existing data if available
-self._load_existing_data()
+    self._load_existing_data()
 
 # Create initial dashboard
-self._create_dashboard()
+    self._create_dashboard()
 
 def _load_existing_data(self):
     def _load_existing_data(self):
@@ -79,9 +79,9 @@ except Exception as e:
 if self.metrics_file.exists():
                 with open(self.metrics_file, 'r') as f:
                     data = json.load(f)
-self.baseline_metrics = data.get('baseline', {})
-self.current_metrics = data.get('current', {})
-self.historical_metrics = data.get('historical', [])
+    self.baseline_metrics = data.get('baseline', {})
+    self.current_metrics = data.get('current', {})
+    self.historical_metrics = data.get('historical', [])
 
 if self.alerts_file.exists():
                 with open(self.alerts_file, 'r') as f:
@@ -98,9 +98,9 @@ def set_baseline_metrics(self, metrics: Dict[str, Any]):
 Args:
             metrics: Dictionary of baseline metrics
 """
-self.baseline_metrics = metrics.copy()
-self.logger.info(f"Set baseline metrics: {list(metrics.keys())}")
-self._save_metrics()
+    self.baseline_metrics = metrics.copy()
+    self.logger.info(f"Set baseline metrics: {list(metrics.keys())}")
+    self._save_metrics()
 
 def update_current_metrics(self, metrics: Dict[str, Any]):
     def update_current_metrics(self, metrics: Dict[str, Any]):
@@ -111,15 +111,15 @@ def update_current_metrics(self, metrics: Dict[str, Any]):
 Args:
             metrics: Dictionary of current metrics
 """
-self.current_metrics = metrics.copy()
-self.check_count += 1
+    self.current_metrics = metrics.copy()
+    self.check_count += 1
 
 # Add timestamp
-self.current_metrics['timestamp'] = datetime.now().isoformat()
-self.current_metrics['check_count'] = self.check_count
+    self.current_metrics['timestamp'] = datetime.now().isoformat()
+    self.current_metrics['check_count'] = self.check_count
 
 # Store in historical data
-self.historical_metrics.append(self.current_metrics.copy())
+    self.historical_metrics.append(self.current_metrics.copy())
 
 # Keep only recent history
 max_history = 1000
@@ -127,13 +127,13 @@ if len(self.historical_metrics) > max_history:
             self.historical_metrics = self.historical_metrics[-max_history:]
 
 # Check for performance alerts
-self._check_performance_alerts()
+    self._check_performance_alerts()
 
 # Save and update dashboard
-self._save_metrics()
-self._create_dashboard()
+    self._save_metrics()
+    self._create_dashboard()
 
-self.last_check = datetime.now()
+    self.last_check = datetime.now()
 
 def _check_performance_alerts(self):
     def _check_performance_alerts(self):
@@ -169,7 +169,7 @@ if degradation > self.config.alert_threshold:
 alerts.append(alert)
 
 # Add new alerts
-self.performance_alerts.extend(alerts)
+    self.performance_alerts.extend(alerts)
 
 # Log alerts
 for alert in alerts:
@@ -268,7 +268,7 @@ plt.savefig(plot_file, dpi=300, bbox_inches='tight')
 plt.close()
 
 # Create HTML dashboard
-self._create_html_dashboard(df)
+    self._create_html_dashboard(df)
 
 except Exception as e:
             self.logger.error(f"Failed to create dashboard: {e}")
@@ -384,7 +384,7 @@ if max_degradation < -0.1:
 elif max_degradation < -0.05:
                 summary['overall_status'] = 'warning'
 
-return summary
+    return summary
 
 def get_alert_summary(self) -> List[Dict[str, Any]]:
         """Get recent performance alerts.
@@ -401,7 +401,7 @@ for alert in self.performance_alerts:
 if alert_time > cutoff_time:
                 recent_alerts.append(alert)
 
-return recent_alerts
+    return recent_alerts
 
 def export_performance_report(self, output_file: str = None) -> str:
         """Export comprehensive performance report.
@@ -437,5 +437,5 @@ report = {
 with open(output_file, 'w') as f:
             json.dump(report, f, indent=2)
 
-self.logger.info(f"Performance report exported to: {output_file}")
-return str(output_file)
+    self.logger.info(f"Performance report exported to: {output_file}")
+    return str(output_file)

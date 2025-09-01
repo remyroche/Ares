@@ -27,7 +27,7 @@ class OptimizedTrainingIntegration:
     with the optimized version while maintaining compatibility.
     """
 
-    def __init__(self, base_config: dict[str, Any]) -> None:
+        def __init__(self, base_config: dict[str, Any]) -> None:
         self.base_config = base_config
         self.logger = system_logger.getChild("OptimizedTrainingIntegration")
 

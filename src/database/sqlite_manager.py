@@ -32,36 +32,30 @@ class ConnectionPool:
 class ConnectionPool:
     """Async connection pool for database operations."""
 
-def __init__(self, max_connections: int = 10, database_path: str = "data/ares.db"):
     def __init__(self, max_connections: int = 10, database_path: str = "data/ares.db"):
-    def __init__(self, max_connections: int = 10, database_path: str = "data/ares.db"):
-    def __init__(self, max_connections: int = 10, database_path: str = "data/ares.db"):
+        def __init__(self, max_connections: int = 10, database_path: str = "data/ares.db"):
+        def __init__(self, max_connections: int = 10, database_path: str = "data/ares.db"):
+        def __init__(self, max_connections: int = 10, database_path: str = "data/ares.db"):
         self.max_connections = max_connections
-self.database_path = database_path
-self.connection_pool: asyncio.Queue | None = None
-self.active_connections: int = 0
-self.total_connections_created: int = 0
-self.connection_errors: int = 0
+    self.database_path = database_path
+    self.connection_pool: asyncio.Queue | None = None
+    self.active_connections: int = 0
+    self.total_connections_created: int = 0
+    self.connection_errors: int = 0
 
-@handle_errors(
-exceptions=(OSError, sqlite3.Error, asyncio.TimeoutError),
-default_return=None,
-)
+@handle_errors( exceptions=(OSError, sqlite3.Error, asyncio.TimeoutError), default_return=None, )
 async def initialize(self) -> None:
         """Initialize the connection pool."""
-self.connection_pool = asyncio.Queue(maxsize=self.max_connections)
+    self.connection_pool = asyncio.Queue(maxsize=self.max_connections)
 
 # Pre-populate pool with connections
 for _ in range(self.max_connections):
             connection = await self._create_connection()
 if connection:
                 await self.connection_pool.put(connection)
-self.total_connections_created += 1
+    self.total_connections_created += 1
 
-@handle_errors(
-exceptions=(OSError, sqlite3.Error, PermissionError),
-default_return=None,
-)
+@handle_errors( exceptions=(OSError, sqlite3.Error, PermissionError), default_return=None, )
 async def _create_connection(self) -> sqlite3.Connection | None:
         """Create a new database connection."""
 connection = sqlite3.connect(self.database_path)
@@ -73,12 +67,9 @@ connection.execute("PRAGMA foreign_keys = ON")
 # Set journal mode to WAL for better concurrency
 connection.execute("PRAGMA journal_mode = WAL")
 
-return connection
+    return connection
 
-@handle_errors(
-exceptions=(asyncio.QueueEmpty, asyncio.TimeoutError, OSError),
-default_return=None,
-)
+@handle_errors( exceptions=(asyncio.QueueEmpty, asyncio.TimeoutError, OSError), default_return=None, )
 async def get_connection(self) -> sqlite3.Connection | None:
         """Get a connection from the pool."""
 if not self.connection_pool:
@@ -90,25 +81,22 @@ try:
 except Exception as e:
     pass  # TODO: Add proper exception handling
 connection = self.connection_pool.get_nowait()
-self.active_connections += 1
-return connection
+    self.active_connections += 1
+    return connection
 except asyncio.QueueEmpty:
             # Create new connection if pool is empty and under limit
 if self.active_connections < self.max_connections:
                 connection = await self._create_connection()
 if connection:
                     self.active_connections += 1
-self.total_connections_created += 1
-return connection
+    self.total_connections_created += 1
+    return connection
 # Wait for a connection to become available
 connection = await self.connection_pool.get()
-self.active_connections += 1
-return connection
+    self.active_connections += 1
+    return connection
 
-@handle_errors(
-exceptions=(asyncio.QueueFull, sqlite3.Error, OSError),
-default_return=None,
-)
+@handle_errors( exceptions=(asyncio.QueueFull, sqlite3.Error, OSError), default_return=None, )
 async def return_connection(self, connection: sqlite3.Connection) -> None:
         """Return a connection to the pool."""
 if connection and self.connection_pool:
@@ -120,16 +108,16 @@ try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-self.connection_pool.put_nowait(connection)
+    self.connection_pool.put_nowait(connection)
 except asyncio.QueueFull:
                 # Close connection if pool is full
 connection.close()
 
-self.active_connections -= 1
+    self.active_connections -= 1
 
 def get_pool_stats(self) -> dict[str, Any]:
         """Get connection pool statistics."""
-return {
+    return {
 "max_connections": self.max_connections, "active_connections": self.active_connections,
 "pool_size": self.connection_pool.qsize() if self.connection_pool else 0,
 "total_connections_created": self.total_connections_created, "connection_errors": self.connection_errors,
@@ -155,50 +143,42 @@ Initialize SQLite manager with enhanced type safety.
 Args:
             config: Configuration dictionary
 """
-self.config: dict[str, Any] = config
-self.logger = system_logger.getChild("SQLiteManager")
+    self.config: dict[str, Any] = config
+    self.logger = system_logger.getChild("SQLiteManager")
 
 # Database state
-self.connection: sqlite3.Connection | None = None
-self.is_connected: bool = False
-self.database_path: str | None = None
+    self.connection: sqlite3.Connection | None = None
+    self.is_connected: bool = False
+    self.database_path: str | None = None
 
 # Configuration
-self.db_config: dict[str, Any] = self.config.get("sqlite_manager", {})
-self.db_path: str = self.db_config.get("database_path", "data/ares.db")
-self.auto_backup: bool = self.db_config.get("auto_backup", True)
-self.backup_interval: int = self.db_config.get(
+    self.db_config: dict[str, Any] = self.config.get("sqlite_manager", {})
+    self.db_path: str = self.db_config.get("database_path", "data/ares.db")
+    self.auto_backup: bool = self.db_config.get("auto_backup", True)
+    self.backup_interval: int = self.db_config.get(
 "backup_interval",
 3600,
 )  # 1 hour
-self.max_connections: int = self.db_config.get("max_connections", 10)
+    self.max_connections: int = self.db_config.get("max_connections", 10)
 
 # Connection pooling
-self.connection_pool: ConnectionPool | None = None
+    self.connection_pool: ConnectionPool | None = None
 
 # Automatic recovery
-self.recovery_attempts: int = 0
-self.max_recovery_attempts: int = self.db_config.get("max_recovery_attempts", 3)
-self.recovery_cooldown: int = self.db_config.get(
+    self.recovery_attempts: int = 0
+    self.max_recovery_attempts: int = self.db_config.get("max_recovery_attempts", 3)
+    self.recovery_cooldown: int = self.db_config.get(
 "recovery_cooldown",
 60,
 )  # 1 minute
-self.last_recovery_attempt: float = 0
+    self.last_recovery_attempt: float = 0
 
 # Performance monitoring
-self.operation_stats: dict[str, int] = defaultdict(int)
-self.error_stats: dict[str, int] = defaultdict(int)
-self.start_time: float = time.time()
+    self.operation_stats: dict[str, int] = defaultdict(int)
+    self.error_stats: dict[str, int] = defaultdict(int)
+    self.start_time: float = time.time()
 
-@handle_specific_errors(
-error_handlers={
-ValueError: (False, "Invalid SQLite manager configuration"),
-AttributeError: (False, "Missing required database parameters"),
-KeyError: (False, "Missing configuration keys"),
-},
-default_return=False,
-context="SQLite manager initialization",
-)
+@handle_specific_errors( error_handlers={ ValueError: (False, "Invalid SQLite manager configuration"), AttributeError: (False, "Missing required database parameters"), KeyError: (False, "Missing configuration keys"), }, default_return=False, context="SQLite manager initialization", )
 async def initialize(self) -> bool:
         """
 Initialize SQLite manager with enhanced error handling.
@@ -210,7 +190,7 @@ try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-self.logger.info("Initializing SQLite Manager...")
+    self.logger.info("Initializing SQLite Manager...")
 
 # Load database configuration
 await self._load_database_configuration()
@@ -218,7 +198,7 @@ await self._load_database_configuration()
 # Validate configuration
 if not self._validate_configuration():
                 self.print(invalid("Invalid configuration for SQLite manager"))
-return False
+    return False
 
 # Initialize connection pool
 await self._initialize_connection_pool()
@@ -230,8 +210,8 @@ await self._initialize_database()
 if self.auto_backup:
                 asyncio.create_task(self._auto_backup_task())
 
-self.logger.info("✅ SQLite Manager initialization completed successfully")
-return True
+    self.logger.info("✅ SQLite Manager initialization completed successfully")
+    return True
 
 except OSError as e:
             self.print(
@@ -239,27 +219,23 @@ failed(
 f"❌ SQLite Manager initialization failed - File system error: {e}",
 ),
 )
-return False
+    return False
 except sqlite3.Error as e:
             self.print(
 failed(
 f"❌ SQLite Manager initialization failed - Database error: {e}",
 ),
 )
-return False
+    return False
 except Exception as e:
             self.print(
 failed(
 f"❌ SQLite Manager initialization failed - Unexpected error: {e}",
 ),
 )
-return False
+    return False
 
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=None,
-context="database configuration loading",
-)
+@handle_errors( exceptions=(ValueError, AttributeError), default_return=None, context="database configuration loading", )
 async def _load_database_configuration(self) -> None:
         """Load database configuration."""
 try:
@@ -272,27 +248,27 @@ DEFAULT_MAX_CONNECTIONS = DEFAULT_MAX_RECOVERY_ATTEMPTS
 DEFAULT_RECOVERY_COOLDOWN = DEFAULT_MAX_RECOVERY_ATTEMPTS
 
 # Set default database parameters
-self.db_config.setdefault("database_path", DEFAULT_DATABASE_PATH)
-self.db_config.setdefault("auto_backup", True)
-self.db_config.setdefault("backup_interval", DEFAULT_BACKUP_INTERVAL)
-self.db_config.setdefault("max_connections", DEFAULT_MAX_CONNECTIONS)
-self.db_config.setdefault("enable_foreign_keys", True)
-self.db_config.setdefault("journal_mode", "WAL")
-self.db_config.setdefault(
+    self.db_config.setdefault("database_path", DEFAULT_DATABASE_PATH)
+    self.db_config.setdefault("auto_backup", True)
+    self.db_config.setdefault("backup_interval", DEFAULT_BACKUP_INTERVAL)
+    self.db_config.setdefault("max_connections", DEFAULT_MAX_CONNECTIONS)
+    self.db_config.setdefault("enable_foreign_keys", True)
+    self.db_config.setdefault("journal_mode", "WAL")
+    self.db_config.setdefault(
 "max_recovery_attempts",
 DEFAULT_MAX_RECOVERY_ATTEMPTS,
 )
-self.db_config.setdefault("recovery_cooldown", DEFAULT_RECOVERY_COOLDOWN)
+    self.db_config.setdefault("recovery_cooldown", DEFAULT_RECOVERY_COOLDOWN)
 
 # Update configuration
-self.db_path = self.db_config["database_path"]
-self.auto_backup = self.db_config["auto_backup"]
-self.backup_interval = self.db_config["backup_interval"]
-self.max_connections = self.db_config["max_connections"]
-self.max_recovery_attempts = self.db_config["max_recovery_attempts"]
-self.recovery_cooldown = self.db_config["recovery_cooldown"]
+    self.db_path = self.db_config["database_path"]
+    self.auto_backup = self.db_config["auto_backup"]
+    self.backup_interval = self.db_config["backup_interval"]
+    self.max_connections = self.db_config["max_connections"]
+    self.max_recovery_attempts = self.db_config["max_recovery_attempts"]
+    self.recovery_cooldown = self.db_config["recovery_cooldown"]
 
-self.logger.info("Database configuration loaded successfully")
+    self.logger.info("Database configuration loaded successfully")
 
 except (KeyError, TypeError) as e:
             self.print(
@@ -303,11 +279,7 @@ except Exception as e:
 error(f"Error loading database configuration - Unexpected error: {e}"),
 )
 
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=False,
-context="configuration validation",
-)
+@handle_errors( exceptions=(ValueError, AttributeError), default_return=False, context="configuration validation", )
 def _validate_configuration(self) -> bool:
         """
 Validate database configuration.
@@ -322,54 +294,50 @@ except Exception as e:
 # Validate database path
 if not self.db_path:
                 self.print(invalid("Invalid database path"))
-return False
+    return False
 
 # Validate backup interval
 if self.backup_interval <= 0:
                 self.print(invalid("Invalid backup interval"))
-return False
+    return False
 
 # Validate max connections
 if self.max_connections <= 0:
                 self.print(invalid("Invalid max connections"))
-return False
+    return False
 
 # Validate recovery settings
 if self.max_recovery_attempts <= 0:
                 self.print(invalid("Invalid max recovery attempts"))
-return False
+    return False
 
 if self.recovery_cooldown <= 0:
                 self.print(invalid("Invalid recovery cooldown"))
-return False
+    return False
 
-self.logger.info("Configuration validation successful")
-return True
+    self.logger.info("Configuration validation successful")
+    return True
 
 except (ValueError, TypeError) as e:
             self.print(error(f"Error validating configuration - Invalid value: {e}"))
-return False
+    return False
 except Exception as e:
             self.print(error(f"Error validating configuration - Unexpected error: {e}"))
-return False
+    return False
 
-@handle_errors(
-exceptions=(Exception,),
-default_return=None,
-context="connection pool initialization",
-)
+@handle_errors( exceptions=(Exception,), default_return=None, context="connection pool initialization", )
 async def _initialize_connection_pool(self) -> None:
         """Initialize connection pool."""
 try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-self.connection_pool = ConnectionPool(
+    self.connection_pool = ConnectionPool(
 max_connections=self.max_connections, database_path=self.db_path,
 )
 await self.connection_pool.initialize()
 
-self.logger.info(
+    self.logger.info(
 f"Connection pool initialized with {self.max_connections} connections",
 )
 
@@ -386,10 +354,7 @@ f"Error initializing connection pool - Unexpected error: {e}",
 ),
 )
 
-@handle_file_operations(
-default_return=False,
-context="database initialization",
-)
+@handle_file_operations( default_return=False, context="database initialization", )
 async def _initialize_database(self) -> bool:
         """
 Initialize database with enhanced error handling.
@@ -410,7 +375,7 @@ if db_dir and not os.path.exists(db_dir):
 connection = await self.connection_pool.get_connection()
 if not connection:
                 self.print(failed("Failed to get connection from pool"))
-return False
+    return False
 
 try:
     pass  # TODO: Add proper exception handling
@@ -428,11 +393,11 @@ await self._create_tables(connection)
 # Commit changes
 connection.commit()
 
-self.is_connected = True
-self.database_path = self.db_path
+    self.is_connected = True
+    self.database_path = self.db_path
 
-self.logger.info("Database initialized successfully")
-return True
+    self.logger.info("Database initialized successfully")
+    return True
 
 finally:
                 # Return connection to pool
@@ -444,27 +409,23 @@ initialization_error(
 f"Error initializing database - SQLite error: {e}",
 ),
 )
-return False
+    return False
 except OSError as e:
             self.print(
 initialization_error(
 f"Error initializing database - File system error: {e}",
 ),
 )
-return False
+    return False
 except Exception as e:
             self.print(
 initialization_error(
 f"Error initializing database - Unexpected error: {e}",
 ),
 )
-return False
+    return False
 
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=None,
-context="table creation",
-)
+@handle_errors( exceptions=(ValueError, AttributeError), default_return=None, context="table creation", )
 async def _create_tables(self, connection: sqlite3.Connection) -> None:
         """Create database tables with enhanced error handling."""
 try:
@@ -532,22 +493,14 @@ PRIMARY KEY (collection, key)
 )
 """)
 
-self.logger.info("Database tables created successfully")
+    self.logger.info("Database tables created successfully")
 
 except sqlite3.Error as e:
             self.print(error(f"Error creating tables - SQLite error: {e}"))
 except Exception as e:
             self.print(error(f"Error creating tables - Unexpected error: {e}"))
 
-@handle_specific_errors(
-error_handlers={
-ValueError: (False, "Invalid trade data"),
-AttributeError: (False, "Missing trade components"),
-KeyError: (False, "Missing required trade data"),
-},
-default_return=False,
-context="trade insertion",
-)
+@handle_specific_errors( error_handlers={ ValueError: (False, "Invalid trade data"), AttributeError: (False, "Missing trade components"), KeyError: (False, "Missing required trade data"), }, default_return=False, context="trade insertion", )
 async def insert_trade(self, trade_data: dict[str, Any]) -> bool:
         """
 Insert trade data with enhanced error handling and connection pooling.
@@ -567,13 +520,13 @@ required_fields = ["symbol", "side", "size", "price"]
 for field in required_fields:
                 if field not in trade_data:
                     self.print(missing("Missing required trade field: {field}"))
-return False
+    return False
 
 # Get connection from pool
 connection = await self.connection_pool.get_connection()
 if not connection:
                 self.print(failed("Failed to get connection for trade insertion"))
-return False
+    return False
 
 try:
     pass  # TODO: Add proper exception handling
@@ -598,10 +551,10 @@ trade_data.get("status", "open"),
 connection.commit()
 
 # Update operation stats
-self.operation_stats["trades_inserted"] += 1
+    self.operation_stats["trades_inserted"] += 1
 
-self.logger.info(f"Trade inserted successfully: {trade_data['symbol']}")
-return True
+    self.logger.info(f"Trade inserted successfully: {trade_data['symbol']}")
+    return True
 
 finally:
                 # Return connection to pool
@@ -609,21 +562,13 @@ await self.connection_pool.return_connection(connection)
 
 except Exception:
             self.error_stats["trade_insertion_errors"] += 1
-self.print(error("Error inserting trade: {e}"))
+    self.print(error("Error inserting trade: {e}"))
 
 # Attempt recovery if needed
 await self._attempt_recovery("trade_insertion")
-return False
+    return False
 
-@handle_specific_errors(
-error_handlers={
-ValueError: (False, "Invalid position data"),
-AttributeError: (False, "Missing position components"),
-KeyError: (False, "Missing required position data"),
-},
-default_return=False,
-context="position update",
-)
+@handle_specific_errors( error_handlers={ ValueError: (False, "Invalid position data"), AttributeError: (False, "Missing position components"), KeyError: (False, "Missing required position data"), }, default_return=False, context="position update", )
 async def update_position(self, position_data: dict[str, Any]) -> bool:
         """
 Update position data with enhanced error handling and connection pooling.
@@ -643,13 +588,13 @@ required_fields = ["symbol", "size", "entry_price", "current_price"]
 for field in required_fields:
                 if field not in position_data:
                     self.print(missing("Missing required position field: {field}"))
-return False
+    return False
 
 # Get connection from pool
 connection = await self.connection_pool.get_connection()
 if not connection:
                 self.print(failed("Failed to get connection for position update"))
-return False
+    return False
 
 try:
     pass  # TODO: Add proper exception handling
@@ -679,12 +624,12 @@ position_data.get("status", "open"),
 connection.commit()
 
 # Update operation stats
-self.operation_stats["positions_updated"] += 1
+    self.operation_stats["positions_updated"] += 1
 
-self.logger.info(
+    self.logger.info(
 f"Position updated successfully: {position_data['symbol']}",
 )
-return True
+    return True
 
 finally:
                 # Return connection to pool
@@ -692,17 +637,13 @@ await self.connection_pool.return_connection(connection)
 
 except Exception:
             self.error_stats["position_update_errors"] += 1
-self.print(error("Error updating position: {e}"))
+    self.print(error("Error updating position: {e}"))
 
 # Attempt recovery if needed
 await self._attempt_recovery("position_update")
-return False
+    return False
 
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=None,
-context="trades getting",
-)
+@handle_errors( exceptions=(ValueError, AttributeError), default_return=None, context="trades getting", )
 async def get_trades(
 self, symbol: str | None = None, limit: int | None = None
 ) -> list[dict[str, Any]]:
@@ -724,7 +665,7 @@ except Exception as e:
 connection = await self.connection_pool.get_connection()
 if not connection:
                 self.print(failed("Failed to get connection for trades retrieval"))
-return []
+    return []
 
 try:
     pass  # TODO: Add proper exception handling
@@ -748,9 +689,9 @@ cursor = connection.execute(query, params)
 trades = [dict(row) for row in cursor.fetchall()]
 
 # Update operation stats
-self.operation_stats["trades_retrieved"] += 1
+    self.operation_stats["trades_retrieved"] += 1
 
-return trades
+    return trades
 
 finally:
                 # Return connection to pool
@@ -758,17 +699,13 @@ await self.connection_pool.return_connection(connection)
 
 except Exception:
             self.error_stats["trades_retrieval_errors"] += 1
-self.print(error("Error getting trades: {e}"))
+    self.print(error("Error getting trades: {e}"))
 
 # Attempt recovery if needed
 await self._attempt_recovery("trades_retrieval")
-return []
+    return []
 
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=None,
-context="positions getting",
-)
+@handle_errors( exceptions=(ValueError, AttributeError), default_return=None, context="positions getting", )
 async def get_positions(self) -> list[dict[str, Any]]:
         """
 Get positions with enhanced error handling and connection pooling.
@@ -784,7 +721,7 @@ except Exception as e:
 connection = await self.connection_pool.get_connection()
 if not connection:
                 self.print(failed("Failed to get connection for positions retrieval"))
-return []
+    return []
 
 try:
     pass  # TODO: Add proper exception handling
@@ -797,9 +734,9 @@ cursor = connection.execute(
 positions = [dict(row) for row in cursor.fetchall()]
 
 # Update operation stats
-self.operation_stats["positions_retrieved"] += 1
+    self.operation_stats["positions_retrieved"] += 1
 
-return positions
+    return positions
 
 finally:
                 # Return connection to pool
@@ -807,17 +744,13 @@ await self.connection_pool.return_connection(connection)
 
 except Exception:
             self.error_stats["positions_retrieval_errors"] += 1
-self.print(error("Error getting positions: {e}"))
+    self.print(error("Error getting positions: {e}"))
 
 # Attempt recovery if needed
 await self._attempt_recovery("positions_retrieval")
-return []
+    return []
 
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=None,
-context="performance getting",
-)
+@handle_errors( exceptions=(ValueError, AttributeError), default_return=None, context="performance getting", )
 async def get_performance(self, days: int | None = None) -> list[dict[str, Any]]:
         """
 Get performance data with enhanced error handling and connection pooling.
@@ -836,7 +769,7 @@ except Exception as e:
 connection = await self.connection_pool.get_connection()
 if not connection:
                 self.print(failed("Failed to get connection for performance retrieval"))
-return []
+    return []
 
 try:
     pass  # TODO: Add proper exception handling
@@ -856,9 +789,9 @@ cursor = connection.execute(query, params)
 performance = [dict(row) for row in cursor.fetchall()]
 
 # Update operation stats
-self.operation_stats["performance_retrieved"] += 1
+    self.operation_stats["performance_retrieved"] += 1
 
-return performance
+    return performance
 
 finally:
                 # Return connection to pool
@@ -866,21 +799,13 @@ await self.connection_pool.return_connection(connection)
 
 except Exception:
             self.error_stats["performance_retrieval_errors"] += 1
-self.print(error("Error getting performance: {e}"))
+    self.print(error("Error getting performance: {e}"))
 
 # Attempt recovery if needed
 await self._attempt_recovery("performance_retrieval")
-return []
+    return []
 
-@handle_specific_errors(
-error_handlers={
-ValueError: (False, "Invalid performance data"),
-AttributeError: (False, "Missing performance components"),
-KeyError: (False, "Missing required performance data"),
-},
-default_return=False,
-context="performance insertion",
-)
+@handle_specific_errors( error_handlers={ ValueError: (False, "Invalid performance data"), AttributeError: (False, "Missing performance components"), KeyError: (False, "Missing required performance data"), }, default_return=False, context="performance insertion", )
 async def insert_performance(self, performance_data: dict[str, Any]) -> bool:
         """
 Insert performance data with enhanced error handling and connection pooling.
@@ -900,13 +825,13 @@ required_fields = ["total_pnl", "win_rate", "sharpe_ratio", "max_drawdown"]
 for field in required_fields:
                 if field not in performance_data:
                     self.print(missing("Missing required performance field: {field}"))
-return False
+    return False
 
 # Get connection from pool
 connection = await self.connection_pool.get_connection()
 if not connection:
                 self.print(failed("Failed to get connection for performance insertion"))
-return False
+    return False
 
 try:
     pass  # TODO: Add proper exception handling
@@ -929,10 +854,10 @@ performance_data["max_drawdown"],
 connection.commit()
 
 # Update operation stats
-self.operation_stats["performance_inserted"] += 1
+    self.operation_stats["performance_inserted"] += 1
 
-self.logger.info("Performance data inserted successfully")
-return True
+    self.logger.info("Performance data inserted successfully")
+    return True
 
 finally:
                 # Return connection to pool
@@ -940,17 +865,13 @@ await self.connection_pool.return_connection(connection)
 
 except Exception:
             self.error_stats["performance_insertion_errors"] += 1
-self.print(error("Error inserting performance: {e}"))
+    self.print(error("Error inserting performance: {e}"))
 
 # Attempt recovery if needed
 await self._attempt_recovery("performance_insertion")
-return False
+    return False
 
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=None,
-context="setting getting",
-)
+@handle_errors( exceptions=(ValueError, AttributeError), default_return=None, context="setting getting", )
 async def get_setting(self, key: str) -> str | None:
         """
 Get setting with enhanced error handling and connection pooling.
@@ -969,7 +890,7 @@ except Exception as e:
 connection = await self.connection_pool.get_connection()
 if not connection:
                 self.print(failed("Failed to get connection for setting retrieval"))
-return None
+    return None
 
 try:
     pass  # TODO: Add proper exception handling
@@ -983,9 +904,9 @@ cursor = connection.execute(
 result = cursor.fetchone()
 
 # Update operation stats
-self.operation_stats["settings_retrieved"] += 1
+    self.operation_stats["settings_retrieved"] += 1
 
-return result["value"] if result else None
+    return result["value"] if result else None
 
 finally:
                 # Return connection to pool
@@ -993,17 +914,13 @@ await self.connection_pool.return_connection(connection)
 
 except Exception:
             self.error_stats["settings_retrieval_errors"] += 1
-self.print(error("Error getting setting: {e}"))
+    self.print(error("Error getting setting: {e}"))
 
 # Attempt recovery if needed
 await self._attempt_recovery("settings_retrieval")
-return None
+    return None
 
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=None,
-context="setting setting",
-)
+@handle_errors( exceptions=(ValueError, AttributeError), default_return=None, context="setting setting", )
 async def set_setting(self, key: str, value: str) -> bool:
         """
 Set setting with enhanced error handling and connection pooling.
@@ -1023,7 +940,7 @@ except Exception as e:
 connection = await self.connection_pool.get_connection()
 if not connection:
                 self.print(failed("Failed to get connection for setting update"))
-return False
+    return False
 
 try:
     pass  # TODO: Add proper exception handling
@@ -1041,10 +958,10 @@ VALUES (?, ?, CURRENT_TIMESTAMP)
 connection.commit()
 
 # Update operation stats
-self.operation_stats["settings_updated"] += 1
+    self.operation_stats["settings_updated"] += 1
 
-self.logger.info(f"Setting updated successfully: {key}")
-return True
+    self.logger.info(f"Setting updated successfully: {key}")
+    return True
 
 finally:
                 # Return connection to pool
@@ -1052,17 +969,13 @@ await self.connection_pool.return_connection(connection)
 
 except Exception:
             self.error_stats["settings_update_errors"] += 1
-self.print(error("Error setting setting: {e}"))
+    self.print(error("Error setting setting: {e}"))
 
 # Attempt recovery if needed
 await self._attempt_recovery("settings_update")
-return False
+    return False
 
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=None,
-context="document setting",
-)
+@handle_errors( exceptions=(ValueError, AttributeError), default_return=None, context="document setting", )
 async def set_document(
 self, collection: str, key: str, data: dict[str, Any],
 ) -> bool:
@@ -1085,7 +998,7 @@ except Exception as e:
 connection = await self.connection_pool.get_connection()
 if not connection:
                 self.print(failed("Failed to get connection for document update"))
-return False
+    return False
 
 try:
     pass  # TODO: Add proper exception handling
@@ -1106,10 +1019,10 @@ VALUES (?, ?, ?, CURRENT_TIMESTAMP)
 connection.commit()
 
 # Update operation stats
-self.operation_stats["documents_updated"] += 1
+    self.operation_stats["documents_updated"] += 1
 
-self.logger.info(f"Document updated successfully: {collection}/{key}")
-return True
+    self.logger.info(f"Document updated successfully: {collection}/{key}")
+    return True
 
 finally:
                 # Return connection to pool
@@ -1117,17 +1030,13 @@ await self.connection_pool.return_connection(connection)
 
 except Exception:
             self.error_stats["documents_update_errors"] += 1
-self.print(error("Error setting document: {e}"))
+    self.print(error("Error setting document: {e}"))
 
 # Attempt recovery if needed
 await self._attempt_recovery("documents_update")
-return False
+    return False
 
-@handle_errors(
-exceptions=(Exception,),
-default_return=None,
-context="automatic recovery",
-)
+@handle_errors( exceptions=(Exception,), default_return=None, context="automatic recovery", )
 async def _attempt_recovery(self, operation: str) -> None:
         """Attempt automatic recovery for failed operations."""
 try:
@@ -1143,16 +1052,16 @@ or self.recovery_attempts >= self.max_recovery_attempts
 ):
                 return
 
-self.logger.info(f"🔄 Attempting recovery for operation: {operation}")
+    self.logger.info(f"🔄 Attempting recovery for operation: {operation}")
 
 # Attempt to reinitialize connection pool
 if self.connection_pool:
                 await self.connection_pool.initialize()
 
-self.recovery_attempts += 1
-self.last_recovery_attempt = current_time
+    self.recovery_attempts += 1
+    self.last_recovery_attempt = current_time
 
-self.logger.info(
+    self.logger.info(
 f"✅ Recovery attempt {self.recovery_attempts}/{self.max_recovery_attempts} completed",
 )
 
@@ -1172,11 +1081,7 @@ except Exception:
                 self.print(error("Error in auto backup task: {e}"))
 await asyncio.sleep(self.backup_interval)
 
-@handle_errors(
-exceptions=(Exception,),
-default_return=None,
-context="closing database connection",
-)
+@handle_errors( exceptions=(Exception,), default_return=None, context="closing database connection", )
 async def close(self) -> None:
         """Close database connections."""
 try:
@@ -1195,18 +1100,15 @@ connection.close()
 except asyncio.QueueEmpty:
                         break
 
-self.connection_pool = None
+    self.connection_pool = None
 
-self.is_connected = False
-self.logger.info("Database connections closed successfully")
+    self.is_connected = False
+    self.logger.info("Database connections closed successfully")
 
 except Exception:
             self.print(connection_error("Error closing database connections: {e}"))
 
-@handle_file_operations(
-default_return=False,
-context="database backup",
-)
+@handle_file_operations( default_return=False, context="database backup", )
 async def create_backup(self, backup_path: str | None = None) -> bool:
         """
 Create database backup with enhanced error handling.
@@ -1229,7 +1131,7 @@ backup_path = f"{self.db_path}.backup_{timestamp}"
 connection = await self.connection_pool.get_connection()
 if not connection:
                 self.print(failed("Failed to get connection for backup"))
-return False
+    return False
 
 try:
     pass  # TODO: Add proper exception handling
@@ -1240,8 +1142,8 @@ backup_connection = sqlite3.connect(backup_path)
 connection.backup(backup_connection)
 backup_connection.close()
 
-self.logger.info(f"Database backup created successfully: {backup_path}")
-return True
+    self.logger.info(f"Database backup created successfully: {backup_path}")
+    return True
 
 finally:
                 # Return connection to pool
@@ -1249,7 +1151,7 @@ await self.connection_pool.return_connection(connection)
 
 except Exception:
             self.print(error("Error creating database backup: {e}"))
-return False
+    return False
 
 def get_database_status(self) -> dict[str, Any]:
         """
@@ -1275,20 +1177,16 @@ status = {
 if self.connection_pool:
                 status["connection_pool_stats"] = self.connection_pool.get_pool_stats()
 
-return status
+    return status
 
 except Exception:
             self.print(error("Error getting database status: {e}"))
-return {}
+    return {}
 
-@handle_errors(
-exceptions=(Exception,),
-default_return=None,
-context="SQLite manager cleanup",
-)
+@handle_errors( exceptions=(Exception,), default_return=None, context="SQLite manager cleanup", )
 async def stop(self) -> None:
         """Stop the SQLite manager."""
-self.logger.info("🛑 Stopping SQLite Manager...")
+    self.logger.info("🛑 Stopping SQLite Manager...")
 
 try:
     pass  # TODO: Add proper exception handling
@@ -1298,10 +1196,10 @@ except Exception as e:
 await self.close()
 
 # Clear operation stats
-self.operation_stats.clear()
-self.error_stats.clear()
+    self.operation_stats.clear()
+    self.error_stats.clear()
 
-self.logger.info("✅ SQLite Manager stopped successfully")
+    self.logger.info("✅ SQLite Manager stopped successfully")
 
 except Exception:
             self.print(error("Error stopping SQLite manager: {e}"))
@@ -1309,11 +1207,7 @@ except Exception:
 # Global SQLite manager instance
 sqlite_manager: SQLiteManager | None = None
 
-@handle_errors(
-exceptions=(Exception,),
-default_return=None,
-context="SQLite manager setup",
-)
+@handle_errors( exceptions=(Exception,), default_return=None, context="SQLite manager setup", )
 async def setup_sqlite_manager(
 config: dict[str, Any] | None = None,
 ) -> SQLiteManager | None:
@@ -1351,8 +1245,8 @@ sqlite_manager = SQLiteManager(config)
 success = await sqlite_manager.initialize()
 if success:
             return sqlite_manager
-return None
+    return None
 
 except Exception as e:
         print(f"Error setting up SQLite manager: {e}")
-return None
+    return None

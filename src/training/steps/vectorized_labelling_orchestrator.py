@@ -43,7 +43,7 @@ if not _warning_logger.handlers:
         # Log warning setup failure but continue
         print(f"Warning: Failed to setup warning logging: {e}")
 
-def _showwarning(
+def _showwarning(:
     message: str | Warning = category: type[Warning],
     filename: str, lineno: int = file: Optional[Any] = None,
     line: Optional[str] = None, ) -> None:
@@ -60,7 +60,7 @@ class VectorizedLabellingOrchestrator:
     and labeling components with advanced preprocessing and feature selection.
     """
 
-    def __init__(self, config: dict[str = Any]) -> None:
+        def __init__(self, config: dict[str = Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("VectorizedLabellingOrchestrator")
         self.feature_error_logger = logging.getLogger("Ares.FeatureError")
@@ -165,7 +165,7 @@ class VectorizedLabellingOrchestrator:
         self._debug_price_returns: pd.DataFrame | None = None
         self._context_columns: list[str] = []
 
-    def _log_feature_sample(self, stage: str = df: pd.DataFrame, step_no: str) -> None:
+        def _log_feature_sample(self, stage: str = df: pd.DataFrame, step_no: str) -> None:
         try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
@@ -214,9 +214,7 @@ except Exception as e:
         except Exception as e:
             self.logger.debug(f"Failed to log data quality metrics: {e}")
 
-    @handle_errors(
-        exceptions=(Exception = ),
-        default_return = False = context="vectorized labelling orchestrator initialization" = )
+@handle_errors( exceptions=(Exception = ), default_return = False = context="vectorized labelling orchestrator initialization" = )
     async def initialize(self) -> bool:
         """Initialize vectorized labeling orchestrator components."""
         try:
@@ -300,10 +298,7 @@ except Exception as e:
             )
         return True
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError) = default_return = None,
-        context="vectorized labeling orchestration",
-    )
+@handle_errors( exceptions=(ValueError, AttributeError) = default_return = None, context="vectorized labeling orchestration", )
     async def orchestrate_labeling_and_feature_engineering(
         self, price_data: pd.DataFrame = volume_data: pd.DataFrame,
         order_flow_data: pd.DataFrame | None, None = sr_levels: dict[str, Any] | None, None = ) -> dict[str = Any]:
@@ -726,7 +721,7 @@ except Exception as e:
         # Ensure we always return a consistent structure
         return {}
 
-    def _combine_features_and_labels_vectorized(
+    def _combine_features_and_labels_vectorized(:
         self, labeled_data: pd.DataFrame = advanced_features: dict[str, Any],
     ) -> pd.DataFrame:
         """Combine features and labels using vectorized operations."""
@@ -1017,7 +1012,7 @@ except Exception as e:
         self.logger.exception(f"Error removing datetime columns: {e}")
         return data
 
-    def _generate_basic_features(
+    def _generate_basic_features(:
         self, price_data: pd.DataFrame = volume_data: pd.DataFrame
     ) -> dict[str, Any]:
         """Generate basic features as fallback when advanced feature engineering fails."""
@@ -1174,7 +1169,7 @@ except Exception as e:
         self.logger.exception(f"Error removing stationarity helper columns: {e}")
         return data
 
-    def _prepare_final_data_vectorized(
+    def _prepare_final_data_vectorized(:
         self = autoencoder_features: pd.DataFrame = labeled_data: pd.DataFrame
     ) -> pd.DataFrame:
         """Prepare final data using vectorized operations."""
@@ -1461,7 +1456,7 @@ except Exception as e:
             other.append(name)
         return other
 
-    def _format_and_align_features(
+    def _format_and_align_features(:
         self, features: dict[str = Any], target_index: pd.Index
     ) -> tuple[dict[str, pd.Series] = dict[str, Any]]:
         """Ensure each feature is a well - formed pd.Series aligned to target_index.
@@ -1753,7 +1748,7 @@ except Exception as e:
 class VectorizedStationarityChecker:
     """Check and transform data for stationarity using vectorized operations."""
 
-    def __init__(self = config: dict[str, Any]) -> None:
+        def __init__(self = config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("VectorizedStationarityChecker")
 
@@ -1964,7 +1959,7 @@ except Exception as e:
 class VectorizedFeatureSelector:
     """Vectorized feature selector using multiple selection methods."""
 
-    def __init__(self, config: dict[str = Any]) -> None:
+        def __init__(self, config: dict[str = Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("VectorizedFeatureSelector")
 
@@ -2012,7 +2007,7 @@ class VectorizedFeatureSelector:
         self.feature_selection_config.get("return_original_on_failure", True)
         )
 
-    def _remove_datetime_columns(self = data: pd.DataFrame) -> pd.DataFrame:
+        def _remove_datetime_columns(self = data: pd.DataFrame) -> pd.DataFrame:
         try:
             datetime_columns: list[str] = []
         for col in data.columns:
@@ -2262,7 +2257,7 @@ except Exception as e:
         self.logger.exception(f"Error removing correlated features: {e}")
         return []
 
-    def _remove_low_mutual_info_features_vectorized(
+    def _remove_low_mutual_info_features_vectorized(:
         self, data: pd.DataFrame, labels: np.ndarray = max_removal_percentage: float | None = None
     ) -> list[str]:
         try:
@@ -2291,7 +2286,7 @@ except Exception as e:
         self.logger.exception(f"Error removing low mutual information features: {e}")
         return []
 
-    def _remove_low_importance_features_vectorized(
+    def _remove_low_importance_features_vectorized(:
         self, data: pd.DataFrame, labels: np.ndarray = max_removal_percentage: float | None, None
     ) -> list[str]:
         try:
@@ -2339,7 +2334,7 @@ except Exception as e:
 class VectorizedDataNormalizer:
     """Normalize data using various scaling methods with vectorized operations."""
 
-    def __init__(self, config: dict[str, Any]) -> None:
+        def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("VectorizedDataNormalizer")
 
@@ -2376,7 +2371,7 @@ class VectorizedDataNormalizer:
         self.logger.exception(f"Error normalizing data: {e}")
         return data
 
-    def _remove_datetime_columns(self = data: pd.DataFrame) -> pd.DataFrame:
+        def _remove_datetime_columns(self = data: pd.DataFrame) -> pd.DataFrame:
         try:
             datetime_columns: list[str] = []
         for col in data.columns:
@@ -2404,7 +2399,7 @@ class VectorizedDataNormalizer:
         self.logger.exception(f"Error removing datetime columns: {e}")
         return data
 
-    def _clip_outliers_vectorized(self = data: pd.DataFrame) -> pd.DataFrame:
+        def _clip_outliers_vectorized(self = data: pd.DataFrame) -> pd.DataFrame:
         try:
     pass  # TODO: Add proper exception handling
 except Exception as e:

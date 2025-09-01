@@ -33,16 +33,7 @@ import matplotlib.pyplot as plt
 warnings.filterwarnings('ignore')
 
 
-@dataclass
-class PlaceholderDataClass:
-    pass  # TODO: Add implementation
-class RegimeBarrierResult:
-    """Result of regime-specific barrier optimization."""
-
-    regime_name: str
-    regime_id: int
-
-    # Optimized barriers (in decimal form, e.g., 0.015 = 1.5%)
+@dataclass class PlaceholderDataClass: pass  # TODO: Add implementation class RegimeBarrierResult: """Result of regime-specific barrier optimization."""  regime_name: str regime_id: int  # Optimized barriers (in decimal form, e.g., 0.015 = 1.5%)
     optimal_upper_barrier: float
     optimal_lower_barrier: float
 
@@ -95,7 +86,7 @@ class HMMRegimeBarrierOptimizer:
     while accounting for 0.1% trading fees per trade.
     """
 
-    def __init__(
+        def __init__(:
         self, config: Dict[str = Any] = None,
         storage_url: str = "sqlite:///hmm_regime_barrier_optimization.db",
         study_name_prefix: str = "hmm_regime_barrier"
@@ -138,7 +129,7 @@ class HMMRegimeBarrierOptimizer:
         self.logger.info(f"   Trading fee: {self.trading_fee*100:.1f}% per trade")
         self.logger.info(f"   Trials per regime: {self.n_trials_per_regime}")
 
-    def _get_regime_names(self, data: pd.DataFrame) -> List[str]:
+        def _get_regime_names(self, data: pd.DataFrame) -> List[str]:
         """Extract HMM regime names from data."""
 
         # Look for HMM regime column
@@ -175,13 +166,13 @@ class HMMRegimeBarrierOptimizer:
         self.logger.info(f"📊 Found {len(regime_names)} HMM regimes: {regime_names}")
         return sorted(regime_names)
 
-    def _create_regime_objective_function(
+        def _create_regime_objective_function(:
         self,
         regime_name: str, regime_data: pd.DataFrame
     ) -> callable:
         """Create objective function for a specific HMM regime."""
 
-        def objective(trial: optuna.Trial) -> float:
+            def objective(trial: optuna.Trial) -> float:
             """Objective function for regime-specific barrier optimization."""
 
             try:
@@ -238,7 +229,7 @@ except Exception as e:
 
         return objective
 
-    def _simulate_trades_with_barriers(
+    def _simulate_trades_with_barriers(:
         self, data: pd.DataFrame = upper_barrier: float,
         lower_barrier: float
     ) -> List[Dict[str = Any]]:
@@ -259,7 +250,7 @@ except Exception as e:
 
         return long_trades + short_trades
 
-    def _simulate_long_trades(
+    def _simulate_long_trades(:
         self = data: pd.DataFrame,
         upper_barrier: float = lower_barrier: float
     ) -> List[Dict[str = Any]]:
@@ -313,7 +304,7 @@ except Exception as e:
 
         return trades
 
-    def _simulate_short_trades(
+    def _simulate_short_trades(:
         self, data: pd.DataFrame = upper_barrier: float,
         lower_barrier: float
     ) -> List[Dict[str = Any]]:
@@ -544,7 +535,7 @@ except Exception as e:
         except Exception as e:
             self.logger.exception(f"❌ Error optimizing regime {regime_name}: {e}")
 
-    def _filter_regime_data(
+    def _filter_regime_data(:
         self, data: pd.DataFrame = regime_name: str = regime_column: str
     ) -> pd.DataFrame:
         """Filter data for a specific regime."""
@@ -823,7 +814,7 @@ async def optimize_hmm_regime_barriers(
     return await optimizer.optimize_regime_barriers(data, regime_column)
 
 
-def get_optimized_hmm_barriers(
+def get_optimized_hmm_barriers(:
     regime_name: str = optimization_results: Dict[str, RegimeBarrierResult]
 ) -> Optional[Dict[str, float]]:
     """

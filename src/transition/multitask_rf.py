@@ -11,33 +11,7 @@ import numpy as np
 import pandas as pd
 import pickle
 
-@dataclass
-class PlaceholderDataClass:
-    pass  # TODO: Add implementation
-class MTRFConfig:
-    pass  # TODO: Add implementation
-class MTRFConfig:
-    pass  # TODO: Add implementation
-class MTRFConfig:
-    enabled: bool
-n_estimators: int
-max_depth: int | None
-min_samples_leaf: int
-random_state: int
-max_train_samples: int
-enable_regression: bool
-
-class MultiTaskRandomForest:
-    pass  # TODO: Add implementation
-class MultiTaskRandomForest:
-    pass  # TODO: Add implementation
-class MultiTaskRandomForest:
-    """
-Simple multi-head trainer built on RF:
-    - path_class head: multiclass {beginning_of_trend, continuation, reversal, end_of_trend}
-- onset_beginning head: binary
-- end_trend head: binary
-- direction heads: one per horizon H (binary up/down)
+@dataclass class PlaceholderDataClass: pass  # TODO: Add implementation class MTRFConfig: pass  # TODO: Add implementation class MTRFConfig: pass  # TODO: Add implementation class MTRFConfig: enabled: bool n_estimators: int max_depth: int | None min_samples_leaf: int random_state: int max_train_samples: int enable_regression: bool  class MultiTaskRandomForest: pass  # TODO: Add implementation class MultiTaskRandomForest: pass  # TODO: Add implementation class MultiTaskRandomForest: """ Simple multi-head trainer built on RF: - path_class head: multiclass {beginning_of_trend, continuation, reversal, end_of_trend} - onset_beginning head: binary - end_trend head: binary - direction heads: one per horizon H (binary up/down)
 - return heads: one per horizon H (regression, optional)
 """
 
@@ -49,7 +23,7 @@ tm.get("multitask_rf", {})
 if isinstance(tm.get("multitask_rf", {}), dict)
 else {}
 )
-self.cfg = MTRFConfig(
+    self.cfg = MTRFConfig(
 enabled=bool(mt.get("enabled", True)),
 n_estimators=int(mt.get("n_estimators", 400)),
 max_depth=int(mt.get("max_depth", 14)),
@@ -58,25 +32,25 @@ random_state=int(mt.get("random_state", 42)),
 max_train_samples=int(mt.get("max_train_samples", 300000)),
 enable_regression=bool(mt.get("enable_regression", True)),
 )
-self.horizons = list(horizons)
-self.models: dict[str, Any] = {}
-self.feature_names_: list[str] = []
-self.thresholds_: dict[str, Any] = {}
-self.reliability_: dict[str, Any] = {}
+    self.horizons = list(horizons)
+    self.models: dict[str, Any] = {}
+    self.feature_names_: list[str] = []
+    self.thresholds_: dict[str, Any] = {}
+    self.reliability_: dict[str, Any] = {}
 
 def _assemble_X(self, samples: list[dict[str, Any]]) -> pd.DataFrame:
         rows: list[dict[str, float]] = []
 for s in samples:
             rf = dict(s.get("rf_features", {}))
 rows.append(rf)
-return pd.DataFrame(rows).fillna(0.0)
+    return pd.DataFrame(rows).fillna(0.0)
 
 def _cap(self, X: pd.DataFrame, y: pd.Series) -> tuple[pd.DataFrame, pd.Series]:
         if len(X) > self.cfg.max_train_samples:
             return X.iloc[-self.cfg.max_train_samples :], y.iloc[
 -self.cfg.max_train_samples :
             ]
-return X, y
+    return X, y
 
 def _best_f1_threshold(self, y_true: np.ndarray, y_score: np.ndarray) -> float:
         if y_true.size == 0 or y_score.size == 0:
@@ -94,13 +68,13 @@ except Exception:
                 f1 = 0.0
 if f1 > best_f1:
                 best_f1, best_thr = f1, thr
-return float(best_thr)
+    return float(best_thr)
 
 def fit(self, samples: list[dict[str, Any]]) -> dict[str, Any]:
         if not self.cfg.enabled or not samples:
             return {"trained": False}
 X = self._assemble_X(samples)
-self.feature_names_ = list(X.columns)
+    self.feature_names_ = list(X.columns)
 
 results: dict[str, Any] = {"trained": True}
 thresholds: dict[str, Any] = {}
@@ -123,7 +97,7 @@ random_state=self.cfg.random_state,
 n_jobs=-1,
 )
 pc_model.fit(Xtr, ytr)
-self.models["path_class"] = pc_model
+    self.models["path_class"] = pc_model
 # Eval
 pc_pred = pc_model.predict(Xva)
 results["path_class"] = {
@@ -175,7 +149,7 @@ random_state=self.cfg.random_state,
 n_jobs=-1,
 )
 clf.fit(Xtr, ytr)
-self.models[head] = clf
+    self.models[head] = clf
 y_pred = clf.predict(Xva)
 results[head] = {
 "report": classification_report(
@@ -194,7 +168,7 @@ reliability[head] = {
 "positive_scale": float(np.clip(mean_y / mean_p, 0.5, 1.5)),
 }
 thresholds[head] = float(
-self._best_f1_threshold(yva.values.astype(int), p1),
+    self._best_f1_threshold(yva.values.astype(int), p1),
 )
 except Exception:
                 pass
@@ -237,7 +211,7 @@ random_state=self.cfg.random_state,
 n_jobs=-1,
 )
 nr_model.fit(Xtr, ytr)
-self.models["next_regime"] = nr_model
+    self.models["next_regime"] = nr_model
 results["next_regime"] = {
 "report": classification_report(
 yva, nr_model.predict(Xva),
@@ -287,7 +261,7 @@ random_state=self.cfg.random_state,
 n_jobs=-1,
 )
 clf.fit(Xtr, ytr)
-self.models[head] = clf
+    self.models[head] = clf
 y_pred = clf.predict(Xva)
 results[head] = {
 "report": classification_report(
@@ -306,7 +280,7 @@ reliability[head] = {
 "positive_scale": float(np.clip(mean_y / mean_p, 0.5, 1.5)),
 }
 thresholds[head] = float(
-self._best_f1_threshold(yva.values.astype(int), p1),
+    self._best_f1_threshold(yva.values.astype(int), p1),
 )
 except Exception:
                 pass
@@ -331,13 +305,13 @@ max_depth=self.cfg.max_depth, min_samples_leaf = self.cfg.min_samples_leaf,
 random_state=self.cfg.random_state, n_jobs = -1,
 )
 reg.fit(Xtr, ytr)
-self.models[head] = reg
+    self.models[head] = reg
 pred = reg.predict(Xva)
 results[head] = {"mae": float(mean_absolute_error(yva, pred))}
 
-self.thresholds_ = thresholds
-self.reliability_ = reliability
-return results
+    self.thresholds_ = thresholds
+    self.reliability_ = reliability
+    return results
 
 def save(self, models_dir: str, prefix: str = "rolling_mtrf") -> dict[str, Any]:
         os.makedirs(models_dir, exist_ok=True)
@@ -388,24 +362,12 @@ with open(rel_path, "w", encoding="utf-8") as f:
                 json.dump(self.reliability_, f, indent=2)
 except Exception as e:
             self.logger.warning(f"Failed to save reliability: {e}")
-return {
+    return {
 "models": saved,
 "meta_path": os.path.join(models_dir, f"{prefix}_meta.json"),
 }
 
-@staticmethod
-def load(models_dir: str, prefix: str = "rolling_mtrf") -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], list[str]]:
-        models: dict[str, Any] = {}
-# Load models
-for fname in os.listdir(models_dir):
-            if fname.startswith(prefix + "_") and fname.endswith(".pkl"):
-                head = fname[len(prefix) + 1 : -4]
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-with open(os.path.join(models_dir, fname), "rb") as f:
-                        models[head] = pickle.load(f)
+@staticmethod def load(models_dir: str, prefix: str = "rolling_mtrf") -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], list[str]]: models: dict[str, Any] = {} # Load models for fname in os.listdir(models_dir): if fname.startswith(prefix + "_") and fname.endswith(".pkl"): head = fname[len(prefix) + 1 : -4] try: pass  # TODO: Add proper exception handling except Exception as e: pass  # TODO: Add proper exception handling with open(os.path.join(models_dir, fname), "rb") as f: models[head] = pickle.load(f)
 except Exception:
                     continue
 # Load thresholds and reliability
@@ -438,7 +400,7 @@ with open(os.path.join(models_dir, f"{prefix}_meta.json"), encoding="utf-8") as 
 feature_names = list(meta.get("feature_names", []))
 except Exception:
             pass
-return models, thresholds, reliability, feature_names
+    return models, thresholds, reliability, feature_names
 
 def predict(self, X: pd.DataFrame) -> dict[str, Any]:
         out: dict[str, Any] = {}
@@ -459,4 +421,4 @@ f"Prediction failed for model '{name}': {e}",
 exc_info=True,
 )
 out[name] = []
-return out
+    return out

@@ -33,48 +33,7 @@ WARNING = "warning"
 ERROR = "error"
 CRITICAL = "critical"
 
-@dataclass
-class PlaceholderDataClass:
-    pass  # TODO: Add implementation
-class ValidationIssue:
-    pass  # TODO: Add implementation
-class ValidationIssue:
-    pass  # TODO: Add implementation
-class ValidationIssue:
-    """Represents a validation issue."""
-issue_type: str
-severity: ValidationSeverity
-description: str
-details: Optional[Dict[str, Any]] = None
-affected_columns: Optional[List[str]] = None
-affected_rows: Optional[List[int]] = None
-
-@dataclass
-class PlaceholderDataClass:
-    pass  # TODO: Add implementation
-class FileValidationResult:
-    pass  # TODO: Add implementation
-class FileValidationResult:
-    pass  # TODO: Add implementation
-class FileValidationResult:
-    """Result of file validation."""
-is_valid: bool
-file_path: str
-file_type: str
-issues: List[ValidationIssue]
-summary: Dict[str, Any]
-validation_timestamp: datetime
-
-class ComprehensiveFileValidator:
-    pass  # TODO: Add implementation
-class ComprehensiveFileValidator:
-    pass  # TODO: Add implementation
-class ComprehensiveFileValidator:
-    """
-Comprehensive file format validator for training pipeline steps.
-
-Validates:
-    - File type and format - Data types (strings, booleans, numerics, etc.)
+@dataclass class PlaceholderDataClass: pass  # TODO: Add implementation class ValidationIssue: pass  # TODO: Add implementation class ValidationIssue: pass  # TODO: Add implementation class ValidationIssue: """Represents a validation issue.""" issue_type: str severity: ValidationSeverity description: str details: Optional[Dict[str, Any]] = None affected_columns: Optional[List[str]] = None affected_rows: Optional[List[int]] = None  @dataclass class PlaceholderDataClass: pass  # TODO: Add implementation class FileValidationResult: pass  # TODO: Add implementation class FileValidationResult: pass  # TODO: Add implementation class FileValidationResult: """Result of file validation.""" is_valid: bool file_path: str file_type: str issues: List[ValidationIssue] summary: Dict[str, Any] validation_timestamp: datetime  class ComprehensiveFileValidator: pass  # TODO: Add implementation class ComprehensiveFileValidator: pass  # TODO: Add implementation class ComprehensiveFileValidator: """ Comprehensive file format validator for training pipeline steps.  Validates: - File type and format - Data types (strings, booleans, numerics, etc.)
 - Number of columns - Column names - Column completeness (no empty values)
 - Index validation
 """
@@ -84,12 +43,12 @@ def __init__(self, config: Optional[Dict[str, Any]] = None):
     def __init__(self, config: Optional[Dict[str, Any]] = None):
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         """Initialize the validator with configuration."""
-self.logger = system_logger.getChild("ComprehensiveFileValidator")
-self.config = config or self._get_default_config()
+    self.logger = system_logger.getChild("ComprehensiveFileValidator")
+    self.config = config or self._get_default_config()
 
 def _get_default_config(self) -> Dict[str, Any]:
         """Get default validation configuration."""
-return {
+    return {
 "file_types": {
 "parquet": {
 "extensions": [".parquet"],
@@ -177,7 +136,8 @@ return {
 }
 }
 
-def validate_file_format(
+def validate_file_format(:
+    pass  # TODO: Add implementation
 self,
 file_path: str,
 expected_schema: Optional[str] = None,
@@ -194,7 +154,7 @@ step_name: Name of the step for logging context
 Returns:
             FileValidationResult with validation details
 """
-self.logger.info(f"🔍 Validating file format for {step_name}: {file_path}")
+    self.logger.info(f"🔍 Validating file format for {step_name}: {file_path}")
 
 issues = []
 summary = {
@@ -269,7 +229,7 @@ severity=ValidationSeverity.CRITICAL,
 description=f"Failed to load file: {str(e)}",
 details={"error": str(e)}
 ))
-return FileValidationResult(
+    return FileValidationResult(
 is_valid=False,
 file_path=file_path,
 file_type=file_type_result["file_type"],
@@ -292,7 +252,7 @@ else:
 for issue in issues:
                 self.logger.warning(f"   - {issue.severity.value.upper()}: {issue.description}")
 
-return FileValidationResult(
+    return FileValidationResult(
 is_valid=is_valid,
 file_path=file_path,
 file_type=file_type_result["file_type"],
@@ -312,7 +272,7 @@ issue_type="file_not_found",
 severity=ValidationSeverity.CRITICAL,
 description=f"File does not exist: {file_path}"
 ))
-return {
+    return {
 "is_valid": False,
 "issues": issues
 }
@@ -385,7 +345,7 @@ description=f"Filename '{filename}' doesn't match expected patterns",
 details={"filename": filename, "expected_patterns": list(expected_patterns.keys())}
 ))
 
-return {
+    return {
 "is_valid": len([i for i in issues if i.severity == ValidationSeverity.CRITICAL]) == 0,
 "issues": issues,
 "path_info": {
@@ -419,7 +379,7 @@ issue_type="empty_file",
 severity=ValidationSeverity.CRITICAL,
 description=f"File is empty: {file_path}"
 ))
-return {
+    return {
 "is_valid": False,
 "file_type": "unknown",
 "issues": issues
@@ -446,7 +406,7 @@ for file_type_name, config in self.config["file_types"].items():
                 file_type = file_type_name
 break
 
-return {
+    return {
 "is_valid": len([i for i in issues if i.severity in [ValidationSeverity.CRITICAL, ValidationSeverity.ERROR]]) == 0,
 "file_type": file_type,
 "issues": issues,
@@ -482,7 +442,7 @@ description=f"Expected at least {expected_count} columns, got {actual_count}",
 details={"expected": expected_count, "actual": actual_count}
 ))
 
-return {
+    return {
 "issues": issues
 }
 
@@ -514,7 +474,7 @@ description = f"Duplicate column names found: {duplicate_columns}",
 affected_columns = duplicate_columns
 ))
 
-return {
+    return {
 "issues": issues
 }
 
@@ -552,7 +512,7 @@ affected_columns=[column],
 details={"types": list(unique_types)}
 ))
 
-return {
+    return {
 "issues": issues
 }
 
@@ -584,7 +544,7 @@ description=f"Completely empty columns found: {empty_columns}",
 affected_columns=empty_columns
 ))
 
-return {
+    return {
 "issues": issues
 }
 
@@ -621,7 +581,7 @@ description=f"Index contains {null_index_count} null values",
 details={"null_count": int(null_index_count)}
 ))
 
-return {
+    return {
 "issues": issues
 }
 
@@ -676,7 +636,7 @@ affected_columns=constant_columns
 
 metrics["constant_columns"] = constant_columns
 
-return {
+    return {
 "issues": issues,
 "metrics": metrics
 }
@@ -685,22 +645,22 @@ return {
 def validate_step1_file(file_path: str) -> FileValidationResult:
     """Validate file for step 1 (data collection)."""
 validator = ComprehensiveFileValidator()
-return validator.validate_file_format(file_path, expected_schema="klines", step_name="step1")
+    return validator.validate_file_format(file_path, expected_schema="klines", step_name="step1")
 
 def validate_step1_5_file(file_path: str) -> FileValidationResult:
     """Validate file for step 1.5 (data conversion)."""
 validator = ComprehensiveFileValidator()
-return validator.validate_file_format(file_path, expected_schema="klines", step_name="step01_5")
+    return validator.validate_file_format(file_path, expected_schema="klines", step_name="step01_5")
 
 def validate_step2_file(file_path: str) -> FileValidationResult:
     """Validate file for step 2 (feature engineering)."""
 validator = ComprehensiveFileValidator()
-return validator.validate_file_format(file_path, expected_schema="features", step_name="step2")
+    return validator.validate_file_format(file_path, expected_schema="features", step_name="step2")
 
 def validate_step4_file(file_path: str) -> FileValidationResult:
     """Validate file for step 4 (processing and labeling)."""
 validator = ComprehensiveFileValidator()
-return validator.validate_file_format(file_path, expected_schema="features", step_name="step4")
+    return validator.validate_file_format(file_path, expected_schema="features", step_name="step4")
 
 # Decorator for automatic validation
 def validate_file_format(step_name: str, expected_schema: Optional[str] = None):
@@ -732,7 +692,7 @@ logging.warning(f"File validation issues in {step_name}: {result}")
 for issue in validation_result.issues:
                         logging.warning(f"  - {issue.severity.value}: {issue.description}")
 
-return result
+    return result
 
-return wrapper
-return decorator
+    return wrapper
+    return decorator

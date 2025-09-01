@@ -46,75 +46,7 @@ class OrderSide(Enum):
 BUY = "buy"
 SELL = "sell"
 
-@dataclass
-class PlaceholderDataClass:
-    pass  # TODO: Add implementation
-class OrderRequest:
-    pass  # TODO: Add implementation
-class OrderRequest:
-    pass  # TODO: Add implementation
-class OrderRequest:
-    """Order request data structure."""
-
-symbol: str
-side: OrderSide
-order_type: OrderType
-quantity: float
-price: float | None = None
-stop_price: float | None = None
-leverage: float | None = None
-time_in_force: str = "GTC"  # Good Till Cancelled
-reduce_only: bool = False
-close_on_trigger: bool = False
-order_link_id: str | None = None
-take_profit: float | None = None
-stop_loss: float | None = None
-trailing_stop: float | None = None
-iceberg_qty: float | None = None
-strategy_id: str | None = None
-strategy_type: str | None = None  # "CHASE_MICRO_BREAKOUT", "LIMIT_ORDER_RETURN", etc.
-post_only: bool | None = None
-
-@dataclass
-class PlaceholderDataClass:
-    pass  # TODO: Add implementation
-class OrderFill:
-    pass  # TODO: Add implementation
-class OrderFill:
-    pass  # TODO: Add implementation
-class OrderFill:
-    """Order fill data structure."""
-
-order_id: str
-symbol: str
-side: OrderSide
-price: float
-quantity: float
-commission: float
-commission_asset: str
-trade_time: datetime
-is_maker: bool = False
-
-@dataclass
-class PlaceholderDataClass:
-    pass  # TODO: Add implementation
-class OrderState:
-    pass  # TODO: Add implementation
-class OrderState:
-    pass  # TODO: Add implementation
-class OrderState:
-    """Order state tracking."""
-
-order_id: str
-symbol: str
-side: OrderSide
-order_type: OrderType
-original_quantity: float
-executed_quantity: float = 0.0
-remaining_quantity: float = 0.0
-average_price: float = 0.0
-status: OrderStatus = OrderStatus.PENDING
-fills: List[OrderFill] = field(default_factory=list)
+@dataclass class PlaceholderDataClass: pass  # TODO: Add implementation class OrderRequest: pass  # TODO: Add implementation class OrderRequest: pass  # TODO: Add implementation class OrderRequest: """Order request data structure."""  symbol: str side: OrderSide order_type: OrderType quantity: float price: float | None = None stop_price: float | None = None leverage: float | None = None time_in_force: str = "GTC"  # Good Till Cancelled reduce_only: bool = False close_on_trigger: bool = False order_link_id: str | None = None take_profit: float | None = None stop_loss: float | None = None trailing_stop: float | None = None iceberg_qty: float | None = None strategy_id: str | None = None strategy_type: str | None = None  # "CHASE_MICRO_BREAKOUT", "LIMIT_ORDER_RETURN", etc. post_only: bool | None = None  @dataclass class PlaceholderDataClass: pass  # TODO: Add implementation class OrderFill: pass  # TODO: Add implementation class OrderFill: pass  # TODO: Add implementation class OrderFill: """Order fill data structure."""  order_id: str symbol: str side: OrderSide price: float quantity: float commission: float commission_asset: str trade_time: datetime is_maker: bool = False  @dataclass class PlaceholderDataClass: pass  # TODO: Add implementation class OrderState: pass  # TODO: Add implementation class OrderState: pass  # TODO: Add implementation class OrderState: """Order state tracking."""  order_id: str symbol: str side: OrderSide order_type: OrderType original_quantity: float executed_quantity: float = 0.0 remaining_quantity: float = 0.0 average_price: float = 0.0 status: OrderStatus = OrderStatus.PENDING fills: List[OrderFill] = field(default_factory=list)
 created_time: datetime = field(default_factory=datetime.now)
 updated_time: datetime = field(default_factory=datetime.now)
 strategy_id: str | None = None
@@ -143,26 +75,22 @@ Initialize the enhanced order manager.
 Args:
             config: Configuration dictionary
 """
-self.config = config
-self.logger = system_logger.getChild("EnhancedOrderManager")
+    self.config = config
+    self.logger = system_logger.getChild("EnhancedOrderManager")
 
 # Order tracking
-self.active_orders: Dict[str, OrderState] = {}
-self.order_history: List[OrderState] = []
+    self.active_orders: Dict[str, OrderState] = {}
+    self.order_history: List[OrderState] = []
 
 # Configuration
-self.max_active_orders = config.get("max_active_orders", 100)
-self.max_history_size = config.get("max_history_size", 1000)
-self.default_timeout = config.get("order_timeout", 300)  # 5 minutes
+    self.max_active_orders = config.get("max_active_orders", 100)
+    self.max_history_size = config.get("max_history_size", 1000)
+    self.default_timeout = config.get("order_timeout", 300)  # 5 minutes
 
 # Metrics
-self.metrics = metrics
+    self.metrics = metrics
 
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=None,
-context="order manager initialization"
-)
+@handle_errors( exceptions=(ValueError, AttributeError), default_return=None, context="order manager initialization" )
 async def initialize(self) -> bool:
         """
 Initialize the order manager.
@@ -174,24 +102,20 @@ try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-self.logger.info("Initializing Enhanced Order Manager...")
+    self.logger.info("Initializing Enhanced Order Manager...")
 
 # Clear any existing state
-self.active_orders.clear()
-self.order_history.clear()
+    self.active_orders.clear()
+    self.order_history.clear()
 
-self.logger.info("✅ Enhanced Order Manager initialized successfully")
-return True
+    self.logger.info("✅ Enhanced Order Manager initialized successfully")
+    return True
 
 except Exception as e:
             self.logger.error(failed(f"❌ Enhanced Order Manager initialization failed: {e}"))
-return False
+    return False
 
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=None,
-context="order creation"
-)
+@handle_errors( exceptions=(ValueError, AttributeError), default_return=None, context="order creation" )
 async def create_order(self, order_request: OrderRequest) -> Optional[OrderState]:
         """
 Create a new order.
@@ -209,7 +133,7 @@ except Exception as e:
 # Validate order request
 if not self._validate_order_request(order_request):
                 self.logger.error(invalid("Invalid order request"))
-return None
+    return None
 
 # Create order state
 order_id = str(uuid.uuid4())
@@ -225,17 +149,17 @@ strategy_type=order_request.strategy_type
 )
 
 # Add to active orders
-self.active_orders[order_id] = order_state
+    self.active_orders[order_id] = order_state
 
 # Update metrics
-self.metrics.increment_counter("orders_created_total")
+    self.metrics.increment_counter("orders_created_total")
 
-self.logger.info(f"Created order {order_id} for {order_request.symbol}")
-return order_state
+    self.logger.info(f"Created order {order_id} for {order_request.symbol}")
+    return order_state
 
 except Exception as e:
             self.logger.error(failed(f"❌ Order creation failed: {e}"))
-return None
+    return None
 
 def _validate_order_request(self, order_request: OrderRequest) -> bool:
         """
@@ -253,33 +177,29 @@ except Exception as e:
     pass  # TODO: Add proper exception handling
 if not order_request.symbol:
                 self.logger.error(missing("Symbol is required"))
-return False
+    return False
 
 if order_request.quantity <= 0:
                 self.logger.error(invalid("Quantity must be positive"))
-return False
+    return False
 
 if order_request.order_type in [OrderType.LIMIT, OrderType.STOP_LIMIT]:
                 if order_request.price is None or order_request.price <= 0:
                     self.logger.error(missing("Price is required for limit orders"))
-return False
+    return False
 
 if order_request.order_type in [OrderType.STOP_LIMIT, OrderType.STOP_MARKET]:
                 if order_request.stop_price is None or order_request.stop_price <= 0:
                     self.logger.error(missing("Stop price is required for stop orders"))
-return False
+    return False
 
-return True
+    return True
 
 except Exception as e:
             self.logger.error(failed(f"❌ Order validation failed: {e}"))
-return False
+    return False
 
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=None,
-context="order update"
-)
+@handle_errors( exceptions=(ValueError, AttributeError), default_return=None, context="order update" )
 async def update_order(self, order_id: str, updates: Dict[str, Any]) -> Optional[OrderState]:
         """
 Update an existing order.
@@ -297,7 +217,7 @@ except Exception as e:
     pass  # TODO: Add proper exception handling
 if order_id not in self.active_orders:
                 self.logger.error(missing(f"Order {order_id} not found"))
-return None
+    return None
 
 order_state = self.active_orders[order_id]
 
@@ -308,18 +228,14 @@ for key, value in updates.items():
 
 order_state.updated_time = datetime.now()
 
-self.logger.info(f"Updated order {order_id}")
-return order_state
+    self.logger.info(f"Updated order {order_id}")
+    return order_state
 
 except Exception as e:
             self.logger.error(failed(f"❌ Order update failed: {e}"))
-return None
+    return None
 
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=None,
-context="order cancellation"
-)
+@handle_errors( exceptions=(ValueError, AttributeError), default_return=None, context="order cancellation" )
 async def cancel_order(self, order_id: str) -> bool:
         """
 Cancel an active order.
@@ -336,31 +252,27 @@ except Exception as e:
     pass  # TODO: Add proper exception handling
 if order_id not in self.active_orders:
                 self.logger.error(missing(f"Order {order_id} not found"))
-return False
+    return False
 
 order_state = self.active_orders[order_id]
 order_state.status = OrderStatus.CANCELLED
 order_state.updated_time = datetime.now()
 
 # Move to history
-self.order_history.append(order_state)
+    self.order_history.append(order_state)
 del self.active_orders[order_id]
 
 # Update metrics
-self.metrics.increment_counter("orders_cancelled_total")
+    self.metrics.increment_counter("orders_cancelled_total")
 
-self.logger.info(f"Cancelled order {order_id}")
-return True
+    self.logger.info(f"Cancelled order {order_id}")
+    return True
 
 except Exception as e:
             self.logger.error(failed(f"❌ Order cancellation failed: {e}"))
-return False
+    return False
 
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=None,
-context="order fill processing"
-)
+@handle_errors( exceptions=(ValueError, AttributeError), default_return=None, context="order fill processing" )
 async def process_fill(self, order_id: str, fill: OrderFill) -> Optional[OrderState]:
         """
 Process an order fill.
@@ -378,7 +290,7 @@ except Exception as e:
     pass  # TODO: Add proper exception handling
 if order_id not in self.active_orders:
                 self.logger.error(missing(f"Order {order_id} not found"))
-return None
+    return None
 
 order_state = self.active_orders[order_id]
 
@@ -397,7 +309,7 @@ order_state.average_price = total_value / order_state.executed_quantity
 if order_state.remaining_quantity <= 0:
                 order_state.status = OrderStatus.FILLED
 # Move to history
-self.order_history.append(order_state)
+    self.order_history.append(order_state)
 del self.active_orders[order_id]
 else:
                 order_state.status = OrderStatus.PARTIALLY_FILLED
@@ -405,14 +317,14 @@ else:
 order_state.updated_time = datetime.now()
 
 # Update metrics
-self.metrics.increment_counter("order_fills_total")
+    self.metrics.increment_counter("order_fills_total")
 
-self.logger.info(f"Processed fill for order {order_id}: {fill.quantity} @ {fill.price}")
-return order_state
+    self.logger.info(f"Processed fill for order {order_id}: {fill.quantity} @ {fill.price}")
+    return order_state
 
 except Exception as e:
             self.logger.error(failed(f"❌ Fill processing failed: {e}"))
-return None
+    return None
 
 def get_active_orders(self) -> Dict[str, OrderState]:
         """
@@ -421,7 +333,7 @@ Get all active orders.
 Returns:
             Dict[str, OrderState]: Active orders
 """
-return self.active_orders.copy()
+    return self.active_orders.copy()
 
 def get_order_history(self) -> List[OrderState]:
         """
@@ -430,7 +342,7 @@ Get order history.
 Returns:
             List[OrderState]: Order history
 """
-return self.order_history.copy()
+    return self.order_history.copy()
 
 def get_order(self, order_id: str) -> Optional[OrderState]:
         """
@@ -442,7 +354,7 @@ Args:
 Returns:
             OrderState: Order state or None if not found
 """
-return self.active_orders.get(order_id)
+    return self.active_orders.get(order_id)
 
 async def cleanup(self) -> None:
         """
@@ -452,13 +364,13 @@ try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-self.logger.info("Cleaning up Enhanced Order Manager...")
+    self.logger.info("Cleaning up Enhanced Order Manager...")
 
 # Cancel all active orders
 for order_id in list(self.active_orders.keys()):
                 await self.cancel_order(order_id)
 
-self.logger.info("✅ Enhanced Order Manager cleanup completed")
+    self.logger.info("✅ Enhanced Order Manager cleanup completed")
 
 except Exception as e:
             self.logger.error(failed(f"❌ Enhanced Order Manager cleanup failed: {e}"))

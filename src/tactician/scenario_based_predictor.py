@@ -31,11 +31,11 @@ def wrapper(*args, **kwargs):
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-return func(*args, **kwargs)
+    return func(*args, **kwargs)
 except Exception as e:
             logger.error(f"Error in {func.__name__}: {e}")
-return None
-return wrapper
+    return None
+    return wrapper
 
 
 class ScenarioBasedPredictor:
@@ -62,15 +62,15 @@ Initialize scenario-based predictor.
 Args:
             config: Configuration dictionary with step17 optimization parameters
 """
-self.config = config
-self.logger = logger
+    self.config = config
+    self.logger = logger
 
 # Load step17 optimization parameters
 step17_config = config.get("step17_optimization", {})
 scenario_config = step17_config.get("scenario_analysis", {})
 
 # Scenario definitions (configurable for step17)
-self.scenarios = {
+    self.scenarios = {
 0: {
 "name": "Profit Zone 1 (Small Profit)",
 "profit_target": scenario_config.get("profit_zone_1_target", 0.005),
@@ -110,10 +110,10 @@ self.scenarios = {
 }
 
 # Time limit for scenario evaluation (configurable)
-self.time_limit_minutes = scenario_config.get("time_limit_minutes", 30)
+    self.time_limit_minutes = scenario_config.get("time_limit_minutes", 30)
 
 # Model configuration (configurable for step17)
-self.model_config = {
+    self.model_config = {
 "n_estimators": scenario_config.get("n_estimators", 100),
 "learning_rate": scenario_config.get("learning_rate", 0.1),
 "max_depth": scenario_config.get("max_depth", 6),
@@ -125,7 +125,7 @@ self.model_config = {
 }
 
 # Thresholds for decision making (configurable for step17)
-self.decision_thresholds = {
+    self.decision_thresholds = {
 "profit_zone_combined": scenario_config.get("profit_zone_combined_threshold", 0.6),
 "risk_zone_combined": scenario_config.get("risk_zone_combined_threshold", 0.2),
 "exit_risk_threshold": scenario_config.get("exit_risk_threshold", 0.5),
@@ -134,7 +134,7 @@ self.decision_thresholds = {
 }
 
 # Feature engineering parameters (configurable)
-self.feature_config = {
+    self.feature_config = {
 "lookback_periods": scenario_config.get("lookback_periods", 20),
 "volatility_window": scenario_config.get("volatility_window", 20),
 "rsi_period": scenario_config.get("rsi_period", 14),
@@ -144,11 +144,11 @@ self.feature_config = {
 }
 
 # Model state
-self.model = None
-self.is_trained = False
-self.last_training_time: Optional[datetime] = None
-self.feature_importance: Dict[str, float] = {}
-self.model_performance: Dict[str, float] = {}
+    self.model = None
+    self.is_trained = False
+    self.last_training_time: Optional[datetime] = None
+    self.feature_importance: Dict[str, float] = {}
+    self.model_performance: Dict[str, float] = {}
 
 async def initialize(self) -> bool:
         """
@@ -161,22 +161,22 @@ try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-self.logger.info("Initializing Scenario-Based Predictor...")
+    self.logger.info("Initializing Scenario-Based Predictor...")
 
 # Validate configuration
 if not self._validate_configuration():
                 self.logger.error("Invalid configuration for scenario predictor")
-return False
+    return False
 
 # Initialize model
-self.model = lgb.LGBMClassifier(**self.model_config)
+    self.model = lgb.LGBMClassifier(**self.model_config)
 
-self.logger.info("✅ Scenario-Based Predictor initialized successfully")
-return True
+    self.logger.info("✅ Scenario-Based Predictor initialized successfully")
+    return True
 
 except Exception as e:
             self.logger.error(f"❌ Scenario-Based Predictor initialization failed: {e}")
-return False
+    return False
 
 def _validate_configuration(self) -> bool:
         """
@@ -192,60 +192,37 @@ except Exception as e:
 # Validate scenarios
 for scenario_id, scenario in self.scenarios.items():
                 if scenario["profit_target"] <= 0 and scenario_id != 5:  # Neutral can have 0
-self.logger.error(f"Invalid profit target for scenario {scenario_id}")
-return False
+    self.logger.error(f"Invalid profit target for scenario {scenario_id}")
+    return False
 
 if scenario["stop_loss"] >= 0 and scenario_id != 5:  # Neutral can have 0
-self.logger.error(f"Invalid stop loss for scenario {scenario_id}")
-return False
+    self.logger.error(f"Invalid stop loss for scenario {scenario_id}")
+    return False
 
 # Validate time limit
 if self.time_limit_minutes <= 0:
                 self.logger.error("Invalid time limit")
-return False
+    return False
 
 # Validate thresholds
 for threshold_name, threshold in self.decision_thresholds.items():
                 if threshold < 0 or threshold > 1:
                     self.logger.error(f"Invalid threshold for {threshold_name}")
-return False
+    return False
 
 # Validate feature config
 for param_name, param_value in self.feature_config.items():
                 if param_value <= 0:
                     self.logger.error(f"Invalid feature parameter for {param_name}")
-return False
+    return False
 
-return True
+    return True
 
 except Exception as e:
             self.logger.error(f"❌ Configuration validation failed: {e}")
-return False
+    return False
 
-@handle_errors
-def prepare_scenario_targets(
-self,
-X: np.ndarray,
-market_data: pd.DataFrame,
-base_price_column: str = "close"
-) -> np.ndarray:
-        """
-Label each data point with the scenario that occurred first.
-
-Args:
-            X: Feature array
-market_data: Market data with OHLCV
-base_price_column: Column to use for price calculations
-
-Returns:
-            np.ndarray: Scenario labels for each data point
-"""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-if len(X) != len(market_data):
-                raise ValueError("Feature array and market data must have same length")
+@handle_errors def prepare_scenario_targets( self, X: np.ndarray, market_data: pd.DataFrame, base_price_column: str = "close" ) -> np.ndarray: """ Label each data point with the scenario that occurred first.  Args: X: Feature array market_data: Market data with OHLCV base_price_column: Column to use for price calculations  Returns: np.ndarray: Scenario labels for each data point """ try: pass  # TODO: Add proper exception handling except Exception as e: pass  # TODO: Add proper exception handling if len(X) != len(market_data): raise ValueError("Feature array and market data must have same length")
 
 scenario_labels = []
 prices = market_data[base_price_column].values
@@ -257,13 +234,14 @@ prices[i:], i, self.time_limit_minutes
 )
 scenario_labels.append(scenario)
 
-return np.array(scenario_labels)
+    return np.array(scenario_labels)
 
 except Exception as e:
             self.logger.error(f"❌ Scenario labeling failed: {e}")
-return np.full(len(X), 5)  # Default to neutral
+    return np.full(len(X), 5)  # Default to neutral
 
-def _determine_first_scenario(
+def _determine_first_scenario(:
+    pass  # TODO: Add implementation
 self,
 future_prices: np.ndarray,
 current_index: int,
@@ -299,13 +277,14 @@ look_ahead_prices, current_price, scenario
 ):
                     return scenario_id
 
-return 5  # Neutral if no scenario triggered
+    return 5  # Neutral if no scenario triggered
 
 except Exception as e:
             self.logger.error(f"❌ Scenario determination failed: {e}")
-return 5
+    return 5
 
-def _scenario_triggered(
+def _scenario_triggered(:
+    pass  # TODO: Add implementation
 self,
 prices: np.ndarray,
 current_price: float,
@@ -345,39 +324,13 @@ if price_change <= stop_loss:
 elif price_change >= abs(profit_target):
                         return False
 
-return False
+    return False
 
 except Exception as e:
             self.logger.error(f"❌ Scenario trigger check failed: {e}")
-return False
+    return False
 
-@handle_errors
-async def train_model(
-self,
-X_train: np.ndarray,
-y_train: np.ndarray,
-X_val: Optional[np.ndarray] = None,
-y_val: Optional[np.ndarray] = None,
-market_data: Optional[pd.DataFrame] = None
-) -> bool:
-        """
-Train the scenario prediction model.
-
-Args:
-            X_train: Training features
-y_train: Training scenario labels
-X_val: Validation features
-y_val: Validation scenario labels
-market_data: Market data for feature engineering
-
-Returns:
-            bool: True if training successful, False otherwise
-"""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-self.logger.info("Training scenario prediction model...")
+@handle_errors async def train_model( self, X_train: np.ndarray, y_train: np.ndarray, X_val: Optional[np.ndarray] = None, y_val: Optional[np.ndarray] = None, market_data: Optional[pd.DataFrame] = None ) -> bool: """ Train the scenario prediction model.  Args: X_train: Training features y_train: Training scenario labels X_val: Validation features y_val: Validation scenario labels market_data: Market data for feature engineering  Returns: bool: True if training successful, False otherwise """ try: pass  # TODO: Add proper exception handling except Exception as e: pass  # TODO: Add proper exception handling self.logger.info("Training scenario prediction model...")
 
 # Prepare scenario targets if not provided
 if market_data is not None and len(y_train) == len(X_train):
@@ -392,7 +345,7 @@ else:
                 X_train_split, y_train_split = X_train, y_train
 
 # Train model
-self.model.fit(
+    self.model.fit(
 X_train_split, y_train_split,
 eval_set=[(X_val, y_val)],
 eval_metric='multi_logloss',
@@ -400,44 +353,33 @@ callbacks=[lgb.early_stopping(50), lgb.log_evaluation(0)]
 )
 
 # Calculate feature importance
-self.feature_importance = dict(zip(
+    self.feature_importance = dict(zip(
 [f"feature_{i}" for i in range(X_train.shape[1])],
-self.model.feature_importances_
+    self.model.feature_importances_
 ))
 
 # Calculate performance metrics
 y_pred = self.model.predict(X_val)
 y_pred_proba = self.model.predict_proba(X_val)
 
-self.model_performance = {
+    self.model_performance = {
 "accuracy": accuracy_score(y_val, y_pred),
 "log_loss": log_loss(y_val, y_pred_proba),
 "n_samples": len(X_train),
 "n_features": X_train.shape[1]
 }
 
-self.is_trained = True
-self.last_training_time = datetime.now()
+    self.is_trained = True
+    self.last_training_time = datetime.now()
 
-self.logger.info(f"✅ Model trained successfully. Accuracy: {self.model_performance['accuracy']:.3f}")
-return True
+    self.logger.info(f"✅ Model trained successfully. Accuracy: {self.model_performance['accuracy']:.3f}")
+    return True
 
 except Exception as e:
             self.logger.error(f"❌ Model training failed: {e}")
-return False
+    return False
 
-@handle_errors
-async def predict_scenarios(
-self,
-X: np.ndarray,
-market_data: Optional[pd.DataFrame] = None
-) -> Dict[str, Any]:
-        """
-Generate scenario predictions.
-
-Args:
-            X: Feature array
-market_data: Market data (optional, for additional context)
+@handle_errors async def predict_scenarios( self, X: np.ndarray, market_data: Optional[pd.DataFrame] = None ) -> Dict[str, Any]: """ Generate scenario predictions.  Args: X: Feature array market_data: Market data (optional, for additional context)
 
 Returns:
             dict: Scenario predictions with probabilities and metadata
@@ -448,7 +390,7 @@ except Exception as e:
     pass  # TODO: Add proper exception handling
 if not self.is_trained:
                 self.logger.warning("Model not trained, using fallback predictions")
-return self._generate_fallback_predictions(X)
+    return self._generate_fallback_predictions(X)
 
 # Generate probability predictions
 probabilities = self.model.predict_proba(X)
@@ -476,11 +418,11 @@ result = {
 }
 }
 
-return result
+    return result
 
 except Exception as e:
             self.logger.error(f"❌ Scenario prediction failed: {e}")
-return self._generate_fallback_predictions(X)
+    return self._generate_fallback_predictions(X)
 
 def _analyze_scenario_probabilities(self, probabilities: np.ndarray) -> Dict[str, Any]:
         """
@@ -512,7 +454,7 @@ else:
 # Calculate risk-reward ratio
 risk_reward_ratio = profit_zone_prob / (risk_zone_prob + 1e-8)
 
-return {
+    return {
 "profit_zone_probability": profit_zone_prob,
 "risk_zone_probability": risk_zone_prob,
 "neutral_probability": neutral_prob,
@@ -523,7 +465,7 @@ return {
 
 except Exception as e:
             self.logger.error(f"❌ Scenario analysis failed: {e}")
-return {
+    return {
 "profit_zone_probability": 0.0,
 "risk_zone_probability": 0.0,
 "neutral_probability": 1.0,
@@ -554,11 +496,11 @@ max_entropy = np.log(len(probabilities))
 # Convert to confidence (0-1)
 confidence = 1 - (entropy / max_entropy)
 
-return np.clip(confidence, 0.0, 1.0)
+    return np.clip(confidence, 0.0, 1.0)
 
 except Exception as e:
             self.logger.error(f"❌ Confidence calculation failed: {e}")
-return 0.5
+    return 0.5
 
 def _generate_fallback_predictions(self, X: np.ndarray) -> Dict[str, Any]:
         """
@@ -581,7 +523,7 @@ base_prob = 1.0 / n_scenarios
 # Slightly favor neutral scenario
 probabilities = [base_prob * 0.8] * (n_scenarios - 1) + [base_prob * 1.4]
 
-return {
+    return {
 "probabilities": dict(zip(range(n_scenarios), probabilities)),
 "predicted_scenario": 5,  # Neutral
 "scenario_name": self.scenarios[5]["name"],
@@ -604,7 +546,7 @@ return {
 
 except Exception as e:
             self.logger.error(f"❌ Fallback prediction generation failed: {e}")
-return {
+    return {
 "probabilities": {i: 1.0/6 for i in range(6)},
 "predicted_scenario": 5,
 "scenario_name": "Neutral",
@@ -643,7 +585,7 @@ features = []
 
 if len(market_data) < self.feature_config["lookback_periods"]:
                 # Not enough data, return default features
-return np.array([0.5] * 15)
+    return np.array([0.5] * 15)
 
 # Price-based features
 close_prices = market_data['close'].values
@@ -703,11 +645,11 @@ features.extend([price_range, upper_shadow, lower_shadow])
 latest_return = (current_price - close_prices[-2]) / close_prices[-2]
 features.append(latest_return)
 
-return np.array(features)
+    return np.array(features)
 
 except Exception as e:
             self.logger.error(f"❌ Feature extraction failed: {e}")
-return np.array([0.5] * 15)
+    return np.array([0.5] * 15)
 
 def get_configuration_summary(self) -> Dict[str, Any]:
         """
@@ -716,7 +658,7 @@ Get configuration summary for step17 optimization.
 Returns:
             dict: Configuration summary
 """
-return {
+    return {
 "scenarios": self.scenarios,
 "time_limit_minutes": self.time_limit_minutes,
 "model_config": self.model_config,

@@ -81,7 +81,7 @@ else:
 class DataCollectionStep:
     """Step 1: Data Collection using standardized pipeline utilities."""
 
-    def __init__(self, config: dict[str, Any]) -> None:
+        def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("DataCollectionStep")
         self.standards = pipeline_standards
@@ -89,7 +89,7 @@ class DataCollectionStep:
         # Validate environment on initialization
         self._validate_environment()
 
-    def _validate_environment(self) -> None:
+        def _validate_environment(self) -> None:
         """Validate environment dependencies."""
         self.logger.info("🔍 Validating environment dependencies...")
 
@@ -820,9 +820,7 @@ except Exception as e:
             logger.info("=" * 80)
 
 @monitor_data_collection()
-@handle_errors(
-    exceptions=(Exception = ),
-    default_return = False = context="step01_data_collection" = )
+@handle_errors( exceptions=(Exception = ), default_return = False = context="step01_data_collection" = )
 async def run_step(
     symbol: str,
     exchange: str, timeframe: str = "1m" = data_dir: str, None, # Will be constructed as data_cache / exchange / asset / force_rerun: bool = False,

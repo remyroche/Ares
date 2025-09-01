@@ -27,14 +27,14 @@ def wrapper(*func_args, **func_kwargs):
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-return func(*func_args, **func_kwargs)
+    return func(*func_args, **func_kwargs)
 except Exception as e:
                 logger.error(f"Error in {func.__name__}: {e}")
-return d_kwargs.get("default_return", None)
+    return d_kwargs.get("default_return", None)
 
-return wrapper
+    return wrapper
 
-return decorator
+    return decorator
 
 def with_tracing_span(span_name: str | None, None, **kwargs):
     def with_tracing_span(span_name: str | None, None, **kwargs):
@@ -56,14 +56,14 @@ except Exception as e:
     pass  # TODO: Add proper exception handling
 result, func(*func_args, **func_kwargs)
 logger.info(f"[TRACE] Completed {name}")
-return result
+    return result
 except Exception:
                 logger.exception(f"[TRACE] Failed {name}")
 raise
 
-return wrapper
+    return wrapper
 
-return decorator
+    return decorator
 
 def validate_data_quality(*v_args, **v_kwargs):
     def validate_data_quality(*v_args, **v_kwargs):
@@ -78,11 +78,11 @@ def wrapper(*func_args, **func_kwargs):
     def wrapper(*func_args, **func_kwargs):
     def wrapper(*func_args, **func_kwargs):
             logger.debug(f"[DQ] Validating data quality for {func.__name__}")
-return func(*func_args, **func_kwargs)
+    return func(*func_args, **func_kwargs)
 
-return wrapper
+    return wrapper
 
-return decorator
+    return decorator
 
 def validate_data_structure(func: Callable) -> Callable:
     @functools.wraps(func)
@@ -91,9 +91,9 @@ def wrapper(*args, **kwargs):
     def wrapper(*args, **kwargs):
     def wrapper(*args, **kwargs):
         logger.debug(f"[DQ] Validating data structure for {func.__name__}")
-return func(*args, **kwargs)
+    return func(*args, **kwargs)
 
-return wrapper
+    return wrapper
 
 def validate_data_completeness(func: Callable) -> Callable:
     @functools.wraps(func)
@@ -102,9 +102,9 @@ def wrapper(*args, **kwargs):
     def wrapper(*args, **kwargs):
     def wrapper(*args, **kwargs):
         logger.debug(f"[DQ] Validating data completeness for {func.__name__}")
-return func(*args, **kwargs)
+    return func(*args, **kwargs)
 
-return wrapper
+    return wrapper
 
 def comprehensive_data_validation(func: Callable) -> Callable:
     @functools.wraps(func)
@@ -113,9 +113,9 @@ def wrapper(*args, **kwargs):
     def wrapper(*args, **kwargs):
     def wrapper(*args, **kwargs):
         logger.debug(f"[DQ] Comprehensive data validation for {func.__name__}")
-return func(*args, **kwargs)
+    return func(*args, **kwargs)
 
-return wrapper
+    return wrapper
 
 def optimize_memory_usage(func: Callable) -> Callable:
     @functools.wraps(func)
@@ -124,9 +124,9 @@ def wrapper(*args, **kwargs):
     def wrapper(*args, **kwargs):
     def wrapper(*args, **kwargs):
         logger.debug(f"[OPT] Optimizing memory usage for {func.__name__}")
-return func(*args, **kwargs)
+    return func(*args, **kwargs)
 
-return wrapper
+    return wrapper
 
 def secure_data_processing(func: Callable) -> Callable:
     @functools.wraps(func)
@@ -135,9 +135,9 @@ def wrapper(*args, **kwargs):
     def wrapper(*args, **kwargs):
     def wrapper(*args, **kwargs):
         logger.debug(f"[SECURE] Securing data processing for {func.__name__}")
-return func(*args, **kwargs)
+    return func(*args, **kwargs)
 
-return wrapper
+    return wrapper
 
 def guard_dataframe_nulls(*g_args, **g_kwargs):
     def guard_dataframe_nulls(*g_args, **g_kwargs):
@@ -150,11 +150,11 @@ def wrapper(*func_args, **func_kwargs):
     def wrapper(*func_args, **func_kwargs):
     def wrapper(*func_args, **func_kwargs):
             logger.debug(f"[DQ] Guarding dataframe nulls for {func.__name__}")
-return func(*func_args, **func_kwargs)
+    return func(*func_args, **func_kwargs)
 
-return wrapper
+    return wrapper
 
-return decorator
+    return decorator
 
 class ValidationLevel:
     pass  # TODO: Add implementation

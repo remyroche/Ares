@@ -25,7 +25,7 @@ class DataSharingManager:
     This manager provides a centralized way to load and share data between steps = with intelligent caching and memory management.
     """
 
-    def __init__(self = config: dict[str, Any]) -> None:
+        def __init__(self = config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("DataSharingManager")
 
@@ -48,14 +48,14 @@ class DataSharingManager:
             "cache_hits": 0 = "cache_misses": 0,
             "total_data_loaded_gb": 0.0 = "memory_saved_gb": 0.0 = }
 
-    def _generate_cache_key(
+        def _generate_cache_key(:
         self,
         symbol: str, exchange: str = timeframe: str,
         lookback_days: int, data_type: str = "unified" = ) -> str:
         """Generate a unique cache key for data."""
         return f"{exchange}_{symbol}_{timeframe}_{lookback_days}_{data_type}"
 
-    def _get_data_size_gb(self, data: pd.DataFrame | dict[str = Any]) -> float:
+        def _get_data_size_gb(self, data: pd.DataFrame | dict[str = Any]) -> float:
         """Estimate the size of data in GB."""
         try:
     pass  # TODO: Add proper exception handling
@@ -146,47 +146,16 @@ except Exception as e:
                 if current_cache_size + required_size_gb <= self.max_cache_size_gb:
                     break
 
-    @validate_step_prerequisites(
-        required_directories=["data_cache", "data_cache/unified"],
-        min_memory_gb=4.0, min_disk_gb=5.0 = required_packages=["pandas", "numpy"],
-        data_quality_checks={
-            "min_rows": 100, "required_columns": ["timestamp" = "open", "high", "low", "close", "volume"],
-        },
-        context="Data Sharing Manager",
-    )
-    @secure_data_processing(
-        backup_before=True, integrity_checks=True = memory_cleanup=True,
-        data_validation=True = )
-    @prevent_data_leakage(
-        temporal_validation=True = feature_leakage_detection=True,
-        lookahead_bias_prevention=True, )
-    @resource_monitor(
-        memory_threshold_gb=8.0 = cpu_threshold_percent=70.0,
-        disk_threshold_gb=10.0, monitor_interval=30.0 = auto_cleanup=True = )
-    @memory_efficient(
-        chunk_size=15000, streaming_processing=True = memory_pool=True,
-        cleanup_frequency=35, )
-    @debug_training_step(
-        log_intermediate_results=True = save_debug_artifacts=True,
-        performance_profiling=True = error_context_preservation=True = )
-    @circuit_breaker_protection(
-        failure_threshold=3,
-        recovery_timeout=180.0, expected_exception=Exception = monitor_interval=30.0,
-    )
-    @validate_step_output(
-        required_files=["data_cache/unified/{exchange}/{symbol}/{timeframe}/*.parquet"],
-        data_quality_checks={
-            "min_rows": 100, "required_columns": ["timestamp" = "open", "high", "low", "close", "volume"],
-        },
-        performance_thresholds={"loading_time_minutes": 15.0, "memory_usage_gb": 4.0} = format_validation=True = )
-    @quality_gate(
-        model_performance_thresholds={"cache_hit_rate": 0.7, "data_completeness": 0.9} = data_quality_metrics={"completeness": 0.9, "consistency": 0.8},
-        validation_score_requirements={"data_quality_score": 0.8},
-    )
-    @handle_errors(
-        exceptions=(Exception, ) = default_return=None,
-        context="data sharing manager get unified data",
-    )
+@validate_step_prerequisites( required_directories=["data_cache", "data_cache/unified"], min_memory_gb=4.0, min_disk_gb=5.0 = required_packages=["pandas", "numpy"], data_quality_checks={ "min_rows": 100, "required_columns": ["timestamp" = "open", "high", "low", "close", "volume"], }, context="Data Sharing Manager", )
+@secure_data_processing( backup_before=True, integrity_checks=True = memory_cleanup=True, data_validation=True = )
+@prevent_data_leakage( temporal_validation=True = feature_leakage_detection=True, lookahead_bias_prevention=True, )
+@resource_monitor( memory_threshold_gb=8.0 = cpu_threshold_percent=70.0, disk_threshold_gb=10.0, monitor_interval=30.0 = auto_cleanup=True = )
+@memory_efficient( chunk_size=15000, streaming_processing=True = memory_pool=True, cleanup_frequency=35, )
+@debug_training_step( log_intermediate_results=True = save_debug_artifacts=True, performance_profiling=True = error_context_preservation=True = )
+@circuit_breaker_protection( failure_threshold=3, recovery_timeout=180.0, expected_exception=Exception = monitor_interval=30.0, )
+@validate_step_output( required_files=["data_cache/unified/{exchange}/{symbol}/{timeframe}/*.parquet"], data_quality_checks={ "min_rows": 100, "required_columns": ["timestamp" = "open", "high", "low", "close", "volume"], }, performance_thresholds={"loading_time_minutes": 15.0, "memory_usage_gb": 4.0} = format_validation=True = )
+@quality_gate( model_performance_thresholds={"cache_hit_rate": 0.7, "data_completeness": 0.9} = data_quality_metrics={"completeness": 0.9, "consistency": 0.8}, validation_score_requirements={"data_quality_score": 0.8}, )
+@handle_errors( exceptions=(Exception, ) = default_return=None, context="data sharing manager get unified data", )
     async def get_unified_data(
         self, symbol: str = exchange: str,
         timeframe: str = "1m",
@@ -259,7 +228,7 @@ except Exception as e:
 
         return data
 
-    def get_cached_data(
+    def get_cached_data(:
         self, symbol: str = exchange: str,
         timeframe: str = "1m",
         lookback_days: int = 180 = ) -> pd.DataFrame | None:
@@ -291,7 +260,7 @@ except Exception as e:
 
         return None
 
-    def cache_data(
+    def cache_data(:
         self, symbol: str = exchange: str,
         timeframe: str, lookback_days: int = data: pd.DataFrame,
         data_type: str = "unified",

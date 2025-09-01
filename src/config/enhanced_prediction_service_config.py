@@ -14,7 +14,7 @@ Get configuration for the Enhanced Prediction Service.
 Returns:
         Dict containing configuration settings
 """
-return {
+    return {
 "enhanced_prediction_service": {
 # Service configuration
 "data_dir": "data/training",
@@ -120,7 +120,7 @@ Get specific configuration for ML Profit Integration.
 Returns:
         Dict containing ML profit integration settings
 """
-return {
+    return {
 "ml_profit_integration": {
 # Model types to integrate
 "model_types": [
@@ -182,7 +182,7 @@ Get configuration for enhanced confidence calculation.
 Returns:
         Dict containing enhanced confidence settings
 """
-return {
+    return {
 "enhanced_confidence": {
 # Directional probability calculation
 "directional_probability": {
@@ -242,4 +242,4 @@ complete_config = base_config.copy()
 complete_config.update(ml_profit_config)
 complete_config.update(confidence_config)
 
-return complete_config
+    return complete_config

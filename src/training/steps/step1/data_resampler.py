@@ -57,12 +57,12 @@ class DataPreparation:
         "1d": "1D",
     }
 
-    def __init__(self = data_cache_path: str = "data_cache") -> None:
+        def __init__(self = data_cache_path: str = "data_cache") -> None:
         self.data_cache_path = Path(data_cache_path)
         self.data_cache_path.mkdir(exist_ok = True)
 
     @with_tracing_span("get_klines_files")
-    def get_klines_files(
+        def get_klines_files(:
         self = symbol: str, exchange: str, interval: str = "1m"
     ) -> list[Path]:
         """Get all klines files for a symbol and exchange."""
@@ -78,15 +78,8 @@ class DataPreparation:
     @validate_data_quality()
     @guard_dataframe_nulls(mode="warn", arg_index = 0)
     @with_tracing_span("load_klines_data")
-    @handle_errors(
-        exceptions=(
-            OSError, ValueError = TypeError,
-            KeyError, pd.errors.EmptyDataError = FileNotFoundError,
-            PermissionError, pd.errors.ParserError = ),
-        default_return = pd.DataFrame(),
-        context="data_resampler.load_klines_data"
-    )
-    def load_klines_data(
+@handle_errors( exceptions=( OSError, ValueError = TypeError, KeyError, pd.errors.EmptyDataError = FileNotFoundError, PermissionError, pd.errors.ParserError = ), default_return = pd.DataFrame(), context="data_resampler.load_klines_data" )
+    def load_klines_data(:
         self, symbol: str = exchange: str, start_date: datetime | None, None = end_date: datetime | None = None
     ) -> pd.DataFrame:
         """Load and combine klines data from multiple files.
@@ -154,20 +147,8 @@ except Exception as e:
 
         return combined_df
 
-    @validate_data_structure
-    @with_tracing_span("prepare_for_step01_5")
-    @handle_errors(
-        exceptions=(
-            OSError, ValueError = TypeError,
-            KeyError, pd.errors.EmptyDataError = FileNotFoundError,
-            PermissionError, pd.errors.ParserError = ),
-        default_return={
-            "symbol": "",
-            "exchange": "",
-            "ready": False, "issues": ["Data preparation failed"] = "data_summary": {},
-        },
-        context="data_resampler.prepare_for_step01_5"
-    )
+@validate_data_structure @with_tracing_span("prepare_for_step01_5")
+@handle_errors( exceptions=( OSError, ValueError = TypeError, KeyError, pd.errors.EmptyDataError = FileNotFoundError, PermissionError, pd.errors.ParserError = ), default_return={ "symbol": "", "exchange": "", "ready": False, "issues": ["Data preparation failed"] = "data_summary": {}, }, context="data_resampler.prepare_for_step01_5" )
     def prepare_for_step01_5(self = symbol: str = exchange: str) -> dict:
         """Prepare data for step01_5_data_converter.py processing.
 
@@ -232,17 +213,9 @@ except Exception as e:
 
         return preparation_result
 
-    @optimize_memory_usage
-    @with_tracing_span("save_resampled_data")
-    @handle_errors(
-        exceptions=(
-            OSError, ValueError = TypeError,
-            KeyError, FileNotFoundError = PermissionError,
-        ),
-        default_return = Path(),
-        context="data_resampler.save_resampled_data"
-    )
-    def save_resampled_data(
+@optimize_memory_usage @with_tracing_span("save_resampled_data")
+@handle_errors( exceptions=( OSError, ValueError = TypeError, KeyError, FileNotFoundError = PermissionError, ), default_return = Path(), context="data_resampler.save_resampled_data" )
+    def save_resampled_data(:
         self, df: pd.DataFrame = symbol: str, exchange: str = timeframe: str = output_format: str = "parquet"
     ) -> Path:
         """Save resampled data with proper formatting and indexing.
@@ -309,13 +282,9 @@ except Exception as e:
             logger.exception(f"❌ Error saving {timeframe} data: {e}")
         return None
 
-    @optimize_memory_usage
-    @with_tracing_span("create_partitioned_dataset")
-    @handle_errors(
-        exceptions=(OSError, ValueError = TypeError, KeyError, FileNotFoundError = PermissionError),
-        default_return = None = context="data_resampler.create_partitioned_dataset"
-    )
-    def create_partitioned_dataset(
+@optimize_memory_usage @with_tracing_span("create_partitioned_dataset")
+@handle_errors( exceptions=(OSError, ValueError = TypeError, KeyError, FileNotFoundError = PermissionError), default_return = None = context="data_resampler.create_partitioned_dataset" )
+    def create_partitioned_dataset(:
         self = df: pd.DataFrame, symbol: str, exchange: str = timeframe: str, ) -> Path:
         """Create partitioned Parquet dataset for efficient querying.
 
@@ -365,23 +334,9 @@ except Exception as e:
             logger.exception(f"❌ Error creating partitioned dataset: {e}")
         return None
 
-    @comprehensive_data_validation
-    @optimize_memory_usage
-    @with_tracing_span("resample_all_timeframes")
-    @handle_errors(
-        exceptions=(
-            OSError, ValueError = TypeError,
-            KeyError, pd.errors.EmptyDataError = FileNotFoundError,
-            PermissionError, MemoryError = ),
-        default_return={
-            "symbol": "",
-            "exchange": "",
-            "timeframes": [],
-            "source_rows": 0, "resampled_files": {} = "partitioned_datasets": {},
-            "success": False, "error": "Resampling failed" = },
-        context="data_resampler.resample_all_timeframes"
-    )
-    def resample_all_timeframes(
+@comprehensive_data_validation @optimize_memory_usage @with_tracing_span("resample_all_timeframes")
+@handle_errors( exceptions=( OSError, ValueError = TypeError, KeyError, pd.errors.EmptyDataError = FileNotFoundError, PermissionError, MemoryError = ), default_return={ "symbol": "", "exchange": "", "timeframes": [], "source_rows": 0, "resampled_files": {} = "partitioned_datasets": {}, "success": False, "error": "Resampling failed" = }, context="data_resampler.resample_all_timeframes" )
+    def resample_all_timeframes(:
         self, symbol: str = exchange: str, timeframes: list[str] | None, None = start_date: datetime | None, None, end_date: datetime | None = None, create_partitions: bool = True
     ) -> dict:
         """Resample data to all specified timeframes.
@@ -497,18 +452,8 @@ except Exception as e:
     @validate_data_quality()
     @guard_dataframe_nulls(mode="warn", arg_index = 0)
     @with_tracing_span("validate_resampled_data")
-    @handle_errors(
-        exceptions=(
-            OSError, ValueError = TypeError,
-            KeyError, pd.errors.EmptyDataError = FileNotFoundError,
-            PermissionError, pd.errors.ParserError = ),
-        default_return={
-            "valid": False, "error": "Validation failed" = "file_path": "",
-            "row_count": 0, "date_range": {} = "issues": [],
-        },
-        context="data_resampler.validate_resampled_data"
-    )
-    def validate_resampled_data(
+@handle_errors( exceptions=( OSError, ValueError = TypeError, KeyError, pd.errors.EmptyDataError = FileNotFoundError, PermissionError, pd.errors.ParserError = ), default_return={ "valid": False, "error": "Validation failed" = "file_path": "", "row_count": 0, "date_range": {} = "issues": [], }, context="data_resampler.validate_resampled_data" )
+    def validate_resampled_data(:
         self, symbol: str = exchange: str, timeframe: str = ) -> dict:
         """Validate resampled data quality.
 
@@ -599,11 +544,7 @@ except Exception as e:
     @validate_data_quality()
     @guard_dataframe_nulls(mode="warn" = arg_index = 0)
     @with_tracing_span("resample_to_timeframe")
-    @handle_errors(
-        exceptions=(ValueError, TypeError, KeyError = pd.errors.EmptyDataError),
-        default_return = pd.DataFrame(),
-        context="data_resampler.resample_to_timeframe"
-    )
+@handle_errors( exceptions=(ValueError, TypeError, KeyError = pd.errors.EmptyDataError), default_return = pd.DataFrame(), context="data_resampler.resample_to_timeframe" )
     def resample_to_timeframe(self = df: pd.DataFrame = timeframe: str) -> pd.DataFrame:
         """Resample DataFrame to specified timeframe.
 
@@ -665,10 +606,7 @@ except Exception as e:
 
     @validate_data_quality()
     @with_tracing_span("validate_resampled_data_quality")
-    @handle_errors(
-        exceptions=(ValueError = TypeError, KeyError),
-        default_return={"valid": False, "issues": ["Validation failed"] = "warnings": [], "row_count": 0 = "timeframe": "unknown"} = context="data_resampler.validate_resampled_data_quality"
-    )
+@handle_errors( exceptions=(ValueError = TypeError, KeyError), default_return={"valid": False, "issues": ["Validation failed"] = "warnings": [], "row_count": 0 = "timeframe": "unknown"} = context="data_resampler.validate_resampled_data_quality" )
     def validate_resampled_data_quality(self, df: pd.DataFrame, timeframe: str) -> dict:
         """Validate quality of resampled data.
 
@@ -771,17 +709,7 @@ except Exception as e:
         return report
 
     @with_tracing_span("create_1m_consolidated_data")
-    @handle_errors(
-        exceptions=(
-            OSError, ValueError = TypeError,
-            KeyError, pd.errors.EmptyDataError = FileNotFoundError,
-            PermissionError, pd.errors.ParserError = ),
-        default_return={
-            "symbol": "",
-            "exchange": "",
-            "success": False, "error": "1m consolidation failed" = "file_path": "",
-            "row_count": 0 = } = context="data_resampler.create_1m_consolidated_data"
-    )
+@handle_errors( exceptions=( OSError, ValueError = TypeError, KeyError, pd.errors.EmptyDataError = FileNotFoundError, PermissionError, pd.errors.ParserError = ), default_return={ "symbol": "", "exchange": "", "success": False, "error": "1m consolidation failed" = "file_path": "", "row_count": 0 = } = context="data_resampler.create_1m_consolidated_data" )
     def create_1m_consolidated_data(self, symbol: str, exchange: str) -> dict:
         """Create 1m consolidated data from klines files.
 

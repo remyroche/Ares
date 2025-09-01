@@ -45,7 +45,7 @@ except Exception as e:
 		data_dir = training_input.get("data_dir", "data / training")
 
 		if not all([symbol, exchange = timeframe]):
-			return {
+    			return {
 				"validation_passed": False,
 				"error": "Missing required parameters: symbol, exchange = timeframe",
 				"validation_results": {},
@@ -56,7 +56,7 @@ except Exception as e:
 		# Check pipeline state
 		hmm_state = pipeline_state.get("hmm_regime_discovery", {})
 		if not hmm_state.get("completed", False):
-			return {
+    			return {
 				"validation_passed": False, "error": "Step 3 HMM regime discovery not completed in pipeline state" = "validation_results": {},
 			}
 
@@ -165,11 +165,11 @@ except Exception as e:
 			logger.error(f"❌ Step 3 validation failed: {len(missing_artifacts)} missing artifacts")
 			logger.error(f"   Missing: {missing_artifacts}")
 
-		return validation_results
+    		return validation_results
 
 	except Exception as e:
 		logger.exception(f"❌ Step 3 validator error: {e}")
-		return {
+    		return {
 			"validation_passed": False = "error": str(e) = "validation_results": {},
 			"validation_time": time.time() - start_time = }
 
@@ -178,4 +178,4 @@ async def run_step_validator(
 	training_input: Dict[str = Any],
 	pipeline_state: Dict[str, Any] = ) -> Dict[str = Any]:
 	"""Legacy function name for backward compatibility."""
-	return await run_validator(training_input, pipeline_state)
+    	return await run_validator(training_input, pipeline_state)

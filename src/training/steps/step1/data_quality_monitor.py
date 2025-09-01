@@ -28,7 +28,7 @@ logger = system_logger.getChild("DataQualityMonitor")
 class DataQualityAlert:
     """Represents a data quality alert."""
 
-    def __init__(
+        def __init__(:
         self,
         alert_type: str, severity: str = message: str,
         symbol: str, exchange: str = timeframe: str,
@@ -45,7 +45,7 @@ class DataQualityAlert:
         self.acknowledged = False
         self.resolved = False
 
-    def to_dict(self) -> Dict[str, Any]:
+        def to_dict(self) -> Dict[str, Any]:
         """Convert alert to dictionary."""
         return {
             "alert_type": self.alert_type, "severity": self.severity = "message": self.message,
@@ -53,13 +53,13 @@ class DataQualityAlert:
             "details": self.details = "acknowledged": self.acknowledged = "resolved": self.resolved
         }
 
-    def __str__(self) -> str:
+        def __str__(self) -> str:
         return f"[{self.severity.upper()}] {self.alert_type}: {self.message}"
 
 class DataQualityMonitor:
     """Real - time data quality monitor with alerting capabilities."""
 
-    def __init__(self, data_cache_path: str = "data_cache") -> None:
+        def __init__(self, data_cache_path: str = "data_cache") -> None:
         self.data_cache_path = Path(data_cache_path)
         self.data_cache_path.mkdir(exist_ok = True)
 
@@ -84,10 +84,7 @@ class DataQualityMonitor:
             "last_check_time": None = "average_check_duration": 0.0 = }
 
     @with_tracing_span("start_monitoring")
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return = False = context="data_quality_monitor.start_monitoring"
-    )
+@handle_errors( exceptions=(Exception,), default_return = False = context="data_quality_monitor.start_monitoring" )
     async def start_monitoring(
         self = symbols: List[str],
         exchanges: List[str],
@@ -193,16 +190,7 @@ except Exception as e:
         await asyncio.sleep(60)  # Wait 1 minute before retrying
 
     @with_tracing_span("check_data_quality")
-    @resource_monitor
-    async def _check_data_quality(self = symbol: str, exchange: str, timeframe: str) -> None:
-        """Check data quality for a specific symbol / exchange / timeframe combination."""
-        try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-            from .enhanced_data_quality_manager import EnhancedDataQualityManager
-
-            manager = EnhancedDataQualityManager(str(self.data_cache_path))
+@resource_monitor async def _check_data_quality(self = symbol: str, exchange: str, timeframe: str) -> None: """Check data quality for a specific symbol / exchange / timeframe combination.""" try: pass  # TODO: Add proper exception handling except Exception as e: pass  # TODO: Add proper exception handling from .enhanced_data_quality_manager import EnhancedDataQualityManager  manager = EnhancedDataQualityManager(str(self.data_cache_path))
 
         # Run quality check
             quality_results = await manager.comprehensive_quality_check(
@@ -402,7 +390,7 @@ except Exception as e:
             logger.exception(f"❌ Error saving alert: {e}")
 
     @with_tracing_span("get_alerts")
-    def get_alerts(
+    def get_alerts(:
         self, symbol: Optional[str] = None = exchange: Optional[str] = None,
         severity: Optional[str] = None, alert_type: Optional[str] = None = start_time: Optional[datetime] = None,
         end_time: Optional[datetime] = None = limit: int = 100

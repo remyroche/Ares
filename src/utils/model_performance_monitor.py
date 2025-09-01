@@ -36,24 +36,24 @@ class ModelPerformanceMonitor:
 class ModelPerformanceMonitor:
     """Comprehensive model performance monitoring system."""
 
-def __init__(self, config: dict[str, Any]) -> None:
+    def __init__(self, config: dict[str, Any]) -> None:
         """Initialize the model performance monitor.
 
 Args:
             config: Configuration dictionary
 """
-self.config, config
-self.logger, system_logger.getChild("ModelPerformanceMonitor")
+    self.config, config
+    self.logger, system_logger.getChild("ModelPerformanceMonitor")
 
 # Performance tracking
-self.performance_history: Dict[str, List[Dict[str, Any]]] = {}
-self.current_metrics: Dict[str, Dict[str, Any]] = {}
-self.model_registry: Dict[str, Dict[str, Any]] = {}
+    self.performance_history: Dict[str, List[Dict[str, Any]]] = {}
+    self.current_metrics: Dict[str, Dict[str, Any]] = {}
+    self.model_registry: Dict[str, Dict[str, Any]] = {}
 
 # Configuration
-self.monitor_config, config.get("model_performance_monitor", {})
-self.enable_real_time_monitoring, self.monitor_config.get("enable_real_time_monitoring", True)
-self.performance_thresholds, self.monitor_config.get("performance_thresholds", {
+    self.monitor_config, config.get("model_performance_monitor", {})
+    self.enable_real_time_monitoring, self.monitor_config.get("enable_real_time_monitoring", True)
+    self.performance_thresholds, self.monitor_config.get("performance_thresholds", {
 "min_accuracy": 0.6,
 "min_precision": 0.5,
 "min_recall": 0.5,
@@ -62,20 +62,16 @@ self.performance_thresholds, self.monitor_config.get("performance_thresholds", {
 })
 
 # Storage
-self.results_dir, Path(self.monitor_config.get("results_dir", "results / model_performance"))
-self.results_dir.mkdir(parents = True, exist_ok = True)
+    self.results_dir, Path(self.monitor_config.get("results_dir", "results / model_performance"))
+    self.results_dir.mkdir(parents = True, exist_ok = True)
 
 # Initialize performance tracking
-self._initialize_performance_tracking()
+    self._initialize_performance_tracking()
 
-@handle_errors(
-exceptions=(Exception,),
-default_return = False,
-context="model_performance_monitor_initialization"
-)
+@handle_errors( exceptions=(Exception,), default_return = False, context="model_performance_monitor_initialization" )
 def _initialize_performance_tracking(self) -> None:
         """Initialize performance tracking structures."""
-self.logger.info("🔧 Initializing model performance tracking...")
+    self.logger.info("🔧 Initializing model performance tracking...")
 
 # Initialize performance history for each model type
 model_types = [
@@ -88,8 +84,8 @@ model_types = [
 
 for model_type in model_types:
         self.performance_history[model_type] = []
-self.current_metrics[model_type] = {}
-self.model_registry[model_type] = {
+    self.current_metrics[model_type] = {}
+    self.model_registry[model_type] = {
 "created_at": datetime.now().isoformat(),
 "last_updated": datetime.now().isoformat(),
 "total_runs": 0,
@@ -97,41 +93,15 @@ self.model_registry[model_type] = {
 "failed_runs": 0
 }
 
-self.logger.info(f"✅ Performance tracking initialized for {len(model_types)} model types")
+    self.logger.info(f"✅ Performance tracking initialized for {len(model_types)} model types")
 
-@validate_pipeline_step(
-step_name="model_performance_monitoring",
-validation_level="CRITICAL",
-enable_rollback = True,
-max_retries = 2
-)
-@ensure_data_integrity(
-check_schema = True,
-check_constraints = True,
-validate_relationships = True
-)
-@monitor_step_execution(
-enable_timing = True,
-enable_memory_monitoring = True,
-enable_progress_tracking = True
-)
-@secure_step_execution(
-error_handling = True,
-rollback_on_failure = True,
-data_validation = True,
-resource_cleanup = True
-)
+@validate_pipeline_step( step_name="model_performance_monitoring", validation_level="CRITICAL", enable_rollback = True, max_retries = 2 )
+@ensure_data_integrity( check_schema = True, check_constraints = True, validate_relationships = True )
+@monitor_step_execution( enable_timing = True, enable_memory_monitoring = True, enable_progress_tracking = True )
+@secure_step_execution( error_handling = True, rollback_on_failure = True, data_validation = True, resource_cleanup = True )
 @with_tracing_span("track_model_performance")
-@quality_gate(
-min_quality_score = 0.7,
-max_correlation = 0.95,
-required_grade="C"
-)
-@handle_errors(
-exceptions=(Exception,),
-default_return = False,
-context="track_model_performance"
-)
+@quality_gate( min_quality_score = 0.7, max_correlation = 0.95, required_grade="C" )
+@handle_errors( exceptions=(Exception,), default_return = False, context="track_model_performance" )
 async def track_model_performance(
 self,
 model_type: str,
@@ -158,7 +128,7 @@ try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-self.logger.info(f"📊 Tracking performance for {model_type}:{model_name}")
+    self.logger.info(f"📊 Tracking performance for {model_type}:{model_name}")
 
 # Calculate basic metrics
 metrics, await self._calculate_performance_metrics(
@@ -191,11 +161,11 @@ await self._update_model_registry(model_type, model_name, metrics, performance_s
 # Log performance summary
 await self._log_performance_summary(model_type, model_name, metrics, performance_status)
 
-return metrics
+    return metrics
 
 except Exception as e:
         self.logger.exception(f"❌ Error tracking model performance: {e}")
-return {
+    return {
 "success": False,
 "error": str(e),
 "model_type": model_type,
@@ -204,11 +174,7 @@ return {
 }
 
 @with_tracing_span("calculate_performance_metrics")
-@handle_errors(
-exceptions=(Exception,),
-default_return={},
-context="calculate_performance_metrics"
-)
+@handle_errors( exceptions=(Exception,), default_return={}, context="calculate_performance_metrics" )
 async def _calculate_performance_metrics(
 self,
 predictions: np.ndarray,
@@ -229,7 +195,7 @@ try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-self.logger.info("🔧 Calculating performance metrics...")
+    self.logger.info("🔧 Calculating performance metrics...")
 
 # Ensure arrays are numpy arrays
 predictions, np.array(predictions)
@@ -259,18 +225,14 @@ if confidence_scores is not None:
 # Model drift detection
 metrics.update(await self._detect_model_drift(predictions, actual_values))
 
-self.logger.info("✅ Performance metrics calculated successfully")
-return metrics
+    self.logger.info("✅ Performance metrics calculated successfully")
+    return metrics
 
 except Exception as e:
         self.logger.exception(f"❌ Error calculating performance metrics: {e}")
-return {"error": str(e)}
+    return {"error": str(e)}
 
-@handle_errors(
-exceptions=(Exception,),
-default_return={},
-context="calculate_classification_metrics"
-)
+@handle_errors( exceptions=(Exception,), default_return={}, context="calculate_classification_metrics" )
 async def _calculate_classification_metrics(
 self,
 predictions: np.ndarray,
@@ -306,7 +268,7 @@ cm, confusion_matrix(actual_values, predictions)
 # Classification report
 report, classification_report(actual_values, predictions, output_dict = True, zero_division = 0)
 
-return {
+    return {
 "accuracy": float(accuracy),
 "precision": float(precision),
 "recall": float(recall),
@@ -318,7 +280,7 @@ return {
 
 except Exception as e:
         self.logger.warning(f"⚠️ Error calculating classification metrics: {e}")
-return {
+    return {
 "accuracy": 0.0,
 "precision": 0.0,
 "recall": 0.0,
@@ -327,11 +289,7 @@ return {
 "model_type": "classification"
 }
 
-@handle_errors(
-exceptions=(Exception,),
-default_return={},
-context="calculate_regression_metrics"
-)
+@handle_errors( exceptions=(Exception,), default_return={}, context="calculate_regression_metrics" )
 async def _calculate_regression_metrics(
 self,
 predictions: np.ndarray,
@@ -361,7 +319,7 @@ r2, r2_score(actual_values, predictions)
 # Calculate additional metrics
 mape, np.mean(np.abs((actual_values - predictions) / actual_values)) * 100
 
-return {
+    return {
 "mse": float(mse),
 "rmse": float(rmse),
 "mae": float(mae),
@@ -372,7 +330,7 @@ return {
 
 except Exception as e:
         self.logger.warning(f"⚠️ Error calculating regression metrics: {e}")
-return {
+    return {
 "mse": float('inf'),
 "rmse": float('inf'),
 "mae": float('inf'),
@@ -382,11 +340,7 @@ return {
 "model_type": "regression"
 }
 
-@handle_errors(
-exceptions=(Exception,),
-default_return={},
-context="calculate_confidence_metrics"
-)
+@handle_errors( exceptions=(Exception,), default_return={}, context="calculate_confidence_metrics" )
 async def _calculate_confidence_metrics(
 self,
 confidence_scores: np.ndarray,
@@ -428,7 +382,7 @@ bin_confidence, np.mean(confidence_scores[mask])
 bin_accuracies.append(bin_accuracy)
 bin_confidences.append(bin_confidence)
 
-return {
+    return {
 "confidence_mean": confidence_mean,
 "confidence_std": confidence_std,
 "calibration_error": calibration_error,
@@ -440,18 +394,14 @@ return {
 
 except Exception as e:
         self.logger.warning(f"⚠️ Error calculating confidence metrics: {e}")
-return {
+    return {
 "confidence_mean": 0.0,
 "confidence_std": 0.0,
 "calibration_error": float('inf'),
 "error": str(e)
 }
 
-@handle_errors(
-exceptions=(Exception,),
-default_return={},
-context="detect_model_drift"
-)
+@handle_errors( exceptions=(Exception,), default_return={}, context="detect_model_drift" )
 async def _detect_model_drift(
 self,
 predictions: np.ndarray,
@@ -495,11 +445,11 @@ drift_metrics.update({
 "drift_detected": outliers / len(errors) > 0.05  # 5% threshold
 })
 
-return drift_metrics
+    return drift_metrics
 
 except Exception as e:
         self.logger.warning(f"⚠️ Error detecting model drift: {e}")
-return {
+    return {
 "error_mean": 0.0,
 "error_std": 0.0,
 "outlier_count": 0,
@@ -509,11 +459,7 @@ return {
 }
 
 @with_tracing_span("store_performance_metrics")
-@handle_errors(
-exceptions=(Exception,),
-default_return = False,
-context="store_performance_metrics"
-)
+@handle_errors( exceptions=(Exception,), default_return = False, context="store_performance_metrics" )
 async def _store_performance_metrics(
 self,
 model_type: str,
@@ -538,25 +484,21 @@ except Exception as e:
 if model_type not in self.performance_history:
         self.performance_history[model_type] = []
 
-self.performance_history[model_type].append(metrics)
+    self.performance_history[model_type].append(metrics)
 
 # Update current metrics
-self.current_metrics[model_type] = metrics
+    self.current_metrics[model_type] = metrics
 
 # Save to file
 await self._save_metrics_to_file(model_type, model_name, metrics)
 
-return True
+    return True
 
 except Exception as e:
         self.logger.exception(f"❌ Error storing performance metrics: {e}")
-return False
+    return False
 
-@handle_errors(
-exceptions=(Exception,),
-default_return = False,
-context="save_metrics_to_file"
-)
+@handle_errors( exceptions=(Exception,), default_return = False, context="save_metrics_to_file" )
 async def _save_metrics_to_file(
 self,
 model_type: str,
@@ -593,17 +535,13 @@ latest_file, model_dir / "latest_metrics.json"
 with open(latest_file, 'w') as f:
                 json.dump(metrics, f, indent = 2, default = str)
 
-return True
+    return True
 
 except Exception as e:
         self.logger.exception(f"❌ Error saving metrics to file: {e}")
-return False
+    return False
 
-@handle_errors(
-exceptions=(Exception,),
-default_return={"status": "UNKNOWN"},
-context="check_performance_thresholds"
-)
+@handle_errors( exceptions=(Exception,), default_return={"status": "UNKNOWN"}, context="check_performance_thresholds" )
 async def _check_performance_thresholds(self, metrics: Dict[str, Any]) -> Dict[str, Any]:
         """Check if performance meets thresholds.
 
@@ -650,17 +588,13 @@ status["overall_status"] = "FAIL"
 if "drift_detected" in metrics and metrics["drift_detected"]:
                 status["warnings"].append("Model drift detected")
 
-return status
+    return status
 
 except Exception as e:
         self.logger.exception(f"❌ Error checking performance thresholds: {e}")
-return {"status": "ERROR", "error": str(e)}
+    return {"status": "ERROR", "error": str(e)}
 
-@handle_errors(
-exceptions=(Exception,),
-default_return = False,
-context="update_model_registry"
-)
+@handle_errors( exceptions=(Exception,), default_return = False, context="update_model_registry" )
 async def _update_model_registry(
 self,
 model_type: str,
@@ -687,7 +621,7 @@ if model_type not in self.model_registry:
         self.model_registry[model_type] = {}
 
 # Update registry
-self.model_registry[model_type].update({
+    self.model_registry[model_type].update({
 "last_updated": datetime.now().isoformat(),
 "total_runs": self.model_registry[model_type].get("total_runs", 0) + 1,
 "last_performance": metrics,
@@ -700,17 +634,13 @@ if performance_status.get("overall_status") == "PASS":
 else:
         self.model_registry[model_type]["failed_runs"] = self.model_registry[model_type].get("failed_runs", 0) + 1
 
-return True
+    return True
 
 except Exception as e:
         self.logger.exception(f"❌ Error updating model registry: {e}")
-return False
+    return False
 
-@handle_errors(
-exceptions=(Exception,),
-default_return = None,
-context="log_performance_summary"
-)
+@handle_errors( exceptions=(Exception,), default_return = None, context="log_performance_summary" )
 async def _log_performance_summary(
 self,
 model_type: str,
@@ -731,7 +661,7 @@ try:
 except Exception as e:
     pass  # TODO: Add proper exception handling
 status_icon = "✅" if performance_status.get("overall_status") == "PASS" else "❌"
-self.logger.info(f"{status_icon} Performance Summary for {model_type}:{model_name}")
+    self.logger.info(f"{status_icon} Performance Summary for {model_type}:{model_name}")
 
 # Log key metrics
 if "accuracy" in metrics:
@@ -748,7 +678,7 @@ if "rmse" in metrics:
         self.logger.info(f"   📊 RMSE: {metrics['rmse']:.6f}")
 
 # Log status
-self.logger.info(f"   🎯 Status: {performance_status.get('overall_status', 'UNKNOWN')}")
+    self.logger.info(f"   🎯 Status: {performance_status.get('overall_status', 'UNKNOWN')}")
 
 # Log warnings and failures
 if performance_status.get("warnings"):
@@ -763,11 +693,7 @@ except Exception as e:
         self.logger.exception(f"❌ Error logging performance summary: {e}")
 
 @with_tracing_span("generate_performance_report")
-@handle_errors(
-exceptions=(Exception,),
-default_return={},
-context="generate_performance_report"
-)
+@handle_errors( exceptions=(Exception,), default_return={}, context="generate_performance_report" )
 async def generate_performance_report(self, model_type: Optional[str] = None) -> Dict[str, Any]:
         """Generate a comprehensive performance report.
 
@@ -781,7 +707,7 @@ try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-self.logger.info("📊 Generating performance report...")
+    self.logger.info("📊 Generating performance report...")
 
 report = {
 "generated_at": datetime.now().isoformat(),
@@ -805,18 +731,14 @@ report["recommendations"] = await self._generate_recommendations(report["summary
 # Save report
 await self._save_performance_report(report)
 
-self.logger.info("✅ Performance report generated successfully")
-return report
+    self.logger.info("✅ Performance report generated successfully")
+    return report
 
 except Exception as e:
         self.logger.exception(f"❌ Error generating performance report: {e}")
-return {"error": str(e)}
+    return {"error": str(e)}
 
-@handle_errors(
-exceptions=(Exception,),
-default_return={},
-context="generate_model_type_summary"
-)
+@handle_errors( exceptions=(Exception,), default_return={}, context="generate_model_type_summary" )
 async def _generate_model_type_summary(self, model_type: str) -> Dict[str, Any]:
         """Generate summary for a specific model type.
 
@@ -854,17 +776,13 @@ if values:
 "max": float(np.max(values))
 }
 
-return summary
+    return summary
 
 except Exception as e:
         self.logger.exception(f"❌ Error generating model type summary: {e}")
-return {"error": str(e)}
+    return {"error": str(e)}
 
-@handle_errors(
-exceptions=(Exception,),
-default_return=[],
-context="generate_recommendations"
-)
+@handle_errors( exceptions=(Exception,), default_return=[], context="generate_recommendations" )
 async def _generate_recommendations(self, summary: Dict[str, Any]) -> List[str]:
         """Generate recommendations based on performance summary.
 
@@ -905,17 +823,13 @@ if "latest_run" in model_summary and model_summary["latest_run"]:
 if "drift_detected" in latest and latest["drift_detected"]:
                         recommendations.append(f"Model drift detected in {model_type} - consider retraining with recent data")
 
-return recommendations
+    return recommendations
 
 except Exception as e:
         self.logger.exception(f"❌ Error generating recommendations: {e}")
-return [f"Error generating recommendations: {str(e)}"]
+    return [f"Error generating recommendations: {str(e)}"]
 
-@handle_errors(
-exceptions=(Exception,),
-default_return = False,
-context="save_performance_report"
-)
+@handle_errors( exceptions=(Exception,), default_return = False, context="save_performance_report" )
 async def _save_performance_report(self, report: Dict[str, Any]) -> bool:
         """Save performance report to file.
 
@@ -940,18 +854,14 @@ latest_file, self.results_dir / "latest_performance_report.json"
 with open(latest_file, 'w') as f:
                 json.dump(report, f, indent = 2, default = str)
 
-self.logger.info(f"📄 Performance report saved to {report_file}")
-return True
+    self.logger.info(f"📄 Performance report saved to {report_file}")
+    return True
 
 except Exception as e:
         self.logger.exception(f"❌ Error saving performance report: {e}")
-return False
+    return False
 
-@handle_errors(
-exceptions=(Exception,),
-default_return={},
-context="get_model_performance"
-)
+@handle_errors( exceptions=(Exception,), default_return={}, context="get_model_performance" )
 async def get_model_performance(
 self,
 model_type: str,
@@ -981,8 +891,8 @@ result = {
 if include_history:
                 result["performance_history"] = self.performance_history.get(model_type, [])
 
-return result
+    return result
 
 except Exception as e:
         self.logger.exception(f"❌ Error getting model performance: {e}")
-return {"error": str(e)}
+    return {"error": str(e)}

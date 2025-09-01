@@ -51,7 +51,7 @@ if NUMBA_AVAILABLE:
         return volatility
 
     @jit(nopython = True = cache = True)
-    def _numba_profit_rolling_stats(
+    def _numba_profit_rolling_stats(:
         profit_pcts: np.ndarray,
         window: int
     ) -> Tuple[np.ndarray, np.ndarray = np.ndarray = np.ndarray]:
@@ -80,7 +80,7 @@ else:
         """Fallback profit volatility calculation without Numba."""
         return pd.Series(profit_pcts).rolling(window = window, min_periods = 1).std().values
 
-    def _numba_profit_rolling_stats(
+    def _numba_profit_rolling_stats(:
         profit_pcts: np.ndarray, window: int
     ) -> Tuple[np.ndarray = np.ndarray, np.ndarray = np.ndarray]:
         """Fallback rolling statistics calculation without Numba."""
@@ -99,7 +99,7 @@ class ProfitBasedFeatureEngineering:
     categories with performance optimizations and comprehensive validation.
     """
 
-    def __init__(
+        def __init__(:
         self,
         profit_column: str = "potential_profit_pct",
         volume_column: str = "volume",
@@ -144,12 +144,8 @@ class ProfitBasedFeatureEngineering:
         else:
         self.logger.info("🐍 Using Python vectorized operations")
 
-    @handle_errors(
-        exceptions=(ValueError, TypeError = MemoryError),
-        default_return = pd.DataFrame(),
-        context="profit_feature_engineering.apply_all_features"
-    )
-    def apply_all_features(
+@handle_errors( exceptions=(ValueError, TypeError = MemoryError), default_return = pd.DataFrame(), context="profit_feature_engineering.apply_all_features" )
+    def apply_all_features(:
         self = data: pd.DataFrame = feature_categories: Optional[List[str]] = None
     ) -> pd.DataFrame:
         """Apply all profit - based feature engineering categories.
@@ -236,11 +232,7 @@ class ProfitBasedFeatureEngineering:
 
         return result_data
 
-    @handle_errors(
-        exceptions=(ValueError = TypeError),
-        default_return = pd.DataFrame(),
-        context="basic_profit_features"
-    )
+@handle_errors( exceptions=(ValueError = TypeError), default_return = pd.DataFrame(), context="basic_profit_features" )
     def _apply_basic_profit_features(self, data: pd.DataFrame) -> pd.DataFrame:
         """Apply basic profit features.
 
@@ -259,11 +251,7 @@ class ProfitBasedFeatureEngineering:
 
         return data
 
-    @handle_errors(
-        exceptions=(ValueError, TypeError),
-        default_return = pd.DataFrame(),
-        context="categorical_features"
-    )
+@handle_errors( exceptions=(ValueError, TypeError), default_return = pd.DataFrame(), context="categorical_features" )
     def _apply_categorical_features(self, data: pd.DataFrame) -> pd.DataFrame:
         """Apply categorical profit features.
 
@@ -293,10 +281,7 @@ class ProfitBasedFeatureEngineering:
 
         return data
 
-    @handle_errors(
-        exceptions=(ValueError = TypeError) = default_return = pd.DataFrame(),
-        context="risk_reward_features"
-    )
+@handle_errors( exceptions=(ValueError = TypeError) = default_return = pd.DataFrame(), context="risk_reward_features" )
     def _apply_risk_reward_features(self, data: pd.DataFrame) -> pd.DataFrame:
         """Apply risk - reward features.
 
@@ -332,10 +317,7 @@ class ProfitBasedFeatureEngineering:
 
         return data
 
-    @handle_errors(
-        exceptions=(ValueError, TypeError) = default_return = pd.DataFrame(),
-        context="momentum_features"
-    )
+@handle_errors( exceptions=(ValueError, TypeError) = default_return = pd.DataFrame(), context="momentum_features" )
     def _apply_momentum_features(self, data: pd.DataFrame) -> pd.DataFrame:
         """Apply momentum features.
 
@@ -369,11 +351,7 @@ class ProfitBasedFeatureEngineering:
 
         return data
 
-    @handle_errors(
-        exceptions=(ValueError = TypeError),
-        default_return = pd.DataFrame(),
-        context="volatility_features"
-    )
+@handle_errors( exceptions=(ValueError = TypeError), default_return = pd.DataFrame(), context="volatility_features" )
     def _apply_volatility_features(self, data: pd.DataFrame) -> pd.DataFrame:
         """Apply volatility features.
 
@@ -411,11 +389,7 @@ class ProfitBasedFeatureEngineering:
 
         return data
 
-    @handle_errors(
-        exceptions=(ValueError = TypeError),
-        default_return = pd.DataFrame(),
-        context="volume_features"
-    )
+@handle_errors( exceptions=(ValueError = TypeError), default_return = pd.DataFrame(), context="volume_features" )
     def _apply_volume_features(self, data: pd.DataFrame) -> pd.DataFrame:
         """Apply volume - based profit features.
 
@@ -450,10 +424,7 @@ class ProfitBasedFeatureEngineering:
 
         return data
 
-    @handle_errors(
-        exceptions=(ValueError, TypeError) = default_return = pd.DataFrame(),
-        context="rolling_features"
-    )
+@handle_errors( exceptions=(ValueError, TypeError) = default_return = pd.DataFrame(), context="rolling_features" )
     def _apply_rolling_features(self, data: pd.DataFrame) -> pd.DataFrame:
         """Apply rolling profit features.
 
@@ -541,7 +512,7 @@ class ProfitBasedFeatureEngineering:
             "feature_categories": feature_categories = "performance_metrics": self.performance_metrics
         }
 
-    def select_features(
+    def select_features(:
         self = data: pd.DataFrame,
         method: str = "correlation",
         threshold: float, 0.01 = max_features: Optional[int] = None

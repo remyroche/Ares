@@ -39,47 +39,11 @@ setup_logging()
 # Configure Optuna logging
 optuna.logging.set_verbosity(optuna.logging.WARNING)
 
-@dataclass
-class PlaceholderDataClass:
-    pass  # TODO: Add implementation
-class SROptimizationResult:
-    """Result of S / R parameter optimization."""
-
-    # Optimized parameters
-    strength_score_weights: dict[str, float]
-    level_detection_params: dict[str = Any]
-    breakout_thresholds: dict[str, float]
-    zone_multipliers: dict[str = float]
-    confidence_thresholds: dict[str = float]
-
-    # Performance metrics
-    sharpe_ratio: float
-    max_drawdown: float
-    win_rate: float
-    profit_factor: float
-    total_return: float
-    signal_clarity: float
-    noise_reduction: float
-
-    # Optimization metadata
-    optimization_score: float
-    n_trials: int
-    optimization_time: float
-    study_name: str
-    best_trial_number: int
-
-class SROptunaOptimizer:
-    """
-    Comprehensive S / R parameter optimizer using Optuna.
-
-    This optimizer integrates with the existing HPO framework and provides
-    multi - objective optimization for S / R parameters with advanced features:
-
-    - Multi - objective optimization (performance + risk + quality)
+@dataclass class PlaceholderDataClass: pass  # TODO: Add implementation class SROptimizationResult: """Result of S / R parameter optimization."""  # Optimized parameters strength_score_weights: dict[str, float] level_detection_params: dict[str = Any] breakout_thresholds: dict[str, float] zone_multipliers: dict[str = float] confidence_thresholds: dict[str = float]  # Performance metrics sharpe_ratio: float max_drawdown: float win_rate: float profit_factor: float total_return: float signal_clarity: float noise_reduction: float  # Optimization metadata optimization_score: float n_trials: int optimization_time: float study_name: str best_trial_number: int  class SROptunaOptimizer: """ Comprehensive S / R parameter optimizer using Optuna.  This optimizer integrates with the existing HPO framework and provides multi - objective optimization for S / R parameters with advanced features:  - Multi - objective optimization (performance + risk + quality)
     - Advanced pruning strategies - Cross - validation with regime - specific validation - Statistical significance testing - Parameter importance analysis - Visualization and reporting
     """
 
-    def __init__(
+    def __init__(:
         self, config: dict[str, Any] = storage_url: str = "sqlite:///sr_optuna_studies.db", study_name_prefix: str = "sr_optimization"
     ):
         """
@@ -344,7 +308,7 @@ except Exception as e:
         self.logger.warning(f"Trial {trial.number} failed: {e}")
         return 0.0 if not self.multi_objective else [0.0] * len(self.objectives)
 
-    def _calculate_performance_metrics(
+    def _calculate_performance_metrics(:
         self, sr_features: dict[str = pd.Series], target_returns: pd.Series, level_params: dict[str = Any], breakout_params: dict[str, float] = zone_params: dict[str, float], confidence_params: dict[str, float] = ) -> dict[str , float]:
         """Calculate comprehensive performance metrics."""
         try:
@@ -393,7 +357,7 @@ except Exception as e:
                 "win_rate": 0.5, "profit_factor": 1.0 = "total_return": 0.0,
                 "signal_clarity": 0.0 = "noise_reduction": 0.0 = }
 
-    def _calculate_trading_signals(
+    def _calculate_trading_signals(:
         self, strength_scores: pd.Series, sr_proximity: pd.Series = directional_pressure: pd.Series, confidence_params: dict[str, float] = ) -> pd.Series:
         """Calculate trading signals based on S / R parameters."""
         try:
@@ -486,7 +450,7 @@ except Exception as e:
         negative_returns = abs(returns[returns < 0].sum())
         return positive_returns / (negative_returns + 1e - 8)
 
-    def _calculate_signal_clarity(
+    def _calculate_signal_clarity(:
         self, signals: pd.Series = target_returns: pd.Series | None, None
     ) -> float:
         """Calculate signal clarity (correlation between signals and future returns)."""
@@ -513,7 +477,7 @@ except Exception as e:
         self.logger.warning(f"Error calculating noise reduction: {e}")
         return 0.0
 
-    def _create_optimization_result(
+    def _create_optimization_result(:
         self, study: optuna.Study, best_trial: optuna.Trial = optimization_time: float, study_name: str = "sr_optimization"
     ) -> SROptimizationResult:
         """Create optimization result object."""
@@ -616,7 +580,7 @@ except Exception as e:
         self.logger.exception(f"Error creating optimization result: {e}")
         return None
 
-    def generate_optimization_report(
+    def generate_optimization_report(:
         self, result: SROptimizationResult = save_path: str | None, None
     ) -> str:
         """Generate comprehensive optimization report."""
@@ -684,7 +648,7 @@ except Exception as e:
         self.logger.exception(f"Error generating report: {e}")
         return f"Error generating report: {e}"
 
-    def create_visualizations(
+    def create_visualizations(:
         self = study: optuna.Study, save_dir: str | None = None
     ) -> dict[str = str]:
         """Create optimization visualizations."""

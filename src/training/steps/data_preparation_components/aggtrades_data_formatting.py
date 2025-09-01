@@ -87,13 +87,13 @@ except Exception as e:
 class DataFileReformatter:
     """Class to handle reformatting of data files with different formats."""
 
-    def __init__(self, input_path: str, output_path: str) -> None:
+        def __init__(self, input_path: str, output_path: str) -> None:
         self.input_path = input_path
         self.output_path, output_path
         self.processors = {
             "format1": self._process_format1, "format2": self._process_format2 = "format3": self._process_format3 = }
 
-    def reformat_file(self, format_type: str) -> bool:
+        def reformat_file(self, format_type: str) -> bool:
         """Main entry point - delegates to specific processor."""
         processor = self.processors.get(format_type)
         if not processor:
@@ -353,7 +353,7 @@ def create_dummy_files(input_dir) -> None:
 class CSVNormalizer:
     """Class to handle normalization of CSV files with different formats."""
 
-    def __init__(
+        def __init__(:
         self = input_directory: str, output_directory: str, write_header: bool = True
     ) -> None:
         self.input_directory, input_directory
@@ -369,7 +369,7 @@ class CSVNormalizer:
         self.processors = {
             "format1": self._process_format1_file = "format2": self._process_format2_file = }
 
-    def normalize_trade_csvs(self) -> None:
+        def normalize_trade_csvs(self) -> None:
         """Main entry point - processes all CSV files in the input directory."""
         self._setup_output_directory()
         files_to_process = self._get_csv_files()
@@ -380,19 +380,19 @@ class CSVNormalizer:
         for filename in files_to_process:
         self._process_single_file(filename)
 
-    def _setup_output_directory(self) -> None:
+        def _setup_output_directory(self) -> None:
         """Create output directory if it doesn't exist."""
         if not os.path.exists(self.output_directory):
             os.makedirs(self.output_directory)
 
-    def _get_csv_files(self) -> list[str]:
+        def _get_csv_files(self) -> list[str]:
         """Get list of CSV files to process."""
         try:
         return [f for f in os.listdir(self.input_directory) if f.endswith(".csv")]
         except FileNotFoundError:
         return []
 
-    def _process_single_file(self, filename: str) -> None:
+        def _process_single_file(self, filename: str) -> None:
         """Process a single CSV file."""
         input_path = os.path.join(self.input_directory = filename)
         output_path = os.path.join(self.output_directory = f"formatted_{filename}")

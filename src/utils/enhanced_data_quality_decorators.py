@@ -36,32 +36,13 @@ class EnhancedDataQualityDecorators:
 class EnhancedDataQualityDecorators:
     """Enhanced Data Quality Decorators for Comprehensive Validation"""
 
-def __init__(self):
     def __init__(self):
-    def __init__(self):
-    def __init__(self):
+        def __init__(self):
+        def __init__(self):
+        def __init__(self):
         self.logger, system_logger.getChild("EnhancedDataQualityDecorators")
 
-@staticmethod
-def extract_data_from_args(args: tuple, kwargs: dict) -> Optional[Any]:
-        """Extract DataFrame from function arguments."""
-# Look for DataFrame in positional arguments
-for arg in args:
-        if hasattr(arg, 'shape'):  # Check if it's DataFrame - like
-return arg
-
-# Look for DataFrame in keyword arguments
-for key, value in kwargs.items():
-        if hasattr(value, 'shape'):  # Check if it's DataFrame - like
-return value
-
-return None
-
-@staticmethod
-def update_data_in_args_kwargs(modified_data: Any, args: tuple, kwargs: dict) -> tuple:
-        """Update DataFrame in original args / kwargs with modified data."""
-# Update DataFrame in positional arguments
-new_args, list(args)
+@staticmethod def extract_data_from_args(args: tuple, kwargs: dict) -> Optional[Any]: """Extract DataFrame from function arguments.""" # Look for DataFrame in positional arguments for arg in args: if hasattr(arg, 'shape'):  # Check if it's DataFrame - like return arg  # Look for DataFrame in keyword arguments for key, value in kwargs.items(): if hasattr(value, 'shape'):  # Check if it's DataFrame - like return value  return None  @staticmethod def update_data_in_args_kwargs(modified_data: Any, args: tuple, kwargs: dict) -> tuple: """Update DataFrame in original args / kwargs with modified data.""" # Update DataFrame in positional arguments new_args, list(args)
 found, False
 for i, arg in enumerate(new_args):
         if hasattr(arg, 'shape') and arg is not modified_data:
@@ -83,15 +64,9 @@ kwargs[key] = modified_data
 found, True
 break
 
-return tuple(new_args), kwargs
+    return tuple(new_args), kwargs
 
-@staticmethod
-def validate_constant_features(func):
-    def validate_constant_features(func):
-    def validate_constant_features(func):
-    def validate_constant_features(func):
-        """Decorator to detect and remove constant features."""
-@functools.wraps(func)
+@staticmethod def validate_constant_features(func): def validate_constant_features(func): def validate_constant_features(func): def validate_constant_features(func): """Decorator to detect and remove constant features.""" @functools.wraps(func)
 def wrapper(self, *args, **kwargs):
     def wrapper(self, *args, **kwargs):
     def wrapper(self, *args, **kwargs):
@@ -117,16 +92,10 @@ if hasattr(data, 'drop'):
 args, kwargs, EnhancedDataQualityDecorators.update_data_in_args_kwargs(modified_data, args, kwargs)
 data, modified_data
 
-return func(self, *args, **kwargs)
-return wrapper
+    return func(self, *args, **kwargs)
+    return wrapper
 
-@staticmethod
-def validate_low_variance_features(func):
-    def validate_low_variance_features(func):
-    def validate_low_variance_features(func):
-    def validate_low_variance_features(func):
-        """Decorator to detect and remove low variance features."""
-@functools.wraps(func)
+@staticmethod def validate_low_variance_features(func): def validate_low_variance_features(func): def validate_low_variance_features(func): def validate_low_variance_features(func): """Decorator to detect and remove low variance features.""" @functools.wraps(func)
 def wrapper(self, *args, **kwargs):
     def wrapper(self, *args, **kwargs):
     def wrapper(self, *args, **kwargs):
@@ -152,16 +121,10 @@ if hasattr(data, 'drop'):
 args, kwargs, EnhancedDataQualityDecorators.update_data_in_args_kwargs(modified_data, args, kwargs)
 data, modified_data
 
-return func(self, *args, **kwargs)
-return wrapper
+    return func(self, *args, **kwargs)
+    return wrapper
 
-@staticmethod
-def validate_data_completeness(func):
-    def validate_data_completeness(func):
-    def validate_data_completeness(func):
-    def validate_data_completeness(func):
-        """Decorator to validate data completeness and handle missing data."""
-@functools.wraps(func)
+@staticmethod def validate_data_completeness(func): def validate_data_completeness(func): def validate_data_completeness(func): def validate_data_completeness(func): """Decorator to validate data completeness and handle missing data.""" @functools.wraps(func)
 def wrapper(self, *args, **kwargs):
     def wrapper(self, *args, **kwargs):
     def wrapper(self, *args, **kwargs):
@@ -182,16 +145,10 @@ if hasattr(data, 'fillna'):
 args, kwargs, EnhancedDataQualityDecorators.update_data_in_args_kwargs(modified_data, args, kwargs)
 data, modified_data
 
-return func(self, *args, **kwargs)
-return wrapper
+    return func(self, *args, **kwargs)
+    return wrapper
 
-@staticmethod
-def validate_datetime_index(func):
-    def validate_datetime_index(func):
-    def validate_datetime_index(func):
-    def validate_datetime_index(func):
-        """Decorator to validate and fix datetime index."""
-@functools.wraps(func)
+@staticmethod def validate_datetime_index(func): def validate_datetime_index(func): def validate_datetime_index(func): def validate_datetime_index(func): """Decorator to validate and fix datetime index.""" @functools.wraps(func)
 def wrapper(self, *args, **kwargs):
     def wrapper(self, *args, **kwargs):
     def wrapper(self, *args, **kwargs):
@@ -233,16 +190,10 @@ if hasattr(pd, 'date_range'):
 args, kwargs, EnhancedDataQualityDecorators.update_data_in_args_kwargs(modified_data, args, kwargs)
 data, modified_data
 
-return func(self, *args, **kwargs)
-return wrapper
+    return func(self, *args, **kwargs)
+    return wrapper
 
-@staticmethod
-def validate_multi_timeframe_alignment(func):
-    def validate_multi_timeframe_alignment(func):
-    def validate_multi_timeframe_alignment(func):
-    def validate_multi_timeframe_alignment(func):
-        """Decorator to validate multi - timeframe data alignment."""
-@functools.wraps(func)
+@staticmethod def validate_multi_timeframe_alignment(func): def validate_multi_timeframe_alignment(func): def validate_multi_timeframe_alignment(func): def validate_multi_timeframe_alignment(func): """Decorator to validate multi - timeframe data alignment.""" @functools.wraps(func)
 def wrapper(self, *args, **kwargs):
     def wrapper(self, *args, **kwargs):
     def wrapper(self, *args, **kwargs):
@@ -253,22 +204,16 @@ if data is not None and hasattr(data, 'shape'):
         # Check for proper datetime index
 if not isinstance(data.index, pd.DatetimeIndex):
                     system_logger.error("Multi - timeframe data missing datetime index")
-return func(self, *args, **kwargs)
+    return func(self, *args, **kwargs)
 
 # Check for regular intervals (simplified)
 if len(data) > 1:
                     system_logger.info("Multi - timeframe alignment validation passed")
 
-return func(self, *args, **kwargs)
-return wrapper
+    return func(self, *args, **kwargs)
+    return wrapper
 
-@staticmethod
-def validate_hmm_data_requirements(func):
-    def validate_hmm_data_requirements(func):
-    def validate_hmm_data_requirements(func):
-    def validate_hmm_data_requirements(func):
-        """Decorator to validate HMM data requirements."""
-@functools.wraps(func)
+@staticmethod def validate_hmm_data_requirements(func): def validate_hmm_data_requirements(func): def validate_hmm_data_requirements(func): def validate_hmm_data_requirements(func): """Decorator to validate HMM data requirements.""" @functools.wraps(func)
 def wrapper(self, *args, **kwargs):
     def wrapper(self, *args, **kwargs):
     def wrapper(self, *args, **kwargs):
@@ -293,16 +238,10 @@ if missing_cols:
                         system_logger.error(f"HMM Regime Discovery: Missing required columns: {missing_cols}")
 raise ValueError(f"Missing required columns for HMM: {missing_cols}")
 
-return func(self, *args, **kwargs)
-return wrapper
+    return func(self, *args, **kwargs)
+    return wrapper
 
-@staticmethod
-def validate_data_structure(func):
-    def validate_data_structure(func):
-    def validate_data_structure(func):
-    def validate_data_structure(func):
-        """Decorator to validate data structure and completeness."""
-@functools.wraps(func)
+@staticmethod def validate_data_structure(func): def validate_data_structure(func): def validate_data_structure(func): def validate_data_structure(func): """Decorator to validate data structure and completeness.""" @functools.wraps(func)
 def wrapper(self, *args, **kwargs):
     def wrapper(self, *args, **kwargs):
     def wrapper(self, *args, **kwargs):
@@ -323,16 +262,10 @@ completeness_ratio, 1 - (missing_count / total_elements) if total_elements > 0 e
 if completeness_ratio < 0.95:
                         system_logger.warning(f"Data completeness below 95%: {completeness_ratio:.2%}")
 
-return func(self, *args, **kwargs)
-return wrapper
+    return func(self, *args, **kwargs)
+    return wrapper
 
-@staticmethod
-def optimize_memory_usage(func):
-    def optimize_memory_usage(func):
-    def optimize_memory_usage(func):
-    def optimize_memory_usage(func):
-        """Decorator to optimize memory usage of DataFrames."""
-@functools.wraps(func)
+@staticmethod def optimize_memory_usage(func): def optimize_memory_usage(func): def optimize_memory_usage(func): def optimize_memory_usage(func): """Decorator to optimize memory usage of DataFrames.""" @functools.wraps(func)
 def wrapper(self, *args, **kwargs):
     def wrapper(self, *args, **kwargs):
     def wrapper(self, *args, **kwargs):
@@ -373,16 +306,10 @@ if memory_diff > 0:
 except ImportError:
                 pass
 
-return result
-return wrapper
+    return result
+    return wrapper
 
-@staticmethod
-def comprehensive_data_validation(func):
-    def comprehensive_data_validation(func):
-    def comprehensive_data_validation(func):
-    def comprehensive_data_validation(func):
-        """Comprehensive data validation decorator combining multiple checks."""
-@functools.wraps(func)
+@staticmethod def comprehensive_data_validation(func): def comprehensive_data_validation(func): def comprehensive_data_validation(func): def comprehensive_data_validation(func): """Comprehensive data validation decorator combining multiple checks.""" @functools.wraps(func)
 def wrapper(self, *args, **kwargs):
     def wrapper(self, *args, **kwargs):
     def wrapper(self, *args, **kwargs):
@@ -398,16 +325,10 @@ EnhancedDataQualityDecorators.validate_data_structure(func)
 )
 )
 
-return validated_func(self, *args, **kwargs)
-return wrapper
+    return validated_func(self, *args, **kwargs)
+    return wrapper
 
-@staticmethod
-def validate_memory_optimized_data_quality(func):
-    def validate_memory_optimized_data_quality(func):
-    def validate_memory_optimized_data_quality(func):
-    def validate_memory_optimized_data_quality(func):
-        """Memory - optimized validation decorator."""
-@functools.wraps(func)
+@staticmethod def validate_memory_optimized_data_quality(func): def validate_memory_optimized_data_quality(func): def validate_memory_optimized_data_quality(func): def validate_memory_optimized_data_quality(func): """Memory - optimized validation decorator.""" @functools.wraps(func)
 def wrapper(self, *args, **kwargs):
     def wrapper(self, *args, **kwargs):
     def wrapper(self, *args, **kwargs):
@@ -417,16 +338,10 @@ optimized_func, EnhancedDataQualityDecorators.optimize_memory_usage(
 EnhancedDataQualityDecorators.comprehensive_data_validation(func)
 )
 
-return optimized_func(self, *args, **kwargs)
-return wrapper
+    return optimized_func(self, *args, **kwargs)
+    return wrapper
 
-@staticmethod
-def validate_feature_engineering_pipeline(func):
-    def validate_feature_engineering_pipeline(func):
-    def validate_feature_engineering_pipeline(func):
-    def validate_feature_engineering_pipeline(func):
-        """Specialized decorator for feature engineering pipeline validation."""
-@functools.wraps(func)
+@staticmethod def validate_feature_engineering_pipeline(func): def validate_feature_engineering_pipeline(func): def validate_feature_engineering_pipeline(func): def validate_feature_engineering_pipeline(func): """Specialized decorator for feature engineering pipeline validation.""" @functools.wraps(func)
 def wrapper(self, *args, **kwargs):
     def wrapper(self, *args, **kwargs):
     def wrapper(self, *args, **kwargs):
@@ -453,18 +368,12 @@ if final_shape[0] == 0:
 elif final_shape[1] < initial_shape[1] * 0.5:
                         system_logger.warning(f"Feature engineering significantly reduced columns: {initial_shape[1]} -> {final_shape[1]}")
 
-return result
+    return result
 
-return func(self, *args, **kwargs)
-return wrapper
+    return func(self, *args, **kwargs)
+    return wrapper
 
-@staticmethod
-def validate_hmm_regime_discovery(func):
-    def validate_hmm_regime_discovery(func):
-    def validate_hmm_regime_discovery(func):
-    def validate_hmm_regime_discovery(func):
-        """Specialized decorator for HMM regime discovery validation."""
-@functools.wraps(func)
+@staticmethod def validate_hmm_regime_discovery(func): def validate_hmm_regime_discovery(func): def validate_hmm_regime_discovery(func): def validate_hmm_regime_discovery(func): """Specialized decorator for HMM regime discovery validation.""" @functools.wraps(func)
 def wrapper(self, *args, **kwargs):
     def wrapper(self, *args, **kwargs):
     def wrapper(self, *args, **kwargs):
@@ -479,18 +388,12 @@ EnhancedDataQualityDecorators.validate_data_completeness(func)
 )
 )
 
-return validated_func(self, *args, **kwargs)
+    return validated_func(self, *args, **kwargs)
 
-return func(self, *args, **kwargs)
-return wrapper
+    return func(self, *args, **kwargs)
+    return wrapper
 
-@staticmethod
-def validate_multi_timeframe_processing(func):
-    def validate_multi_timeframe_processing(func):
-    def validate_multi_timeframe_processing(func):
-    def validate_multi_timeframe_processing(func):
-        """Specialized decorator for multi - timeframe processing validation."""
-@functools.wraps(func)
+@staticmethod def validate_multi_timeframe_processing(func): def validate_multi_timeframe_processing(func): def validate_multi_timeframe_processing(func): def validate_multi_timeframe_processing(func): """Specialized decorator for multi - timeframe processing validation.""" @functools.wraps(func)
 def wrapper(self, *args, **kwargs):
     def wrapper(self, *args, **kwargs):
     def wrapper(self, *args, **kwargs):
@@ -502,8 +405,8 @@ EnhancedDataQualityDecorators.validate_data_completeness(func)
 )
 )
 
-return validated_func(self, *args, **kwargs)
-return wrapper
+    return validated_func(self, *args, **kwargs)
+    return wrapper
 
 # Create standalone decorator functions for easier import validate_constant_features, EnhancedDataQualityDecorators.validate_constant_features
 validate_low_variance_features, EnhancedDataQualityDecorators.validate_low_variance_features

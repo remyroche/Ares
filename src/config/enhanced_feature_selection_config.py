@@ -4,25 +4,7 @@ from dataclasses import dataclass, field
 from pydantic import Field
 
 
-@dataclass
-class PlaceholderDataClass:
-    pass  # TODO: Add implementation
-class EnhancedFeatureSelectionConfig:
-    pass  # TODO: Add implementation
-class EnhancedFeatureSelectionConfig:
-    pass  # TODO: Add implementation
-class EnhancedFeatureSelectionConfig:
-    """
-Enhanced Dynamic Feature Selection Configuration
-
-Addresses three key requirements:
-    1. Dynamic selection process without fixed arbitrary thresholds
-2. Ensures selected features aren't too correlated
-3. Adds interaction features between top features
-"""
-
-# Core feature selection parameters
-target_features: int = Field(default=100, description="Target number of features to select")
+@dataclass class PlaceholderDataClass: pass  # TODO: Add implementation class EnhancedFeatureSelectionConfig: pass  # TODO: Add implementation class EnhancedFeatureSelectionConfig: pass  # TODO: Add implementation class EnhancedFeatureSelectionConfig: """ Enhanced Dynamic Feature Selection Configuration  Addresses three key requirements: 1. Dynamic selection process without fixed arbitrary thresholds 2. Ensures selected features aren't too correlated 3. Adds interaction features between top features """  # Core feature selection parameters target_features: int = Field(default=100, description="Target number of features to select")
 min_features_per_category: int = Field(default=3, description="Minimum features to select from each category")
 max_features_per_category: int = Field(default=20, description="Maximum features to select from each category")
 
@@ -119,7 +101,7 @@ def get_default_enhanced_feature_selection_config() -> Dict[str, Any]:
     """Get default configuration for enhanced feature selection."""
 config = EnhancedFeatureSelectionConfig()
 
-return {
+    return {
 "feature_reduction": {
 "target_features": config.target_features,
 "min_features_per_category": config.min_features_per_category,
@@ -194,7 +176,7 @@ base_config["feature_reduction"].update({
 "save_intermediate_results": False,  # Disable for memory efficiency
 })
 
-return base_config
+    return base_config
 
 
 def get_comprehensive_feature_selection_config() -> Dict[str, Any]:
@@ -211,7 +193,7 @@ base_config["feature_reduction"].update({
 "correlation_threshold_fallback": 0.90,  # Stricter correlation filtering
 })
 
-return base_config
+    return base_config
 
 
 def get_regime_specific_feature_selection_config(regime_type: str) -> Dict[str, Any]:
@@ -272,7 +254,7 @@ base_config["feature_reduction"].update({
 }
 })
 
-return base_config
+    return base_config
 
 
 # Example usage and validation

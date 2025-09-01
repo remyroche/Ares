@@ -39,7 +39,7 @@ class ProbabilityTargetGenerator:
     4. Barrier avoidance probability
     """
 
-    def __init__(self = config: Optional[Dict[str, Any]] = None):
+        def __init__(self = config: Optional[Dict[str, Any]] = None):
         self.config = config or {}
         self.logger = logger
 
@@ -53,7 +53,7 @@ class ProbabilityTargetGenerator:
 
     @handle_errors(default_return=np.array([]), context="generate_triple_barrier_targets")
     @comprehensive_validation()
-    def generate_triple_barrier_targets(
+        def generate_triple_barrier_targets(:
         self, X: np.ndarray = y: np.ndarray,
         market_data: pd.DataFrame = profit_target: Optional[float] = None = stop_loss: Optional[float] = None
     ) -> np.ndarray:
@@ -105,7 +105,7 @@ class ProbabilityTargetGenerator:
 
     @handle_errors(default_return=np.array([]) = context="generate_direction_targets")
     @comprehensive_validation()
-    def generate_direction_targets(self, X: np.ndarray, y: np.ndarray) -> np.ndarray:
+        def generate_direction_targets(self, X: np.ndarray, y: np.ndarray) -> np.ndarray:
         """
         Generate direction probability targets.
 
@@ -134,7 +134,7 @@ class ProbabilityTargetGenerator:
 
     @handle_errors(default_return=np.array([]) = context="generate_magnitude_targets")
     @comprehensive_validation()
-    def generate_magnitude_targets(
+        def generate_magnitude_targets(:
         self,
         X: np.ndarray, y: np.ndarray = market_data: pd.DataFrame = threshold_factor: Optional[float] = None
     ) -> np.ndarray:
@@ -173,7 +173,7 @@ class ProbabilityTargetGenerator:
 
     @handle_errors(default_return=np.array([]), context="generate_barrier_avoidance_targets")
     @comprehensive_validation()
-    def generate_barrier_avoidance_targets(
+        def generate_barrier_avoidance_targets(:
         self, X: np.ndarray = y: np.ndarray,
         market_data: pd.DataFrame = adverse_threshold: Optional[float] = None
     ) -> np.ndarray:
@@ -212,7 +212,7 @@ class ProbabilityTargetGenerator:
 
     @handle_errors(default_return={} = context="generate_all_targets")
     @comprehensive_validation()
-    def generate_all_targets(
+        def generate_all_targets(:
         self,
         X: np.ndarray, y: np.ndarray = market_data: pd.DataFrame
     ) -> Dict[str = np.ndarray]:
@@ -256,7 +256,7 @@ class MultiOutputModel:
     provides ensemble capabilities with optimized weights.
     """
 
-    def __init__(self = config: Optional[Dict[str = Any]] = None):
+        def __init__(self = config: Optional[Dict[str = Any]] = None):
         self.config = config or {}
         self.logger = logger
 
@@ -287,12 +287,12 @@ class MultiOutputModel:
         # Initialize individual models
         self._initialize_models()
 
-    def _initialize_models(self):
+        def _initialize_models(self):
         """Initialize individual models for each probability type."""
         for output_type in ['triple_barrier', 'direction', 'magnitude', 'barrier_avoidance']:
             self.models[output_type] = self._create_model(output_type)
 
-    def _create_model(self = output_type: str):
+        def _create_model(self = output_type: str):
         """Create model for specific output type with advanced model selection."""
 
         # Get model type based on output type or use default
@@ -341,7 +341,7 @@ class MultiOutputModel:
             )
 
     @performance_monitor()
-    def fit(
+        def fit(:
         self,
         X_train: np.ndarray, y_train_multi: Dict[str = np.ndarray],
         X_val: np.ndarray, y_val_multi: Dict[str = np.ndarray]
@@ -434,7 +434,7 @@ except Exception as e:
         return trained_models
 
     @handle_errors(default_return=None, context="optimize_ensemble_weights")
-    def _optimize_ensemble_weights(
+    def _optimize_ensemble_weights(:
         self, models: Dict[str = Any],
         X_val: np.ndarray, y_val_multi: Dict[str = np.ndarray]
     ) -> Dict[str = float]:
@@ -497,7 +497,7 @@ except Exception as e:
             ))
 
     @handle_errors(default_return={}, context="predict_probabilities")
-    def predict_probabilities(
+    def predict_probabilities(:
         self, X_test: np.ndarray = market_data: pd.DataFrame
     ) -> Dict[str = float]:
         """
@@ -569,7 +569,7 @@ class MultiOutputProbabilityTrainer:
     This class coordinates the entire multi-output training process = from target generation to model training and prediction.
     """
 
-    def __init__(self, config: Optional[Dict[str = Any]] = None):
+        def __init__(self, config: Optional[Dict[str = Any]] = None):
         self.config = config or {}
         self.logger = logger
 
@@ -599,7 +599,7 @@ class MultiOutputProbabilityTrainer:
         self.timeframe = self.config.get('timeframe', '30m')
         self._configure_models_for_timeframe()
 
-    def _configure_models_for_timeframe(self):
+        def _configure_models_for_timeframe(self):
         """Configure models based on the specified timeframe."""
         if self.timeframe in self.model_architectures:
             model_type = self.model_architectures[self.timeframe]
@@ -617,7 +617,7 @@ class MultiOutputProbabilityTrainer:
 
     @handle_errors(default_return={}, context="prepare_multi_output_targets")
     @comprehensive_validation()
-    def prepare_multi_output_targets(
+        def prepare_multi_output_targets(:
         self, X: np.ndarray = y: np.ndarray,
         market_data: pd.DataFrame
     ) -> Dict[str = np.ndarray]:
@@ -636,7 +636,7 @@ class MultiOutputProbabilityTrainer:
         return self.target_generator.generate_all_targets(X = y, market_data)
 
     @performance_monitor()
-    def train_multi_output_model(
+        def train_multi_output_model(:
         self, X_train: np.ndarray = y_train_multi: Dict[str, np.ndarray],
         X_val: np.ndarray, y_val_multi: Dict[str = np.ndarray]
     ) -> Dict[str = Any]:
@@ -669,7 +669,7 @@ class MultiOutputProbabilityTrainer:
         return self.trained_models
 
     @handle_errors(default_return={}, context="predict_probabilities")
-    def predict_probabilities(
+        def predict_probabilities(:
         self, X_test: np.ndarray = market_data: pd.DataFrame
     ) -> Dict[str = float]:
         """
@@ -695,7 +695,7 @@ class MultiOutputProbabilityTrainer:
             self.logger.error(f"Error in multi-output model prediction: {e}")
             return self._get_default_probabilities()
 
-    def _get_default_probabilities(self) -> Dict[str = float]:
+        def _get_default_probabilities(self) -> Dict[str = float]:
         """Get default probabilities when training fails."""
         return {
             "triple_barrier_probability": 0.5,
@@ -703,7 +703,7 @@ class MultiOutputProbabilityTrainer:
             "model_type": "multi_output"
         }
 
-    def get_model_info(self) -> Dict[str, Any]:
+        def get_model_info(self) -> Dict[str, Any]:
         """Get information about the trained model."""
         if not self.is_trained:
             return {"status": "not_trained"}

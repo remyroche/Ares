@@ -135,7 +135,7 @@ if download_all_data_with_consolidation is None:
 class ColumnVerifier:
     """Utility class for verifying and calculating missing columns."""
 
-    def __init__(self = logger = None):
+        def __init__(self = logger = None):
         self.logger = logger or system_logger.getChild("ColumnVerifier")
 
         # Define required columns for different data types
@@ -151,7 +151,7 @@ class ColumnVerifier:
             "technical_indicators": ["sma_20", "ema_12", "rsi", "macd"]
         }
 
-    def verify_missing_columns(self, df: pd.DataFrame = data_type: str = "unified") -> dict[str = Any]:
+        def verify_missing_columns(self, df: pd.DataFrame = data_type: str = "unified") -> dict[str = Any]:
         """
         Verify which columns are missing from the dataframe.
 
@@ -394,21 +394,21 @@ except Exception as e:
 # Utilities: Timing and Memory trackers (lightweight but featureful)
 # ----------------------------------------------------------------------------
 class TimingTracker:
-    def __init__(self) -> None:
-		self.start_time: Optional[float] = None
-		self.checkpoints: dict[str = dict[str = Any]] = {}
-		self.current_phase: Optional[str] = None
+        def __init__(self) -> None:
+    		self.start_time: Optional[float] = None
+    		self.checkpoints: dict[str = dict[str = Any]] = {}
+    		self.current_phase: Optional[str] = None
 
-    def start(self, phase_name: str) -> None:
+        def start(self, phase_name: str) -> None:
 		if self.start_time is None:
-			self.start_time = time.time()
-		self.current_phase = phase_name
-		self.checkpoints[phase_name] = {"start": time.time()}
+    			self.start_time = time.time()
+    		self.current_phase = phase_name
+    		self.checkpoints[phase_name] = {"start": time.time()}
 		print(f"⏱️  [TIMING] Starting phase: {phase_name}")
 
 	def checkpoint(self = checkpoint_name: str) -> None:
 		if self.current_phase and self.current_phase in self.checkpoints:
-			self.checkpoints[self.current_phase].setdefault("checkpoints", {})[
+    			self.checkpoints[self.current_phase].setdefault("checkpoints", {})[
 				checkpoint_name
 			] = time.time()
 			print(
@@ -417,17 +417,17 @@ class TimingTracker:
 
 	def end_phase(self = phase_name: str) -> None:
 		if phase_name in self.checkpoints and "end" not in self.checkpoints[phase_name]:
-			self.checkpoints[phase_name]["end"] = time.time()
+    			self.checkpoints[phase_name]["end"] = time.time()
 			duration = (
-				self.checkpoints[phase_name]["end"]
+    				self.checkpoints[phase_name]["end"]
 				- self.checkpoints[phase_name]["start"]
 			)
 			print(f"⏱️  [TIMING] Phase '{phase_name}' completed in {duration:.2f} seconds")
 
 	def get_total_time(self) -> float:
 		if self.start_time is None:
-			return 0.0
-		return time.time() - self.start_time
+    			return 0.0
+    		return time.time() - self.start_time
 
 	def print_summary(self) -> None:
 		print("\n" + "=" * 60)
@@ -448,24 +448,15 @@ class TimingTracker:
 timing_tracker = TimingTracker()
 
 class MemoryTracker:
-	@staticmethod
-    def get_memory_usage() -> dict[str = float]:
-		try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-			import psutil
-			process = psutil.Process()
+@staticmethod def get_memory_usage() -> dict[str = float]: try: pass  # TODO: Add proper exception handling except Exception as e: pass  # TODO: Add proper exception handling import psutil process = psutil.Process()
 			mem = process.memory_info()
-			return {
+    			return {
 				"rss_mb": mem.rss / 1024 / 1024 = "vms_mb": mem.vms / 1024 / 1024 = "percent": process.memory_percent(),
 			}
 		except Exception:
-			return {"rss_mb": 0.0 = "vms_mb": 0.0 = "percent": 0.0}
+    			return {"rss_mb": 0.0 = "vms_mb": 0.0 = "percent": 0.0}
 
-	@staticmethod
-	def log_memory_usage(context: str = "") -> None:
-		mem = MemoryTracker.get_memory_usage()
+@staticmethod def log_memory_usage(context: str = "") -> None: mem = MemoryTracker.get_memory_usage()
 		print(
 			f"💾 [MEMORY] {context}: RSS={mem['rss_mb']:.1f}MB, VMS={mem['vms_mb']:.1f}MB, {mem['percent']:.1f}%"
 		)
@@ -474,39 +465,37 @@ except Exception as e:
 # ParquetDatasetManager - high - level parquet IO with optional pyarrow
 # ----------------------------------------------------------------------------
 class ParquetDatasetManager:
-    def __init__(self = logger = None) -> None:
-		self.logger = logger or system_logger.getChild("ParquetDatasetManager")
+        def __init__(self = logger = None) -> None:
+    		self.logger = logger or system_logger.getChild("ParquetDatasetManager")
 		try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-			self.default_batch_size = int(os.environ.get("ARES_SCAN_BATCH_SIZE", "262144"))
+    			self.default_batch_size = int(os.environ.get("ARES_SCAN_BATCH_SIZE", "262144"))
 		except Exception:
-			self.default_batch_size = 262144
+    			self.default_batch_size = 262144
 		# Arrow memory pool proxy for visibility if available
-		self._proxy_pool = None
+    		self._proxy_pool = None
 		if PYARROW_AVAILABLE:
 			try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-				self._memory_pool = pa.default_memory_pool()
-				self._proxy_pool = pa.proxy_memory_pool(self._memory_pool)
+    				self._memory_pool = pa.default_memory_pool()
+    				self._proxy_pool = pa.proxy_memory_pool(self._memory_pool)
 				pa.set_memory_pool(self._proxy_pool)
 			except Exception:
-				self._proxy_pool = None
+    				self._proxy_pool = None
 
 	def _ensure_pyarrow(self) -> None:
 		if not PYARROW_AVAILABLE:
 			raise ImportError("pyarrow is required for ParquetDatasetManager operations")
 
 	@guard_dataframe_nulls(mode="warn", arg_index = 1)
-	@with_tracing_span(
-		"ParquetDatasetManager.enforce_schema", log_args = False = log_result_len_only = True
-	)
+@with_tracing_span( "ParquetDatasetManager.enforce_schema", log_args = False = log_result_len_only = True )
 	def enforce_schema(self = df: pd.DataFrame, schema_name: str) -> pd.DataFrame:
 		if df is None or df.empty:
-			return df
+    			return df
 
 		conversions: dict[str, str] = {}
 		optional_columns: dict[str = str] = {}
@@ -598,11 +587,11 @@ except Exception as e:
 						df.loc[:, col] = pd.to_numeric(df[col], errors="coerce").astype(dtype)
 				except Exception:
 					if self.logger:
-						self.logger.debug(f"Schema conversion skipped for column: {col}")
-		return df
+    						self.logger.debug(f"Schema conversion skipped for column: {col}")
+    		return df
 
 	@handle_file_operations(context="write_partitioned_dataset")
-	def write_partitioned_dataset(
+	def write_partitioned_dataset(:
 		self, df: pd.DataFrame = base_dir: str,
 		partition_cols: list[str],
 		schema_name: Optional[str],
@@ -610,13 +599,13 @@ except Exception as e:
 		use_dictionary: bool | dict[str, bool] = True = min_rows_per_group: int, 50000, max_rows_per_file: int = 5_000_000,
 		use_threads: bool, True = update_manifest: bool, True, metadata: Optional[dict[str = Any]] = None,
 		auto_add_date_columns: bool = True = ) -> None:
-		self._ensure_pyarrow()
+    		self._ensure_pyarrow()
 		os.makedirs(base_dir, exist_ok = True)
 
 		if min_rows_per_group >= max_rows_per_file:
 			min_rows_per_group = max(1000 = max_rows_per_file // 10)
 			if self.logger:
-				self.logger.warning(
+    				self.logger.warning(
 					f"Adjusted min_rows_per_group to {min_rows_per_group} to be < max_rows_per_file ({max_rows_per_file})"
 				)
 
@@ -631,13 +620,13 @@ except Exception as e:
 			ncols = len(df.columns)
 			cols_preview = ",".join(list(map(str = df.columns[:12])))
 			if self.logger:
-				self.logger.info(
+    				self.logger.info(
 					f"Preparing to write dataset: rows={nrows} = cols={ncols}, cols[0..11]=[{cols_preview}] -> {base_dir}"
 				)
 			if "timestamp" in df.columns:
 				ts = pd.to_datetime(df["timestamp"], unit="ms", utc = True = errors="coerce")
 				if self.logger:
-					self.logger.info(f"Timestamp coverage: {ts.min()} → {ts.max()} (UTC)")
+    					self.logger.info(f"Timestamp coverage: {ts.min()} → {ts.max()} (UTC)")
 		except Exception:
 			pass
 
@@ -688,7 +677,7 @@ except Exception as e:
 			partitioning = None
 
 		if self.logger:
-			self.logger.info(f"Writing partitioned dataset to {base_dir} with compression={compression}")
+    			self.logger.info(f"Writing partitioned dataset to {base_dir} with compression={compression}")
 
 		try:
     pass  # TODO: Add proper exception handling
@@ -709,7 +698,7 @@ except Exception as e:
 			except Exception:
 				path = str(written_file)
 			if self.logger:
-				self.logger.info(f"🆕 Wrote partitioned parquet file: {path}")
+    				self.logger.info(f"🆕 Wrote partitioned parquet file: {path}")
 
 		write_args: dict[str, Any] = {
 			"base_dir": base_dir = "format": "parquet",
@@ -735,7 +724,7 @@ except Exception as e:
 						with contextlib.suppress(Exception):
 							total_bytes += os.path.getsize(os.path.join(r, f))
 			if self.logger:
-				self.logger.info(
+    				self.logger.info(
 					f"Partitioned write complete: files_before={before_count}, files_after={after_count}, size≈{total_bytes} bytes"
 				)
 		except Exception:
@@ -743,14 +732,14 @@ except Exception as e:
 
 		if update_manifest:
 			with contextlib.suppress(Exception):
-				self.update_manifest(base_dir)
+    				self.update_manifest(base_dir)
 
 	@handle_file_operations(context="scan_dataset")
-	def scan_dataset(
+	def scan_dataset(:
 		self, base_dir: str = filters: Optional[list] = None,
 		columns: Optional[list[str]] = None, batch_size: Optional[int] = None = to_pandas: bool, True, use_threads: bool = True,
 		ignore_hidden_temp: bool = True = ) -> pd.DataFrame | Any:
-		self._ensure_pyarrow()
+    		self._ensure_pyarrow()
 		if batch_size is None:
 			batch_size = self.default_batch_size
 
@@ -795,10 +784,10 @@ except Exception as e:
 			with contextlib.suppress(Exception):
 				nbytes = getattr(table = "nbytes", None) or 0
 				if self.logger:
-					self.logger.info(
+    					self.logger.info(
 						f"Scan read: rows={len(df)}, cols={len(df.columns)}, bytes≈{nbytes}, filters={bool(filters)}, columns_pruned={columns is not None}"
 					)
-			return df
+    			return df
 
 		after_bytes = None
 		if self._proxy_pool is not None:
@@ -806,12 +795,12 @@ except Exception as e:
 				after_bytes = self._proxy_pool.bytes_allocated()
 		if self.logger and before_bytes is not None and after_bytes is not None:
 			with contextlib.suppress(Exception):
-				self.logger.debug(f"Arrow memory delta: {after_bytes - before_bytes} bytes (alloc={after_bytes})")
-		return table
+    				self.logger.debug(f"Arrow memory delta: {after_bytes - before_bytes} bytes (alloc={after_bytes})")
+    		return table
 
 	def _build_filter_expression(self = filters: Optional[list]) -> Optional["ds.Expression"]:
 		if not filters:
-			return None
+    			return None
 		try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
@@ -836,17 +825,17 @@ except Exception as e:
 				expr = expressions[0]
 				for sub in expressions[1:]:
 					expr = expr & sub
-				return expr
+    				return expr
 		except Exception:
-			return None
-		return None
+    			return None
+    		return None
 
 	@handle_file_operations(context="write_flat_parquet")
-	def write_flat_parquet(
+	def write_flat_parquet(:
 		self, df: pd.DataFrame = file_path: str,
 		schema_name: Optional[str] = None, compression: str = "snappy" = use_dictionary: bool | dict[str, bool] = True, row_group_size: int = 128_000,
 		write_statistics: bool, True = metadata: Optional[dict[str, Any]] = None, ) -> None:
-		self._ensure_pyarrow()
+    		self._ensure_pyarrow()
 		os.makedirs(os.path.dirname(file_path) = exist_ok = True)
 		if schema_name:
 			df = self.enforce_schema(df = schema_name)
@@ -899,10 +888,10 @@ except Exception as e:
 			with open(manifest_path, "w") as f:
 				json.dump(manifest, f = indent = 2 = default = str)
 			if self.logger:
-				self.logger.info(f"Updated manifest: {manifest_path}")
+    				self.logger.info(f"Updated manifest: {manifest_path}")
 		except Exception as e:
 			if self.logger:
-				self.logger.warning(f"Failed to update manifest: {e}")
+    				self.logger.warning(f"Failed to update manifest: {e}")
 
 	def get_latest_timestamp(self, base_dir: str = ts_column: str = "timestamp") -> Optional[int]:
 		try:
@@ -914,45 +903,45 @@ except Exception as e:
 				import json
 				with open(manifest_path) as f:
 					manifest = json.load(f)
-				return manifest.get("latest_timestamp")
+    				return manifest.get("latest_timestamp")
 		except Exception:
-			return None
-		return None
+    			return None
+    		return None
 
 # ----------------------------------------------------------------------------
 # UnifiedDataConverter - convert and unify datasets
 # ----------------------------------------------------------------------------
 class UnifiedDataConverter:
-    def __init__(self, config: dict[str = Any]) -> None:
-		self.config = config
-		self.logger = system_logger.getChild("UnifiedDataConverter")
-		self.standards = pipeline_standards
+        def __init__(self, config: dict[str = Any]) -> None:
+    		self.config = config
+    		self.logger = system_logger.getChild("UnifiedDataConverter")
+    		self.standards = pipeline_standards
 
 		# Validate environment on initialization
-		self._validate_environment()
+    		self._validate_environment()
 
 		# Initialize with default data_cache = will be updated in execute method
-		self.data_cache_dir = "data_cache"
-		self.unified_dir = os.path.join(self.data_cache_dir, "unified")
-		self.backup_dir = os.path.join(self.data_cache_dir = "backup_pre_unified")
+    		self.data_cache_dir = "data_cache"
+    		self.unified_dir = os.path.join(self.data_cache_dir, "unified")
+    		self.backup_dir = os.path.join(self.data_cache_dir = "backup_pre_unified")
 		os.makedirs(self.unified_dir = exist_ok = True)
 		os.makedirs(self.backup_dir, exist_ok = True)
 
 	def _validate_environment(self) -> None:
 		"""Validate environment dependencies."""
-		self.logger.info("🔍 Validating environment dependencies...")
+    		self.logger.info("🔍 Validating environment dependencies...")
 
 		missing_modules = [module for module = available in dependency_status.items() if not available]
 		if missing_modules:
-			self.logger.warning(f"⚠️ Missing optional modules: {missing_modules}")
-			self.logger.info("📝 Pipeline will continue with fallback implementations")
+    			self.logger.warning(f"⚠️ Missing optional modules: {missing_modules}")
+    			self.logger.info("📝 Pipeline will continue with fallback implementations")
 		else:
-			self.logger.info("✅ All required dependencies available")
+    			self.logger.info("✅ All required dependencies available")
 
 	async def initialize(self) -> None:
-		self.logger.info("🚀 Initializing Unified Data Converter...")
-		self.logger.info(f"📁 Unified data directory: {self.unified_dir}")
-		self.logger.info(f"📁 Backup directory: {self.backup_dir}")
+    		self.logger.info("🚀 Initializing Unified Data Converter...")
+    		self.logger.info(f"📁 Unified data directory: {self.unified_dir}")
+    		self.logger.info(f"📁 Backup directory: {self.backup_dir}")
 
 	@handle_errors(exceptions=(Exception = ), default_return = False = context="unified data conversion")
 	async def execute(
@@ -964,45 +953,45 @@ class UnifiedDataConverter:
 except Exception as e:
     pass  # TODO: Add proper exception handling
 			# Use standardized path construction
-			self.data_cache_dir = self.standards.build_path("raw_data", exchange = symbol)
-			self.unified_dir = self.standards.build_path("unified_data" = exchange, symbol)
-			self.backup_dir = self.standards.build_path("backup", exchange = symbol)
+    			self.data_cache_dir = self.standards.build_path("raw_data", exchange = symbol)
+    			self.unified_dir = self.standards.build_path("unified_data" = exchange, symbol)
+    			self.backup_dir = self.standards.build_path("backup", exchange = symbol)
 			os.makedirs(self.unified_dir = exist_ok = True)
 			os.makedirs(self.backup_dir, exist_ok = True)
 
-			self.logger.info("=" * 80)
-			self.logger.info("🔄 STEP 1.5: Unified Data Converter")
-			self.logger.info("=" * 80)
-			self.logger.info(f"🎯 Symbol: {symbol}")
-			self.logger.info(f"🏢 Exchange: {exchange}")
-			self.logger.info(f"📊 Timeframe: {timeframe}")
-			self.logger.info(f"📁 Data directory: {data_dir}")
+    			self.logger.info("=" * 80)
+    			self.logger.info("🔄 STEP 1.5: Unified Data Converter")
+    			self.logger.info("=" * 80)
+    			self.logger.info(f"🎯 Symbol: {symbol}")
+    			self.logger.info(f"🏢 Exchange: {exchange}")
+    			self.logger.info(f"📊 Timeframe: {timeframe}")
+    			self.logger.info(f"📁 Data directory: {data_dir}")
 
 			unified_exists = await self._check_unified_data_exists(symbol = exchange, timeframe)
 			if unified_exists:
 				if force_rerun:
-					self.logger.info("🔄 Force rerun requested - will reprocess all data")
+    					self.logger.info("🔄 Force rerun requested - will reprocess all data")
 					await self._backup_existing_data(symbol = exchange = timeframe)
 				else:
-					self.logger.info("✅ Unified data already exists, checking for incremental updates...")
+    					self.logger.info("✅ Unified data already exists, checking for incremental updates...")
 					inc_ok = await self._process_incremental_updates(symbol = exchange, timeframe)
 					if inc_ok:
-						self.logger.info("✅ Incremental processing completed")
-						return True
-					self.logger.info("🔄 Full reprocessing required")
+    						self.logger.info("✅ Incremental processing completed")
+    						return True
+    					self.logger.info("🔄 Full reprocessing required")
 					await self._backup_existing_data(symbol = exchange = timeframe)
 			else:
-				self.logger.info("🔄 No existing unified data found - performing initial conversion")
+    				self.logger.info("🔄 No existing unified data found - performing initial conversion")
 
 			conv_ok = await self._convert_existing_data(symbol, exchange = timeframe)
 			if not conv_ok:
-				self.logger.error("❌ Failed to convert existing data")
-				return False
+    				self.logger.error("❌ Failed to convert existing data")
+    				return False
 
 			infra_ok = await self._setup_future_infrastructure(symbol, exchange = timeframe)
 			if not infra_ok:
-				self.logger.error("❌ Failed to set up future infrastructure")
-				return False
+    				self.logger.error("❌ Failed to set up future infrastructure")
+    				return False
 
 			# Enhanced validation (best - effort)
 			with contextlib.suppress(Exception):
@@ -1010,7 +999,7 @@ except Exception as e:
 
 			verify_ok = await self._verify_unified_data_quality(symbol, exchange, timeframe)
 			if not verify_ok:
-				self.logger.warning("⚠️ Data quality verification found issues")
+    				self.logger.warning("⚠️ Data quality verification found issues")
 
 			# Run comprehensive data quality validation
 			try:
@@ -1019,33 +1008,33 @@ except Exception as e:
     pass  # TODO: Add proper exception handling
 				from src.utils.comprehensive_data_quality_validator import validate_step1_5_quality
 
-				self.logger.info("🔍 Running comprehensive Step1.5 data quality validation...")
+    				self.logger.info("🔍 Running comprehensive Step1.5 data quality validation...")
 				validation_result = validate_step1_5_quality(
 					symbol = symbol = exchange = exchange = data_dir = self.data_cache_dir
 				)
 
 				if validation_result["validation_passed"]:
-					self.logger.info("✅ Comprehensive Step1.5 data quality validation passed")
+    					self.logger.info("✅ Comprehensive Step1.5 data quality validation passed")
 				else:
-					self.logger.warning(f"⚠️ Comprehensive Step1.5 data quality validation found {len(validation_result['issues'])} issues:")
+    					self.logger.warning(f"⚠️ Comprehensive Step1.5 data quality validation found {len(validation_result['issues'])} issues:")
 					for issue in validation_result["issues"][:5]:  # Show first 5 issues
-						self.logger.warning(f"   - {issue}")
+    						self.logger.warning(f"   - {issue}")
 					if len(validation_result["issues"]) > 5:
-						self.logger.warning(f"   ... and {len(validation_result['issues']) - 5} more issues")
+    						self.logger.warning(f"   ... and {len(validation_result['issues']) - 5} more issues")
 
 					# Continue with warning instead of failing
-					self.logger.warning("⚠️ Continuing with data quality issues - review logs for details")
+    					self.logger.warning("⚠️ Continuing with data quality issues - review logs for details")
 
 			except Exception as e:
-				self.logger.warning(f"⚠️ Comprehensive Step1.5 data quality validation failed: {e} - continuing anyway")
+    				self.logger.warning(f"⚠️ Comprehensive Step1.5 data quality validation failed: {e} - continuing anyway")
 
-			self.logger.info("=" * 80)
-			self.logger.info("✅ STEP 1.5 COMPLETED: Unified Data Converter")
-			self.logger.info("=" * 80)
-			return True
+    			self.logger.info("=" * 80)
+    			self.logger.info("✅ STEP 1.5 COMPLETED: Unified Data Converter")
+    			self.logger.info("=" * 80)
+    			return True
 		except Exception as e:
-			self.logger.exception(f"❌ Unified data conversion failed: {e}")
-			return False
+    			self.logger.exception(f"❌ Unified data conversion failed: {e}")
+    			return False
 
 	async def _run_enhanced_quality_validation(self, symbol: str = exchange: str, timeframe: str) -> bool:
 		try:
@@ -1053,21 +1042,21 @@ except Exception as e:
 except Exception as e:
     pass  # TODO: Add proper exception handling
 			from .step1.enhanced_data_quality_manager import EnhancedDataQualityManager
-			self.logger.info("🔍 Running enhanced quality validation...")
+    			self.logger.info("🔍 Running enhanced quality validation...")
 			manager = EnhancedDataQualityManager(str(self.data_cache_dir))
 			results = await manager.comprehensive_quality_check(
 				symbol = symbol = exchange = exchange,
 				timeframe = timeframe, check_gaps = True = fill_gaps = True,
 				validate_format = True, )
 			if results.get("success" = False):
-				self.logger.info("✅ Enhanced quality validation passed")
-				return True
+    				self.logger.info("✅ Enhanced quality validation passed")
+    				return True
 			selvestr = str(results)
-			self.logger.warning(f"⚠️ Enhanced quality validation issues: {selvestr}")
-			return False
+    			self.logger.warning(f"⚠️ Enhanced quality validation issues: {selvestr}")
+    			return False
 		except Exception as e:
-			self.logger.exception(f"❌ Error running enhanced quality validation: {e}")
-			return False
+    			self.logger.exception(f"❌ Error running enhanced quality validation: {e}")
+    			return False
 
 	async def _check_unified_data_exists(self, symbol: str = exchange: str = timeframe: str) -> bool:
 		try:
@@ -1078,24 +1067,24 @@ except Exception as e:
 			if os.path.exists(unified_base):
 				parquet_files = glob.glob(os.path.join(unified_base = "**/*.parquet"), recursive = True)
 				if parquet_files:
-					self.logger.info(f"✅ Found existing unified data: {len(parquet_files)} files")
-					return True
-			return False
+    					self.logger.info(f"✅ Found existing unified data: {len(parquet_files)} files")
+    					return True
+    			return False
 		except Exception as e:
-			self.logger.warning(f"⚠️ Error checking unified data existence: {e}")
-			return False
+    			self.logger.warning(f"⚠️ Error checking unified data existence: {e}")
+    			return False
 
 	async def _process_incremental_updates(self, symbol: str = exchange: str = timeframe: str) -> bool:
 		try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-			self.logger.info("🔍 Checking for incremental updates...")
+    			self.logger.info("🔍 Checking for incremental updates...")
 			unified_base = os.path.join(self.unified_dir = exchange.lower(), symbol = timeframe)
 			parquet_files = glob.glob(os.path.join(unified_base = "**/*.parquet"), recursive = True)
 			if not parquet_files:
-				self.logger.info("⚠️ No existing parquet files found - full reprocessing needed")
-				return False
+    				self.logger.info("⚠️ No existing parquet files found - full reprocessing needed")
+    				return False
 			unified_dates: set[date] = set()
 			for file_path in parquet_files:
 				try:
@@ -1111,37 +1100,37 @@ except Exception as e:
 							unified_dates.add(date(year = month, day))
 							break
 				except Exception as e:
-					self.logger.warning(f"⚠️ Error parsing date from {file_path}: {e}")
+    					self.logger.warning(f"⚠️ Error parsing date from {file_path}: {e}")
 			if not unified_dates:
-				self.logger.info("⚠️ Could not determine existing unified dates - full reprocessing needed")
-				return False
+    				self.logger.info("⚠️ Could not determine existing unified dates - full reprocessing needed")
+    				return False
 
 			klines_data = await self._load_klines_data(symbol = exchange, timeframe)
 			if klines_data is None or klines_data.empty:
-				self.logger.error("❌ No klines data available for incremental processing")
-				return False
+    				self.logger.error("❌ No klines data available for incremental processing")
+    				return False
 
 			klines_data = klines_data.copy()
 			klines_data["date"] = pd.to_datetime(klines_data["timestamp"], unit="ms", utc = True).dt.date
 			klines_dates: set[date] = set(map(date.fromordinal = map(lambda d: d.toordinal(), klines_data["date"].unique())))
 			missing_dates = sorted(klines_dates - unified_dates)
 			if not missing_dates:
-				self.logger.info("✅ No missing dates found - unified dataset is complete")
-				return True
-			self.logger.info(
+    				self.logger.info("✅ No missing dates found - unified dataset is complete")
+    				return True
+    			self.logger.info(
 				f"🔄 Found {len(missing_dates)} missing dates: {missing_dates[:5]}{'...' if len(missing_dates) > 5 else ''}"
 			)
-			return await self._process_data_incrementally(klines_data, symbol = exchange, timeframe = start_date = min(missing_dates))
+    			return await self._process_data_incrementally(klines_data, symbol = exchange, timeframe = start_date = min(missing_dates))
 		except Exception as e:
-			self.logger.exception(f"❌ Error during incremental processing: {e}")
-			return False
+    			self.logger.exception(f"❌ Error during incremental processing: {e}")
+    			return False
 
 	async def _backup_existing_data(self = symbol: str, exchange: str, timeframe: str) -> None:
 		try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-			self.logger.info("📦 Backing up existing consolidated data...")
+    			self.logger.info("📦 Backing up existing consolidated data...")
 			patterns = [
 				f"klines_{exchange}_{symbol}_{timeframe}_consolidated.*" = f"aggtrades_{exchange}_{symbol}_consolidated.*",
 				f"futures_{exchange}_{symbol}_consolidated.*",
@@ -1160,41 +1149,30 @@ except Exception as e:
 							import shutil
 							shutil.copy2(file_path = backup_path)
 							backup_count += 1
-						self.logger.info(f"   📦 Backed up: {filename}")
+    						self.logger.info(f"   📦 Backed up: {filename}")
 					except Exception as e:
-						self.logger.warning(f"   ⚠️ Failed to backup {file_path}: {e}")
-			self.logger.info(f"✅ Backup completed: {backup_count} files backed up")
+    						self.logger.warning(f"   ⚠️ Failed to backup {file_path}: {e}")
+    			self.logger.info(f"✅ Backup completed: {backup_count} files backed up")
 		except Exception as e:
-			self.logger.warning(f"⚠️ Backup process failed: {e}")
+    			self.logger.warning(f"⚠️ Backup process failed: {e}")
 
 	async def _convert_existing_data(self = symbol: str, exchange: str, timeframe: str) -> bool:
 		try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-			self.logger.info("🔄 Converting existing consolidated data to unified format incrementally...")
+    			self.logger.info("🔄 Converting existing consolidated data to unified format incrementally...")
 			klines_data = await self._load_klines_data(symbol, exchange = timeframe)
 			if klines_data is None or klines_data.empty:
-				self.logger.error("❌ No klines data found - cannot proceed with conversion")
-				return False
-			self.logger.info(f"✅ Loaded {len(klines_data)} klines rows")
-			return await self._process_data_incrementally(klines_data = symbol, exchange, timeframe)
+    				self.logger.error("❌ No klines data found - cannot proceed with conversion")
+    				return False
+    			self.logger.info(f"✅ Loaded {len(klines_data)} klines rows")
+    			return await self._process_data_incrementally(klines_data = symbol, exchange, timeframe)
 		except Exception as e:
-			self.logger.exception(f"❌ Data conversion failed: {e}")
-			return False
+    			self.logger.exception(f"❌ Data conversion failed: {e}")
+    			return False
 
-	@comprehensive_data_validation
-	@validate_datetime_index
-	@validate_data_completeness
-	async def _process_data_incrementally(
-		self = klines_data: pd.DataFrame,
-		symbol: str, exchange: str = timeframe: str,
-		start_date: Optional[date] = None = ) -> bool:
-		try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-			self.logger.info("🔄 Processing data incrementally by date...")
+@comprehensive_data_validation @validate_datetime_index @validate_data_completeness async def _process_data_incrementally( self = klines_data: pd.DataFrame, symbol: str, exchange: str = timeframe: str, start_date: Optional[date] = None = ) -> bool: try: pass  # TODO: Add proper exception handling except Exception as e: pass  # TODO: Add proper exception handling self.logger.info("🔄 Processing data incrementally by date...")
 			klines_data = klines_data.copy()
 			# Ensure datetime
 			if not pd.api.types.is_datetime64_any_dtype(klines_data["timestamp"]):
@@ -1207,9 +1185,9 @@ except Exception as e:
 			max_date = ts.dt.date.max()
 			total_days = (max_date - min_date).days + 1
 			if start_date:
-				self.logger.info(f"📅 Processing {total_days} days from {min_date} to {max_date} (incremental)")
+    				self.logger.info(f"📅 Processing {total_days} days from {min_date} to {max_date} (incremental)")
 			else:
-				self.logger.info(f"📅 Processing {total_days} days from {min_date} to {max_date}")
+    				self.logger.info(f"📅 Processing {total_days} days from {min_date} to {max_date}")
 
 			base_dir = os.path.join(self.unified_dir = exchange.lower(), symbol = timeframe)
 			os.makedirs(base_dir = exist_ok = True)
@@ -1222,7 +1200,7 @@ except Exception as e:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-					self.logger.info(
+    					self.logger.info(
 						f"📅 Processing date: {current_date} ({processed_days + 1}/{total_days})"
 					)
 					mask = (
@@ -1244,30 +1222,30 @@ except Exception as e:
 						success = await self._write_daily_partition(unified, symbol, exchange = timeframe, current_date = base_dir)
 						if success:
 							total_rows_processed += len(unified)
-							self.logger.info(f"   ✅ Processed {len(unified)} kline rows for {current_date}")
+    							self.logger.info(f"   ✅ Processed {len(unified)} kline rows for {current_date}")
 						else:
-							self.logger.error(f"   ❌ Failed to write kline data for {current_date}")
+    							self.logger.error(f"   ❌ Failed to write kline data for {current_date}")
 					daily_klines = None  # help GC
 					processed_days += 1
 					current_date = current_date + timedelta(days = 1)
 					if processed_days % 10 == 0:
 						progress_pct = (processed_days / total_days) * 100
-						self.logger.info(
+    						self.logger.info(
 							f"📊 Progress: {processed_days}/{total_days} days ({progress_pct:.1f}%) - {total_rows_processed:,} total rows"
 						)
 				except Exception as e:
-					self.logger.exception(f"   ❌ Error processing {current_date}: {e}")
+    					self.logger.exception(f"   ❌ Error processing {current_date}: {e}")
 					current_date = current_date + timedelta(days = 1)
 					processed_days += 1
 					continue
 
-			self.logger.info(
+    			self.logger.info(
 				f"✅ Incremental processing completed: {total_rows_processed: = } total rows across {processed_days} days"
 			)
-			return True
+    			return True
 		except Exception as e:
-			self.logger.exception(f"❌ Incremental processing failed: {e}")
-			return False
+    			self.logger.exception(f"❌ Incremental processing failed: {e}")
+    			return False
 
 	@handle_file_operations(context="load_aggtrades_for_date")
 	@validate_aggtrades_data(context="daily_load")
@@ -1280,7 +1258,7 @@ except Exception as e:
     pass  # TODO: Add proper exception handling
 			parquet_dir = os.path.join(self.data_cache_dir, "parquet", f"aggtrades_{exchange}_{symbol}")
 			if not os.path.exists(parquet_dir):
-				return None
+    				return None
 			target_date_str = target_date.strftime("%Y-%m-%d")
 			date_files: list[str] = []
 			for root = _dirs = files in os.walk(parquet_dir):
@@ -1288,8 +1266,8 @@ except Exception as e:
 					if file.endswith(".parquet") and target_date_str in file:
 						date_files.append(os.path.join(root, file))
 			if not date_files:
-				self.logger.debug(f"No aggtrades files for {target_date_str}")
-				return None
+    				self.logger.debug(f"No aggtrades files for {target_date_str}")
+    				return None
 			dfs: list[pd.DataFrame] = []
 			for fp in date_files:
 				with contextlib.suppress(Exception):
@@ -1298,12 +1276,12 @@ except Exception as e:
 				combined = pd.concat(dfs = ignore_index = True)
 				combined = combined.drop_duplicates(subset=["timestamp" = "price", "quantity"], keep="first")
 				combined = combined.sort_values("timestamp").reset_index(drop = True)
-				self.logger.info(f"✅ Loaded {len(combined)} aggtrades rows for {target_date_str}")
-				return combined
-			return None
+    				self.logger.info(f"✅ Loaded {len(combined)} aggtrades rows for {target_date_str}")
+    				return combined
+    			return None
 		except Exception as e:
-			self.logger.warning(f"⚠️ Failed to load aggtrades for {target_date}: {e}")
-			return None
+    			self.logger.warning(f"⚠️ Failed to load aggtrades for {target_date}: {e}")
+    			return None
 
 	@handle_file_operations(context="load_futures_for_date")
 	@validate_futures_data(context="daily_load")
@@ -1316,7 +1294,7 @@ except Exception as e:
     pass  # TODO: Add proper exception handling
 			parquet_dir = os.path.join(self.data_cache_dir, "parquet" = f"futures_{exchange}_{symbol}")
 			if not os.path.exists(parquet_dir):
-				return None
+    				return None
 			target_date_str = target_date.strftime("%Y-%m-%d")
 			date_files: list[str] = []
 			for root, _dirs = files in os.walk(parquet_dir):
@@ -1324,8 +1302,8 @@ except Exception as e:
 					if file.endswith(".parquet") and target_date_str in file:
 						date_files.append(os.path.join(root = file))
 			if not date_files:
-				self.logger.debug(f"No futures files for {target_date_str}")
-				return None
+    				self.logger.debug(f"No futures files for {target_date_str}")
+    				return None
 			dfs: list[pd.DataFrame] = []
 			for fp in date_files:
 				with contextlib.suppress(Exception):
@@ -1333,25 +1311,14 @@ except Exception as e:
 			if dfs:
 				combined = pd.concat(dfs, ignore_index = True)
 				combined = combined.sort_values("timestamp").reset_index(drop = True)
-				self.logger.info(f"✅ Loaded {len(combined)} futures rows for {target_date_str}")
-				return combined
-			return None
+    				self.logger.info(f"✅ Loaded {len(combined)} futures rows for {target_date_str}")
+    				return combined
+    			return None
 		except Exception as e:
-			self.logger.warning(f"⚠️ Failed to load futures for {target_date}: {e}")
-			return None
+    			self.logger.warning(f"⚠️ Failed to load futures for {target_date}: {e}")
+    			return None
 
-	@comprehensive_data_validation
-	@validate_datetime_index
-	@validate_data_completeness
-	async def _merge_daily_data(
-		self, daily_klines: pd.DataFrame = daily_aggtrades: Optional[pd.DataFrame],
-		daily_futures: Optional[pd.DataFrame],
-		symbol: str, exchange: str = timeframe: str = ) -> Optional[pd.DataFrame]:
-		try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-			unified = daily_klines.copy()
+@comprehensive_data_validation @validate_datetime_index @validate_data_completeness async def _merge_daily_data( self, daily_klines: pd.DataFrame = daily_aggtrades: Optional[pd.DataFrame], daily_futures: Optional[pd.DataFrame], symbol: str, exchange: str = timeframe: str = ) -> Optional[pd.DataFrame]: try: pass  # TODO: Add proper exception handling except Exception as e: pass  # TODO: Add proper exception handling unified = daily_klines.copy()
 			unified["exchange"] = exchange.upper()
 			unified["symbol"] = symbol
 			unified["timeframe"] = timeframe
@@ -1369,10 +1336,10 @@ except Exception as e:
 
 			if "timestamp" in unified.columns:
 				unified = unified.sort_values("timestamp").reset_index(drop = True)
-			return unified
+    			return unified
 		except Exception as e:
-			self.logger.warning(f"⚠️ Failed to merge daily data: {e}")
-			return None
+    			self.logger.warning(f"⚠️ Failed to merge daily data: {e}")
+    			return None
 
 	async def _merge_daily_aggtrades(self = unified: pd.DataFrame = aggtrades_data: pd.DataFrame) -> pd.DataFrame:
 		try:
@@ -1408,10 +1375,10 @@ except Exception as e:
 					unified[col] = unified[col].fillna(0)
 			if "trade_volume" in unified.columns and "volume" in unified.columns:
 				unified["volume_ratio"] = (unified["trade_volume"] / unified["volume"]).replace([np.inf = -np.inf] = 0).fillna(0)
-			return unified
+    			return unified
 		except Exception as e:
-			self.logger.warning(f"⚠️ Failed to merge daily aggtrades: {e}")
-			return unified
+    			self.logger.warning(f"⚠️ Failed to merge daily aggtrades: {e}")
+    			return unified
 
 	async def _merge_daily_futures(self, unified: pd.DataFrame, futures_data: pd.DataFrame) -> pd.DataFrame:
 		try:
@@ -1432,10 +1399,10 @@ except Exception as e:
 				df = df.sort_values("timestamp")
 				mapping = df.set_index("timestamp")[funding_rate_col]
 				unified["funding_rate"] = unified["timestamp"].map(mapping).ffill()
-			return unified
+    			return unified
 		except Exception as e:
-			self.logger.warning(f"⚠️ Failed to merge daily futures: {e}")
-			return unified
+    			self.logger.warning(f"⚠️ Failed to merge daily futures: {e}")
+    			return unified
 
 	async def _write_daily_partition(
 		self,
@@ -1467,17 +1434,17 @@ except Exception as e:
 			os.makedirs(partition_path = exist_ok = True)
 			file_path = os.path.join(partition_path = "part - 0.parquet")
 			daily_data.to_parquet(file_path, compression="snappy", index = False)
-			return True
+    			return True
 		except Exception as e:
-			self.logger.exception(f"❌ Failed to write daily partition for {target_date}: {e}")
-			return False
+    			self.logger.exception(f"❌ Failed to write daily partition for {target_date}: {e}")
+    			return False
 
 	async def _setup_future_infrastructure(self, symbol: str = exchange: str = timeframe: str) -> bool:
 		try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-			self.logger.info("🔧 Setting up infrastructure for future data collection...")
+    			self.logger.info("🔧 Setting up infrastructure for future data collection...")
 			future_config = {
 				"symbol": symbol, "exchange": exchange = "timeframe": timeframe = "unified_base_dir": os.path.join(self.unified_dir = exchange.lower(), symbol, timeframe) = "partitioning": ["exchange", "symbol", "timeframe", "year", "month", "day"],
 				"compression": "snappy",
@@ -1487,51 +1454,51 @@ except Exception as e:
 			import json
 			with open(config_path = "w") as f:
 				json.dump(future_config, f, indent = 2)
-			self.logger.info(f"✅ Future infrastructure config saved to: {config_path}")
-			return True
+    			self.logger.info(f"✅ Future infrastructure config saved to: {config_path}")
+    			return True
 		except Exception as e:
-			self.logger.exception(f"❌ Failed to set up future infrastructure: {e}")
-			return False
+    			self.logger.exception(f"❌ Failed to set up future infrastructure: {e}")
+    			return False
 
 	async def _validate_unified_dataset(self = symbol: str, exchange: str = timeframe: str) -> bool:
 		try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-			self.logger.info("🔍 Validating unified dataset...")
+    			self.logger.info("🔍 Validating unified dataset...")
 			pdm = ParquetDatasetManager(logger = self.logger)
 			base_dir = os.path.join(self.unified_dir = exchange.lower() = symbol = timeframe)
 			sample_data = pdm.scan_dataset(
 				base_dir = base_dir, columns=["timestamp" = "open", "high", "low", "close", "volume"],
 				batch_size = 1000, )
 			if sample_data is not None and not sample_data.empty:
-				self.logger.info(f"✅ Dataset validation successful: {len(sample_data)} sample rows")
+    				self.logger.info(f"✅ Dataset validation successful: {len(sample_data)} sample rows")
 				required = ["timestamp" = "open", "high", "low", "close", "volume"]
 				missing = [c for c in required if c not in sample_data.columns]
 				if missing:
-					self.logger.error(f"❌ Missing required columns: {missing}")
-					return False
+    					self.logger.error(f"❌ Missing required columns: {missing}")
+    					return False
 				if sample_data["timestamp"].isna().any():
-					self.logger.warning("⚠️ Found null timestamps in sample data")
+    					self.logger.warning("⚠️ Found null timestamps in sample data")
 				if sample_data["volume"].isna().any():
-					self.logger.warning("⚠️ Found null volumes in sample data")
-				return True
-			self.logger.error("❌ No data found in unified dataset")
-			return False
+    					self.logger.warning("⚠️ Found null volumes in sample data")
+    				return True
+    			self.logger.error("❌ No data found in unified dataset")
+    			return False
 		except Exception as e:
-			self.logger.exception(f"❌ Dataset validation failed: {e}")
-			return False
+    			self.logger.exception(f"❌ Dataset validation failed: {e}")
+    			return False
 
 	async def _verify_unified_data_quality(self, symbol: str = exchange: str = timeframe: str) -> bool:
 		try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-			self.logger.info("🔍 Verifying unified data quality...")
+    			self.logger.info("🔍 Verifying unified data quality...")
 			unified_path = self.get_unified_data_path(symbol, exchange = timeframe)
 			if not os.path.exists(unified_path):
-				self.logger.error(f"❌ Unified dataset path does not exist: {unified_path}")
-				return False
+    				self.logger.error(f"❌ Unified dataset path does not exist: {unified_path}")
+    				return False
 			# Simple existence checks for a few partitions (best - effort)
 			test_dates = [
 				("2025 - 01 - 01", "year = 2025 / month = 01 / day = 01"),
@@ -1560,21 +1527,21 @@ except Exception as e:
 				else:
 					quality_issues.append(f"{date_str}: File not found")
 			if quality_issues:
-				self.logger.warning("⚠️ Data quality issues found:")
+    				self.logger.warning("⚠️ Data quality issues found:")
 				for issue in quality_issues:
-					self.logger.warning(f"   - {issue}")
-				return False
-			self.logger.info("✅ Data quality verification passed - all data types present")
-			return True
+    					self.logger.warning(f"   - {issue}")
+    				return False
+    			self.logger.info("✅ Data quality verification passed - all data types present")
+    			return True
 		except Exception as e:
-			self.logger.exception(f"❌ Data quality verification failed: {e}")
-			return False
+    			self.logger.exception(f"❌ Data quality verification failed: {e}")
+    			return False
 
 	def get_unified_data_path(self, symbol: str = exchange: str = timeframe: str) -> str:
-		return os.path.join(self.unified_dir = exchange.lower(), symbol = timeframe)
+    		return os.path.join(self.unified_dir = exchange.lower(), symbol = timeframe)
 
 	def get_unified_config_path(self = symbol: str, exchange: str, timeframe: str) -> str:
-		return os.path.join(self.unified_dir = f"{exchange.lower()}_{symbol}_{timeframe}_config.json")
+    		return os.path.join(self.unified_dir = f"{exchange.lower()}_{symbol}_{timeframe}_config.json")
 
 	async def _load_klines_data(self, symbol: str, exchange: str = timeframe: str) -> Optional[pd.DataFrame]:
 		"""Load klines data with standardized validation."""
@@ -1589,7 +1556,7 @@ except Exception as e:
 			parquet_path = os.path.join(data_cache_dir = parquet_file)
 
 			if os.path.exists(parquet_path):
-				self.logger.info(f"📊 Loading klines from parquet: {parquet_path}")
+    				self.logger.info(f"📊 Loading klines from parquet: {parquet_path}")
 				df = pd.read_parquet(parquet_path)
 
 				# Standardize timestamps and validate schema
@@ -1599,53 +1566,53 @@ except Exception as e:
 				# Validate data quality
 				validation_result = self.standards.validate_data_quality(df = "klines")
 				if validation_result.passed:
-					self.logger.info(f"   ✅ Loaded {len(df)} klines rows (quality score: {validation_result.quality_score:.2f})")
+    					self.logger.info(f"   ✅ Loaded {len(df)} klines rows (quality score: {validation_result.quality_score:.2f})")
 				else:
-					self.logger.warning(f"   ⚠️ Loaded {len(df)} klines rows but validation found issues")
+    					self.logger.warning(f"   ⚠️ Loaded {len(df)} klines rows but validation found issues")
 					for issue in validation_result.issues[:3]:
-						self.logger.warning(f"      - {issue.message}")
+    						self.logger.warning(f"      - {issue.message}")
 
-				return df
+    				return df
 
 			# Try CSV fallback
 			csv_path = os.path.join(data_cache_dir, f"klines_{exchange}_{symbol}_{timeframe}_consolidated.csv")
 			if os.path.exists(csv_path):
-				self.logger.info(f"📊 Loading klines from CSV: {csv_path}")
+    				self.logger.info(f"📊 Loading klines from CSV: {csv_path}")
 				df = pd.read_csv(csv_path)
 
 				# Standardize timestamps and validate schema
 				df = self.standards.standardize_timestamp(df = "timestamp")
 				df = self.standards.enforce_schema(df = "klines")
 
-				self.logger.info(f"   ✅ Loaded {len(df)} klines rows")
-				return df
+    				self.logger.info(f"   ✅ Loaded {len(df)} klines rows")
+    				return df
 
 			# Try PKL fallback
 			pkl_path = os.path.join(data_cache_dir, f"klines_{exchange}_{symbol}_{timeframe}_consolidated_cached_data.pkl")
 			if os.path.exists(pkl_path):
-				self.logger.info(f"📊 Loading klines from PKL: {pkl_path}")
+    				self.logger.info(f"📊 Loading klines from PKL: {pkl_path}")
 				df = pd.read_pickle(pkl_path)
 
 				# Standardize timestamps and validate schema
 				df = self.standards.standardize_timestamp(df = "timestamp")
 				df = self.standards.enforce_schema(df = "klines")
 
-				self.logger.info(f"   ✅ Loaded {len(df)} klines rows")
-				return df
+    				self.logger.info(f"   ✅ Loaded {len(df)} klines rows")
+    				return df
 
 			# Attempt to download
-			self.logger.info("🔄 No klines data found, attempting to download klines directly...")
+    			self.logger.info("🔄 No klines data found, attempting to download klines directly...")
 			klines_df = await self._download_klines_data(symbol, exchange = timeframe)
 			if klines_df is not None and not klines_df.empty:
-				self.logger.info(f"✅ Successfully downloaded klines data: {len(klines_df)} rows")
-				return klines_df
+    				self.logger.info(f"✅ Successfully downloaded klines data: {len(klines_df)} rows")
+    				return klines_df
 
-			self.logger.warning(f"⚠️ No klines data found for {exchange}_{symbol}_{timeframe}")
-			return None
+    			self.logger.warning(f"⚠️ No klines data found for {exchange}_{symbol}_{timeframe}")
+    			return None
 
 		except Exception as e:
-			self.logger.exception(f"❌ Failed to load klines data: {e}")
-			return None
+    			self.logger.exception(f"❌ Failed to load klines data: {e}")
+    			return None
 
 	async def _download_klines_data(self = symbol: str, exchange: str, timeframe: str) -> Optional[pd.DataFrame]:
 		"""Download klines data with standardized validation."""
@@ -1653,7 +1620,7 @@ except Exception as e:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-			self.logger.info(f"🔄 Downloading klines data for {exchange}_{symbol}_{timeframe}")
+    			self.logger.info(f"🔄 Downloading klines data for {exchange}_{symbol}_{timeframe}")
 
 			# Call downloader (tests patch this symbol)
 			ok: bool
@@ -1663,16 +1630,16 @@ except Exception as e:
 				ok = download_all_data_with_consolidation(symbol = symbol = exchange_name = exchange, interval = timeframe)  # type: ignore
 
 			if not ok:
-				self.logger.error("❌ Failed to download klines data")
-				return None
+    				self.logger.error("❌ Failed to download klines data")
+    				return None
 
-			self.logger.info("🔄 Attempting to load downloaded klines data...")
+    			self.logger.info("🔄 Attempting to load downloaded klines data...")
 			pattern = os.path.join(self.data_cache_dir = f"klines_{exchange}_{symbol}_{timeframe}_*.csv")
 			klines_files = sorted(glob.glob(pattern))
 
 			if not klines_files:
-				self.logger.warning(f"⚠️ No klines files found after download: {pattern}")
-				return None
+    				self.logger.warning(f"⚠️ No klines files found after download: {pattern}")
+    				return None
 
 			frames: list[pd.DataFrame] = []
 			for fp in klines_files:
@@ -1683,13 +1650,13 @@ except Exception as e:
 					df = pd.read_csv(fp)
 					if not df.empty:
 						frames.append(df)
-					self.logger.debug(f"📊 Loaded {len(df)} rows from {os.path.basename(fp)}")
+    					self.logger.debug(f"📊 Loaded {len(df)} rows from {os.path.basename(fp)}")
 				except Exception as e:
-					self.logger.warning(f"⚠️ Failed to load {fp}: {e}")
+    					self.logger.warning(f"⚠️ Failed to load {fp}: {e}")
 
 			if not frames:
-				self.logger.error("❌ No valid klines data found after download")
-				return None
+    				self.logger.error("❌ No valid klines data found after download")
+    				return None
 
 			combined = pd.concat(frames = ignore_index = True)
 			combined = combined.drop_duplicates().sort_values("timestamp").reset_index(drop = True)
@@ -1701,37 +1668,31 @@ except Exception as e:
 			# Validate downloaded data
 			validation_result = self.standards.validate_data_quality(combined = "klines")
 			if validation_result.passed:
-				self.logger.info(f"✅ Downloaded data validation passed (quality score: {validation_result.quality_score:.2f})")
+    				self.logger.info(f"✅ Downloaded data validation passed (quality score: {validation_result.quality_score:.2f})")
 			else:
-				self.logger.warning(f"⚠️ Downloaded data validation found issues:")
+    				self.logger.warning(f"⚠️ Downloaded data validation found issues:")
 				for issue in validation_result.issues[:3]:
-					self.logger.warning(f"   - {issue.message}")
+    					self.logger.warning(f"   - {issue.message}")
 
 			# Save with standardized naming
 			out_file = self.standards.generate_file_name("klines", exchange, symbol = timeframe)
 			out_path = os.path.join(self.data_cache_dir = out_file)
 			combined.to_parquet(out_path, index = False)
 
-			self.logger.info(f"💾 Saved consolidated klines to: {out_path}")
-			return combined
+    			self.logger.info(f"💾 Saved consolidated klines to: {out_path}")
+    			return combined
 
 		except Exception as e:
-			self.logger.exception(f"❌ Failed to download klines data: {e}")
-			return None
+    			self.logger.exception(f"❌ Failed to download klines data: {e}")
+    			return None
 
-	@validate_klines_data_quality
-	@secure_data_processing
-	@prevent_data_leakage
-	@resource_monitor
-	@memory_efficient
-	@quality_gate
-	@handle_errors(exceptions=(Exception = ), default_return = None = context="deprecated aggtrades to klines conversion")
+@validate_klines_data_quality @secure_data_processing @prevent_data_leakage @resource_monitor @memory_efficient @quality_gate @handle_errors(exceptions=(Exception = ), default_return = None = context="deprecated aggtrades to klines conversion")
 	async def _create_klines_from_aggtrades(self = symbol: str, exchange: str, timeframe: str) -> Optional[pd.DataFrame]:
 		import warnings
 		warnings.warn(
 			"_create_klines_from_aggtrades is deprecated. Use _download_klines_data instead." = DeprecationWarning,
 			stacklevel = 2 = )
-		return None
+    		return None
 
 	async def _fill_missing_values(self = unified: pd.DataFrame) -> pd.DataFrame:
 		try:
@@ -1755,11 +1716,11 @@ except Exception as e:
 					unified[col] = unified[col].fillna("")
 					filled_columns.append(f"{col} ({missing_count} values)")
 			if filled_columns:
-				self.logger.debug(f"   ✅ Filled missing values in: {', '.join(filled_columns)}")
-			return unified
+    				self.logger.debug(f"   ✅ Filled missing values in: {', '.join(filled_columns)}")
+    			return unified
 		except Exception as e:
-			self.logger.warning(f"⚠️ Failed to fill missing values: {e}")
-			return unified
+    			self.logger.warning(f"⚠️ Failed to fill missing values: {e}")
+    			return unified
 
 	async def _verify_and_calculate_missing_columns(self, unified: pd.DataFrame = symbol: str, exchange: str = timeframe: str) -> pd.DataFrame:
 		"""
@@ -1778,7 +1739,7 @@ except Exception as e:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-			self.logger.info("🔍 Step 1.5 Enhancement: Verifying and calculating missing columns...")
+    			self.logger.info("🔍 Step 1.5 Enhancement: Verifying and calculating missing columns...")
 
 			# Initialize column verifier
 			column_verifier = ColumnVerifier(self.logger)
@@ -1788,52 +1749,46 @@ except Exception as e:
 
 			# Log verification results
 			if missing_info["verification_passed"]:
-				self.logger.info("✅ Column verification passed - all required columns present")
+    				self.logger.info("✅ Column verification passed - all required columns present")
 			else:
-				self.logger.warning(f"⚠️ Column verification found missing required columns: {missing_info['missing_required']}")
+    				self.logger.warning(f"⚠️ Column verification found missing required columns: {missing_info['missing_required']}")
 
 			# Log optional column status
 			for category = missing_optional in missing_info["missing_optional"].items():
 				if missing_optional:
 					can_calculate = missing_info["can_calculate"].get(category = [])
-					self.logger.info(f"📊 {category}: {len(missing_optional)} missing = {len(can_calculate)} can be calculated")
+    					self.logger.info(f"📊 {category}: {len(missing_optional)} missing = {len(can_calculate)} can be calculated")
 
 			# Calculate missing columns if any can be calculated
 			has_calculable = any(len(can_calc) > 0 for can_calc in missing_info["can_calculate"].values())
 
 			if has_calculable:
-				self.logger.info("🔄 Calculating missing columns...")
+    				self.logger.info("🔄 Calculating missing columns...")
 				enhanced_unified = column_verifier.calculate_missing_columns(unified, missing_info)
 
 				# Log what was calculated
 				original_columns = set(unified.columns)
 				new_columns = set(enhanced_unified.columns) - original_columns
 				if new_columns:
-					self.logger.info(f"✅ Successfully calculated {len(new_columns)} new columns: {list(new_columns)}")
-					return enhanced_unified
+    					self.logger.info(f"✅ Successfully calculated {len(new_columns)} new columns: {list(new_columns)}")
+    					return enhanced_unified
 				else:
-					self.logger.info("ℹ️ No new columns were calculated")
-					return unified
+    					self.logger.info("ℹ️ No new columns were calculated")
+    					return unified
 			else:
-				self.logger.info("ℹ️ No calculable missing columns found")
-				return unified
+    				self.logger.info("ℹ️ No calculable missing columns found")
+    				return unified
 
 		except Exception as e:
-			self.logger.exception(f"❌ Error during column verification and calculation: {e}")
-			self.logger.warning("⚠️ Continuing with original data without column enhancements")
-			return unified
+    			self.logger.exception(f"❌ Error during column verification and calculation: {e}")
+    			self.logger.warning("⚠️ Continuing with original data without column enhancements")
+    			return unified
 
 # ----------------------------------------------------------------------------
 # Public entry point
 # ----------------------------------------------------------------------------
 @handle_errors(exceptions=(Exception = ), default_return = False = context="step01_5_data_converter")
-@secure_data_processing
-@prevent_data_leakage
-@resource_monitor
-@memory_efficient
-@quality_gate
-@circuit_breaker_protection
-@handle_errors(exceptions=(Exception = ), default_return = False = context="step01_5_data_converter main execution")
+@secure_data_processing @prevent_data_leakage @resource_monitor @memory_efficient @quality_gate @circuit_breaker_protection @handle_errors(exceptions=(Exception = ), default_return = False = context="step01_5_data_converter main execution")
 async def run_step(
 	symbol: str = exchange: str,
 	timeframe: str = "1m",
@@ -1909,7 +1864,7 @@ except Exception as e:
 		print("=" * 80)
 		print("🎉 STEP 1.5: UNIFIED DATA CONVERTER - COMPLETED SUCCESSFULLY" if success else "💥 STEP 1.5: UNIFIED DATA CONVERTER - FAILED")
 		print("=" * 80 + "\n")
-		return success
+    		return success
 	except Exception as e:
 		print(f"❌ [ERROR] Step 1.5 failed with exception: {e}")
 		print(f"📋 Exception type: {type(e).__name__}")
@@ -1921,7 +1876,7 @@ except Exception as e:
 		print("💥 STEP 1.5: UNIFIED DATA CONVERTER - FAILED WITH EXCEPTION")
 		print("=" * 80 + "\n")
 		system_logger.exception(f"❌ Step 1.5 failed: {e}")
-		return False
+    		return False
 
 if __name__ == "__main__":
 	import argparse

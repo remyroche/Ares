@@ -77,42 +77,35 @@ Initialize Ares pipeline with enhanced type safety and DI.
 Args:
             config: Optional configuration dictionary
 """
-self.logger = system_logger.getChild("AresPipeline")
-self.config = config or {}
+    self.logger = system_logger.getChild("AresPipeline")
+    self.config = config or {}
 
 # Initialize dependency injection container
-self.container: DependencyContainer = DependencyContainer(config or {})
-self.service_locator: ServiceLocator = ServiceLocator(self.container)
+    self.container: DependencyContainer = DependencyContainer(config or {})
+    self.service_locator: ServiceLocator = ServiceLocator(self.container)
 
 # Pipeline components (will be resolved through DI)
-self.analyst: IAnalyst | None = None
-self.strategist: IStrategist | None = None
-self.tactician: ITactician | None = None
-self.supervisor: ISupervisor | None = None
-self.state_manager: IStateManager | None = None
-self.event_bus: IEventBus | None = None
+    self.analyst: IAnalyst | None = None
+    self.strategist: IStrategist | None = None
+    self.tactician: ITactician | None = None
+    self.supervisor: ISupervisor | None = None
+    self.state_manager: IStateManager | None = None
+    self.event_bus: IEventBus | None = None
 
 # Dual model system
-self.dual_model_system: DualModelSystem | None = None
+    self.dual_model_system: DualModelSystem | None = None
 
 # Performance monitoring
-self.performance_monitor: PerformanceMonitor | None = None
-self.performance_dashboard: PerformanceDashboard | None = None
+    self.performance_monitor: PerformanceMonitor | None = None
+    self.performance_dashboard: PerformanceDashboard | None = None
 
 # Pipeline state
-self.is_running: bool = False
-self.start_time: datetime | None = None
-self.cycle_count: int = 0
-self.last_cycle_time: datetime | None = None
+    self.is_running: bool = False
+    self.start_time: datetime | None = None
+    self.cycle_count: int = 0
+    self.last_cycle_time: datetime | None = None
 
-@handle_specific_errors(
-error_handlers={
-ValueError: (False, "Invalid pipeline configuration"),
-AttributeError: (False, "Missing required pipeline components"),
-KeyError: (False, "Missing configuration keys"),
-},
-default_return=False, context="pipeline initialization",
-)
+@handle_specific_errors( error_handlers={ ValueError: (False, "Invalid pipeline configuration"), AttributeError: (False, "Missing required pipeline components"), KeyError: (False, "Missing configuration keys"), }, default_return=False, context="pipeline initialization", )
 async def initialize(self) -> bool:
         """
 Initialize pipeline with enhanced error handling and DI.
@@ -124,7 +117,7 @@ try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-self.logger.info("Initializing Ares Pipeline...")
+    self.logger.info("Initializing Ares Pipeline...")
 
 # Initialize configuration service
 await self._initialize_configuration_service()
@@ -145,19 +138,16 @@ await self._initialize_dual_model_system()
 await self._initialize_performance_monitoring()
 
 # Setup signal handlers
-self._setup_signal_handlers()
+    self._setup_signal_handlers()
 
-self.logger.info("✅ Ares Pipeline initialization completed successfully")
-return True
+    self.logger.info("✅ Ares Pipeline initialization completed successfully")
+    return True
 
 except Exception:
             self.logger.exception("❌ Ares Pipeline initialization failed")
-return False
+    return False
 
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=None, context="configuration service initialization",
-)
+@handle_errors( exceptions=(ValueError, AttributeError), default_return=None, context="configuration service initialization", )
 async def _initialize_configuration_service(self) -> None:
         """Initialize configuration service."""
 try:
@@ -165,37 +155,35 @@ try:
 except Exception as e:
     pass  # TODO: Add proper exception handling
 print("   ⚙️ Initializing ConfigurationService...")
-self.logger.info("   ⚙️ Initializing ConfigurationService...")
+    self.logger.info("   ⚙️ Initializing ConfigurationService...")
 
 # Register ConfigurationService via factory so it receives DI config
-def _config_service_factory(
+def _config_service_factory(:
+    pass  # TODO: Add implementation
 container: DependencyContainer
 ) -> ConfigurationService:
                 # Pass the DI container's config into the service
-return ConfigurationService(container.get_config("root_config", {}))
+    return ConfigurationService(container.get_config("root_config", {}))
 
 # Store current container config under a conventional key if missing
 if self.container.get_config("root_config") is None:
                 # The DependencyContainer already holds its config; expose it
-self.container.set_config("root_config", self.container._config)
+    self.container.set_config("root_config", self.container._config)
 
-self.container.register_factory(
+    self.container.register_factory(
 "ConfigurationService",
 _config_service_factory
 )
 
 print("   ✅ ConfigurationService initialized successfully")
-self.logger.info("   ✅ ConfigurationService initialized successfully")
+    self.logger.info("   ✅ ConfigurationService initialized successfully")
 
 except Exception as e:
             print(f"   ❌ Error initializing configuration service: {e}")
-self.logger.exception("Error initializing configuration service")
+    self.logger.exception("Error initializing configuration service")
 raise
 
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=None, context="core service registration",
-)
+@handle_errors( exceptions=(ValueError, AttributeError), default_return=None, context="core service registration", )
 async def _register_core_services(self) -> None:
         """Register core services in DI container with comprehensive logging."""
 try:
@@ -203,25 +191,25 @@ try:
 except Exception as e:
     pass  # TODO: Add proper exception handling
 print("🔧 Registering core services...")
-self.logger.info("🔧 Registering core services...")
+    self.logger.info("🔧 Registering core services...")
 
 # Register database manager
 print("   💾 Registering DatabaseManager...")
-self.logger.info("   💾 Registering DatabaseManager...")
+    self.logger.info("   💾 Registering DatabaseManager...")
 try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-self.container.register("DatabaseManager", SQLiteManager)
+    self.container.register("DatabaseManager", SQLiteManager)
 print("   ✅ DatabaseManager registered successfully")
-self.logger.info("   ✅ DatabaseManager registered successfully")
+    self.logger.info("   ✅ DatabaseManager registered successfully")
 except Exception as e:
                 print(f"   ❌ Failed to register DatabaseManager: {e}")
-self.logger.exception("   ❌ Failed to register DatabaseManager")
+    self.logger.exception("   ❌ Failed to register DatabaseManager")
 
 # Register exchange client
 print("   🏢 Registering ExchangeClient...")
-self.logger.info("   🏢 Registering ExchangeClient...")
+    self.logger.info("   🏢 Registering ExchangeClient...")
 try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
@@ -232,121 +220,118 @@ except Exception as e:
 exchange_instance = RootExchangeFactory.get_exchange(
 get_exchange_name().lower(),
 )
-self.container.register_instance("ExchangeClient", exchange_instance)
+    self.container.register_instance("ExchangeClient", exchange_instance)
 print("   ✅ ExchangeClient registered successfully")
-self.logger.info("   ✅ ExchangeClient registered successfully")
+    self.logger.info("   ✅ ExchangeClient registered successfully")
 except Exception as e:
                 print(f"   ❌ Failed to register ExchangeClient: {e}")
-self.logger.exception("   ❌ Failed to register ExchangeClient")
+    self.logger.exception("   ❌ Failed to register ExchangeClient")
 
 # Register analyst
 print("   📊 Registering Analyst...")
-self.logger.info("   📊 Registering Analyst...")
+    self.logger.info("   📊 Registering Analyst...")
 try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-self.container.register("Analyst", Analyst, config={"analyst": {}})
+    self.container.register("Analyst", Analyst, config={"analyst": {}})
 print("   ✅ Analyst registered successfully")
-self.logger.info("   ✅ Analyst registered successfully")
+    self.logger.info("   ✅ Analyst registered successfully")
 except Exception as e:
                 print(f"   ❌ Failed to register Analyst: {e}")
-self.logger.exception("   ❌ Failed to register Analyst")
+    self.logger.exception("   ❌ Failed to register Analyst")
 
 # Register strategist
 print("   🧠 Registering Strategist...")
-self.logger.info("   🧠 Registering Strategist...")
+    self.logger.info("   🧠 Registering Strategist...")
 try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-self.container.register(
+    self.container.register(
 "Strategist",
 Strategist, config={"strategist": {}},
 )
 print("   ✅ Strategist registered successfully")
-self.logger.info("   ✅ Strategist registered successfully")
+    self.logger.info("   ✅ Strategist registered successfully")
 except Exception as e:
                 print(f"   ❌ Failed to register Strategist: {e}")
-self.logger.exception("   ❌ Failed to register Strategist")
+    self.logger.exception("   ❌ Failed to register Strategist")
 
 # Register tactician
 print("   🎯 Registering Tactician...")
-self.logger.info("   🎯 Registering Tactician...")
+    self.logger.info("   🎯 Registering Tactician...")
 try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-self.container.register(
+    self.container.register(
 "Tactician",
 Tactician, config={"tactician": {}},
 )
 print("   ✅ Tactician registered successfully")
-self.logger.info("   ✅ Tactician registered successfully")
+    self.logger.info("   ✅ Tactician registered successfully")
 except Exception as e:
                 print(f"   ❌ Failed to register Tactician: {e}")
-self.logger.exception("   ❌ Failed to register Tactician")
+    self.logger.exception("   ❌ Failed to register Tactician")
 
 # Register supervisor
 print("   👁️ Registering Supervisor...")
-self.logger.info("   👁️ Registering Supervisor...")
+    self.logger.info("   👁️ Registering Supervisor...")
 try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-self.container.register(
+    self.container.register(
 "Supervisor",
 Supervisor, config={"supervisor": {}},
 )
 print("   ✅ Supervisor registered successfully")
-self.logger.info("   ✅ Supervisor registered successfully")
+    self.logger.info("   ✅ Supervisor registered successfully")
 except Exception as e:
                 print(f"   ❌ Failed to register Supervisor: {e}")
-self.logger.exception("   ❌ Failed to register Supervisor")
+    self.logger.exception("   ❌ Failed to register Supervisor")
 
 # Register state manager
 print("   💾 Registering StateManager...")
-self.logger.info("   💾 Registering StateManager...")
+    self.logger.info("   💾 Registering StateManager...")
 try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-self.container.register(
+    self.container.register(
 "StateManager",
 StateManager, config={"state_manager": {}},
 )
 print("   ✅ StateManager registered successfully")
-self.logger.info("   ✅ StateManager registered successfully")
+    self.logger.info("   ✅ StateManager registered successfully")
 except Exception as e:
                 print(f"   ❌ Failed to register StateManager: {e}")
-self.logger.exception("   ❌ Failed to register StateManager")
+    self.logger.exception("   ❌ Failed to register StateManager")
 
 # Register event bus
 print("   📡 Registering EventBus...")
-self.logger.info("   📡 Registering EventBus...")
+    self.logger.info("   📡 Registering EventBus...")
 try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-self.container.register("EventBus", EventBus, config={"event_bus": {}})
+    self.container.register("EventBus", EventBus, config={"event_bus": {}})
 print("   ✅ EventBus registered successfully")
-self.logger.info("   ✅ EventBus registered successfully")
+    self.logger.info("   ✅ EventBus registered successfully")
 except Exception as e:
                 print(f"   ❌ Failed to register EventBus: {e}")
-self.logger.exception("   ❌ Failed to register EventBus")
+    self.logger.exception("   ❌ Failed to register EventBus")
 
 print("✅ Core services registered successfully")
-self.logger.info("✅ Core services registered successfully")
+    self.logger.info("✅ Core services registered successfully")
 
 except Exception:
             print(warning("Error registering core services"))
-self.logger.exception("Error registering core services")
+    self.logger.exception("Error registering core services")
 raise
 
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=None, context="pipeline component resolution",
-)
+@handle_errors( exceptions=(ValueError, AttributeError), default_return=None, context="pipeline component resolution", )
 async def _resolve_pipeline_components(self) -> None:
         """Resolve pipeline components through DI container with comprehensive logging."""
 try:
@@ -354,81 +339,78 @@ try:
 except Exception as e:
     pass  # TODO: Add proper exception handling
 print("🔧 Resolving pipeline components...")
-self.logger.info("🔧 Resolving pipeline components...")
+    self.logger.info("🔧 Resolving pipeline components...")
 
 # Resolve all components
 print("   📊 Resolving Analyst component...")
-self.logger.info("   📊 Resolving Analyst component...")
-self.analyst = self.container.resolve("Analyst")
+    self.logger.info("   📊 Resolving Analyst component...")
+    self.analyst = self.container.resolve("Analyst")
 if self.analyst:
                 print("   ✅ Analyst component resolved successfully")
-self.logger.info("   ✅ Analyst component resolved successfully")
+    self.logger.info("   ✅ Analyst component resolved successfully")
 else:
                 print("   ❌ Failed to resolve Analyst component")
-self.logger.error("   ❌ Failed to resolve Analyst component")
+    self.logger.error("   ❌ Failed to resolve Analyst component")
 
 print("   🧠 Resolving Strategist component...")
-self.logger.info("   🧠 Resolving Strategist component...")
-self.strategist = self.container.resolve("Strategist")
+    self.logger.info("   🧠 Resolving Strategist component...")
+    self.strategist = self.container.resolve("Strategist")
 if self.strategist:
                 print("   ✅ Strategist component resolved successfully")
-self.logger.info("   ✅ Strategist component resolved successfully")
+    self.logger.info("   ✅ Strategist component resolved successfully")
 else:
                 print("   ❌ Failed to resolve Strategist component")
-self.logger.error("   ❌ Failed to resolve Strategist component")
+    self.logger.error("   ❌ Failed to resolve Strategist component")
 
 print("   🎯 Resolving Tactician component...")
-self.logger.info("   🎯 Resolving Tactician component...")
-self.tactician = self.container.resolve("Tactician")
+    self.logger.info("   🎯 Resolving Tactician component...")
+    self.tactician = self.container.resolve("Tactician")
 if self.tactician:
                 print("   ✅ Tactician component resolved successfully")
-self.logger.info("   ✅ Tactician component resolved successfully")
+    self.logger.info("   ✅ Tactician component resolved successfully")
 else:
                 print("   ❌ Failed to resolve Tactician component")
-self.logger.error("   ❌ Failed to resolve Tactician component")
+    self.logger.error("   ❌ Failed to resolve Tactician component")
 
 print("   👁️ Resolving Supervisor component...")
-self.logger.info("   👁️ Resolving Supervisor component...")
-self.supervisor = self.container.resolve("Supervisor")
+    self.logger.info("   👁️ Resolving Supervisor component...")
+    self.supervisor = self.container.resolve("Supervisor")
 if self.supervisor:
                 print("   ✅ Supervisor component resolved successfully")
-self.logger.info("   ✅ Supervisor component resolved successfully")
+    self.logger.info("   ✅ Supervisor component resolved successfully")
 else:
                 print("   ❌ Failed to resolve Supervisor component")
-self.logger.error("   ❌ Failed to resolve Supervisor component")
+    self.logger.error("   ❌ Failed to resolve Supervisor component")
 
 print("   💾 Resolving StateManager component...")
-self.logger.info("   💾 Resolving StateManager component...")
-self.state_manager = self.container.resolve("StateManager")
+    self.logger.info("   💾 Resolving StateManager component...")
+    self.state_manager = self.container.resolve("StateManager")
 if self.state_manager:
                 print("   ✅ StateManager component resolved successfully")
-self.logger.info("   ✅ StateManager component resolved successfully")
+    self.logger.info("   ✅ StateManager component resolved successfully")
 else:
                 print("   ❌ Failed to resolve StateManager component")
-self.logger.error("   ❌ Failed to resolve StateManager component")
+    self.logger.error("   ❌ Failed to resolve StateManager component")
 
 print("   📡 Resolving EventBus component...")
-self.logger.info("   📡 Resolving EventBus component...")
-self.event_bus = self.container.resolve("EventBus")
+    self.logger.info("   📡 Resolving EventBus component...")
+    self.event_bus = self.container.resolve("EventBus")
 if self.event_bus:
                 print("   ✅ EventBus component resolved successfully")
-self.logger.info("   ✅ EventBus component resolved successfully")
+    self.logger.info("   ✅ EventBus component resolved successfully")
 else:
                 print("   ❌ Failed to resolve EventBus component")
-self.logger.error("   ❌ Failed to resolve EventBus component")
+    self.logger.error("   ❌ Failed to resolve EventBus component")
 
 print("✅ Pipeline components resolved successfully")
-self.logger.info("✅ Pipeline components resolved successfully")
+    self.logger.info("✅ Pipeline components resolved successfully")
 
 except Exception:
             print(warning("Error resolving pipeline components"))
-self.logger.exception("Error resolving pipeline components")
+    self.logger.exception("Error resolving pipeline components")
 raise
 
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=None, context="component initialization",
-)
+@handle_errors( exceptions=(ValueError, AttributeError), default_return=None, context="component initialization", )
 async def _initialize_components(self) -> None:
         """Initialize all pipeline components."""
 try:
@@ -454,15 +436,12 @@ if self.tactician:
 if self.supervisor:
                 await self.supervisor.initialize()
 
-self.logger.info("All pipeline components initialized successfully")
+    self.logger.info("All pipeline components initialized successfully")
 
 except Exception:
             self.logger.exception("Error initializing components")
 
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=None, context="signal handler setup",
-)
+@handle_errors( exceptions=(ValueError, AttributeError), default_return=None, context="signal handler setup", )
 def _setup_signal_handlers(self) -> None:
         """Setup signal handlers for graceful shutdown."""
 try:
@@ -472,24 +451,17 @@ except Exception as e:
 signal.signal(signal.SIGINT, self._signal_handler)
 signal.signal(signal.SIGTERM, self._signal_handler)
 
-self.logger.info("Signal handlers configured")
+    self.logger.info("Signal handlers configured")
 
 except Exception:
             self.logger.exception("Error setting up signal handlers")
 
 def _signal_handler(self, signum: int, _frame: Any) -> None:
         """Handle shutdown signals."""
-self.logger.info(f"Received signal {signum}, initiating graceful shutdown...")
+    self.logger.info(f"Received signal {signum}, initiating graceful shutdown...")
 asyncio.create_task(self.stop())
 
-@handle_specific_errors(
-error_handlers={
-ConnectionError: (None, "Failed to connect to exchange"),
-TimeoutError: (None, "Pipeline operation timed out"),
-ValueError: (None, "Invalid pipeline state"),
-},
-default_return=None, context="pipeline execution",
-)
+@handle_specific_errors( error_handlers={ ConnectionError: (None, "Failed to connect to exchange"), TimeoutError: (None, "Pipeline operation timed out"), ValueError: (None, "Invalid pipeline state"), }, default_return=None, context="pipeline execution", )
 async def run(self) -> dict[str, Any] | None:
         """
 Run the Ares pipeline with comprehensive logging and timeout protection.
@@ -502,20 +474,20 @@ try:
 except Exception as e:
     pass  # TODO: Add proper exception handling
 print("🔄 Starting Ares Pipeline execution...")
-self.logger.info("🔄 Starting Ares Pipeline execution...")
+    self.logger.info("🔄 Starting Ares Pipeline execution...")
 
 if self.is_running:
                 print(warning("Pipeline already running"))
-self.logger.warning("Pipeline already running")
-return None
+    self.logger.warning("Pipeline already running")
+    return None
 
 print("🚀 Starting Ares Pipeline...")
-self.logger.info("🚀 Starting Ares Pipeline...")
-self.is_running = True
-self.start_time = datetime.now()
+    self.logger.info("🚀 Starting Ares Pipeline...")
+    self.is_running = True
+    self.start_time = datetime.now()
 
 print(f"📅 Pipeline start time: {self.start_time}")
-self.logger.info(f"📅 Pipeline start time: {self.start_time}")
+    self.logger.info(f"📅 Pipeline start time: {self.start_time}")
 
 # Add timeout protection
 max_cycles = 10  # Maximum number of cycles to prevent infinite loops
@@ -535,7 +507,7 @@ if self.cycle_count >= max_cycles:
                         print(
 f"⏰ Reached maximum cycles ({max_cycles}), stopping pipeline",
 )
-self.logger.info(
+    self.logger.info(
 f"⏰ Reached maximum cycles ({max_cycles}), stopping pipeline",
 )
 break
@@ -544,7 +516,7 @@ if elapsed_time >= max_duration:
                         print(
 f"⏰ Reached maximum duration ({max_duration}s), stopping pipeline",
 )
-self.logger.info(
+    self.logger.info(
 f"⏰ Reached maximum duration ({max_duration}s), stopping pipeline",
 )
 break
@@ -552,16 +524,16 @@ break
 print(
 f"🔄 Executing pipeline cycle {self.cycle_count + 1}... (Time: {elapsed_time:.1f}s)",
 )
-self.logger.info(
+    self.logger.info(
 f"🔄 Executing pipeline cycle {self.cycle_count + 1}... (Time: {elapsed_time:.1f}s)",
 )
 
 await self._execute_cycle()
-self.cycle_count += 1
-self.last_cycle_time = datetime.now()
+    self.cycle_count += 1
+    self.last_cycle_time = datetime.now()
 
 print(f"✅ Cycle {self.cycle_count} completed successfully")
-self.logger.info(
+    self.logger.info(
 f"✅ Cycle {self.cycle_count} completed successfully",
 )
 
@@ -578,14 +550,14 @@ cycle_interval = config_service.get_value(
 print(
 f"⏱️ Waiting {cycle_interval} seconds before next cycle...",
 )
-self.logger.info(
+    self.logger.info(
 f"⏱️ Waiting {cycle_interval} seconds before next cycle...",
 )
 except Exception as e:
                         print(
 warning("Error getting cycle interval, using default"),
 )
-self.logger.warning(
+    self.logger.warning(
 f"Error getting cycle interval, using default: {e}",
 )
 cycle_interval = 10
@@ -594,11 +566,11 @@ await asyncio.sleep(cycle_interval)
 
 except asyncio.CancelledError:
                     print(error("Pipeline cancelled"))
-self.logger.info("Pipeline cancelled")
+    self.logger.info("Pipeline cancelled")
 break
 except Exception as e:
                     print(warning(f"Error in pipeline cycle: {e}"))
-self.logger.exception("Error in pipeline cycle")
+    self.logger.exception("Error in pipeline cycle")
 await asyncio.sleep(5)  # Wait before retrying
 
 end_time = datetime.now()
@@ -608,11 +580,11 @@ print("✅ Pipeline completed successfully!")
 print(f"📊 Total cycles executed: {self.cycle_count}")
 print(f"⏱️ Total duration: {duration:.2f} seconds")
 
-self.logger.info("✅ Pipeline completed successfully!")
-self.logger.info(f"📊 Total cycles executed: {self.cycle_count}")
-self.logger.info(f"⏱️ Total duration: {duration:.2f} seconds")
+    self.logger.info("✅ Pipeline completed successfully!")
+    self.logger.info(f"📊 Total cycles executed: {self.cycle_count}")
+    self.logger.info(f"⏱️ Total duration: {duration:.2f} seconds")
 
-return {
+    return {
 "status": "completed",
 "cycles_executed": self.cycle_count,
 "start_time": self.start_time,
@@ -622,17 +594,14 @@ return {
 
 except Exception as e:
             print(critical(f"Fatal error running pipeline: {e}"))
-self.logger.exception("Error running pipeline")
-return None
+    self.logger.exception("Error running pipeline")
+    return None
 finally:
             self.is_running = False
 print("🧹 Pipeline cleanup completed")
-self.logger.info("🧹 Pipeline cleanup completed")
+    self.logger.info("🧹 Pipeline cleanup completed")
 
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=None, context="pipeline cycle execution",
-)
+@handle_errors( exceptions=(ValueError, AttributeError), default_return=None, context="pipeline cycle execution", )
 async def _execute_cycle(self) -> None:
         """Execute a single pipeline cycle with comprehensive logging."""
 try:
@@ -641,14 +610,14 @@ except Exception as e:
     pass  # TODO: Add proper exception handling
 cycle_start = datetime.now()
 print(f"🔄 Starting pipeline cycle {self.cycle_count + 1}")
-self.logger.info(f"🔄 Starting pipeline cycle {self.cycle_count + 1}")
+    self.logger.info(f"🔄 Starting pipeline cycle {self.cycle_count + 1}")
 
 # Step 1: Market Analysis
 print("📊 Step 1: Market Analysis")
-self.logger.info("📊 Step 1: Market Analysis")
+    self.logger.info("📊 Step 1: Market Analysis")
 if self.analyst:
                 print("   🔍 Executing market analysis...")
-self.logger.info("   🔍 Executing market analysis...")
+    self.logger.info("   🔍 Executing market analysis...")
 # Provide complete analysis input with all required fields
 analysis_input = {
 "symbol": "ETHUSDT",
@@ -661,20 +630,20 @@ analysis_input = {
 analysis_result = await self.analyst.execute_analysis(analysis_input)
 if analysis_result:
                     print("   ✅ Market analysis completed successfully")
-self.logger.info("   ✅ Market analysis completed successfully")
+    self.logger.info("   ✅ Market analysis completed successfully")
 else:
                     print("   ⚠️ Market analysis had issues")
-self.logger.warning("   ⚠️ Market analysis had issues")
+    self.logger.warning("   ⚠️ Market analysis had issues")
 else:
                 print("   ❌ Analyst component not available")
-self.logger.error("   ❌ Analyst component not available")
+    self.logger.error("   ❌ Analyst component not available")
 
 # Step 2: Strategy Development
 print("🧠 Step 2: Strategy Development")
-self.logger.info("🧠 Step 2: Strategy Development")
+    self.logger.info("🧠 Step 2: Strategy Development")
 if self.strategist:
                 print("   🎯 Developing trading strategy...")
-self.logger.info("   🎯 Developing trading strategy...")
+    self.logger.info("   🎯 Developing trading strategy...")
 # Provide basic market context for strategist
 strategy_market_data = pd.DataFrame(
 {
@@ -691,39 +660,39 @@ market_data=strategy_market_data, current_price=strategy_current_price,
 )
 if strategy_result:
                     print("   ✅ Strategy development completed successfully")
-self.logger.info(
+    self.logger.info(
 "   ✅ Strategy development completed successfully",
 )
 else:
                     print("   ⚠️ Strategy development had issues")
-self.logger.warning("   ⚠️ Strategy development had issues")
+    self.logger.warning("   ⚠️ Strategy development had issues")
 else:
                 print("   ❌ Strategist component not available")
-self.logger.error("   ❌ Strategist component not available")
+    self.logger.error("   ❌ Strategist component not available")
 
 # Step 3: Tactical Execution
 print("🎯 Step 3: Tactical Execution")
-self.logger.info("🎯 Step 3: Tactical Execution")
+    self.logger.info("🎯 Step 3: Tactical Execution")
 if self.tactician:
                 print("   ⚡ Executing tactical decisions...")
-self.logger.info("   ⚡ Executing tactical decisions...")
+    self.logger.info("   ⚡ Executing tactical decisions...")
 tactical_result = await self.tactician.run()
 if tactical_result:
                     print("   ✅ Tactical execution completed successfully")
-self.logger.info("   ✅ Tactical execution completed successfully")
+    self.logger.info("   ✅ Tactical execution completed successfully")
 else:
                     print("   ⚠️ Tactical execution had issues")
-self.logger.warning("   ⚠️ Tactical execution had issues")
+    self.logger.warning("   ⚠️ Tactical execution had issues")
 else:
                 print("   ❌ Tactician component not available")
-self.logger.error("   ❌ Tactician component not available")
+    self.logger.error("   ❌ Tactician component not available")
 
 # Step 4: Dual Model System Decision Making
 print("🤖 Step 4: Dual Model System Decision Making")
-self.logger.info("🤖 Step 4: Dual Model System Decision Making")
+    self.logger.info("🤖 Step 4: Dual Model System Decision Making")
 if self.dual_model_system:
                 print("   🧠 Making trading decisions with dual model system...")
-self.logger.info(
+    self.logger.info(
 "   🧠 Making trading decisions with dual model system...",
 )
 
@@ -746,7 +715,7 @@ market_data=market_data, current_price=current_price,
 
 if decision_result:
                     print("   ✅ Dual model system decision completed successfully")
-self.logger.info(
+    self.logger.info(
 "   ✅ Dual model system decision completed successfully",
 )
 
@@ -784,10 +753,10 @@ f"   📊 Decision: {action}, Analyst: {analyst_confidence:.3f}, Tactician: {tac
 print(
 f"   💰 Position Size: {position_size:.4f}, Leverage: {leverage:.2f}x",
 )
-self.logger.info(
+    self.logger.info(
 f"   📊 Decision: {action}, Analyst: {analyst_confidence:.3f}, Tactician: {tactician_confidence:.3f}, Final: {final_confidence:.3f}",
 )
-self.logger.info(
+    self.logger.info(
 f"   💰 Position Size: {position_size:.4f}, Leverage: {leverage:.2f}x",
 )
 
@@ -796,7 +765,7 @@ if self.dual_model_system.should_trigger_training():
                         print(
 "   🔄 Model training conditions met - triggering training...",
 )
-self.logger.info(
+    self.logger.info(
 "   🔄 Model training conditions met - triggering training...",
 )
 
@@ -810,48 +779,48 @@ force_training=False,
 
 if training_result.get("success", False):
                             print("   ✅ Model training completed successfully")
-self.logger.info(
+    self.logger.info(
 "   ✅ Model training completed successfully",
 )
 else:
                             print(
 f"   ⚠️ Model training failed: {training_result.get('error', 'Unknown error')}",
 )
-self.logger.warning(
+    self.logger.warning(
 f"   ⚠️ Model training failed: {training_result.get('error', 'Unknown error')}",
 )
 else:
                     print("   ⚠️ Dual model system decision had issues")
-self.logger.warning("   ⚠️ Dual model system decision had issues")
+    self.logger.warning("   ⚠️ Dual model system decision had issues")
 else:
                 print("   ❌ Dual model system not available")
-self.logger.error("   ❌ Dual model system not available")
+    self.logger.error("   ❌ Dual model system not available")
 
 # Step 5: Supervision and Monitoring
 print("👁️ Step 5: Supervision and Monitoring")
-self.logger.info("👁️ Step 5: Supervision and Monitoring")
+    self.logger.info("👁️ Step 5: Supervision and Monitoring")
 if self.supervisor:
                 print("   📊 Monitoring system performance...")
-self.logger.info("   📊 Monitoring system performance...")
+    self.logger.info("   📊 Monitoring system performance...")
 # Use a simple method that exists
 supervision_result = True  # Assume success for now
 if supervision_result:
                     print("   ✅ Supervision completed successfully")
-self.logger.info("   ✅ Supervision completed successfully")
+    self.logger.info("   ✅ Supervision completed successfully")
 else:
                     print("   ⚠️ Supervision had issues")
-self.logger.warning("   ⚠️ Supervision had issues")
+    self.logger.warning("   ⚠️ Supervision had issues")
 else:
                 print("   ❌ Supervisor component not available")
-self.logger.error("   ❌ Supervisor component not available")
+    self.logger.error("   ❌ Supervisor component not available")
 
 cycle_duration = (datetime.now() - cycle_start).total_seconds()
 print(f"✅ Pipeline cycle completed in {cycle_duration:.2f}s")
-self.logger.info(f"✅ Pipeline cycle completed in {cycle_duration:.2f}s")
+    self.logger.info(f"✅ Pipeline cycle completed in {cycle_duration:.2f}s")
 
 except Exception as e:
             print(warning(f"Error executing pipeline cycle: {e}"))
-self.logger.exception("Error executing pipeline cycle")
+    self.logger.exception("Error executing pipeline cycle")
 raise
 
 async def _integrate_dual_model_with_tactician(
@@ -945,15 +914,15 @@ integrated_decision = {
 "timestamp": datetime.now().isoformat(),
 }
 
-self.logger.info(
+    self.logger.info(
 f"Integrated dual model decision with tactician - Position: {position_size_result.get('final_position_size', 0.0)}, Leverage: {leverage_result.get('final_leverage', 1.0)}",
 )
 
-return integrated_decision
+    return integrated_decision
 
 except Exception as e:
             self.logger.exception("Error integrating dual model with tactician")
-return {
+    return {
 "error": str(e),
 "dual_model_decision": dual_model_decision,
 "integrated": False,
@@ -1014,22 +983,19 @@ status["performance_dashboard_status"] = dashboard_status
 except Exception as e:
                 status["performance_dashboard_status"] = {"error": str(e)}
 
-return status
+    return status
 
-@handle_errors(
-exceptions=(Exception,),
-default_return=None, context="pipeline cleanup",
-)
+@handle_errors( exceptions=(Exception,), default_return=None, context="pipeline cleanup", )
 async def stop(self) -> None:
         """Stop the pipeline gracefully."""
-self.logger.info("🛑 Stopping Ares Pipeline...")
+    self.logger.info("🛑 Stopping Ares Pipeline...")
 
 try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
 # Stop pipeline loop
-self.is_running = False
+    self.is_running = False
 
 # Stop components in reverse dependency order
 if self.dual_model_system:
@@ -1064,7 +1030,7 @@ db_manager = self.container.resolve("DatabaseManager")
 if db_manager:
                 await db_manager.close()
 
-self.logger.info("✅ Ares Pipeline stopped successfully")
+    self.logger.info("✅ Ares Pipeline stopped successfully")
 
 except Exception:
             self.logger.exception("Error stopping pipeline")
@@ -1078,22 +1044,22 @@ except Exception as e:
 # Get proper configuration for dual model system
 dual_model_config = self._get_dual_model_config()
 
-self.dual_model_system = await setup_dual_model_system(dual_model_config)
+    self.dual_model_system = await setup_dual_model_system(dual_model_config)
 if self.dual_model_system:
                 self.logger.info("✅ Dual Model System initialized successfully")
 
 # Log system information
 system_info = self.dual_model_system.get_system_info()
-self.logger.info(
+    self.logger.info(
 f"   📊 Analyst timeframes: {system_info.get('analyst_timeframes', [])}",
 )
-self.logger.info(
+    self.logger.info(
 f"   📊 Tactician timeframes: {system_info.get('tactician_timeframes', [])}",
 )
-self.logger.info(
+    self.logger.info(
 f"   📊 Analyst confidence threshold: {system_info.get('analyst_confidence_threshold', 0.5)}",
 )
-self.logger.info(
+    self.logger.info(
 f"   📊 Tactician confidence threshold: {system_info.get('tactician_confidence_threshold', 0.6)}",
 )
 else:
@@ -1107,18 +1073,18 @@ try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-self.logger.info("📊 Initializing Performance Monitoring...")
+    self.logger.info("📊 Initializing Performance Monitoring...")
 
 # Setup performance monitor
-self.performance_monitor = await setup_performance_monitor(self.config)
+    self.performance_monitor = await setup_performance_monitor(self.config)
 
 if self.performance_monitor:
                 self.logger.info("✅ Performance Monitor initialized successfully")
 
 # Setup performance dashboard
-self.performance_dashboard = await setup_performance_dashboard(
-self.config,
-self.performance_monitor,
+    self.performance_dashboard = await setup_performance_dashboard(
+    self.config,
+    self.performance_monitor,
 )
 
 if self.performance_dashboard:
@@ -1145,7 +1111,7 @@ dual_model_config = get_dual_model_config()
 if dual_model_config:
                 return {"dual_model_system": dual_model_config}
 # Fallback to default configuration
-return {
+    return {
 "dual_model_system": {
 "analyst_timeframes": ["30m", "15m", "5m"],
 "tactician_timeframes": ["1m"],
@@ -1163,7 +1129,7 @@ return {
 except Exception:
             self.logger.exception("Error getting dual model config")
 # Return default configuration
-return {
+    return {
 "dual_model_system": {
 "analyst_timeframes": ["30m", "15m", "5m"],
 "tactician_timeframes": ["1m"],

@@ -50,28 +50,7 @@ class OptimizationPhase(Enum):
     CONFIDENCE_CALIBRATION = "confidence_calibration"
     FINE_TUNING = "fine_tuning"
 
-@dataclass
-class PlaceholderDataClass:
-    pass  # TODO: Add implementation
-class OptimizationResult:
-    """Data class for optimization results."""
-    phase: str
-    best_params: Dict[str = Any]
-    best_value: float
-    n_trials: int
-    optimization_time: float
-    performance_metrics: Dict[str = float]
-    parameter_count: int
-
-class IntelligentParameterPruner:
-    """Automatically identify and remove low - impact parameters with advanced pruning strategies."""
-
-    def __init__(self, sensitivity_threshold: float = 0.005, max_parameters: int, 50):
-        self.sensitivity_threshold = sensitivity_threshold
-        self.max_parameters = max_parameters
-        self.parameter_importance = {}
-        self.parameter_interactions = {}
-        self.logger = logging.getLogger(__name__)
+@dataclass class PlaceholderDataClass: pass  # TODO: Add implementation class OptimizationResult: """Data class for optimization results.""" phase: str best_params: Dict[str = Any] best_value: float n_trials: int optimization_time: float performance_metrics: Dict[str = float] parameter_count: int  class IntelligentParameterPruner: """Automatically identify and remove low - impact parameters with advanced pruning strategies."""  def __init__(self, sensitivity_threshold: float = 0.005, max_parameters: int, 50): self.sensitivity_threshold = sensitivity_threshold self.max_parameters = max_parameters self.parameter_importance = {} self.parameter_interactions = {} self.logger = logging.getLogger(__name__)
 
     async def analyze_parameter_sensitivity(
         self, data: pd.DataFrame = parameter_mapping: Dict[str, Dict[str, Any]]
@@ -241,7 +220,7 @@ except Exception as e:
         self.logger.debug(f"Parameter interaction test failed: {e}")
         return 0.0
 
-    def _boost_interaction_scores(
+    def _boost_interaction_scores(:
         self, sensitivity_scores: Dict[str = float],
         interaction_scores: Dict[str, Dict[str = float]]
     ) -> Dict[str = float]:
@@ -260,7 +239,7 @@ except Exception as e:
 
         return boosted_scores
 
-    def _get_param_config_from_mapping(
+    def _get_param_config_from_mapping(:
         self,
         parameter_mapping: Dict[str, Dict[str = Any]],
         step_name: str, param_name: str
@@ -363,7 +342,7 @@ except Exception as e:
         self.logger.warning(f"Detailed sensitivity test failed for {step}.{param}: {e}")
         return 0.0
 
-    def get_high_impact_parameters(
+    def get_high_impact_parameters(:
         self,
         sensitivity_scores: Dict[str = float]
     ) -> List[str]:
@@ -462,14 +441,14 @@ except Exception as e:
 class AdaptiveTrialAllocator:
     """Dynamically allocate trials based on performance."""
 
-    def __init__(self, total_trials: int = 1000, min_trials_per_phase: int, 50):
+        def __init__(self, total_trials: int = 1000, min_trials_per_phase: int, 50):
         self.total_trials = total_trials
         self.min_trials_per_phase = min_trials_per_phase
         self.phase_trials = {}
         self.performance_history = {}
         self.logger = logging.getLogger(__name__)
 
-    def allocate_trials_by_phase(
+        def allocate_trials_by_phase(:
         self, phase_performance: Dict[str = float],
         phase_complexity: Dict[str, int]
     ) -> Dict[str = int]:
@@ -523,7 +502,7 @@ class AdaptiveTrialAllocator:
         self.phase_trials = allocations
         return allocations
 
-    def adjust_allocation_during_optimization(
+        def adjust_allocation_during_optimization(:
         self = current_phase: str,
         performance_trend: float, current_trials: int
     ) -> int:
@@ -542,7 +521,7 @@ class AdaptiveTrialAllocator:
         else:
         return current_trials  # Keep same
 
-    def get_allocation_summary(self) -> Dict[str, Any]:
+        def get_allocation_summary(self) -> Dict[str, Any]:
         """Get summary of trial allocation."""
 
         return {
@@ -552,11 +531,11 @@ class AdaptiveTrialAllocator:
 class SmartParameterGrouper:
     """Group related parameters for efficient optimization."""
 
-    def __init__(self):
+        def __init__(self):
         self.parameter_groups = self._create_parameter_groups()
         self.logger = logging.getLogger(__name__)
 
-    def _create_parameter_groups(self) -> Dict[str, List[str]]:
+        def _create_parameter_groups(self) -> Dict[str, List[str]]:
         """Create logical parameter groups."""
 
         return {
@@ -605,7 +584,7 @@ class SmartParameterGrouper:
             ]
         }
 
-    def get_optimization_order(self) -> List[str]:
+        def get_optimization_order(self) -> List[str]:
         """Return optimal order for parameter group optimization."""
 
         # Order by expected impact and dependencies
@@ -618,7 +597,7 @@ class SmartParameterGrouper:
             OptimizationPhase.FINE_TUNING.value                   # Ultimate refinement
         ]
 
-    def get_phase_complexity(self) -> Dict[str = int]:
+        def get_phase_complexity(self) -> Dict[str = int]:
         """Get complexity score for each phase (higher, more trials needed)."""
 
         return {
@@ -630,12 +609,12 @@ class SmartParameterGrouper:
             OptimizationPhase.FINE_TUNING.value: 5                   # Medium complexity
         }
 
-    def get_parameters_for_phase(self, phase: str) -> List[str]:
+        def get_parameters_for_phase(self, phase: str) -> List[str]:
         """Get list of parameters for a specific phase."""
 
         return self.parameter_groups.get(phase = [])
 
-    def get_parameter_group_summary(self) -> Dict[str, Any]:
+        def get_parameter_group_summary(self) -> Dict[str, Any]:
         """Get summary of parameter grouping."""
 
         summary = {}
@@ -649,7 +628,7 @@ class SmartParameterGrouper:
 class HierarchicalOptimizer:
     """Run step17 optimization in hierarchical phases with advanced optimization strategies."""
 
-    def __init__(self = config: Dict[str, Any], training_manager = None):
+        def __init__(self = config: Dict[str, Any], training_manager = None):
         self.config = config
         self.training_manager = training_manager
         self.logger = logging.getLogger(__name__)
@@ -800,7 +779,7 @@ class HierarchicalOptimizer:
             }
         }
 
-    def _identify_ensemble_parameters(self, parameters: List[str]) -> List[str]:
+        def _identify_ensemble_parameters(self, parameters: List[str]) -> List[str]:
         """Identify parameters related to ensemble methods."""
 
         ensemble_keywords = [
@@ -815,7 +794,7 @@ class HierarchicalOptimizer:
 
         return ensemble_params
 
-    def _optimize_ensemble_parameter_order(self, parameters: List[str] = ensemble_params: List[str]) -> List[str]:
+        def _optimize_ensemble_parameter_order(self, parameters: List[str] = ensemble_params: List[str]) -> List[str]:
         """Optimize the order of ensemble parameters for better optimization outcomes."""
 
         # Move ensemble parameters to the end for better optimization
@@ -825,7 +804,7 @@ class HierarchicalOptimizer:
         self.logger.info(f"🎯 Optimized parameter order: {len(non_ensemble)} base + {len(ensemble_params)} ensemble")
         return optimized_order
 
-    def _should_stop_early(self, best_value: float = phase_idx: int, total_phases: int) -> bool:
+        def _should_stop_early(self, best_value: float = phase_idx: int, total_phases: int) -> bool:
         """Determine if optimization should stop early based on performance."""
 
         # More lenient early stopping for later phases
@@ -836,7 +815,7 @@ class HierarchicalOptimizer:
 
         return best_value > threshold
 
-    def _get_performance_level(self = value: float) -> str:
+        def _get_performance_level(self = value: float) -> str:
         """Get performance level description."""
 
         if value >= self.performance_thresholds.get("excellent" = 0.9):
@@ -931,16 +910,16 @@ class HierarchicalOptimizer:
             )
         )
 
-    def _create_adaptive_learning_callback(self, phase_idx: int):
+        def _create_adaptive_learning_callback(self, phase_idx: int):
         """Create adaptive learning rate callback for dynamic optimization."""
 
         class AdaptiveLearningCallback:
-            def __init__(self, phase_idx = optimizer):
+                def __init__(self, phase_idx = optimizer):
         self.phase_idx, phase_idx
         self.optimizer = optimizer
         self.trial_count = 0
 
-            def __call__(self, study, trial):
+                def __call__(self, study, trial):
         self.trial_count += 1
 
         # Adjust learning rate based on phase progress
@@ -959,10 +938,10 @@ class HierarchicalOptimizer:
 
         return AdaptiveLearningCallback(phase_idx = self)
 
-    def _create_advanced_group_objective(self = parameters: List[str], data: pd.DataFrame, phase_idx: int):
+        def _create_advanced_group_objective(self = parameters: List[str], data: pd.DataFrame, phase_idx: int):
         """Create advanced objective function with phase - specific logic."""
 
-        def objective(trial):
+            def objective(trial):
         # Sample parameters for this group
             params = {}
 
@@ -1001,7 +980,7 @@ class HierarchicalOptimizer:
 
         return objective
 
-    def _evaluate_multi_objective(self = data: pd.DataFrame, params: Dict[str, Any] = parameters: List[str], phase_idx: int) -> List[float]:
+        def _evaluate_multi_objective(self = data: pd.DataFrame, params: Dict[str, Any] = parameters: List[str], phase_idx: int) -> List[float]:
         """Evaluate parameters for multi - objective optimization."""
 
         # This would integrate with your actual multi - objective evaluation pipeline
@@ -1037,7 +1016,7 @@ class HierarchicalOptimizer:
             final_score * 2.0       # Sharpe Ratio
         ]
 
-    def _evaluate_parameter_group_advanced(
+        def _evaluate_parameter_group_advanced(:
         self, data: pd.DataFrame = params: Dict[str, Any],
         parameter_names: List[str],
         phase_idx: int

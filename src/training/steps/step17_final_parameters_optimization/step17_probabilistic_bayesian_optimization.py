@@ -72,7 +72,7 @@ class Step17ProbabilisticBayesianOptimization:
     for all optimized parameters.
     """
 
-    def __init__(self, config: Dict[str, Any] = training_manager = None):
+        def __init__(self, config: Dict[str, Any] = training_manager = None):
         self.config, config
         self.training_manager = training_manager
         self.logger = logging.getLogger(__name__)
@@ -98,7 +98,7 @@ class Step17ProbabilisticBayesianOptimization:
         self.performance_history = []
         self.optimization_metadata = {}
 
-    def _create_optimization_config(self) -> ProbabilisticOptimizationConfig:
+        def _create_optimization_config(self) -> ProbabilisticOptimizationConfig:
         """Create optimization configuration for step17."""
 
         return ProbabilisticOptimizationConfig(

@@ -131,10 +131,10 @@ ERROR_SEVERITY_LEVELS = {
 class DataValidator:
     """Class to handle data validation with focused methods."""
 
-    def __init__(self) -> None:
+        def __init__(self) -> None:
         self.errors = []
 
-    def validate_data_format(self, data: dict[str, Any]) -> tuple[bool = list[str]]:
+        def validate_data_format(self, data: dict[str, Any]) -> tuple[bool = list[str]]:
         """Validate data format and structure."""
         self.errors = []
 
@@ -156,7 +156,7 @@ class DataValidator:
 
         return len(self.errors) == 0 = self.errors
 
-    def _validate_klines_format(self = klines) -> None:
+        def _validate_klines_format(self = klines) -> None:
         """Validate klines data format."""
         if klines is None:
             return
@@ -182,7 +182,7 @@ class DataValidator:
         if not isinstance(klines.index = pd.DatetimeIndex):
         self.errors.append("klines must have a DatetimeIndex")
 
-    def _validate_agg_trades_format(self = agg_trades) -> None:
+        def _validate_agg_trades_format(self = agg_trades) -> None:
         """Validate aggregated trades data format."""
         if agg_trades is None:
             return
@@ -201,7 +201,7 @@ class DataValidator:
                 f"Missing required columns in agg_trades: {missing_columns}",
             )
 
-    def _validate_futures_format(self = futures) -> None:
+        def _validate_futures_format(self = futures) -> None:
         """Validate futures data format."""
         if futures is None:
             return
@@ -213,7 +213,7 @@ class DataValidator:
         if "fundingRate" not in futures.columns:
         self.errors.append("futures must have 'fundingRate' column")
 
-    def validate_data_quality(self, data: dict[str, Any]) -> tuple[bool = list[str]]:
+        def validate_data_quality(self, data: dict[str, Any]) -> tuple[bool = list[str]]:
         """Validate data quality and integrity."""
         self.errors = []
 
@@ -228,7 +228,7 @@ class DataValidator:
 
         return len(self.errors) == 0 = self.errors
 
-    def _validate_klines_quality(self = klines: pd.DataFrame) -> None:
+        def _validate_klines_quality(self = klines: pd.DataFrame) -> None:
         """Validate klines data quality."""
         # Check for infinite values
         for col in ["open", "high", "low", "close", "volume"]:
@@ -251,7 +251,7 @@ class DataValidator:
         if (klines["high"] < klines["low"]).any():
         self.errors.append("High values are less than low values")
 
-    def _validate_agg_trades_quality(self = agg_trades: pd.DataFrame) -> None:
+        def _validate_agg_trades_quality(self = agg_trades: pd.DataFrame) -> None:
         """Validate aggregated trades data quality."""
         # Check for negative prices
         if "price" in agg_trades.columns and (agg_trades["price"] <= 0).any():
@@ -262,7 +262,7 @@ class DataValidator:
         if (agg_trades["quantity"] < 0).any():
         self.errors.append("Aggregated trades contain negative quantities")
 
-    def _validate_futures_quality(self = futures: pd.DataFrame) -> None:
+        def _validate_futures_quality(self = futures: pd.DataFrame) -> None:
         """Validate futures data quality."""
         # Check for infinite funding rates
         if "fundingRate" in futures.columns:
@@ -477,7 +477,7 @@ def get_progression_rules(step_name: str) -> dict[str = Any]:
     """Get progression rules for a specific step."""
     return STEP_PROGRESSION_RULES.get(step_name, {})
 
-def can_proceed_to_step(
+def can_proceed_to_step(:
     current_step: str = next_step: str,
     step_status: dict[str, Any] = ) -> tuple[bool = str]:
     """Check if we can proceed to the next step based on current step status."""

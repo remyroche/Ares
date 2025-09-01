@@ -16,7 +16,7 @@ Get diverse lookback period optimization configuration.
 Returns:
         dict: Configuration dictionary
 """
-return {
+    return {
 "diverse_lookback_optimization": {
 "target_periods_per_feature": 3,
 "min_periods_per_feature": 2,
@@ -204,7 +204,7 @@ Get strategy for selecting diverse periods.
 Returns:
         dict: Selection strategy
 """
-return {
+    return {
 "selection_strategy": {
 "greedy_algorithm": {
 "enabled": True,
@@ -272,7 +272,7 @@ Get mapping of periods to market insights.
 Returns:
         dict: Period to insight mapping
 """
-return {
+    return {
 "period_insights": {
 "RSI": {
 "short_periods": {
@@ -360,7 +360,7 @@ Get period priorities for high leverage trading.
 Returns:
         dict: High leverage period priorities
 """
-return {
+    return {
 "high_leverage_priorities": {
 "risk_management": {
 "priority": "high",

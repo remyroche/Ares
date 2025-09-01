@@ -41,7 +41,7 @@ for i in range(1, n + 1):
             for j in range(1, m + 1):
                 cost = abs(a[i - 1] - b[j - 1])
 dtw[i, j] = cost + min(dtw[i - 1, j], dtw[i, j - 1], dtw[i - 1, j - 1])
-return float(dtw[n, m] / (n + m))
+    return float(dtw[n, m] / (n + m))
 except Exception:
         return float("nan")
 
@@ -51,15 +51,16 @@ class TransitionSeqDataset(Dataset):
     pass  # TODO: Add implementation
 class TransitionSeqDataset(Dataset):
     pass  # TODO: Add proper implementation
-def __init__(
+    def __init__(:
+    pass  # TODO: Add implementation
 self,
 samples: list[dict[str, Any]],
 numeric_dim: int,
 label_index: list[str],
 ):
         self.samples = samples
-self.numeric_dim = numeric_dim
-self.label_index = label_index
+    self.numeric_dim = numeric_dim
+    self.label_index = label_index
 
 def __len__(self) -> int:
         return len(self.samples)
@@ -85,7 +86,7 @@ path_map = {
 y_path = path_map.get(str(s.get("path_class", "end_of_trend")), 2)
 # time to pt
 y_ttpt = int(s.get("Y_time_to_pt", -1))
-return {
+    return {
 "hmm_ids": _to_tensor(hmm_ids, torch.long),
 "x_num": _to_tensor(X_num, torch.float32),
 "y_ret": _to_tensor(y_ret, torch.float32),
@@ -100,7 +101,8 @@ class SmallTransformer(pl.LightningModule if pl else nn.Module):
     pass  # TODO: Add implementation
 class SmallTransformer(pl.LightningModule if pl else nn.Module):
     pass  # TODO: Add proper implementation
-def __init__(
+    def __init__(:
+    pass  # TODO: Add implementation
 self,
 hmm_vocab: int,
 num_features: int,
@@ -116,34 +118,34 @@ focal_gamma: float = 0.0,
             super().__init__()
 else:
             super().__init__()
-self.save_hyperparameters()
-self.hmm_emb = nn.Embedding(hmm_vocab, d_model)
-self.num_proj = nn.Linear(num_features, d_model)
-self.enc_ln = nn.LayerNorm(d_model)
+    self.save_hyperparameters()
+    self.hmm_emb = nn.Embedding(hmm_vocab, d_model)
+    self.num_proj = nn.Linear(num_features, d_model)
+    self.enc_ln = nn.LayerNorm(d_model)
 enc_layer = nn.TransformerEncoderLayer(
 d_model, nhead=nhead,
 dim_feedforward=d_model, dropout=dropout, batch_first=True,
 )
-self.encoder = nn.TransformerEncoder(enc_layer, num_layers=num_layers)
+    self.encoder = nn.TransformerEncoder(enc_layer, num_layers=num_layers)
 # Decoder heads
-self.dec_ret = nn.Sequential(
+    self.dec_ret = nn.Sequential(
 nn.Linear(d_model, d_model),
 nn.GELU(),
 nn.Linear(d_model, 1),
 )
-self.dec_hmm = nn.Sequential(
+    self.dec_hmm = nn.Sequential(
 nn.Linear(d_model, d_model),
 nn.GELU(),
 nn.Linear(d_model, hmm_vocab),
 )
-self.cls_path = nn.Sequential(
+    self.cls_path = nn.Sequential(
 nn.Linear(d_model, d_model),
 nn.GELU(),
 nn.Linear(d_model, 4),
 )
-self.post_len = num_features
-self.lr = lr
-self.mse = nn.SmoothL1Loss()
+    self.post_len = num_features
+    self.lr = lr
+    self.mse = nn.SmoothL1Loss()
 # class weights
 if path_class_weights:
             w_map = {
@@ -156,10 +158,10 @@ w = torch.ones(4, dtype=torch.float32)
 for k, v in path_class_weights.items():
                 if k in w_map:
                     w[w_map[k]] = float(v)
-self.ce = nn.CrossEntropyLoss(weight=w)
+    self.ce = nn.CrossEntropyLoss(weight=w)
 else:
             self.ce = nn.CrossEntropyLoss()
-self.focal_gamma = float(focal_gamma)
+    self.focal_gamma = float(focal_gamma)
 
 def forward(self, hmm_ids: torch.Tensor, x_num: torch.Tensor) -> torch.Tensor:
         # hmm_ids: [B = L_pre] ; x_num: [B, L_pre = F]
@@ -168,9 +170,10 @@ x = self.enc_ln(x)
 h = self.encoder(x)  # [B = L_pre, d]
 # CLS token: mean pool last K
 cls = h.mean(dim=1)
-return h, cls
+    return h, cls
 
-def training_step(
+def training_step(:
+    pass  # TODO: Add implementation
 self,
 batch: dict[str, torch.Tensor],
 batch_idx: int,
@@ -203,14 +206,14 @@ loss_path = ((1 - p) ** self.focal_gamma) * ce
 else:
             loss_path = self.ce(pred_path, y_path)
 loss = loss_ret * 1.0 + loss_hmm * 0.7 + loss_path * 0.5
-self.log_dict(
+    self.log_dict(
 {
 "train_loss": loss, "loss_ret": loss_ret,
 "loss_hmm": loss_hmm, "loss_path": loss_path,
 },
 prog_bar=True,
 )
-return loss
+    return loss
 
 def validation_step(self, batch: dict[str, torch.Tensor], batch_idx: int) -> None:
         hmm_ids = batch["hmm_ids"]
@@ -243,7 +246,7 @@ with torch.no_grad():
             state_pred = pred_hmm.argmax(-1)
 state_acc = (state_pred == y_hmm).float().mean()
 mse = nn.functional.mse_loss(pred_ret, y_ret)
-self.log_dict(
+    self.log_dict(
 {"val_loss": loss, "val_state_acc": state_acc, "val_mse": mse},
 prog_bar=True,
 )
@@ -254,7 +257,7 @@ def configure_optimizers(self):
     def configure_optimizers(self):
         opt = torch.optim.AdamW(self.parameters(), lr=self.lr, weight_decay=1e-2)
 sch = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, mode="min", patience=5)
-return {
+    return {
 "optimizer": opt, "lr_scheduler": {"scheduler": sch, "monitor": "val_loss"},
 }
 
@@ -264,7 +267,8 @@ class SmallTCN(SmallTransformer):
     pass  # TODO: Add implementation
 class SmallTCN(SmallTransformer):
     pass  # TODO: Add proper implementation
-def __init__(
+    def __init__(:
+    pass  # TODO: Add implementation
 self,
 hmm_vocab: int,
 num_features: int,
@@ -300,7 +304,7 @@ nn.Dropout(dropout),
 nn.Conv1d(d_model=d_model, kernel_size=1),
 ),
 )
-self.tcn = nn.ModuleList(blocks)
+    self.tcn = nn.ModuleList(blocks)
 
 def forward(self, hmm_ids: torch.Tensor, x_num: torch.Tensor) -> torch.Tensor:
         x = self.hmm_emb(hmm_ids) + self.num_proj(x_num)  # [B = L,D]
@@ -309,9 +313,10 @@ for block in self.tcn:
             y = y + block(y)
 h = y.transpose(1, 2)  # [B = L,D]
 cls = h.mean(dim=1)
-return h, cls
+    return h, cls
 
-def build_dataloaders(
+def build_dataloaders(:
+    pass  # TODO: Add implementation
 samples: list[dict[str, Any]],
 numeric_dim: int,
 label_index: list[str],
@@ -334,9 +339,10 @@ val_ds, batch_size=batch_size,
 shuffle=False, num_workers=0,
 pin_memory=True,
 )
-return train_loader, val_loader
+    return train_loader, val_loader
 
-def evaluate_samples(
+def evaluate_samples(:
+    pass  # TODO: Add implementation
 model: SmallTransformer,
 dataloader: DataLoader,
 pt_mult: float = 0.002,
@@ -386,14 +392,15 @@ torch.tensor(ttpt_pred, device=device, dtype=torch.float32)
 ),
 ).item()
 ttpt_mae_list.append(mae)
-return {
+    return {
 "mse": float(np.nanmean(mse_list)) if mse_list else float("nan"),
 "dtw": float(np.nanmean(dtw_list)) if dtw_list else float("nan"),
 "state_acc": float(np.nanmean(acc_list)) if acc_list else float("nan"),
 "ttpt_mae": float(np.nanmean(ttpt_mae_list)) if ttpt_mae_list else float("nan"),
 }
 
-def train_seq2seq(
+def train_seq2seq(:
+    pass  # TODO: Add implementation
 samples: list[dict[str, Any]],
 label_index: list[str],
 numeric_feature_names: list[str],
@@ -414,7 +421,7 @@ model_type: str = "transformer",
     logger = system_logger.getChild("TransitionSeq2SeqTrainer")
 if pl is None:
         logger.warning("PyTorch Lightning not available; skip seq2seq training.")
-return {"trained": False}
+    return {"trained": False}
 numeric_dim = len(numeric_feature_names)
 
 def _make_model() -> SmallTransformer:
@@ -427,7 +434,7 @@ lr=lr,
 path_class_weights=path_class_weights,
 focal_gamma=focal_gamma,
 )
-return SmallTransformer(
+    return SmallTransformer(
 hmm_vocab=numeric_dim, num_features=numeric_dim,
 post_len=post_window, d_model=d_model,
 nhead=nhead, num_layers=num_layers,
@@ -480,7 +487,7 @@ trainer.save_checkpoint(os.path.join(artifact_dir_models, "last.ckpt"))
 except Exception:
             pass
 metrics = evaluate_samples(model, val_loader, pt_mult=pt_mult)
-return model, metrics
+    return model, metrics
 
 if cv_folds and cv_folds > 1:
         n = len(samples)
@@ -497,9 +504,9 @@ all_metrics.append(m)
 if m.get("mse", float("inf")) < best_mse:
                 best_mse = m.get("mse", float("inf"))
 best_idx = k
-return {
+    return {
 "trained": True, "cv_metrics": all_metrics,
 "best_fold": best_idx, "best_mse": best_mse,
 }
 model, metrics = _train_one(samples)
-return {"trained": True, "metrics": metrics}
+    return {"trained": True, "metrics": metrics}

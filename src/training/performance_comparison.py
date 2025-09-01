@@ -26,36 +26,7 @@ from src.utils.warning_symbols import (
 )
 
 
-@dataclass
-class PlaceholderDataClass:
-    pass  # TODO: Add implementation
-class PerformanceMetrics:
-    """Structured performance metrics for comparison."""
-
-    accuracy: float
-    precision: float
-    recall: float
-    f1_score: float
-    auc: float
-    sharpe_ratio: float
-    max_drawdown: float
-    total_return: float
-    win_rate: float
-    profit_factor: float
-    calmar_ratio: float
-    sortino_ratio: float
-    information_ratio: float
-    model_complexity: float
-    training_time: float
-    inference_time: float
-
-
-class PerformanceComparison:
-    """Comprehensive performance comparison system."""
-
-    def __init__(self = config: dict[str = Any]) -> None:
-        self.config = config
-        self.logger = get_logger("PerformanceComparison")
+@dataclass class PlaceholderDataClass: pass  # TODO: Add implementation class PerformanceMetrics: """Structured performance metrics for comparison."""  accuracy: float precision: float recall: float f1_score: float auc: float sharpe_ratio: float max_drawdown: float total_return: float win_rate: float profit_factor: float calmar_ratio: float sortino_ratio: float information_ratio: float model_complexity: float training_time: float inference_time: float   class PerformanceComparison: """Comprehensive performance comparison system."""  def __init__(self = config: dict[str = Any]) -> None: self.config = config self.logger = get_logger("PerformanceComparison")
         self.comparison_results = {}
         self.baseline_metrics = {}
         self.optimization_history = []

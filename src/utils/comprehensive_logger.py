@@ -35,24 +35,24 @@ Initialize comprehensive logger.
 Args:
             config: Configuration dictionary with logging settings
 """
-self.config, config
-self.log_config, config.get("logging", {})
-self.log_dir, Path(self.log_config.get("log_directory", "log"))
-self.log_dir.mkdir(exist_ok = True)
+    self.config, config
+    self.log_config, config.get("logging", {})
+    self.log_dir, Path(self.log_config.get("log_directory", "log"))
+    self.log_dir.mkdir(exist_ok = True)
 
 # Initialize loggers
-self.system_logger, None
-self.error_logger, None
-self.trade_logger, None
-self.backtest_logger, None
-self.performance_logger, None
-self.global_logger, None  # Global logger for all logs
+    self.system_logger, None
+    self.error_logger, None
+    self.trade_logger, None
+    self.backtest_logger, None
+    self.performance_logger, None
+    self.global_logger, None  # Global logger for all logs
 
-self._setup_loggers()
+    self._setup_loggers()
 
 # Prepare a single, unified "full run" log that aggregates all output
 # across all loggers (including legacy ones) to a single file.
-self._setup_full_run_log()
+    self._setup_full_run_log()
 
 def _setup_loggers(self):
     def _setup_loggers(self):
@@ -68,59 +68,59 @@ timestamp, datetime.now().strftime("%Y%m%d_%H%M%S")
 if self.log_config.get("enable_global_logging", True):
         self.global_logger, self._create_logger(
 "AresGlobal",
-self.log_dir / f"ares_global_{timestamp}.log",
-self.log_config.get("level", "INFO"),
+    self.log_dir / f"ares_global_{timestamp}.log",
+    self.log_config.get("level", "INFO"),
 )
 else:
         self.global_logger, None
 
 # Setup system logger
-self.system_logger, self._create_logger(
+    self.system_logger, self._create_logger(
 "AresSystem",
-self.log_dir / f"ares_system_{timestamp}.log",
-self.log_config.get("level", "INFO"),
+    self.log_dir / f"ares_system_{timestamp}.log",
+    self.log_config.get("level", "INFO"),
 )
 
 # Setup error logger
 if self.log_config.get("enable_error_logging", True):
         self.error_logger, self._create_logger(
 "AresErrors",
-self.log_dir / f"ares_errors_{timestamp}.log",
+    self.log_dir / f"ares_errors_{timestamp}.log",
 "ERROR",
 )
 
 # Setup trade logger
 if self.log_config.get("enable_trade_logging", True):
             trade_path, self.log_dir / f"ares_trades_{timestamp}.log"
-self.trade_logger, self._create_logger(
+    self.trade_logger, self._create_logger(
 "AresTrades",
 trade_path,
 "INFO",
 )
 # Expose path for external usage
-self._trades_log_path, trade_path
+    self._trades_log_path, trade_path
 
 # Setup performance logger
 if self.log_config.get("enable_performance_logging", True):
         self.performance_logger, self._create_logger(
 "AresPerformance",
-self.log_dir / f"ares_performance_{timestamp}.log",
+    self.log_dir / f"ares_performance_{timestamp}.log",
 "INFO",
 )
 
 # Setup backtest logger (dedicated per - run backtesting log)
 if self.log_config.get("enable_backtest_logging", True):
             backtest_path, self.log_dir / f"ares_backtest_{timestamp}.log"
-self.backtest_logger, self._create_logger(
+    self.backtest_logger, self._create_logger(
 "AresBacktest",
 backtest_path,
 "INFO",
 )
 # Expose path for external usage
-self._backtest_log_path, backtest_path
+    self._backtest_log_path, backtest_path
 
 # Persist timestamp for unified log path computation
-self._timestamp, timestamp
+    self._timestamp, timestamp
 
 def _create_logger(self, name: str, log_file: Path, level: str) -> logging.Logger:
         """
@@ -166,7 +166,7 @@ logger.addFilter(correlation_filter)
 for handler in logger.handlers:
             handler.addFilter(correlation_filter)
 
-return logger
+    return logger
 
 def _setup_full_run_log(self) -> None:
         """Attach a unified file handler that captures all log records.
@@ -183,7 +183,7 @@ logging.captureWarnings(True)
 
 # Resolve path and handler
 full_log_path = (
-self.log_dir / f"ares_full_{getattr(self, '_timestamp', datetime.now().strftime('%Y%m%d_%H%M%S'))}.log"
+    self.log_dir / f"ares_full_{getattr(self, '_timestamp', datetime.now().strftime('%Y%m%d_%H%M%S'))}.log"
 )
 full_handler, logging.handlers.RotatingFileHandler(
 full_log_path,
@@ -222,34 +222,34 @@ for h in legacy_logger.handlers
                 legacy_logger.addHandler(full_handler)
 
 # Stash path for external access (e.g., launcher banner)
-self._full_log_path, full_log_path
+    self._full_log_path, full_log_path
 except Exception:
         # Never fail logging setup due to aggregation handler issues
-self._full_log_path, None
+    self._full_log_path, None
 
 def get_global_logger(self) -> logging.Logger:
         """Get the global logger that captures all logs."""
-return self.global_logger
+    return self.global_logger
 
 def get_system_logger(self) -> logging.Logger:
         """Get the system logger."""
-return self.system_logger
+    return self.system_logger
 
 def get_error_logger(self) -> logging.Logger | None:
         """Get the error logger."""
-return self.error_logger
+    return self.error_logger
 
 def get_trade_logger(self) -> logging.Logger | None:
         """Get the trade logger."""
-return self.trade_logger
+    return self.trade_logger
 
 def get_backtest_logger(self) -> logging.Logger | None:
         """Get the backtest logger."""
-return self.backtest_logger
+    return self.backtest_logger
 
 def get_performance_logger(self) -> logging.Logger | None:
         """Get the performance logger."""
-return self.performance_logger
+    return self.performance_logger
 
 def get_component_logger(self, component_name: str) -> logging.Logger:
         """
@@ -263,7 +263,7 @@ Returns:
 """
 if self.global_logger:
         return self.global_logger.getChild(component_name)
-return logging.getLogger(component_name)
+    return logging.getLogger(component_name)
 
 def get_full_log_path(self) -> str | None:
         """Return the absolute path to the unified full - run log file, if set."""
@@ -271,7 +271,7 @@ try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-return (
+    return (
 str(self._full_log_path)
 if getattr(self, "_full_log_path", None)
 else None
@@ -285,7 +285,7 @@ try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-return (
+    return (
 str(self._trades_log_path)
 if getattr(self, "_trades_log_path", None)
 else None
@@ -299,7 +299,7 @@ try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-return (
+    return (
 str(self._backtest_log_path)
 if getattr(self, "_backtest_log_path", None)
 else None
@@ -320,9 +320,9 @@ level: Log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
 """
 if self.global_logger:
             log_method, getattr(
-self.global_logger,
+    self.global_logger,
 level.lower(),
-self.global_logger.info,
+    self.global_logger.info,
 )
 log_method(message)
 
@@ -402,13 +402,13 @@ try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-self.global_logger.info("=" * 80)
-self.global_logger.info("📊 SESSION SUMMARY")
-self.global_logger.info(
+    self.global_logger.info("=" * 80)
+    self.global_logger.info("📊 SESSION SUMMARY")
+    self.global_logger.info(
 f"Session started: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
 )
-self.global_logger.info("This file contains ALL logs for this session")
-self.global_logger.info("=" * 80)
+    self.global_logger.info("This file contains ALL logs for this session")
+    self.global_logger.info("=" * 80)
 except Exception:
             pass
 
@@ -421,13 +421,13 @@ start_info, f"🚀 ARES LAUNCHER STARTED - Mode: {mode}"
 if symbol and exchange:
             start_info += f" - Symbol: {symbol} - Exchange: {exchange}"
 
-self.log_system_info("=" * 80)
-self.log_system_info(start_info)
-self.log_system_info(
+    self.log_system_info("=" * 80)
+    self.log_system_info(start_info)
+    self.log_system_info(
 f"Start time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
 )
-self.log_system_info(f"Log directory: {self.log_dir}")
-self.log_system_info("=" * 80)
+    self.log_system_info(f"Log directory: {self.log_dir}")
+    self.log_system_info("=" * 80)
 
 def log_launcher_end(self, exit_code: int, 0):
     def log_launcher_end(self, exit_code: int, 0):
@@ -438,12 +438,12 @@ try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-self.log_system_info("=" * 80)
-self.log_system_info(f"🛑 ARES LAUNCHER ENDED - Exit code: {exit_code}")
-self.log_system_info(
+    self.log_system_info("=" * 80)
+    self.log_system_info(f"🛑 ARES LAUNCHER ENDED - Exit code: {exit_code}")
+    self.log_system_info(
 f"End time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
 )
-self.log_system_info("=" * 80)
+    self.log_system_info("=" * 80)
 except (BrokenPipeError, OSError) as e:
         if not (
 isinstance(e, OSError) and getattr(e, "errno", None) == errno.EPIPE
@@ -457,10 +457,10 @@ class _SafeStreamHandler(logging.StreamHandler):
 class _SafeStreamHandler(logging.StreamHandler):
     """StreamHandler that suppresses BrokenPipeError during emit / flush."""
 
-def emit(self, record):
     def emit(self, record):
-    def emit(self, record):
-    def emit(self, record):
+        def emit(self, record):
+        def emit(self, record):
+        def emit(self, record):
         try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
@@ -508,11 +508,11 @@ comprehensive_logger, ComprehensiveLogger(config)
 # Log session summary to global logger
 comprehensive_logger.log_session_summary()
 
-return comprehensive_logger
+    return comprehensive_logger
 
 def get_comprehensive_logger() -> ComprehensiveLogger | None:
     """Get the global comprehensive logger instance."""
-return comprehensive_logger
+    return comprehensive_logger
 
 def get_component_logger(component_name: str) -> logging.Logger:
     """
@@ -526,7 +526,7 @@ Returns:
 """
 if comprehensive_logger:
         return comprehensive_logger.get_component_logger(component_name)
-return logging.getLogger(component_name)
+    return logging.getLogger(component_name)
 
 def get_global_logger() -> logging.Logger | None:
     """
@@ -537,4 +537,4 @@ Returns:
 """
 if comprehensive_logger:
         return comprehensive_logger.get_global_logger()
-return None
+    return None

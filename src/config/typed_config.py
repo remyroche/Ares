@@ -39,8 +39,8 @@ def __init__(self, config_path: str | None = None):
     def __init__(self, config_path: str | None = None):
     def __init__(self, config_path: str | None = None):
         self._config_path = config_path
-self._config: ConfigDict | None = None
-self._validator = TypeValidator()
+    self._config: ConfigDict | None = None
+    self._validator = TypeValidator()
 
 def load_config(self, config_path: str | None = None) -> ConfigDict:
         """
@@ -75,10 +75,10 @@ raise json.JSONDecodeError(msg)
 
 # Validate configuration structure
 validated_config = self._validate_and_transform_config(raw_config)
-self._config = validated_config
+    self._config = validated_config
 
 logger.info(f"Successfully loaded and validated configuration from {path}")
-return validated_config
+    return validated_config
 
 def _validate_and_transform_config(self, raw_config: dict[str, Any]) -> ConfigDict:
         """
@@ -138,7 +138,7 @@ if "training" in raw_config:
 raw_config["training"],
 )
 
-return config
+    return config
 
 except (KeyError, TypeError, ValueError) as e:
             raise RuntimeTypeError(
@@ -148,34 +148,34 @@ f"Configuration validation: {e}",
 
 def _validate_database_config(self, config: dict[str, Any]) -> DatabaseConfig:
         """Validate database configuration."""
-return self._validator.validate_type(config, DatabaseConfig, "database_config")
+    return self._validator.validate_type(config, DatabaseConfig, "database_config")
 
 def _validate_exchange_config(self, config: dict[str, Any]) -> ExchangeConfig:
         """Validate exchange configuration."""
-return self._validator.validate_type(config, ExchangeConfig, "exchange_config")
+    return self._validator.validate_type(config, ExchangeConfig, "exchange_config")
 
 def _validate_trading_config(self, config: dict[str, Any]) -> TradingConfig:
         """Validate trading configuration."""
-return self._validator.validate_type(config, TradingConfig, "trading_config")
+    return self._validator.validate_type(config, TradingConfig, "trading_config")
 
 def _validate_ml_config(self, config: dict[str, Any]) -> MLConfig:
         """Validate ML configuration."""
-return self._validator.validate_type(config, MLConfig, "ml_config")
+    return self._validator.validate_type(config, MLConfig, "ml_config")
 
 def _validate_monitoring_config(self, config: dict[str, Any]) -> MonitoringConfig:
         """Validate monitoring configuration."""
-return self._validator.validate_type(
+    return self._validator.validate_type(
 config, MonitoringConfig,
 "monitoring_config",
 )
 
 def _validate_system_config(self, config: dict[str, Any]) -> SystemConfig:
         """Validate system configuration."""
-return self._validator.validate_type(config, SystemConfig, "system_config")
+    return self._validator.validate_type(config, SystemConfig, "system_config")
 
 def _validate_training_config(self, config: dict[str, Any]) -> TrainingConfig:
         """Validate training configuration."""
-return self._validator.validate_type(config, TrainingConfig, "training_config")
+    return self._validator.validate_type(config, TrainingConfig, "training_config")
 
 def get_config(self) -> ConfigDict:
         """
@@ -190,38 +190,38 @@ Raises:
 if self._config is None:
             msg = "No configuration loaded. Call load_config() first."
 raise RuntimeError(msg)
-return self._config
+    return self._config
 
 def get_database_config(self) -> DatabaseConfig | None:
         """Get database configuration."""
 config = self.get_config()
-return config.get("database")
+    return config.get("database")
 
 def get_exchange_config(self, exchange_name: str) -> ExchangeConfig | None:
         """Get exchange configuration."""
 config = self.get_config()
 exchanges = config.get("exchanges", {})
-return exchanges.get(exchange_name)
+    return exchanges.get(exchange_name)
 
 def get_trading_config(self) -> TradingConfig | None:
         """Get trading configuration."""
 config = self.get_config()
-return config.get("trading")
+    return config.get("trading")
 
 def get_ml_config(self) -> MLConfig | None:
         """Get ML configuration."""
 config = self.get_config()
-return config.get("ml")
+    return config.get("ml")
 
 def get_monitoring_config(self) -> MonitoringConfig | None:
         """Get monitoring configuration."""
 config = self.get_config()
-return config.get("monitoring")
+    return config.get("monitoring")
 
 def get_system_config(self) -> SystemConfig | None:
         """Get system configuration."""
 config = self.get_config()
-return config.get("system")
+    return config.get("system")
 
 def validate_runtime_config(self, config: dict[str, Any]) -> bool:
         """
@@ -237,8 +237,8 @@ try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-self._validate_and_transform_config(config)
-return True
+    self._validate_and_transform_config(config)
+    return True
 except RuntimeTypeError:
             return False
 
@@ -268,14 +268,14 @@ def get_typed_config_manager() -> TypedConfigManager:
 global _global_config_manager
 if _global_config_manager is None:
         _global_config_manager = TypedConfigManager()
-return _global_config_manager
+    return _global_config_manager
 
 def load_typed_config(config_path: str) -> ConfigDict:
     """Load typed configuration from file."""
 manager = get_typed_config_manager()
-return manager.load_config(config_path)
+    return manager.load_config(config_path)
 
 def get_typed_config() -> ConfigDict:
     """Get current typed configuration."""
 manager = get_typed_config_manager()
-return manager.get_config()
+    return manager.get_config()

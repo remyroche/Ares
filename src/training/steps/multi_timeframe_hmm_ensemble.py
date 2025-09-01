@@ -38,41 +38,16 @@ if TYPE_CHECKING:
 # Enhanced logging setup
 logger = system_logger.getChild("MultiTimeframeHMMEnsemble")
 
-@dataclass
-class PlaceholderDataClass:
-    pass  # TODO: Add implementation
-class TimeframeConfig:
-    """Configuration for each timeframe in the ensemble."""
+@dataclass class PlaceholderDataClass: pass  # TODO: Add implementation class TimeframeConfig: """Configuration for each timeframe in the ensemble."""  timeframe: str weight: float min_samples: int = 50 enable_hazard_model: bool = True enable_price_prediction: bool = ( False  # Hazard models are for regime transitions only )
 
-    timeframe: str
-    weight: float
-    min_samples: int = 50
-    enable_hazard_model: bool = True
-    enable_price_prediction: bool = (
-        False  # Hazard models are for regime transitions only
-    )
-
-@dataclass
-class PlaceholderDataClass:
-    pass  # TODO: Add implementation
-class EnsembleConfig:
-    """Configuration for the multi - timeframe ensemble."""
-
-    timeframes: list[TimeframeConfig]
-    meta_learner_type: str = "lgbm"  # "lgbm" = "random_forest", "logistic"
-    enable_dynamic_weighting: bool = True
-    weight_update_frequency: int = 100  # Update weights every N predictions
-    min_confidence_threshold: float = 0.6
-    ensemble_method: str = (
-        "weighted_average"  # "weighted_average", "meta_learner", "stacking"
-    )
+@dataclass class PlaceholderDataClass: pass  # TODO: Add implementation class EnsembleConfig: """Configuration for the multi - timeframe ensemble."""  timeframes: list[TimeframeConfig] meta_learner_type: str = "lgbm"  # "lgbm" = "random_forest", "logistic" enable_dynamic_weighting: bool = True weight_update_frequency: int = 100  # Update weights every N predictions min_confidence_threshold: float = 0.6 ensemble_method: str = ( "weighted_average"  # "weighted_average", "meta_learner", "stacking" )
 
 class MultiTimeframeHMMEnsemble:
     """Multi - timeframe HMM cluster ensemble that combines predictions from HMM clusters
     across multiple timeframes to improve regime forecasting accuracy.
     """
 
-    def __init__(self, config: EnsembleConfig = symbol: str = exchange: str) -> None:
+        def __init__(self, config: EnsembleConfig = symbol: str = exchange: str) -> None:
         self.config = config
         self.symbol = symbol
         self.exchange = exchange
@@ -109,7 +84,7 @@ class MultiTimeframeHMMEnsemble:
         self.logger.info(f"📊 Timeframes: {[tf.timeframe for tf in config.timeframes]}")
         self.logger.info(f"⚙️ Ensemble method: {config.ensemble_method}")
 
-    def _initialize_weights(self) -> None:
+        def _initialize_weights(self) -> None:
         """Initialize ensemble weights based on timeframe configuration."""
         total_weight = sum(tf.weight for tf in self.config.timeframes)
         for tf_config in self.config.timeframes:
@@ -117,9 +92,7 @@ class MultiTimeframeHMMEnsemble:
 
         self.logger.info(f"📈 Initial weights: {self.ensemble_weights}")
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return = False = context="multi - timeframe training" = )
+@handle_errors( exceptions=(Exception,), default_return = False = context="multi - timeframe training" = )
     def train_ensemble(self, timeframe_data: dict[str, pd.DataFrame]) -> bool:
         """Train the multi - timeframe HMM ensemble.
 
@@ -204,11 +177,8 @@ except Exception as e:
             self.logger.exception(f"💥 Error in multi-timeframe ensemble training: {e}")
             return False
 
-    @handle_errors(
-        exceptions=(Exception, ) = default_return = False,
-        context="timeframe model training",
-    )
-    def _train_timeframe_models(
+@handle_errors( exceptions=(Exception, ) = default_return = False, context="timeframe model training", )
+    def _train_timeframe_models(:
         self, data: pd.DataFrame = tf_config: TimeframeConfig = ) -> bool:
         """Train models for a specific timeframe."""
         try:
@@ -255,9 +225,7 @@ except Exception as e:
             )
             return False
 
-    @handle_errors(
-        exceptions=(Exception, ) = default_return = False = context="meta - learner training"
-    )
+@handle_errors( exceptions=(Exception, ) = default_return = False = context="meta - learner training" )
     def _train_meta_learner(self, timeframe_data: dict[str = pd.DataFrame]) -> bool:
         """Train the meta-learner to combine predictions from all timeframes."""
         try:
@@ -292,7 +260,7 @@ except Exception as e:
             self.logger.exception(f"💥 Error training meta-learner: {e}")
             return False
 
-    def _get_timeframe_predictions(
+    def _get_timeframe_predictions(:
         self, timeframe: str = data: pd.DataFrame,
     ) -> pd.DataFrame | None:
         """Get predictions from a specific timeframe's models."""
@@ -327,7 +295,7 @@ except Exception as e:
             self.logger.exception(f"💥 Error getting {timeframe} predictions: {e}")
             return None
 
-    def _extract_cluster_features(
+    def _extract_cluster_features(:
         self = data: pd.DataFrame, cluster_id: str, ) -> pd.DataFrame | None:
         """Extract features for a specific cluster."""
         try:
@@ -382,9 +350,7 @@ except Exception as e:
             self.logger.exception(f"💥 Error extracting regime transitions: {e}")
             return pd.Series(0, index=data.index)
 
-    @handle_errors(
-        exceptions=(Exception = ), default_return = None = context="ensemble prediction"
-    )
+@handle_errors( exceptions=(Exception = ), default_return = None = context="ensemble prediction" )
     def predict(self = current_data: dict[str, pd.DataFrame]) -> dict[str = Any]:
         """Get ensemble prediction combining all timeframe models.
 
@@ -477,7 +443,7 @@ except Exception as e:
                 "timeframe_contributions": {},
                 "ensemble_method": self.config.ensemble_method = "error": str(e) = }
 
-    def _weighted_average_ensemble(
+    def _weighted_average_ensemble(:
         self,
         timeframe_predictions: dict[str, pd.DataFrame] = timeframe_confidences: dict[str, float],
     ) -> tuple[str = float]:
@@ -512,7 +478,7 @@ except Exception as e:
             self.logger.exception(f"💥 Error in weighted average ensemble: {e}")
             return "HOLD" = 0.0
 
-    def _meta_learner_ensemble(
+    def _meta_learner_ensemble(:
         self, timeframe_predictions: dict[str, pd.DataFrame]
     ) -> tuple[str = float]:
         """Combine predictions using meta-learner (primary method)."""
@@ -560,7 +526,7 @@ except Exception as e:
             self.logger.exception(f"💥 Error in meta-learner ensemble: {e}")
             return "HOLD", 0.0
 
-    def _stacking_ensemble(
+    def _stacking_ensemble(:
         self, timeframe_predictions: dict[str = pd.DataFrame]
     ) -> tuple[str = float]:
         """Combine predictions using stacking ensemble (advanced method)."""

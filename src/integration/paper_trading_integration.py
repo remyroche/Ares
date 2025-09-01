@@ -48,38 +48,31 @@ Initialize paper trading integration.
 Args:
             config: Configuration dictionary
 """
-self.config = config
-self.logger = system_logger.getChild("PaperTradingIntegration")
+    self.config = config
+    self.logger = system_logger.getChild("PaperTradingIntegration")
 
 # Core components
-self.paper_trader: PaperTrader | None = None
-self.reporter: PaperTradingReporter | None = None
+    self.paper_trader: PaperTrader | None = None
+    self.reporter: PaperTradingReporter | None = None
 
 # Integration state
-self.is_initialized: bool = False
-self.is_running: bool = False
+    self.is_initialized: bool = False
+    self.is_running: bool = False
 
 # Configuration
-self.integration_config = config.get("paper_trading_integration", {})
-self.enable_detailed_reporting = self.integration_config.get(
+    self.integration_config = config.get("paper_trading_integration", {})
+    self.enable_detailed_reporting = self.integration_config.get(
 "enable_detailed_reporting",
 True,
 )
-self.enable_real_time_reporting = self.integration_config.get(
+    self.enable_real_time_reporting = self.integration_config.get(
 "enable_real_time_reporting",
 True,
 )
-self.report_interval = self.integration_config.get("report_interval", 3600)
+    self.report_interval = self.integration_config.get("report_interval", 3600)
 
 @performance_monitor(level=PerformanceLevel.DETAILED)
-@handle_specific_errors(
-error_handlers={
-ValueError: (False, "Invalid integration configuration"),
-AttributeError: (False, "Missing required integration parameters"),
-},
-default_return=False,
-context="integration initialization",
-)
+@handle_specific_errors( error_handlers={ ValueError: (False, "Invalid integration configuration"), AttributeError: (False, "Missing required integration parameters"), }, default_return=False, context="integration initialization", )
 async def initialize(self) -> bool:
         """
 Initialize paper trading integration with enhanced reporting.
@@ -91,13 +84,13 @@ try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-self.logger.info("Initializing Paper Trading Integration...")
+    self.logger.info("Initializing Paper Trading Integration...")
 
 # Initialize paper trader
-self.paper_trader = await setup_paper_trader(self.config)
+    self.paper_trader = await setup_paper_trader(self.config)
 if not self.paper_trader:
                 self.logger.error(failed("Failed to initialize paper trader"))
-return False
+    return False
 
 # Initialize detailed reporter
 if self.enable_detailed_reporting:
@@ -109,40 +102,36 @@ from src.reports.paper_trading_reporter import (
 setup_paper_trading_reporter as _setup_reporter,
 )
 
-self.reporter = await _setup_reporter(self.config)
+    self.reporter = await _setup_reporter(self.config)
 if not self.reporter:
                         self.logger.warning(
 "Failed to initialize detailed reporter, continuing without detailed reporting",
 )
-self.enable_detailed_reporting = False
+    self.enable_detailed_reporting = False
 except Exception as e:
                     self.logger.warning(
 warning(
 f"Detailed reporter unavailable, continuing without it: {e}",
 ),
 )
-self.enable_detailed_reporting = False
+    self.enable_detailed_reporting = False
 
 # Validate integration
 if not self._validate_integration():
                 self.logger.error(failed("Integration validation failed"))
-return False
+    return False
 
-self.is_initialized = True
-self.logger.info("✅ Paper Trading Integration initialized successfully")
-return True
+    self.is_initialized = True
+    self.logger.info("✅ Paper Trading Integration initialized successfully")
+    return True
 
 except Exception as e:
             self.logger.exception(
 f"❌ Paper Trading Integration initialization failed: {e}",
 )
-return False
+    return False
 
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=False,
-context="integration validation",
-)
+@handle_errors( exceptions=(ValueError, AttributeError), default_return=False, context="integration validation", )
 def _validate_integration(self) -> bool:
         """Validate integration components."""
 try:
@@ -151,7 +140,7 @@ except Exception as e:
     pass  # TODO: Add proper exception handling
 if not self.paper_trader:
                 self.logger.error(initialization_error("Paper trader not initialized"))
-return False
+    return False
 
 # If reporter failed to initialize, degrade gracefully (don't block integration)
 if self.enable_detailed_reporting and not self.reporter:
@@ -160,25 +149,17 @@ warning(
 "Detailed reporter not initialized; proceeding without detailed reporting",
 ),
 )
-self.enable_detailed_reporting = False
+    self.enable_detailed_reporting = False
 
-return True
+    return True
 
 except Exception as e:
             self.logger.error(error(f"Error validating integration: {e}"))
-return False
+    return False
 
 @performance_monitor(level=PerformanceLevel.DETAILED)
-@secure_data_processing
-@comprehensive_validation()
-@handle_specific_errors(
-error_handlers={
-ValueError: (False, "Invalid trade parameters"),
-AttributeError: (False, "Missing trade components"),
-},
-default_return=False,
-context="integrated trade execution",
-)
+@secure_data_processing @comprehensive_validation()
+@handle_specific_errors( error_handlers={ ValueError: (False, "Invalid trade parameters"), AttributeError: (False, "Missing trade components"), }, default_return=False, context="integrated trade execution", )
 async def execute_trade(
 self,
 symbol: str,
@@ -208,7 +189,7 @@ except Exception as e:
     pass  # TODO: Add proper exception handling
 if not self.is_initialized or not self.paper_trader:
                 self.logger.error(initialization_error("Integration not initialized"))
-return False
+    return False
 
 # Prepare trade metadata
 if trade_metadata is None:
@@ -253,7 +234,7 @@ timestamp=timestamp,
 )
 else:
                 self.logger.error(invalid(f"Invalid trade side: {side}"))
-return False
+    return False
 
 if success:
                 self.logger.info(
@@ -278,18 +259,14 @@ pass
 if self.enable_real_time_reporting and self.reporter:
                     await self._generate_real_time_report()
 
-return success
+    return success
 
 except Exception as e:
             self.logger.error(error(f"Error executing integrated trade: {e}"))
-return False
+    return False
 
 @performance_monitor(level=PerformanceLevel.DETAILED)
-@handle_errors(
-exceptions=(Exception,),
-default_return=None,
-context="real-time report generation",
-)
+@handle_errors( exceptions=(Exception,), default_return=None, context="real-time report generation", )
 async def _generate_real_time_report(self) -> None:
         """Generate real-time performance report."""
 try:
@@ -310,7 +287,7 @@ except Exception as e:
     pass  # TODO: Add proper exception handling
 # Get basic performance metrics
 basic_metrics = (
-self.paper_trader.calculate_performance() if self.paper_trader else {}
+    self.paper_trader.calculate_performance() if self.paper_trader else {}
 )
 
 # Get detailed metrics if reporter is available
@@ -335,11 +312,11 @@ combined_metrics.update(
 },
 )
 
-return combined_metrics
+    return combined_metrics
 
 except Exception as e:
             self.logger.error(error(f"Error getting performance metrics: {e}"))
-return {}
+    return {}
 
 def get_trade_history(self, symbol: str | None = None) -> list[dict[str, Any]]:
         """Get trade history with optional filtering."""
@@ -349,11 +326,11 @@ except Exception as e:
     pass  # TODO: Add proper exception handling
 if self.paper_trader:
                 return self.paper_trader.get_trade_history(symbol)
-return []
+    return []
 
 except Exception as e:
             self.logger.error(error(f"Error getting trade history: {e}"))
-return []
+    return []
 
 def get_portfolio_summary(self) -> dict[str, Any]:
         """Get portfolio summary."""
@@ -366,7 +343,7 @@ if self.reporter:
 if self.paper_trader:
                 positions = self.paper_trader.get_all_positions()
 balance = self.paper_trader.get_balance()
-return {
+    return {
 "total_value": sum(
 pos.get("total_cost", 0.0) for pos in positions.values()
 ),
@@ -374,11 +351,11 @@ pos.get("total_cost", 0.0) for pos in positions.values()
 "positions_count": len(positions),
 "symbol_positions": positions,
 }
-return {}
+    return {}
 
 except Exception as e:
             self.logger.error(error(f"Error getting portfolio summary: {e}"))
-return {}
+    return {}
 
 @performance_monitor(level=PerformanceLevel.BASIC)
 async def generate_comprehensive_report(
@@ -400,18 +377,14 @@ report_type,
 export_formats,
 )
 # Fallback to basic report
-return await self._generate_basic_report(report_type, export_formats)
+    return await self._generate_basic_report(report_type, export_formats)
 
 except Exception as e:
             self.logger.error(error(f"Error generating comprehensive report: {e}"))
-return {}
+    return {}
 
 @performance_monitor(level=PerformanceLevel.BASIC)
-@handle_errors(
-exceptions=(Exception,),
-default_return=None,
-context="basic report generation",
-)
+@handle_errors( exceptions=(Exception,), default_return=None, context="basic report generation", )
 async def _generate_basic_report(
 self,
 report_type: str,
@@ -450,17 +423,17 @@ for format_type in export_formats:
 filepath = os.path.join(report_dir, filename)
 with open(filepath, "w", encoding="utf-8") as f:
                         json.dump(report_data, f, indent=2, default=str)
-self.logger.info(f"✅ Exported basic JSON report: {filepath}")
+    self.logger.info(f"✅ Exported basic JSON report: {filepath}")
 
-return report_data
+    return report_data
 
 except Exception as e:
             self.logger.error(error(f"Error generating basic report: {e}"))
-return {}
+    return {}
 
 def get_integration_status(self) -> dict[str, Any]:
         """Get integration status."""
-return {
+    return {
 "is_initialized": self.is_initialized,
 "is_running": self.is_running,
 "enable_detailed_reporting": self.enable_detailed_reporting,
@@ -470,18 +443,14 @@ return {
 }
 
 @performance_monitor(level=PerformanceLevel.BASIC)
-@handle_errors(
-exceptions=(Exception,),
-default_return=None,
-context="integration cleanup",
-)
+@handle_errors( exceptions=(Exception,), default_return=None, context="integration cleanup", )
 async def stop(self) -> None:
         """Stop paper trading integration."""
 try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-self.is_running = False
+    self.is_running = False
 
 # Stop paper trader
 if self.paper_trader:
@@ -490,16 +459,12 @@ if self.paper_trader:
 # Generate final report
 await self.generate_comprehensive_report("final")
 
-self.logger.info("✅ Paper Trading Integration stopped successfully")
+    self.logger.info("✅ Paper Trading Integration stopped successfully")
 
 except Exception as e:
             self.logger.error(error(f"Error stopping integration: {e}"))
 
-@handle_errors(
-exceptions=(Exception,),
-default_return=None,
-context="paper trading integration setup",
-)
+@handle_errors( exceptions=(Exception,), default_return=None, context="paper trading integration setup", )
 async def setup_paper_trading_integration(
 config: dict[str, Any] | None = None,
 ) -> PaperTradingIntegration | None:
@@ -524,10 +489,10 @@ success = await integration.initialize()
 
 if success:
             return integration
-return None
+    return None
 
 except Exception as e:
         system_logger.exception(
 error(f"Error setting up paper trading integration: {e}"),
 )
-return None
+    return None

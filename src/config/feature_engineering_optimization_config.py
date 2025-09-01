@@ -16,7 +16,7 @@ Get feature engineering optimization configuration.
 Returns:
         dict: Configuration dictionary
 """
-return {
+    return {
 "feature_engineering_optimization": {
 "enabled": True,
 "optimization_settings": {
@@ -135,7 +135,7 @@ Get optimized timeframe configuration for high leverage trading.
 Returns:
         dict: Optimized timeframe configuration
 """
-return {
+    return {
 "optimized_timeframes": {
 "1m": {
 "weight": 0.20,
@@ -203,7 +203,7 @@ Get validation rules for feature optimization results.
 Returns:
         dict: Validation rules
 """
-return {
+    return {
 "validation_rules": {
 "min_importance_score": 0.1,
 "max_correlation": 0.8,
@@ -240,7 +240,7 @@ Get schema for optimization output files.
 Returns:
         dict: Output schema
 """
-return {
+    return {
 "output_schema": {
 "optimization_results": {
 "timestamp": "string",

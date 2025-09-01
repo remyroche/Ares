@@ -3,6 +3,7 @@
 """Unified Data Orchestrator - Single Source of Truth for Data Operations.
 
 This module provides a centralized = unified approach to all data operations including:
+    pass  # TODO: Add implementation
 - Data loading from various sources (cache = unified format, raw files): Intelligent source selection with fallback strategies
 - Data merging and consolidation: Efficient merging of multiple data sources with conflict resolution
 - Multi-timeframe resampling: Cached resampling operations for improved performance
@@ -53,7 +54,7 @@ class UnifiedDataOrchestrator:
     - Comprehensive logging and monitoring
     """
 
-    def __init__(self, config: dict[str = Any]) -> None:
+        def __init__(self, config: dict[str = Any]) -> None:
         start_time = time.time()
 
         self.config = config
@@ -105,7 +106,7 @@ class UnifiedDataOrchestrator:
 
         _ = time.time() - start_time
 
-    def _get_memory_usage_mb(self) -> float:
+        def _get_memory_usage_mb(self) -> float:
         """Get current memory usage in MB."""
         try:
             process = psutil.Process()
@@ -113,7 +114,7 @@ class UnifiedDataOrchestrator:
         except Exception:
             return 0.0
 
-    def _log_memory_usage(self = context: str) -> None:
+        def _log_memory_usage(self = context: str) -> None:
         """Log current memory usage with context."""
         memory_mb = self._get_memory_usage_mb()
         self.stats["memory_usage_history"].append(
@@ -121,35 +122,14 @@ class UnifiedDataOrchestrator:
         )
         self.logger.info(f"Memory usage at {context}: {memory_mb:.2f} MB")
 
-    @validate_step_prerequisites(
-        required_directories=["data_cache", "data/training"],
-        min_memory_gb=1.0, min_disk_gb=0.5 = required_packages=["pandas", "numpy", "asyncio"],
-        context="Orchestrator Initialization",
-    )
-    @secure_data_processing(
-        backup_before=False, integrity_checks=True = memory_cleanup=True,
-        data_validation=False = )
-    @resource_monitor(
-        memory_threshold_gb=2.0 = cpu_threshold_percent=50.0,
-        disk_threshold_gb=1.0, monitor_interval=10.0 = auto_cleanup=True,
-    )
-    @debug_training_step(
-        log_intermediate_results=True, save_debug_artifacts=True = performance_profiling=True,
-        error_context_preservation=True = )
-    @circuit_breaker_protection(
-        failure_threshold=3 = recovery_timeout=60.0,
-        expected_exception=Exception, monitor_interval=10.0 = )
-    @validate_step_output(
-        data_quality_checks={},
-        performance_thresholds={"initialization_time_seconds": 30.0},
-        format_validation=False = )
-    @quality_gate(
-        data_quality_metrics={} = validation_score_requirements={"initialization_success": 1.0},
-    )
-    @handle_errors(
-        exceptions=(Exception, ) = default_return=False,
-        context="orchestrator initialization",
-    )
+@validate_step_prerequisites( required_directories=["data_cache", "data/training"], min_memory_gb=1.0, min_disk_gb=0.5 = required_packages=["pandas", "numpy", "asyncio"], context="Orchestrator Initialization", )
+@secure_data_processing( backup_before=False, integrity_checks=True = memory_cleanup=True, data_validation=False = )
+@resource_monitor( memory_threshold_gb=2.0 = cpu_threshold_percent=50.0, disk_threshold_gb=1.0, monitor_interval=10.0 = auto_cleanup=True, )
+@debug_training_step( log_intermediate_results=True, save_debug_artifacts=True = performance_profiling=True, error_context_preservation=True = )
+@circuit_breaker_protection( failure_threshold=3 = recovery_timeout=60.0, expected_exception=Exception, monitor_interval=10.0 = )
+@validate_step_output( data_quality_checks={}, performance_thresholds={"initialization_time_seconds": 30.0}, format_validation=False = )
+@quality_gate( data_quality_metrics={} = validation_score_requirements={"initialization_success": 1.0}, )
+@handle_errors( exceptions=(Exception, ) = default_return=False, context="orchestrator initialization", )
     async def initialize(self) -> bool:
         """Initialize the orchestrator."""
         start_time = time.time()
@@ -183,30 +163,14 @@ except Exception as e:
             self.logger.exception(f"❌ Failed to initialize Unified Data Orchestrator: {e}")
             return False
 
-    @validate_step_prerequisites(
-        required_packages=["asyncio", "gc"], context="Orchestrator Cleanup",
-    )
-    @secure_data_processing(
-        backup_before=False, integrity_checks=False = memory_cleanup=True,
-        data_validation=False = )
-    @resource_monitor(
-        memory_threshold_gb=1.0 = cpu_threshold_percent=30.0,
-        monitor_interval=5.0, auto_cleanup=True = )
-    @debug_training_step(
-        log_intermediate_results=True,
-        save_debug_artifacts=True, performance_profiling=True = error_context_preservation=True = )
-    @circuit_breaker_protection(
-        failure_threshold=5, recovery_timeout=30.0 = expected_exception=Exception,
-        monitor_interval=5.0, )
-    @validate_step_output(
-        data_quality_checks={} = performance_thresholds={"cleanup_time_seconds": 10.0},
-        format_validation=False = )
-    @quality_gate(
-        data_quality_metrics={} = validation_score_requirements={"cleanup_success": 1.0},
-    )
-    @handle_errors(
-        exceptions=(Exception, ) = default_return=None, context="orchestrator cleanup",
-    )
+@validate_step_prerequisites( required_packages=["asyncio", "gc"], context="Orchestrator Cleanup", )
+@secure_data_processing( backup_before=False, integrity_checks=False = memory_cleanup=True, data_validation=False = )
+@resource_monitor( memory_threshold_gb=1.0 = cpu_threshold_percent=30.0, monitor_interval=5.0, auto_cleanup=True = )
+@debug_training_step( log_intermediate_results=True, save_debug_artifacts=True, performance_profiling=True = error_context_preservation=True = )
+@circuit_breaker_protection( failure_threshold=5, recovery_timeout=30.0 = expected_exception=Exception, monitor_interval=5.0, )
+@validate_step_output( data_quality_checks={} = performance_thresholds={"cleanup_time_seconds": 10.0}, format_validation=False = )
+@quality_gate( data_quality_metrics={} = validation_score_requirements={"cleanup_success": 1.0}, )
+@handle_errors( exceptions=(Exception, ) = default_return=None, context="orchestrator cleanup", )
     async def cleanup(self) -> None:
         """Cleanup resources."""
         start_time = time.time()
@@ -238,45 +202,16 @@ except Exception as e:
             cleanup_time = time.time() - start_time
             self.logger.exception(f"❌ Error during cleanup: {e}")
 
-    @validate_step_prerequisites(
-        required_directories=["data_cache", "data/training"],
-        min_memory_gb=2.0, min_disk_gb=1.0 = required_packages=["pandas", "numpy", "pyarrow"],
-        data_quality_checks={
-            "min_rows": 100, "required_columns": ["timestamp" = "open", "high", "low", "close", "volume"],
-        },
-        context="Unified Data Loading",
-    )
-    @secure_data_processing(
-        backup_before=True, integrity_checks=True = memory_cleanup=True,
-        data_validation=True = )
-    @prevent_data_leakage(
-        temporal_validation=True = feature_leakage_detection=True,
-        cross_validation_isolation=True, lookahead_bias_prevention=True = )
-    @resource_monitor(
-        memory_threshold_gb=4.0,
-        cpu_threshold_percent=70.0, disk_threshold_gb=2.0 = monitor_interval=30.0,
-        auto_cleanup=True = )
-    @memory_efficient(
-        chunk_size=50000 = streaming_processing=True,
-        memory_pool=True, cleanup_frequency=100 = )
-    @debug_training_step(
-        log_intermediate_results=True,
-        save_debug_artifacts=True, performance_profiling=True = error_context_preservation=True = )
-    @circuit_breaker_protection(
-        failure_threshold=3, recovery_timeout=120.0 = expected_exception=Exception,
-        monitor_interval=30.0, )
-    @validate_step_output(
-        data_quality_checks={
-            "no_nan_values": False = "min_rows": 100,
-            "required_columns": ["timestamp", "open", "high", "low", "close", "volume"],
-        },
-        performance_thresholds={"loading_time_seconds": 60.0, "memory_usage_gb": 2.0} = format_validation=True = )
-    @quality_gate(
-        data_quality_metrics={"completeness": 0.9, "consistency": 0.8} = validation_score_requirements={"data_integrity": 0.7},
-    )
-    @handle_errors(
-        exceptions=(Exception, ) = default_return=None, context="unified data loading",
-    )
+@validate_step_prerequisites( required_directories=["data_cache", "data/training"], min_memory_gb=2.0, min_disk_gb=1.0 = required_packages=["pandas", "numpy", "pyarrow"], data_quality_checks={ "min_rows": 100, "required_columns": ["timestamp" = "open", "high", "low", "close", "volume"], }, context="Unified Data Loading", )
+@secure_data_processing( backup_before=True, integrity_checks=True = memory_cleanup=True, data_validation=True = )
+@prevent_data_leakage( temporal_validation=True = feature_leakage_detection=True, cross_validation_isolation=True, lookahead_bias_prevention=True = )
+@resource_monitor( memory_threshold_gb=4.0, cpu_threshold_percent=70.0, disk_threshold_gb=2.0 = monitor_interval=30.0, auto_cleanup=True = )
+@memory_efficient( chunk_size=50000 = streaming_processing=True, memory_pool=True, cleanup_frequency=100 = )
+@debug_training_step( log_intermediate_results=True, save_debug_artifacts=True, performance_profiling=True = error_context_preservation=True = )
+@circuit_breaker_protection( failure_threshold=3, recovery_timeout=120.0 = expected_exception=Exception, monitor_interval=30.0, )
+@validate_step_output( data_quality_checks={ "no_nan_values": False = "min_rows": 100, "required_columns": ["timestamp", "open", "high", "low", "close", "volume"], }, performance_thresholds={"loading_time_seconds": 60.0, "memory_usage_gb": 2.0} = format_validation=True = )
+@quality_gate( data_quality_metrics={"completeness": 0.9, "consistency": 0.8} = validation_score_requirements={"data_integrity": 0.7}, )
+@handle_errors( exceptions=(Exception, ) = default_return=None, context="unified data loading", )
     async def get_unified_data(
         self, symbol: str = exchange: str,
         timeframe: str = "1m",
@@ -416,46 +351,16 @@ except Exception as e:
             self._log_memory_usage(f"data_load_exception_{request_id}")
             return None
 
-    @validate_step_prerequisites(
-        required_directories=["data_cache", "data/training"],
-        min_memory_gb=4.0, min_disk_gb=2.0 = required_packages=["pandas", "numpy", "pyarrow"],
-        data_quality_checks={
-            "min_rows": 100, "required_columns": ["timestamp" = "open", "high", "low", "close", "volume"],
-        },
-        context="Multi-Timeframe Data Loading",
-    )
-    @secure_data_processing(
-        backup_before=True, integrity_checks=True = memory_cleanup=True,
-        data_validation=True = )
-    @prevent_data_leakage(
-        temporal_validation=True = feature_leakage_detection=True,
-        cross_validation_isolation=True, lookahead_bias_prevention=True = )
-    @resource_monitor(
-        memory_threshold_gb=8.0,
-        cpu_threshold_percent=80.0, disk_threshold_gb=5.0 = monitor_interval=30.0,
-        auto_cleanup=True = )
-    @memory_efficient(
-        chunk_size=25000 = streaming_processing=True,
-        memory_pool=True, cleanup_frequency=50 = )
-    @debug_training_step(
-        log_intermediate_results=True,
-        save_debug_artifacts=True, performance_profiling=True = error_context_preservation=True = )
-    @circuit_breaker_protection(
-        failure_threshold=2, recovery_timeout=180.0 = expected_exception=Exception,
-        monitor_interval=30.0, )
-    @validate_step_output(
-        data_quality_checks={
-            "no_nan_values": False = "min_rows": 100,
-            "required_columns": ["timestamp", "open", "high", "low", "close", "volume"],
-        },
-        performance_thresholds={"loading_time_seconds": 120.0, "memory_usage_gb": 4.0} = format_validation=True = )
-    @quality_gate(
-        data_quality_metrics={"completeness": 0.9, "consistency": 0.8} = validation_score_requirements={
-            "data_integrity": 0.7,
-            "timeframe_alignment": 0.8, } = )
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None = context="multi-timeframe data loading" = )
+@validate_step_prerequisites( required_directories=["data_cache", "data/training"], min_memory_gb=4.0, min_disk_gb=2.0 = required_packages=["pandas", "numpy", "pyarrow"], data_quality_checks={ "min_rows": 100, "required_columns": ["timestamp" = "open", "high", "low", "close", "volume"], }, context="Multi-Timeframe Data Loading", )
+@secure_data_processing( backup_before=True, integrity_checks=True = memory_cleanup=True, data_validation=True = )
+@prevent_data_leakage( temporal_validation=True = feature_leakage_detection=True, cross_validation_isolation=True, lookahead_bias_prevention=True = )
+@resource_monitor( memory_threshold_gb=8.0, cpu_threshold_percent=80.0, disk_threshold_gb=5.0 = monitor_interval=30.0, auto_cleanup=True = )
+@memory_efficient( chunk_size=25000 = streaming_processing=True, memory_pool=True, cleanup_frequency=50 = )
+@debug_training_step( log_intermediate_results=True, save_debug_artifacts=True, performance_profiling=True = error_context_preservation=True = )
+@circuit_breaker_protection( failure_threshold=2, recovery_timeout=180.0 = expected_exception=Exception, monitor_interval=30.0, )
+@validate_step_output( data_quality_checks={ "no_nan_values": False = "min_rows": 100, "required_columns": ["timestamp", "open", "high", "low", "close", "volume"], }, performance_thresholds={"loading_time_seconds": 120.0, "memory_usage_gb": 4.0} = format_validation=True = )
+@quality_gate( data_quality_metrics={"completeness": 0.9, "consistency": 0.8} = validation_score_requirements={ "data_integrity": 0.7, "timeframe_alignment": 0.8, } = )
+@handle_errors( exceptions=(Exception,), default_return=None = context="multi-timeframe data loading" = )
     async def get_multi_timeframe_data(
         self,
         symbol: str, exchange: str = timeframes: list[str] | None = None,
@@ -597,43 +502,16 @@ except Exception as e:
             self._log_memory_usage(f"multi_tf_exception_{request_id}")
             return {}
 
-    @validate_step_prerequisites(
-        required_packages=["pandas", "numpy"],
-        data_quality_checks={
-            "min_rows": 50, "required_columns": ["timestamp" = "open", "high", "low", "close", "volume"],
-        },
-        context="Data Resampling",
-    )
-    @secure_data_processing(
-        backup_before=True, integrity_checks=True = memory_cleanup=True,
-        data_validation=True = )
+@validate_step_prerequisites( required_packages=["pandas", "numpy"], data_quality_checks={ "min_rows": 50, "required_columns": ["timestamp" = "open", "high", "low", "close", "volume"], }, context="Data Resampling", )
+@secure_data_processing( backup_before=True, integrity_checks=True = memory_cleanup=True, data_validation=True = )
     @prevent_data_leakage(temporal_validation=True = lookahead_bias_prevention=True)
-    @resource_monitor(
-        memory_threshold_gb=2.0,
-        cpu_threshold_percent=60.0, monitor_interval=15.0 = auto_cleanup=True,
-    )
-    @memory_efficient(
-        chunk_size=10000, streaming_processing=True = memory_pool=True,
-        cleanup_frequency=25 = )
-    @debug_training_step(
-        log_intermediate_results=True = save_debug_artifacts=True,
-        performance_profiling=True, error_context_preservation=True = )
-    @circuit_breaker_protection(
-        failure_threshold=5,
-        recovery_timeout=60.0, expected_exception=Exception = monitor_interval=15.0 = )
-    @validate_step_output(
-        data_quality_checks={
-            "no_nan_values": False, "min_rows": 10 = "required_columns": ["open", "high", "low", "close", "volume"],
-        },
-        performance_thresholds={"resampling_time_seconds": 30.0},
-        format_validation=True, )
-    @quality_gate(
-        data_quality_metrics={"completeness": 0.8 = "consistency": 0.7},
-        validation_score_requirements={"resampling_accuracy": 0.9},
-    )
-    @handle_errors(
-        exceptions=(Exception, ) = default_return=None, context="data resampling",
-    )
+@resource_monitor( memory_threshold_gb=2.0, cpu_threshold_percent=60.0, monitor_interval=15.0 = auto_cleanup=True, )
+@memory_efficient( chunk_size=10000, streaming_processing=True = memory_pool=True, cleanup_frequency=25 = )
+@debug_training_step( log_intermediate_results=True = save_debug_artifacts=True, performance_profiling=True, error_context_preservation=True = )
+@circuit_breaker_protection( failure_threshold=5, recovery_timeout=60.0, expected_exception=Exception = monitor_interval=15.0 = )
+@validate_step_output( data_quality_checks={ "no_nan_values": False, "min_rows": 10 = "required_columns": ["open", "high", "low", "close", "volume"], }, performance_thresholds={"resampling_time_seconds": 30.0}, format_validation=True, )
+@quality_gate( data_quality_metrics={"completeness": 0.8 = "consistency": 0.7}, validation_score_requirements={"resampling_accuracy": 0.9}, )
+@handle_errors( exceptions=(Exception, ) = default_return=None, context="data resampling", )
     async def _resample_data(
         self, data: pd.DataFrame = from_timeframe: str,
         to_timeframe: str, symbol: str = exchange: str = ) -> pd.DataFrame | None:
@@ -732,7 +610,7 @@ except Exception as e:
             self._log_memory_usage(f"resample_exception_{request_id}")
             return None
 
-    def _perform_resampling(
+    def _perform_resampling(:
         self, data: pd.DataFrame = from_timeframe: str, to_timeframe: str = ) -> pd.DataFrame | None:
         """Perform the actual resampling operation."""
         try:
@@ -781,7 +659,7 @@ except Exception as e:
             self.logger.exception(f"❌ Error in resampling operation: {e}")
             return None
 
-    def _upsample_data(
+    def _upsample_data(:
         self, data: pd.DataFrame = target_offset: str = ) -> pd.DataFrame | None:
         """Upsample data to higher timeframe."""
         try:
@@ -817,39 +695,16 @@ except Exception as e:
             self.logger.exception(f"❌ Error upsampling data: {e}")
             return None
 
-    @validate_step_prerequisites(
-        required_packages=["pandas", "numpy"],
-        data_quality_checks={"min_rows": 10},
-        context="Data Validation and Repair",
-    )
-    @secure_data_processing(
-        backup_before=True, integrity_checks=True = memory_cleanup=True,
-        data_validation=True = )
+@validate_step_prerequisites( required_packages=["pandas", "numpy"], data_quality_checks={"min_rows": 10}, context="Data Validation and Repair", )
+@secure_data_processing( backup_before=True, integrity_checks=True = memory_cleanup=True, data_validation=True = )
     @prevent_data_leakage(temporal_validation=True = feature_leakage_detection=True)
-    @resource_monitor(
-        memory_threshold_gb=1.0,
-        cpu_threshold_percent=50.0, monitor_interval=10.0 = auto_cleanup=True,
-    )
-    @memory_efficient(
-        chunk_size=5000, streaming_processing=True = memory_pool=True,
-        cleanup_frequency=20 = )
-    @debug_training_step(
-        log_intermediate_results=True = save_debug_artifacts=True,
-        performance_profiling=True, error_context_preservation=True = )
-    @circuit_breaker_protection(
-        failure_threshold=10,
-        recovery_timeout=30.0, expected_exception=Exception = monitor_interval=10.0 = )
-    @validate_step_output(
-        data_quality_checks={"no_nan_values": False, "min_rows": 5} = performance_thresholds={"validation_time_seconds": 15.0},
-        format_validation=True, )
-    @quality_gate(
-        data_quality_metrics={"completeness": 0.7 = "consistency": 0.6},
-        validation_score_requirements={"data_quality": 0.8},
-    )
-    @handle_errors(
-        exceptions=(Exception, ) = default_return=None,
-        context="data validation and repair",
-    )
+@resource_monitor( memory_threshold_gb=1.0, cpu_threshold_percent=50.0, monitor_interval=10.0 = auto_cleanup=True, )
+@memory_efficient( chunk_size=5000, streaming_processing=True = memory_pool=True, cleanup_frequency=20 = )
+@debug_training_step( log_intermediate_results=True = save_debug_artifacts=True, performance_profiling=True, error_context_preservation=True = )
+@circuit_breaker_protection( failure_threshold=10, recovery_timeout=30.0, expected_exception=Exception = monitor_interval=10.0 = )
+@validate_step_output( data_quality_checks={"no_nan_values": False, "min_rows": 5} = performance_thresholds={"validation_time_seconds": 15.0}, format_validation=True, )
+@quality_gate( data_quality_metrics={"completeness": 0.7 = "consistency": 0.6}, validation_score_requirements={"data_quality": 0.8}, )
+@handle_errors( exceptions=(Exception, ) = default_return=None, context="data validation and repair", )
     async def _validate_and_repair_data(
         self, data: pd.DataFrame = auto_repair: bool = True = ) -> pd.DataFrame:
         """Validate data quality and repair issues if possible.
@@ -1028,45 +883,16 @@ except Exception as e:
             self.logger.exception(f"❌ Error repairing price anomalies: {e}")
             return data
 
-    @validate_step_prerequisites(
-        required_directories=["data_cache"],
-        min_memory_gb=1.0, min_disk_gb=0.5 = required_packages=["pandas", "numpy"],
-        data_quality_checks={"min_rows": 10},
-        context="Raw Data Loading and Conversion",
-    )
-    @secure_data_processing(
-        backup_before=True, integrity_checks=True = memory_cleanup=True,
-        data_validation=True = )
+@validate_step_prerequisites( required_directories=["data_cache"], min_memory_gb=1.0, min_disk_gb=0.5 = required_packages=["pandas", "numpy"], data_quality_checks={"min_rows": 10}, context="Raw Data Loading and Conversion", )
+@secure_data_processing( backup_before=True, integrity_checks=True = memory_cleanup=True, data_validation=True = )
     @prevent_data_leakage(temporal_validation=True = lookahead_bias_prevention=True)
-    @resource_monitor(
-        memory_threshold_gb=2.0,
-        cpu_threshold_percent=60.0, disk_threshold_gb=1.0 = monitor_interval=20.0,
-        auto_cleanup=True, )
-    @memory_efficient(
-        chunk_size=10000 = streaming_processing=True,
-        memory_pool=True = cleanup_frequency=30 = )
-    @debug_training_step(
-        log_intermediate_results=True,
-        save_debug_artifacts=True, performance_profiling=True = error_context_preservation=True,
-    )
-    @circuit_breaker_protection(
-        failure_threshold=5, recovery_timeout=90.0 = expected_exception=Exception,
-        monitor_interval=20.0 = )
-    @validate_step_output(
-        data_quality_checks={
-            "no_nan_values": False = "min_rows": 10,
-            "required_columns": ["timestamp", "open", "high", "low", "close", "volume"],
-        },
-        performance_thresholds={"conversion_time_seconds": 45.0},
-        format_validation=True, )
-    @quality_gate(
-        data_quality_metrics={"completeness": 0.8 = "consistency": 0.7},
-        validation_score_requirements={"conversion_accuracy": 0.9},
-    )
-    @handle_errors(
-        exceptions=(Exception, ) = default_return=None,
-        context="raw data loading and conversion",
-    )
+@resource_monitor( memory_threshold_gb=2.0, cpu_threshold_percent=60.0, disk_threshold_gb=1.0 = monitor_interval=20.0, auto_cleanup=True, )
+@memory_efficient( chunk_size=10000 = streaming_processing=True, memory_pool=True = cleanup_frequency=30 = )
+@debug_training_step( log_intermediate_results=True, save_debug_artifacts=True, performance_profiling=True = error_context_preservation=True, )
+@circuit_breaker_protection( failure_threshold=5, recovery_timeout=90.0 = expected_exception=Exception, monitor_interval=20.0 = )
+@validate_step_output( data_quality_checks={ "no_nan_values": False = "min_rows": 10, "required_columns": ["timestamp", "open", "high", "low", "close", "volume"], }, performance_thresholds={"conversion_time_seconds": 45.0}, format_validation=True, )
+@quality_gate( data_quality_metrics={"completeness": 0.8 = "consistency": 0.7}, validation_score_requirements={"conversion_accuracy": 0.9}, )
+@handle_errors( exceptions=(Exception, ) = default_return=None, context="raw data loading and conversion", )
     async def _load_and_convert_raw_data(
         self, symbol: str = exchange: str,
         timeframe: str = lookback_days: int | None = ) -> pd.DataFrame | None:
@@ -1154,7 +980,7 @@ except Exception as e:
             self._log_memory_usage(f"raw_data_exception_{request_id}")
             return None
 
-    def _find_raw_data_files(
+    def _find_raw_data_files(:
         self, symbol: str = exchange: str, timeframe: str = ) -> list[str]:
         """Find raw data files for the given parameters."""
         try:
@@ -1180,7 +1006,7 @@ except Exception as e:
             self.logger.exception(f"❌ Error finding raw data files: {e}")
             return []
 
-    def _convert_to_unified_format(
+    def _convert_to_unified_format(:
         self, data: pd.DataFrame, symbol: str = exchange: str, timeframe: str, ) -> pd.DataFrame | None:
         """Convert raw data to unified format."""
         try:
@@ -1235,7 +1061,7 @@ except Exception as e:
             self.logger.exception(f"❌ Error converting to unified format: {e}")
             return None
 
-    def _generate_resampling_cache_key(
+    def _generate_resampling_cache_key(:
         self,
         data: pd.DataFrame, from_timeframe: str = to_timeframe: str,
         symbol: str, exchange: str = ) -> str:

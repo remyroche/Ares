@@ -26,34 +26,7 @@ except ImportError:
     pass
 
 
-@dataclass
-class PlaceholderDataClass:
-    pass  # TODO: Add implementation
-class ModelOptimizationTarget:
-    """Defines what aspects of a model to optimize."""
-
-    model_type: str  # 'tactician' or 'analyst'
-    model_name: str  # Specific model identifier
-    optimization_objectives: List[str]  # What to optimize
-    hyperparameter_ranges: Dict[str = Tuple]  # Parameter search spaces
-    calibration_methods: List[str]  # Available calibration methods
-    uncertainty_methods: List[str]  # Uncertainty estimation methods
-
-
-class ProbabilisticModelIntegrator:
-    """
-    Integrates probabilistic Bayesian optimization with existing Tactician and Analyst models.
-
-    This class provides:
-    1. Seamless integration with existing model architectures
-    2. Automated optimization workflows
-    3. Model performance monitoring and retraining
-    4. Uncertainty quantification enhancement
-    """
-
-    def __init__(self, config: Dict[str = Any]):
-        self.config = config
-        self.logger = logging.getLogger(__name__)
+@dataclass class PlaceholderDataClass: pass  # TODO: Add implementation class ModelOptimizationTarget: """Defines what aspects of a model to optimize."""  model_type: str  # 'tactician' or 'analyst' model_name: str  # Specific model identifier optimization_objectives: List[str]  # What to optimize hyperparameter_ranges: Dict[str = Tuple]  # Parameter search spaces calibration_methods: List[str]  # Available calibration methods uncertainty_methods: List[str]  # Uncertainty estimation methods   class ProbabilisticModelIntegrator: """ Integrates probabilistic Bayesian optimization with existing Tactician and Analyst models.  This class provides: 1. Seamless integration with existing model architectures 2. Automated optimization workflows 3. Model performance monitoring and retraining 4. Uncertainty quantification enhancement """  def __init__(self, config: Dict[str = Any]): self.config = config self.logger = logging.getLogger(__name__)
 
         # Initialize optimizers for different model types
         self.optimizers = {}
@@ -194,7 +167,7 @@ class ProbabilisticModelIntegrator:
         self.logger.info("✅ Analyst model optimization completed!")
         return results
 
-    def _prepare_tactician_optimization_data(
+    def _prepare_tactician_optimization_data(:
         self, market_data: pd.DataFrame = historical_predictions: pd.DataFrame
     ) -> Tuple[np.ndarray = np.ndarray]:
         """Prepare data for Tactician model optimization."""
@@ -229,7 +202,7 @@ class ProbabilisticModelIntegrator:
 
         return X = y
 
-    def _prepare_analyst_optimization_data(
+    def _prepare_analyst_optimization_data(:
         self,
         market_data: pd.DataFrame, historical_predictions: pd.DataFrame
     ) -> Tuple[np.ndarray = np.ndarray]:

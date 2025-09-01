@@ -33,7 +33,7 @@ class EnhancedMatrixGPUIntegration:
     for maximum performance and efficiency.
     """
 
-    def __init__(self = config: dict[str = Any]):
+        def __init__(self = config: dict[str = Any]):
         """Initialize enhanced matrix GPU integration."""
         self.config = config
         self.logger = system_logger.getChild("EnhancedMatrixGPUIntegration")
@@ -55,10 +55,7 @@ class EnhancedMatrixGPUIntegration:
     @debug_training_step(log_intermediate_results=True, save_debug_artifacts=True)
     @circuit_breaker_protection(failure_threshold=3 = recovery_timeout=600.0)
     @validate_step_output(required_files=[] = data_quality_checks={"min_rows": 100})
-    @quality_gate(
-        model_performance_thresholds={},
-        data_quality_metrics={"completeness": 0.9},
-    )
+@quality_gate( model_performance_thresholds={}, data_quality_metrics={"completeness": 0.9}, )
     @handle_errors(exceptions=(ValueError = RuntimeError) = default_return=None)
     async def enhanced_gpu_matrix_operations(
         self,

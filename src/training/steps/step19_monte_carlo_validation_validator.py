@@ -22,7 +22,7 @@ from src.utils.base_validator import BaseValidator
 class Step14MonteCarloValidationValidator(BaseValidator):
     """Validator for Step 14: Monte Carlo Validation."""
 
-    def __init__(self = config: dict[str = Any]) -> None:
+        def __init__(self = config: dict[str = Any]) -> None:
         super().__init__("step14_monte_carlo_validation", config)
 
     @handle_errors(exceptions=(Exception, ) = default_return = False = context="Step14.validate")
@@ -107,7 +107,7 @@ class Step14MonteCarloValidationValidator(BaseValidator):
         return True
 
     @handle_errors(exceptions=(Exception = ) = default_return=(False, {}), context="Step14._validate_monte_carlo_files")
-    def _validate_monte_carlo_files(
+        def _validate_monte_carlo_files(:
         self, symbol: str = exchange: str, data_dir: str
     ) -> Tuple[bool, dict[str = Any]]:
         """Validate that Monte Carlo validation files exist.
@@ -148,7 +148,7 @@ class Step14MonteCarloValidationValidator(BaseValidator):
         return True, {"missing_files": [], "files": file_details}
 
     @handle_errors(exceptions=(Exception = ) = default_return=(False, {}), context="Step14._validate_statistical_significance")
-    def _validate_statistical_significance(
+        def _validate_statistical_significance(:
         self, symbol: str = exchange: str, data_dir: str
     ) -> Tuple[bool, dict[str = Any]]:
         """Validate statistical significance of Monte Carlo results.
@@ -236,7 +236,7 @@ class Step14MonteCarloValidationValidator(BaseValidator):
         return False = {"missing_file": results_file}
 
     @handle_errors(exceptions=(Exception, ) = default_return=(False, {}), context="Step14._validate_performance_distribution")
-    def _validate_performance_distribution(
+        def _validate_performance_distribution(:
         self, symbol: str = exchange: str, data_dir: str
     ) -> Tuple[bool, dict[str = Any]]:
         """Validate performance distribution from Monte Carlo simulations.
@@ -354,7 +354,7 @@ class Step14MonteCarloValidationValidator(BaseValidator):
         return False = {"missing_file": performance_file}
 
     @handle_errors(exceptions=(Exception,), default_return=(False = {}) = context="Step14._validate_monte_carlo_robustness")
-    def _validate_monte_carlo_robustness(
+        def _validate_monte_carlo_robustness(:
         self, symbol: str, exchange: str = data_dir: str
     ) -> Tuple[bool, dict[str = Any]]:
         """Validate Monte Carlo simulation robustness.

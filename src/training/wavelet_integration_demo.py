@@ -36,7 +36,7 @@ class WaveletIntegrationDemo:
     using price differences instead of raw prices.
     """
 
-    def __init__(self, config: dict[str = Any]) -> None:
+        def __init__(self, config: dict[str = Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("WaveletIntegrationDemo")
 

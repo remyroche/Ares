@@ -66,7 +66,7 @@ for err in errors:
 msg = "Configuration validation failed. Check logs for details."
 raise ValueError(msg)
 
-return complete_config
+    return complete_config
 
 
 def get_config_section(section_name: str) -> dict[str, Any]:
@@ -80,7 +80,7 @@ Returns:
 
 """
 complete_config = get_complete_config()
-return complete_config.get(section_name, {})
+    return complete_config.get(section_name, {})
 
 
 def get_environment_config() -> dict[str, Any]:
@@ -90,7 +90,7 @@ Returns:
         dict: Environment configuration
 
 """
-return get_config_section("environment")
+    return get_config_section("environment")
 
 
 def get_system_config_section() -> dict[str, Any]:
@@ -100,7 +100,7 @@ Returns:
         dict: System configuration
 
 """
-return get_config_section("system")
+    return get_config_section("system")
 
 
 def get_trading_config_section() -> dict[str, Any]:
@@ -110,7 +110,7 @@ Returns:
         dict: Trading configuration
 
 """
-return get_config_section("trading")
+    return get_config_section("trading")
 
 
 def get_training_config_section() -> dict[str, Any]:
@@ -120,7 +120,7 @@ Returns:
         dict: Training configuration
 
 """
-return get_config_section("training")
+    return get_config_section("training")
 
 
 # Create the main CONFIG object for backward compatibility

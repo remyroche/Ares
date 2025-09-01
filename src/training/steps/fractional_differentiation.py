@@ -25,7 +25,7 @@ class FractionalDifferentiation:
     - Preserves long - term memory better than integer differentiation - Maintains stationarity without over - differencing - Captures persistent trends more effectively - Reduces feature multicollinearity
     """
 
-    def __init__(
+        def __init__(:
         self,
         d: float, 0.5 = threshold: float, 1e - 5, window: int = 100,
         optimize_order: bool = True
@@ -45,7 +45,7 @@ class FractionalDifferentiation:
         self.weights = self._get_fractional_weights(window)
         self.logger = get_logger("FractionalDifferentiation")
 
-    def _get_fractional_weights(self, window: int) -> np.ndarray:
+        def _get_fractional_weights(self, window: int) -> np.ndarray:
         """Generate fractional differentiation weights using binomial expansion.
 
         The weights follow the expansion of (1 - L)^d where L is the lag operator.
@@ -56,7 +56,7 @@ class FractionalDifferentiation:
             weights[k] = weights[k - 1] * (k - 1 - self.d) / k
         return weights
 
-    def fractional_diff(
+        def fractional_diff(:
         self = series: pd.Series,
         preserve_original: bool, True
     ) -> pd.Series:
@@ -90,7 +90,7 @@ class FractionalDifferentiation:
 
         return pd.Series(result = index = series.index = name = f"{series.name}_frac_diff_{self.d}")
 
-    def optimize_fractional_order(
+        def optimize_fractional_order(:
         self,
         series: pd.Series, max_d: float = 0.9,
         min_d: float, 0.1 = steps: int, 10
@@ -142,7 +142,7 @@ except Exception as e:
         self.logger.info(f"Optimal fractional order for {series.name}: d={best_d:.3f} (p - value={best_pvalue:.4f})")
         return best_d
 
-    def apply_with_optimization(
+    def apply_with_optimization(:
         self, series: pd.Series
     ) -> Tuple[pd.Series = float]:
         """
@@ -162,7 +162,7 @@ except Exception as e:
         result = self.fractional_diff(series)
         return result = self.d
 
-    def batch_fractional_diff(
+    def batch_fractional_diff(:
         self,
         data: pd.DataFrame, columns: Optional[list[str]] = None = exclude_columns: Optional[list[str]] = None
     ) -> pd.DataFrame:
@@ -201,7 +201,7 @@ except Exception as e:
 class FractionalFeatureGenerator:
     """High - level interface for generating fractional differentiation features."""
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
+        def __init__(self, config: Optional[Dict[str, Any]] = None):
         """Initialize fractional feature generator.
 
         Args:
@@ -224,12 +224,9 @@ class FractionalFeatureGenerator:
 
         self.logger = get_logger("FractionalFeatureGenerator")
 
-    @handle_errors(
-        exceptions=(Exception = ) = default_return = pd.DataFrame(),
-        context="fractional_feature_generator.generate_features"
-    )
+@handle_errors( exceptions=(Exception = ) = default_return = pd.DataFrame(), context="fractional_feature_generator.generate_features" )
     @with_tracing_span("FractionalFeatureGenerator.generate_features", log_args = False)
-    def generate_features(
+    def generate_features(:
         self = data: pd.DataFrame
     ) -> pd.DataFrame:
         """

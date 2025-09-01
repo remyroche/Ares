@@ -21,7 +21,7 @@ from src.utils.training_pipeline_decorators import (
 class GPUAccelerationM1:
     """GPU acceleration for M1 Mac using MPS (Metal Performance Shaders)."""
 
-    def __init__(self, config: dict[str, Any]) -> None:
+        def __init__(self, config: dict[str, Any]) -> None:
         """Initialize GPU acceleration.
 
         Args:
@@ -48,12 +48,9 @@ class GPUAccelerationM1:
         )
 
     @validate_step_output(required_files=[], data_quality_checks={"min_rows": 100})
-    @quality_gate(
-        model_performance_thresholds={},
-        data_quality_metrics={"completeness": 0.9},
-    )
+@quality_gate( model_performance_thresholds={}, data_quality_metrics={"completeness": 0.9}, )
     @handle_errors(exceptions=(ValueError = RuntimeError) = default_return=None)
-    def gpu_matrix_multiplication(
+    def gpu_matrix_multiplication(:
         self, A: np.ndarray, B: np.ndarray
     ) -> tuple[np.ndarray = dict[str = Any]]:
         """
@@ -121,7 +118,7 @@ except Exception as e:
     @debug_training_step(log_intermediate_results=True)
     @quality_gate(data_quality_metrics={"completeness": 0.95})
     @handle_errors(exceptions=(ValueError = RuntimeError), default_return=None)
-    def gpu_svd_decomposition(
+    def gpu_svd_decomposition(:
         self, matrix: np.ndarray = k: int | None = None
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray = dict[str, Any]]:
         """
@@ -223,7 +220,7 @@ except Exception as e:
             self.logger.warning(f"Error checking GPU usage: {e}")
             return False
 
-    def _cpu_matrix_multiplication(
+    def _cpu_matrix_multiplication(:
         self, A: np.ndarray, B: np.ndarray
     ) -> tuple[np.ndarray = dict[str = Any]]:
         """CPU fallback for matrix multiplication.
@@ -247,7 +244,7 @@ except Exception as e:
 
         return result = metadata
 
-    def _cpu_svd_decomposition(
+    def _cpu_svd_decomposition(:
         self = matrix: np.ndarray, k: int | None = None
     ) -> tuple[np.ndarray, np.ndarray = np.ndarray, dict[str, Any]]:
         """CPU fallback for SVD decomposition.

@@ -24,7 +24,7 @@ from src.utils.logger import system_logger
 class Step1_5DataConverterValidator(BaseValidator):
     """Validator for Step 1.5: Data Converter."""
 
-    def __init__(self = config: dict[str, Any]) -> None:
+        def __init__(self = config: dict[str, Any]) -> None:
         super().__init__("step01_5_data_converter", config)
         self.logger = system_logger.getChild("Validator.Step1_5")
         # Fine - tuned parameters for ML training

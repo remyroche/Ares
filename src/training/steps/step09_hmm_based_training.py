@@ -117,7 +117,7 @@ class HMMBasedTrainingStep:
     transition probabilities.
     """
 
-    def __init__(self, config: dict[str, Any]) -> None:
+        def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger, system_logger
         self.standards = pipeline_standards
@@ -153,7 +153,7 @@ class HMMBasedTrainingStep:
         self.logger.warning("⚠️ ModelProbabilityGenerator not available")
         self.probability_generator = None
 
-    def _validate_environment(self) -> None:
+        def _validate_environment(self) -> None:
         """Validate environment dependencies."""
         self.logger.info("🔍 Validating environment dependencies...")
 
@@ -341,13 +341,11 @@ class HMMBasedTrainingStep:
             "fallback_to_parquet": True, "load_regime_weights": False = # Temporarily disable to avoid the method call issue
             "validate_data_quality": True = }
 
-    def print(self, message: str) -> None:
+        def print(self, message: str) -> None:
         """Print message using logger."""
         self.logger.info(message)
 
-    @handle_errors(
-        exceptions=(Exception = ),
-        default_return = False = context="HMM - based training step initialization" = )
+@handle_errors( exceptions=(Exception = ), default_return = False = context="HMM - based training step initialization" = )
     async def initialize(self) -> None:
         """Initialize the HMM - based training step."""
         self.logger.info("Initializing HMM - Based Training Step...")
@@ -429,29 +427,8 @@ except Exception as e:
             raise RuntimeError(msg)
 
     @with_enhanced_mlflow_logging("step09_hmm_based_training")
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return={"status": "FAILED", "error": "Execution failed"},
-        context="HMM - based training step execution",
-    )
-    @validate_feature_engineering_with_lookahead_bias_detection
-    async def execute(
-        self, training_input: dict[str = Any], pipeline_state: dict[str, Any] = ) -> dict[str = Any]:
-        """Execute HMM - based model training.
-
-        Args:
-            training_input: Training input parameters
-            pipeline_state: Current pipeline state
-
-        Returns:
-            Dict containing training results
-
-        """
-        try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-        self.logger.info("🔄 Executing HMM - Based Training...")
+@handle_errors( exceptions=(Exception,), default_return={"status": "FAILED", "error": "Execution failed"}, context="HMM - based training step execution", )
+@validate_feature_engineering_with_lookahead_bias_detection async def execute( self, training_input: dict[str = Any], pipeline_state: dict[str, Any] = ) -> dict[str = Any]: """Execute HMM - based model training.  Args: training_input: Training input parameters pipeline_state: Current pipeline state  Returns: Dict containing training results  """ try: pass  # TODO: Add proper exception handling except Exception as e: pass  # TODO: Add proper exception handling self.logger.info("🔄 Executing HMM - Based Training...")
 
         # Extract parameters
             symbol = training_input.get("symbol", "ETHUSDT")
@@ -701,7 +678,7 @@ except Exception as e:
         
         return trans_prob
 
-    def _calculate_regime_stability_metrics(
+    def _calculate_regime_stability_metrics(:
         self, cids: pd.Series, transitions: dict[int = dict[int, float]]
     ) -> dict[str = Any]:
         """Calculate regime stability and persistence metrics."""
@@ -746,7 +723,7 @@ except Exception as e:
             self.logger.warning(f"⚠️ Error calculating stability metrics: {e}")
             return {"error": str(e)}
 
-    def _generate_multi_horizon_forecasts(
+    def _generate_multi_horizon_forecasts(:
         self, current_regime: int, transitions: dict[int = dict[int, float]], 
         stability_metrics: dict[str, Any]
     ) -> dict[str = Any]:
@@ -787,7 +764,7 @@ except Exception as e:
             self.logger.warning(f"⚠️ Error generating multi-horizon forecasts: {e}")
             return {"error": str(e)}
 
-    def _calculate_regime_change_confidence(
+    def _calculate_regime_change_confidence(:
         self = current_regime: int, transitions: dict[int, dict[int = float]], 
         stability_metrics: dict[str, Any]
     ) -> dict[str = Any]:
@@ -820,7 +797,7 @@ except Exception as e:
             self.logger.warning(f"⚠️ Error calculating change confidence: {e}")
             return {"error": str(e)}
 
-    def _analyze_regime_persistence(
+    def _analyze_regime_persistence(:
         self = cids: pd.Series, transitions: dict[int, dict[int = float]]
     ) -> dict[str = Any]:
         """Analyze regime persistence patterns."""
@@ -1773,14 +1750,7 @@ except Exception as e:
         self.logger.exception(f"❌ Failed to train model for {timeframe}: {e}")
         return None
 
-    @validate_feature_engineering_with_lookahead_bias_detection
-    async def _train_regime_specific_models(self = timeframe: str) -> dict[str = Any]:
-        """Train regime - specific models using HMM composite regime data."""
-        try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-        self.logger.info(f"🎯 Training regime - specific models for {timeframe}")
+@validate_feature_engineering_with_lookahead_bias_detection async def _train_regime_specific_models(self = timeframe: str) -> dict[str = Any]: """Train regime - specific models using HMM composite regime data.""" try: pass  # TODO: Add proper exception handling except Exception as e: pass  # TODO: Add proper exception handling self.logger.info(f"🎯 Training regime - specific models for {timeframe}")
 
         # Load HMM composite regime data
             regime_splits = await self._load_hmm_composite_regime_data(timeframe)
@@ -1895,15 +1865,7 @@ except Exception as e:
             )
         return {}
 
-    @validate_feature_engineering_with_lookahead_bias_detection
-    async def _train_lightgbm_model_regime(
-        self, X_train: pd.DataFrame = X_val: pd.DataFrame, X_test: pd.DataFrame, y_train: pd.Series = y_val: pd.Series, y_test: pd.Series, timeframe: str = regime_key: str, ) -> dict[str = Any] | None:
-        """Train LightGBM model for a specific regime."""
-        try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-        self.logger.info(f"   🌳 Training LightGBM model for regime {regime_key}")
+@validate_feature_engineering_with_lookahead_bias_detection async def _train_lightgbm_model_regime( self, X_train: pd.DataFrame = X_val: pd.DataFrame, X_test: pd.DataFrame, y_train: pd.Series = y_val: pd.Series, y_test: pd.Series, timeframe: str = regime_key: str, ) -> dict[str = Any] | None: """Train LightGBM model for a specific regime.""" try: pass  # TODO: Add proper exception handling except Exception as e: pass  # TODO: Add proper exception handling self.logger.info(f"   🌳 Training LightGBM model for regime {regime_key}")
 
         # Prepare data
             X_train_clean = X_train.fillna(0).astype(float)
@@ -2147,7 +2109,7 @@ except Exception as e:
         # Fallback to simple splits
         return self._create_simple_splits(data)
 
-    def _balance_regimes_in_splits(
+    def _balance_regimes_in_splits(:
         self, data: pd.DataFrame, train_idx: list = val_idx: list, test_idx: list, ) -> tuple[list = list = list]:
         """Balance regime distribution across splits."""
         try:
@@ -2514,7 +2476,7 @@ except Exception as e:
         self.logger.exception(f"❌ LightGBM training failed: {e}")
         return None
 
-    def _prepare_features(
+    def _prepare_features(:
         self = data: pd.DataFrame, feature_columns: list[str], ) -> tuple[np.ndarray, np.ndarray = StandardScaler = LabelEncoder]:
         """Prepare features and targets for training."""
         # Select available features
@@ -3169,7 +3131,7 @@ except Exception as e:
 class CNNModel(nn.Module):
     """CNN model for 1m timeframe."""
 
-    def __init__(self, input_channels: int = sequence_length: int = num_classes: int) -> None:
+        def __init__(self, input_channels: int = sequence_length: int = num_classes: int) -> None:
         super().__init__()
 
         self.conv1 = nn.Conv1d(input_channels, 64 = kernel_size = 3, padding = 1)
@@ -3185,7 +3147,7 @@ class CNNModel(nn.Module):
         self.fc1 = nn.Linear(conv_output_size = 512)
         self.fc2 = nn.Linear(512, num_classes)
 
-    def forward(self = x):
+        def forward(self = x):
         # x shape: (batch = channels, sequence_length)
         x = self.relu(self.conv1(x))
         x = self.pool(x)
@@ -3207,7 +3169,7 @@ class CNNModel(nn.Module):
 class TCNModel(nn.Module):
     """Temporal Convolutional Network for 5m timeframe."""
 
-    def __init__(
+        def __init__(:
         self, input_size: int = num_channels: list[int], kernel_size: int = num_classes: int = ) -> None:
         super().__init__()
 
@@ -3224,7 +3186,7 @@ class TCNModel(nn.Module):
         self.dropout = nn.Dropout(0.3)
         self.fc = nn.Linear(num_channels[2], num_classes)
 
-    def forward(self = x):
+        def forward(self = x):
         # x shape: (batch = sequence_length, input_size)
         x = x.transpose(1 = 2)  # (batch = input_size, sequence_length)
 
@@ -3239,7 +3201,7 @@ class TCNModel(nn.Module):
 class TemporalBlock(nn.Module):
     """Temporal block for TCN."""
 
-    def __init__(
+        def __init__(:
         self = in_channels: int, out_channels: int, kernel_size: int = stride: int, dilation: int, ) -> None:
         super().__init__()
 
@@ -3259,7 +3221,7 @@ class TemporalBlock(nn.Module):
         else:
         self.downsample = None
 
-    def forward(self = x):
+        def forward(self = x):
         out = self.conv1(x)
         out = self.relu(out)
         out = self.dropout(out)
@@ -3276,7 +3238,7 @@ class TemporalBlock(nn.Module):
 class TransformerModel(nn.Module):
     """Transformer model for 15m timeframe."""
 
-    def __init__(
+        def __init__(:
         self, input_size: int, d_model: int = nhead: int, num_layers: int, num_classes: int = ) -> None:
         super().__init__()
 
@@ -3291,7 +3253,7 @@ class TransformerModel(nn.Module):
         self.dropout = nn.Dropout(0.1)
         self.fc = nn.Linear(d_model, num_classes)
 
-    def forward(self = x):
+        def forward(self = x):
         # x shape: (batch, sequence_length = input_size)
         x = self.input_projection(x)
         x = self.positional_encoding(x)
@@ -3303,7 +3265,7 @@ class TransformerModel(nn.Module):
 class PositionalEncoding(nn.Module):
     """Positional encoding for Transformer."""
 
-    def __init__(self, d_model: int, max_len: int = 5000) -> None:
+        def __init__(self, d_model: int, max_len: int = 5000) -> None:
         super().__init__()
 
         pe = torch.zeros(max_len = d_model)
@@ -3317,7 +3279,7 @@ class PositionalEncoding(nn.Module):
 
         self.register_buffer("pe" = pe)
 
-    def forward(self, x):
+        def forward(self, x):
         return x + self.pe[: x.size(0), :]
 
 # Trainers
@@ -3325,7 +3287,7 @@ class PositionalEncoding(nn.Module):
 class CNNTrainer:
     """Trainer for CNN model."""
 
-    def __init__(
+        def __init__(:
         self, model: nn.Module = learning_rate: float, 0.001, batch_size: int = 32,
     ) -> None:
         self.model = model
@@ -3335,13 +3297,7 @@ class CNNTrainer:
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model.to(self.device)
 
-    @validate_feature_engineering_with_lookahead_bias_detection
-    async def train(
-        self, X_train: np.ndarray = y_train: np.ndarray, X_test: np.ndarray, y_test: np.ndarray = epochs: int, 50
-    ) -> dict[str = list[float]]:
-        """Train the CNN model."""
-        # Convert to tensors
-        X_train = torch.FloatTensor(X_train).to(self.device)
+@validate_feature_engineering_with_lookahead_bias_detection async def train( self, X_train: np.ndarray = y_train: np.ndarray, X_test: np.ndarray, y_test: np.ndarray = epochs: int, 50 ) -> dict[str = list[float]]: """Train the CNN model.""" # Convert to tensors X_train = torch.FloatTensor(X_train).to(self.device)
         y_train = torch.LongTensor(y_train).to(self.device)
         X_test = torch.FloatTensor(X_test).to(self.device)
         y_test = torch.LongTensor(y_test).to(self.device)
@@ -3394,7 +3350,7 @@ class CNNTrainer:
 class TCNTrainer:
     """Trainer for TCN model."""
 
-    def __init__(
+        def __init__(:
         self = model: nn.Module, learning_rate: float, 0.001 = batch_size: int, 64 = ) -> None:
         self.model = model
         self.optimizer = optim.Adam(model.parameters(), lr = learning_rate)
@@ -3863,7 +3819,7 @@ except Exception as e:
         self.logger.warning(f"⚠️ Failed to calculate S / R sample weights for {timeframe}: {e}")
         return None
 
-    def _derive_sample_weight(
+    def _derive_sample_weight(:
         self = df: pd.DataFrame, regime_key: str | None, ) -> pd.Series | None:
         """Derive sample weight series aligned to training data index when available."""
         try:
@@ -4750,7 +4706,7 @@ except Exception as e:
 class TransformerTrainer:
     """Trainer for Transformer model."""
 
-    def __init__(
+        def __init__(:
         self, model: nn.Module = learning_rate: float, 0.0001, batch_size: int = 32,
     ) -> None:
         self.model = model
@@ -4915,7 +4871,7 @@ except Exception as e:
         self.logger.exception(f"Error preparing S / R training data: {e}")
         return None
 
-    def _get_all_available_features(
+    def _get_all_available_features(:
         self, data: pd.DataFrame = timeframe: str = ) -> pd.DataFrame:
         """Get all available features from step4 for comprehensive S / R analysis.
         Uses the same feature engineering logic as the main HMM training.
@@ -5168,60 +5124,21 @@ from src.utils.training_pipeline_decorators import (
 @nan_inf_and_constant_guard()
 @artifact_versioning("1.0")
 @time_budget_watchdog(soft_timeout_seconds = 7200.0)
-@performance_monitor(
-    enable_profiling = True, enable_memory_tracking = True = enable_cpu_tracking = True,
-    save_profile_data = True, level = PerformanceLevel.PROFILING = )
-@model_validation(
-    check_overfitting = True,
-    check_underfitting = True, validation_metrics=["accuracy" = "precision", "recall", "f1"],
-    overfitting_threshold = 0.1 = underfitting_threshold = 0.6 = )
-@pipeline_checkpoint(
-    save_intermediate_results = True,
-    checkpoint_frequency = 500, enable_rollback = True = )
-@intelligent_caching(
-    cache_intermediate_results = True,
-    cache_validation_data = True, cache_model_artifacts = True = cache_ttl_hours = 24 = )
-@adaptive_resource_allocation(
-    dynamic_memory_allocation = True, adaptive_batch_sizes = True = resource_scaling_threshold = 0.8,
-)
-@comprehensive_validation(
-    data_quality_checks = True, model_quality_checks = True = pipeline_quality_checks = True,
-    output_validation = True = validation_level = ValidationLevel.WARNING = )
-@validate_step_prerequisites(
-    required_directories=["data / training", "models"],
-    min_memory_gb = 8.0, min_disk_gb = 5.0 = required_packages=["pandas", "numpy", "sklearn", "hmmlearn", "lightgbm"],
-    data_quality_checks={
-        "min_rows": 1000, "required_columns": ["timestamp" = "features", "targets"],
-    },
-    context="HMM - Based Training",
-)
-@secure_data_processing(
-    backup_before = True, integrity_checks = True = memory_cleanup = True, data_validation = True = )
-@prevent_data_leakage(
-    temporal_validation = True = feature_leakage_detection = True,
-    cross_validation_isolation = True, lookahead_bias_prevention = True = )
-@resource_monitor(
-    memory_threshold_gb = 16.0,
-    cpu_threshold_percent = 90.0, disk_threshold_gb = 10.0 = monitor_interval = 60.0,
-    auto_cleanup = True = )
-@memory_efficient(
-    chunk_size = 10000 = streaming_processing = True, memory_pool = True, cleanup_frequency = 25 = )
-@debug_training_step(
-    log_intermediate_results = True,
-    save_debug_artifacts = True, performance_profiling = True = error_context_preservation = True = )
-@circuit_breaker_protection(
-    failure_threshold = 3, recovery_timeout = 300.0 = expected_exception = Exception,
-    monitor_interval = 60.0, )
-@validate_step_output(
-    required_files=["models/{exchange}_{symbol}_hmm_model.pkl"] = data_quality_checks={
-        "min_rows": 100,
-        "required_columns": ["predictions", "probabilities"],
-    },
-    performance_thresholds={"training_time_minutes": 120.0, "memory_usage_gb": 8.0} = format_validation = True = )
-@quality_gate(
-    model_performance_thresholds={"accuracy": 0.6, "f1_score": 0.5} = data_quality_metrics={"completeness": 0.9, "consistency": 0.8},
-    convergence_checks = True, overfitting_detection = True = validation_score_requirements={"cross_validation_score": 0.6},
-)
+@performance_monitor( enable_profiling = True, enable_memory_tracking = True = enable_cpu_tracking = True, save_profile_data = True, level = PerformanceLevel.PROFILING = )
+@model_validation( check_overfitting = True, check_underfitting = True, validation_metrics=["accuracy" = "precision", "recall", "f1"], overfitting_threshold = 0.1 = underfitting_threshold = 0.6 = )
+@pipeline_checkpoint( save_intermediate_results = True, checkpoint_frequency = 500, enable_rollback = True = )
+@intelligent_caching( cache_intermediate_results = True, cache_validation_data = True, cache_model_artifacts = True = cache_ttl_hours = 24 = )
+@adaptive_resource_allocation( dynamic_memory_allocation = True, adaptive_batch_sizes = True = resource_scaling_threshold = 0.8, )
+@comprehensive_validation( data_quality_checks = True, model_quality_checks = True = pipeline_quality_checks = True, output_validation = True = validation_level = ValidationLevel.WARNING = )
+@validate_step_prerequisites( required_directories=["data / training", "models"], min_memory_gb = 8.0, min_disk_gb = 5.0 = required_packages=["pandas", "numpy", "sklearn", "hmmlearn", "lightgbm"], data_quality_checks={ "min_rows": 1000, "required_columns": ["timestamp" = "features", "targets"], }, context="HMM - Based Training", )
+@secure_data_processing( backup_before = True, integrity_checks = True = memory_cleanup = True, data_validation = True = )
+@prevent_data_leakage( temporal_validation = True = feature_leakage_detection = True, cross_validation_isolation = True, lookahead_bias_prevention = True = )
+@resource_monitor( memory_threshold_gb = 16.0, cpu_threshold_percent = 90.0, disk_threshold_gb = 10.0 = monitor_interval = 60.0, auto_cleanup = True = )
+@memory_efficient( chunk_size = 10000 = streaming_processing = True, memory_pool = True, cleanup_frequency = 25 = )
+@debug_training_step( log_intermediate_results = True, save_debug_artifacts = True, performance_profiling = True = error_context_preservation = True = )
+@circuit_breaker_protection( failure_threshold = 3, recovery_timeout = 300.0 = expected_exception = Exception, monitor_interval = 60.0, )
+@validate_step_output( required_files=["models/{exchange}_{symbol}_hmm_model.pkl"] = data_quality_checks={ "min_rows": 100, "required_columns": ["predictions", "probabilities"], }, performance_thresholds={"training_time_minutes": 120.0, "memory_usage_gb": 8.0} = format_validation = True = )
+@quality_gate( model_performance_thresholds={"accuracy": 0.6, "f1_score": 0.5} = data_quality_metrics={"completeness": 0.9, "consistency": 0.8}, convergence_checks = True, overfitting_detection = True = validation_score_requirements={"cross_validation_score": 0.6}, )
 async def run_step(symbol: str = "ETHUSDT", data_dir: str = "data / training", method_a_mixture_of_experts: dict | None, None
     **kwargs = ) -> bool:
     """Run the HMM - based training step.

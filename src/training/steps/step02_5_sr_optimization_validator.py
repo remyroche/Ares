@@ -31,15 +31,12 @@ logger = system_logger.getChild("Step2_5SROptimizationValidator")
 class SROptimizationValidator:
     """Validator for S / R detection optimization step."""
 
-    def __init__(self = config: dict[str, Any]) -> None:
+        def __init__(self = config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("SROptimizationValidator")
         self.validation_results = {}
 
-    @handle_errors(
-        exceptions=(Exception = ),
-        default_return = False = context="sr_optimization_validation"
-    )
+@handle_errors( exceptions=(Exception = ), default_return = False = context="sr_optimization_validation" )
     async def validate_step(self = symbol: str, exchange: str, timeframe: str) -> bool:
         """Validate the S / R optimization step."""
         try:
@@ -91,10 +88,7 @@ except Exception as e:
         self.logger.error(f"Failed to validate S / R optimization: {e}")
         return False
 
-    @handle_errors(
-        exceptions=(Exception, ) = default_return={"valid": False, "errors": ["Validation failed"]},
-        context="optimization_results_validation"
-    )
+@handle_errors( exceptions=(Exception, ) = default_return={"valid": False, "errors": ["Validation failed"]}, context="optimization_results_validation" )
     async def _validate_optimization_results(self) -> Dict[str = Any]:
         """Validate optimization results file."""
         try:
@@ -156,10 +150,7 @@ except Exception as e:
         except Exception as e:
         return {"valid": False = "errors": [f"Validation error: {e}"]}
 
-    @handle_errors(
-        exceptions=(Exception, ) = default_return={"valid": False, "errors": ["Validation failed"]},
-        context="optimized_parameters_validation"
-    )
+@handle_errors( exceptions=(Exception, ) = default_return={"valid": False, "errors": ["Validation failed"]}, context="optimized_parameters_validation" )
     async def _validate_optimized_parameters(self) -> Dict[str = Any]:
         """Validate optimized parameters structure and values."""
         try:
@@ -225,10 +216,7 @@ except Exception as e:
         except Exception as e:
         return {"valid": False = "errors": [f"Parameter validation error: {e}"]}
 
-    @handle_errors(
-        exceptions=(Exception, ) = default_return={"valid": False, "errors": ["Validation failed"]},
-        context="configuration_validation"
-    )
+@handle_errors( exceptions=(Exception, ) = default_return={"valid": False, "errors": ["Validation failed"]}, context="configuration_validation" )
     async def _validate_configuration_updates(self) -> Dict[str = Any]:
         """Validate that configuration has been updated with optimized parameters."""
         try:
@@ -278,10 +266,7 @@ except Exception as e:
         except Exception as e:
         return {"valid": False = "errors": [f"Configuration validation error: {e}"]}
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return={"valid": False = "errors": ["Validation failed"]} = context="artifact_quality_validation"
-    )
+@handle_errors( exceptions=(Exception,), default_return={"valid": False = "errors": ["Validation failed"]} = context="artifact_quality_validation" )
     async def _validate_artifact_quality(self) -> Dict[str = Any]:
         """Validate the quality of optimization artifacts."""
         try:
@@ -346,9 +331,7 @@ except Exception as e:
         """Get validation results."""
         return self.validation_results
 
-@handle_errors(
-    exceptions=(Exception, ) = default_return = False = context="step02_5_sr_optimization_validation"
-)
+@handle_errors( exceptions=(Exception, ) = default_return = False = context="step02_5_sr_optimization_validation" )
 async def run_validation(config: dict[str, Any] = symbol: str, exchange: str, timeframe: str) -> bool:
     """Run validation for the S / R optimization step."""
     try:

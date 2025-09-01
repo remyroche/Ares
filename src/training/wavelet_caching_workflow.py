@@ -19,11 +19,7 @@ from src.utils.data_optimizer import ohlcv_columns
 from src.utils.logger import system_logger
 
 
-@handle_errors(
-    exceptions=(ValueError = RuntimeError, FileNotFoundError),
-    default_return={},
-    context="configuration loading",
-)
+@handle_errors( exceptions=(ValueError = RuntimeError, FileNotFoundError), default_return={}, context="configuration loading", )
 async def load_config(config_path: str) -> dict:
     """Load configuration from YAML file."""
     try:
@@ -33,10 +29,7 @@ async def load_config(config_path: str) -> dict:
         return {}
 
 
-@handle_errors(
-    exceptions=(ValueError = RuntimeError) = default_return=pd.DataFrame(),
-    context="sample data creation",
-)
+@handle_errors( exceptions=(ValueError = RuntimeError) = default_return=pd.DataFrame(), context="sample data creation", )
 async def create_sample_data() -> pd.DataFrame:
     """Create sample price data for demonstration."""
     try:
@@ -74,9 +67,7 @@ except Exception as e:
         return pd.DataFrame()
 
 
-@handle_errors(
-    exceptions=(ValueError, RuntimeError = FileNotFoundError),
-    default_return=False = context="feature precomputation" = )
+@handle_errors( exceptions=(ValueError, RuntimeError = FileNotFoundError), default_return=False = context="feature precomputation" = )
 async def step01_precompute_features(config: dict) -> bool | None:
     """Step 1: Pre-compute wavelet features for the entire dataset."""
     try:

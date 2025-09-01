@@ -34,30 +34,22 @@ Initialize improved pipeline executor.
 Args:
             pipeline_components: Dictionary containing all pipeline components
 """
-self.logger = system_logger.getChild("ImprovedPipelineExecutor")
+    self.logger = system_logger.getChild("ImprovedPipelineExecutor")
 
 # Pipeline components
-self.analyst = pipeline_components.get("analyst")
-self.strategist = pipeline_components.get("strategist")
-self.tactician = pipeline_components.get("tactician")
-self.dual_model_system = pipeline_components.get("dual_model_system")
-self.supervisor = pipeline_components.get("supervisor")
-self.exchange_client = pipeline_components.get("exchange_client")
+    self.analyst = pipeline_components.get("analyst")
+    self.strategist = pipeline_components.get("strategist")
+    self.tactician = pipeline_components.get("tactician")
+    self.dual_model_system = pipeline_components.get("dual_model_system")
+    self.supervisor = pipeline_components.get("supervisor")
+    self.exchange_client = pipeline_components.get("exchange_client")
 
 # Pipeline state
-self.cycle_count = 0
-self.cycle_history: List[Dict[str, Any]] = []
-self.max_history_size = 100
+    self.cycle_count = 0
+    self.cycle_history: List[Dict[str, Any]] = []
+    self.max_history_size = 100
 
-@handle_specific_errors(
-error_handlers={
-ValueError: (False, "Invalid pipeline configuration"),
-AttributeError: (False, "Missing required pipeline components"),
-KeyError: (False, "Missing configuration keys"),
-},
-default_return=False,
-context="pipeline executor initialization",
-)
+@handle_specific_errors( error_handlers={ ValueError: (False, "Invalid pipeline configuration"), AttributeError: (False, "Missing required pipeline components"), KeyError: (False, "Missing configuration keys"), }, default_return=False, context="pipeline executor initialization", )
 async def initialize(self) -> bool:
         """
 Initialize pipeline executor.
@@ -69,25 +61,21 @@ try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-self.logger.info("Initializing Improved Pipeline Executor...")
+    self.logger.info("Initializing Improved Pipeline Executor...")
 
 # Validate components
 if not self._validate_components():
                 self.logger.error("Invalid pipeline components")
-return False
+    return False
 
-self.logger.info("✅ Improved Pipeline Executor initialized successfully")
-return True
+    self.logger.info("✅ Improved Pipeline Executor initialized successfully")
+    return True
 
 except Exception as e:
             self.logger.error(failed(f"❌ Pipeline executor initialization failed: {e}"))
-return False
+    return False
 
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=False,
-context="component validation",
-)
+@handle_errors( exceptions=(ValueError, AttributeError), default_return=False, context="component validation", )
 def _validate_components(self) -> bool:
         """Validate that all required components are available."""
 try:
@@ -103,23 +91,15 @@ for component_name in required_components:
 
 if missing_components:
                 self.logger.error(f"Missing required components: {missing_components}")
-return False
+    return False
 
-return True
+    return True
 
 except Exception as e:
             self.logger.error(f"Error validating components: {e}")
-return False
+    return False
 
-@handle_specific_errors(
-error_handlers={
-ValueError: (None, "Invalid market data"),
-AttributeError: (None, "Missing market data fields"),
-KeyError: (None, "Missing market data keys"),
-},
-default_return=None,
-context="market data retrieval",
-)
+@handle_specific_errors( error_handlers={ ValueError: (None, "Invalid market data"), AttributeError: (None, "Missing market data fields"), KeyError: (None, "Missing market data keys"), }, default_return=None, context="market data retrieval", )
 async def _get_market_data(self, symbol: str = "ETHUSDT", timeframe: str = "1h", limit: int = 100) -> Optional[Dict[str, Any]]:
         """
 Get market data from exchange or generate mock data.
@@ -148,7 +128,7 @@ interval=timeframe,
 limit=limit
 )
 current_price = float(market_data["close"].iloc[-1]) if not market_data.empty else 100.0
-self.logger.info(f"Retrieved real market data for {symbol}")
+    self.logger.info(f"Retrieved real market data for {symbol}")
 except Exception as e:
                     self.logger.warning(f"Error fetching real market data: {e}, using mock data")
 market_data, current_price = self._generate_mock_market_data(limit)
@@ -156,7 +136,7 @@ else:
                 # Generate mock data
 market_data, current_price = self._generate_mock_market_data(limit)
 
-return {
+    return {
 "market_data": market_data,
 "current_price": current_price,
 "symbol": symbol,
@@ -166,7 +146,7 @@ return {
 
 except Exception as e:
             self.logger.error(f"Error getting market data: {e}")
-return None
+    return None
 
 def _generate_mock_market_data(self, limit: int) -> tuple[pd.DataFrame, float]:
         """Generate mock market data for testing."""
@@ -192,17 +172,9 @@ market_data = pd.DataFrame({
 })
 
 current_price = float(prices[-1])
-return market_data, current_price
+    return market_data, current_price
 
-@handle_specific_errors(
-error_handlers={
-ValueError: (None, "Step 1 execution failed"),
-AttributeError: (None, "Analyst component error"),
-KeyError: (None, "Missing analysis parameters"),
-},
-default_return=None,
-context="step 1 market analysis",
-)
+@handle_specific_errors( error_handlers={ ValueError: (None, "Step 1 execution failed"), AttributeError: (None, "Analyst component error"), KeyError: (None, "Missing analysis parameters"), }, default_return=None, context="step 1 market analysis", )
 async def execute_step_1_market_analysis(self, market_context: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """
 Execute Step 1: Market Analysis.
@@ -217,7 +189,7 @@ try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-self.logger.info("📊 Executing Step 1: Market Analysis")
+    self.logger.info("📊 Executing Step 1: Market Analysis")
 
 # Prepare analysis input
 analysis_input = {
@@ -236,7 +208,7 @@ analysis_result = await self.analyst.execute_analysis(analysis_input)
 
 if analysis_result:
                 self.logger.info("✅ Step 1: Market Analysis completed successfully")
-return {
+    return {
 "step": 1,
 "status": "success",
 "result": analysis_result,
@@ -244,7 +216,7 @@ return {
 }
 else:
                 self.logger.warning("⚠️ Step 1: Market Analysis had issues")
-return {
+    return {
 "step": 1,
 "status": "warning",
 "result": None,
@@ -253,22 +225,14 @@ return {
 
 except Exception as e:
             self.logger.error(f"❌ Step 1: Market Analysis failed: {e}")
-return {
+    return {
 "step": 1,
 "status": "error",
 "error": str(e),
 "timestamp": datetime.now().isoformat(),
 }
 
-@handle_specific_errors(
-error_handlers={
-ValueError: (None, "Step 2 execution failed"),
-AttributeError: (None, "Strategist component error"),
-KeyError: (None, "Missing strategy parameters"),
-},
-default_return=None,
-context="step 2 strategy development",
-)
+@handle_specific_errors( error_handlers={ ValueError: (None, "Step 2 execution failed"), AttributeError: (None, "Strategist component error"), KeyError: (None, "Missing strategy parameters"), }, default_return=None, context="step 2 strategy development", )
 async def execute_step_2_strategy_development(
 self,
 market_context: Dict[str, Any],
@@ -288,7 +252,7 @@ try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-self.logger.info("🧠 Executing Step 2: Strategy Development")
+    self.logger.info("🧠 Executing Step 2: Strategy Development")
 
 # Execute strategy generation with analysis results
 strategy_result = await self.strategist.generate_strategy(
@@ -304,9 +268,9 @@ if strategy_result:
 direction = strategy_result.get("direction", "HOLD")
 confidence = strategy_result.get("confidence", 0.0)
 position_size = strategy_result.get("position_size", 0.0)
-self.logger.info(f"   📊 Strategy: {direction}, Confidence: {confidence:.3f}, Position Size: {position_size:.4f}")
+    self.logger.info(f"   📊 Strategy: {direction}, Confidence: {confidence:.3f}, Position Size: {position_size:.4f}")
 
-return {
+    return {
 "step": 2,
 "status": "success",
 "result": strategy_result,
@@ -314,7 +278,7 @@ return {
 }
 else:
                 self.logger.warning("⚠️ Step 2: Strategy Development had issues")
-return {
+    return {
 "step": 2,
 "status": "warning",
 "result": None,
@@ -323,22 +287,14 @@ return {
 
 except Exception as e:
             self.logger.error(f"❌ Step 2: Strategy Development failed: {e}")
-return {
+    return {
 "step": 2,
 "status": "error",
 "error": str(e),
 "timestamp": datetime.now().isoformat(),
 }
 
-@handle_specific_errors(
-error_handlers={
-ValueError: (None, "Step 3 execution failed"),
-AttributeError: (None, "Tactician component error"),
-KeyError: (None, "Missing tactical parameters"),
-},
-default_return=None,
-context="step 3 tactical execution",
-)
+@handle_specific_errors( error_handlers={ ValueError: (None, "Step 3 execution failed"), AttributeError: (None, "Tactician component error"), KeyError: (None, "Missing tactical parameters"), }, default_return=None, context="step 3 tactical execution", )
 async def execute_step_3_tactical_execution(
 self,
 market_context: Dict[str, Any],
@@ -360,7 +316,7 @@ try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-self.logger.info("🎯 Executing Step 3: Tactical Execution")
+    self.logger.info("🎯 Executing Step 3: Tactical Execution")
 
 # Prepare tactical input with context from previous steps
 tactical_input = {
@@ -379,7 +335,7 @@ tactical_result = await self.tactician.run()
 
 if tactical_result:
                 self.logger.info("✅ Step 3: Tactical Execution completed successfully")
-return {
+    return {
 "step": 3,
 "status": "success",
 "result": tactical_result,
@@ -388,7 +344,7 @@ return {
 }
 else:
                 self.logger.warning("⚠️ Step 3: Tactical Execution had issues")
-return {
+    return {
 "step": 3,
 "status": "warning",
 "result": None,
@@ -397,22 +353,14 @@ return {
 
 except Exception as e:
             self.logger.error(f"❌ Step 3: Tactical Execution failed: {e}")
-return {
+    return {
 "step": 3,
 "status": "error",
 "error": str(e),
 "timestamp": datetime.now().isoformat(),
 }
 
-@handle_specific_errors(
-error_handlers={
-ValueError: (None, "Step 4 execution failed"),
-AttributeError: (None, "Dual model system error"),
-KeyError: (None, "Missing dual model parameters"),
-},
-default_return=None,
-context="step 4 dual model decision",
-)
+@handle_specific_errors( error_handlers={ ValueError: (None, "Step 4 execution failed"), AttributeError: (None, "Dual model system error"), KeyError: (None, "Missing dual model parameters"), }, default_return=None, context="step 4 dual model decision", )
 async def execute_step_4_dual_model_decision(
 self,
 market_context: Dict[str, Any],
@@ -436,7 +384,7 @@ try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-self.logger.info("🤖 Executing Step 4: Dual Model System Decision Making")
+    self.logger.info("🤖 Executing Step 4: Dual Model System Decision Making")
 
 # Make trading decision with enhanced context
 decision_result = await self.dual_model_system.make_trading_decision(
@@ -461,7 +409,7 @@ analyst_confidence = decision_result.get("analyst_confidence", 0.0)
 tactician_confidence = decision_result.get("tactician_confidence", 0.0)
 final_confidence = decision_result.get("final_confidence", 0.0)
 
-self.logger.info(f"   📊 Decision: {action}, Analyst: {analyst_confidence:.3f}, Tactician: {tactician_confidence:.3f}, Final: {final_confidence:.3f}")
+    self.logger.info(f"   📊 Decision: {action}, Analyst: {analyst_confidence:.3f}, Tactician: {tactician_confidence:.3f}, Final: {final_confidence:.3f}")
 
 # Check for model training trigger
 if self.dual_model_system.should_trigger_training():
@@ -476,7 +424,7 @@ if training_result.get("success", False):
 else:
                         self.logger.warning(f"   ⚠️ Model training failed: {training_result.get('error', 'Unknown error')}")
 
-return {
+    return {
 "step": 4,
 "status": "success",
 "result": decision_result,
@@ -485,7 +433,7 @@ return {
 }
 else:
                 self.logger.warning("⚠️ Step 4: Dual Model Decision had issues")
-return {
+    return {
 "step": 4,
 "status": "warning",
 "result": None,
@@ -494,18 +442,14 @@ return {
 
 except Exception as e:
             self.logger.error(f"❌ Step 4: Dual Model Decision failed: {e}")
-return {
+    return {
 "step": 4,
 "status": "error",
 "error": str(e),
 "timestamp": datetime.now().isoformat(),
 }
 
-@handle_errors(
-exceptions=(Exception,),
-default_return=None,
-context="dual model tactician integration",
-)
+@handle_errors( exceptions=(Exception,), default_return=None, context="dual model tactician integration", )
 async def _integrate_dual_model_with_tactician(
 self,
 dual_model_decision: Dict[str, Any],
@@ -602,29 +546,21 @@ integrated_decision = {
 "timestamp": datetime.now().isoformat(),
 }
 
-self.logger.info(
+    self.logger.info(
 f"Integrated dual model decision with tactician - Position: {position_size_result.get('final_position_size', 0.0)}, Leverage: {leverage_result.get('final_leverage', 1.0)}",
 )
 
-return integrated_decision
+    return integrated_decision
 
 except Exception as e:
             self.logger.exception("Error integrating dual model with tactician")
-return {
+    return {
 "error": str(e),
 "dual_model_decision": dual_model_decision,
 "integrated": False,
 }
 
-@handle_specific_errors(
-error_handlers={
-ValueError: (None, "Pipeline execution failed"),
-AttributeError: (None, "Pipeline component error"),
-KeyError: (None, "Missing pipeline parameters"),
-},
-default_return=None,
-context="complete pipeline execution",
-)
+@handle_specific_errors( error_handlers={ ValueError: (None, "Pipeline execution failed"), AttributeError: (None, "Pipeline component error"), KeyError: (None, "Missing pipeline parameters"), }, default_return=None, context="complete pipeline execution", )
 async def execute_complete_pipeline(self, symbol: str = "ETHUSDT") -> Optional[Dict[str, Any]]:
         """
 Execute complete pipeline with improved data flow.
@@ -639,16 +575,16 @@ try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-self.cycle_count += 1
+    self.cycle_count += 1
 cycle_start = datetime.now()
 
-self.logger.info(f"🔄 Starting complete pipeline execution - Cycle {self.cycle_count}")
+    self.logger.info(f"🔄 Starting complete pipeline execution - Cycle {self.cycle_count}")
 
 # Step 0: Get market data
 market_context = await self._get_market_data(symbol)
 if not market_context:
                 self.logger.error("Failed to get market data")
-return None
+    return None
 
 # Step 1: Market Analysis
 analysis_results = await self.execute_step_1_market_analysis(market_context)
@@ -679,16 +615,16 @@ cycle_results = {
 }
 
 # Store in history
-self.cycle_history.append(cycle_results)
+    self.cycle_history.append(cycle_results)
 if len(self.cycle_history) > self.max_history_size:
                 self.cycle_history = self.cycle_history[-self.max_history_size:]
 
-self.logger.info(f"✅ Complete pipeline execution finished - Cycle {self.cycle_count}")
-return cycle_results
+    self.logger.info(f"✅ Complete pipeline execution finished - Cycle {self.cycle_count}")
+    return cycle_results
 
 except Exception as e:
             self.logger.error(f"❌ Complete pipeline execution failed: {e}")
-return None
+    return None
 
 def _determine_overall_status(self, step_results: List[Optional[Dict[str, Any]]]) -> str:
         """Determine overall pipeline status based on step results."""
@@ -709,11 +645,11 @@ def get_cycle_history(self, limit: Optional[int] = None) -> List[Dict[str, Any]]
 history = self.cycle_history.copy()
 if limit:
             history = history[-limit:]
-return history
+    return history
 
 def get_pipeline_status(self) -> Dict[str, Any]:
         """Get current pipeline status."""
-return {
+    return {
 "cycle_count": self.cycle_count,
 "history_size": len(self.cycle_history),
 "components_available": {

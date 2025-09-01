@@ -34,15 +34,15 @@ def __init__(self, config_path: str = "src/config/live_wavelet_config.yaml"):
     def __init__(self, config_path: str = "src/config/live_wavelet_config.yaml"):
     def __init__(self, config_path: str = "src/config/live_wavelet_config.yaml"):
         self.config_path = config_path
-self.config = self._load_config()
-self.logger = system_logger.getChild("LiveWaveletDemo")
+    self.config = self._load_config()
+    self.logger = system_logger.getChild("LiveWaveletDemo")
 
 # Initialize wavelet integration
-self.wavelet_integration = LiveWaveletIntegration(self.config)
+    self.wavelet_integration = LiveWaveletIntegration(self.config)
 
 # Demo state
-self.is_running = False
-self.demo_data = []
+    self.is_running = False
+    self.demo_data = []
 
 def _load_config(self) -> dict:
         """Load configuration from YAML file."""
@@ -54,7 +54,7 @@ with open(self.config_path) as f:
                 return yaml.safe_load(f)
 except Exception as e:
             self.logger.error(f"Error loading config: {e}")
-return {}
+    return {}
 
 async def initialize(self) -> bool:
         """Initialize the demo."""
@@ -62,23 +62,23 @@ try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-self.logger.info("🚀 Initializing Live Wavelet Demo...")
+    self.logger.info("🚀 Initializing Live Wavelet Demo...")
 
 # Initialize wavelet integration
 success = await self.wavelet_integration.initialize()
 if not success:
                 self.logger.error("Failed to initialize wavelet integration")
-return False
+    return False
 
 # Generate demo data
-self._generate_demo_data()
+    self._generate_demo_data()
 
-self.logger.info("✅ Live Wavelet Demo initialized successfully")
-return True
+    self.logger.info("✅ Live Wavelet Demo initialized successfully")
+    return True
 
 except Exception as e:
             self.logger.error(f"❌ Error initializing demo: {e}")
-return False
+    return False
 
 def _generate_demo_data(self) -> None:
         """Generate realistic demo market data."""
@@ -108,7 +108,7 @@ prices[600:620] *= 1.05
 prices[800:850] += np.random.normal(0, 1000, 50)
 
 # Create OHLCV data
-self.demo_data = []
+    self.demo_data = []
 for i in range(n_points):
                 price = prices[i]
 high = price * (1 + abs(np.random.normal(0, 0.01)))
@@ -116,7 +116,7 @@ low = price * (1 - abs(np.random.normal(0, 0.01)))
 open_price = price * (1 + np.random.normal(0, 0.005))
 volume = np.random.uniform(1000, 10000)
 
-self.demo_data.append(
+    self.demo_data.append(
 {
 "timestamp": time.time() + i,
 "open": open_price,
@@ -127,7 +127,7 @@ self.demo_data.append(
 },
 )
 
-self.logger.info(f"📊 Generated {len(self.demo_data)} demo data points")
+    self.logger.info(f"📊 Generated {len(self.demo_data)} demo data points")
 
 except Exception as e:
             self.logger.error(f"Error generating demo data: {e}")
@@ -143,8 +143,8 @@ try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-self.logger.info(f"🎬 Starting Live Wavelet Demo (duration: {duration}s)")
-self.is_running = True
+    self.logger.info(f"🎬 Starting Live Wavelet Demo (duration: {duration}s)")
+    self.is_running = True
 
 start_time = time.time()
 data_index = 0
@@ -175,8 +175,8 @@ if data_index % 100 == 0:
 data_index += 1
 await asyncio.sleep(0.1)  # 100ms intervals
 
-self.logger.info("✅ Live Wavelet Demo completed")
-self._log_final_stats()
+    self.logger.info("✅ Live Wavelet Demo completed")
+    self._log_final_stats()
 
 except Exception as e:
             self.logger.error(f"Error running demo: {e}")
@@ -194,7 +194,7 @@ if index >= len(self.demo_data):
 
 data_point = self.demo_data[index]
 
-return {
+    return {
 "price_data": pd.DataFrame([data_point]),
 "volume_data": pd.DataFrame({"volume": [data_point["volume"]]}),
 "timestamp": data_point["timestamp"],
@@ -204,7 +204,7 @@ return {
 
 except Exception as e:
             self.logger.error(f"Error creating market data: {e}")
-return {}
+    return {}
 
 def _log_signal_results(self, results: dict) -> None:
         """Log signal results."""
@@ -246,7 +246,7 @@ hold_count = recent.get("hold_count", 0)
 avg_confidence = recent.get("avg_confidence", 0.0)
 avg_time = recent.get("avg_computation_time", 0.0)
 
-self.logger.info(
+    self.logger.info(
 f"📈 Performance: "
 f"Signals: {buy_count}B/{sell_count}S/{hold_count}H = "
 f"Avg Confidence: {avg_confidence:.2f}, "
@@ -280,18 +280,18 @@ except Exception as e:
     pass  # TODO: Add proper exception handling
 stats = self.wavelet_integration.get_performance_stats()
 
-self.logger.info("📊 Final Statistics:")
-self.logger.info(f"  Total signals: {stats.get('signal_history_count', 0)}")
+    self.logger.info("📊 Final Statistics:")
+    self.logger.info(f"  Total signals: {stats.get('signal_history_count', 0)}")
 
 recent = stats.get("recent_signals", {})
 if recent:
                 self.logger.info(f"  Buy signals: {recent.get('buy_count', 0)}")
-self.logger.info(f"  Sell signals: {recent.get('sell_count', 0)}")
-self.logger.info(f"  Hold signals: {recent.get('hold_count', 0)}")
-self.logger.info(
+    self.logger.info(f"  Sell signals: {recent.get('sell_count', 0)}")
+    self.logger.info(f"  Hold signals: {recent.get('hold_count', 0)}")
+    self.logger.info(
 f"  Average confidence: {recent.get('avg_confidence', 0.0):.2f}",
 )
-self.logger.info(
+    self.logger.info(
 f"  Average computation time: {recent.get('avg_computation_time', 0.0):.3f}s",
 )
 
@@ -299,10 +299,10 @@ f"  Average computation time: {recent.get('avg_computation_time', 0.0):.3f}s",
 perf_stats = stats.get("performance_stats", {})
 if perf_stats:
                 self.logger.info(f"  Window size: {perf_stats.get('window_size', 0)}")
-self.logger.info(
+    self.logger.info(
 f"  Wavelet type: {perf_stats.get('wavelet_type', 'unknown')}",
 )
-self.logger.info(
+    self.logger.info(
 f"  Signal rate: {perf_stats.get('signal_rate', 0.0):.2%}",
 )
 
@@ -311,8 +311,8 @@ except Exception as e:
 
 def stop_demo(self) -> None:
         """Stop the demo."""
-self.is_running = False
-self.logger.info("🛑 Demo stopped by user")
+    self.is_running = False
+    self.logger.info("🛑 Demo stopped by user")
 
 async def main():
     pass  # TODO: Add implementation

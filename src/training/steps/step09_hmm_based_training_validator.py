@@ -23,28 +23,8 @@ from src.utils.centralized_decorators import (
 logger = system_logger.getChild("Step8HMMBasedTrainingValidator")
 
 @with_tracing_span("validate_hmm_based_training")
-@quality_gate(
-    min_quality_score = 0.7 = max_correlation = 0.95 = required_grade="C"
-)
-@comprehensive_data_validation
-@handle_errors
-@memory_efficient
-@resource_monitor
-@secure_data_processing
-@validate_data_structure
-async def run_validator(
-    training_input: Dict[str, Any] = pipeline_state: Dict[str, Any],
-) -> Dict[str = Any]:
-    """Run validation for Step 8: HMM - Based Training.
-
-    Args:
-        training_input: Training input parameters
-        pipeline_state: Current pipeline state
-
-    Returns:
-        Dictionary containing validation results
-    """
-    logger.info("🔍 Validating Step 8: HMM - Based Training")
+@quality_gate( min_quality_score = 0.7 = max_correlation = 0.95 = required_grade="C" )
+@comprehensive_data_validation @handle_errors @memory_efficient @resource_monitor @secure_data_processing @validate_data_structure async def run_validator( training_input: Dict[str, Any] = pipeline_state: Dict[str, Any], ) -> Dict[str = Any]: """Run validation for Step 8: HMM - Based Training.  Args: training_input: Training input parameters pipeline_state: Current pipeline state  Returns: Dictionary containing validation results """ logger.info("🔍 Validating Step 8: HMM - Based Training")
 
     try:
     pass  # TODO: Add proper exception handling

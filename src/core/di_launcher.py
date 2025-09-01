@@ -32,18 +32,18 @@ def __init__(self, config: dict[str, Any] | None = None):
     def __init__(self, config: dict[str, Any] | None = None):
     def __init__(self, config: dict[str, Any] | None = None):
         self.config = config or CONFIG
-self.logger = system_logger.getChild("DILauncher")
+    self.logger = system_logger.getChild("DILauncher")
 
 # Create DI container with configuration
-self.container = DependencyContainer(self.config)
-self.registry = ServiceRegistry(self.container)
+    self.container = DependencyContainer(self.config)
+    self.registry = ServiceRegistry(self.container)
 
 # Create factory
-self.factory = TradingSystemFactory(self.container)
+    self.factory = TradingSystemFactory(self.container)
 
 # System components
-self.system_components: dict[str, Any] = {}
-self.is_running = False
+    self.system_components: dict[str, Any] = {}
+    self.is_running = False
 
 async def launch_paper_trading(self, symbol: str, exchange: str) -> dict[str, Any]:
         """
@@ -60,13 +60,13 @@ try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-self.logger.info(f"Launching paper trading for {symbol} on {exchange}")
+    self.logger.info(f"Launching paper trading for {symbol} on {exchange}")
 
 # Configure for paper trading
 trading_config = self._create_paper_trading_config(symbol, exchange)
 
 # Register services
-self.registry.register_all_services(trading_config)
+    self.registry.register_all_services(trading_config)
 
 # Create exchange client
 from src.exchange.binance import BinanceClient
@@ -81,7 +81,7 @@ from src.supervisor.performance_reporter import PerformanceReporter
 performance_reporter = PerformanceReporter(trading_config.get("performance", {}))
 
 # Create trading components
-self.system_components = await self.factory.create_complete_trading_system(
+    self.system_components = await self.factory.create_complete_trading_system(
 exchange_client,
 state_manager,
 performance_reporter,
@@ -90,10 +90,10 @@ performance_reporter,
 # Start all components
 await self._start_all_components()
 
-self.is_running = True
-self.logger.info("Paper trading system launched successfully")
+    self.is_running = True
+    self.logger.info("Paper trading system launched successfully")
 
-return self.system_components
+    return self.system_components
 
 except Exception as e:
             self.logger.exception(f"Failed to launch paper trading: {e}")
@@ -114,13 +114,13 @@ try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-self.logger.info(f"Launching live trading for {symbol} on {exchange}")
+    self.logger.info(f"Launching live trading for {symbol} on {exchange}")
 
 # Configure for live trading
 trading_config = self._create_live_trading_config(symbol, exchange)
 
 # Register services
-self.registry.register_all_services(trading_config)
+    self.registry.register_all_services(trading_config)
 
 # Create exchange client
 from src.exchange.binance import BinanceClient
@@ -135,7 +135,7 @@ from src.supervisor.performance_reporter import PerformanceReporter
 performance_reporter = PerformanceReporter(trading_config.get("performance", {}))
 
 # Create trading components
-self.system_components = await self.factory.create_complete_trading_system(
+    self.system_components = await self.factory.create_complete_trading_system(
 exchange_client,
 state_manager,
 performance_reporter,
@@ -144,10 +144,10 @@ performance_reporter,
 # Start all components
 await self._start_all_components()
 
-self.is_running = True
-self.logger.info("Live trading system launched successfully")
+    self.is_running = True
+    self.logger.info("Live trading system launched successfully")
 
-return self.system_components
+    return self.system_components
 
 except Exception as e:
             self.logger.exception(f"Failed to launch live trading: {e}")
@@ -155,7 +155,7 @@ raise
 
 def _create_paper_trading_config(self, symbol: str, exchange: str) -> dict[str, Any]:
         """Create configuration for paper trading mode."""
-return {
+    return {
 "mode": "paper_trading",
 "symbol": symbol,
 "exchange": {
@@ -176,7 +176,7 @@ return {
 
 def _create_live_trading_config(self, symbol: str, exchange: str) -> dict[str, Any]:
         """Create configuration for live trading mode."""
-return {
+    return {
 "mode": "live_trading",
 "symbol": symbol,
 "exchange": {
@@ -204,7 +204,7 @@ except Exception as e:
 for name, component in self.system_components.items():
                 if hasattr(component, "start"):
                     await component.start()
-self.logger.info(f"Started component: {name}")
+    self.logger.info(f"Started component: {name}")
 
 except Exception as e:
             self.logger.exception(f"Failed to start components: {e}")
@@ -219,10 +219,10 @@ except Exception as e:
 for name, component in self.system_components.items():
                 if hasattr(component, "stop"):
                     await component.stop()
-self.logger.info(f"Stopped component: {name}")
+    self.logger.info(f"Stopped component: {name}")
 
-self.is_running = False
-self.logger.info("Trading system stopped")
+    self.is_running = False
+    self.logger.info("Trading system stopped")
 
 except Exception as e:
             self.logger.exception(f"Failed to stop components: {e}")
@@ -230,7 +230,7 @@ raise
 
 def get_status(self) -> dict[str, Any]:
         """Get launcher status."""
-return {
+    return {
 "is_running": self.is_running,
 "components": list(self.system_components.keys()),
 "config": self.config,

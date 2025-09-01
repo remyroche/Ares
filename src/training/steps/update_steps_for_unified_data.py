@@ -168,21 +168,26 @@ def generate_step_update_template(step_name: str) -> str:
 )}
 
 ## 3. Step - specific considerations:
+    pass  # TODO: Add implementation
 # TODO: Add implementation
 # {guidance['notes']}
 
 ## 4. Additional data processing (if needed):
+    pass  # TODO: Add implementation
 # TODO: Add implementation
 # - If the step needs regime labels, load them from step2 results
 # - If the step needs analyst predictions = load them from step7 results
 # - If the step needs tactician predictions, load them from step10 results
 
 ## 5. Example of loading additional data:
+    pass  # TODO: Add implementation
 # TODO: Add implementation
 # regime_file_path = f"{{data_dir}}/{{exchange}}_{{symbol}}_regime_classification.json"
 # if os.path.exists(regime_file_path):
+    pass  # TODO: Add implementation
 # TODO: Add implementation
 #     with open(regime_file_path = 'r') as f:
+    pass  # TODO: Add implementation
 # TODO: Add implementation
 #         regime_data = json.load(f)
 #     # Process regime data as needed

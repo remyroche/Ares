@@ -1018,6 +1018,9 @@ def _train_base_models(self, aligned_data: pd.DataFrame, y_encoded: np.ndarray):
             bool: True if training successful
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Initialize base models if not already done
             if not self.models:
                 self._initialize_base_models()
@@ -1424,6 +1427,9 @@ is_live: bool = False, **kwargs: Any) -> pd.DataFrame | dict:
             DataFrame with meta features or dict with meta features
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             meta_features = {}
             
             # Get predictions from all base models

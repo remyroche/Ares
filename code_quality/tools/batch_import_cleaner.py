@@ -30,6 +30,9 @@ def is_import_used(import_name, content, ast_tree):
 def find_and_remove_unused_imports(filepath, dry_run=True):
     """Find and remove unused imports from a file."""
     try:
+        pass  # TODO: Add proper exception handling
+    except Exception as e:
+        pass  # TODO: Add proper exception handling
         with open(filepath, 'r', encoding='utf-8') as f:
             content = f.read()
 

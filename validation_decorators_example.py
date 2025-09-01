@@ -158,9 +158,9 @@ async def demonstrate_file_validation():
         f.write("test data")
 
     try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+        pass  # TODO: Add proper exception handling
+    except Exception as e:
+        pass  # TODO: Add proper exception handling
         # Test file operation validation
         result = await load_klines_data(test_file)
         print(f"File operation result: {result}")
@@ -238,9 +238,9 @@ async def main():
     print("=" * 50)
 
     try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+        pass  # TODO: Add proper exception handling
+    except Exception as e:
+        pass  # TODO: Add proper exception handling
         await demonstrate_file_validation()
         await demonstrate_dataframe_validation()
         await demonstrate_step_validation()

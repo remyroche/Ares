@@ -36,6 +36,7 @@ class QualityLevel(Enum):
 
 @dataclass
 class PlaceholderDataClass:
+    pass  # TODO: Add implementation
 # TODO: Add implementation
 class DataQualityMetrics:
     """Data quality metrics container."""
@@ -55,6 +56,7 @@ class DataQualityMetrics:
 
 @dataclass
 class PlaceholderDataClass:
+    pass  # TODO: Add implementation
 # TODO: Add implementation
 class CompatibilityMetrics:
     """Data compatibility metrics container."""
@@ -72,6 +74,7 @@ class CompatibilityMetrics:
 
 @dataclass
 class PlaceholderDataClass:
+    pass  # TODO: Add implementation
 # TODO: Add implementation
 class FormatMetrics:
     """Data format metrics container."""
@@ -88,6 +91,7 @@ class FormatMetrics:
 
 @dataclass
 class PlaceholderDataClass:
+    pass  # TODO: Add implementation
 # TODO: Add implementation
 class IndexMetrics:
     """Data indexing metrics container."""

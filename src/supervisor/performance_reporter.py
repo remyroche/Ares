@@ -206,7 +206,6 @@ self, performance_data: dict[str, Any]
 ) -> dict[str, Any]:
                 """Generate performance forecast."""
         try:
-    # TODO: Implement proper exception handling logic
 returns = performance_data.get("returns", [])
 if not returns:
                 return {}
@@ -379,10 +378,6 @@ self.report_templates[report_type] = {
 except Exception as e:
             self.logger.error(f"Error caching report: {e}")
 
-class PerformanceReporter:
-    # TODO: Implement specific functionality based on requirements
-class PerformanceReporter:
-    # TODO: Implement specific functionality based on requirements
 class PerformanceReporter:
     """
 Enhanced Performance Reporter component with DI, type hints, robust error handling, and advanced reporting capabilities.

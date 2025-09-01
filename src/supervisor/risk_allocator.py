@@ -28,10 +28,6 @@ from src.utils.supervisor_error_handler import (
 )
 
 class RiskAllocator:
-    # TODO: Implement specific functionality based on requirements
-class RiskAllocator:
-    # TODO: Implement specific functionality based on requirements
-class RiskAllocator:
     """
 Portfolio-Level Risk Allocator component responsible for:
     - Portfolio-level risk management (excluding position sizing)

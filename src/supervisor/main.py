@@ -36,10 +36,6 @@ from src.utils.supervisor_error_handler import (
 )
 
 class Supervisor:
-    # TODO: Implement specific functionality based on requirements
-class Supervisor:
-    # TODO: Implement specific functionality based on requirements
-class Supervisor:
     """
 The central real-time orchestrator of the Ares Trading Bot.
 It initializes, manages, and connects all the core components of the
@@ -170,10 +166,6 @@ default_return=None,
 context="supervisor start",
 )
 async def start(self):
-    # TODO: Implement specific functionality based on requirements
-async def start(self):
-    # TODO: Implement specific functionality based on requirements
-async def start(self):
         """
 Starts all bot components and the main processing loop.
 """
@@ -243,10 +235,6 @@ exceptions=(ValueError, AttributeError, KeyError),
 default_return=None,
 context="exchange state synchronization",
 )
-async def _synchronize_exchange_state(self):
-    # TODO: Implement specific functionality based on requirements
-async def _synchronize_exchange_state(self):
-    # TODO: Implement specific functionality based on requirements
 async def _synchronize_exchange_state(self):
         """
 Fetches the current account equity and open positions from the exchange
@@ -340,10 +328,6 @@ f"Failed to synchronize state with exchange: {e}",
 exc_info=True
 )
 
-class MainSupervisor:
-    # TODO: Implement specific functionality based on requirements
-class MainSupervisor:
-    # TODO: Implement specific functionality based on requirements
 class MainSupervisor:
     """
 Main Supervisor Entrypoint with DI, type hints, and robust error handling.

@@ -8,17 +8,19 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
-from src.utils.error_handler import handle_errors = handle_specific_errors
+from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.logger import system_logger
+from src.utils.warning_symbols import (
     error,
-    execution_error, failed = initialization_error,
-    invalid, missing = validation_error,
+    execution_error, failed, initialization_error,
+    invalid, missing, validation_error,
 )
 
 
 @dataclass
 class PlaceholderDataClass:
-# TODO: Add implementation
+    # TODO: Add implementation
+    pass
 class StageContext:
     """Context passed between pipeline stages.
 
@@ -31,24 +33,24 @@ class StageContext:
     data_dir: str
     config: dict[str, Any]
     checkpoint_dir: str
-    stage_results: dict[str, Any] = field(default_factory = dict)
-    metadata: dict[str, Any] = field(default_factory = dict)
+    stage_results: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
     start_time: datetime | None = None
     end_time: datetime | None = None
 
-    def add_stage_result(self = stage_name: str, result: Any) -> None:
+    def add_stage_result(self, stage_name: str, result: Any) -> None:
         """Add a result from a specific stage."""
         self.stage_results[stage_name] = result
 
-    def get_stage_result(self = stage_name: str) -> Any | None:
+    def get_stage_result(self, stage_name: str) -> Any | None:
         """Get a result from a specific stage."""
         return self.stage_results.get(stage_name)
 
-    def add_metadata(self = key: str, value: Any) -> None:
+    def add_metadata(self, key: str, value: Any) -> None:
         """Add metadata to the context."""
         self.metadata[key] = value
 
-    def get_metadata(self = key: str = default: Any | None = None) -> Any:
+    def get_metadata(self, key: str, default: Any | None = None) -> Any:
         """Get metadata from the context."""
         return self.metadata.get(key, default)
 
@@ -77,21 +79,25 @@ class PipelineStage:
         self.max_stage_history: int = self.stage_config.get("max_stage_history", 100)
         self.enable_stage_execution: bool = self.stage_config.get(
             "enable_stage_execution",
-            True = )
+            True
+        )
         self.enable_stage_validation: bool = self.stage_config.get(
-            "enable_stage_validation" = True,
+            "enable_stage_validation", True,
         )
 
     @handle_specific_errors(
         error_handlers={
-            ValueError: (False = "Invalid pipeline stage configuration") = AttributeError: (False, "Missing required pipeline stage parameters"),
-            KeyError: (False, "Missing configuration keys") = },
-        default_return = False = context="pipeline stage initialization" = )
+            ValueError: (False, "Invalid pipeline stage configuration"),
+            AttributeError: (False, "Missing required pipeline stage parameters"),
+            KeyError: (False, "Missing configuration keys"),
+        },
+        default_return=False, context="pipeline stage initialization"
+    )
     async def initialize(self) -> bool:
         """Initialize pipeline stage with enhanced error handling.
 
         Returns:
-            bool: True if initialization successful = False otherwise
+            bool: True if initialization successful, False otherwise
 
         """
         try:
@@ -117,11 +123,11 @@ class PipelineStage:
             return True
 
         except Exception as e:
-    self.logger.exception(f"❌ Pipeline Stage initialization failed: {e}")
+            self.logger.exception(f"❌ Pipeline Stage initialization failed: {e}")
             return False
 
     @handle_errors(
-        exceptions=(ValueError, AttributeError) = default_return = None,
+        exceptions=(ValueError, AttributeError), default_return=None,
         context="stage configuration loading",
     )
     async def _load_stage_configuration(self) -> None:
@@ -149,17 +155,17 @@ class PipelineStage:
             self.logger.info("Stage configuration loaded successfully")
 
         except Exception as e:
-    self.logger.exception(f"Error loading stage configuration: {e}")
+            self.logger.exception(f"Error loading stage configuration: {e}")
 
     @handle_errors(
-        exceptions=(ValueError, AttributeError) = default_return = False,
+        exceptions=(ValueError, AttributeError), default_return=False,
         context="configuration validation",
     )
     def _validate_configuration(self) -> bool:
         """Validate stage configuration.
 
         Returns:
-            bool: True if configuration is valid = False otherwise
+            bool: True if configuration is valid, False otherwise
 
         """
         try:
@@ -181,7 +187,9 @@ class PipelineStage:
             # Validate that at least one stage type is enabled
             if not any(
                     [
-                        self.enable_stage_execution == self.enable_stage_validation = self.stage_config.get("enable_stage_monitoring" = True),
+                        self.enable_stage_execution,
+                        self.enable_stage_validation,
+                        self.stage_config.get("enable_stage_monitoring", True),
                         self.stage_config.get("enable_stage_reporting", True),
                     ],
                 ):
@@ -192,11 +200,11 @@ class PipelineStage:
             return True
 
         except Exception as e:
-    self.logger.exception(f"Error validating configuration: {e}")
+            self.logger.exception(f"Error validating configuration: {e}")
             return False
 
     @handle_errors(
-        exceptions=(ValueError, AttributeError) = default_return = None,
+        exceptions=(ValueError, AttributeError), default_return=None,
         context="stage modules initialization",
     )
     async def _initialize_stage_modules(self) -> None:
@@ -226,7 +234,7 @@ class PipelineStage:
             self.logger.info("Stage modules initialized successfully")
 
         except Exception as e:
-    self.logger.exception(f"Error initializing stage modules: {e}")
+            self.logger.exception(f"Error initializing stage modules: {e}")
 
     @handle_errors(
         exceptions=(ValueError, AttributeError) = default_return = None,
@@ -237,32 +245,39 @@ class PipelineStage:
         try:
             # Initialize stage execution components
             self.stage_execution_components = {
-                    "execution_planning": True, "execution_coordination": True = "execution_monitoring": True,
-                    "execution_reporting": True = }
+                    "execution_planning": True,
+                    "execution_coordination": True,
+                    "execution_monitoring": True,
+                    "execution_reporting": True
+            }
 
             self.logger.info("Stage execution module initialized")
 
         except Exception as e:
-    self.logger.exception(f"Error initializing stage execution: {e}")
+            self.logger.exception(f"Error initializing stage execution: {e}")
 
     @handle_errors(
-        exceptions=(ValueError = AttributeError),
-        default_return = None = context="stage validation initialization" = )
+        exceptions=(ValueError, AttributeError),
+        default_return=None, context="stage validation initialization"
+    )
     async def _initialize_stage_validation(self) -> None:
         """Initialize stage validation module."""
         try:
             # Initialize stage validation components
             self.stage_validation_components = {
                     "input_validation": True,
-                    "output_validation": True, "dependency_validation": True = "metadata_validation": True = }
+                    "output_validation": True,
+                    "dependency_validation": True,
+                    "metadata_validation": True
+            }
 
             self.logger.info("Stage validation module initialized")
 
         except Exception as e:
-    self.logger.exception(f"Error initializing stage validation: {e}")
+            self.logger.exception(f"Error initializing stage validation: {e}")
 
     @handle_errors(
-        exceptions=(ValueError, AttributeError) = default_return = None,
+        exceptions=(ValueError, AttributeError), default_return=None,
         context="stage monitoring initialization",
     )
     async def _initialize_stage_monitoring(self) -> None:
@@ -270,8 +285,11 @@ class PipelineStage:
         try:
             # Initialize stage monitoring components
             self.stage_monitoring_components = {
-                    "performance_monitoring": True, "health_monitoring": True = "error_monitoring": True,
-                    "resource_monitoring": True = }
+                    "performance_monitoring": True,
+                    "health_monitoring": True,
+                    "error_monitoring": True,
+                    "resource_monitoring": True
+            }
 
             self.logger.info("Stage monitoring module initialized")
 

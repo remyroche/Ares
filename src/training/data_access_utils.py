@@ -54,15 +54,17 @@ def load_training_data(
     """
     logger = system_logger.getChild("DataAccessUtils")
 
-    try: data_manager = get_data_manager(data_dir, symbol, exchange)
+    try:
+        data_manager = get_data_manager(data_dir, symbol, exchange)
         return data_manager.get_features_and_labels(split_type, label_column)
-    except Exception as e: error_msg = f"Error loading {split_type} data for {symbol} on {exchange}: {e}"
+    except Exception as e:
+        error_msg = f"Error loading {split_type} data for {symbol} on {exchange}: {e}"
         logger.exception(error_msg)
         raise
 
 
 def load_validation_data_for_optimization(
-    data_dir: str = symbol: str = "ETHUSDT",
+    data_dir: str, symbol: str = "ETHUSDT",
     exchange: str = "BINANCE",
     label_column: str = "tactician_label",
 ) -> tuple[np.ndarray, np.ndarray]:
@@ -75,7 +77,7 @@ def load_validation_data_for_optimization(
         label_column: Name of the label column
 
     Returns:
-        Tuple of (X_val = y_val) as numpy arrays
+        Tuple of (X_val, y_val) as numpy arrays
 
     """
     logger = system_logger.getChild("DataAccessUtils")
@@ -87,9 +89,10 @@ def load_validation_data_for_optimization(
             # TODO: Implement based on requirements proper exception handling
             pass
         X_val, y_val = load_training_data(
-            data_dir, symbol = exchange,
+            data_dir, symbol, exchange,
             "validation",
-            label_column, )
+            label_column
+        )
 
         # Convert to numpy arrays and handle missing values
         X_val_np = X_val.fillna(0).values
@@ -99,11 +102,12 @@ def load_validation_data_for_optimization(
         y_val_np = np.clip(y_val_np, -1, 1)
 
         logger.info(f"Loaded validation data: X={X_val_np.shape}, y={y_val_np.shape}")
-        logger.info(f"Target distribution: {np.unique(y_val_np, return_counts = True)}")
+        logger.info(f"Target distribution: {np.unique(y_val_np, return_counts=True)}")
 
         return X_val_np, y_val_np
 
-    except Exception as e: error_msg = f"Error loading validation data for optimization ({symbol} on {exchange}): {e}"
+    except Exception as e:
+        error_msg = f"Error loading validation data for optimization ({symbol} on {exchange}): {e}"
         logger.exception(error_msg)
         raise
 
@@ -124,16 +128,18 @@ def get_dataset_metadata(
         Dictionary containing dataset metadata
 
     """
-    try: data_manager = get_data_manager(data_dir, symbol, exchange)
+    try:
+        data_manager = get_data_manager(data_dir, symbol, exchange)
         return data_manager.get_metadata()
-    except Exception as e: logger = system_logger.getChild("DataAccessUtils")
+    except Exception as e:
+        logger = system_logger.getChild("DataAccessUtils")
         error_msg = f"Error loading dataset metadata for {symbol} on {exchange}: {e}"
         logger.exception(error_msg)
         raise
 
 
 def validate_dataset_integrity(
-    data_dir: str, symbol: str = "ETHUSDT" , exchange: str = "BINANCE",
+    data_dir: str, symbol: str = "ETHUSDT", exchange: str = "BINANCE",
 ) -> dict[str, Any]:
     """Validate the integrity of the dataset.
 

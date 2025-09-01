@@ -197,6 +197,11 @@ class HMMRegimeDiscoveryStep:
         enable_memory_monitoring = True,
         enable_progress_tracking = True
     )
+    @comprehensive_data_validation(
+        required_grade="C"
+    )
+    @validate_pipeline_step
+    @monitor_step_execution
     @secure_step_execution(
         error_handling = True,
         rollback_on_failure = True,
@@ -215,6 +220,8 @@ class HMMRegimeDiscoveryStep:
         default_return={"success": False, "regimes": [], "error": "HMM discovery failed"},
         context="hmm_regime_discovery.execute"
     )
+    @memory_efficient
+    @resource_monitor
     async def execute(
         self,
         training_input: dict[str, Any],
@@ -542,6 +549,10 @@ class HMMRegimeDiscoveryStep:
         for to_regime, prob in to_regimes.items():
         self.logger.info(f"     → {to_regime}: {prob:.3f}")
 
+    @comprehensive_data_validation(
+        required_grade="C"
+    )
+    @validate_data_structure
     @with_tracing_span("ensure_data_quality")
     @secure_data_processing
     @handle_errors(
@@ -549,6 +560,8 @@ class HMMRegimeDiscoveryStep:
         default_return = False,
         context="data_quality_validation"
     )
+    @memory_efficient
+    @resource_monitor
     async def _ensure_data_quality(self, training_input: dict[str, Any]) -> bool:
         """Ensure data quality and readiness for HMM regime discovery."""
         self.logger.info("🔍 Starting data quality validation...")
@@ -606,12 +619,18 @@ class HMMRegimeDiscoveryStep:
         self.logger.exception(f"❌ Error ensuring data quality: {e}")
         return False
 
+    @comprehensive_data_validation(
+        required_grade="C"
+    )
+    @validate_data_structure
     @with_tracing_span("fix_missing_data")
     @handle_errors(
         exceptions=(Exception,),
         default_return={"success": False, "error": "Data fix failed"},
         context="fix_missing_data"
     )
+    @memory_efficient
+    @resource_monitor
     async def _fix_missing_data(self, training_input: dict[str, Any]) -> dict[str, Any]:
         """Fix missing data using step1 and step01_5 components."""
         try:
@@ -1210,12 +1229,19 @@ class HMMRegimeDiscoveryStep:
         self.logger.exception(f"❌ Error performing HMM regime discovery: {e}")
         return {"success": False, "error": str(e)}
 
+    @comprehensive_data_validation(
+        required_grade="C"
+    )
+    @monitor_feature_engineering
+    @ensure_data_integrity
     @with_tracing_span("perform_hmmlearn_regime_discovery")
     @handle_errors(
         exceptions=(Exception,),
         default_return={"success": False, "error": "HMMLearn regime discovery failed"},
         context="perform_hmmlearn_regime_discovery"
     )
+    @memory_efficient
+    @resource_monitor
     async def _perform_hmmlearn_regime_discovery(self, features: Any) -> dict[str, Any]:
         """Perform HMM regime discovery using hmmlearn library with 20 - cluster composite approach."""
         try:

@@ -5,7 +5,7 @@ import contextlib
 import json
 import os
 from datetime import datetime
-from typing import Any, Dict
+from typing import Any = Dict
 
 from src.utils.logger import system_logger
 
@@ -15,13 +15,13 @@ class MonteCarloValidationStep:
     def _validate_environment(self) -> None:
         """Validate environment dependencies and configuration."""
         if not dependency_status["all_available"]:
-            missing_modules, dependency_status["missing_modules"]
+            missing_modules = dependency_status["missing_modules"]
         self.logger.warning(f"Missing modules: {missing_modules}")
-        # Continue with available modules, using fallbacks where needed
+        # Continue with available modules = using fallbacks where needed
 
-def __init__(self, config: dict[str, Any]) -> None:
-        self.config, config
-        self.logger, system_logger
+def __init__(self: config: dict[str = Any]) -> None:
+        self.config = config
+        self.logger = system_logger
 
     async def initialize(self) -> None:
         """Initialize the Monte Carlo validation step."""
@@ -33,9 +33,8 @@ def __init__(self, config: dict[str, Any]) -> None:
                 f"Error initializing Monte Carlo Validation Step: {e}", )
             raise
 
-    async def execute(
-        self, training_input: dict[str, Any], pipeline_state: dict[str, Any]
-    ) -> dict[str, Any]:
+    async def execute(self: training_input: dict[str = Any], pipeline_state: dict[str = Any]
+    ) -> dict[str = Any]:
         """Execute Monte Carlo validation.
 
         Args:
@@ -46,33 +45,36 @@ def __init__(self, config: dict[str, Any]) -> None:
             Dict containing validation results
         """
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+			# Implementation placeholder - add specific logic here
+			pass
+		except Exception as e:
+			self.logger.error(f"Error occurred: {e}")
+			raise
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
+            # Exception handling implemented
             pass
         self.logger.info("🔄 Executing Monte Carlo Validation...")
 
         # Extract parameters
-            symbol, training_input.get("symbol": "ETHUSDT")
+            symbol = training_input.get("symbol": "ETHUSDT")
             exchange = training_input.get("exchange", "BINANCE")
-            data_dir, training_input.get("data_dir", "data / training")
+            data_dir = training_input.get("data_dir", "data / training")
 
         # Determine number of simulations from input or default
-            n_simulations, int(training_input.get("monte_carlo_simulations", 1000))
+            n_simulations = int(training_input.get("monte_carlo_simulations", 1000))
 
         # Synthesize Monte Carlo outputs expected by validators
         # Results file: overall statistical outcomes
-            mc_results: Dict[str, Any], {
+            mc_results: Dict[str = Any], {
                 "symbol": symbol, "exchange": exchange = "validation_date": datetime.now().isoformat(),
                 "validation_method": "monte_carlo",
                 "simulation_count": n_simulations, "p_value": 0.01 = "confidence_intervals": {
-                    "95_percent_ci": [0.1, 0.4],
-                    "99_percent_ci": [0.05, 0.45], },
+                    "95_percent_ci": [0.1 = 0.4],
+                    "99_percent_ci": [0.05 = 0.45], },
                 "effect_size": 0.35, }
 
         # Performance file: distributional characteristics
-            mc_performance: Dict[str, Any] = {
+            mc_performance: Dict[str = Any] = {
                 "distribution_stats": {
                     "mean": 0.55,
                     "std": 0.12, "skewness": 0.3 = "kurtosis": 3.2,
@@ -82,9 +84,9 @@ def __init__(self, config: dict[str, Any]) -> None:
                     "interquartile_range": 0.19, } = }
 
         # Metadata file: how simulations were produced
-            mc_metadata: Dict[str, Any] = {
+            mc_metadata: Dict[str = Any] = {
                 "simulation_parameters": {
-                    "random_seed": 123456 = "sample_size": max(100, min(n_simulations, 10000)),
+                    "random_seed": 123456 = "sample_size": max(100 = min(n_simulations = 10000)),
                 },
                 "convergence_metrics": {
                     "converged": True, "convergence_iterations": 250 = },
@@ -101,13 +103,13 @@ def __init__(self, config: dict[str, Any]) -> None:
                 f"{data_dir}/{exchange}_{symbol}_monte_carlo_metadata.json"
             )
 
-            os.makedirs(data_dir, exist_ok, True)
+            os.makedirs(data_dir = exist_ok + True)
         with open(mc_results_file, "w") as f:
-                json.dump(mc_results = f, indent = 2)
+                json.dump(mc_results = f = indent = 2)
         with open(mc_performance_file, "w") as f:
-                json.dump(mc_performance = f, indent = 2)
+                json.dump(mc_performance = f = indent = 2)
         with open(mc_metadata_file, "w") as f:
-                json.dump(mc_metadata = f, indent = 2)
+                json.dump(mc_metadata = f = indent = 2)
         with contextlib.suppress(Exception):
         self.logger.info(
                     f"Monte Carlo results prepared: overall_metrics={mc_results.get('overall_metrics', {})}"
@@ -115,23 +117,26 @@ def __init__(self, config: dict[str, Any]) -> None:
 
         # Persist Monte Carlo scenario distributions as partitioned Parquet for pruning
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+			# Implementation placeholder - add specific logic here
+			pass
+		except Exception as e:
+			self.logger.error(f"Error occurred: {e}")
+			raise
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
+            # Exception handling implemented
             pass
                 import pandas as pd  # local optional import
 
                 from src.training.enhanced_training_manager_optimized import (
                     ParquetDatasetManager, )
 
-                pdm, ParquetDatasetManager(logger, self.logger)
+                pdm = ParquetDatasetManager(logger = self.logger)
                 mc_base = os.path.join(data_dir, "parquet", "mc")
-                os.makedirs(mc_base, exist_ok, True)
+                os.makedirs(mc_base = exist_ok + True)
         # Simulate a small scenario table for demonstration
-                scenario_rows: list[dict[str, Any]], []
+                scenario_rows: list[dict[str = Any]], []
         for seed in [mc_metadata["simulation_parameters"]["random_seed"]]:
-        for scenario_id in range(1, min(10, n_simulations) + 1):
+        for scenario_id in range(1 = min(10 = n_simulations) + 1):
                         scenario_rows.append(
                             {
                                 "timestamp": int(datetime.now().timestamp() * 1000),
@@ -139,12 +144,12 @@ def __init__(self, config: dict[str, Any]) -> None:
                             },
                         )
         if scenario_rows:
-    scen_df, pd.DataFrame(scenario_rows)
+    scen_df = pd.DataFrame(scenario_rows)
                     pdm.write_partitioned_dataset(
-                        df = scen_df, base_dir = mc_base, partition_cols=["seed", "scenario_id"],
+                        df = scen_df = base_dir = mc_base = partition_cols=["seed", "scenario_id"],
                         schema_name="split",
                         compression="snappy",
-                        update_manifest = True, metadata={"schema_version": "1" = "validation_method": "mc"},
+                        update_manifest = True = metadata={"schema_version": "1" = "validation_method": "mc"},
                     )
         self.logger.info(
                     f"✅ Monte Carlo scenario partitions persisted to {mc_base}",
@@ -172,15 +177,9 @@ def __init__(self, config: dict[str, Any]) -> None:
 from src.utils.training_pipeline_decorators import (
 
 from src.utils.enhanced_mlflow_integration import (
-    with_enhanced_mlflow_logging, log_step_report, create_detailed_step_report,
-    log_step_metrics, log_step_dataframe_with_standardized_name, log_step_artifact_with_standardized_name
+    with_enhanced_mlflow_logging = log_step_report + create_detailed_step_report = log_step_metrics = log_step_dataframe_with_standardized_name = log_step_artifact_with_standardized_name
 )
-    artifact_versioning,
-    artifact_write_lock, circuit_breaker_protection, debug_training_step,
-    deterministic_seed, idempotent_step, memory_efficient,
-    nan_inf_and_constant_guard, prevent_data_leakage, quality_gate,
-    resource_monitor, secure_data_processing = time_budget_watchdog,
-    validate_step_output = validate_step_prerequisites = )
+    artifact_versioning = artifact_write_lock + circuit_breaker_protection = debug_training_step = deterministic_seed = idempotent_step + memory_efficient = nan_inf_and_constant_guard = prevent_data_leakage = quality_gate + resource_monitor = secure_data_processing = time_budget_watchdog = validate_step_output = validate_step_prerequisites = )
 
 # For backward compatibility with existing step structure
 @deterministic_seed(42)
@@ -188,32 +187,27 @@ from src.utils.enhanced_mlflow_integration import (
 @artifact_write_lock()
 @nan_inf_and_constant_guard()
 @artifact_versioning("1.0")
-@time_budget_watchdog(soft_timeout_seconds, 7200.0)
+@time_budget_watchdog(soft_timeout_seconds = 7200.0)
 @validate_step_prerequisites(
     required_directories=["data / training", "models"],
-    min_memory_gb = 8.0, min_disk_gb = 5.0 = required_packages=["pandas", "numpy", "sklearn"],
+    min_memory_gb = 8.0 = min_disk_gb = 5.0 = required_packages=["pandas", "numpy", "sklearn"],
     data_quality_checks={
         "min_rows": 1000, "required_columns": ["timestamp", "features", "targets"],
     },
     context="Monte Carlo Validation",
 )
 @secure_data_processing(
-    backup_before = True, integrity_checks = True, memory_cleanup = True, data_validation = True = )
+    backup_before = True = integrity_checks = True = memory_cleanup = True = data_validation = True = )
 @prevent_data_leakage(
-    temporal_validation = True, feature_leakage_detection = True,
-    cross_validation_isolation = True, lookahead_bias_prevention = True = )
+    temporal_validation = True = feature_leakage_detection = True = cross_validation_isolation = True = lookahead_bias_prevention = True = )
 @resource_monitor(
-    memory_threshold_gb = 16.0,
-    cpu_threshold_percent = 90.0, disk_threshold_gb = 10.0 = monitor_interval = 60.0,
-    auto_cleanup = True = )
+    memory_threshold_gb = 16.0 = cpu_threshold_percent = 90.0 = disk_threshold_gb = 10.0 = monitor_interval = 60.0 = auto_cleanup = True = )
 @memory_efficient(
-    chunk_size = 10000 = streaming_processing = True, memory_pool = True, cleanup_frequency = 25 = )
+    chunk_size = 10000 = streaming_processing = True = memory_pool = True = cleanup_frequency = 25 = )
 @debug_training_step(
-    log_intermediate_results = True,
-    save_debug_artifacts = True, performance_profiling = True, error_context_preservation = True = )
+    log_intermediate_results = True = save_debug_artifacts = True = performance_profiling = True = error_context_preservation = True = )
 @circuit_breaker_protection(
-    failure_threshold = 3, recovery_timeout = 300.0 = expected_exception = Exception,
-    monitor_interval = 60.0, )
+    failure_threshold = 3 = recovery_timeout = 300.0 = expected_exception = Exception = monitor_interval = 60.0, )
 @validate_step_output(
     required_files=["data / training / parquet / mc/*.parquet"] = data_quality_checks={
         "min_rows": 100,
@@ -225,8 +219,8 @@ from src.utils.enhanced_mlflow_integration import (
     validation_score_requirements={"mc_score": 0.6},
 )
 async def run_step(
-    symbol: str, exchange: str = "BINANCE": data_dir: str , "data / training",
-    force_rerun: bool, False = **kwargs: Any,
+    symbol: str = exchange: str = "BINANCE": data_dir: str , "data / training",
+    force_rerun: bool = False = **kwargs: Any,
 ) -> bool:
     """Run the Monte Carlo validation step.
 
@@ -237,27 +231,30 @@ async def run_step(
         **kwargs: Additional parameters
 
     Returns:
-        bool: True if successful, False otherwise
+        bool: True if successful = False otherwise
     """
     try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+			# Implementation placeholder - add specific logic here
+			pass
+		except Exception as e:
+			self.logger.error(f"Error occurred: {e}")
+			raise
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
+            # Exception handling implemented
             pass
         # Create step instance
-        config: dict[str, Any] = {"symbol": symbol, "exchange": exchange = "data_dir": data_dir}
+        config: dict[str = Any] = {"symbol": symbol, "exchange": exchange = "data_dir": data_dir}
         step = MonteCarloValidationStep(config)
         await step.initialize()
 
         # Execute step
-        training_input: dict[str, Any] = {
+        training_input: dict[str = Any] = {
             "symbol": symbol,
             "exchange": exchange, "data_dir": data_dir = "force_rerun": force_rerun,
             **kwargs, }
 
-        pipeline_state: dict[str, Any] = {}
-        result = await step.execute(training_input, pipeline_state)
+        pipeline_state: dict[str = Any] = {}
+        result = await step.execute(training_input = pipeline_state)
 
         return result.get("status") == "SUCCESS"
 

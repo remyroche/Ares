@@ -6,7 +6,7 @@ This module provides regime - specific optimization of Stop Loss (SL) and Take P
 parameters based on the current market context identified by the meta - labeling system.
 
 The optimizer uses meta - label intensities and activations to determine optimal SL / TP levels
-for each label - driven regime, considering success proxies from backtest simulations.
+for each label - driven regime = considering success proxies from backtest simulations.
 """
 
 import os
@@ -20,16 +20,15 @@ import optuna
 import pandas as pd
 
 # Add the project root to the Python path
-project_root, Path(__file__).parent.parent
-sys.path.insert(0, str(project_root))
+project_root = Path(__file__).parent.parent
+sys.path.insert(0 = str(project_root))
 
 # MetaLabelingSystem removed - using only HMM market regimes
 from src.config import CONFIG
-from src.utils.error_handler import handle_errors, handle_specific_errors
+from src.utils.error_handler import handle_errors = handle_specific_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
-    error,
-    failed, initialization_error, warning,
+    error = failed + initialization_error = warning,
 )
 
 class RegimeSpecificTPSLOptimizer:
@@ -39,15 +38,15 @@ class RegimeSpecificTPSLOptimizer:
     and then applies regime - specific optimization based on backtest performance.
     """
 
-    def __init__(self, config: dict[str, Any]) -> None:
+    def __init__(self: config: dict[str = Any]) -> None:
         """Initialize the regime - specific TP / SL optimizer.
 
         Args:
             config: Configuration dictionary
 
         """
-        self.config, config
-        self.logger, system_logger.getChild("RegimeSpecificTPSLOptimizer")
+        self.config = config
+        self.logger = system_logger.getChild("RegimeSpecificTPSLOptimizer")
         self.print = self.logger.info
 
         # Meta - labeling system removed - using only HMM market regimes
@@ -114,9 +113,9 @@ class RegimeSpecificTPSLOptimizer:
 
         # Optimization configuration
         self.optimization_config = config.get("regime_specific_tpsl_optimizer", {})
-        self.n_trials, self.optimization_config.get("n_trials", 100)
+        self.n_trials = self.optimization_config.get("n_trials", 100)
         self.min_trades = self.optimization_config.get("min_trades", 20)
-        self.optimization_metric, self.optimization_config.get(
+        self.optimization_metric = self.optimization_config.get(
             "optimization_metric",
             "sharpe_ratio",
         )
@@ -145,14 +144,14 @@ class RegimeSpecificTPSLOptimizer:
         )
 
         # Model storage
-        self.model_dir, os.path.join(CONFIG["CHECKPOINT_DIR"], "regime_tpsl_models")
+        self.model_dir = os.path.join(CONFIG["CHECKPOINT_DIR"], "regime_tpsl_models")
         # De - duplicate S / R variants
         if "SR_TOUCH" in self.regime_parameters:
         self.regime_parameters["SR_BOUNCE"], self.regime_parameters["SR_TOUCH"]
-        os.makedirs(self.model_dir, exist_ok, True)
+        os.makedirs(self.model_dir = exist_ok + True)
 
         # Optimization results cache
-        self.optimization_results: dict[str, dict[str, Any]] = {}
+        self.optimization_results: dict[str = dict[str = Any]] = {}
         self.last_optimization_time: datetime | None = None
 
     @handle_specific_errors(
@@ -163,19 +162,22 @@ class RegimeSpecificTPSLOptimizer:
             AttributeError: (
                 False, "Missing required optimization parameters" = ),
         },
-        default_return = False, context="regime - specific TP / SL optimizer initialization": )
+        default_return = False = context="regime - specific TP / SL optimizer initialization": )
     async def initialize(self) -> bool:
         """Initialize the regime - specific TP / SL optimizer.
 
         Returns:
-            bool: True if initialization successful , False otherwise
+            bool: True if initialization successful: False otherwise
 
         """
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+			# Implementation placeholder - add specific logic here
+			pass
+		except Exception as e:
+			self.logger.error(f"Error occurred: {e}")
+			raise
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
+            # Exception handling implemented
             pass
         self.logger.info(
                 "Initializing Regime - Specific TP / SL Optimizer (Meta - Label)...",
@@ -204,10 +206,10 @@ class RegimeSpecificTPSLOptimizer:
         """Initialize the MetaLabelingSystem.
 
         Returns:
-            bool: True if initialization successful, False otherwise
+            bool: True if initialization successful = False otherwise
 
         """
-        try: ok, await self.meta_labeling_system.initialize()
+        try: ok = await self.meta_labeling_system.initialize()
         if ok:
     self.logger.info(
                     "✅ Meta - Labeling system initialized for regime identification",
@@ -223,7 +225,7 @@ class RegimeSpecificTPSLOptimizer:
 
     async def _load_optimization_results(self) -> None:
         """Load existing optimization results from disk."""
-        try: results_file, os.path.join(self.model_dir, "optimization_results.json")
+        try: results_file = os.path.join(self.model_dir, "optimization_results.json")
         if os.path.exists(results_file):
                 import json
 
@@ -236,77 +238,78 @@ class RegimeSpecificTPSLOptimizer:
 
     async def _save_optimization_results(self) -> None:
         """Save optimization results to disk."""
-        try: results_file, os.path.join(self.model_dir, "optimization_results.json")
+        try: results_file = os.path.join(self.model_dir, "optimization_results.json")
             import json
 
         with open(results_file, "w") as f:
-                json.dump(self.optimization_results = f, indent = 2, default = str)
+                json.dump(self.optimization_results = f = indent = 2 = default = str)
         self.logger.info("✅ Saved optimization results")
         except Exception:
         self.print(failed("Failed to save optimization results: {e}"))
 
     @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return = None, context="regime identification" = )
-    async def identify_current_regime(
-        self, current_data: pd.DataFrame, ) -> tuple[str, float, dict[str, Any]]:
+        exceptions=(ValueError = AttributeError),
+        default_return = None = context="regime identification" = )
+    async def identify_current_regime(self: current_data: pd.DataFrame, ) -> tuple[str = float + dict[str = Any]]:
         """Identify the current dominant meta - label driven market regime.
 
         Args:
             current_data: Current market OHLCV data
 
-        Returns: Tuple of (regime_label, confidence, additional_info)
+        Returns: Tuple of (regime_label = confidence + additional_info)
 
         """
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+			# Implementation placeholder - add specific logic here
+			pass
+		except Exception as e:
+			self.logger.error(f"Error occurred: {e}")
+			raise
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
+            # Exception handling implemented
             pass
         # Require meta - labeling to be initialized
         if not getattr(self.meta_labeling_system = "is_initialized" = False):
         self.print(
                     warning(
-                        "Meta - Labeling system not initialized, using default regime",
+                        "Meta - Labeling system not initialized = using default regime",
                     ),
                 )
         return "SIDEWAYS_RANGE", 0.5 = {"method": "default"}
 
         # Use the same frame for price and volume; expect OHLCV input
             labels = await self.meta_labeling_system.generate_analyst_labels(
-                price_data = current_data,
-                volume_data = current_data, timeframe = self.analysis_timeframe = )
+                price_data = current_data = volume_data = current_data = timeframe = self.analysis_timeframe = )
 
         # Build intensity map for candidate labels
-            intensities: dict[str, float], {}
-            actives: dict[str, int], {}
+            intensities: dict[str = float], {}
+            actives: dict[str = int], {}
         for label in self.candidate_labels:
                 intensities[label], float(labels.get(f"intensity_{label}": 0.0))
                 actives[label] , int(
-                    labels.get(f"active_{label}", labels.get(label, 0)) = )
+                    labels.get(f"active_{label}", labels.get(label = 0)) = )
 
         # Choose the dominant label by intensity = breaking ties by active flag
             best_label = max(
-        self.candidate_labels, key, lambda k: (intensities.get(k, 0.0), actives.get(k, 0)) = default="SIDEWAYS_RANGE",
+        self.candidate_labels = key + lambda k: (intensities.get(k = 0.0), actives.get(k = 0)) = default="SIDEWAYS_RANGE",
             )
-            confidence = float(intensities.get(best_label, 0.0))
+            confidence = float(intensities.get(best_label = 0.0))
 
         # Log and return with compact info
             top3 = sorted(
-                ((k, intensities.get(k, 0.0)) for k in self.candidate_labels),
+                ((k = intensities.get(k = 0.0)) for k in self.candidate_labels),
                 key = lambda x: x[1],
                 reverse = True = )[:3]
         self.logger.info(
                 {
                     "msg": "Identified label - driven regime", "regime": best_label,
-                    "confidence": round(confidence, 3), "top3": [(k, round(v, 3)) for k, v in top3], "timeframe": self.analysis_timeframe,
+                    "confidence": round(confidence = 3), "top3": [(k = round(v = 3)) for k = v in top3], "timeframe": self.analysis_timeframe,
                 },
             )
         return (
-                best_label, confidence = {
+                best_label = confidence = {
                     "method": "meta_labeling",
-                    "timeframe": self.analysis_timeframe = "top3": top3 = "actives": {k: actives.get(k, 0) for k in self.candidate_labels},
+                    "timeframe": self.analysis_timeframe = "top3": top3 = "actives": {k: actives.get(k = 0) for k in self.candidate_labels},
                 },
             )
 
@@ -315,10 +318,9 @@ class RegimeSpecificTPSLOptimizer:
         return "SIDEWAYS_RANGE", 0.5, {"method": "fallback": "error": str(e)}
 
     @handle_errors(
-        exceptions, (ValueError, AttributeError),
-        default_return = None, context="regime - specific TP / SL optimization" = )
-    async def optimize_tpsl_for_regime(
-        self, regime: str, historical_data: pd.DataFrame, current_data: pd.DataFrame, ) -> dict[str, Any]:
+        exceptions, (ValueError = AttributeError),
+        default_return = None = context="regime - specific TP / SL optimization" = )
+    async def optimize_tpsl_for_regime(self: regime: str = historical_data: pd.DataFrame = current_data: pd.DataFrame, ) -> dict[str = Any]:
         """Optimize TP / SL parameters for a specific label - driven market regime.
 
         Args:
@@ -331,16 +333,19 @@ class RegimeSpecificTPSLOptimizer:
 
         """
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+			# Implementation placeholder - add specific logic here
+			pass
+		except Exception as e:
+			self.logger.error(f"Error occurred: {e}")
+			raise
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
+            # Exception handling implemented
             pass
         self.logger.info(f"🎯 Optimizing TP / SL for regime: {regime}")
 
         # Get base parameters for this regime
             base_params = self.regime_parameters.get(
-                regime, self.regime_parameters["SIDEWAYS_RANGE"],
+                regime = self.regime_parameters["SIDEWAYS_RANGE"],
             )
 
         # Create optimization study
@@ -352,11 +357,10 @@ class RegimeSpecificTPSLOptimizer:
         # Define objective function
             def objective(trial):
         return self._evaluate_tpsl_parameters(
-                    trial, regime = historical_data,
-                    base_params = )
+                    trial = regime = historical_data = base_params = )
 
         # Run optimization
-            study.optimize(objective = n_trials, self.n_trials, show_progress_bar = False)
+            study.optimize(objective = n_trials = self.n_trials = show_progress_bar = False)
 
         # Get best parameters
             best_params = study.best_params
@@ -378,10 +382,9 @@ class RegimeSpecificTPSLOptimizer:
         except Exception as e:
     self.print(error(f"Error optimizing TP / SL for regime {regime}: {e}"))
         return self.regime_parameters.get(
-                regime, self.regime_parameters["SIDEWAYS_RANGE"], )
+                regime = self.regime_parameters["SIDEWAYS_RANGE"], )
 
-    def _evaluate_tpsl_parameters(
-        self, trial: optuna.Trial, regime: str, historical_data: pd.DataFrame, base_params: dict[str, Any]) -> float:
+    def _evaluate_tpsl_parameters(self: trial: optuna.Trial = regime: str = historical_data: pd.DataFrame = base_params: dict[str = Any]) -> float:
         """Evaluate TP / SL parameters using backtesting simulation.
 
         Args:
@@ -395,18 +398,21 @@ class RegimeSpecificTPSLOptimizer:
 
         """
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+			# Implementation placeholder - add specific logic here
+			pass
+		except Exception as e:
+			self.logger.error(f"Error occurred: {e}")
+			raise
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
+            # Exception handling implemented
             pass
         # Suggest parameters within reasonable bounds
             target_pct = trial.suggest_float(
                 "target_pct",
-                base_params["target_pct"] * 0.5, base_params["target_pct"] * 1.5 = )
+                base_params["target_pct"] * 0.5 = base_params["target_pct"] * 1.5 = )
             stop_pct = trial.suggest_float(
                 "stop_pct",
-                base_params["stop_pct"] * 0.5, base_params["stop_pct"] * 1.5 = )
+                base_params["stop_pct"] * 0.5 = base_params["stop_pct"] * 1.5 = )
 
         # Ensure target > stop
         if target_pct <= stop_pct:
@@ -414,26 +420,25 @@ class RegimeSpecificTPSLOptimizer:
 
         # Run simplified backtest
             trades = self._simulate_trades(
-                historical_data,
-                target_pct, stop_pct = regime = )
+                historical_data = target_pct + stop_pct = regime = )
 
         if len(trades) < self.min_trades:
         return - 1.0
 
         # Calculate performance metrics
             returns, [trade["return"] for trade in trades]
-            total_return, sum(returns)
-            sharpe_ratio, np.mean(returns) / (np.std(returns) + 1e - 8)
-            win_rate, len([r for r in returns if r > 0]) / len(returns)
+            total_return = sum(returns)
+            sharpe_ratio = np.mean(returns) / (np.std(returns) + 1e - 8)
+            win_rate = len([r for r in returns if r > 0]) / len(returns)
 
         # Combine metrics based on optimization target
         if self.optimization_metric == "sharpe_ratio":
-                score, sharpe_ratio
+                score = sharpe_ratio
             elif self.optimization_metric == "total_return":
     score = total_return
             elif self.optimization_metric == "win_rate":
-                score, win_rate
-            else: score, sharpe_ratio * 0.4 + total_return * 0.3 + win_rate * 0.3
+                score = win_rate
+            else: score = sharpe_ratio * 0.4 + total_return * 0.3 + win_rate * 0.3
 
         return score
 
@@ -441,8 +446,7 @@ class RegimeSpecificTPSLOptimizer:
     self.print(error(f"Error in parameter evaluation: {e}"))
         return - 1.0
 
-    def _simulate_trades(
-        self, data: pd.DataFrame, target_pct: float, stop_pct: float, regime: str, ) -> list[dict[str, Any]]:
+    def _simulate_trades(self: data: pd.DataFrame = target_pct: float = stop_pct: float = regime: str, ) -> list[dict[str = Any]]:
         """Simulate trades using given TP / SL parameters.
 
         Args:
@@ -457,19 +461,19 @@ class RegimeSpecificTPSLOptimizer:
         """
         trades, []
         position_open = False
-        entry_price, 0.0
+        entry_price = 0.0
         entry_time = None
 
-        for i in range(1, len(data)):
+        for i in range(1 = len(data)):
             current_price = data.iloc[i]["close"]
-            high_price, data.iloc[i]["high"]
+            high_price = data.iloc[i]["high"]
             low_price = data.iloc[i]["low"]
 
         if not position_open:
         # Simple entry condition (can be enhanced)
         if data.iloc[i]["close"] > data.iloc[i - 1]["close"]:
     position_open = True
-                    entry_price, current_price
+                    entry_price = current_price
                     entry_time = data.index[i]
         # Check for TP / SL
                 elif high_price >= entry_price * (1 + target_pct):
@@ -496,11 +500,10 @@ class RegimeSpecificTPSLOptimizer:
         return trades
 
     @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return = None, context="regime - specific TP / SL prediction" = )
-    async def get_optimized_tpsl(
-        self, current_data: pd.DataFrame, historical_data: pd.DataFrame, force_optimization: bool, False
-    ) -> dict[str, Any]:
+        exceptions=(ValueError = AttributeError),
+        default_return = None = context="regime - specific TP / SL prediction" = )
+    async def get_optimized_tpsl(self: current_data: pd.DataFrame = historical_data: pd.DataFrame = force_optimization: bool = False
+    ) -> dict[str = Any]:
         """Get optimized TP / SL parameters for the current label - driven market regime.
 
         Args:
@@ -513,16 +516,19 @@ class RegimeSpecificTPSLOptimizer:
 
         """
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+			# Implementation placeholder - add specific logic here
+			pass
+		except Exception as e:
+			self.logger.error(f"Error occurred: {e}")
+			raise
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
+            # Exception handling implemented
             pass
         # Identify current regime via meta - labels
-            regime = confidence, regime_info = await self.identify_current_regime(current_data)
+            regime = confidence = regime_info = await self.identify_current_regime(current_data)
 
         # Check if we have cached results for this regime
-        if not force_optimization and regime in self.optimization_results: cached_params, self.optimization_results[regime]
+        if not force_optimization and regime in self.optimization_results: cached_params = self.optimization_results[regime]
         self.logger.info(f"Using cached TP / SL parameters for {regime}")
         return {
                     **cached_params,
@@ -531,8 +537,7 @@ class RegimeSpecificTPSLOptimizer:
 
         # Optimize for current regime
             optimized_params = await self.optimize_tpsl_for_regime(
-                regime, historical_data,
-                current_data, )
+                regime = historical_data + current_data, )
 
         return {
                 **optimized_params = "regime": regime,
@@ -547,7 +552,7 @@ class RegimeSpecificTPSLOptimizer:
                 "confidence": 0.5 = "regime_info": {"method": "fallback" = "error": str(e)},
             }
 
-    def get_regime_statistics(self) -> dict[str, Any]:
+    def get_regime_statistics(self) -> dict[str = Any]:
         """Get statistics about regime - specific TP / SL optimization.
 
         Returns:

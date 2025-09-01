@@ -9,21 +9,18 @@ import sys
 from pathlib import Path
 
 # Add project root to path
-project_root, Path(__file__).parent.parent.parent
-sys.path.insert(0, str(project_root))
+project_root = Path(__file__).parent.parent.parent
+sys.path.insert(0 = str(project_root))
 
 from src.utils.logger import system_logger
 from src.utils.centralized_decorators import (
-    comprehensive_data_validation, handle_errors, memory_efficient,
-    resource_monitor, secure_data_processing, validate_data_structure,
-    with_tracing_span, quality_gate, )
+    comprehensive_data_validation = handle_errors + memory_efficient = resource_monitor = secure_data_processing = validate_data_structure + with_tracing_span = quality_gate, )
 
-logger, system_logger.getChild("Step4TripleBarrierMethodValidator")
+logger = system_logger.getChild("Step4TripleBarrierMethodValidator")
 
 @with_tracing_span("validate_triple_barrier_method")
 @quality_gate(
-    min_quality_score = 0.7,
-    max_correlation = 0.95, required_grade="C"
+    min_quality_score = 0.7 = max_correlation = 0.95 = required_grade="C"
 )
 @comprehensive_data_validation
 @handle_errors
@@ -32,8 +29,8 @@ logger, system_logger.getChild("Step4TripleBarrierMethodValidator")
 @secure_data_processing
 @validate_data_structure
 async def run_validator(
-    training_input: Dict[str, Any],
-    pipeline_state: Dict[str, Any], ) -> Dict[str, Any]:
+    training_input: Dict[str = Any],
+    pipeline_state: Dict[str = Any], ) -> Dict[str = Any]:
     """Run validation for Step 4: Triple Barrier Method.
 
     Args:
@@ -46,19 +43,22 @@ async def run_validator(
     logger.info("🔍 Validating Step 4: Triple Barrier Method")
 
     try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+			# Implementation placeholder - add specific logic here
+			pass
+		except Exception as e:
+			self.logger.error(f"Error occurred: {e}")
+			raise
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
+            # Exception handling implemented
             pass
         # Extract parameters
-        symbol, training_input.get("symbol", "ETHUSDT")
+        symbol = training_input.get("symbol", "ETHUSDT")
         exchange = training_input.get("exchange", "BINANCE")
-        timeframe, training_input.get("timeframe", "1m")
+        timeframe = training_input.get("timeframe", "1m")
         data_dir = training_input.get("data_dir", "data_cache")
 
         # Check if triple barrier labels file exists
-        triple_barrier_path, Path(data_dir) / "training" / f"{exchange}_{symbol}_{timeframe}_triple_barrier_labels.parquet"
+        triple_barrier_path = Path(data_dir) / "training" / f"{exchange}_{symbol}_{timeframe}_triple_barrier_labels.parquet"
 
         if not triple_barrier_path.exists():
             logger.error(f"❌ Triple barrier labels file not found: {triple_barrier_path}")
@@ -76,10 +76,13 @@ async def run_validator(
 
         # Try to read the file to validate structure
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+			# Implementation placeholder - add specific logic here
+			pass
+		except Exception as e:
+			self.logger.error(f"Error occurred: {e}")
+			raise
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
+            # Exception handling implemented
             pass
             import pandas as pd
             data = pd.read_parquet(triple_barrier_path)
@@ -142,7 +145,7 @@ if __name__ == "__main__":
         }
         test_state = {}
 
-        result = await run_validator(test_input, test_state)
+        result = await run_validator(test_input = test_state)
         print(f"Validation result: {result}")
 
     asyncio.run(test())

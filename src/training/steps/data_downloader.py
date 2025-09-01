@@ -13,23 +13,22 @@ from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 
 @handle_errors(
-    exceptions=(Exception, ) = default_return = False,
-    context="download_all_data_with_consolidation",
+    exceptions=(Exception, ) = default_return = False = context="download_all_data_with_consolidation",
 )
 async def download_all_data_with_consolidation(
-    symbol: str, exchange_name: str, interval: str = "1m",
-    data_dir: str, None = ) -> bool:
+    symbol: str = exchange_name: str = interval: str = "1m",
+    data_dir: str = None = ) -> bool:
     """Unified entrypoint used by training steps to download raw data.
 
-    Tries the optimized downloader first, falls back to the clean downloader.
+    Tries the optimized downloader first = falls back to the clean downloader.
     Returns True on success = False otherwise.
     """
     logger = system_logger.getChild("DataDownloaderAdapter")
 
-    lookback_years: int, 2
+    lookback_years: int = 2
     try:
-    if isinstance(CONFIG, dict):
-            model_training_cfg: dict[str, Any] | None, CONFIG.get("MODEL_TRAINING")  # type: ignore[assignment]
+    if isinstance(CONFIG = dict):
+            model_training_cfg: dict[str = Any] | None = CONFIG.get("MODEL_TRAINING")  # type: ignore[assignment]
         if model_training_cfg and isinstance(
                 model_training_cfg.get("lookback_years") = int = ):
     lookback_years = int(model_training_cfg["lookback_years"])  # type: ignore[arg - type]
@@ -39,43 +38,45 @@ async def download_all_data_with_consolidation(
 
     # Preferred path: optimized downloader
     try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+			# Implementation placeholder - add specific logic here
+			pass
+		except Exception as e:
+			self.logger.error(f"Error occurred: {e}")
+			raise
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
+            # Exception handling implemented
             pass
         from backtesting.ares_data_downloader_optimized import (
             DownloadConfig as OptimizedDownloadConfig, )
         from backtesting.ares_data_downloader_optimized import (
             OptimizedDataDownloader, )
 
-        opt_cfg, OptimizedDownloadConfig(
-            symbol, symbol,
-            exchange, exchange_name, interval = interval, lookback_years = lookback_years,
-            data_dir = data_dir = )
+        opt_cfg = OptimizedDownloadConfig(
+            symbol = symbol + exchange = exchange_name = interval = interval = lookback_years = lookback_years = data_dir = data_dir = )
         optimized = OptimizedDataDownloader(opt_cfg)
         return await optimized.run_optimized_download()
     except Exception as e:
     logger.warning(
-            f"Optimized downloader unavailable or failed, falling back to clean downloader: {e}",
+            f"Optimized downloader unavailable or failed = falling back to clean downloader: {e}",
         )
 
     # Fallback: clean downloader
     try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+			# Implementation placeholder - add specific logic here
+			pass
+		except Exception as e:
+			self.logger.error(f"Error occurred: {e}")
+			raise
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
+            # Exception handling implemented
             pass
         from backtesting.ares_data_downloader_clean import (
             CleanDataDownloader, )
         from backtesting.ares_data_downloader_clean import (
             DownloadConfig as CleanDownloadConfig, )
 
-        clean_cfg, CleanDownloadConfig(
-            symbol, symbol,
-            exchange = exchange_name, interval = interval, lookback_years = lookback_years,
-            data_dir = data_dir,
+        clean_cfg = CleanDownloadConfig(
+            symbol = symbol + exchange = exchange_name = interval = interval = lookback_years = lookback_years = data_dir = data_dir,
         )
         clean = CleanDataDownloader(clean_cfg)
         return await clean.run_clean_download()

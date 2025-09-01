@@ -11,7 +11,6 @@ import re
 import ast
 import os
 from typing import List, Dict, Set, Tuple
-from pathlib import Path
 
 
 class DeadCodeRemover:

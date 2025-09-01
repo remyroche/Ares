@@ -7,7 +7,6 @@ Fixes common syntax errors in Python files.
 import os
 import re
 import ast
-from pathlib import Path
 from typing import List, Dict, Tuple
 
 

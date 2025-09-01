@@ -39,10 +39,10 @@ def safe_call(func):
             logger.error("Error in %s: %s", func.__name__, exc, exc_info=True)
             return None
 
-            return wrapper
+    return wrapper
 
 
-        class ConfigurationUsageExample:
+class ConfigurationUsageExample:
     """Example class demonstrating configuration usage"""
 
     def __init__(self) -> None:
@@ -50,7 +50,18 @@ def safe_call(func):
         self.hpo_config: Dict[str, Any] = CONFIG["hyperparameter_optimization"]
         self.comp_config: Dict[str, Any] = CONFIG["computational_optimization"]
 
-        @safe_call def validate_configuration(self) -> bool:  # type: ignore[override] """Validate the configuration settings""" # Check required sections required_sections = [ "hyperparameter_optimization", "computational_optimization", ] for section in required_sections: if section not in self.config: msg = f"Missing required configuration section: {section}" raise ValueError(msg)
+    @safe_call
+    def validate_configuration(self) -> bool:  # type: ignore[override]
+        """Validate the configuration settings"""
+        # Check required sections
+        required_sections = [
+            "hyperparameter_optimization",
+            "computational_optimization",
+        ]
+        for section in required_sections:
+            if section not in self.config:
+                msg = f"Missing required configuration section: {section}"
+                raise ValueError(msg)
 
         # Validate hyperparameter optimization
         hpo_config = self.hpo_config
@@ -73,7 +84,10 @@ def safe_call(func):
         logger.info("Configuration validation passed")
         return True
 
-        @safe_call def print_configuration_summary(self) -> None: """Print a summary of the current configuration""" print("\n" + "=" * 60)
+    @safe_call
+    def print_configuration_summary(self) -> None:
+        """Print a summary of the current configuration"""
+        print("\n" + "=" * 60)
         print("CONFIGURATION SUMMARY")
         print("=" * 60)
 
@@ -144,7 +158,10 @@ def safe_call(func):
             print(f"    Patience: {comp_config['early_stopping']['patience']}")
             print(f"    Min Trials: {comp_config['early_stopping']['min_trials']}")
 
-        @safe_call def demonstrate_multi_objective_config(self) -> None: """Demonstrate multi-objective optimization configuration usage""" print("\n" + "=" * 60)
+    @safe_call
+    def demonstrate_multi_objective_config(self) -> None:
+        """Demonstrate multi-objective optimization configuration usage"""
+        print("\n" + "=" * 60)
         print("MULTI-OBJECTIVE OPTIMIZATION CONFIGURATION")
         print("=" * 60)
 
@@ -184,7 +201,10 @@ def safe_call(func):
         else:
             print(warning("Multi-objective optimization is disabled"))
 
-        @safe_call def demonstrate_bayesian_config(self) -> None: """Demonstrate Bayesian optimization configuration usage""" print("\n" + "=" * 60)
+    @safe_call
+    def demonstrate_bayesian_config(self) -> None:
+        """Demonstrate Bayesian optimization configuration usage"""
+        print("\n" + "=" * 60)
         print("BAYESIAN OPTIMIZATION CONFIGURATION")
         print("=" * 60)
 
@@ -216,7 +236,10 @@ def safe_call(func):
         else:
             print(warning("Bayesian optimization is disabled"))
 
-        @safe_call def demonstrate_adaptive_config(self) -> None: """Demonstrate adaptive optimization configuration usage""" print("\n" + "=" * 60)
+    @safe_call
+    def demonstrate_adaptive_config(self) -> None:
+        """Demonstrate adaptive optimization configuration usage"""
+        print("\n" + "=" * 60)
         print("ADAPTIVE OPTIMIZATION CONFIGURATION")
         print("=" * 60)
 
@@ -242,7 +265,10 @@ def safe_call(func):
         else:
             print(warning("Adaptive optimization is disabled"))
 
-        @safe_call def demonstrate_computational_config(self) -> None: """Demonstrate computational optimization configuration usage""" print("\n" + "=" * 60)
+    @safe_call
+    def demonstrate_computational_config(self) -> None:
+        """Demonstrate computational optimization configuration usage"""
+        print("\n" + "=" * 60)
         print("COMPUTATIONAL OPTIMIZATION CONFIGURATION")
         print("=" * 60)
 
@@ -290,7 +316,10 @@ def safe_call(func):
         else:
             print("\n❌ Progressive evaluation is disabled")
 
-        @safe_call async def demonstrate_optimization_usage(self) -> None: """Demonstrate how to use the configuration in actual optimization""" print("\n" + "=" * 60)
+    @safe_call
+    async def demonstrate_optimization_usage(self) -> None:
+        """Demonstrate how to use the configuration in actual optimization"""
+        print("\n" + "=" * 60)
         print("OPTIMIZATION USAGE EXAMPLES")
         print("=" * 60)
 
@@ -315,9 +344,6 @@ def safe_call(func):
         # Example 2: Bayesian optimization
         print("\n🔍 Example 2: Bayesian Optimization")
         try:
-    pass  # TODO: Add proper exception handling
-        except Exception as e:
-    pass  # TODO: Add proper exception handling
             _bayes = AdvancedBayesianOptimizer(
                 config=self.hpo_config["bayesian_optimization"],
                 search_space=self.hpo_config["search_spaces"],
@@ -335,9 +361,6 @@ def safe_call(func):
         # Example 3: Computational optimization
         print("\n⚡ Example 3: Computational Optimization")
         try:
-    pass  # TODO: Add proper exception handling
-        except Exception as e:
-    pass  # TODO: Add proper exception handling
             _bt = OptimizedBacktester(market_data=mock_market_data, config=self.comp_config)
             print("✅ Optimized backtester initialized successfully")
             print(
@@ -352,7 +375,10 @@ def safe_call(func):
         except Exception as exc:
             print(initialization_error(f"Error initializing optimized backtester: {exc}"))
 
-        @safe_call def demonstrate_configuration_modification(self) -> None: """Demonstrate how to modify configuration settings""" print("\n" + "=" * 60)
+    @safe_call
+    def demonstrate_configuration_modification(self) -> None:
+        """Demonstrate how to modify configuration settings"""
+        print("\n" + "=" * 60)
         print("CONFIGURATION MODIFICATION EXAMPLES")
         print("=" * 60)
 
@@ -438,12 +464,9 @@ def safe_call(func):
         return True
 
 
-    def main() -> None:
-    """Main function to run the configuration usage example"""
-            try:
-    pass  # TODO: Add proper exception handling
-        except Exception as e:
-    pass  # TODO: Add proper exception handling
+def main():
+    """Main function to run configuration usage examples."""
+    try:
         example = ConfigurationUsageExample()
         success = example.run_all_demonstrations()
 
@@ -457,10 +480,10 @@ def safe_call(func):
         else:
             print("\n❌ Configuration usage demonstration failed!")
             sys.exit(1)
-            except Exception as exc:  # pragma: no cover - defensive CLI wrapper
+    except Exception as exc:  # pragma: no cover - defensive CLI wrapper
         print(error(f"Error running configuration usage example: {exc}"))
         sys.exit(1)
 
 
-        if __name__ == "__main__":
+if __name__ == "__main__":
     main()

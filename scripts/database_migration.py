@@ -42,9 +42,6 @@ async def export_database(db_path: str = "data/ares_local_db.sqlite") -> None:
     db_manager: Optional[SQLiteManager] = None
 
     try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
         # Initialize database manager
         db_manager = SQLiteManager(db_path)
         await db_manager.initialize()
@@ -89,9 +86,6 @@ async def import_database(import_path: str, db_path: str = "data/ares_local_db.s
     db_manager: Optional[SQLiteManager] = None
 
     try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
         # Validate the import file first
         db_manager = SQLiteManager(db_path)
         await db_manager.initialize()
@@ -136,9 +130,6 @@ async def validate_file(file_path: str) -> None:
     db_manager: Optional[SQLiteManager] = None
 
     try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
         db_manager = SQLiteManager("data/ares_local_db.sqlite")
         await db_manager.initialize()
 
@@ -186,9 +177,6 @@ async def create_backup(db_path: str = "data/ares_local_db.sqlite") -> None:
     db_manager: Optional[SQLiteManager] = None
 
     try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
         db_manager = SQLiteManager(db_path)
         await db_manager.initialize()
 
@@ -218,9 +206,6 @@ async def list_migrations(db_path: str = "data/ares_local_db.sqlite") -> None:
     db_manager: Optional[SQLiteManager] = None
 
     try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
         db_manager = SQLiteManager(db_path)
         await db_manager.initialize()
 
@@ -311,18 +296,18 @@ def print_usage() -> None:
     print("  python scripts/database_migration.py cleanup")
 
 
-        async def main() -> None:
+async def main() -> None:
     """Main function."""
     # Setup logging
     setup_logging()
 
-            if len(sys.argv) < 2:
+    if len(sys.argv) < 2:
         print_usage()
         sys.exit(1)
 
     command = sys.argv[1]
 
-            if command == "export":
+    if command == "export":
         db_path = sys.argv[2] if len(sys.argv) > 2 else "data/ares_local_db.sqlite"
         await export_database(db_path)
 
@@ -361,5 +346,5 @@ def print_usage() -> None:
         sys.exit(1)
 
 
-        if __name__ == "__main__":
+if __name__ == "__main__":
     asyncio.run(main())

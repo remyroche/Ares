@@ -5,10 +5,11 @@ Investigates feature calculation issues, NaN sources, and data quality in HMM re
 """
 
 
-from pathlib import Path
 import sys
 import traceback
 import warnings
+from pathlib import Path
+from typing import Any, Callable, Dict, Optional
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -40,10 +41,10 @@ def _handle_errors(default: Optional[Any] = None) -> Callable[[Callable[..., Any
 
         return wrapper
 
-            return decorator
+    return decorator
 
 
-        def _require_dataframe(func: Callable[..., Any]) -> Callable[..., Any]:
+def _require_dataframe(func: Callable[..., Any]) -> Callable[..., Any]:
     """Decorator to validate the first argument is a pandas DataFrame."""
 
     def wrapper(*args: Any, **kwargs: Any) -> Any:
@@ -54,10 +55,10 @@ def _handle_errors(default: Optional[Any] = None) -> Callable[[Callable[..., Any
             raise TypeError("Expected a pandas DataFrame as input")
         return func(*args, **kwargs)
 
-            return wrapper
+    return wrapper
 
 
-        class FeatureQualityDiagnostic:
+class FeatureQualityDiagnostic:
     """Diagnostic tool for feature quality analysis."""
 
     def __init__(self) -> None:
@@ -65,7 +66,10 @@ def _handle_errors(default: Optional[Any] = None) -> Callable[[Callable[..., Any
         self.results: Dict[str, Any] = {}
 
     @_handle_errors(default={})
-        @_require_dataframe def analyze_feature_calculations(self, data: pd.DataFrame) -> Dict[str, Any]: """Analyze feature calculation quality and identify issues.""" self.logger.info("🔍 Analyzing feature calculations...")
+    @_require_dataframe
+    def analyze_feature_calculations(self, data: pd.DataFrame) -> Dict[str, Any]:
+        """Analyze feature calculation quality and identify issues."""
+        self.logger.info("🔍 Analyzing feature calculations...")
 
         numeric_df = data.select_dtypes(include=[np.number])
 
@@ -151,7 +155,12 @@ def _handle_errors(default: Optional[Any] = None) -> Callable[[Callable[..., Any
         return issues
 
     @_handle_errors(default=[])
-        @_require_dataframe def _detect_suspicious_patterns(self, data: pd.DataFrame) -> List[Dict[str, Any]]: """Detect suspicious patterns in feature data.""" suspicious: List[Dict[str, Any]] = []  for col in data.columns: series = data[col].dropna()
+    @_require_dataframe
+    def _detect_suspicious_patterns(self, data: pd.DataFrame) -> List[Dict[str, Any]]:
+        """Detect suspicious patterns in feature data."""
+        suspicious: List[Dict[str, Any]] = []
+        for col in data.columns:
+            series = data[col].dropna()
             if len(series) == 0:
                 continue
 
@@ -180,7 +189,10 @@ def _handle_errors(default: Optional[Any] = None) -> Callable[[Callable[..., Any
         return suspicious
 
     @_handle_errors(default={})
-        @_require_dataframe def analyze_block_features(self, data: pd.DataFrame, block_name: str) -> Dict[str, Any]: """Analyze features for a specific block.""" self.logger.info("🔍 Analyzing %s block features...", block_name)
+    @_require_dataframe
+    def analyze_block_features(self, data: pd.DataFrame, block_name: str) -> Dict[str, Any]:
+        """Analyze features for a specific block."""
+        self.logger.info("🔍 Analyzing %s block features...", block_name)
 
         # Define feature mappings for each block
         block_features: Dict[str, List[str]] = {
@@ -264,7 +276,10 @@ def _handle_errors(default: Optional[Any] = None) -> Callable[[Callable[..., Any
         }
 
     @_handle_errors(default={})
-        @_require_dataframe def _analyze_data_quality(self, data: pd.DataFrame) -> Dict[str, Any]: """Analyze data quality metrics.""" numeric_df = data.select_dtypes(include=[np.number])
+    @_require_dataframe
+    def _analyze_data_quality(self, data: pd.DataFrame) -> Dict[str, Any]:
+        """Analyze data quality metrics."""
+        numeric_df = data.select_dtypes(include=[np.number])
         return {
             "total_rows": int(len(data)),
             "nan_counts": data.isna().sum().to_dict(),
@@ -283,7 +298,10 @@ def _handle_errors(default: Optional[Any] = None) -> Callable[[Callable[..., Any
         }
 
     @_handle_errors(default={})
-        @_require_dataframe def _analyze_correlations(self, data: pd.DataFrame) -> Dict[str, Any]: """Analyze correlation patterns.""" numeric_df = data.select_dtypes(include=[np.number])
+    @_require_dataframe
+    def _analyze_correlations(self, data: pd.DataFrame) -> Dict[str, Any]:
+        """Analyze correlation patterns."""
+        numeric_df = data.select_dtypes(include=[np.number])
         if numeric_df.empty:
             return {
                 "correlation_matrix": {},
@@ -323,7 +341,10 @@ def _handle_errors(default: Optional[Any] = None) -> Callable[[Callable[..., Any
         }
 
     @_handle_errors(default={})
-        @_require_dataframe def _analyze_variance(self, data: pd.DataFrame) -> Dict[str, Any]: """Analyze variance patterns.""" numeric_df = data.select_dtypes(include=[np.number])
+    @_require_dataframe
+    def _analyze_variance(self, data: pd.DataFrame) -> Dict[str, Any]:
+        """Analyze variance patterns."""
+        numeric_df = data.select_dtypes(include=[np.number])
         variances = numeric_df.var(numeric_only=True)
 
         return {
@@ -335,7 +356,7 @@ def _handle_errors(default: Optional[Any] = None) -> Callable[[Callable[..., Any
         }
 
     @_handle_errors(default="")
-    def generate_report(:
+    def generate_report(
         self, issues: Dict[str, Any], block_analyses: Dict[str, Any]
     ) -> str:
         """Generate a comprehensive diagnostic report."""
@@ -445,7 +466,10 @@ def _handle_errors(default: Optional[Any] = None) -> Callable[[Callable[..., Any
         return "\n".join(report)
 
     @_handle_errors(default=None)
-        @_require_dataframe def save_plots(self, data: pd.DataFrame, output_dir: str = "diagnostic_plots") -> None: """Generate and save diagnostic plots.""" Path(output_dir).mkdir(exist_ok=True)
+    @_require_dataframe
+    def save_plots(self, data: pd.DataFrame, output_dir: str = "diagnostic_plots") -> None:
+        """Generate and save diagnostic plots."""
+        Path(output_dir).mkdir(exist_ok=True)
 
         numeric_df = data.select_dtypes(include=[np.number])
 
@@ -498,14 +522,11 @@ def _handle_errors(default: Optional[Any] = None) -> Callable[[Callable[..., Any
         plt.close()
 
 
-    def main() -> None:
+def main() -> None:
     """Main diagnostic function."""
     diagnostic = FeatureQualityDiagnostic()
 
-            try:
-    pass  # TODO: Add proper exception handling
-        except Exception as e:
-    pass  # TODO: Add proper exception handling
+    try:
         # Load sample data (you'll need to provide actual data path)
         data_path = "data_cache/features_15m.parquet"  # Adjust path as needed
 
@@ -543,10 +564,10 @@ def _handle_errors(default: Optional[Any] = None) -> Callable[[Callable[..., Any
         diagnostic.save_plots(data)
         print("📊 Plots saved to: diagnostic_plots/")
 
-            except Exception as e:  # pragma: no cover - defensive CLI wrapper
+    except Exception as e:  # pragma: no cover - defensive CLI wrapper
         print(f"❌ Error during diagnostic: {e}")
         traceback.print_exc()
 
 
-        if __name__ == "__main__":
+if __name__ == "__main__":
     main()

@@ -30,7 +30,7 @@ def debug_triple_barrier():
     occurrences = 0
     total_attempts = 0
 
-            for i in range(len(test_data) - 1):
+    for i in range(len(test_data) - 1):
         start_price = prices[i]
         start_time = timestamps[i]
 
@@ -82,5 +82,6 @@ def debug_triple_barrier():
 
     print(f"\nResults: {occurrences} successes out of {total_attempts} attempts")
 
-        if __name__ == "__main__":
+
+if __name__ == "__main__":
     debug_triple_barrier()

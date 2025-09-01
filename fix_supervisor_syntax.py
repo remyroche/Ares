@@ -1,136 +1,129 @@
 #!/usr/bin/env python3
 """
-Comprehensive syntax fixer for supervisor directory files.
-This script addresses common syntax errors found in the supervisor files.
+Script to fix common syntax errors in supervisor files.
 """
 
 import os
 import re
-from pathlib import Path
+import glob
 
-def fix_common_syntax_errors(content):
-    """Fix common syntax errors in Python code."""
+def fix_import_statement(content):
+    """Fix malformed import statements with extra commas and parentheses."""
+    # Fix the common import pattern with extra commas
+    pattern = r'from src\.utils\.supervisor_error_handler import \(([^)]+)\)\)'
+    replacement = r'from src.utils.supervisor_error_handler import (\1)'
+    content = re.sub(pattern, replacement, content)
+    
+    # Fix individual imports with extra commas
+    content = re.sub(r',,', ',', content)
+    content = re.sub(r',\s*\)', ')', content)
+    
+    return content
+
+def fix_try_except_blocks(content):
+    """Fix malformed try-except blocks."""
+    # Fix the pattern: try:\n    pass  # TODO: Add proper exception handling\n    except Exception as e:\n    pass  # TODO: Add proper exception handling
+    pattern = r'try:\s*\n\s*pass\s*# TODO: Add proper exception handling\s*\nexcept Exception as e:\s*\n\s*pass\s*# TODO: Add proper exception handling\s*\n'
+    replacement = 'try:\n'
+    content = re.sub(pattern, replacement, content)
+    
+    return content
+
+def fix_indentation(content):
+    """Fix indentation issues."""
     lines = content.split('\n')
     fixed_lines = []
-    i = 0
     
-    while i < len(lines):
-        line = lines[i]
+    for line in lines:
+        # Fix class attribute indentation
+        if re.match(r'^self\.\w+:', line):
+            if not line.startswith('        '):
+                line = '        ' + line.lstrip()
         
-        # Fix 1: Remove duplicate function definitions
-        if line.strip().startswith('def ') and i + 1 < len(lines):
-            next_line = lines[i + 1]
-            if next_line.strip().startswith('def ') and 'def ' in next_line:
-                # Skip duplicate def lines
-                while i < len(lines) and lines[i].strip().startswith('def '):
-                    i += 1
-                continue
+        # Fix method decorator indentation
+        if line.strip().startswith('@'):
+            if not line.startswith('    '):
+                line = '    ' + line.lstrip()
         
-        # Fix 2: Fix indentation for class methods
-        if line.strip().startswith('def ') and not line.startswith('    '):
-            # This should be indented if it's inside a class
-            if any('class ' in prev_line for prev_line in fixed_lines[-10:] if prev_line.strip()):
-                line = '    ' + line
+        # Fix method definition indentation
+        if re.match(r'^(async )?def \w+\(', line.strip()):
+            if not line.startswith('    '):
+                line = '    ' + line.lstrip()
         
-        # Fix 3: Fix missing try/except blocks
-        if 'try:' in line and i + 1 < len(lines):
-            next_line = lines[i + 1]
-            if not next_line.strip().startswith('    ') and not next_line.strip().startswith('except'):
-                # Add proper indentation
-                fixed_lines.append(line)
-                i += 1
-                continue
-        
-        # Fix 4: Fix unindented code blocks
-        if line.strip() and not line.startswith('    ') and not line.startswith('\t'):
-            # Check if previous line ends with ':'
-            if fixed_lines and fixed_lines[-1].strip().endswith(':'):
-                line = '    ' + line
-        
-        # Fix 5: Fix missing except blocks
-        if 'try:' in line and i + 1 < len(lines):
-            # Look ahead to see if there's an except block
-            has_except = False
-            for j in range(i + 1, min(i + 10, len(lines))):
-                if 'except' in lines[j]:
-                    has_except = True
-                    break
-                elif lines[j].strip() and not lines[j].strip().startswith('    '):
-                    break
-            
-            if not has_except:
-                fixed_lines.append(line)
-                fixed_lines.append('    pass  # TODO: Add proper exception handling')
-                i += 1
-                continue
-        
-        # Fix 6: Fix invalid import statements
-        if line.strip().startswith('from ') and 'import (' in line:
-            # Fix multi-line imports
-            import_lines = [line]
-            j = i + 1
-            while j < len(lines) and ')' not in lines[j]:
-                import_lines.append(lines[j])
-                j += 1
-            if j < len(lines):
-                import_lines.append(lines[j])
-            
-            # Reconstruct the import
-            fixed_import = 'from ' + line.split('from ')[1].split(' import')[0] + ' import ('
-            for imp_line in import_lines[1:]:
-                if ')' in imp_line:
-                    fixed_import += imp_line.strip()
-                else:
-                    fixed_import += imp_line.strip() + ', '
-            
-            fixed_lines.append(fixed_import)
-            i = j
-            continue
+        # Fix docstring indentation
+        if line.strip().startswith('"""') or line.strip().startswith("'''"):
+            if not line.startswith('        '):
+                line = '        ' + line.lstrip()
         
         fixed_lines.append(line)
-        i += 1
     
     return '\n'.join(fixed_lines)
 
-def fix_file(filepath):
-    """Fix syntax errors in a single file."""
+def fix_logger_calls(content):
+    """Fix malformed logger calls with extra function calls."""
+    # Fix pattern: self.logger.warning(warning(...))
+    content = re.sub(r'self\.logger\.warning\(warning\(', 'self.logger.warning(', content)
+    content = re.sub(r'self\.logger\.error\(error\(', 'self.logger.error(', content)
+    content = re.sub(r'self\.logger\.info\(info\(', 'self.logger.info(', content)
+    content = re.sub(r'self\.logger\.debug\(debug\(', 'self.logger.debug(', content)
+    
+    return content
+
+def fix_supervisor_file(file_path):
+    """Fix syntax errors in a supervisor file."""
+    print(f"Fixing {file_path}...")
+    
     try:
-        with open(filepath, 'r', encoding='utf-8') as f:
+        with open(file_path, 'r', encoding='utf-8') as f:
             content = f.read()
         
         # Apply fixes
-        fixed_content = fix_common_syntax_errors(content)
+        content = fix_import_statement(content)
+        content = fix_try_except_blocks(content)
+        content = fix_logger_calls(content)
+        content = fix_indentation(content)
         
         # Write back
-        with open(filepath, 'w', encoding='utf-8') as f:
-            f.write(fixed_content)
+        with open(file_path, 'w', encoding='utf-8') as f:
+            f.write(content)
         
-        return True
+        # Test compilation
+        import subprocess
+        result = subprocess.run(['python3', '-m', 'py_compile', file_path], 
+                              capture_output=True, text=True)
+        
+        if result.returncode == 0:
+            print(f"✅ {file_path} - Fixed successfully")
+            return True
+        else:
+            print(f"❌ {file_path} - Still has errors: {result.stderr}")
+            return False
+            
     except Exception as e:
-        print(f"Error fixing {filepath}: {e}")
+        print(f"❌ Error processing {file_path}: {e}")
         return False
 
 def main():
     """Main function to fix all supervisor files."""
-    supervisor_dir = Path('src/supervisor')
+    supervisor_dir = "src/supervisor"
     
-    if not supervisor_dir.exists():
-        print("Supervisor directory not found!")
+    if not os.path.exists(supervisor_dir):
+        print(f"Directory {supervisor_dir} not found")
         return
     
-    python_files = list(supervisor_dir.glob('*.py'))
-    print(f"Found {len(python_files)} Python files to fix")
+    # Get all Python files in supervisor directory
+    python_files = glob.glob(os.path.join(supervisor_dir, "*.py"))
+    
+    print(f"Found {len(python_files)} Python files in {supervisor_dir}")
     
     fixed_count = 0
-    for filepath in python_files:
-        print(f"Fixing {filepath}...")
-        if fix_file(filepath):
-            fixed_count += 1
-            print(f"✅ Fixed {filepath}")
-        else:
-            print(f"❌ Failed to fix {filepath}")
+    total_count = len(python_files)
     
-    print(f"\nFixed {fixed_count} out of {len(python_files)} files")
+    for file_path in python_files:
+        if fix_supervisor_file(file_path):
+            fixed_count += 1
+    
+    print(f"\nSummary: Fixed {fixed_count}/{total_count} files")
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

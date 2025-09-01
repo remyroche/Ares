@@ -8,32 +8,31 @@ from src.supervisor.performance_monitor import PerformanceMonitor
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from dataclasses import dataclass
 
-from src.utils.supervisor_error_handler import (supervisor_component_error_handler,, supervisor_critical_error_handler,, supervisor_safe_error_handler,, supervisor_error_context,, handle_component_failure,, handle_portfolio_error,, handle_risk_error,, handle_performance_error,, handle_model_error,, handle_exchange_error,, ComponentFailureError,, PortfolioManagementError,, RiskManagementError,, PerformanceMonitoringError,, ModelManagementError,, ExchangeIntegrationError,, )
-)
+from src.utils.supervisor_error_handler import (supervisor_component_error_handler, supervisor_critical_error_handler, supervisor_safe_error_handler, supervisor_error_context, handle_component_failure, handle_portfolio_error, handle_risk_error, handle_performance_error, handle_model_error, handle_exchange_error, ComponentFailureError, PortfolioManagementError, RiskManagementError, PerformanceMonitoringError, ModelManagementError, ExchangeIntegrationError)
 
 #!/usr/bin/env python3
-"""
+        """
 Enhanced Model Monitor
 
 This module provides comprehensive model behavior monitoring, feature importance tracking,
 decision path analysis, and ensemble performance monitoring that integrates with the
 existing performance monitoring infrastructure.
-"""
+        """
 
 
 
 class ModelDriftType(Enum):
-    """Model drift types."""
+        """Model drift types."""
 
 CONCEPT_DRIFT = "concept_drift"
 DATA_DRIFT = "data_drift"
 LABEL_DRIFT = "label_drift"
 FEATURE_DRIFT = "feature_drift"
 
-@dataclass_json
-@dataclass
+    @dataclass_json
+    @dataclass
 class ModelDriftAlert:
-    """Model drift alert."""
+        """Model drift alert."""
 
 model_id: str
 model_type: str
@@ -46,10 +45,10 @@ severity: str  # "low", "medium", "high", "critical"
 description: str
 
 
-@dataclass_json
-@dataclass
+    @dataclass_json
+    @dataclass
 class FeatureDriftMetrics:
-    """Feature drift metrics."""
+        """Feature drift metrics."""
 
 feature_name: str
 current_distribution: dict[str, float]
@@ -60,10 +59,10 @@ p_value: float
 is_drifted: bool
 
 
-@dataclass_json
-@dataclass
+    @dataclass_json
+    @dataclass
 class ModelPerformanceSnapshot:
-    """Model performance snapshot."""
+        """Model performance snapshot."""
 
 model_id: str
 model_type: str
@@ -79,10 +78,10 @@ concept_drift_score: float
 data_drift_score: float
 
 
-@dataclass_json
-@dataclass
+    @dataclass_json
+    @dataclass
 class EnsemblePerformanceMetrics:
-    """Ensemble performance metrics."""
+        """Ensemble performance metrics."""
 
 ensemble_id: str
 timestamp: datetime
@@ -94,18 +93,17 @@ agreement_score: float
 meta_learner_performance: float | None = None
 
 class EnhancedModelMonitor:
-    """
+        """
 Enhanced model monitor that integrates with existing performance monitoring
 to provide comprehensive model behavior tracking.
-"""
-
+        """
         """
 Initialize enhanced model monitor.
 
 Args:
             config: Configuration dictionary
 performance_monitor: Existing performance monitor instance
-"""
+        """
 self.config = config
 self.performance_monitor = performance_monitor
 self.logger = system_logger.getChild("EnhancedModelMonitor")
@@ -114,65 +112,55 @@ self.logger = system_logger.getChild("EnhancedModelMonitor")
 self.monitor_config = config.get("enhanced_model_monitor", {})
 self.drift_detection_enabled = self.monitor_config.get(
 "drift_detection_enabled",
-True,
-)
+True)
 self.feature_importance_tracking = self.monitor_config.get(
 "feature_importance_tracking",
-True,
-)
+True)
 self.decision_path_analysis = self.monitor_config.get(
 "decision_path_analysis",
-True,
-)
+True)
 self.ensemble_monitoring = self.monitor_config.get("ensemble_monitoring", True)
 
 # Monitoring intervals
 self.drift_check_interval = self.monitor_config.get(
 "drift_check_interval",
-300,
-)  # 5 minutes
+300)  # 5 minutes
 self.performance_snapshot_interval = self.monitor_config.get(
 "performance_snapshot_interval",
-60,
-)  # 1 minute
+60)  # 1 minute
 self.feature_analysis_interval = self.monitor_config.get(
 "feature_analysis_interval",
-600,
-)  # 10 minutes
+600)  # 10 minutes
 
 # Storage
-self.model_performance_history: dict[str, list[ModelPerformanceSnapshot]] = {}
-self.ensemble_performance_history: dict[
+        self.        self.model_performance_history:: dict[str, list[ModelPerformanceSnapshot]] = {}
+        self.        self.ensemble_performance_history:: dict[
 str,
 list[EnsemblePerformanceMetrics],
 ] = {}
-self.drift_alerts: list[ModelDriftAlert] = []
-self.feature_drift_history: dict[str, list[FeatureDriftMetrics]] = {}
+        self.        self.drift_alerts:: list[ModelDriftAlert] = []
+        self.        self.feature_drift_history:: dict[str, list[FeatureDriftMetrics]] = {}
 
 # Reference data for drift detection
-self.reference_distributions: dict[str, dict[str, float]] = {}
-self.reference_performance: dict[str, float] = {}
+        self.        self.reference_distributions:: dict[str, dict[str, float]] = {}
+        self.        self.reference_performance:: dict[str, float] = {}
 
 # Monitoring state
 self.is_monitoring = False
-self.monitoring_tasks: list[asyncio.Task] = []
+        self.        self.monitoring_tasks:: list[asyncio.Task] = []
 
 self.logger.info("🚀 Enhanced Model Monitor initialized")
 
-@handle_specific_errors(
+    @handle_specific_errors(
 error_handlers={
 ValueError: (False, "Invalid model monitor configuration"),
 AttributeError: (False, "Missing required monitor parameters"),
 },
 default_return=False,
-context="model monitor initialization",
-)
-async def initialize(self) -> bool:
+context="model monitor initialization")
+    async def initialize(self) -> bool:
         """Initialize the enhanced model monitor."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 self.logger.info("Initializing Enhanced Model Monitor...")
 
 # Load reference data for drift detection
@@ -188,21 +176,16 @@ return True
 
 except Exception as e:
             self.logger.exception(
-f"❌ Enhanced Model Monitor initialization failed: {e}",
-)
+f"❌ Enhanced Model Monitor initialization failed: {e}")
 return False
 
-@handle_errors(
+    @handle_errors(
 exceptions=(ValueError, AttributeError),
 default_return=None,
-context="reference data loading",
-)
-async def _load_reference_data(self) -> None:
+context="reference data loading")
+    async def _load_reference_data(self) -> None:
         """Load reference data for drift detection."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 # Load reference distributions and performance metrics
 # This would typically load from saved model snapshots or training data
 self.logger.info("Loading reference data for drift detection...")
@@ -216,49 +199,37 @@ self.logger.info("Loading reference data for drift detection...")
 except Exception as e:
             self.logger.error(f"Error loading reference data: {e}")
 
-@handle_errors(
+    @handle_errors(
 exceptions=(ValueError, AttributeError),
 default_return=None,
-context="drift detection initialization",
-)
-async def _initialize_drift_detection(self) -> None:
+context="drift detection initialization")
+    async def _initialize_drift_detection(self) -> None:
         """Initialize drift detection components."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 self.logger.info("Initializing drift detection components...")
 # Initialize drift detection algorithms and thresholds
 except Exception as e:
             self.logger.error(f"Error initializing drift detection: {e}")
 
-@handle_errors(
+    @handle_errors(
 exceptions=(ValueError, AttributeError),
 default_return=None,
-context="feature tracking initialization",
-)
-async def _initialize_feature_tracking(self) -> None:
+context="feature tracking initialization")
+    async def _initialize_feature_tracking(self) -> None:
         """Initialize feature importance tracking."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 self.logger.info("Initializing feature importance tracking...")
 # Initialize feature tracking components
 except Exception as e:
             self.logger.error(f"Error initializing feature tracking: {e}")
 
-@handle_errors(
+    @handle_errors(
 exceptions=(ValueError, AttributeError),
 default_return=None,
-context="ensemble monitoring initialization",
-)
-async def _initialize_ensemble_monitoring(self) -> None:
+context="ensemble monitoring initialization")
+    async def _initialize_ensemble_monitoring(self) -> None:
         """Initialize ensemble performance monitoring."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 self.logger.info("Initializing ensemble monitoring...")
 # Initialize ensemble monitoring components
 except Exception as e:

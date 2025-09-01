@@ -10,95 +10,83 @@ from datetime import datetime
 from src.utils.logger import system_logger
 from typing import Any
 from src.utils.error_handler import handle_errors, handle_specific_errors
-from src.utils.error_handler import (, from src.utils.supervisor_error_handler import (, supervisor_component_error_handler,, supervisor_critical_error_handler,, supervisor_safe_error_handler,, supervisor_error_context,, handle_component_failure,, handle_portfolio_error,, handle_risk_error,, handle_performance_error,, handle_model_error,, handle_exchange_error,, ComponentFailureError,, PortfolioManagementError,, RiskManagementError,, PerformanceMonitoringError,, ModelManagementError,, ExchangeIntegrationError,, ))
-)
-error,
-execution_error,
-initialization_error,
-invalid,
-warning
+from src.utils.supervisor_error_handler import (
+    supervisor_component_error_handler, supervisor_critical_error_handler, 
+    supervisor_safe_error_handler, supervisor_error_context, handle_component_failure, 
+    handle_portfolio_error, handle_risk_error, handle_performance_error, 
+    handle_model_error, handle_exchange_error, ComponentFailureError, 
+    PortfolioManagementError, RiskManagementError, PerformanceMonitoringError, 
+    ModelManagementError, ExchangeIntegrationError
 )
 
 class ExchangeVolumeAdapter:
     """
-Adapts trading strategies and position sizing based on exchange volume characteristics.
+    Adapts trading strategies and position sizing based on exchange volume characteristics.
 
-This class handles the critical differences between exchanges:
-    - Volume/liquidity differences
-- Spread and slippage variations
-- Market impact considerations
-- Data quality adjustments
-"""
+    This class handles the critical differences between exchanges:
+        - Volume/liquidity differences
+        - Spread and slippage variations
+        - Market impact considerations
+        - Data quality adjustments
+    """
 
     def __init__(self, config: dict[str, Any]) -> None:
         self.config: dict[str, Any] = config
-self.logger = system_logger.getChild("ExchangeVolumeAdapter")
+        self.logger = system_logger.getChild("ExchangeVolumeAdapter")
 
-# Exchange volume profiles
-self.volume_profiles: dict[str, dict[str, Any]] = {
-"BINANCE": {
-"avg_daily_volume": 1000000,  # High volume
-"spread_multiplier": 1.0,  # Baseline
-"slippage_multiplier": 1.0,  # Baseline
-"position_size_multiplier": 1.0,  # Baseline
-"data_quality_score": 0.95,  # High quality
-"market_impact_threshold": 0.001,  # Low impact
-},
-"MEXC": {
-"avg_daily_volume": 50000,  # Lower volume
-"spread_multiplier": 2.5,  # Wider spreads
-"slippage_multiplier": 3.0,  # Higher slippage
-"position_size_multiplier": 0.4,  # Smaller positions
-"data_quality_score": 0.75,  # Moderate quality
-"market_impact_threshold": 0.005,  # Higher impact
-},
-"GATEIO": {
-"avg_daily_volume": 30000,  # Lower volume
-"spread_multiplier": 3.0,  # Wider spreads
-"slippage_multiplier": 3.5,  # Higher slippage
-"position_size_multiplier": 0.3,  # Smaller positions
-"data_quality_score": 0.70,  # Moderate quality
-"market_impact_threshold": 0.008,  # Higher impact
-},
-}
+        # Exchange volume profiles
+        self.volume_profiles: dict[str, dict[str, Any]] = {
+            "BINANCE": {
+                "avg_daily_volume": 1000000,  # High volume
+                "spread_multiplier": 1.0,  # Baseline
+                "slippage_multiplier": 1.0,  # Baseline
+                "position_size_multiplier": 1.0,  # Baseline
+                "data_quality_score": 0.95,  # High quality
+                "market_impact_threshold": 0.001,  # Low impact
+            },
+            "MEXC": {
+                "avg_daily_volume": 50000,  # Lower volume
+                "spread_multiplier": 2.5,  # Wider spreads
+                "slippage_multiplier": 3.0,  # Higher slippage
+                "position_size_multiplier": 0.4,  # Smaller positions
+                "data_quality_score": 0.75,  # Moderate quality
+                "market_impact_threshold": 0.005,  # Higher impact
+            },
+            "GATEIO": {
+                "avg_daily_volume": 30000,  # Lower volume
+                "spread_multiplier": 3.0,  # Wider spreads
+                "slippage_multiplier": 3.5,  # Higher slippage
+                "position_size_multiplier": 0.3,  # Smaller positions
+                "data_quality_score": 0.70,  # Moderate quality
+                "market_impact_threshold": 0.008,  # Higher impact
+            },
+        }
 
-# Configuration
-self.adapter_config: dict[str, Any] = self.config.get(
-"exchange_volume_adapter",
-{},
-)
-self.enable_volume_adaptation: bool = self.adapter_config.get(
-"enable_volume_adaptation",
-True
-)
-self.enable_dynamic_adjustment: bool = self.adapter_config.get(
-"enable_dynamic_adjustment",
-True
-)
-self.volume_history_window: int = self.adapter_config.get(
-"volume_history_window",
-24,
-)  # hours
+        # Configuration
+        self.adapter_config: dict[str, Any] = self.config.get(
+            "exchange_volume_adapter", {})
+        self.enable_volume_adaptation: bool = self.adapter_config.get(
+            "enable_volume_adaptation", True)
+        self.enable_dynamic_adjustment: bool = self.adapter_config.get(
+            "enable_dynamic_adjustment", True)
+        self.volume_history_window: int = self.adapter_config.get(
+            "volume_history_window", 24)  # hours
 
-# State
-self.current_volume_metrics: dict[str, dict[str, Any]] = {}
-self.adaptation_history: list[dict[str, Any]] = []
+        # State
+        self.current_volume_metrics: dict[str, dict[str, Any]] = {}
+        self.adaptation_history: list[dict[str, Any]] = []
 
-@handle_specific_errors(
+    @handle_specific_errors(
 error_handlers={
 ValueError: (False, "Invalid exchange volume adapter configuration"),
 AttributeError: (False, "Missing required adapter parameters"),
 KeyError: (False, "Missing configuration keys"),
 },
 default_return=False,
-context="exchange volume adapter initialization",
-)
-async def initialize(self) -> bool:
+context="exchange volume adapter initialization")
+    async def initialize(self) -> bool:
         """Initialize the exchange volume adapter."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 self.logger.info("Initializing Exchange Volume Adapter...")
 
 # Load configuration
@@ -113,27 +101,21 @@ return False
 await self._initialize_volume_metrics()
 
 self.logger.info(
-"✅ Exchange Volume Adapter initialization completed successfully",
-)
+"✅ Exchange Volume Adapter initialization completed successfully")
 return True
 
 except Exception as e:
             self.logger.exception(
-f"❌ Exchange Volume Adapter initialization failed: {e}",
-)
+f"❌ Exchange Volume Adapter initialization failed: {e}")
 return False
 
-@handle_errors(
+    @handle_errors(
 exceptions=(ValueError, AttributeError),
 default_return=None,
-context="adapter configuration loading",
-)
-async def _load_adapter_configuration(self) -> None:
+context="adapter configuration loading")
+    async def _load_adapter_configuration(self) -> None:
         """Load adapter configuration."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 # Set defaults
 self.adapter_config.setdefault("enable_volume_adaptation", True)
 self.adapter_config.setdefault("enable_dynamic_adjustment", True)
@@ -146,17 +128,13 @@ self.logger.info("Adapter configuration loaded successfully")
 except Exception as e:
             self.logger.error(f"Error loading adapter configuration: {e}")
 
-@handle_errors(
+    @handle_errors(
 exceptions=(ValueError, AttributeError),
 default_return=False,
-context="configuration validation",
-)
-def _validate_configuration(self) -> bool:
+context="configuration validation")
+    def _validate_configuration(self) -> bool:
         """Validate adapter configuration."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 if self.volume_history_window <= 0:
                 self.logger.error("Invalid volume history window")
 return False
@@ -172,17 +150,13 @@ except Exception as e:
             self.logger.error(f"Error validating configuration: {e}")
 return False
 
-@handle_errors(
-exceptions=(Exception,),
+    @handle_errors(
+exceptions=(Exception),
 default_return=None,
-context="volume metrics initialization",
-)
-async def _initialize_volume_metrics(self) -> None:
+context="volume metrics initialization")
+    async def _initialize_volume_metrics(self) -> None:
         """Initialize volume metrics for all exchanges."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 for exchange in self.volume_profiles:
                 self.current_volume_metrics[exchange] = {
 "current_volume": 0,
@@ -198,23 +172,21 @@ self.logger.info("Volume metrics initialized successfully")
 except Exception:
             self.print(initialization_error("Error initializing volume metrics: {e}"))
 
-def get_volume_profile(self, exchange: str) -> dict[str, Any]:
+    def get_volume_profile(self, exchange: str) -> dict[str, Any]:
         """Get volume profile for a specific exchange."""
 exchange_upper = exchange.upper()
 if exchange_upper not in self.volume_profiles:
             self.logger.warning(
-f"No volume profile found for {exchange}, using BINANCE profile",
-)
+f"No volume profile found for {exchange}, using BINANCE profile")
 return self.volume_profiles["BINANCE"]
 return self.volume_profiles[exchange_upper]
 
-def calculate_position_size_adjustment(
+    def calculate_position_size_adjustment(
 self,
 exchange: str,
 base_position_size: float,
 current_volume: float = None,
-confidence_score: float = None,
-) -> float:
+confidence_score: float = None) -> float:
         """
 Calculate position size adjustment based on exchange volume characteristics.
 
@@ -226,11 +198,8 @@ confidence_score: Model confidence score (optional)
 
 Returns:
             Adjusted position size
-"""
+        """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 profile = self.get_volume_profile(exchange)
 base_multiplier = profile["position_size_multiplier"]
 
@@ -267,8 +236,7 @@ self.logger.info(
 f"Position size adjustment for {exchange}: "
 f"base={base_position_size:.4f}, "
 f"adjustment={adjustment:.3f}, "
-f"final={adjusted_size:.4f}",
-)
+f"final={adjusted_size:.4f}")
 
 return adjusted_size
 
@@ -276,12 +244,9 @@ except Exception:
             self.print(error("Error calculating position size adjustment: {e}"))
 return base_position_size * 0.5  # Conservative fallback
 
-def calculate_spread_adjustment(self, exchange: str, base_spread: float) -> float:
+    def calculate_spread_adjustment(self, exchange: str, base_spread: float) -> float:
         """Calculate spread adjustment based on exchange characteristics."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 profile = self.get_volume_profile(exchange)
 spread_multiplier = profile["spread_multiplier"]
 return base_spread * spread_multiplier
@@ -290,14 +255,11 @@ except Exception:
             self.print(error("Error calculating spread adjustment: {e}"))
 return base_spread * 2.0  # Conservative fallback
 
-def calculate_slippage_adjustment(
+    def calculate_slippage_adjustment(
 self, exchange: str,
 base_slippage: float = None) -> float:
         """Calculate slippage adjustment based on exchange characteristics."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 profile = self.get_volume_profile(exchange)
 slippage_multiplier = profile["slippage_multiplier"]
 return base_slippage * slippage_multiplier
@@ -306,7 +268,7 @@ except Exception:
             self.print(error("Error calculating slippage adjustment: {e}"))
 return base_slippage * 2.5  # Conservative fallback
 
-def adjust_model_confidence(
+    def adjust_model_confidence(
 self, exchange: str,
 base_confidence: float = None, data_quality_metrics: dict[str, Any] = None) -> float:
         """
@@ -319,11 +281,8 @@ data_quality_metrics: Optional data quality metrics
 
 Returns:
             Adjusted confidence score
-"""
+        """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 profile = self.get_volume_profile(exchange)
 data_quality_score = profile["data_quality_score"]
 
@@ -344,8 +303,7 @@ adjusted_confidence = max(0.1, min(1.0, adjusted_confidence))
 self.logger.info(
 f"Confidence adjustment for {exchange}: "
 f"base={base_confidence:.3f}, "
-f"adjusted={adjusted_confidence:.3f}",
-)
+f"adjusted={adjusted_confidence:.3f}")
 
 return adjusted_confidence
 
@@ -353,13 +311,12 @@ except Exception:
             self.print(error("Error adjusting model confidence: {e}"))
 return base_confidence * 0.8  # Conservative fallback
 
-def should_execute_trade(
+    def should_execute_trade(
 self,
 exchange: str,
 position_size: float,
 current_volume: float = None,
-market_impact_threshold: float = None,
-) -> tuple[bool, str]:
+market_impact_threshold: float = None) -> tuple[bool, str]:
         """
 Determine if a trade should be executed based on volume constraints.
 
@@ -371,11 +328,8 @@ market_impact_threshold: Custom market impact threshold
 
 Returns:
             Tuple of (should_execute = reason)
-"""
+        """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 profile = self.get_volume_profile(exchange)
 threshold = market_impact_threshold or profile["market_impact_threshold"]
 
@@ -388,8 +342,7 @@ impact_ratio = position_size / current_volume
 if impact_ratio > threshold:
                 return (
 False,
-f"Market impact too high: {impact_ratio:.4f} > {threshold:.4f}",
-)
+f"Market impact too high: {impact_ratio:.4f} > {threshold:.4f}")
 
 # Check minimum volume threshold
 min_volume = self.adapter_config.get("min_volume_threshold", 1000)
@@ -402,17 +355,13 @@ except Exception as e:
             self.print(execution_error(f"Error checking trade execution: {e}"))
 return (False, f"Error: {e}")
 
-@handle_errors(
+    @handle_errors(
 exceptions=(KeyError, ValueError),
 default_return=1.0,
-context="adaptation factor retrieval",
-)
-async def get_adaptation_factor(self, exchange: str) -> float:
+context="adaptation factor retrieval")
+    async def get_adaptation_factor(self, exchange: str) -> float:
         """Get adaptation factor for an exchange based on volume characteristics."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 exchange_upper = exchange.upper()
 if exchange_upper not in self.volume_profiles:
                 self.logger.warning(f"No volume profile for exchange: {exchange}")
@@ -444,12 +393,9 @@ except Exception as e:
             self.logger.error(f"Error getting adaptation factor for {exchange}: {e}")
 return 1.0
 
-def get_adaptation_summary(self) -> dict[str , Any]:
+    def get_adaptation_summary(self) -> dict[str , Any]:
         """Get summary of current volume adaptations."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 return {
 "enabled": self.enable_volume_adaptation,
 "dynamic_adjustment": self.enable_dynamic_adjustment,
@@ -462,15 +408,12 @@ except Exception as e:
             self.print(error("Error getting adaptation summary: {e}"))
 return {"error": str(e)}
 
-async def update_volume_metrics(
+    async def update_volume_metrics(
 self, exchange: str,
 current_volume: float = None, spread: float = None,
 slippage: float = None) -> None:
         """Update volume metrics for an exchange."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 if exchange.upper() not in self.current_volume_metrics:
                 self.print(warning("No metrics tracking for {exchange}"))
 return
@@ -489,8 +432,7 @@ self.adaptation_history.append(
 {
 "exchange": exchange , "timestamp": datetime.now(),
 "volume": current_volume , "spread": spread,
-"slippage": slippage},
-)
+"slippage": slippage})
 
 # Keep history within limits
 max_history = self.adapter_config.get("max_history", 1000)
@@ -500,12 +442,9 @@ if len(self.adaptation_history) > max_history:
 except Exception:
             self.print(error("Error updating volume metrics: {e}"))
 
-async def cleanup(self) -> None:
+    async def cleanup(self) -> None:
         """Cleanup resources."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 self.logger.info("Cleaning up Exchange Volume Adapter...")
 # Clear history
 self.adaptation_history.clear()
@@ -515,18 +454,13 @@ self.logger.info("✅ Exchange Volume Adapter cleanup completed")
 except Exception:
             self.print(error("Error during cleanup: {e}"))
 
-@handle_errors(
-exceptions=(Exception,),
-default_return=None, context="exchange volume adapter setup",
-)
-async def setup_exchange_volume_adapter(
-config: dict[str , Any] | None = None,
-) -> ExchangeVolumeAdapter | None:
-    """Setup exchange volume adapter."""
+    @handle_errors(
+exceptions=(Exception),
+default_return=None, context="exchange volume adapter setup")
+    async def setup_exchange_volume_adapter(
+config: dict[str , Any] | None = None) -> ExchangeVolumeAdapter | None:
+        """Setup exchange volume adapter."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 if config is None:
             config = {}
 

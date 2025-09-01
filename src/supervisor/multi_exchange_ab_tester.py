@@ -10,23 +10,22 @@ from src.supervisor.exchange_volume_adapter import ExchangeVolumeAdapter
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from dataclasses import dataclass
 
-from src.utils.supervisor_error_handler import (supervisor_component_error_handler,, supervisor_critical_error_handler,, supervisor_safe_error_handler,, supervisor_error_context,, handle_component_failure,, handle_portfolio_error,, handle_risk_error,, handle_performance_error,, handle_model_error,, handle_exchange_error,, ComponentFailureError,, PortfolioManagementError,, RiskManagementError,, PerformanceMonitoringError,, ModelManagementError,, ExchangeIntegrationError,, )
-)
+from src.utils.supervisor_error_handler import (supervisor_component_error_handler, supervisor_critical_error_handler, supervisor_safe_error_handler, supervisor_error_context, handle_component_failure, handle_portfolio_error, handle_risk_error, handle_performance_error, handle_model_error, handle_exchange_error, ComponentFailureError, PortfolioManagementError, RiskManagementError, PerformanceMonitoringError, ModelManagementError, ExchangeIntegrationError)
 
 #!/usr/bin/env python3
-"""
+        """
 Multi-Exchange A/B Testing Framework
 
 This module enables simultaneous testing of the same model across different exchanges
 to compare performance, validate transfer learning, and identify exchange-specific characteristics.
-"""
+        """
 
 
 if TYPE_CHECKING:
     pass
-@dataclass
+    @dataclass
 class MultiExchangeTestConfig:
-    """Multi-exchange A/B test configuration."""
+        """Multi-exchange A/B test configuration."""
 
 test_name: str
 model_id: str
@@ -38,9 +37,9 @@ max_position_size: float = 0.05
 enable_volume_adaptation: bool = True
 enable_performance_tracking: bool = True
 
-@dataclass
+    @dataclass
 class ExchangeTestResult:
-    """Single exchange test result."""
+        """Single exchange test result."""
 
 exchange: str
 timestamp: datetime
@@ -54,9 +53,9 @@ volume_adapted: bool = False
 adaptation_factor: float | None = None
 error_message: str | None = None
 
-@dataclass
+    @dataclass
 class MultiExchangeTestSummary:
-    """Multi-exchange test summary."""
+        """Multi-exchange test summary."""
 
 test_name: str
 model_id: str
@@ -72,9 +71,9 @@ best_performing_exchange: str | None = None
 worst_performing_exchange: str | None = None
 
 class MultiExchangeABTester:
-    """
+        """
 Multi-exchange A/B testing framework for comparing model performance across exchanges.
-"""
+        """
 
     def __init__(self, config: dict[str, Any]) -> None:
         """
@@ -82,26 +81,25 @@ Initialize multi-exchange A/B tester.
 
 Args:
             config: Configuration dictionary
-"""
+        """
 self.config = config
 self.logger = system_logger.getChild("MultiExchangeABTester")
 
 # Test state
-self.current_test: MultiExchangeTestConfig | None = None
-self.test_results: dict[str, list[ExchangeTestResult]] = {}
-self.test_start_time: datetime | None = None
-self.is_running: bool = False
+        self.        self.current_test:: MultiExchangeTestConfig | None = None
+        self.        self.test_results:: dict[str, list[ExchangeTestResult]] = {}
+        self.        self.test_start_time:: datetime | None = None
+        self.        self.is_running:: bool = False
 
 # Performance tracking
-self.performance_metrics: dict[str, dict[str, Any]] = {}
-self.volume_adaptation_metrics: dict[str, dict[str, Any]] = {}
+        self.        self.performance_metrics:: dict[str, dict[str, Any]] = {}
+        self.        self.volume_adaptation_metrics:: dict[str, dict[str, Any]] = {}
 
 # Configuration
 self.ab_config = self.config.get("multi_exchange_ab_tester", {})
 self.result_storage_path = self.ab_config.get(
 "result_storage_path",
-"multi_exchange_ab_test_results",
-)
+"multi_exchange_ab_test_results")
 self.enable_volume_adaptation = self.ab_config.get(
 "enable_volume_adaptation",
 True
@@ -112,25 +110,21 @@ True
 )
 
 # Volume adapter for exchange-specific adjustments
-self.volume_adapter: ExchangeVolumeAdapter | None = None
+        self.        self.volume_adapter:: ExchangeVolumeAdapter | None = None
 if self.enable_volume_adaptation:
             self.volume_adapter = ExchangeVolumeAdapter(self.config)
 
-@handle_specific_errors(
+    @handle_specific_errors(
 error_handlers={
 ValueError: (False, "Invalid multi-exchange A/B test configuration"),
 AttributeError: (False, "Missing required multi-exchange A/B test parameters"),
 KeyError: (False, "Missing configuration keys"),
 },
 default_return=False,
-context="multi-exchange A/B test initialization",
-)
-async def initialize(self) -> bool:
+context="multi-exchange A/B test initialization")
+    async def initialize(self) -> bool:
         """Initialize the multi-exchange A/B tester."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 self.logger.info("Initializing Multi-Exchange A/B Tester...")
 
 # Create result storage directory
@@ -147,17 +141,13 @@ except Exception as e:
             self.logger.error(f"❌ Multi-Exchange A/B Tester initialization failed: {e}")
 return False
 
-@handle_errors(
+    @handle_errors(
 exceptions=(ValueError, AttributeError),
 default_return=False,
-context="test configuration validation",
-)
-def _validate_test_config(self, test_config: MultiExchangeTestConfig) -> bool:
+context="test configuration validation")
+    def _validate_test_config(self, test_config: MultiExchangeTestConfig) -> bool:
         """Validate test configuration."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 if not test_config.test_name:
                 self.logger.error("Test name is required")
 return False
@@ -184,20 +174,16 @@ except Exception as e:
             self.logger.error(f"Error validating test configuration: {e}")
 return False
 
-@handle_specific_errors(
+    @handle_specific_errors(
 error_handlers={
 ValueError: (False, "Failed to start multi-exchange A/B test"),
 RuntimeError: (False, "A/B test already running"),
 },
 default_return=False,
-context="multi-exchange A/B test start",
-)
-async def start_multi_exchange_test(self, test_config: MultiExchangeTestConfig) -> bool:
+context="multi-exchange A/B test start")
+    async def start_multi_exchange_test(self, test_config: MultiExchangeTestConfig) -> bool:
         """Start a new multi-exchange A/B test."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 if self.is_running:
                 self.logger.error("Multi-exchange A/B test already running")
 return False
@@ -235,17 +221,13 @@ except Exception as e:
             self.logger.error(f"❌ Failed to start multi-exchange A/B test: {e}")
 return False
 
-@handle_errors(
-exceptions=(Exception,),
+    @handle_errors(
+exceptions=(Exception),
 default_return=None,
-context="multi-exchange test execution",
-)
-async def execute_multi_exchange_test(self) -> None:
+context="multi-exchange test execution")
+    async def execute_multi_exchange_test(self) -> None:
         """Execute the multi-exchange A/B test."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 if not self.current_test or not self.is_running:
                 return
 
@@ -263,17 +245,13 @@ await self._generate_test_summary()
 except Exception as e:
             self.logger.error(f"Error executing multi-exchange test: {e}")
 
-@handle_errors(
-exceptions=(Exception,),
+    @handle_errors(
+exceptions=(Exception),
 default_return=None,
-context="test cycle execution",
-)
-async def _execute_test_cycle(self) -> None:
+context="test cycle execution")
+    async def _execute_test_cycle(self) -> None:
         """Execute a single test cycle across all exchanges."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 if not self.current_test:
                 return
 
@@ -288,12 +266,11 @@ for exchange in self.current_test.exchanges:
 except Exception as e:
             self.logger.error(f"Error executing test cycle: {e}")
 
-@handle_errors(
-exceptions=(Exception,),
+    @handle_errors(
+exceptions=(Exception),
 default_return=None,
-context="exchange test execution",
-)
-async def _execute_exchange_test(
+context="exchange test execution")
+    async def _execute_exchange_test(
 self,
 exchange: str,
 prediction: float,
@@ -301,9 +278,6 @@ confidence: float
 ) -> None:
         """Execute test on a single exchange."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 if confidence < self.current_test.min_confidence_threshold:
                 return
 
@@ -341,8 +315,7 @@ executed=executed,
 profit_loss=profit_loss,
 slippage=slippage,
 volume_adapted=volume_adapted,
-adaptation_factor=adaptation_factor,
-)
+adaptation_factor=adaptation_factor)
 
 # Store result
 self.test_results[exchange].append(result)
@@ -353,17 +326,13 @@ self._update_exchange_metrics(exchange, result)
 except Exception as e:
             self.logger.error(f"Error executing exchange test for {exchange}: {e}")
 
-@handle_errors(
-exceptions=(Exception,),
+    @handle_errors(
+exceptions=(Exception),
 default_return=None,
-context="metrics update",
-)
-def _update_exchange_metrics(self, exchange: str, result: ExchangeTestResult) -> None:
+context="metrics update")
+    def _update_exchange_metrics(self, exchange: str, result: ExchangeTestResult) -> None:
         """Update performance metrics for an exchange."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 metrics = self.performance_metrics[exchange]
 metrics["total_samples"] += 1
 
@@ -397,17 +366,13 @@ vol_metrics["adaptations_applied"]
 except Exception as e:
             self.logger.error(f"Error updating metrics for {exchange}: {e}")
 
-@handle_errors(
-exceptions=(Exception,),
+    @handle_errors(
+exceptions=(Exception),
 default_return=None,
-context="test summary generation",
-)
-async def _generate_test_summary(self) -> None:
+context="test summary generation")
+    async def _generate_test_summary(self) -> None:
         """Generate comprehensive test summary."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 if not self.current_test or not self.test_start_time:
                 return
 
@@ -469,8 +434,7 @@ exchange: metrics["average_adaptation_factor"]
 for exchange, metrics in self.volume_adaptation_metrics.items()
 },
 best_performing_exchange=best_exchange,
-worst_performing_exchange=worst_exchange,
-)
+worst_performing_exchange=worst_exchange)
 
 # Save summary
 await self._save_test_summary(summary)
@@ -482,17 +446,13 @@ self.logger.info(f"Worst performing exchange: {worst_exchange}")
 except Exception as e:
             self.logger.error(f"Error generating test summary: {e}")
 
-@handle_errors(
-exceptions=(Exception,),
+    @handle_errors(
+exceptions=(Exception),
 default_return=None,
-context="test summary saving",
-)
-async def _save_test_summary(self, summary: MultiExchangeTestSummary) -> None:
+context="test summary saving")
+    async def _save_test_summary(self, summary: MultiExchangeTestSummary) -> None:
         """Save test summary to file."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 filename = f"{summary.test_name}_{timestamp}.json"
 filepath = os.path.join(self.result_storage_path, filename)
@@ -512,17 +472,13 @@ self.logger.info(f"Test summary saved to {filepath}")
 except Exception as e:
             self.logger.error(f"Error saving test summary: {e}")
 
-@handle_errors(
-exceptions=(Exception,),
+    @handle_errors(
+exceptions=(Exception),
 default_return=None,
-context="multi-exchange A/B test stop",
-)
-async def stop_multi_exchange_test(self) -> None:
+context="multi-exchange A/B test stop")
+    async def stop_multi_exchange_test(self) -> None:
         """Stop the current multi-exchange A/B test."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 self.is_running = False
 if self.current_test:
                 self.logger.info(f"🛑 Multi-exchange A/B test '{self.current_test.test_name}' stopped")
@@ -530,17 +486,13 @@ if self.current_test:
 except Exception as e:
             self.logger.error(f"Error stopping multi-exchange A/B test: {e}")
 
-@handle_errors(
-exceptions=(Exception,),
+    @handle_errors(
+exceptions=(Exception),
 default_return=None,
-context="multi-exchange A/B test cleanup",
-)
-async def cleanup(self) -> None:
+context="multi-exchange A/B test cleanup")
+    async def cleanup(self) -> None:
         """Clean up resources."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 await self.stop_multi_exchange_test()
 
 if self.volume_adapter:
@@ -553,15 +505,14 @@ self.logger.info("✅ Multi-exchange A/B tester cleanup completed")
 except Exception as e:
             self.logger.error(f"Error during cleanup: {e}")
 
-@handle_errors(
-exceptions=(Exception,),
+    @handle_errors(
+exceptions=(Exception),
 default_return=None,
-context="multi-exchange A/B tester setup",
-)
-async def setup_multi_exchange_ab_tester(
+context="multi-exchange A/B tester setup")
+    async def setup_multi_exchange_ab_tester(
 config: dict[str, Any] | None = None
 ) -> MultiExchangeABTester | None:
-    """
+        """
 Setup multi-exchange A/B tester.
 
 Args:
@@ -569,11 +520,8 @@ Args:
 
 Returns:
         MultiExchangeABTester instance or None if setup fails
-"""
+        """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 if config is None:
             config = {}
 

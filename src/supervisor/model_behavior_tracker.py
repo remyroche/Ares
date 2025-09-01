@@ -11,21 +11,20 @@ from src.utils.warning_symbols import error, failed, initialization_error
 import numpy as np
 from dataclasses import dataclass
 
-from src.utils.supervisor_error_handler import (supervisor_component_error_handler,, supervisor_critical_error_handler,, supervisor_safe_error_handler,, supervisor_error_context,, handle_component_failure,, handle_portfolio_error,, handle_risk_error,, handle_performance_error,, handle_model_error,, handle_exchange_error,, ComponentFailureError,, PortfolioManagementError,, RiskManagementError,, PerformanceMonitoringError,, ModelManagementError,, ExchangeIntegrationError,, )
-)
+from src.utils.supervisor_error_handler import (supervisor_component_error_handler, supervisor_critical_error_handler, supervisor_safe_error_handler, supervisor_error_context, handle_component_failure, handle_portfolio_error, handle_risk_error, handle_performance_error, handle_model_error, handle_exchange_error, ComponentFailureError, PortfolioManagementError, RiskManagementError, PerformanceMonitoringError, ModelManagementError, ExchangeIntegrationError)
 
 #!/usr/bin/env python3
-"""
+        """
 Model Behavior Tracker
 
 This module enhances the existing performance monitoring system with comprehensive
 model behavior tracking, feature importance monitoring, and decision path analysis.
-"""
+        """
 
 
 
 class BehaviorMetricType(Enum):
-    """Model behavior metric types."""
+        """Model behavior metric types."""
 
 PREDICTION_CONSISTENCY = "prediction_consistency"
 CONFIDENCE_TREND = "confidence_trend"
@@ -36,9 +35,9 @@ DECISION_PATH_STABILITY = "decision_path_stability"
 CONFIDENCE_CALIBRATION = "confidence_calibration"
 THEORY_VS_REALITY = "theory_vs_reality"
 
-@dataclass
+    @dataclass
 class ModelBehaviorSnapshot:
-    """Model behavior snapshot."""
+        """Model behavior snapshot."""
 
 model_id: str
 model_type: str
@@ -53,9 +52,9 @@ confidence_calibration: float | None = None
 theory_vs_reality_score: float | None = None
 metadata: dict[str, Any] = None
 
-@dataclass
+    @dataclass
 class FeatureImportanceTracking:
-    """Feature importance tracking data."""
+        """Feature importance tracking data."""
 
 feature_name: str
 model_id: str
@@ -65,9 +64,9 @@ importance_rank: int
 stability_score: float
 drift_score: float
 
-@dataclass
+    @dataclass
 class DecisionPathAnalysis:
-    """Decision path analysis data."""
+        """Decision path analysis data."""
 
 model_id: str
 timestamp: datetime
@@ -78,17 +77,16 @@ path_complexity: float
 confidence_distribution: list[float]
 
 class ModelBehaviorTracker:
-    """
+        """
 Enhanced model behavior tracker that integrates with existing performance monitoring.
-"""
-
+        """
         """
 Initialize model behavior tracker.
 
 Args:
             config: Configuration dictionary
 performance_monitor: Existing performance monitor instance
-"""
+        """
 self.config = config
 self.performance_monitor = performance_monitor
 self.logger = system_logger.getChild("ModelBehaviorTracker")
@@ -97,38 +95,33 @@ self.logger = system_logger.getChild("ModelBehaviorTracker")
 self.tracker_config = config.get("model_behavior_tracker", {})
 self.tracking_interval = self.tracker_config.get(
 "tracking_interval",
-60,
-)  # 1 minute
+60)  # 1 minute
 self.max_history_size = self.tracker_config.get("max_history_size", 1000)
 
 # Storage
-self.behavior_history: dict[str , list[ModelBehaviorSnapshot]] = {}
-self.feature_importance_history: dict[str , list[FeatureImportanceTracking]] = {}
-self.decision_path_history: dict[str , list[DecisionPathAnalysis]] = {}
+        self.        self.behavior_history:: dict[str , list[ModelBehaviorSnapshot]] = {}
+        self.        self.feature_importance_history:: dict[str , list[FeatureImportanceTracking]] = {}
+        self.        self.decision_path_history:: dict[str , list[DecisionPathAnalysis]] = {}
 
 # Tracking state
 self.is_tracking = False
-self.tracking_task: asyncio.Task | None = None
+        self.        self.tracking_task:: asyncio.Task | None = None
 
 # Reference data for stability calculations
-self.reference_behavior: dict[str , dict[str, float]] = {}
+        self.        self.reference_behavior:: dict[str , dict[str, float]] = {}
 
 self.logger.info("🚀 Model Behavior Tracker initialized")
 
-@handle_specific_errors(
+    @handle_specific_errors(
 error_handlers={
 ValueError: (False, "Invalid tracker configuration"),
 AttributeError: (False, "Missing required tracker parameters"),
 },
 default_return=False,
-context="behavior tracker initialization",
-)
-async def initialize(self) -> bool:
+context="behavior tracker initialization")
+    async def initialize(self) -> bool:
         """Initialize the model behavior tracker."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 self.logger.info("Initializing Model Behavior Tracker...")
 
 # Load reference behavior data
@@ -144,21 +137,16 @@ return True
 
 except Exception as e:
             self.logger.exception(
-f"❌ Model Behavior Tracker initialization failed: {e}",
-)
+f"❌ Model Behavior Tracker initialization failed: {e}")
 return False
 
-@handle_errors(
+    @handle_errors(
 exceptions=(ValueError, AttributeError),
 default_return=None,
-context="reference behavior loading",
-)
-async def _load_reference_behavior(self) -> None:
+context="reference behavior loading")
+    async def _load_reference_behavior(self) -> None:
         """Load reference behavior data for stability calculations."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 # Load reference behavior metrics from training data
 self.reference_behavior = {
 "prediction_consistency": 0.85,
@@ -174,17 +162,13 @@ self.logger.info("📊 Reference behavior data loaded")
 except Exception:
             self.logger.exception(error("Error loading reference behavior: {e}"))
 
-@handle_errors(
+    @handle_errors(
 exceptions=(ValueError, AttributeError),
 default_return=None,
-context="behavior tracking initialization",
-)
-async def _initialize_behavior_tracking(self) -> None:
+context="behavior tracking initialization")
+    async def _initialize_behavior_tracking(self) -> None:
         """Initialize behavior tracking components."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 # Set up behavior tracking thresholds
 self.behavior_thresholds = {
 BehaviorMetricType.PREDICTION_CONSISTENCY: 0.80,
@@ -199,20 +183,15 @@ self.logger.info("🔍 Behavior tracking initialized")
 
 except Exception:
             self.logger.exception(
-initialization_error("Error initializing behavior tracking: {e}"),
-)
+initialization_error("Error initializing behavior tracking: {e}"))
 
-@handle_errors(
+    @handle_errors(
 exceptions=(ValueError, AttributeError),
 default_return=None,
-context="feature tracking initialization",
-)
-async def _initialize_feature_tracking(self) -> None:
+context="feature tracking initialization")
+    async def _initialize_feature_tracking(self) -> None:
         """Initialize feature importance tracking."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 # Initialize feature tracking storage
 self.feature_importance_history = {}
 
@@ -220,20 +199,15 @@ self.logger.info("📈 Feature importance tracking initialized")
 
 except Exception:
             self.logger.exception(
-initialization_error("Error initializing feature tracking: {e}"),
-)
+initialization_error("Error initializing feature tracking: {e}"))
 
-@handle_errors(
+    @handle_errors(
 exceptions=(ValueError, AttributeError),
 default_return=None,
-context="decision path tracking initialization",
-)
-async def _initialize_decision_path_tracking(self) -> None:
+context="decision path tracking initialization")
+    async def _initialize_decision_path_tracking(self) -> None:
         """Initialize decision path tracking."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 # Initialize decision path tracking storage
 self.decision_path_history = {}
 
@@ -241,21 +215,16 @@ self.logger.info("🛤️ Decision path tracking initialized")
 
 except Exception:
             self.logger.exception(
-initialization_error("Error initializing decision path tracking: {e}"),
-)
+initialization_error("Error initializing decision path tracking: {e}"))
 
-@handle_specific_errors(
+    @handle_specific_errors(
 error_handlers={
 Exception: (False, "Behavior tracking failed"),
 },
-default_return=False, context="behavior tracking",
-)
-async def start_tracking(self) -> bool:
+default_return=False, context="behavior tracking")
+    async def start_tracking(self) -> bool:
         """Start the model behavior tracking."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 self.is_tracking = True
 self.logger.info("🚦 Starting Model Behavior Tracker...")
 
@@ -267,39 +236,30 @@ return True
 
 except Exception:
             self.logger.exception(
-failed("❌ Failed to start Model Behavior Tracker: {e}"),
-)
+failed("❌ Failed to start Model Behavior Tracker: {e}"))
 return False
 
-@handle_errors(
-exceptions=(Exception,),
+    @handle_errors(
+exceptions=(Exception),
 default_return=None,
-context="behavior tracking loop",
-)
-async def _behavior_tracking_loop(self) -> None:
+context="behavior tracking loop")
+    async def _behavior_tracking_loop(self) -> None:
         """Continuous behavior tracking loop."""
 while self.is_tracking:
                     try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 await self._capture_behavior_snapshots()
 await asyncio.sleep(self.tracking_interval)
 except Exception:
                 self.logger.exception(error("Error in behavior tracking loop: {e}"))
 await asyncio.sleep(60)  # Wait before retrying
 
-@handle_errors(
-exceptions=(Exception,),
+    @handle_errors(
+exceptions=(Exception),
 default_return=None,
-context="behavior snapshot capture",
-)
-async def _capture_behavior_snapshots(self) -> None:
+context="behavior snapshot capture")
+    async def _capture_behavior_snapshots(self) -> None:
         """Capture behavior snapshots for all models."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 # Get current performance metrics from performance monitor
 current_metrics = self.performance_monitor.get_performance_metrics()
 
@@ -307,35 +267,27 @@ for model_id, performance in current_metrics.get("models", {}).items():
                 # Calculate behavior metrics
 prediction_consistency = self._calculate_prediction_consistency(
 model_id,
-performance,
-)
+performance)
 confidence_trend = self._calculate_confidence_trend(
 model_id,
-performance,
-)
+performance)
 feature_importance_stability = (
 self._calculate_feature_importance_stability(model_id, performance)
-)
 prediction_drift = self._calculate_prediction_drift(
 model_id,
-performance,
-)
+performance)
 ensemble_diversity = self._calculate_ensemble_diversity(
 model_id,
-performance,
-)
+performance)
 decision_path_stability = self._calculate_decision_path_stability(
 model_id,
-performance,
-)
+performance)
 confidence_calibration = self._calculate_confidence_calibration(
 model_id,
-performance,
-)
+performance)
 theory_vs_reality_score = self._calculate_theory_vs_reality_score(
 model_id,
-performance,
-)
+performance)
 
 # Create behavior snapshot
 snapshot = ModelBehaviorSnapshot(
@@ -350,8 +302,7 @@ ensemble_diversity=ensemble_diversity,
 decision_path_stability=decision_path_stability,
 confidence_calibration=confidence_calibration,
 theory_vs_reality_score=theory_vs_reality_score,
-metadata=performance.get("metadata", {}),
-)
+metadata=performance.get("metadata", {}))
 
 if model_id not in self.behavior_history:
                     self.behavior_history[model_id] = []
@@ -369,23 +320,18 @@ self.logger.debug("📊 Behavior snapshots captured")
 except Exception:
             self.logger.exception(error("Error capturing behavior snapshots: {e}"))
 
-def _calculate_prediction_consistency(
+    def _calculate_prediction_consistency(
 self,
 model_id: str,
-performance: dict[str, Any],
-) -> float:
+performance: dict[str, Any]) -> float:
         """Calculate prediction consistency."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 # This would typically analyze recent predictions vs historical patterns
 # For now, use a simplified approach based on accuracy stability
 accuracy = performance.get("accuracy", 0.0)
 reference_accuracy = self.reference_behavior.get(
 "prediction_consistency",
-0.85,
-)
+0.85)
 
 # Calculate consistency as how close current accuracy is to reference
 consistency = 1.0 - abs(accuracy - reference_accuracy) / reference_accuracy
@@ -393,20 +339,15 @@ return max(0.0, min(1.0, consistency))
 
 except Exception:
             self.logger.exception(
-error("Error calculating prediction consistency: {e}"),
-)
+error("Error calculating prediction consistency: {e}"))
 return 0.0
 
-def _calculate_confidence_trend(
+    def _calculate_confidence_trend(
 self,
 model_id: str,
-performance: dict[str, Any],
-) -> list[float]:
+performance: dict[str, Any]) -> list[float]:
         """Calculate confidence trend."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 # This would typically analyze recent confidence scores
 # For now, simulate a trend based on performance metrics
 confidence = performance.get("confidence", 0.0)
@@ -419,22 +360,17 @@ except Exception:
             self.logger.exception(error("Error calculating confidence trend: {e}"))
 return [0.0] * 10
 
-def _calculate_feature_importance_stability(
+    def _calculate_feature_importance_stability(
 self, model_id: str,
-performance: dict[str , Any],
-) -> float:
+performance: dict[str , Any]) -> float:
         """Calculate feature importance stability."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 # This would typically analyze feature importance changes over time
 # For now, use a simplified approach
 feature_stability = performance.get("feature_stability", 0.8)
 reference_stability = self.reference_behavior.get(
 "feature_importance_stability",
-0.82,
-)
+0.82)
 
 # Calculate stability relative to reference
 stability = (
@@ -444,26 +380,20 @@ return max(0.0, min(1.0, stability))
 
 except Exception as e:
             self.logger.exception(
-f"Error calculating feature importance stability: {e}",
-)
+f"Error calculating feature importance stability: {e}")
 return 0.0
 
-def _calculate_prediction_drift(
+    def _calculate_prediction_drift(
 self, model_id: str,
-performance: dict[str , Any],
-) -> float:
+performance: dict[str , Any]) -> float:
         """Calculate prediction drift."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 # This would typically analyze prediction distribution changes
 # For now, use a simplified approach
 accuracy = performance.get("accuracy", 0.0)
 reference_accuracy = self.reference_behavior.get(
 "prediction_consistency",
-0.85,
-)
+0.85)
 
 # Calculate drift as performance degradation
 return max(0.0, reference_accuracy - accuracy) / reference_accuracy
@@ -472,15 +402,11 @@ except Exception:
             self.logger.exception(error("Error calculating prediction drift: {e}"))
 return 0.0
 
-def _calculate_ensemble_diversity(
+    def _calculate_ensemble_diversity(
 self, model_id: str,
-performance: dict[str , Any],
-) -> float | None:
+performance: dict[str , Any]) -> float | None:
         """Calculate ensemble diversity."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 # This would typically analyze individual model predictions in ensemble
 # For now, use a simplified approach
 if "ensemble" in model_id.lower():
@@ -491,22 +417,17 @@ except Exception:
             self.logger.exception(error("Error calculating ensemble diversity: {e}"))
 return None
 
-def _calculate_decision_path_stability(
+    def _calculate_decision_path_stability(
 self, model_id: str,
-performance: dict[str , Any],
-) -> float | None:
+performance: dict[str , Any]) -> float | None:
         """Calculate decision path stability."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 # This would typically analyze decision path consistency
 # For now, use a simplified approach
 path_stability = performance.get("path_stability", 0.8)
 reference_stability = self.reference_behavior.get(
 "decision_path_stability",
-0.80,
-)
+0.80)
 
 # Calculate stability relative to reference
 stability = (
@@ -516,58 +437,43 @@ return max(0.0, min(1.0, stability))
 
 except Exception:
             self.logger.exception(
-error("Error calculating decision path stability: {e}"),
-)
+error("Error calculating decision path stability: {e}"))
 return None
 
-def _calculate_confidence_calibration(
+    def _calculate_confidence_calibration(
 self, model_id: str,
-performance: dict[str , Any],
-) -> float | None:
+performance: dict[str , Any]) -> float | None:
         """Calculate confidence calibration score for a model."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 # Simulate confidence calibration calculation
 # In production, this would compare predicted probabilities with actual outcomes
 return 0.92
 
 except Exception as e:
             self.logger.exception(
-f"Error calculating confidence calibration for {model_id}: {e}",
-)
+f"Error calculating confidence calibration for {model_id}: {e}")
 return None
 
-def _calculate_theory_vs_reality_score(
+    def _calculate_theory_vs_reality_score(
 self, model_id: str,
-performance: dict[str , Any],
-) -> float | None:
+performance: dict[str , Any]) -> float | None:
         """Calculate theory vs reality score for a model."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 # Simulate theory vs reality calculation
 # In production = this would compare expected vs actual model behavior
 return 0.88
 
 except Exception as e:
             self.logger.exception(
-f"Error calculating theory vs reality score for {model_id}: {e}",
-)
+f"Error calculating theory vs reality score for {model_id}: {e}")
 return None
 
-@handle_errors(
-exceptions=(Exception,),
-default_return=None, context="behavior tracker stop",
-)
-async def stop_tracking(self) -> None:
+    @handle_errors(
+exceptions=(Exception),
+default_return=None, context="behavior tracker stop")
+    async def stop_tracking(self) -> None:
         """Stop the model behavior tracking."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 self.logger.info("🛑 Stopping Model Behavior Tracker...")
 
 self.is_tracking = False
@@ -582,7 +488,7 @@ self.logger.info("✅ Model Behavior Tracker stopped successfully")
 except Exception:
             self.logger.exception(error("Error stopping behavior tracker: {e}"))
 
-def get_behavior_history(
+    def get_behavior_history(
 self, model_id: str,
 limit: int | None = None) -> list[ModelBehaviorSnapshot]:
         """Get behavior history for a specific model."""
@@ -593,12 +499,9 @@ if limit:
 
 return history
 
-def get_behavior_summary(self, model_id: str) -> dict[str, Any]:
+    def get_behavior_summary(self, model_id: str) -> dict[str, Any]:
         """Get behavior summary for a specific model."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 history = self.behavior_history.get(model_id = [])
 
 if not history:
@@ -611,14 +514,11 @@ summary = {
 "model_id": model_id , "total_snapshots": len(history),
 "recent_snapshots": len(recent_snapshots),
 "avg_prediction_consistency": np.mean(
-[s.prediction_consistency for s in recent_snapshots],
-),
+[s.prediction_consistency for s in recent_snapshots]),
 "avg_feature_importance_stability": np.mean(
-[s.feature_importance_stability for s in recent_snapshots],
-),
+[s.feature_importance_stability for s in recent_snapshots]),
 "avg_prediction_drift": np.mean(
-[s.prediction_drift for s in recent_snapshots],
-),
+[s.prediction_drift for s in recent_snapshots]),
 "behavior_trend": self._calculate_behavior_trend(recent_snapshots),
 "stability_score": self._calculate_overall_stability(recent_snapshots),
 "alert_level": self._determine_alert_level(recent_snapshots),
@@ -631,8 +531,7 @@ if any(s.ensemble_diversity is not None for s in recent_snapshots):
 s.ensemble_diversity
 for s in recent_snapshots
 if s.ensemble_diversity is not None
-],
-)
+])
 
 # Add decision path metrics if applicable
 if any(s.decision_path_stability is not None for s in recent_snapshots):
@@ -641,8 +540,7 @@ if any(s.decision_path_stability is not None for s in recent_snapshots):
 s.decision_path_stability
 for s in recent_snapshots
 if s.decision_path_stability is not None
-],
-)
+])
 
 return summary
 
@@ -650,12 +548,9 @@ except Exception:
             self.logger.exception(error("Error generating behavior summary: {e}"))
 return {}
 
-def _calculate_behavior_trend(self, snapshots: list[ModelBehaviorSnapshot]) -> str:
+    def _calculate_behavior_trend(self, snapshots: list[ModelBehaviorSnapshot]) -> str:
         """Calculate behavior trend."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 if len(snapshots) < 2:
                 return "insufficient_data"
 
@@ -677,14 +572,10 @@ except Exception:
             self.logger.exception(error("Error calculating behavior trend: {e}"))
 return "unknown"
 
-def _calculate_overall_stability(
-self, snapshots: list[ModelBehaviorSnapshot],
-) -> float:
+    def _calculate_overall_stability(
+self, snapshots: list[ModelBehaviorSnapshot]) -> float:
         """Calculate overall stability score."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 if not snapshots:
                 return 0.0
 
@@ -709,12 +600,9 @@ except Exception:
             self.logger.exception(error("Error calculating overall stability: {e}"))
 return 0.0
 
-def _determine_alert_level(self, snapshots: list[ModelBehaviorSnapshot]) -> str:
+    def _determine_alert_level(self, snapshots: list[ModelBehaviorSnapshot]) -> str:
         """Determine alert level based on behavior metrics."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 if not snapshots:
                 return "unknown"
 
@@ -736,7 +624,7 @@ except Exception:
             self.logger.exception(error("Error determining alert level: {e}"))
 return "unknown"
 
-def get_all_behavior_summaries(self) -> dict[str , dict[str, Any]]:
+    def get_all_behavior_summaries(self) -> dict[str , dict[str, Any]]:
         """Get behavior summaries for all models."""
 summaries = {}
 
@@ -745,12 +633,9 @@ for model_id in self.behavior_history:
 
 return summaries
 
-def export_behavior_data(self, filepath: str | None = None) -> str:
+    def export_behavior_data(self, filepath: str | None = None) -> str:
         """Export behavior data to file."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 if not filepath:
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 filepath = f"reports/model_behavior_data_{timestamp}.json"
@@ -775,15 +660,13 @@ except Exception:
 return ""
 
 # Factory function for creating model behavior tracker
-@handle_errors(
-exceptions=(Exception,),
-default_return=None, context="model behavior tracker setup",
-)
-async def setup_model_behavior_tracker(
+    @handle_errors(
+exceptions=(Exception),
+default_return=None, context="model behavior tracker setup")
+    async def setup_model_behavior_tracker(
 config: dict[str , Any],
-performance_monitor: PerformanceMonitor,
-) -> ModelBehaviorTracker | None:
-    """
+performance_monitor: PerformanceMonitor) -> ModelBehaviorTracker | None:
+        """
 Set up model behavior tracker.
 
 Args:
@@ -792,11 +675,8 @@ performance_monitor: Performance monitor instance
 
 Returns:
         ModelBehaviorTracker instance or None if setup fails
-"""
+        """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 tracker = ModelBehaviorTracker(config, performance_monitor)
 success = await tracker.initialize()
 

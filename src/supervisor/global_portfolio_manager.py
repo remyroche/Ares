@@ -4,17 +4,15 @@ from datetime import datetime
 from src.utils.logger import system_logger
 from typing import Any
 from src.utils.error_handler import handle_errors, handle_specific_errors
-from src.utils.warning_symbols import (, from src.utils.supervisor_error_handler import (, supervisor_component_error_handler,, supervisor_critical_error_handler,, supervisor_safe_error_handler,, supervisor_error_context,, handle_component_failure,, handle_portfolio_error,, handle_risk_error,, handle_performance_error,, handle_model_error,, handle_exchange_error,, ComponentFailureError,, PortfolioManagementError,, RiskManagementError,, PerformanceMonitoringError,, ModelManagementError,, ExchangeIntegrationError,, ))
-)
+from src.utils.warning_symbols import (, from src.utils.supervisor_error_handler import (, supervisor_component_error_handler, supervisor_critical_error_handler, supervisor_safe_error_handler, supervisor_error_context, handle_component_failure, handle_portfolio_error, handle_risk_error, handle_performance_error, handle_model_error, handle_exchange_error, ComponentFailureError, PortfolioManagementError, RiskManagementError, PerformanceMonitoringError, ModelManagementError, ExchangeIntegrationError)
 error,
 initialization_error,
-invalid,
-)
+invalid)
 
 class GlobalPortfolioManager:
-    """
+        """
 Global Portfolio Manager with comprehensive error handling and type safety.
-"""
+        """
 
     def __init__(self, config: dict[str, Any]) -> None:
         """
@@ -22,63 +20,52 @@ Initialize global portfolio manager with enhanced type safety.
 
 Args:
             config: Configuration dictionary
-"""
-self.config: dict[str, Any] = config
+        """
+        self.        self.config:: dict[str, Any] = config
 self.logger = system_logger.getChild("GlobalPortfolioManager")
 
 # Global portfolio manager state
-self.is_managing: bool = False
-self.management_results: dict[str, Any] = {}
-self.management_history: list[dict[str, Any]] = []
+        self.        self.is_managing:: bool = False
+        self.        self.management_results:: dict[str, Any] = {}
+        self.        self.management_history:: list[dict[str, Any]] = []
 
 # Configuration
-self.portfolio_config: dict[str, Any] = self.config.get(
+        self.        self.portfolio_config:: dict[str, Any] = self.config.get(
 "global_portfolio_manager",
-{},
-)
-self.management_interval: int = self.portfolio_config.get(
+{})
+        self.        self.management_interval:: int = self.portfolio_config.get(
 "management_interval",
-3600,
-)
-self.max_management_history: int = self.portfolio_config.get(
+3600)
+        self.        self.max_management_history:: int = self.portfolio_config.get(
 "max_management_history",
-100,
-)
-self.enable_portfolio_allocation: bool = self.portfolio_config.get(
+100)
+        self.        self.enable_portfolio_allocation:: bool = self.portfolio_config.get(
 "enable_portfolio_allocation",
-True,
-)
-self.enable_risk_management: bool = self.portfolio_config.get(
+True)
+        self.        self.enable_risk_management:: bool = self.portfolio_config.get(
 "enable_risk_management",
-True,
-)
-self.enable_rebalancing: bool = self.portfolio_config.get(
+True)
+        self.        self.enable_rebalancing:: bool = self.portfolio_config.get(
 "enable_rebalancing",
-True,
-)
+True)
 
-@handle_specific_errors(
+    @handle_specific_errors(
 error_handlers={
 ValueError: (False, "Invalid global portfolio manager configuration"),
 AttributeError: (
-False, "Missing required global portfolio manager parameters",
-),
+False, "Missing required global portfolio manager parameters"),
 KeyError: (False, "Missing configuration keys"),
 },
 default_return=False,
-context="global portfolio manager initialization",
-)
-async def initialize(self) -> bool:
+context="global portfolio manager initialization")
+    async def initialize(self) -> bool:
         """
 Initialize global portfolio manager with enhanced error handling.
 
 Returns:
             bool: True if initialization successful, False otherwise
-"""
+        """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             self.logger.info("Initializing Global Portfolio Manager...")
 
 # Load global portfolio manager configuration
@@ -87,34 +74,27 @@ await self._load_portfolio_configuration()
 # Validate configuration
 if not self._validate_configuration():
                 self.print(
-invalid("Invalid configuration for global portfolio manager"),
-)
+invalid("Invalid configuration for global portfolio manager"))
 return False
 
 # Initialize global portfolio manager modules
 await self._initialize_portfolio_modules()
 
 self.logger.info(
-"✅ Global Portfolio Manager initialization completed successfully",
-)
+"✅ Global Portfolio Manager initialization completed successfully")
 return True
 
 except Exception as e:
             self.logger.exception(
-f"❌ Global Portfolio Manager initialization failed: {e}",
-)
+f"❌ Global Portfolio Manager initialization failed: {e}")
 return False
 
-@handle_errors(
+    @handle_errors(
 exceptions=(ValueError, AttributeError),
-default_return=None, context="portfolio configuration loading",
-)
-async def _load_portfolio_configuration(self) -> None:
+default_return=None, context="portfolio configuration loading")
+    async def _load_portfolio_configuration(self) -> None:
         """Load global portfolio manager configuration."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             # Set default portfolio parameters
 self.portfolio_config.setdefault("management_interval", 3600)
 self.portfolio_config.setdefault("max_management_history", 100)
@@ -138,29 +118,24 @@ self.enable_risk_management = self.portfolio_config[
 self.enable_rebalancing = self.portfolio_config["enable_rebalancing"]
 
 self.logger.info(
-"Global portfolio manager configuration loaded successfully",
-)
+"Global portfolio manager configuration loaded successfully")
 
 except Exception:
             self.print(error("Error loading portfolio configuration: {e}"))
 
-@handle_errors(
+    @handle_errors(
 exceptions=(ValueError, AttributeError),
 default_return=False,
-context="configuration validation",
-)
+context="configuration validation")
 
-def _validate_configuration(self) -> bool:
+    def _validate_configuration(self) -> bool:
         """
 Validate global portfolio manager configuration.
 
 Returns:
             bool: True if configuration is valid, False otherwise
-"""
+        """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             # Validate management interval
 if self.management_interval <= 0:
                 self.print(invalid("Invalid management interval"))
@@ -179,8 +154,7 @@ self.enable_risk_management,
 self.enable_rebalancing,
 self.portfolio_config.get("enable_performance_monitoring", True),
 self.portfolio_config.get("enable_optimization", True),
-],
-):
+]):
                 self.print(error("At least one management type must be enabled"))
 return False
 
@@ -191,16 +165,12 @@ except Exception:
             self.print(error("Error validating configuration: {e}"))
 return False
 
-@handle_errors(
+    @handle_errors(
 exceptions=(ValueError, AttributeError),
-default_return=None, context="portfolio modules initialization",
-)
-async def _initialize_portfolio_modules(self) -> None:
+default_return=None, context="portfolio modules initialization")
+    async def _initialize_portfolio_modules(self) -> None:
         """Initialize global portfolio manager modules."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             # Initialize portfolio allocation module
 if self.enable_portfolio_allocation:
                 await self._initialize_portfolio_allocation()
@@ -222,24 +192,18 @@ if self.portfolio_config.get("enable_optimization", True):
                 await self._initialize_optimization()
 
 self.logger.info(
-"Global portfolio manager modules initialized successfully",
-)
+"Global portfolio manager modules initialized successfully")
 
 except Exception:
             self.print(
-initialization_error("Error initializing portfolio modules: {e}"),
-)
+initialization_error("Error initializing portfolio modules: {e}"))
 
-@handle_errors(
+    @handle_errors(
 exceptions=(ValueError, AttributeError),
-default_return=None, context="portfolio allocation initialization",
-)
-async def _initialize_portfolio_allocation(self) -> None:
+default_return=None, context="portfolio allocation initialization")
+    async def _initialize_portfolio_allocation(self) -> None:
         """Initialize portfolio allocation module."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 # Initialize portfolio allocation components
 self.portfolio_allocation_components = {
 "asset_allocation": True , "sector_allocation": True,
@@ -250,19 +214,14 @@ self.logger.info("Portfolio allocation module initialized")
 
 except Exception:
             self.print(
-initialization_error("Error initializing portfolio allocation: {e}"),
-)
+initialization_error("Error initializing portfolio allocation: {e}"))
 
-@handle_errors(
+    @handle_errors(
 exceptions=(ValueError, AttributeError),
-default_return=None, context="risk management initialization",
-)
-async def _initialize_risk_management(self) -> None:
+default_return=None, context="risk management initialization")
+    async def _initialize_risk_management(self) -> None:
         """Initialize risk management module."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 # Initialize risk management components
 self.risk_management_components = {
 "stop_loss_management": True,
@@ -275,16 +234,12 @@ self.logger.info("Risk management module initialized")
 except Exception:
             self.print(initialization_error("Error initializing risk management: {e}"))
 
-@handle_errors(
+    @handle_errors(
 exceptions=(ValueError, AttributeError),
-default_return=None, context="rebalancing initialization",
-)
-async def _initialize_rebalancing(self) -> None:
+default_return=None, context="rebalancing initialization")
+    async def _initialize_rebalancing(self) -> None:
         """Initialize rebalancing module."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 # Initialize rebalancing components
 self.rebalancing_components = {
 "periodic_rebalancing": True , "threshold_rebalancing": True,
@@ -296,17 +251,13 @@ self.logger.info("Rebalancing module initialized")
 except Exception:
             self.print(initialization_error("Error initializing rebalancing: {e}"))
 
-@handle_errors(
+    @handle_errors(
 exceptions=(ValueError, AttributeError),
 default_return=None,
-context="performance monitoring initialization",
-)
-async def _initialize_performance_monitoring(self) -> None:
+context="performance monitoring initialization")
+    async def _initialize_performance_monitoring(self) -> None:
         """Initialize performance monitoring module."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 # Initialize performance monitoring components
 self.performance_monitoring_components = {
 "return_monitoring": True , "risk_monitoring": True,
@@ -317,19 +268,14 @@ self.logger.info("Performance monitoring module initialized")
 
 except Exception:
             self.print(
-initialization_error("Error initializing performance monitoring: {e}"),
-)
+initialization_error("Error initializing performance monitoring: {e}"))
 
-@handle_errors(
+    @handle_errors(
 exceptions=(ValueError, AttributeError),
-default_return=None, context="optimization initialization",
-)
-async def _initialize_optimization(self) -> None:
+default_return=None, context="optimization initialization")
+    async def _initialize_optimization(self) -> None:
         """Initialize optimization module."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 # Initialize optimization components
 self.optimization_components = {
 "mean_variance_optimization": True , "black_litterman_optimization": True,
@@ -341,17 +287,15 @@ self.logger.info("Optimization module initialized")
 except Exception:
             self.print(initialization_error("Error initializing optimization: {e}"))
 
-@handle_specific_errors(
+    @handle_specific_errors(
 error_handlers={
 ValueError: (False, "Invalid management parameters"),
 AttributeError: (False, "Missing management components"),
 KeyError: (False, "Missing required management data"),
 },
-default_return=False, context="global portfolio management execution",
-)
-async def execute_portfolio_management(
-self, management_input: dict[str, Any],
-) -> bool:
+default_return=False, context="global portfolio management execution")
+    async def execute_portfolio_management(
+self, management_input: dict[str, Any]) -> bool:
         """
 Execute global portfolio management operations.
 
@@ -360,11 +304,8 @@ Args:
 
 Returns:
             bool: True if successful = False otherwise
-"""
+        """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 if not self._validate_management_inputs(management_input):
                 return False
 
@@ -404,8 +345,7 @@ await self._store_management_results()
 
 self.is_managing = False
 self.logger.info(
-"✅ Global portfolio management execution completed successfully",
-)
+"✅ Global portfolio management execution completed successfully")
 return True
 
 except Exception:
@@ -413,12 +353,11 @@ except Exception:
 self.is_managing = False
 return False
 
-@handle_errors(
+    @handle_errors(
 exceptions=(ValueError, AttributeError),
-default_return=False, context="management inputs validation",
-)
+default_return=False, context="management inputs validation")
 
-def _validate_management_inputs(self, management_input: dict[str, Any]) -> bool:
+    def _validate_management_inputs(self, management_input: dict[str, Any]) -> bool:
         """
 Validate management inputs.
 
@@ -427,18 +366,14 @@ Args:
 
 Returns:
             bool: True if valid = False otherwise
-"""
+        """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 # Check required management input fields
 required_fields = ["management_type", "data_source", "timestamp"]
 for field in required_fields:
                 if field not in management_input:
                     self.logger.error(
-f"Missing required management input field: {field}",
-)
+f"Missing required management input field: {field}")
 return False
 
 # Validate data types
@@ -456,13 +391,11 @@ except Exception:
             self.print(error("Error validating management inputs: {e}"))
 return False
 
-@handle_errors(
+    @handle_errors(
 exceptions=(ValueError, AttributeError),
-default_return=None, context="portfolio allocation",
-)
-async def _perform_portfolio_allocation(
-self, management_input: dict[str, Any],
-) -> dict[str , Any]:
+default_return=None, context="portfolio allocation")
+    async def _perform_portfolio_allocation(
+self, management_input: dict[str, Any]) -> dict[str , Any]:
         """
 Perform portfolio allocation.
 
@@ -471,11 +404,8 @@ Args:
 
 Returns:
             dict[str , Any]: Portfolio allocation results
-"""
+        """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 results = {}
 
 # Perform asset allocation
@@ -505,13 +435,11 @@ except Exception:
             self.print(error("Error performing portfolio allocation: {e}"))
 return {}
 
-@handle_errors(
+    @handle_errors(
 exceptions=(ValueError, AttributeError),
-default_return=None, context="risk management",
-)
-async def _perform_risk_management(
-self, management_input: dict[str, Any],
-) -> dict[str , Any]:
+default_return=None, context="risk management")
+    async def _perform_risk_management(
+self, management_input: dict[str, Any]) -> dict[str , Any]:
         """
 Perform risk management.
 
@@ -520,11 +448,8 @@ Args:
 
 Returns:
             dict[str , Any]: Risk management results
-"""
+        """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 results = {}
 
 # Position sizing is handled by the Tactician component
@@ -539,7 +464,6 @@ management_input)
 if self.risk_management_components.get("correlation_management", False):
                 results["correlation_management"] = (
 self._perform_correlation_management(management_input)
-)
 
 # Perform volatility management
 if self.risk_management_components.get("volatility_management", False):
@@ -553,13 +477,11 @@ except Exception:
             self.print(error("Error performing risk management: {e}"))
 return {}
 
-@handle_errors(
+    @handle_errors(
 exceptions=(ValueError, AttributeError),
-default_return=None, context="rebalancing",
-)
-async def _perform_rebalancing(
-self, management_input: dict[str, Any],
-) -> dict[str , Any]:
+default_return=None, context="rebalancing")
+    async def _perform_rebalancing(
+self, management_input: dict[str, Any]) -> dict[str , Any]:
         """
 Perform rebalancing.
 
@@ -568,11 +490,8 @@ Args:
 
 Returns:
             dict[str , Any]: Rebalancing results
-"""
+        """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 results = {}
 
 # Perform periodic rebalancing
@@ -594,7 +513,6 @@ management_input)
 if self.rebalancing_components.get("opportunistic_rebalancing", False):
                 results["opportunistic_rebalancing"] = (
 self._perform_opportunistic_rebalancing(management_input)
-)
 
 self.logger.info("Rebalancing completed")
 return results
@@ -603,14 +521,12 @@ except Exception:
             self.print(error("Error performing rebalancing: {e}"))
 return {}
 
-@handle_errors(
+    @handle_errors(
 exceptions=(ValueError, AttributeError),
 default_return=None,
-context="performance monitoring",
-)
-async def _perform_performance_monitoring(
-self, management_input: dict[str, Any],
-) -> dict[str , Any]:
+context="performance monitoring")
+    async def _perform_performance_monitoring(
+self, management_input: dict[str, Any]) -> dict[str , Any]:
         """
 Perform performance monitoring.
 
@@ -619,11 +535,8 @@ Args:
 
 Returns:
             dict[str, Any]: Performance monitoring results
-"""
+        """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 results = {}
 
 # Perform return monitoring
@@ -642,7 +555,6 @@ if self.performance_monitoring_components.get(
 False):
                 results["attribution_monitoring"] = (
 self._perform_attribution_monitoring(management_input)
-)
 
 # Perform benchmark monitoring
 if self.performance_monitoring_components.get(
@@ -658,13 +570,11 @@ except Exception:
             self.print(error("Error performing performance monitoring: {e}"))
 return {}
 
-@handle_errors(
+    @handle_errors(
 exceptions=(ValueError, AttributeError),
-default_return=None, context="optimization",
-)
-async def _perform_optimization(
-self, management_input: dict[str, Any],
-) -> dict[str , Any]:
+default_return=None, context="optimization")
+    async def _perform_optimization(
+self, management_input: dict[str, Any]) -> dict[str , Any]:
         """
 Perform optimization.
 
@@ -673,30 +583,24 @@ Args:
 
 Returns:
             dict[str , Any]: Optimization results
-"""
+        """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 results = {}
 
 # Perform mean variance optimization
 if self.optimization_components.get("mean_variance_optimization", False):
                 results["mean_variance_optimization"] = (
 self._perform_mean_variance_optimization(management_input)
-)
 
 # Perform Black Litterman optimization
 if self.optimization_components.get("black_litterman_optimization", False):
                 results["black_litterman_optimization"] = (
 self._perform_black_litterman_optimization(management_input)
-)
 
 # Perform risk parity optimization
 if self.optimization_components.get("risk_parity_optimization", False):
                 results["risk_parity_optimization"] = (
 self._perform_risk_parity_optimization(management_input)
-)
 
 # Perform factor optimization
 if self.optimization_components.get("factor_optimization", False):
@@ -712,14 +616,10 @@ return {}
 
 # Portfolio allocation methods
 
-def _perform_asset_allocation(
-self, management_input: dict[str, Any],
-) -> dict[str , Any]:
+    def _perform_asset_allocation(
+self, management_input: dict[str, Any]) -> dict[str , Any]:
         """Perform asset allocation."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 # Simulate asset allocation
 return {
 "asset_allocation_completed": True , "allocation_method": "mean_variance",
@@ -731,14 +631,10 @@ except Exception:
             self.print(error("Error performing asset allocation: {e}"))
 return {}
 
-def _perform_sector_allocation(
-self, management_input: dict[str, Any],
-) -> dict[str , Any]:
+    def _perform_sector_allocation(
+self, management_input: dict[str, Any]) -> dict[str , Any]:
         """Perform sector allocation."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 # Simulate sector allocation
 return {
 "sector_allocation_completed": True , "allocation_method": "sector_rotation",
@@ -756,14 +652,10 @@ except Exception:
             self.print(error("Error performing sector allocation: {e}"))
 return {}
 
-def _perform_geographic_allocation(
-self, management_input: dict[str, Any],
-) -> dict[str , Any]:
+    def _perform_geographic_allocation(
+self, management_input: dict[str, Any]) -> dict[str , Any]:
         """Perform geographic allocation."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 # Simulate geographic allocation
 return {
 "geographic_allocation_completed": True,
@@ -781,14 +673,10 @@ except Exception:
             self.print(error("Error performing geographic allocation: {e}"))
 return {}
 
-def _perform_strategy_allocation(
-self, management_input: dict[str, Any],
-) -> dict[str , Any]:
+    def _perform_strategy_allocation(
+self, management_input: dict[str, Any]) -> dict[str , Any]:
         """Perform strategy allocation."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 # Simulate strategy allocation
 return {
 "strategy_allocation_completed": True,
@@ -811,14 +699,10 @@ return {}
 # Position sizing is handled by the Tactician component
 # This method has been removed to avoid overlap with Tactician responsibilities
 
-def _perform_stop_loss_management(
-self, management_input: dict[str, Any],
-) -> dict[str , Any]:
+    def _perform_stop_loss_management(
+self, management_input: dict[str, Any]) -> dict[str , Any]:
         """Perform stop loss management."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 # Simulate stop loss management
 return {
 "stop_loss_management_completed": True , "stop_loss_method": "trailing_stop",
@@ -830,14 +714,10 @@ except Exception:
             self.print(error("Error performing stop loss management: {e}"))
 return {}
 
-def _perform_correlation_management(
-self, management_input: dict[str, Any],
-) -> dict[str , Any]:
+    def _perform_correlation_management(
+self, management_input: dict[str, Any]) -> dict[str , Any]:
         """Perform correlation management."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 # Simulate correlation management
 return {
 "correlation_management_completed": True , "correlation_threshold": 0.7,
@@ -849,14 +729,10 @@ except Exception:
             self.print(error("Error performing correlation management: {e}"))
 return {}
 
-def _perform_volatility_management(
-self, management_input: dict[str, Any],
-) -> dict[str , Any]:
+    def _perform_volatility_management(
+self, management_input: dict[str, Any]) -> dict[str , Any]:
         """Perform volatility management."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 # Simulate volatility management
 return {
 "volatility_management_completed": True , "volatility_target": 0.12,
@@ -870,14 +746,10 @@ return {}
 
 # Rebalancing methods
 
-def _perform_periodic_rebalancing(
-self, management_input: dict[str, Any],
-) -> dict[str , Any]:
+    def _perform_periodic_rebalancing(
+self, management_input: dict[str, Any]) -> dict[str , Any]:
         """Perform periodic rebalancing."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 # Simulate periodic rebalancing
 return {
 "periodic_rebalancing_completed": True , "rebalancing_frequency": "monthly",
@@ -890,14 +762,10 @@ except Exception:
             self.print(error("Error performing periodic rebalancing: {e}"))
 return {}
 
-def _perform_threshold_rebalancing(
-self, management_input: dict[str, Any],
-) -> dict[str , Any]:
+    def _perform_threshold_rebalancing(
+self, management_input: dict[str, Any]) -> dict[str , Any]:
         """Perform threshold rebalancing."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 # Simulate threshold rebalancing
 return {
 "threshold_rebalancing_completed": True , "threshold_level": 0.05,
@@ -910,14 +778,10 @@ except Exception:
             self.print(error("Error performing threshold rebalancing: {e}"))
 return {}
 
-def _perform_drift_rebalancing(
-self, management_input: dict[str, Any],
-) -> dict[str , Any]:
+    def _perform_drift_rebalancing(
+self, management_input: dict[str, Any]) -> dict[str , Any]:
         """Perform drift rebalancing."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 # Simulate drift rebalancing
 return {
 "drift_rebalancing_completed": True,
@@ -930,14 +794,10 @@ except Exception:
             self.print(error("Error performing drift rebalancing: {e}"))
 return {}
 
-def _perform_opportunistic_rebalancing(
-self, management_input: dict[str, Any],
-) -> dict[str , Any]:
+    def _perform_opportunistic_rebalancing(
+self, management_input: dict[str, Any]) -> dict[str , Any]:
         """Perform opportunistic rebalancing."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 # Simulate opportunistic rebalancing
 return {
 "opportunistic_rebalancing_completed": True , "opportunity_detected": True,
@@ -952,14 +812,10 @@ return {}
 
 # Performance monitoring methods
 
-def _perform_return_monitoring(
-self, management_input: dict[str, Any],
-) -> dict[str , Any]:
+    def _perform_return_monitoring(
+self, management_input: dict[str, Any]) -> dict[str , Any]:
         """Perform return monitoring."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 # Simulate return monitoring
 return {
 "return_monitoring_completed": True , "current_return": 0.085,
@@ -972,14 +828,10 @@ except Exception:
             self.print(error("Error performing return monitoring: {e}"))
 return {}
 
-def _perform_risk_monitoring(
-self, management_input: dict[str, Any],
-) -> dict[str , Any]:
+    def _perform_risk_monitoring(
+self, management_input: dict[str, Any]) -> dict[str , Any]:
         """Perform risk monitoring."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 # Simulate risk monitoring
 return {
 "risk_monitoring_completed": True , "current_risk": 0.12,
@@ -992,14 +844,10 @@ except Exception:
             self.print(error("Error performing risk monitoring: {e}"))
 return {}
 
-def _perform_attribution_monitoring(
-self, management_input: dict[str, Any],
-) -> dict[str , Any]:
+    def _perform_attribution_monitoring(
+self, management_input: dict[str, Any]) -> dict[str , Any]:
         """Perform attribution monitoring."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 # Simulate attribution monitoring
 return {
 "attribution_monitoring_completed": True , "attribution_factors": [
@@ -1015,14 +863,10 @@ except Exception:
             self.print(error("Error performing attribution monitoring: {e}"))
 return {}
 
-def _perform_benchmark_monitoring(
-self, management_input: dict[str, Any],
-) -> dict[str , Any]:
+    def _perform_benchmark_monitoring(
+self, management_input: dict[str, Any]) -> dict[str , Any]:
         """Perform benchmark monitoring."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 # Simulate benchmark monitoring
 return {
 "benchmark_monitoring_completed": True , "benchmark_return": 0.08,
@@ -1037,14 +881,10 @@ return {}
 
 # Optimization methods
 
-def _perform_mean_variance_optimization(
-self, management_input: dict[str, Any],
-) -> dict[str , Any]:
+    def _perform_mean_variance_optimization(
+self, management_input: dict[str, Any]) -> dict[str , Any]:
         """Perform mean variance optimization."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 # Simulate mean variance optimization
 return {
 "mean_variance_optimization_completed": True , "optimization_method": "mean_variance",
@@ -1057,14 +897,10 @@ except Exception:
             self.print(error("Error performing mean variance optimization: {e}"))
 return {}
 
-def _perform_black_litterman_optimization(
-self, management_input: dict[str, Any],
-) -> dict[str , Any]:
+    def _perform_black_litterman_optimization(
+self, management_input: dict[str, Any]) -> dict[str , Any]:
         """Perform Black Litterman optimization."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 # Simulate Black Litterman optimization
 return {
 "black_litterman_optimization_completed": True , "optimization_method": "black_litterman",
@@ -1077,14 +913,10 @@ except Exception:
             self.print(error("Error performing Black Litterman optimization: {e}"))
 return {}
 
-def _perform_risk_parity_optimization(
-self, management_input: dict[str, Any],
-) -> dict[str , Any]:
+    def _perform_risk_parity_optimization(
+self, management_input: dict[str, Any]) -> dict[str , Any]:
         """Perform risk parity optimization."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 # Simulate risk parity optimization
 return {
 "risk_parity_optimization_completed": True , "optimization_method": "risk_parity",
@@ -1097,14 +929,10 @@ except Exception:
             self.print(error("Error performing risk parity optimization: {e}"))
 return {}
 
-def _perform_factor_optimization(
-self, management_input: dict[str, Any],
-) -> dict[str , Any]:
+    def _perform_factor_optimization(
+self, management_input: dict[str, Any]) -> dict[str , Any]:
         """Perform factor optimization."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 # Simulate factor optimization
 return {
 "factor_optimization_completed": True , "optimization_method": "factor_based",
@@ -1117,16 +945,12 @@ except Exception:
             self.print(error("Error performing factor optimization: {e}"))
 return {}
 
-@handle_errors(
+    @handle_errors(
 exceptions=(ValueError, AttributeError),
-default_return=None, context="management results storage",
-)
-async def _store_management_results(self) -> None:
+default_return=None, context="management results storage")
+    async def _store_management_results(self) -> None:
         """Store management results."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 # Add timestamp
 self.management_results["timestamp"] = datetime.now().isoformat()
 
@@ -1142,14 +966,12 @@ self.logger.info("Management results stored successfully")
 except Exception:
             self.print(error("Error storing management results: {e}"))
 
-@handle_errors(
+    @handle_errors(
 exceptions=(ValueError, AttributeError),
-default_return=None, context="management results getting",
-)
+default_return=None, context="management results getting")
 
-def get_management_results(
-self, management_type: str | None = None,
-) -> dict[str , Any]:
+    def get_management_results(
+self, management_type: str | None = None) -> dict[str , Any]:
         """
 Get management results.
 
@@ -1158,11 +980,8 @@ Args:
 
 Returns:
             dict[str , Any]: Management results
-"""
+        """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 if management_type:
                 return self.management_results.get(management_type = {})
 return self.management_results.copy()
@@ -1171,12 +990,11 @@ except Exception:
             self.print(error("Error getting management results: {e}"))
 return {}
 
-@handle_errors(
+    @handle_errors(
 exceptions=(ValueError, AttributeError),
-default_return=None, context="management history getting",
-)
+default_return=None, context="management history getting")
 
-def get_management_history(self, limit: int | None = None) -> list[dict[str, Any]]:
+    def get_management_history(self, limit: int | None = None) -> list[dict[str, Any]]:
         """
 Get management history.
 
@@ -1185,11 +1003,8 @@ Args:
 
 Returns:
             list[dict[str , Any]]: Management history
-"""
+        """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 history = self.management_history.copy()
 
 if limit:
@@ -1201,13 +1016,13 @@ except Exception:
             self.print(error("Error getting management history: {e}"))
 return []
 
-def get_management_status(self) -> dict[str , Any]:
+    def get_management_status(self) -> dict[str , Any]:
         """
 Get management status information.
 
 Returns:
             dict[str , Any]: Management status
-"""
+        """
 return {
 "is_managing": self.is_managing,
 "management_interval": self.management_interval,
@@ -1217,27 +1032,21 @@ return {
 "enable_rebalancing": self.enable_rebalancing,
 "enable_performance_monitoring": self.portfolio_config.get(
 "enable_performance_monitoring",
-True,
-),
+True),
 "enable_optimization": self.portfolio_config.get(
 "enable_optimization",
-True,
-),
+True),
 "management_history_count": len(self.management_history),
 }
 
-@handle_errors(
-exceptions=(Exception,),
-default_return=None, context="global portfolio manager cleanup",
-)
-async def stop(self) -> None:
+    @handle_errors(
+exceptions=(Exception),
+default_return=None, context="global portfolio manager cleanup")
+    async def stop(self) -> None:
         """Stop the global portfolio manager."""
 self.logger.info("🛑 Stopping Global Portfolio Manager...")
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 # Stop managing
 self.is_managing = False
 
@@ -1255,14 +1064,12 @@ except Exception:
 # Global portfolio manager instance
 global_portfolio_manager: GlobalPortfolioManager | None = None
 
-@handle_errors(
-exceptions=(Exception,),
-default_return=None, context="global portfolio manager setup",
-)
-async def setup_global_portfolio_manager(
-config: dict[str, Any] | None = None,
-) -> GlobalPortfolioManager | None:
-    """
+    @handle_errors(
+exceptions=(Exception),
+default_return=None, context="global portfolio manager setup")
+    async def setup_global_portfolio_manager(
+config: dict[str, Any] | None = None) -> GlobalPortfolioManager | None:
+        """
 Setup global portfolio manager.
 
 Args:
@@ -1270,11 +1077,8 @@ Args:
 
 Returns:
         GlobalPortfolioManager | None: Global portfolio manager instance
-"""
+        """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 global global_portfolio_manager
 
 if config is None:

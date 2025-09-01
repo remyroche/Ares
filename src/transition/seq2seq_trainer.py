@@ -13,51 +13,62 @@ import numpy as np
 import torch
 
 try:
-    pass  # TODO: Add proper exception handling
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
 pass
 except Exception:  # pragma: no cover
 pl = None  # type: ignore
 
 if TYPE_CHECKING:
-    pass  # TODO: Add proper implementation
+    passpass  # TODO: Add proper implementation
 # Hint to speed CPU matmul on Apple Accelerate
 with contextlib.suppress(Exception):
-    torch.set_float32_matmul_precision("high")
+    passtorch.set_float32_matmul_precision("high")
 
 def _to_tensor(x: np.ndarray, dtype: torch.dtype = torch.float32) -> torch.Tensor:
     return torch.as_tensor(x, dtype=dtype)
 
 def _dtw_distance(a: np.ndarray, b: np.ndarray) -> float:
     try:
-    pass  # TODO: Add proper exception handling
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
 n, m = len(a), len(b)
 dtw = np.full((n + 1, m + 1), np.inf, dtype=float)
 dtw[0, 0] = 0.0
 for i in range(1, n + 1):
-            for j in range(1, m + 1):
-                cost = abs(a[i - 1] - b[j - 1])
+    passfor j in range(1, m + 1):
+    passcost = abs(a[i - 1] - b[j - 1])
 dtw[i, j] = cost + min(dtw[i - 1, j], dtw[i, j - 1], dtw[i - 1, j - 1])
 return float(dtw[n, m] / (n + m))
 except Exception:
-        return float("nan")
+    passpassreturn float("nan")
 
 class TransitionSeqDataset(Dataset):
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="transitionseqdataset initialization",
+    )
+    async def initialize(self) -> bool:
+        """Initialize TransitionSeqDataset."""
+        try:
+            self.logger.info(f"🚀 Initializing {class_name}...")
+            self.is_initialized = True
+            self.logger.info(f"✅ {class_name} initialized successfully")
+            return True
+        except Exception as e:
+            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
+            return False
     pass  # TODO: Add implementation
 class TransitionSeqDataset(Dataset):
     pass  # TODO: Add implementation
 class TransitionSeqDataset(Dataset):
     pass  # TODO: Add proper implementation
-def __init__(
-self,
-samples: list[dict[str, Any]],
-numeric_dim: int,
-label_index: list[str],
-):
-        self.samples = samples
+def __init__(...):
+    passself.samples = samples
 self.numeric_dim = numeric_dim
 self.label_index = label_index
 
@@ -75,7 +86,39 @@ X_num = s.get("X_pre_numeric", np.zeros((len(hmm_ids), 0), dtype=float))
 y_ret = s["Y_post_returns"].astype(np.float32)
 y_states_df: pd.DataFrame = s["Y_post_states"]
 y_hmm = y_states_df["hmm_state_id"].to_numpy(dtype=np.int64)
-# Class at t0 (path_class) if present
+# Class at t0 (path_class) 
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="smalltransformer initialization",
+    )
+    async def initialize(self) -> bool:
+        """Initialize SmallTran
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="smalltransformer initialization",
+    )
+    async def initialize(self) -> bool:
+        """Initialize SmallTransformer."""
+        try:
+            self.logger.info(f"🚀 Initializing {class_name}...")
+            self.is_initialized = True
+            self.logger.info(f"✅ {class_name} initialized successfully")
+            return True
+        except Exception as e:
+            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
+            return False
+sformer."""
+        try:
+            self.logger.info(f"🚀 Initializing {class_name}...")
+            self.is_initialized = True
+            self.logger.info(f"✅ {class_name} initialized successfully")
+            return True
+        except Exception as e:
+            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
+            return False
+if present
 path_map = {
 "continuation": 0,
 "reversal": 1,
@@ -95,27 +138,16 @@ return {
 }
 
 class SmallTransformer(pl.LightningModule if pl else nn.Module):
-    pass  # TODO: Add implementation
+    passpass  # TODO: Add implementation
 class SmallTransformer(pl.LightningModule if pl else nn.Module):
-    pass  # TODO: Add implementation
+    passpass  # TODO: Add implementation
 class SmallTransformer(pl.LightningModule if pl else nn.Module):
-    pass  # TODO: Add proper implementation
-def __init__(
-self,
-hmm_vocab: int,
-num_features: int,
-d_model: int = 128,
-nhead: int = 4,
-num_layers: int = 2,
-dropout: float = 0.1,
-lr: float = 1e-3,
-path_class_weights: dict[str, float] | None = None,
-focal_gamma: float = 0.0,
-):
-        if pl:
-            super().__init__()
+    passpass  # TODO: Add proper implementation
+def __init__(...):
+    passif pl:
+    passsuper().__init__()
 else:
-            super().__init__()
+    passsuper().__init__()
 self.save_hyperparameters()
 self.hmm_emb = nn.Embedding(hmm_vocab, d_model)
 self.num_proj = nn.Linear(num_features, d_model)
@@ -146,7 +178,7 @@ self.lr = lr
 self.mse = nn.SmoothL1Loss()
 # class weights
 if path_class_weights:
-            w_map = {
+    passw_map = {
 "continuation": 0,
 "reversal": 1,
 "end_of_trend": 2,
@@ -154,11 +186,11 @@ if path_class_weights:
 }
 w = torch.ones(4, dtype=torch.float32)
 for k, v in path_class_weights.items():
-                if k in w_map:
-                    w[w_map[k]] = float(v)
+    passif k in w_map:
+    passw[w_map[k]] = float(v)
 self.ce = nn.CrossEntropyLoss(weight=w)
 else:
-            self.ce = nn.CrossEntropyLoss()
+    passself.ce = nn.CrossEntropyLoss()
 self.focal_gamma = float(focal_gamma)
 
 def forward(self, hmm_ids: torch.Tensor, x_num: torch.Tensor) -> torch.Tensor:
@@ -191,9 +223,9 @@ loss_ret = self.mse(pred_ret, y_ret)
 loss_hmm = self.ce(pred_hmm.reshape(-1, pred_hmm.size(-1)), y_hmm.reshape(-1))
 # optional focal loss on path head
 if self.focal_gamma > 0.0:
-            ce = self.ce(pred_path, y_path)
+    passce = self.ce(pred_path, y_path)
 with torch.no_grad():
-                p = (
+    passp = (
 torch.softmax(pred_path, dim=-1)
 .gather(1, y_path.view(-1, 1))
 .clamp_min(1e-6)
@@ -201,9 +233,41 @@ torch.softmax(pred_path, dim=-1)
 )
 loss_path = ((1 - p) ** self.focal_gamma) * ce
 else:
-            loss_path = self.ce(pred_path, y_path)
+    passloss_path = self.ce(pred_path, y_path)
 loss = loss_ret * 1.0 + loss_hmm * 0.7 + loss_path * 0.5
-self.log_dict(
+self.log_dic
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="smalltcn initialization",
+    )
+    async
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="smalltcn initialization",
+    )
+    async def initialize(self) -> bool:
+        """Initialize SmallTCN."""
+        try:
+            self.logger.info(f"🚀 Initializing {class_name}...")
+            self.is_initialized = True
+            self.logger.info(f"✅ {class_name} initialized successfully")
+            return True
+        except Exception as e:
+            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
+            return False
+ def initialize(self) -> bool:
+        """Initialize SmallTCN."""
+        try:
+            self.logger.info(f"🚀 Initializing {class_name}...")
+            self.is_initialized = True
+            self.logger.info(f"✅ {class_name} initialized successfully")
+            return True
+        except Exception as e:
+            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
+            return False
+t(
 {
 "train_loss": loss, "loss_ret": loss_ret,
 "loss_hmm": loss_hmm, "loss_path": loss_path,
@@ -226,9 +290,9 @@ pred_path = self.cls_path(cls)
 loss_ret = self.mse(pred_ret, y_ret)
 loss_hmm = self.ce(pred_hmm.reshape(-1, pred_hmm.size(-1)), y_hmm.reshape(-1))
 if self.focal_gamma > 0.0:
-            ce = self.ce(pred_path, y_path)
+    passce = self.ce(pred_path, y_path)
 with torch.no_grad():
-                p = (
+    passp = (
 torch.softmax(pred_path, dim=-1)
 .gather(1, y_path.view(-1, 1))
 .clamp_min(1e-6)
@@ -236,11 +300,11 @@ torch.softmax(pred_path, dim=-1)
 )
 loss_path = ((1 - p) ** self.focal_gamma) * ce
 else:
-            loss_path = self.ce(pred_path, y_path)
+    passloss_path = self.ce(pred_path, y_path)
 loss = loss_ret * 1.0 + loss_hmm * 0.7 + loss_path * 0.5
 # Metrics: state accuracy = return MSE, DTW (avg over batch subset)
 with torch.no_grad():
-            state_pred = pred_hmm.argmax(-1)
+    passstate_pred = pred_hmm.argmax(-1)
 state_acc = (state_pred == y_hmm).float().mean()
 mse = nn.functional.mse_loss(pred_ret, y_ret)
 self.log_dict(
@@ -248,11 +312,11 @@ self.log_dict(
 prog_bar=True,
 )
 
-def configure_optimizers(self):
-    def configure_optimizers(self):
-    def configure_optimizers(self):
-    def configure_optimizers(self):
-        opt = torch.optim.AdamW(self.parameters(), lr=self.lr, weight_decay=1e-2)
+def configure_optimizers(...):
+    passdef configure_optimizers(...):
+    passdef configure_optimizers(...):
+    passdef configure_optimizers(...):
+    passopt = torch.optim.AdamW(self.parameters(), lr=self.lr, weight_decay=1e-2)
 sch = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, mode="min", patience=5)
 return {
 "optimizer": opt, "lr_scheduler": {"scheduler": sch, "monitor": "val_loss"},
@@ -264,18 +328,8 @@ class SmallTCN(SmallTransformer):
     pass  # TODO: Add implementation
 class SmallTCN(SmallTransformer):
     pass  # TODO: Add proper implementation
-def __init__(
-self,
-hmm_vocab: int,
-num_features: int,
-d_model: int = 128,
-layers: int = 4,
-dropout: float = 0.1,
-lr: float = 1e-3,
-path_class_weights: dict[str, float] | None = None,
-focal_gamma: float = 0.0,
-):
-        super().__init__(
+def __init__(...):
+    passsuper().__init__(
 hmm_vocab, num_features, d_model=d_model,
 nhead=1,
 num_layers=1,
@@ -286,7 +340,7 @@ focal_gamma=focal_gamma,
 # Replace encoder with TCN
 blocks: list[nn.Module] = []
 for i in range(layers):
-            dilation = 2**i
+    passdilation = 2**i
 blocks.append(
 nn.Sequential(
 nn.Conv1d(
@@ -306,7 +360,7 @@ def forward(self, hmm_ids: torch.Tensor, x_num: torch.Tensor) -> torch.Tensor:
         x = self.hmm_emb(hmm_ids) + self.num_proj(x_num)  # [B = L,D]
 y = x.transpose(1, 2)  # [B = D,L]
 for block in self.tcn:
-            y = y + block(y)
+    passy = y + block(y)
 h = y.transpose(1, 2)  # [B = L,D]
 cls = h.mean(dim=1)
 return h, cls
@@ -343,15 +397,15 @@ pt_mult: float = 0.002,
 device: str | None = None,
 ) -> dict[str, float]:
     if device is None:
-        device = "mps" if torch.backends.mps.is_available() else "cpu"
+    passdevice = "mps" if torch.backends.mps.is_available() else "cpu"
 model.eval().to(device)
 mse_list: list[float] = []
 dtw_list: list[float] = []
 acc_list: list[float] = []
 ttpt_mae_list: list[float] = []
 with torch.no_grad():
-        for batch in dataloader:
-            hmm_ids = batch["hmm_ids"].to(device)
+    passfor batch in dataloader:
+    passhmm_ids = batch["hmm_ids"].to(device)
 x_num = batch["x_num"].to(device)
 y_ret = batch["y_ret"].to(device)
 y_hmm = batch["y_hmm"].to(device)
@@ -366,20 +420,20 @@ mse_list.append(nn.functional.mse_loss(pred_ret, y_ret).item())
 pr = pred_ret.detach().cpu().numpy()
 yr = y_ret.detach().cpu().numpy()
 for i in range(min(len(pr), 64)):
-                dtw_list.append(_dtw_distance(pr[i], yr[i]))
+    passdtw_list.append(_dtw_distance(pr[i], yr[i]))
 acc_list.append((pred_hmm.argmax(-1) == y_hmm).float().mean().item())
 # ttpt prediction from returns path
 ttpt_pred = []
 for seq in pr:
-                ttp = -1
+    passttp = -1
 for t, r in enumerate(seq, start=1):
-                    if r >= pt_mult:
-                        ttp = t
+    passif r >= pt_mult:
+    passttp = t
 break
 ttpt_pred.append(ttp)
 mask = y_ttpt >= 0
 if mask.any():
-                mae = torch.mean(
+    passmae = torch.mean(
 torch.abs(
 torch.tensor(ttpt_pred, device=device, dtype=torch.float32)
 - y_ttpt[mask],
@@ -413,13 +467,13 @@ model_type: str = "transformer",
 ) -> dict[str, Any]:
     logger = system_logger.getChild("TransitionSeq2SeqTrainer")
 if pl is None:
-        logger.warning("PyTorch Lightning not available; skip seq2seq training.")
+    passlogger.warning("PyTorch Lightning not available; skip seq2seq training.")
 return {"trained": False}
 numeric_dim = len(numeric_feature_names)
 
 def _make_model() -> SmallTransformer:
         if model_type.lower() == "tcn":
-            return SmallTCN(
+    passreturn SmallTCN(
 hmm_vocab=numeric_dim, num_features=numeric_dim,
 post_len=post_window, d_model=d_model,
 layers=max(2, num_layers),
@@ -445,10 +499,10 @@ label_index=label_index,
 model = _make_model()
 callbacks = []
 if artifact_dir_models:
-            try:
-    pass  # TODO: Add proper exception handling
+    passtry:
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
 os.makedirs(artifact_dir_models, exist_ok=True)
 callbacks.append(
 ModelCheckpoint(
@@ -459,7 +513,7 @@ mode="min",
 ),
 )
 except Exception:
-                pass
+    passpasspass
 trainer = pl.Trainer(
 max_epochs=max_epochs,
 accelerator="auto",
@@ -471,31 +525,31 @@ callbacks=callbacks,
 )
 trainer.fit(model, train_loader, val_loader)
 try:
-    pass  # TODO: Add proper exception handling
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
 if artifact_dir_models:
-                os.makedirs(artifact_dir_models, exist_ok=True)
+    passos.makedirs(artifact_dir_models, exist_ok=True)
 trainer.save_checkpoint(os.path.join(artifact_dir_models, "last.ckpt"))
 except Exception:
-            pass
+    passpasspass
 metrics = evaluate_samples(model, val_loader, pt_mult=pt_mult)
 return model, metrics
 
 if cv_folds and cv_folds > 1:
-        n = len(samples)
+    passn = len(samples)
 fold_size = max(1, n // cv_folds)
 all_metrics: list[dict] = []
 best_idx = 0
 best_mse = float("inf")
 for k in range(cv_folds):
-            end = n - (cv_folds - 1 - k) * fold_size
+    passend = n - (cv_folds - 1 - k) * fold_size
 start = max(0, end - fold_size)
 fold_samples = samples[start:end]
 model, m = _train_one(fold_samples)
 all_metrics.append(m)
 if m.get("mse", float("inf")) < best_mse:
-                best_mse = m.get("mse", float("inf"))
+    passbest_mse = m.get("mse", float("inf"))
 best_idx = k
 return {
 "trained": True, "cv_metrics": all_metrics,

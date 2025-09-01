@@ -6,7 +6,23 @@ from typing import Any
 
 
 class MarketRegime:
-    """Represents a market regime with specific characteristics."""
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="marketregime initialization",
+    )
+    async def initialize(self) -> bool:
+        """Initialize MarketRegime."""
+        try:
+            self.logger.info(f"🚀 Initializing {class_name}...")
+            self.is_initialized = True
+            self.logger.info(f"✅ {class_name} initialized successfully")
+            return True
+        except Exception as e:
+            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
+            return False
+    pass"""Represents a market regime with specific characteristics."""
 
     def __init__(
         self, name: str, volatility: float,

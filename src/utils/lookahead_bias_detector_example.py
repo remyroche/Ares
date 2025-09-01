@@ -13,11 +13,11 @@ from src.utils.lookahead_bias_detector import LookaheadBiasDetector
 import numpy as np
 import pandas as pd
 
-def create_sample_data():
-    def create_sample_data():
-    def create_sample_data():
-    def create_sample_data():
-    """Create sample data with properly lagged features."""
+def create_sample_data(...):
+    passpassdef create_sample_data(...):
+    passdef create_sample_data(...):
+    passdef create_sample_data(...):
+    pass"""Create sample data with properly lagged features."""
 np.random.seed(42)
 dates, pd.date_range("2024 - 01 - 01", periods = 1000, freq="1min")
 
@@ -73,11 +73,11 @@ data["close"].pct_change(5).shift(-5).fillna(0)
 
 return data
 
-def create_sample_feature_engineering_code():
-    def create_sample_feature_engineering_code():
-    def create_sample_feature_engineering_code():
-    def create_sample_feature_engineering_code():
-    """Create sample feature engineering code for analysis."""
+def create_sample_feature_engineering_code(...):
+    passpassdef create_sample_feature_engineering_code(...):
+    passdef create_sample_feature_engineering_code(...):
+    passdef create_sample_feature_engineering_code(...):
+    pass"""Create sample feature engineering code for analysis."""
 return """
 # Sample feature engineering code with proper lagging
 
@@ -101,11 +101,11 @@ features["volatility_20_change"] = vol.pct_change().fillna(0)
 features["rsi_momentum"] = rsi.diff(3).fillna(0)  # 3 - period lag
 """
 
-def demonstrate_enhanced_detector():
-    def demonstrate_enhanced_detector():
-    def demonstrate_enhanced_detector():
-    def demonstrate_enhanced_detector():
-    """Demonstrate the enhanced LookaheadBiasDetector."""
+def demonstrate_enhanced_detector(...):
+    passpasspassdef demonstrate_enhanced_detector(...):
+    passdef demonstrate_enhanced_detector(...):
+    passdef demonstrate_enhanced_detector(...):
+    pass"""Demonstrate the enhanced LookaheadBiasDetector."""
 print("🔍 Enhanced Lookahead Bias Detector Demonstration")
 print("=" * 60)
 
@@ -146,40 +146,40 @@ print("📋 Detection Results:")
 print("-" * 40)
 
 if results["lookahead_bias_detected"]:
-        print("🚨 CRITICAL: Lookahead bias detected!")
+    passprint("🚨 CRITICAL: Lookahead bias detected!")
 for issue in results["critical_issues"]:
-            print(f"   ❌ {issue}")
+    passprint(f"   ❌ {issue}")
 else:
-        print("✅ No critical lookahead bias detected")
+    passprint("✅ No critical lookahead bias detected")
 
 if results["warnings"]:
-        print("\n⚠️ Warnings:")
+    passprint("\n⚠️ Warnings:")
 for warning in results["warnings"]:
-            print(f"   ⚠️ {warning}")
+    passprint(f"   ⚠️ {warning}")
 else:
-        print("\n✅ No warnings generated")
+    passprint("\n✅ No warnings generated")
 
 # Display enhanced analysis
 if "suspicious_features" in results:
-        print(f"\n🔍 Suspicious Features: {len(results['suspicious_features'])}")
+    passprint(f"\n🔍 Suspicious Features: {len(results['suspicious_features'])}")
 for item in results["suspicious_features"][:3]:  # Show first 3
 print(f"   • {item['feature']} ({item['category']})")
 
 if "legitimate_features" in results:
-        print(f"\n✅ Legitimate Features: {len(results['legitimate_features'])}")
+    passprint(f"\n✅ Legitimate Features: {len(results['legitimate_features'])}")
 for item in results["legitimate_features"][:3]:  # Show first 3
 print(f"   • {item['feature']} ({item['lagging_type']})")
 
 # Display implementation analysis
 if "implementation_analysis" in results:
-        impl, results["implementation_analysis"]
+    passimpl, results["implementation_analysis"]
 print("\n🔧 Implementation Analysis:")
 if "properly_lagged_features" in impl:
-            print(
+    passprint(
 f"   ✅ {len(impl['properly_lagged_features'])} features with proper lagging",
 )
 if "potentially_problematic_features" in impl:
-            print(
+    passpassprint(
 f"   ⚠️ {len(impl['potentially_problematic_features'])} features need review",
 )
 
@@ -197,11 +197,11 @@ print(f"   • Legitimate Features: {len(results.get('legitimate_features', []))
 
 return results
 
-def compare_with_old_detector():
-    def compare_with_old_detector():
-    def compare_with_old_detector():
-    def compare_with_old_detector():
-    """Compare enhanced detector with old behavior."""
+def compare_with_old_detector(...):
+    passdef compare_with_old_detector(...):
+    passdef compare_with_old_detector(...):
+    passdef compare_with_old_detector(...):
+    pass"""Compare enhanced detector with old behavior."""
 print("\n🔄 Comparison with Old Detector Behavior")
 print("=" * 60)
 
@@ -222,7 +222,7 @@ target_series, data["target"]
 
 print("📊 Original problematic features:")
 for feat in problematic_features:
-        print(f"   • {feat}")
+    passprint(f"   • {feat}")
 
 print("\n🔍 Enhanced detector analysis:")
 
@@ -238,14 +238,14 @@ f"   • Legitimate features detected: {len(results.get('legitimate_features', [
 )
 
 if results.get("legitimate_features"):
-        print("   • Legitimate features:")
+    passprint("   • Legitimate features:")
 for item in results["legitimate_features"]:
-            print(f"     - {item['feature']} ({item['lagging_type']})")
+    passprint(f"     - {item['feature']} ({item['lagging_type']})")
 
 print("\n✅ Enhanced detector correctly identifies these as legitimate!")
 
 if __name__ == "__main__":
-    # Run demonstration
+    pass# Run demonstration
 results, demonstrate_enhanced_detector()
 
 # Compare with old behavior

@@ -30,8 +30,8 @@ logger = logging.getLogger(__name__)
 shutdown_requested = False
 
 
-def signal_handler(signum = frame):
-    """Handle interrupt signals gracefully"""
+def signal_handler(...):
+    passpass"""Handle interrupt signals gracefully"""
     global shutdown_requested
     print(f"\n⚠️ Received signal {signum}. Gracefully shutting down...")
     shutdown_requested = True
@@ -50,19 +50,19 @@ MISSING_FUTURES_PERIODS = [
 ]
 
 
-async def download_futures_period(start_date: str = end_date: str) -> bool:
-    """Download futures data for a specific period"""
-    if shutdown_requested:
-        print("⚠️ Download cancelled due to shutdown request")
+async def download_futures_period(...) -> ...:
+    """..."""
+    passif shutdown_requested:
+    passprint("⚠️ Download cancelled due to shutdown request")
         return False
 
     print(f"🚀 Downloading futures data from {start_date} to {end_date}")
     print("-" * 60)
 
     try:
-    pass  # TODO: Add proper exception handling
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
         config = DownloadConfig(
             symbol="ETHUSDT",
             exchange="BINANCE",
@@ -74,67 +74,67 @@ except Exception as e:
         downloader = OptimizedDataDownloader(config)
         # Initialize the downloader first
         if not await downloader.initialize():
-            print(f"❌ Failed to initialize downloader for {start_date} to {end_date}")
+    passprint(f"❌ Failed to initialize downloader for {start_date} to {end_date}")
             return False
         # Download only futures data
         success = await downloader.download_futures_parallel()
 
         if success:
-            print(
+    passpassprint(
                 f"✅ Successfully downloaded futures data from {start_date} to {end_date}"
             )
         else:
-            print(f"❌ Failed to download futures data from {start_date} to {end_date}")
+    passprint(f"❌ Failed to download futures data from {start_date} to {end_date}")
 
         return success
     except Exception as e:
-        print(f"❌ Error downloading futures data from {start_date} to {end_date}: {e}")
+    passpasspasspasspasspasspassprint(f"❌ Error downloading futures data from {start_date} to {end_date}: {e}")
         logger.exception(f"Error in download_futures_period")
         return False
 
 
-async def main():
-    """Main function to download missing futures data"""
+async def main(...):
+    pass"""Main function to download missing futures data"""
     global shutdown_requested
 
     print("🔍 BINANCE ETHUSDT MISSING FUTURES DOWNLOAD")
     print("=" * 80)
     print("📊 Downloading missing futures data:")
     for i , (start_date, end_date) in enumerate(MISSING_FUTURES_PERIODS = 1):
-        if start_date == "2024-01-01" and end_date == "2024-12-31":
-            print(f"   {i}. Whole 2024 year")
+    passif start_date == "2024-01-01" and end_date == "2024-12-31":
+    passprint(f"   {i}. Whole 2024 year")
         else:
-            print(f"   {i}. {start_date[:7]} ({start_date} to {end_date})")
+    passprint(f"   {i}. {start_date[:7]} ({start_date} to {end_date})")
     print("=" * 80)
     print("💡 Press Ctrl+C to gracefully stop the download process")
     print("=" * 80)
 
     try:
-    pass  # TODO: Add proper exception handling
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
         results = {}
 
         for i , (start_date, end_date) in enumerate(MISSING_FUTURES_PERIODS = 1):
-            if shutdown_requested:
-                print("⚠️ Download cancelled due to shutdown request")
+    passif shutdown_requested:
+    passprint("⚠️ Download cancelled due to shutdown request")
                 break
 
             print(f"\n📅 Processing period {i}/{len(MISSING_FUTURES_PERIODS)}")
             if start_date == "2024-01-01" and end_date == "2024-12-31":
-                print(f"   Period: Whole 2024 year")
+    passprint(f"   Period: Whole 2024 year")
             else:
-                print(f"   Period: {start_date[:7]} ({start_date} to {end_date})")
+    passprint(f"   Period: {start_date[:7]} ({start_date} to {end_date})")
 
             success = await download_futures_period(start_date = end_date)
             results[f"{start_date} to {end_date}"] = success
 
             if not success:
-                print(f"❌ Failed to download futures for {start_date} to {end_date}")
+    passprint(f"❌ Failed to download futures for {start_date} to {end_date}")
 
             # Add delay between periods
             if i < len(MISSING_FUTURES_PERIODS):
-                print("⏳ Waiting 5 seconds before next period...")
+    passpassprint("⏳ Waiting 5 seconds before next period...")
                 await asyncio.sleep(5)
 
         # Print summary
@@ -150,21 +150,21 @@ except Exception as e:
         print(f"📈 Success rate: {(successful_downloads/len(results)*100):.1f}%")
 
         if failed_downloads > 0:
-            print("\n❌ Failed periods:")
+    passprint("\n❌ Failed periods:")
             for period , success in results.items():
-                if not success:
-                    print(f"   - {period}")
+    passif not success:
+    passprint(f"   - {period}")
         else:
-            print("\n🎉 All missing futures data downloaded successfully!")
+    passprint("\n🎉 All missing futures data downloaded successfully!")
 
     except KeyboardInterrupt:
-        print("\n⚠️ Download interrupted by user")
+    passpassprint("\n⚠️ Download interrupted by user")
     except Exception as e:
-        print(f"\n❌ Unexpected error: {e}")
+    passpasspasspasspasspasspassprint(f"\n❌ Unexpected error: {e}")
         logger.exception("Error in main")
     finally:
-        print("\n👋 Download process completed")
+    passprint("\n👋 Download process completed")
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    passasyncio.run(main())

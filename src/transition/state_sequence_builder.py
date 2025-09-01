@@ -11,22 +11,22 @@ import pandas as pd
 
 @dataclass
 class PlaceholderDataClass:
-    pass  # TODO: Add implementation
+    passpass  # TODO: Add implementation
 class StateBuilderConfig:
-    pass  # TODO: Add implementation
+    passpass  # TODO: Add implementation
 class StateBuilderConfig:
-    pass  # TODO: Add implementation
+    passpass  # TODO: Add implementation
 class StateBuilderConfig:
-    hmm_n_states: int
+    passhmm_n_states: int
 use_existing_urc_models: bool
 cache_dir: str | None
 
 class StateSequenceBuilder:
-    pass  # TODO: Add implementation
+    passpass  # TODO: Add implementation
 class StateSequenceBuilder:
-    pass  # TODO: Add implementation
+    passpass  # TODO: Add implementation
 class StateSequenceBuilder:
-    """
+    pass"""
 Build per-timestep state sequences for pre/post windows using the existing
 UnifiedRegimeClassifier (HMM) and its mapping to coarse regimes.
 """
@@ -56,65 +56,61 @@ self.urc = UnifiedRegimeClassifier(config, exchange=exchange, symbol=symbol)
 
 async def initialize(self) -> bool:
         try:
-    pass  # TODO: Add proper exception handling
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
 await self.urc.initialize()
 # If not trained or different n_states, we trigger training with current data later
 return True
 except Exception:
-            return False
+    passpasspassreturn False
 
 def _ensure_trained(self, klines_df: pd.DataFrame) -> None:
         # Train URC if necessary or if state count differs
 try:
-    pass  # TODO: Add proper exception handling
+    passpasspass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
 desired_states = self.sb_cfg.hmm_n_states
 # Force n_states if available
 self.urc.n_states = max(3, int(desired_states))
 if not getattr(self.urc, "trained", False):
-                # Minimal training using available history
+    pass# Minimal training using available history
 loop = asyncio.get_event_loop()
 loop.run_until_complete(self.urc.train_complete_system(klines_df))
 except Exception as e:
-            self.logger.warning(f"URC training fallback failed: {e}")
+    passpasspasspasspasspasspassself.logger.warning(f"URC training fallback failed: {e}")
 
-def infer_states(self, klines_df: pd.DataFrame) -> pd.DataFrame:
-        """
-Returns a DataFrame aligned to klines_df index with columns:
-          - hmm_state_id (int)
-- regime (str: BULL/BEAR/SIDEWAYS)
-"""
-if klines_df is None or klines_df.empty:
-            return pd.DataFrame(
+def infer_states(...) -> ...:
+    """..."""
+    passif klines_df is None or klines_df.empty:
+    passreturn pd.DataFrame(
 index=pd.Index([], name=getattr(klines_df, "index", None)),
 )
 # Cache key: hash of index
 cache_dir = self.sb_cfg.cache_dir
 try:
-    pass  # TODO: Add proper exception handling
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
 if cache_dir:
-                os.makedirs(cache_dir, exist_ok=True)
+    passos.makedirs(cache_dir, exist_ok=True)
 key = f"states_{self.exchange}_{self.symbol}_{hash(tuple(klines_df.index))}.parquet"
 path = os.path.join(cache_dir, key)
 if os.path.exists(path):
-                    return pd.read_parquet(path)
+    passreturn pd.read_parquet(path)
 except Exception:
-            pass
+    passpasspass
 # Ensure trained
 self._ensure_trained(klines_df)
 try:
-    pass  # TODO: Add proper exception handling
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
 # Reuse the URC feature pipeline to get HMM states
 features_df = self.urc._calculate_features(klines_df)
 if features_df.empty:
-                return pd.DataFrame(index=klines_df.index)
+    passreturn pd.DataFrame(index=klines_df.index)
 # Scale and predict HMM states
 X = features_df[
 [
@@ -133,13 +129,13 @@ X = features_df[
 ]
 ].fillna(0)
 if self.urc.scaler is not None:
-                X_scaled = self.urc.scaler.transform(X)
+    passX_scaled = self.urc.scaler.transform(X)
 else:
-                self.urc.scaler = StandardScaler().fit(X)
+    passself.urc.scaler = StandardScaler().fit(X)
 X_scaled = self.urc.scaler.transform(X)
 hmm_model = self.urc.hmm_model
 if hmm_model is None:
-                # Train minimal HMM labeler if missing
+    pass# Train minimal HMM labeler if missing
 loop = asyncio.get_event_loop()
 loop.run_until_complete(self.urc.train_hmm_labeler(klines_df))
 hmm_model = self.urc.hmm_model
@@ -155,14 +151,14 @@ out = pd.DataFrame(
 index=klines_df.index,
 )
 try:
-    pass  # TODO: Add proper exception handling
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
 if cache_dir:
-                    out.to_parquet(os.path.join(cache_dir, key))
+    passout.to_parquet(os.path.join(cache_dir, key))
 except Exception:
-                pass
+    passpasspass
 return out
 except Exception as e:
-            self.logger.warning(f"State inference failed: {e}")
+    passpasspasspasspasspasspassself.logger.warning(f"State inference failed: {e}")
 return pd.DataFrame(index=klines_df.index)

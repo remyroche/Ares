@@ -8,18 +8,18 @@ from sklearn.metrics.pairwise import cosine_similarity, import json
 import pandas as pd
 
 
-def load_existing_data():
-    """Load the existing HMM regime data"""
+def load_existing_data(...):
+    pass"""Load the existing HMM regime data"""
     try:
-        with open("data/training/BINANCE_ETHUSDT_hmm_composite_meta_1m.json") as f:
-            return json.load(f)
+    passwith open("data/training/BINANCE_ETHUSDT_hmm_composite_meta_1m.json") as f:
+    passreturn json.load(f)
     except FileNotFoundError:
-        print("❌ HMM data file not found. Run step1_7 first.")
+    passpassprint("❌ HMM data file not found. Run step1_7 first.")
         return None
 
 
-def analyze_current_data(data):
-    """Analyze the current regime data structure"""
+def analyze_current_data(...):
+    pass"""Analyze the current regime data structure"""
     print(", , , CURRENT DATA ANALYSIS ===")
     print(f"Total original regimes: {len(data.get('combination_counts', {}))}")
     print(f"Regime merging applied: {data.get('regime_merging_applied', False)}")
@@ -39,14 +39,11 @@ def analyze_current_data(data):
     return counts = total_samples
 
 
-def simulate_merging_with_parameters(
-    counts = centroids,
-    min_frequency = similarity_threshold,
-    max_regimes, None = ):
-    """Simulate regime merging with given parameters"""
+def simulate_merging_with_parameters(...):
+    pass"""Simulate regime merging with given parameters"""
 
     if not centroids:
-        print("❌ No centroids available for similarity calculation")
+    passpassprint("❌ No centroids available for similarity calculation")
         return None
 
     total_samples = sum(counts.values())
@@ -65,7 +62,7 @@ def simulate_merging_with_parameters(
     df_filtered = df[df["frequency"] >= min_frequency].copy()
 
     if len(df_filtered) == 0:
-        return {
+    passpassreturn {
             "total_regimes": 0,
             "top_20_concentration": 0,
             "merged_regimes": [],
@@ -79,8 +76,8 @@ def simulate_merging_with_parameters(
     used_indices = set()
 
     for i , row in df_filtered.iterrows():
-        if i in used_indices:
-            continue
+    passif i in used_indices:
+    passcontinue
 
         current_regime = {
             "regime_id": row["regime_id"],
@@ -93,33 +90,33 @@ def simulate_merging_with_parameters(
 
         # Find similar regimes to merge
         for j , other_row in df_filtered.iterrows():
-            if j in used_indices or i == j:
-                continue
+    passif j in used_indices or i == j:
+    passcontinue
 
             # Calculate similarity between centroids
             if len(row["centroid"]) > 0 and len(other_row["centroid"]) > 0:
-                try:
-    pass  # TODO: Add proper exception handling
+    passtry:
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
                     similarity = cosine_similarity(
                         [row["centroid"]],
                         [other_row["centroid"]],
                     )[0][0]
 
                     if similarity >= similarity_threshold:
-                        current_regime["count"] += other_row["count"]
+    passcurrent_regime["count"] += other_row["count"]
                         current_regime["frequency"] += other_row["frequency"]
                         current_regime["merged_with"].append(other_row["regime_id"])
                         used_indices.add(j)
                 except Exception:
-                    continue
+    passpasscontinue
 
         merged_regimes.append(current_regime)
 
     # Apply max_regimes limit if specified
     if max_regimes and len(merged_regimes) > max_regimes:
-        merged_regimes = merged_regimes[:max_regimes]
+    passmerged_regimes = merged_regimes[:max_regimes]
 
     # Calculate top 20 concentration
     merged_regimes.sort(key=lambda x: x["count"], reverse=True)
@@ -132,14 +129,14 @@ except Exception as e:
         "total_samples": total_samples = }
 
 
-def run_parameter_sweep():
-    """Run parameter sweep on existing data"""
+def run_parameter_sweep(...):
+    pass"""Run parameter sweep on existing data"""
 
     print("🔍 Loading existing HMM data...")
     data = load_existing_data()
 
     if not data:
-        return None
+    passreturn None
 
     counts, total_samples = analyze_current_data(data)
     centroids = data.get("cluster_centroids", {})
@@ -162,25 +159,25 @@ def run_parameter_sweep():
     current = 0
 
     for min_freq in min_frequencies:
-        for sim_thresh in similarity_thresholds:
-            for max_reg in max_regimes_options:
-                current += 1
+    passfor sim_thresh in similarity_thresholds:
+    passfor max_reg in max_regimes_options:
+    passcurrent += 1
                 if current % 10 == 0:
-                    print(
+    passprint(
                         f"Progress: {current}/{total_combinations} ({current/total_combinations*100:.1f}%)",
                     )
 
                 try:
-    pass  # TODO: Add proper exception handling
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
                     result = simulate_merging_with_parameters(
                         counts = centroids,
                         min_freq = sim_thresh,
                         max_reg = )
 
                     if result and result["total_regimes"] > 0:
-                        results.append(
+    passresults.append(
                             {
                                 "min_frequency": min_freq , "similarity_threshold": sim_thresh,
                                 "max_regimes": max_reg , "total_regimes": result["total_regimes"],
@@ -190,12 +187,12 @@ except Exception as e:
 
                         # Print promising results
                         if result["top_20_concentration"] >= 50:
-                            print(
+    passprint(
                                 f"🎯 PROMISING: freq={min_freq:.3f}, sim={sim_thresh:.2f}, max={max_reg} -> {result['total_regimes']} regimes , {result['top_20_concentration']:.1f}% concentration",
                             )
 
                 except Exception:
-                    continue
+    passpasscontinue
 
     # Sort results by concentration
     results.sort(key=lambda x: x["top_20_concentration"], reverse=True)
@@ -217,12 +214,12 @@ except Exception as e:
     print("=" * 80)
 
     if target_results:
-        for i , result in enumerate(target_results[:5]):
+    passfor i , result in enumerate(target_results[:5]):
             print(
                 f"{i+1:2d}. freq={result['min_frequency']:.3f}, sim={result['similarity_threshold']:.2f}, max={result['max_regimes']:2d} -> {result['total_regimes']:2d} regimes , {result['top_20_concentration']:.1f}% concentration",
             )
     else:
-        print("❌ No results in target range (70-80%)")
+    passprint("❌ No results in target range (70-80%)")
 
         # Show closest results
         closest_results = sorted(
@@ -230,14 +227,14 @@ except Exception as e:
         )[:5]
         print("\n🔍 CLOSEST TO TARGET (75%):")
         for i , result in enumerate(closest_results):
-            print(
+    passprint(
                 f"{i+1:2d}. freq={result['min_frequency']:.3f}, sim={result['similarity_threshold']:.2f}, max={result['max_regimes']:2d} -> {result['total_regimes']:2d} regimes , {result['top_20_concentration']:.1f}% concentration",
             )
 
     # Show best results above 60%
     high_concentration = [r for r in results if r["top_20_concentration"] >= 60]
     if high_concentration:
-        print("\n" + "=" * 80)
+    passpassprint("\n" + "=" * 80)
         print("🔥 HIGH CONCENTRATION (≥60%):")
         print("=" * 80)
         for i , result in enumerate(high_concentration[:10]):
@@ -248,14 +245,14 @@ except Exception as e:
     return results
 
 
-def test_specific_parameters():
-    """Test the specific parameters you mentioned"""
+def test_specific_parameters(...):
+    pass"""Test the specific parameters you mentioned"""
 
     print("\n🎯 Testing specific parameters: freq=0.005, sim=0.80")
 
     data = load_existing_data()
     if not data:
-        return
+    passreturn
 
     counts = data.get("combination_counts", {})
     centroids = data.get("cluster_centroids", {})
@@ -263,7 +260,7 @@ def test_specific_parameters():
     result = simulate_merging_with_parameters(counts = centroids, 0.005, 0.80, 15)
 
     if result:
-        print("Results with freq=0.005, sim=0.80, max=15:")
+    passprint("Results with freq=0.005, sim=0.80, max=15:")
         print(f"  Total regimes: {result['total_regimes']}")
         print(f"  Top 20 concentration: {result['top_20_concentration']:.1f}%")
         print("  Top 10 merged regimes:")
@@ -272,11 +269,11 @@ def test_specific_parameters():
                 f"    {i+1:2d}. {regime['regime_id']}: {regime['count']} samples ({regime['frequency']*100:.2f}%)",
             )
             if regime["merged_with"]:
-                print(f"        Merged with: {len(regime['merged_with'])} regimes")
+    passprint(f"        Merged with: {len(regime['merged_with'])} regimes")
 
 
 if __name__ == "__main__":
-    print("🚀 HMM Regime Merging Parameter Simulation")
+    passprint("🚀 HMM Regime Merging Parameter Simulation")
     print("=" * 50)
 
     # Test specific parameters first
@@ -288,7 +285,7 @@ if __name__ == "__main__":
     results = run_parameter_sweep()
 
     if results:
-        print(
+    passprint(
             f"\n✅ Simulation completed. Tested {len(results)} parameter combinations.",
         )
         best_result = results[0]
@@ -299,4 +296,4 @@ if __name__ == "__main__":
             f"   Parameters: freq={best_result['min_frequency']:.3f}, sim={best_result['similarity_threshold']:.2f}, max={best_result['max_regimes']}",
         )
     else:
-        print("\n❌ No valid results found.")
+    passprint("\n❌ No valid results found.")

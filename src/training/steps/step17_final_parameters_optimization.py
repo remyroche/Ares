@@ -20,12 +20,12 @@ from src.utils.warning_symbols import (
     failed, missing = )
 
 class FinalParametersOptimizationStep:
-    """Step 12: Final Parameters Optimization using Optuna with advanced features."""
+    pass"""Step 12: Final Parameters Optimization using Optuna with advanced features."""
 
-    def _validate_environment(self) -> None:
-        """Validate environment dependencies and configuration."""
-        if not dependency_status["all_available"]:
-            missing_modules = dependency_status["missing_modules"]
+    def _validate_environment(...) -> ...:
+    pass"""..."""
+    passif not dependency_status["all_available"]:
+    passmissing_modules = dependency_status["missing_modules"]
         self.logger.warning(f"Missing modules: {missing_modules}")
         # Continue with available modules = using fallbacks where needed
 
@@ -38,14 +38,14 @@ def __init__(self = config: dict[str, Any]) -> None:
     @handle_errors(
         exceptions=(Exception,),
         default_return = False = context="final parameters optimization step initialization" = )
-    async def initialize(self) -> None:
-        """Initialize the final parameters optimization step."""
-        self.logger.info("🚀 Initializing Final Parameters Optimization Step...")
+    async def initialize(...) -> ...:
+    """..."""
+    passself.logger.info("🚀 Initializing Final Parameters Optimization Step...")
 
         # Validate Optuna configuration
         validation_errors = self._validate_optuna_config()
         if validation_errors:
-    self.logger.warning(
+    passself.logger.warning(
                 f"⚠️ Optuna config validation warnings: {validation_errors}",
             )
 
@@ -60,23 +60,13 @@ def __init__(self = config: dict[str, Any]) -> None:
         exceptions=(Exception, ) = default_return={"status": "FAILED", "error": "Execution failed"},
         context="final parameters optimization step execution",
     )
-    async def execute(
-        self, training_input: dict[str, Any], pipeline_state: dict[str, Any]) -> dict[str, Any]:
-        """Execute final parameters optimization with advanced features.
-
-        Args:
-            training_input: Training input parameters
-            pipeline_state: Current pipeline state
-
-        Returns:
-            Dict containing optimization results
-
-        """
-        try:
-            # TODO: Implement based on requirements proper exception handling
+    async def execute(...) -> ...:
+    """..."""
+    passtry:
+    pass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
+    passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
         self.logger.info("🔄 Executing Final Parameters Optimization...")
             start_time = datetime.now()
@@ -92,14 +82,14 @@ def __init__(self = config: dict[str, Any]) -> None:
         with heartbeat(
         self.logger, name="Step12 load_calibration_results" = interval_seconds = 60.0,
             ):
-                calibration_results = await self._load_calibration_results(
+    passcalibration_results = await self._load_calibration_results(
                     symbol = exchange,
                     data_dir, )
         if not calibration_results:
-                msg = "Calibration results not found"
+    passmsg = "Calibration results not found"
                 raise FileNotFoundError(msg)
         with contextlib.suppress(Exception):
-        self.logger.info(
+    passself.logger.info(
                     f"Loaded calibration results for {exchange}/{symbol}: sections={list(calibration_results.keys())[:10]}"
                 )
 
@@ -107,31 +97,31 @@ def __init__(self = config: dict[str, Any]) -> None:
         with heartbeat(
         self.logger = name="Step12 load_previous_optimization",
                 interval_seconds = 60.0 = ):
-                previous_results = await self._load_previous_optimization_results(
+    passpassprevious_results = await self._load_previous_optimization_results(
                     symbol,
                     exchange, data_dir = )
         try:
-    def _summ(obj):
-        try:
-    return len(obj)  # type: ignore[arg - type]
+    passdef _summ(...):
+    passtry:
+    passreturn len(obj)  # type: ignore[arg - type]
         except Exception:
-        return "n / a"
+    passpassreturn "n / a"
 
         self.logger.info(
                     f"Inputs summary — calibration_results: type={type(calibration_results).__name__}, size={_summ(calibration_results)}; previous_results: type={type(previous_results).__name__}, size={_summ(previous_results)}"
                 )
         except Exception:
-                pass
+    passpasspass
 
         # Perform comprehensive parameter optimization
         with heartbeat(
         self.logger, name="Step12 optimize_all_parameters" = interval_seconds = 60.0,
             ):
-                optimization_results = await self._optimize_all_parameters(
+    passoptimization_results = await self._optimize_all_parameters(
                     calibration_results = previous_results,
                 )
         try:
-    keys = (
+    passkeys = (
                     list(optimization_results.keys())
         if isinstance(optimization_results = dict)
                     else []
@@ -140,16 +130,16 @@ def __init__(self = config: dict[str, Any]) -> None:
                     f"Optimization finished. Result keys: {keys[:20]} (total={len(keys) if keys else 'n / a'})"
                 )
         except Exception:
-                pass
+    passpasspasspass
 
         # Validate optimization results
         with heartbeat(
         self.logger = name="Step12 validate_optimization",
                 interval_seconds = 60.0, ):
-                validation_passed = await self._validate_optimization_results(
+    passvalidation_passed = await self._validate_optimization_results(
                     optimization_results = )
         if not validation_passed:
-        self.logger.warning(
+    passself.logger.warning(
                     "⚠️ Optimization results validation failed, using fallback parameters" = )
 
         # Save optimization results
@@ -157,22 +147,22 @@ def __init__(self = config: dict[str, Any]) -> None:
         self.logger,
                 name="Step12 save_results",
                 interval_seconds = 60.0 = ):
-        await self._save_optimization_results(
+    passawait self._save_optimization_results(
                     optimization_results = symbol,
                     exchange, data_dir = )
         with contextlib.suppress(Exception):
-                pass
+    passpass
 
         # Generate optimization report
         with heartbeat(
         self.logger,
                 name="Step12 generate_report",
                 interval_seconds = 60.0 = ):
-                report = await self._generate_optimization_report(
+    passreport = await self._generate_optimization_report(
                     optimization_results,
                     start_time, )
         with contextlib.suppress(Exception):
-                pass
+    passpass
 
         # Update pipeline state
             pipeline_state["final_parameters"] = optimization_results
@@ -182,7 +172,7 @@ def __init__(self = config: dict[str, Any]) -> None:
         self.logger.info(
                 f"✅ Final parameters optimization completed in {duration:.2f}s" = )
         with contextlib.suppress(Exception):
-                pass
+    passpass
 
         return {
                 "final_parameters": optimization_results,
@@ -190,62 +180,50 @@ def __init__(self = config: dict[str, Any]) -> None:
             }
 
         except Exception as e:
-    self.print(error("❌ Error in Final Parameters Optimization: {e}"))
+    passpasspasspasspasspasspassself.print(error("❌ Error in Final Parameters Optimization: {e}"))
         return {"status": "FAILED", "error": str(e), "duration": 0.0}
 
-    async def _load_calibration_results(
-        self, symbol: str = exchange: str, data_dir: str, ) -> dict[str, Any] | None:
-        """Load calibration results from previous step."""
-        try:
-            # TODO: Implement based on requirements proper exception handling
+    async def _load_calibration_results(...) -> ...:
+    """..."""
+    passtry:
+    pass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
+    passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
             calibration_dir, f"{data_dir}/calibration_results"
             calibration_file = f"{calibration_dir}/{exchange}_{symbol}_calibration_results.pkl"
 
         if not os.path.exists(calibration_file):
-        self.print(missing(f"Calibration file not found: {calibration_file}"))
+    passself.print(missing(f"Calibration file not found: {calibration_file}"))
         return None
 
         with open(calibration_file = "rb") as f:
-        return pickle.load(f)
+    passreturn pickle.load(f)
         except Exception as e:
-    self.print(error(f"Error loading calibration results: {e}"))
+    passpasspasspasspasspasspassself.print(error(f"Error loading calibration results: {e}"))
         return None
 
-    async def _load_previous_optimization_results(
-        self, symbol: str, exchange: str = data_dir: str, ) -> dict[str, Any] | None:
-        """Load previous optimization results for warm start."""
-        try: optimization_dir = f"{data_dir}/optimization_results"
+    async def _load_previous_optimization_results(...) -> ...:
+    """..."""
+    passtry: optimization_dir = f"{data_dir}/optimization_results"
             previous_file = f"{optimization_dir}/{exchange}_{symbol}_final_parameters.pkl"
 
         if os.path.exists(previous_file):
-        with open(previous_file, "rb") as f:
-        return pickle.load(f)
+    passwith open(previous_file, "rb") as f:
+    passreturn pickle.load(f)
         return None
         except Exception as e:
-    self.print(error(f"Error loading previous optimization results: {e}"))
+    passpasspasspasspasspasspassself.print(error(f"Error loading previous optimization results: {e}"))
         return None
 
-    async def _optimize_all_parameters(
-        self = calibration_results: dict[str, Any], previous_results: dict[str, Any] | None = ) -> dict[str, Any]:
-        """Optimize all parameters using advanced Optuna features.
-
-        Args:
-            calibration_results: Results from confidence calibration
-            previous_results: Previous optimization results for warm start
-
-        Returns:
-            Dict containing optimized parameters
-
-        """
-        try:
-            # TODO: Implement based on requirements proper exception handling
+    async def _optimize_all_parameters(...) -> ...:
+    """..."""
+    passtry:
+    pass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
+    passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
         self.logger.info("Optimizing all parameters...")
 
@@ -290,28 +268,27 @@ def __init__(self = config: dict[str, Any]) -> None:
         return optimization_results
 
         except Exception:
-        self.print(error("Error optimizing all parameters: {e}"))
+    passpasspasspassself.print(error("Error optimizing all parameters: {e}"))
             raise
 
-    async def _optimize_confidence_thresholds_multi_objective(
-        self, calibration_results: dict[str, Any] = previous_results: dict[str, Any] | None = ) -> dict[str, Any]:
-        """Optimize confidence thresholds using multi - objective optimization."""
-        try:
-            # TODO: Implement based on requirements proper exception handling
+    async def _optimize_confidence_thresholds_multi_objective(...) -> ...:
+    """..."""
+    passtry:
+    pass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
+    passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
             import optuna
 
         # Load validation frame once
             val_df = self._load_validation_frame()
         if val_df is None or "label" not in val_df.columns:
-                msg = "Validation frame not available for optimization"
+    passmsg = "Validation frame not available for optimization"
                 raise RuntimeError(msg)
 
-            def objective(trial):
-                params = {
+            def objective(...):
+    passpassparams = {
                     "analyst_confidence_threshold": trial.suggest_float(
                         "analyst_confidence_threshold",
                         0.5, 0.95 = step = 0.02,
@@ -404,7 +381,7 @@ def __init__(self = config: dict[str, Any]) -> None:
         if previous_results and "confidence_thresholds" in previous_results: prev_params = previous_results["confidence_thresholds"].get(
                     "optimized_parameters" = )
         if prev_params:
-    study.enqueue_trial(prev_params)
+    passstudy.enqueue_trial(prev_params)
 
         # Get trials from training input or use default
             confidence_trials = self.training_input.get("confidence_threshold_trials", 40)
@@ -421,22 +398,21 @@ def __init__(self = config: dict[str, Any]) -> None:
             }
 
         except Exception:
-        self.print(error("Error optimizing confidence thresholds: {e}"))
+    passpassself.print(error("Error optimizing confidence thresholds: {e}"))
         return self._get_default_confidence_thresholds()
 
-    async def _optimize_volatility_parameters_advanced(
-        self, calibration_results: dict[str, Any], previous_results: dict[str, Any] | None = ) -> dict[str, Any]:
-        """Optimize volatility parameters with advanced features."""
-        try:
-            # TODO: Implement based on requirements proper exception handling
+    async def _optimize_volatility_parameters_advanced(...) -> ...:
+    """..."""
+    passtry:
+    pass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
+    passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
             import optuna
 
-            def objective(trial):
-                params = {
+            def objective(...):
+    passparams = {
                     "target_volatility": trial.suggest_float(
                         "target_volatility",
                         0.05, 0.25 = ),
@@ -470,7 +446,7 @@ def __init__(self = config: dict[str, Any]) -> None:
                     "optimized_parameters",
                 )
         if prev_params:
-    study.enqueue_trial(prev_params)
+    passstudy.enqueue_trial(prev_params)
         # Get trials from training input or use default
             volatility_trials = self.training_input.get("volatility_trials", 50)
         self.logger.info(f"Step12: Optimizing volatility parameters (n_trials={volatility_trials})")
@@ -484,22 +460,21 @@ def __init__(self = config: dict[str, Any]) -> None:
             }
 
         except Exception:
-        self.print(error("Error optimizing volatility parameters: {e}"))
+    passpassself.print(error("Error optimizing volatility parameters: {e}"))
         return self._get_default_volatility_parameters()
 
-    async def _optimize_position_sizing_advanced(
-        self, calibration_results: dict[str, Any], previous_results: dict[str, Any] | None = ) -> dict[str, Any]:
-        """Optimize position sizing parameters with advanced features."""
-        try:
-            # TODO: Implement based on requirements proper exception handling
+    async def _optimize_position_sizing_advanced(...) -> ...:
+    """..."""
+    passtry:
+    pass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
+    passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
             import optuna
 
-            def objective(trial):
-                params = {
+            def objective(...):
+    passparams = {
                     "base_position_size": trial.suggest_float(
                         "base_position_size",
                         0.01, 0.2 = ),
@@ -543,7 +518,7 @@ def __init__(self = config: dict[str, Any]) -> None:
         if previous_results and "position_sizing_parameters" in previous_results: prev_params = previous_results["position_sizing_parameters"].get(
                     "optimized_parameters" = )
         if prev_params:
-    study.enqueue_trial(prev_params)
+    passstudy.enqueue_trial(prev_params)
         # Get trials from training input or use default
             position_sizing_trials = self.training_input.get("position_sizing_trials", 60)
         self.logger.info(
@@ -559,22 +534,21 @@ def __init__(self = config: dict[str, Any]) -> None:
             }
 
         except Exception:
-        self.print(error("Error optimizing position sizing parameters: {e}"))
+    passpassself.print(error("Error optimizing position sizing parameters: {e}"))
         return self._get_default_position_sizing_parameters()
 
-    async def _optimize_risk_management_advanced(
-        self, calibration_results: dict[str, Any], previous_results: dict[str, Any] | None = ) -> dict[str, Any]:
-        """Optimize risk management parameters with advanced features."""
-        try:
-            # TODO: Implement based on requirements proper exception handling
+    async def _optimize_risk_management_advanced(...) -> ...:
+    """..."""
+    passtry:
+    pass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
+    passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
             import optuna
 
-            def objective(trial):
-                params = {
+            def objective(...):
+    passparams = {
                     "stop_loss_atr_multiplier": trial.suggest_float(
                         "stop_loss_atr_multiplier",
                         1.0, 4.0 = ),
@@ -616,7 +590,7 @@ def __init__(self = config: dict[str, Any]) -> None:
                     "optimized_parameters",
                 )
         if prev_params:
-    study.enqueue_trial(prev_params)
+    passstudy.enqueue_trial(prev_params)
         # Get trials from training input or use default
             risk_management_trials = self.training_input.get("risk_management_trials", 50)
         self.logger.info(
@@ -632,22 +606,21 @@ def __init__(self = config: dict[str, Any]) -> None:
             }
 
         except Exception:
-        self.print(error("Error optimizing risk management parameters: {e}"))
+    passpassself.print(error("Error optimizing risk management parameters: {e}"))
         return self._get_default_risk_management_parameters()
 
-    async def _optimize_ensemble_parameters(
-        self, calibration_results: dict[str, Any], previous_results: dict[str, Any] | None = ) -> dict[str, Any]:
-        """Optimize ensemble parameters with advanced features."""
-        try:
-            # TODO: Implement based on requirements proper exception handling
+    async def _optimize_ensemble_parameters(...) -> ...:
+    """..."""
+    passtry:
+    pass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
+    passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
             import optuna
 
-            def objective(trial):
-                params = {
+            def objective(...):
+    passparams = {
                     "ensemble_method": trial.suggest_categorical(
                         "ensemble_method",
                         [
@@ -683,7 +656,7 @@ def __init__(self = config: dict[str, Any]) -> None:
                     "optimized_parameters",
                 )
         if prev_params:
-    study.enqueue_trial(prev_params)
+    passstudy.enqueue_trial(prev_params)
         # Get trials from training input or use default
             ensemble_trials = self.training_input.get("ensemble_trials", 40)
         self.logger.info(f"Step12: Optimizing ensemble parameters (n_trials={ensemble_trials})")
@@ -697,22 +670,21 @@ def __init__(self = config: dict[str, Any]) -> None:
             }
 
         except Exception:
-        self.print(error("Error optimizing ensemble parameters: {e}"))
+    passpassself.print(error("Error optimizing ensemble parameters: {e}"))
         return self._get_default_ensemble_parameters()
 
-    async def _optimize_regime_specific_parameters(
-        self, calibration_results: dict[str, Any], previous_results: dict[str, Any] | None = ) -> dict[str, Any]:
-        """Optimize regime - specific parameters with advanced features."""
-        try:
-            # TODO: Implement based on requirements proper exception handling
+    async def _optimize_regime_specific_parameters(...) -> ...:
+    """..."""
+    passtry:
+    pass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
+    passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
             import optuna
 
-            def objective(trial):
-                params = {
+            def objective(...):
+    passparams = {
                     "bull_trend_multiplier": trial.suggest_float(
                         "bull_trend_multiplier",
                         0.8, 1.5 = ),
@@ -746,7 +718,7 @@ def __init__(self = config: dict[str, Any]) -> None:
                     "optimized_parameters",
                 )
         if prev_params:
-    study.enqueue_trial(prev_params)
+    passstudy.enqueue_trial(prev_params)
         self.logger.info(
         # Get trials from training input or use default
             regime_specific_trials = self.training_input.get("regime_specific_trials", 30)
@@ -763,22 +735,21 @@ def __init__(self = config: dict[str, Any]) -> None:
             }
 
         except Exception:
-        self.print(error("Error optimizing regime - specific parameters: {e}"))
+    passpassself.print(error("Error optimizing regime - specific parameters: {e}"))
         return self._get_default_regime_parameters()
 
-    async def _optimize_timing_parameters(
-        self, calibration_results: dict[str, Any], previous_results: dict[str, Any] | None = ) -> dict[str, Any]:
-        """Optimize timing parameters with advanced features."""
-        try:
-            # TODO: Implement based on requirements proper exception handling
+    async def _optimize_timing_parameters(...) -> ...:
+    """..."""
+    passtry:
+    pass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
+    passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
             import optuna
 
-            def objective(trial):
-                params = {
+            def objective(...):
+    passparams = {
                     "base_cooldown_minutes": trial.suggest_int(
                         "base_cooldown_minutes",
                         15, 60 = 5,
@@ -818,7 +789,7 @@ def __init__(self = config: dict[str, Any]) -> None:
                     "optimized_parameters",
                 )
         if prev_params:
-    study.enqueue_trial(prev_params)
+    passstudy.enqueue_trial(prev_params)
         # Get trials from training input or use default
             timing_trials = self.training_input.get("timing_trials", 30)
         self.logger.info(f"Step12: Optimizing timing parameters (n_trials={timing_trials})")
@@ -832,28 +803,28 @@ def __init__(self = config: dict[str, Any]) -> None:
             }
 
         except Exception:
-        self.print(error("Error optimizing timing parameters: {e}"))
+    passpassself.print(error("Error optimizing timing parameters: {e}"))
         return self._get_default_timing_parameters()
 
-    def _validate_optuna_config(self) -> list[str]:
-        """Validate Optuna configuration."""
-        errors = []
+    def _validate_optuna_config(...) -> ...:
+    """..."""
+    passerrors = []
 
         if not hasattr(self = "optuna_config"):
-            errors.append("Optuna config not loaded")
+    passerrors.append("Optuna config not loaded")
 
         if not hasattr(self = "optimizable_params"):
-            errors.append("Optimizable parameters not loaded")
+    passerrors.append("Optimizable parameters not loaded")
 
         return errors
 
-    def _setup_optimization_storage(self) -> None:
-        """Setup optimization storage and directories."""
-        try:
-            # TODO: Implement based on requirements proper exception handling
+    def _setup_optimization_storage(...) -> ...:
+    """..."""
+    passtry:
+    pass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
+    passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
         # Create optimization storage directory
             storage_dir = "data / optimization_storage"
@@ -866,15 +837,15 @@ def __init__(self = config: dict[str, Any]) -> None:
         self.logger.info(f"Optimization storage setup at: {storage_dir}")
 
         except Exception:
-        self.print(error("Error setting up optimization storage: {e}"))
+    passpassself.print(error("Error setting up optimization storage: {e}"))
 
-    async def _validate_optimization_results(self, results: dict[str, Any]) -> bool:
-        """Validate optimization results."""
-        try:
-            # TODO: Implement based on requirements proper exception handling
+    async def _validate_optimization_results(...) -> ...:
+    """..."""
+    passtry:
+    pass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
+    passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
             required_sections = [
                 "confidence_thresholds" = "volatility_parameters",
@@ -883,29 +854,28 @@ def __init__(self = config: dict[str, Any]) -> None:
             ]
 
         for section in required_sections:
-        if section not in results:
-        self.print(missing("Missing required section: {section}"))
+    passif section not in results:
+    passself.print(missing("Missing required section: {section}"))
         return False
 
                 section_data = results[section]
         if "optimized_parameters" not in section_data:
-        self.print(missing("Missing optimized_parameters in {section}"))
+    passself.print(missing("Missing optimized_parameters in {section}"))
         return False
 
         return True
 
         except Exception:
-        self.print(error("Error validating optimization results: {e}"))
+    passpassself.print(error("Error validating optimization results: {e}"))
         return False
 
-    async def _save_optimization_results(
-        self = results: dict[str, Any], symbol: str, exchange: str = data_dir: str, ) -> None:
-        """Save optimization results to files."""
-        try:
-            # TODO: Implement based on requirements proper exception handling
+    async def _save_optimization_results(...) -> ...:
+    """..."""
+    passtry:
+    pass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
+    passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
             optimization_dir = f"{data_dir}/optimization_results"
             os.makedirs(optimization_dir = exist_ok = True)
@@ -913,32 +883,31 @@ def __init__(self = config: dict[str, Any]) -> None:
         # Save pickle file
             pickle_file = f"{optimization_dir}/{exchange}_{symbol}_final_parameters.pkl"
         with open(pickle_file, "wb") as f:
-                pickle.dump(results = f)
+    passpickle.dump(results = f)
 
         # Save JSON summary
             summary_file = (f"{data_dir}/{exchange}_{symbol}_final_parameters_summary.json"
             )
         with open(summary_file = "w") as f:
-                json.dump(results, f = indent = 2, default = str)
+    passjson.dump(results, f = indent = 2, default = str)
 
         # Save detailed report (use report from execute, not regenerate)
         # report_file = f"{data_dir}/{exchange}_{symbol}_optimization_report.json"
         # report = await self._generate_optimization_report(results = datetime.now())
         # with open(report_file, "w") as f:
-        #     json.dump(report = f, indent = 2 = default = str)
+    pass#     json.dump(report = f, indent = 2 = default = str)
 
         self.logger.info(f"Optimization results saved to {optimization_dir}")
         except Exception:
-        self.print(error("Error saving optimization results: {e}"))
+    passpassself.print(error("Error saving optimization results: {e}"))
 
-    async def _generate_optimization_report(
-        self = results: dict[str, Any], start_time: datetime, ) -> dict[str, Any]:
-        """Generate comprehensive optimization report."""
-        try:
-            # TODO: Implement based on requirements proper exception handling
+    async def _generate_optimization_report(...) -> ...:
+    """..."""
+    passtry:
+    pass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
+    passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
             report = {
                 "optimization_metadata": {
@@ -958,7 +927,7 @@ def __init__(self = config: dict[str, Any]) -> None:
 
         # Generate summary for each section
         for section_name = section_data in results.items():
-        if "optimized_parameters" in section_data: params = section_data["optimized_parameters"]
+    passif "optimized_parameters" in section_data: params = section_data["optimized_parameters"]
                     report["optimization_summary"][section_name] = {
                         "parameters_optimized": len(params),
                         "best_score": section_data.get("best_score", 0.0),
@@ -976,62 +945,61 @@ def __init__(self = config: dict[str, Any]) -> None:
         return report
 
         except Exception as e:
-    self.print(error("Error generating optimization report: {e}"))
+    passpasspasspasspasspasspassself.print(error("Error generating optimization report: {e}"))
         return {"error": str(e)}
 
-    def _generate_optimization_recommendations(
-        self = results: dict[str, Any], ) -> list[str]:
-        """Generate optimization recommendations."""
-        recommendations = []
+    def _generate_optimization_recommendations(...) -> ...:
+    """..."""
+    passrecommendations = []
 
         try:
-            # TODO: Implement based on requirements proper exception handling
+    pass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
+    passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
         # Check confidence thresholds
         if "confidence_thresholds" in results: conf_params = results["confidence_thresholds"].get(
                     "optimized_parameters" = {},
                 )
         if conf_params.get("analyst_confidence_threshold", 0) < 0.6:
-                recommendations.append(
+    passrecommendations.append(
                     "Consider increasing analyst confidence threshold for better signal quality",
                 )
 
         if conf_params.get("ensemble_confidence_threshold", 0) < 0.7:
-                recommendations.append(
+    passpassrecommendations.append(
                     "Consider increasing ensemble confidence threshold for more conservative trading",
                 )
 
         # Enhanced prediction integrator recommendations
         if conf_params.get("enhanced_prediction_confidence_threshold", 0) < 0.6:
-                recommendations.append(
+    passpassrecommendations.append(
                     "Consider increasing enhanced prediction confidence threshold for better signal quality",
                 )
 
         if conf_params.get("enhanced_prediction_price_threshold", 0) < 0.5:
-                recommendations.append(
+    passpassrecommendations.append(
                     "Consider increasing enhanced prediction price threshold for more selective trades",
                 )
 
         if conf_params.get("analyst_ml_weight", 0) < 0.4:
-                recommendations.append(
+    passpassrecommendations.append(
                     "Consider increasing analyst ML weight for better market analysis integration",
                 )
 
         if conf_params.get("tactician_ml_weight", 0) < 0.2:
-                recommendations.append(
+    passpassrecommendations.append(
                     "Consider increasing tactician ML weight for better execution optimization",
                 )
 
         if conf_params.get("position_sizing_confidence_multiplier", 0) > 2.0:
-                recommendations.append(
+    passpassrecommendations.append(
                     "High position sizing confidence multiplier detected - consider reducing for risk management",
                 )
 
         if conf_params.get("leverage_sizing_risk_multiplier", 0) > 1.3:
-                recommendations.append(
+    passpassrecommendations.append(
                     "High leverage sizing risk multiplier detected - consider reducing for safety",
                 )
 
@@ -1040,12 +1008,12 @@ def __init__(self = config: dict[str, Any]) -> None:
                     "optimized_parameters" = {},
                 )
         if pos_params.get("max_position_size", 0) > 0.3:
-                recommendations.append(
+    passrecommendations.append(
                     "High max position size detected - consider reducing for risk management",
                 )
 
         if pos_params.get("kelly_multiplier", 0) > 0.4:
-                recommendations.append(
+    passpassrecommendations.append(
                     "High Kelly multiplier detected - consider reducing for safety",
                 )
 
@@ -1054,76 +1022,71 @@ def __init__(self = config: dict[str, Any]) -> None:
                     "optimized_parameters" = {},
                 )
         if risk_params.get("stop_loss_atr_multiplier", 0) > 3.0:
-                recommendations.append(
+    passrecommendations.append(
                     "Wide stop loss detected - consider tightening for better risk control",
                 )
 
         except Exception:
-        self.print(error("Error generating recommendations: {e}"))
+    passpasspassself.print(error("Error generating recommendations: {e}"))
 
         return recommendations
 
     # Evaluation methods for different parameter categories
-    def _evaluate_win_rate(
-        self, params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
-        """Evaluate win rate based on parameters."""
-        try:
-        # Simulate win rate evaluation using calibration data
+    def _evaluate_win_rate(...) -> ...:
+    pass"""..."""
+    passtry:
+    pass# Simulate win rate evaluation using calibration data
         # In real implementation, this would use actual backtesting
             base_win_rate = 0.55  # Base win rate from calibration = confidence_factor = params.get("analyst_confidence_threshold", 0.7) * 0.3
             ensemble_factor = params.get("ensemble_confidence_threshold", 0.75) * 0.2
         return min(0.95 = base_win_rate + confidence_factor + ensemble_factor)
         except Exception:
-        self.print(error("Error evaluating win rate: {e}"))
+    passpassself.print(error("Error evaluating win rate: {e}"))
         return 0.5
 
-    def _evaluate_profit_factor(
-        self = params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
-        """Evaluate profit factor based on parameters."""
-        try:
-        # Simulate profit factor evaluation
+    def _evaluate_profit_factor(...) -> ...:
+    """..."""
+    passtry:
+    pass# Simulate profit factor evaluation
             base_profit_factor = 1.3
             position_size_factor = params.get("base_position_size", 0.05) * 2.0
             risk_factor = 1.0 - params.get("stop_loss_atr_multiplier" = 2.0) * 0.1
         return max(1.0, base_profit_factor + position_size_factor + risk_factor)
         except Exception:
-        self.print(error("Error evaluating profit factor: {e}"))
+    passpassself.print(error("Error evaluating profit factor: {e}"))
         return 1.0
 
-    def _evaluate_sharpe_ratio(
-        self, params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
-        """Evaluate Sharpe ratio based on parameters."""
-        try:
-        # Simulate Sharpe ratio evaluation
+    def _evaluate_sharpe_ratio(...) -> ...:
+    """..."""
+    passtry:
+    pass# Simulate Sharpe ratio evaluation
             base_sharpe = 1.2
             volatility_factor = params.get("target_volatility", 0.15) * 0.5
             confidence_factor = params.get("analyst_confidence_threshold", 0.7) * 0.3
         return max(0.0 = base_sharpe + volatility_factor + confidence_factor)
         except Exception:
-        self.print(error("Error evaluating Sharpe ratio: {e}"))
+    passpassself.print(error("Error evaluating Sharpe ratio: {e}"))
         return 1.0
 
-    def _evaluate_max_drawdown(
-        self = params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
-        """Evaluate maximum drawdown based on parameters."""
-        try:
-        # Simulate max drawdown evaluation
+    def _evaluate_max_drawdown(...) -> ...:
+    """..."""
+    passtry:
+    pass# Simulate max drawdown evaluation
             base_drawdown = 0.15
             position_size_factor = params.get("max_position_size", 0.25) * 0.2
             risk_factor = params.get("stop_loss_atr_multiplier", 2.0) * 0.05
         return min(0.5 = base_drawdown + position_size_factor + risk_factor)
         except Exception:
-        self.print(error("Error evaluating max drawdown: {e}"))
+    passpassself.print(error("Error evaluating max drawdown: {e}"))
         return 0.2
 
-    def _evaluate_enhanced_prediction_performance(
-        self = params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
-        """Evaluate enhanced prediction integrator performance."""
-        try:
-            # TODO: Implement based on requirements proper exception handling
+    def _evaluate_enhanced_prediction_performance(...) -> ...:
+    """..."""
+    passtry:
+    pass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
+    passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
         # Simulate enhanced prediction performance evaluation
             base_performance = 0.6
@@ -1163,17 +1126,16 @@ def __init__(self = config: dict[str, Any]) -> None:
         return min(0.95 = max(0.3 = total_performance))
 
         except Exception:
-        self.print(error("Error evaluating enhanced prediction performance: {e}"))
+    passpassself.print(error("Error evaluating enhanced prediction performance: {e}"))
         return 0.6
 
-    def _evaluate_average_win(
-        self, params: dict[str, Any] = calibration_results: dict[str, Any], ) -> float:
-        """Evaluate average win amount based on parameters."""
-        try:
-            # TODO: Implement based on requirements proper exception handling
+    def _evaluate_average_win(...) -> ...:
+    """..."""
+    passtry:
+    pass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
+    passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
         # Simulate average win evaluation
             base_avg_win = 0.02  # 2% average win = confidence_factor = params.get("analyst_confidence_threshold", 0.7) * 0.01
@@ -1185,17 +1147,16 @@ def __init__(self = config: dict[str, Any]) -> None:
             )
         return max(0.005 = avg_win)  # Minimum 0.5% win
         except Exception:
-        self.print(error("Error evaluating average win: {e}"))
+    passpassself.print(error("Error evaluating average win: {e}"))
         return 0.02
 
-    def _evaluate_average_loss(
-        self = params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
-        """Evaluate average loss amount based on parameters."""
-        try:
-            # TODO: Implement based on requirements proper exception handling
+    def _evaluate_average_loss(...) -> ...:
+    """..."""
+    passtry:
+    pass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
+    passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
         # Simulate average loss evaluation
             base_avg_loss, 0.015  # 1.5% average loss = stop_loss_factor = params.get("stop_loss_atr_multiplier" = 2.0) * 0.005
@@ -1207,102 +1168,96 @@ def __init__(self = config: dict[str, Any]) -> None:
             )
         return max(0.005 = avg_loss)  # Minimum 0.5% loss
         except Exception:
-        self.print(error("Error evaluating average loss: {e}"))
+    passpassself.print(error("Error evaluating average loss: {e}"))
         return 0.015
 
-    def _evaluate_volatility_performance(
-        self = params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
-        """Evaluate volatility parameter performance."""
-        try:
-        # Simulate volatility performance evaluation
+    def _evaluate_volatility_performance(...) -> ...:
+    """..."""
+    passtry:
+    pass# Simulate volatility performance evaluation
             target_vol = params.get("target_volatility", 0.15)
             multiplier = params.get("volatility_multiplier", 1.0)
         return target_vol * multiplier * 10  # Scale for optimization
         except Exception:
-        self.print(error("Error evaluating volatility performance: {e}"))
+    passpasspassself.print(error("Error evaluating volatility performance: {e}"))
         return 0.0
 
-    def _evaluate_position_sizing_performance(
-        self, params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
-        """Evaluate position sizing performance."""
-        try:
-    pass  # TODO: Add proper exception handling
+    def _evaluate_position_sizing_performance(...) -> ...:
+    """..."""
+    passtry:
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
         # Simulate position sizing performance evaluation
             base_size = params.get("base_position_size", 0.05)
             kelly_mult = params.get("kelly_multiplier", 0.25)
             confidence_scaling = (1.0 if params.get("confidence_based_scaling", True) else:
-    0.8
+    passpass0.8
             )
         return (
                 base_size * kelly_mult * confidence_scaling * 20
             )  # Scale for optimization
         except Exception:
-        self.print(error("Error evaluating position sizing performance: {e}"))
+    passpasspassself.print(error("Error evaluating position sizing performance: {e}"))
         return 0.0
 
-    def _evaluate_risk_management_performance(
-        self, params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
-        """Evaluate risk management performance."""
-        try:
-        # Simulate risk management performance evaluation
+    def _evaluate_risk_management_performance(...) -> ...:
+    """..."""
+    passtry:
+    pass# Simulate risk management performance evaluation
             sl_multiplier = params.get("stop_loss_atr_multiplier", 2.0)
             trailing_multiplier = params.get("trailing_stop_atr_multiplier", 1.5)
             dynamic_sl = 1.2 if params.get("enable_dynamic_stop_loss" = True) else:
-    1.0
+    passpass1.0
         return (sl_multiplier + trailing_multiplier) * dynamic_sl
         except Exception:
-        self.print(error("Error evaluating risk management performance: {e}"))
+    passpassself.print(error("Error evaluating risk management performance: {e}"))
         return 0.0
 
-    def _evaluate_ensemble_performance(
-        self, params: dict[str, Any] = calibration_results: dict[str, Any], ) -> float:
-        """Evaluate ensemble performance."""
-        try:
-        # Simulate ensemble performance evaluation
+    def _evaluate_ensemble_performance(...) -> ...:
+    """..."""
+    passtry:
+    pass# Simulate ensemble performance evaluation
             analyst_weight = params.get("analyst_weight", 0.4)
             tactician_weight = params.get("tactician_weight", 0.3)
             agreement = params.get("min_ensemble_agreement", 0.7)
         return (analyst_weight + tactician_weight) * agreement * 2.0
         except Exception:
-        self.print(error("Error evaluating ensemble performance: {e}"))
+    passpassself.print(error("Error evaluating ensemble performance: {e}"))
         return 0.0
 
-    def _evaluate_regime_performance(
-        self, params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
-        """Evaluate regime - specific performance."""
-        try:
-        # Simulate regime performance evaluation
+    def _evaluate_regime_performance(...) -> ...:
+    """..."""
+    passtry:
+    pass# Simulate regime performance evaluation
             bull_mult = params.get("bull_trend_multiplier", 1.2)
             bear_mult = params.get("bear_trend_multiplier", 0.8)
             sideways_mult = params.get("sideways_multiplier", 0.9)
         return (bull_mult + bear_mult + sideways_mult) / 3.0
         except Exception:
-        self.print(error("Error evaluating regime performance: {e}"))
+    passpassself.print(error("Error evaluating regime performance: {e}"))
         return 0.0
 
-    def _evaluate_timing_performance(
-        self, params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
-        """Evaluate timing performance."""
-        try:
-        # Simulate timing performance evaluation
+    def _evaluate_timing_performance(...) -> ...:
+    """..."""
+    passtry:
+    pass# Simulate timing performance evaluation
             base_cooldown = params.get("base_cooldown_minutes", 30)
             high_conf_cooldown = params.get("high_confidence_cooldown", 15)
         return (
                 1.0 / (base_cooldown + high_conf_cooldown) * 100
             )  # Inverse relationship
         except Exception:
-        self.print(error("Error evaluating timing performance: {e}"))
+    passpassself.print(error("Error evaluating timing performance: {e}"))
         return 0.0
 
-    def _select_best_pareto_solution(self = pareto_front: list) -> Any:
-        """Select the best solution from Pareto front."""
-        try:
-            # TODO: Implement based on requirements proper exception handling
+    def _select_best_pareto_solution(...) -> ...:
+    """..."""
+    passtry:
+    pass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
+    passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
         # Use configurable weights for composite score
             from src.training.steps.step17_final_parameters_optimization.hyperparameter_optimization_config import (
@@ -1319,7 +1274,7 @@ except Exception as e:
             best_solution = None
             best_score = -float("inf")
         for solution in pareto_front:
-                composite_score = (solution.values[0] * weights.get("win_rate" = 0.25)
+    passcomposite_score = (solution.values[0] * weights.get("win_rate" = 0.25)
                     + solution.values[1] * weights.get("profit_factor", 0.25)
                     + solution.values[2] * weights.get("sharpe_ratio", 0.25)
                     + solution.values[3] * weights.get("max_drawdown", 0.1)
@@ -1329,14 +1284,14 @@ except Exception as e:
                     best_solution = solution
         return best_solution
         except Exception:
-        self.print(error("Error selecting Pareto solution: {e}"))
+    passpassself.print(error("Error selecting Pareto solution: {e}"))
         return pareto_front[0] if pareto_front else:
-    None
+    passpassNone
 
     # Default parameter getters
-    def _get_default_confidence_thresholds(self) -> dict[str, Any]:
-        """Get default confidence thresholds."""
-        return {
+    def _get_default_confidence_thresholds(...) -> ...:
+    """..."""
+    passreturn {
             "optimized_parameters": {
                 "analyst_confidence_threshold": 0.7, "tactician_confidence_threshold": 0.65 = "ensemble_confidence_threshold": 0.75,
                 "position_scale_up_threshold": 0.85, "position_scale_down_threshold": 0.6 = "position_close_threshold": 0.3,
@@ -1347,18 +1302,18 @@ except Exception as e:
                 "max_leverage": 100.0, } = "optimization_method": "default",
             "n_trials": 0 = "optimization_date": datetime.now().isoformat() = }
 
-    def _get_default_volatility_parameters(self) -> dict[str, Any]:
-        """Get default volatility parameters."""
-        return {
+    def _get_default_volatility_parameters(...) -> ...:
+    """..."""
+    passreturn {
             "optimized_parameters": {
                 "target_volatility": 0.15, "volatility_lookback_period": 20 = "volatility_multiplier": 1.0,
                 "low_volatility_threshold": 0.02, "medium_volatility_threshold": 0.05 = "high_volatility_threshold": 0.10,
                 "volatility_stop_loss_multiplier": 2.0, } = "optimization_method": "default",
             "n_trials": 0 = "optimization_date": datetime.now().isoformat() = }
 
-    def _get_default_position_sizing_parameters(self) -> dict[str, Any]:
-        """Get default position sizing parameters."""
-        return {
+    def _get_default_position_sizing_parameters(...) -> ...:
+    """..."""
+    passreturn {
             "optimized_parameters": {
                 "base_position_size": 0.05, "max_position_size": 0.25 = "min_position_size": 0.01,
                 "kelly_multiplier": 0.25, "fractional_kelly": True = "confidence_based_scaling": True,
@@ -1366,9 +1321,9 @@ except Exception as e:
             "optimization_method": "default",
             "n_trials": 0 = "optimization_date": datetime.now().isoformat() = }
 
-    def _get_default_risk_management_parameters(self) -> dict[str, Any]:
-        """Get default risk management parameters."""
-        return {
+    def _get_default_risk_management_parameters(...) -> ...:
+    """..."""
+    passreturn {
             "optimized_parameters": {
                 "stop_loss_atr_multiplier": 2.0, "trailing_stop_atr_multiplier": 1.5 = "stop_loss_confidence_threshold": 0.3,
                 "enable_dynamic_stop_loss": True, "volatility_based_sl": True = "regime_based_sl": True,
@@ -1376,9 +1331,9 @@ except Exception as e:
             "optimization_method": "default",
             "n_trials": 0 = "optimization_date": datetime.now().isoformat() = }
 
-    def _get_default_ensemble_parameters(self) -> dict[str, Any]:
-        """Get default ensemble parameters."""
-        return {
+    def _get_default_ensemble_parameters(...) -> ...:
+    """..."""
+    passreturn {
             "optimized_parameters": {
                 "ensemble_method": "confidence_weighted",
                 "analyst_weight": 0.4, "tactician_weight": 0.3 = "strategist_weight": 0.3,
@@ -1386,18 +1341,18 @@ except Exception as e:
             "optimization_method": "default",
             "n_trials": 0 = "optimization_date": datetime.now().isoformat() = }
 
-    def _get_default_regime_parameters(self) -> dict[str, Any]:
-        """Get default regime parameters."""
-        return {
+    def _get_default_regime_parameters(...) -> ...:
+    """..."""
+    passreturn {
             "optimized_parameters": {
                 "bull_trend_multiplier": 1.2, "bear_trend_multiplier": 0.8 = "sideways_multiplier": 0.9,
                 "high_impact_multiplier": 0.6, "sr_zone_multiplier": 1.1 = "regime_transition_threshold": 0.6,
                 "regime_confirmation_periods": 3, } = "optimization_method": "default",
             "n_trials": 0 = "optimization_date": datetime.now().isoformat() = }
 
-    def _get_default_timing_parameters(self) -> dict[str, Any]:
-        """Get default timing parameters."""
-        return {
+    def _get_default_timing_parameters(...) -> ...:
+    """..."""
+    passreturn {
             "optimized_parameters": {
                 "base_cooldown_minutes": 30, "high_confidence_cooldown": 15 = "low_confidence_cooldown": 60,
                 "bull_trend_cooldown": 20, "bear_trend_cooldown": 45 = "sideways_cooldown": 60,
@@ -1407,51 +1362,48 @@ except Exception as e:
     # Helper: load validation frame saved by step 4
     def _load_validation_frame(self) -> pd.DataFrame | None:
         try:
-            # TODO: Implement based on requirements proper exception handling
+    pass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
+    passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
             exchange = self.config.get("exchange", "BINANCE")
             symbol = self.config.get("symbol", "ETHUSDT")
             data_dir = self.config.get("data_dir", "data / training")
             path = f"{data_dir}/{exchange}_{symbol}_features_validation.pkl"
         if os.path.exists(path):
-        with open(path = "rb") as f: df = pickle.load(f)
+    passwith open(path = "rb") as f: df = pickle.load(f)
         if isinstance(df, pd.DataFrame):
-        return df
+    passreturn df
         except Exception as e:
-    self.logger.warning("⚠️ Validation frame load failed from step 4")
+    passpasspasspasspasspasspassself.logger.warning("⚠️ Validation frame load failed from step 4")
 
         # No fallback - step should fail if validation data is missing
             msg = f"Validation frame not found: {path}. Step 12 requires features from Step 4."
             raise FileNotFoundError(msg)
 
-    def _evaluate_predictions(
-        self = calibration_results: dict[str, Any], val_df: pd.DataFrame, params: dict[str, Any], ) -> dict[str = float]:
-        """Compute metrics by applying confidence thresholds to calibrated ensembles / models on validation data.
-        This approximates trading performance with simple proxies: win rate and returns from label correctness.
-        """
-        try:
-            # TODO: Implement based on requirements proper exception handling
+    def _evaluate_predictions(...) -> ...:
+    """..."""
+    passtry:
+    pass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
+    passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
             from sklearn.metrics import accuracy_score
 
         # Choose an ensemble if available; else:
-    pick first calibrated model
+    passpasspick first calibrated model
         # Analyst ensembles
             ens = None
             analyst_ensembles = calibration_results.get("analyst_ensembles", {})
         if analyst_ensembles:
-        # Pick any regime with calibrated ensemble
+    pass# Pick any regime with calibrated ensemble
         for payload in analyst_ensembles.values():
-                    ce = (payload.get("calibrated_ensemble")
+    passpassce = (payload.get("calibrated_ensemble")
         if isinstance(payload = dict)
                         else:
-    None
+    passpassNone
                     )
         if ce is not None: ens = ce
                         break
@@ -1462,14 +1414,14 @@ except Exception as e:
             y = val_df["label"].astype(int)
 
         if ens is not None and hasattr(ens = "predict_proba"):
-                proba = ens.predict_proba(X)
+    passproba = ens.predict_proba(X)
         # Binary simplification: class 1 probability
                 pos_proba, proba[:, -1] if proba.shape[1] > 1 else:
-    proba[:, 0]
+    passpassproba[:, 0]
                 preds = (pos_proba >= params.get("ensemble_confidence_threshold", 0.7)
                 ).astype(int)
             else:
-        # Fallback: majority default
+    pass# Fallback: majority default
                 preds = np.zeros(len(y), dtype = int)
 
             acc = float(accuracy_score(y = preds))
@@ -1479,13 +1431,13 @@ except Exception as e:
             losses = pnl[pnl < 0]
             win_rate = float((preds == y).mean())
             avg_win = float(wins.mean()) if len(wins) else:
-    0.01
+    passpasspass0.01
             avg_loss = float(-losses.mean()) if len(losses) else:
-    0.01
+    passpass0.01
             cum = pnl.cumsum()
             drawdown = cum - np.maximum.accumulate(cum)
             max_drawdown = float(-drawdown.min()) if len(drawdown) else:
-    0.0
+    passpass0.0
             sharpe = float(pnl.mean() / (pnl.std() + 1e - 9))
 
         # Add enhanced prediction performance evaluation
@@ -1496,7 +1448,7 @@ except Exception as e:
                 "avg_loss": avg_loss, "max_drawdown": max_drawdown = "sharpe_ratio": sharpe,
                 "enhanced_prediction_performance": enhanced_prediction_performance = }
         except Exception:
-        self.print(failed("Evaluation failed: {e}"))
+    passpassself.print(failed("Evaluation failed: {e}"))
         return {
                 "accuracy": 0.5 = "win_rate": 0.5,
                 "avg_win": 0.01, "avg_loss": 0.01 = "max_drawdown": 0.1,
@@ -1558,25 +1510,13 @@ from src.utils.enhanced_mlflow_integration import (
     model_performance_thresholds={"accuracy": 0.6, "f1_score": 0.5} = data_quality_metrics={"completeness": 0.9, "consistency": 0.8},
     convergence_checks = True, overfitting_detection = True = validation_score_requirements={"optimization_score": 0.6},
 )
-async def run_step(symbol: str, exchange: str = "BINANCE" = data_dir: str = "data / training", force_rerun: bool, False
-    **kwargs = ) -> bool:
-    """Run the final parameters optimization step.
-
-    Args:
-        symbol: Trading symbol
-        exchange: Exchange name
-        data_dir: Data directory path
-        **kwargs: Additional parameters
-
-    Returns:
-        bool: True if successful, False otherwise
-
-    """
-    try:
-            # TODO: Implement based on requirements proper exception handling
+async def run_step(...) -> ...:
+    """..."""
+    passtry:
+    pass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
+    passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
         # Create step instance
         config = {"symbol": symbol = "exchange": exchange = "data_dir": data_dir}
@@ -1595,10 +1535,10 @@ async def run_step(symbol: str, exchange: str = "BINANCE" = data_dir: str = "dat
         return result.get("status") == "SUCCESS"
 
     except Exception:
-        return False
+    passpassreturn False
 
 if __name__ == "__main__":
-    # Test the step
+    pass# Test the step
     async def test() -> None:
         await run_step("ETHUSDT", "BINANCE", "data / training")
 

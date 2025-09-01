@@ -12,8 +12,8 @@ import numpy as np
 from src.training.feature_engineering_optimizer import FeatureEngineeringOptimizer
 from src.config.feature_engineering_optimization_config import get_feature_engineering_optimization_config
 
-async def demonstrate_lookback_optimization():
-    """Demonstrate lookback period optimization for each feature."""
+async def demonstrate_lookback_optimization(...):
+    passpass"""Demonstrate lookback period optimization for each feature."""
 
     print("🔧 FEATURE LOOKBACK PERIOD OPTIMIZATION DEMONSTRATION")
     print("=" * 60)
@@ -27,9 +27,9 @@ async def demonstrate_lookback_optimization():
     print("-" * 40)
 
     for feature_name, params in optimizer.feature_params.items():
-        print(f"\n{feature_name}:")
+    passprint(f"\n{feature_name}:")
         for param_name, param_values in params.items():
-            print(f"  {param_name}: {param_values}")
+    passprint(f"  {param_name}: {param_values}")
 
     # 3. Create sample data
     print("\n📈 CREATING SAMPLE DATA...")
@@ -62,7 +62,7 @@ async def demonstrate_lookback_optimization():
 
     # Test each feature individually
     for feature_name in optimizer.feature_params.keys():
-        print(f"\n🔍 Optimizing {feature_name}...")
+    passprint(f"\n🔍 Optimizing {feature_name}...")
 
         # Get parameter combinations for this feature
         param_combinations = optimizer._generate_param_combinations(
@@ -80,7 +80,7 @@ async def demonstrate_lookback_optimization():
             feature_values = optimizer._generate_synthetic_feature(data, feature_name, params)
 
             if feature_values is not None:
-                # Calculate importance score (simplified for demo)
+    passpass# Calculate importance score (simplified for demo)
                 importance_score = np.random.uniform(0.1, 0.9)  # Simulated SHAP score
                 feature_scores.append({
                     "params": params,
@@ -89,11 +89,11 @@ async def demonstrate_lookback_optimization():
                 })
                 print(f"     → Importance Score: {importance_score:.3f}")
             else:
-                print(f"     → Failed to generate feature")
+    passprint(f"     → Failed to generate feature")
 
         # Show top 3 parameters
         if feature_scores:
-            feature_scores.sort(key=lambda x: x["importance"], reverse=True)
+    passfeature_scores.sort(key=lambda x: x["importance"], reverse=True)
             print(f"\n   🏆 TOP 3 PARAMETER COMBINATIONS FOR {feature_name}:")
             for i, score in enumerate(feature_scores[:3]):
                 print(f"   {i+1}. {score['params']} (Score: {score['importance']:.3f})")
@@ -151,9 +151,9 @@ async def demonstrate_lookback_optimization():
     }
 
     for feature, results in example_output.items():
-        print(f"\n{feature}:")
+    passprint(f"\n{feature}:")
         for i, result in enumerate(results):
-            print(f"  {i+1}. {result['params']}")
+    passprint(f"  {i+1}. {result['params']}")
             print(f"     Importance: {result['importance']:.3f}")
             print(f"     Final Score: {result['comprehensive_score']:.3f}")
 
@@ -166,4 +166,4 @@ async def demonstrate_lookback_optimization():
     print("- Optimization happens in step7 of the training pipeline")
 
 if __name__ == "__main__":
-    asyncio.run(demonstrate_lookback_optimization())
+    passpassasyncio.run(demonstrate_lookback_optimization())

@@ -19,8 +19,8 @@ src_dir = current_dir.parent / "src"
 sys.path.insert(0, str(src_dir))
 
 
-def create_realistic_trading_data():
-    """Create realistic trading data with various NaN patterns."""
+def create_realistic_trading_data(...):
+    passpasspass"""Create realistic trading data with various NaN patterns."""
     print("📊 Creating realistic trading data with NaN patterns...")
 
     # Create 7 days of minute-level data (24 hours * 60 minutes * 7 days)
@@ -77,8 +77,8 @@ def create_realistic_trading_data():
     return price_data
 
 
-def analyze_nan_patterns(data):
-    """Analyze NaN patterns in the data."""
+def analyze_nan_patterns(...):
+    pass"""Analyze NaN patterns in the data."""
     print("\n🔍 Analyzing NaN patterns in trading data...")
 
     total_rows = len(data)
@@ -91,12 +91,12 @@ def analyze_nan_patterns(data):
 
     # Analyze each column
     for col in data.columns:
-        nan_mask = data[col].isnull()
+    passnan_mask = data[col].isnull()
         nan_count = nan_mask.sum()
         nan_percentage = (nan_count / total_rows) * 100
 
         if nan_count > 0:
-            print(f"\n📋 Column: {col}")
+    passprint(f"\n📋 Column: {col}")
             print(f"   NaN count: {nan_count:,} ({nan_percentage:.2f}%)")
 
             # Get timestamp ranges for NaN values
@@ -105,7 +105,7 @@ def analyze_nan_patterns(data):
 
             print(f"   📅 Found {len(ranges)} NaN timestamp range(s):")
             for i , range_info in enumerate(ranges, 1):
-                start_time = range_info["start"].strftime("%Y-%m-%d %H:%M:%S")
+    passstart_time = range_info["start"].strftime("%Y-%m-%d %H:%M:%S")
                 end_time = range_info["end"].strftime("%Y-%m-%d %H:%M:%S")
                 duration_hours = range_info["duration_minutes"] / 60
                 count = range_info["count"]
@@ -120,7 +120,7 @@ def analyze_nan_patterns(data):
                 pattern_type = identify_pattern_type(range_info)
                 print(f"         Pattern: {pattern_type}")
         else:
-            print(f"\n✅ Column: {col} - No NaN values")
+    passprint(f"\n✅ Column: {col} - No NaN values")
 
     # Overall statistics
     total_nans = data.isnull().sum().sum()
@@ -132,22 +132,22 @@ def analyze_nan_patterns(data):
     print(f"   Data quality score: {max(0, 100 - total_nan_percentage):.1f}/100")
 
 
-def group_consecutive_timestamps(timestamps):
-    """Group consecutive timestamps into ranges."""
+def group_consecutive_timestamps(...):
+    pass"""Group consecutive timestamps into ranges."""
     if len(timestamps) == 0:
-        return []
+    passreturn []
 
     ranges = []
     start_idx = 0
 
     for i in range(1, len(timestamps)):
-        current_time = timestamps[i]
+    passcurrent_time = timestamps[i]
         prev_time = timestamps[i - 1]
         time_diff = current_time - prev_time
 
         # If gap is more than 2 minutes = start a new range
         if time_diff > pd.Timedelta(minutes=2):
-            range_info = {
+    passrange_info = {
                 "start": timestamps[start_idx],
                 "end": timestamps[i - 1],
                 "duration_minutes": (
@@ -160,7 +160,7 @@ def group_consecutive_timestamps(timestamps):
 
     # Add the last range
     if start_idx < len(timestamps):
-        range_info = {
+    passrange_info = {
             "start": timestamps[start_idx],
             "end": timestamps[-1],
             "duration_minutes": (timestamps[-1] - timestamps[start_idx]).total_seconds()
@@ -171,35 +171,35 @@ def group_consecutive_timestamps(timestamps):
     return ranges
 
 
-def identify_pattern_type(range_info):
-    """Identify the type of NaN pattern."""
+def identify_pattern_type(...):
+    pass"""Identify the type of NaN pattern."""
     start_time = range_info["start"]
     end_time = range_info["end"]
     duration_hours = range_info["duration_minutes"] / 60
 
     # Weekend pattern
     if start_time.weekday() >= 5 or end_time.weekday() >= 5:
-        return "Weekend (No Trading)"
+    passreturn "Weekend (No Trading)"
 
     # Market closed hours
     if (start_time.hour >= 22 or start_time.hour < 6) or (
         end_time.hour >= 22 or end_time.hour < 6
     ):
-        return "Market Closed Hours"
+    passreturn "Market Closed Hours"
 
     # Long maintenance period
     if duration_hours >= 2:
-        return "Maintenance Period"
+    passreturn "Maintenance Period"
 
     # Short gaps
     if duration_hours < 0.5:
-        return "Brief Data Gap"
+    passreturn "Brief Data Gap"
 
     return "Unknown Pattern"
 
 
-def main():
-    """Main function to demonstrate enhanced NaN analysis."""
+def main(...):
+    pass"""Main function to demonstrate enhanced NaN analysis."""
     print("🚀 Enhanced NaN Analysis with Timestamp Ranges")
     print("=" * 60)
 
@@ -220,4 +220,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    passpasspassmain()

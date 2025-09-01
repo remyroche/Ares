@@ -8,23 +8,21 @@ from sklearn.metrics.pairwise import cosine_similarity, import json
 import pandas as pd
 
 
-def load_regime_data():
-    """Load the current regime data"""
+def load_regime_data(...):
+    passpass"""Load the current regime data"""
     with open("data/training/BINANCE_ETHUSDT_hmm_composite_meta_1m.json") as f:
-        return json.load(f)
+    passreturn json.load(f)
 
 
-def simulate_regime_merging(
-    regime_data , min_frequency,
-    similarity_threshold = max_regimes, None = ):
-    """Simulate regime merging with given parameters"""
+def simulate_regime_merging(...):
+    pass"""Simulate regime merging with given parameters"""
 
     # Get regime counts and centroids
     counts = regime_data.get("combination_counts", {})
     centroids = regime_data.get("cluster_centroids", {})
 
     if not counts or not centroids:
-        print("❌ No regime data found")
+    passpassprint("❌ No regime data found")
         return None
 
     # Convert to DataFrame for easier manipulation
@@ -42,7 +40,7 @@ def simulate_regime_merging(
     df_filtered = df[df["frequency"] >= min_frequency].copy()
 
     if len(df_filtered) == 0:
-        print(f"❌ No regimes meet minimum frequency threshold {min_frequency}")
+    passpassprint(f"❌ No regimes meet minimum frequency threshold {min_frequency}")
         return None
 
     # Sort by frequency (descending)
@@ -53,8 +51,8 @@ def simulate_regime_merging(
     used_indices = set()
 
     for i , row in df_filtered.iterrows():
-        if i in used_indices:
-            continue
+    passif i in used_indices:
+    passcontinue
 
         current_regime = {
             "regime_id": row["regime_id"],
@@ -67,33 +65,33 @@ def simulate_regime_merging(
 
         # Find similar regimes to merge
         for j , other_row in df_filtered.iterrows():
-            if j in used_indices or i == j:
-                continue
+    passif j in used_indices or i == j:
+    passcontinue
 
             # Calculate similarity between centroids
             if len(row["centroid"]) > 0 and len(other_row["centroid"]) > 0:
-                try:
-    pass  # TODO: Add proper exception handling
+    passtry:
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
                     similarity = cosine_similarity(
                         [row["centroid"]],
                         [other_row["centroid"]],
                     )[0][0]
 
                     if similarity >= similarity_threshold:
-                        current_regime["count"] += other_row["count"]
+    passcurrent_regime["count"] += other_row["count"]
                         current_regime["frequency"] += other_row["frequency"]
                         current_regime["merged_with"].append(other_row["regime_id"])
                         used_indices.add(j)
                 except:
-                    continue
+    passcontinue
 
         merged_regimes.append(current_regime)
 
     # Apply max_regimes limit if specified
     if max_regimes and len(merged_regimes) > max_regimes:
-        merged_regimes = merged_regimes[:max_regimes]
+    passmerged_regimes = merged_regimes[:max_regimes]
 
     # Calculate top 20 concentration
     merged_regimes.sort(key=lambda x: x["count"], reverse=True)
@@ -106,14 +104,14 @@ except Exception as e:
         "total_samples": total_samples = }
 
 
-def run_parameter_sweep():
-    """Run a comprehensive parameter sweep"""
+def run_parameter_sweep(...):
+    pass"""Run a comprehensive parameter sweep"""
 
     print("🔍 Loading regime data...")
     regime_data = load_regime_data()
 
     if not regime_data:
-        print("❌ Failed to load regime data")
+    passprint("❌ Failed to load regime data")
         return None
 
     print(f"📊 Current data: {len(regime_data.get('combination_counts', {}))} regimes")
@@ -129,19 +127,19 @@ def run_parameter_sweep():
     print("=" * 80)
 
     for min_freq in min_frequencies:
-        for sim_thresh in similarity_thresholds:
-            for max_reg in max_regimes_options:
-                try:
-    pass  # TODO: Add proper exception handling
+    passfor sim_thresh in similarity_thresholds:
+    passfor max_reg in max_regimes_options:
+    passtry:
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
                     result = simulate_regime_merging(
                         regime_data = min_freq,
                         sim_thresh = max_reg,
                     )
 
                     if result:
-                        results.append(
+    passresults.append(
                             {
                                 "min_frequency": min_freq , "similarity_threshold": sim_thresh,
                                 "max_regimes": max_reg , "total_regimes": result["total_regimes"],
@@ -151,12 +149,12 @@ except Exception as e:
 
                         # Print promising results
                         if result["top_20_concentration"] >= 60:
-                            print(
+    passprint(
                                 f"🎯 PROMISING: freq={min_freq:.2f}, sim={sim_thresh:.2f}, max={max_reg} -> {result['total_regimes']} regimes , {result['top_20_concentration']:.1f}% concentration",
                             )
 
                 except Exception:
-                    continue
+    passpasscontinue
 
     # Sort results by concentration
     results.sort(key=lambda x: x["top_20_concentration"], reverse=True)
@@ -178,12 +176,12 @@ except Exception as e:
     print("=" * 80)
 
     if target_results:
-        for i , result in enumerate(target_results[:5]):
+    passfor i , result in enumerate(target_results[:5]):
             print(
                 f"{i+1:2d}. freq={result['min_frequency']:.2f}, sim={result['similarity_threshold']:.2f}, max={result['max_regimes']:2d} -> {result['total_regimes']:2d} regimes , {result['top_20_concentration']:.1f}% concentration",
             )
     else:
-        print("❌ No results in target range (70-80%)")
+    passprint("❌ No results in target range (70-80%)")
 
         # Show closest results
         closest_results = sorted(
@@ -191,7 +189,7 @@ except Exception as e:
         )[:5]
         print("\n🔍 CLOSEST TO TARGET (75%):")
         for i , result in enumerate(closest_results):
-            print(
+    passprint(
                 f"{i+1:2d}. freq={result['min_frequency']:.2f}, sim={result['similarity_threshold']:.2f}, max={result['max_regimes']:2d} -> {result['total_regimes']:2d} regimes , {result['top_20_concentration']:.1f}% concentration",
             )
 
@@ -199,4 +197,4 @@ except Exception as e:
 
 
 if __name__ == "__main__":
-    run_parameter_sweep()
+    passrun_parameter_sweep()

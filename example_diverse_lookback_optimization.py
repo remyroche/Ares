@@ -12,8 +12,8 @@ import numpy as np
 from src.training.diverse_lookback_optimizer import DiverseLookbackOptimizer
 from src.config.diverse_lookback_config import get_diverse_lookback_config
 
-async def demonstrate_diverse_lookback_optimization():
-    """Demonstrate diverse lookback period optimization."""
+async def demonstrate_diverse_lookback_optimization(...):
+    passpass"""Demonstrate diverse lookback period optimization."""
 
     print("🎯 DIVERSE LOOKBACK PERIOD OPTIMIZATION DEMONSTRATION")
     print("=" * 65)
@@ -45,7 +45,7 @@ async def demonstrate_diverse_lookback_optimization():
 
     prices = []
     for i in range(4):
-        if i == 0:  # Trending up regime
+    passpassif i == 0:  # Trending up regime
             returns = np.random.normal(0.0003, 0.001, regime_length)
         elif i == 1:  # Trending down regime
             returns = np.random.normal(-0.0003, 0.001, regime_length)
@@ -83,7 +83,7 @@ async def demonstrate_diverse_lookback_optimization():
 
     lookback_ranges = config["lookback_ranges"]
     for feature_name, range_config in lookback_ranges.items():
-        periods = list(range(range_config["min"], range_config["max"] + 1, range_config["step"]))
+    passperiods = list(range(range_config["min"], range_config["max"] + 1, range_config["step"]))
         print(f"{feature_name:15} : {range_config['min']:2d}-{range_config['max']:2d} (step {range_config['step']:1d}) = {len(periods):2d} periods")
         print(f"{'':15}   {range_config['description']}")
         print(f"{'':15}   Expected insights: {', '.join(range_config['expected_insights'])}")
@@ -132,7 +132,7 @@ async def demonstrate_diverse_lookback_optimization():
 
     print("Period scores (information score + market insight):")
     for score in period_scores:
-        print(f"   Period {score['period']:2d}: {score['information_score']:.2f} - {score['market_insight']}")
+    passprint(f"   Period {score['period']:2d}: {score['information_score']:.2f} - {score['market_insight']}")
     print()
 
     # Simulate diversity analysis
@@ -146,7 +146,7 @@ async def demonstrate_diverse_lookback_optimization():
     ]
 
     for corr in correlations:
-        print(f"   {corr['periods']}: correlation={corr['correlation']:.2f}, diversity={corr['diversity']:.2f}")
+    passprint(f"   {corr['periods']}: correlation={corr['correlation']:.2f}, diversity={corr['diversity']:.2f}")
 
     avg_diversity = np.mean([c['diversity'] for c in correlations])
     print(f"   Average diversity: {avg_diversity:.2f}")
@@ -186,7 +186,7 @@ async def demonstrate_diverse_lookback_optimization():
     }
 
     for feature, data in diverse_periods.items():
-        print(f"{feature:15} : Periods {data['selected_periods']}")
+    passprint(f"{feature:15} : Periods {data['selected_periods']}")
         print(f"{'':15}   Insights: {', '.join(data['insights'])}")
         print(f"{'':15}   Diversity: {data['diversity_score']:.2f}")
         print()
@@ -209,10 +209,10 @@ async def demonstrate_diverse_lookback_optimization():
     }
 
     for regime, periods in regime_periods.items():
-        print(f"{regime}:")
+    passprint(f"{regime}:")
         for feature, feature_periods in periods.items():
-            if feature != "insight":
-                print(f"   {feature}: {feature_periods}")
+    passif feature != "insight":
+    passprint(f"   {feature}: {feature_periods}")
         print(f"   Insight: {periods['insight']}")
         print()
 
@@ -300,4 +300,4 @@ async def demonstrate_diverse_lookback_optimization():
     print("- Provides regime-specific period optimization")
 
 if __name__ == "__main__":
-    asyncio.run(demonstrate_diverse_lookback_optimization())
+    passpassasyncio.run(demonstrate_diverse_lookback_optimization())

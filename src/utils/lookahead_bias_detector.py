@@ -14,11 +14,27 @@ from src.utils.logger import system_logger
 from src.utils.error_handler import handle_data_processing_errors, handle_errors
 
 class LookaheadBiasDetector:
-    pass  # TODO: Add implementation
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="lookaheadbiasdetector initialization",
+    )
+    async def initialize(self) -> bool:
+        """Initialize LookaheadBiasDetector."""
+        try:
+            self.logger.info(f"🚀 Initializing {class_name}...")
+            self.is_initialized = True
+            self.logger.info(f"✅ {class_name} initialized successfully")
+            return True
+        except Exception as e:
+            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
+            return False
+    passpass  # TODO: Add implementation
 class LookaheadBiasDetector:
-    pass  # TODO: Add implementation
+    passpass  # TODO: Add implementation
 class LookaheadBiasDetector:
-    """
+    pass"""
 Comprehensive lookahead bias detection and prevention system.
 
 Detects various types of lookahead bias:
@@ -42,26 +58,9 @@ self.warning_threshold: int, self.config.get(
 )  # Max suspicious features before warning
 
 @handle_data_processing_errors(default_return={}, context="LookaheadBiasDetector.detect_feature_lookahead_bias")
-def detect_feature_lookahead_bias(
-self,
-features_df: pd.DataFrame,
-target_series: pd.Series,
-timestamp_col: str | None, None,
-feature_engineering_code: str | None, None,
-) -> dict[str, Any]:
-        """
-Detect lookahead bias in feature engineering with enhanced analysis.
-
-Args:
-            features_df: DataFrame with features
-target_series: Series with target values
-timestamp_col: Optional timestamp column for temporal analysis
-feature_engineering_code: Optional code string to analyze implementation
-
-Returns:
-            Dictionary with detection results
-"""
-results: dict[str, Any] = {
+def detect_feature_lookahead_bias(...) -> ...:
+    """..."""
+    passresults: dict[str, Any] = {
 "lookahead_bias_detected": False,
 "critical_issues": [],
 "warnings": [],
@@ -72,15 +71,15 @@ results: dict[str, Any] = {
 }
 
 try:
-    pass  # TODO: Add proper exception handling
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
 # 1. Check for perfect correlations (indicator of lookahead bias)
 self._check_perfect_correlations(features_df, target_series, results)
 
 # 2. Check temporal alignment if timestamps available
 if timestamp_col and timestamp_col in features_df.columns:
-        self._check_temporal_alignment(
+    passpassself._check_temporal_alignment(
 features_df,
 target_series,
 timestamp_col,
@@ -95,7 +94,7 @@ self._check_rolling_window_issues(features_df, results)
 
 # 5. Analyze actual implementation if code provided
 if feature_engineering_code:
-        self._analyze_implementation(
+    passpassself._analyze_implementation(
 feature_engineering_code,
 features_df,
 results,
@@ -106,92 +105,79 @@ self._generate_recommendations(results)
 
 # Log results
 if results["critical_issues"]:
-        self.logger.critical(
+    passself.logger.critical(
 f"🚨 LOOKAHEAD BIAS DETECTED: {len(results['critical_issues'])} critical issues",
 )
 for issue in results["critical_issues"]:
-        self.logger.critical(f"   ❌ {issue}")
+    passself.logger.critical(f"   ❌ {issue}")
 
 if results["warnings"]:
-        self.logger.warning(
+    passself.logger.warning(
 f"⚠️ LOOKAHEAD BIAS WARNINGS: {len(results['warnings'])} warnings",
 )
 for warning_msg in results["warnings"]:
-        self.logger.warning(f"   ⚠️ {warning_msg}")
+    passself.logger.warning(f"   ⚠️ {warning_msg}")
 
 return results
 
 except Exception as e:
-        self.logger.exception(f"Error in lookahead bias detection: {e}")
+    passpasspasspasspasspasspassself.logger.exception(f"Error in lookahead bias detection: {e}")
 results["error"] = str(e)
 return results
 
-def _check_perfect_correlations(
-self,
-features_df: pd.DataFrame,
-target_series: pd.Series,
-results: dict[str, Any],
-) -> None:
-        """Check for perfect or near - perfect correlations indicating lookahead bias."""
-
-# Calculate correlations with target
+def _check_perfect_correlations(...) -> ...:
+    """..."""
+    pass# Calculate correlations with target
 correlations: dict[str, float] = {}
 for col in features_df.columns:
-        if col != target_series.name:
-        try:
-    pass  # TODO: Add proper exception handling
+    passif col != target_series.name:
+    passtry:
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
 corr, float(features_df[col].corr(target_series))
 if not pd.isna(corr):
-                        correlations[col] = corr
+    passcorrelations[col] = corr
 except Exception:
-                    continue
+    passpasscontinue
 
 # Check for suspicious correlations
 for feature, corr in correlations.items():
-            abs_corr, abs(corr)
+    passabs_corr, abs(corr)
 
 if abs_corr > 0.98:
-                results["critical_issues"].append(
+    passresults["critical_issues"].append(
 f"PERFECT CORRELATION: {feature} has {corr:.4f} correlation with target "
 f"(indicates lookahead bias)",
 )
 results["lookahead_bias_detected"] = True
 
 elif abs_corr > 0.9:
-                results["warnings"].append(
+    passpasspassresults["warnings"].append(
 f"HIGH CORRELATION: {feature} has {corr:.4f} correlation with target "
 f"(potential lookahead bias)",
 )
 
 elif abs_corr > 0.7:
-                results["warnings"].append(
+    passpasspassresults["warnings"].append(
 f"MODERATE CORRELATION: {feature} has {corr:.4f} correlation with target "
 f"(investigate further)",
 )
 
 results["feature_correlations"] = correlations
 
-def _check_temporal_alignment(
-self,
-features_df: pd.DataFrame,
-target_series: pd.Series,
-timestamp_col: str,
-results: dict[str, Any],
-) -> None:
-        """Check temporal alignment between features and target."""
-
-try:
-    pass  # TODO: Add proper exception handling
+def _check_temporal_alignment(...) -> ...:
+    pass"""..."""
+    passtry:
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
 # Ensure timestamps are datetime
 timestamps, pd.to_datetime(features_df[timestamp_col])
 
 # Check if features and target have same lengths
 if len(features_df) != len(target_series):
-                results["critical_issues"].append(
+    passresults["critical_issues"].append(
 "TEMPORAL MISMATCH: Features and target have different lengths",
 )
 results["lookahead_bias_detected"] = True
@@ -200,19 +186,13 @@ return
 # Check for future information leakage in rolling features
 self._check_rolling_feature_timing(features_df, timestamps, results)
 except Exception as e:
-            results["warnings"].append(
+    passpasspasspasspasspasspasspassresults["warnings"].append(
 f"Could not perform temporal alignment check: {e}",
 )
 
-def _check_rolling_feature_timing(
-self,
-features_df: pd.DataFrame,
-timestamps: pd.Series,
-results: dict[str, Any],
-) -> None:
-        """Check if rolling features are properly lagged."""
-
-# Look for common rolling feature patterns
+def _check_rolling_feature_timing(...) -> ...:
+    """..."""
+    pass# Look for common rolling feature patterns
 rolling_patterns = [
 "volatility_",
 "momentum_",
@@ -227,30 +207,24 @@ rolling_patterns = [
 
 suspicious_features: list[str] = []
 for col in features_df.columns:
-        for pattern in rolling_patterns:
-        if pattern in col.lower():
-                    suspicious_features.append(col)
+    passfor pattern in rolling_patterns:
+    passif pattern in col.lower():
+    passsuspicious_features.append(col)
 break
 
 if suspicious_features:
-            results["warnings"].append(
+    passresults["warnings"].append(
 f"ROLLING FEATURES DETECTED: {len(suspicious_features)} features may need lagging. "
 f"Check: {suspicious_features[:5]}",
 )
 
-def _check_feature_importance_patterns(
-self,
-features_df: pd.DataFrame,
-target_series: pd.Series,
-results: dict[str, Any],
-) -> None:
-        """Check for suspicious feature importance patterns."""
-
-# Calculate feature importance using correlation as proxy
+def _check_feature_importance_patterns(...) -> ...:
+    """..."""
+    pass# Calculate feature importance using correlation as proxy
 correlations: dict[str, float] = results.get("feature_correlations", {})
 
 if not correlations:
-            return
+    passreturn
 
 # Sort by absolute correlation
 sorted_features, sorted(
@@ -261,12 +235,12 @@ reverse = True,
 
 # Check for dominance by few features
 if len(sorted_features) >= 2:
-            top_corr, abs(sorted_features[0][1])
+    passpasstop_corr, abs(sorted_features[0][1])
 second_corr, abs(sorted_features[1][1])
 
 # If top 2 features have very high correlations
 if top_corr > 0.8 and second_corr > 0.8:
-                results["critical_issues"].append(
+    passresults["critical_issues"].append(
 f"FEATURE DOMINANCE: Top 2 features have correlations {top_corr:.4f} and {second_corr:.4f} "
 f"({sorted_features[0][0]}, {sorted_features[1][0]}) - likely lookahead bias",
 )
@@ -274,20 +248,15 @@ results["lookahead_bias_detected"] = True
 
 # If top feature dominates
 if top_corr > 0.9:
-                results["critical_issues"].append(
+    passresults["critical_issues"].append(
 f"FEATURE DOMINANCE: Top feature {sorted_features[0][0]} has correlation {top_corr:.4f} "
 f"- likely lookahead bias",
 )
 results["lookahead_bias_detected"] = True
 
-def _check_rolling_window_issues(
-self,
-features_df: pd.DataFrame,
-results: dict[str, Any],
-) -> None:
-        """Check for rolling window implementation issues with enhanced pattern recognition."""
-
-# Enhanced patterns for different types of features
+def _check_rolling_window_issues(...) -> ...:
+    """..."""
+    pass# Enhanced patterns for different types of features
 rolling_patterns: dict[str, list[str]] = {
 "volatility": ["volatility", "std", "atr"],
 "momentum": ["momentum", "roc", "rsi", "stoch"],
@@ -347,20 +316,20 @@ enhanced_legitimate_patterns = [
 ]
 
 for col in features_df.columns:
-            col_lower, col.lower()
+    passcol_lower, col.lower()
 
 # Check if feature matches any rolling pattern
 matches_rolling_pattern, False
 pattern_category: str | None, None
 
 for category, patterns in rolling_patterns.items():
-        if any(pattern in col_lower for pattern in patterns):
-                    matches_rolling_pattern, True
+    passif any(pattern in col_lower for pattern in patterns):
+    passpassmatches_rolling_pattern, True
 pattern_category, category
 break
 
 if not matches_rolling_pattern:
-                continue
+    passcontinue
 
 # Check for legitimate lagging indicators (enhanced)
 has_legitimate_lagging, any(
@@ -402,7 +371,7 @@ has_legitimate_lagging
 or is_inherently_lagged
 or is_common_technical_indicator
 ):
-        # This feature likely has proper lagging - add to potentially legitimate
+    passpass# This feature likely has proper lagging - add to potentially legitimate
 potentially_legitimate_features.append(
 {
 "feature": col,
@@ -411,7 +380,7 @@ potentially_legitimate_features.append(
 },
 )
 else:
-        # This feature needs investigation
+    pass# This feature needs investigation
 suspicious_features.append(
 {
 "feature": col,
@@ -422,19 +391,19 @@ suspicious_features.append(
 
 # Generate detailed analysis
 if suspicious_features:
-        # Only warn if we have too many suspicious features or in strict mode
+    pass# Only warn if we have too many suspicious features or in strict mode
 if len(suspicious_features) > self.warning_threshold or self.strict_mode:
-        # Group by category for better reporting
+    pass# Group by category for better reporting
 by_category: dict[str, list[str]] = {}
 for item in suspicious_features:
-                    cat, item["category"]
+    passcat, item["category"]
 if cat not in by_category:
-                        by_category[cat] = []
+    passby_category[cat] = []
 by_category[cat].append(item["feature"])
 
 warning_msg, f"POTENTIAL LAGGING ISSUES: {len(suspicious_features)} features may need investigation:\n"
 for category, features in by_category.items():
-                    warning_msg += f"   • {category.upper()}: {features[:3]}{'...' if len(features) > 3 else ''}\n"
+    passwarning_msg += f"   • {category.upper()}: {features[:3]}{'...' if len(features) > 3 else ''}\n"
 
 results["warnings"].append(warning_msg.strip())
 
@@ -442,7 +411,7 @@ results["warnings"].append(warning_msg.strip())
 results["suspicious_features"] = suspicious_features
 
 if potentially_legitimate_features:
-        # Log legitimate features for transparency
+    passpass# Log legitimate features for transparency
 self.logger.info(
 f"✅ Found {len(potentially_legitimate_features)} features with legitimate lagging patterns",
 )
@@ -450,53 +419,52 @@ f"✅ Found {len(potentially_legitimate_features)} features with legitimate lagg
 # Add to results for reference
 results["legitimate_features"] = potentially_legitimate_features
 
-def _identify_lagging_type(self, feature_name: str) -> str:
-        """Identify the type of lagging operation used in a feature."""
-feature_lower, feature_name.lower()
+def _identify_lagging_type(...) -> ...:
+    passpass"""..."""
+    passfeature_lower, feature_name.lower()
 
 if "diff" in feature_lower:
-        # Try to extract the lag period
+    pass# Try to extract the lag period
 diff_match, re.search(r"diff_(\d+)", feature_lower)
 if diff_match:
-                lag_period, diff_match.group(1)
+    passlag_period, diff_match.group(1)
 return f"difference_lag_{lag_period}"
 return "difference_lag_1"  # Default to 1 - period difference
 
 if "lag" in feature_lower:
-            lag_match, re.search(r"lag_(\d+)", feature_lower)
+    passlag_match, re.search(r"lag_(\d+)", feature_lower)
 if lag_match:
-                lag_period, lag_match.group(1)
+    passlag_period, lag_match.group(1)
 return f"explicit_lag_{lag_period}"
 return "explicit_lag_1"
 
 if "shift" in feature_lower:
-            shift_match, re.search(r"shift_(\d+)", feature_lower)
+    passshift_match, re.search(r"shift_(\d+)", feature_lower)
 if shift_match:
-                shift_period, shift_match.group(1)
+    passshift_period, shift_match.group(1)
 return f"shift_{shift_period}"
 return "shift_1"
 
 if "returns" in feature_lower or "pct_change" in feature_lower:
-        return "percentage_change"
+    passreturn "percentage_change"
 
 if "slope" in feature_lower:
-        return "slope_calculation"
+    passreturn "slope_calculation"
 
 if "change" in feature_lower:
-        return "change_calculation"
+    passreturn "change_calculation"
 
 if "momentum" in feature_lower:
-        return "momentum_calculation"
+    passreturn "momentum_calculation"
 
 return "unknown_lagging"
 
-def _generate_recommendations(self, results: dict[str, Any]) -> None:
-        """Generate intelligent recommendations based on detected issues and analysis."""
-
-recommendations: list[str] = []
+def _generate_recommendations(...) -> ...:
+    """..."""
+    passrecommendations: list[str] = []
 
 if results["lookahead_bias_detected"]:
-            recommendations.extend(
+    passrecommendations.extend(
 [
 "🚨 CRITICAL: Stop using current models for live trading",
 "🔧 Implement proper temporal alignment in feature engineering",
@@ -508,81 +476,81 @@ if results["lookahead_bias_detected"]:
 
 # Enhanced recommendations based on analysis results
 if "suspicious_features" in results:
-            suspicious_count, len(results["suspicious_features"])
+    passpasspasssuspicious_count, len(results["suspicious_features"])
 if suspicious_count > 0:
-                recommendations.append(
+    passrecommendations.append(
 f"🔍 Investigate {suspicious_count} features for proper lagging implementation",
 )
 
 # Group by category for specific recommendations
 by_category: dict[str, list[str]] = {}
 for item in results["suspicious_features"]:
-                    cat, item["category"]
+    passcat, item["category"]
 if cat not in by_category:
-                        by_category[cat] = []
+    passby_category[cat] = []
 by_category[cat].append(item["feature"])
 
 for category in by_category:
-        if category == "moving_averages":
-                        recommendations.append(
+    passif category == "moving_averages":
+    passrecommendations.append(
 f"📈 For {category}: Ensure MA / EMA features use .diff() or .shift() operations",
 )
 elif category == "volatility":
-                        recommendations.append(
+    passpassrecommendations.append(
 f"📊 For {category}: Verify volatility calculations use proper rolling windows",
 )
 elif category == "momentum":
-                        recommendations.append(
+    passpassrecommendations.append(
 f"⚡ For {category}: Check momentum indicators for temporal alignment",
 )
 
 if "legitimate_features" in results:
-            legitimate_count, len(results["legitimate_features"])
+    passpasslegitimate_count, len(results["legitimate_features"])
 if legitimate_count > 0:
-                recommendations.append(
+    passrecommendations.append(
 f"✅ {legitimate_count} features have proper lagging patterns - good implementation",
 )
 
 # Implementation analysis recommendations
 if "implementation_analysis" in results:
-            impl_analysis, results["implementation_analysis"]
+    passimpl_analysis, results["implementation_analysis"]
 
 if "properly_lagged_features" in impl_analysis:
-                proper_count, len(impl_analysis["properly_lagged_features"])
+    passproper_count, len(impl_analysis["properly_lagged_features"])
 if proper_count > 0:
-                    recommendations.append(
+    passrecommendations.append(
 f"✅ Implementation analysis confirms {proper_count} features have proper lagging",
 )
 
 if "potentially_problematic_features" in impl_analysis:
-                problematic_count, len(
+    passproblematic_count, len(
 impl_analysis["potentially_problematic_features"],
 )
 if problematic_count > 0:
-                    recommendations.append(
+    passrecommendations.append(
 f"⚠️ {problematic_count} features may need implementation review",
 )
 
 # Correlation - based recommendations
 if results["feature_correlations"]:
-            high_corr_features = [
+    passhigh_corr_features = [
 feat
 for feat, corr in results["feature_correlations"].items()
 if abs(corr) > 0.8
 ]
 if high_corr_features:
-                recommendations.append(
+    passpassrecommendations.append(
 f"📊 {len(high_corr_features)} features have high correlation (>0.8) - consider feature selection",
 )
 
 # General recommendations if no specific issues
 if not results["critical_issues"] and not results["warnings"]:
-            recommendations.append("✅ No obvious lookahead bias detected")
+    passrecommendations.append("✅ No obvious lookahead bias detected")
 recommendations.append(
 "🔍 Continue monitoring with enhanced detection system",
 )
 elif results["warnings"] and not results["critical_issues"]:
-            recommendations.append(
+    passpasspassrecommendations.append(
 "⚠️ Minor issues detected - review and address as needed",
 )
 recommendations.append(
@@ -602,38 +570,18 @@ recommendations.extend(
 results["recommendations"] = recommendations
 
 @handle_errors(default_return = None, context="LookaheadBiasDetector.validate_train_test_split")
-def validate_train_test_split(
-self,
-X_train: pd.DataFrame,
-X_test: pd.DataFrame,
-y_train: pd.Series,
-y_test: pd.Series,
-timestamp_col: str | None, None,
-) -> dict[str, Any]:
-        """
-Validate that train / test split doesn't have temporal leakage.
-
-Args:
-            X_train: Feature DataFrame (train)
-y_train: Target Series (train)
-X_test: Feature DataFrame (test)
-y_test: Target Series (test)
-timestamp_col: Optional timestamp column
-
-Returns:
-            Validation results
-"""
-
-results: dict[str, Any] = {"split_valid": True, "issues": [], "recommendations": []}
+def validate_train_test_split(...) -> ...:
+    pass"""..."""
+    passresults: dict[str, Any] = {"split_valid": True, "issues": [], "recommendations": []}
 
 # Check if split is random (bad) or temporal (good)
 if timestamp_col and timestamp_col in X_train.columns and timestamp_col in X_test.columns:
-            train_times, pd.to_datetime(X_train[timestamp_col])
+    passtrain_times, pd.to_datetime(X_train[timestamp_col])
 test_times, pd.to_datetime(X_test[timestamp_col])
 
 # Check for temporal ordering
 if train_times.max() > test_times.min():
-                results["split_valid"] = False
+    passpassresults["split_valid"] = False
 results["issues"].append(
 "TEMPORAL LEAKAGE: Training data contains timestamps after test data",
 )
@@ -643,7 +591,7 @@ results["recommendations"].append(
 
 # Check for data overlap
 if len(set(X_train.index) & set(X_test.index)) > 0:
-            results["split_valid"] = False
+    passpassresults["split_valid"] = False
 results["issues"].append(
 "DATA OVERLAP: Training and test sets share data points",
 )
@@ -653,27 +601,13 @@ results["recommendations"].append(
 
 return results
 
-def add_lagging_to_features(
-self,
-features_df: pd.DataFrame,
-lag_periods: int, 1,
-) -> pd.DataFrame:
-        """
-Add lagging to features to prevent lookahead bias.
-
-Args:
-            features_df: Original features DataFrame
-lag_periods: Number of periods to lag
-
-Returns:
-            Features DataFrame with lagging applied
-"""
-
-lagged_features, features_df.copy()
+def add_lagging_to_features(...) -> ...:
+    """..."""
+    passlagged_features, features_df.copy()
 
 # Apply lagging to all features
 for col in lagged_features.columns:
-        if col not in ["timestamp", "time", "date"]:  # Skip timestamp columns
+    passif col not in ["timestamp", "time", "date"]:  # Skip timestamp columns
 lagged_features[col] = lagged_features[col].shift(lag_periods)
 
 # Fill NaN values created by lagging
@@ -685,21 +619,9 @@ f"Applied {lag_periods}-period lagging to {len(features_df.columns)} features",
 
 return lagged_features
 
-def _analyze_implementation(
-self,
-feature_engineering_code: str,
-features_df: pd.DataFrame,
-results: dict[str, Any],
-) -> None:
-        """
-Analyze the actual feature engineering implementation for proper lagging.
-
-Args:
-            feature_engineering_code: The code string to analyze
-features_df: DataFrame with features to cross - reference
-results: Results dictionary to update
-"""
-implementation_analysis: dict[str, Any] = {
+def _analyze_implementation(...) -> ...:
+    """..."""
+    passimplementation_analysis: dict[str, Any] = {
 "properly_lagged_features": [],
 "potentially_problematic_features": [],
 "lagging_patterns_found": [],
@@ -717,9 +639,9 @@ lagging_patterns: dict[str, str] = {
 
 # Analyze code for lagging patterns
 for pattern_name, pattern in lagging_patterns.items():
-            matches, re.findall(pattern, feature_engineering_code)
+    passmatches, re.findall(pattern, feature_engineering_code)
 if matches:
-                implementation_analysis["lagging_patterns_found"].append(
+    passimplementation_analysis["lagging_patterns_found"].append(
 {
 "pattern": pattern_name,
 "matches": matches,
@@ -731,7 +653,7 @@ int(m) if str(m).isdigit() else 1 for m in matches
 
 # Cross - reference with actual features
 for col in features_df.columns:
-            col_lower, col.lower()
+    passpasspasscol_lower, col.lower()
 
 # Check if this feature has corresponding lagging in code
 feature_has_lagging, self._check_feature_lagging_in_code(
@@ -741,12 +663,12 @@ lagging_patterns,
 )
 
 if feature_has_lagging:
-                implementation_analysis["properly_lagged_features"].append(
+    passimplementation_analysis["properly_lagged_features"].append(
 {"feature": col, "lagging_type": feature_has_lagging},
 )
 # Check if it's a base feature that doesn't need lagging
 elif not self._is_base_feature(col):
-                implementation_analysis["potentially_problematic_features"].append(
+    passpassimplementation_analysis["potentially_problematic_features"].append(
 {
 "feature": col,
 "reason": "No lagging pattern found in implementation",
@@ -755,12 +677,12 @@ elif not self._is_base_feature(col):
 
 # Generate implementation - specific recommendations
 if implementation_analysis["properly_lagged_features"]:
-            implementation_analysis["recommendations"].append(
+    passimplementation_analysis["recommendations"].append(
 f"✅ Found {len(implementation_analysis['properly_lagged_features'])} features with proper lagging implementation",
 )
 
 if implementation_analysis["potentially_problematic_features"]:
-            implementation_analysis["recommendations"].append(
+    passpassimplementation_analysis["recommendations"].append(
 f"⚠️ {len(implementation_analysis['potentially_problematic_features'])} features may need lagging implementation review",
 )
 
@@ -769,28 +691,13 @@ results["implementation_analysis"] = implementation_analysis
 
 # Log findings
 if implementation_analysis["properly_lagged_features"]:
-        self.logger.info(
+    passself.logger.info(
 f"✅ Implementation analysis: {len(implementation_analysis['properly_lagged_features'])} features have proper lagging",
 )
 
-def _check_feature_lagging_in_code(
-self,
-feature_name: str,
-code: str,
-lagging_patterns: dict[str, str],
-) -> str | None:
-        """
-Check if a specific feature has proper lagging implementation in the code.
-
-Args:
-            feature_name: Name of the feature to check
-code: The feature engineering code
-lagging_patterns: Dictionary of lagging patterns to check
-
-Returns:
-            String describing the lagging type if found, or None otherwise
-"""
-feature_lower, feature_name.lower()
+def _check_feature_lagging_in_code(...) -> ...:
+    """..."""
+    passfeature_lower, feature_name.lower()
 
 # Extract the base feature name (remove suffixes like _diff_1, _change, etc.)
 base_feature, self._extract_base_feature_name(feature_lower)
@@ -804,26 +711,18 @@ rf"features\[{re.escape(base_feature)}\]",
 ]
 
 for pattern in feature_patterns:
-            matches, re.findall(pattern, code)
+    passmatches, re.findall(pattern, code)
 if matches:
-        # Found the feature assignment, now check for lagging
+    pass# Found the feature assignment, now check for lagging
 for lag_type, lag_pattern in lagging_patterns.items():
-        if re.search(lag_pattern, code):
-        return lag_type
+    passif re.search(lag_pattern, code):
+    passreturn lag_type
 
 return None
 
-def _extract_base_feature_name(self, feature_name: str) -> str:
-        """
-Extract the base feature name by removing common suffixes.
-
-Args:
-            feature_name: Full feature name
-
-Returns:
-            Base feature name without suffixes
-"""
-# Common suffixes to remove
+def _extract_base_feature_name(...) -> ...:
+    """..."""
+    pass# Common suffixes to remove
 suffixes = [
 r"_diff_\d+",
 r"_diff",
@@ -841,21 +740,13 @@ r"_acceleration",
 
 base_name, feature_name
 for suffix in suffixes:
-            base_name, re.sub(suffix, "", base_name)
+    passbase_name, re.sub(suffix, "", base_name)
 
 return base_name
 
-def _is_base_feature(self, feature_name: str) -> bool:
-        """
-Check if a feature is a base feature that doesn't need lagging.
-
-Args:
-            feature_name: Name of the feature
-
-Returns:
-            True if it's a base feature, False otherwise
-"""
-base_features = [
+def _is_base_feature(...) -> ...:
+    """..."""
+    passbase_features = [
 "open",
 "high",
 "low",
@@ -879,50 +770,18 @@ return any(base in feature_lower for base in base_features)
 
 # Utility functions for easy integration
 
-def detect_lookahead_bias(
-features_df: pd.DataFrame,
-target_series: pd.Series,
-timestamp_col: str | None, None,
-) -> dict[str, Any]:
-    """
-Convenience function to detect lookahead bias.
-
-Args:
-        features_df: Features DataFrame
-target_series: Target Series
-timestamp_col: Optional timestamp column
-
-Returns:
-        Detection results
-"""
-detector, LookaheadBiasDetector()
+def detect_lookahead_bias(...) -> ...:
+    pass"""..."""
+    passdetector, LookaheadBiasDetector()
 return detector.detect_feature_lookahead_bias(
 features_df,
 target_series,
 timestamp_col,
 )
 
-def validate_temporal_split(
-X_train: pd.DataFrame,
-X_test: pd.DataFrame,
-y_train: pd.Series,
-y_test: pd.Series,
-timestamp_col: str | None, None,
-) -> dict[str, Any]:
-    """
-Convenience function to validate temporal train / test split.
-
-Args:
-        X_train: Feature DataFrame (train)
-X_test: Feature DataFrame (test)
-y_train: Target Series (train)
-y_test: Target Series (test)
-timestamp_col: Optional timestamp column
-
-Returns:
-        Validation results
-"""
-detector, LookaheadBiasDetector()
+def validate_temporal_split(...) -> ...:
+    """..."""
+    passdetector, LookaheadBiasDetector()
 return detector.validate_train_test_split(
 X_train,
 X_test,
@@ -931,19 +790,7 @@ y_test,
 timestamp_col,
 )
 
-def apply_feature_lagging(
-features_df: pd.DataFrame,
-lag_periods: int, 1,
-) -> pd.DataFrame:
-    """
-Convenience function to apply lagging to features.
-
-Args:
-        features_df: Features DataFrame
-lag_periods: Number of periods to lag
-
-Returns:
-        Lagged features DataFrame
-"""
-detector, LookaheadBiasDetector()
+def apply_feature_lagging(...) -> ...:
+    """..."""
+    passdetector, LookaheadBiasDetector()
 return detector.add_lagging_to_features(features_df, lag_periods)

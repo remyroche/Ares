@@ -24,7 +24,7 @@ _global_container: _DependencyContainer | None = None
 def get_container() -> _DependencyContainer:
     global _global_container
 if _global_container is None:
-        _global_container = _DependencyContainer()
+    pass_global_container = _DependencyContainer()
 return _global_container
 
 

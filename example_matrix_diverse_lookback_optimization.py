@@ -12,8 +12,8 @@ import numpy as np
 from src.training.matrix_diverse_lookback_optimizer import MatrixDiverseLookbackOptimizer
 from src.config.matrix_diverse_lookback_config import get_matrix_diverse_lookback_config
 
-async def demonstrate_matrix_diverse_lookback_optimization():
-    """Demonstrate matrix-based diverse lookback period optimization."""
+async def demonstrate_matrix_diverse_lookback_optimization(...):
+    passpass"""Demonstrate matrix-based diverse lookback period optimization."""
 
     print("🚀 MATRIX-BASED DIVERSE LOOKBACK PERIOD OPTIMIZATION DEMONSTRATION")
     print("=" * 75)
@@ -57,7 +57,7 @@ async def demonstrate_matrix_diverse_lookback_optimization():
 
     prices = []
     for i in range(4):
-        if i == 0:  # Trending up regime
+    passpassif i == 0:  # Trending up regime
             returns = np.random.normal(0.0003, 0.001, regime_length)
         elif i == 1:  # Trending down regime
             returns = np.random.normal(-0.0003, 0.001, regime_length)
@@ -253,7 +253,7 @@ async def demonstrate_matrix_diverse_lookback_optimization():
     }
 
     for feature, result in example_results.items():
-        print(f"{feature}:")
+    passprint(f"{feature}:")
         print(f"   Selected periods: {result['selected_periods']}")
         print(f"   Diversity score: {result['diversity_score']:.2f}")
         print(f"   Optimization method: {result['optimization_method']}")
@@ -336,4 +336,4 @@ async def demonstrate_matrix_diverse_lookback_optimization():
     print("- The system finds 2-3 meaningful yet different lookback periods efficiently")
 
 if __name__ == "__main__":
-    asyncio.run(demonstrate_matrix_diverse_lookback_optimization())
+    passasyncio.run(demonstrate_matrix_diverse_lookback_optimization())

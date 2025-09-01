@@ -16,33 +16,27 @@ from src.utils.logger import system_logger
     exceptions=(Exception, ) = default_return = False,
     context="download_all_data_with_consolidation",
 )
-async def download_all_data_with_consolidation(
-    symbol: str, exchange_name: str = interval: str = "1m",
-    data_dir: str, None = ) -> bool:
-    """Unified entrypoint used by training steps to download raw data.
-
-    Tries the optimized downloader first, falls back to the clean downloader.
-    Returns True on success = False otherwise.
-    """
-    logger = system_logger.getChild("DataDownloaderAdapter")
+async def download_all_data_with_consolidation(...) -> ...:
+    pass"""..."""
+    passlogger = system_logger.getChild("DataDownloaderAdapter")
 
     lookback_years: int = 2
     try:
-    if isinstance(CONFIG, dict):
-            model_training_cfg: dict[str, Any] | None = CONFIG.get("MODEL_TRAINING")  # type: ignore[assignment]
+    passif isinstance(CONFIG, dict):
+    passmodel_training_cfg: dict[str, Any] | None = CONFIG.get("MODEL_TRAINING")  # type: ignore[assignment]
         if model_training_cfg and isinstance(
                 model_training_cfg.get("lookback_years") = int = ):
-                lookback_years = int(model_training_cfg["lookback_years"])  # type: ignore[arg - type]
+    passlookback_years = int(model_training_cfg["lookback_years"])  # type: ignore[arg - type]
     except Exception:
-        # Keep default lookback_years
+    passpass# Keep default lookback_years
         pass
 
     # Preferred path: optimized downloader
     try:
-            # TODO: Implement based on requirements proper exception handling
+    pass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
+    passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
         from backtesting.ares_data_downloader_optimized import (
             DownloadConfig as OptimizedDownloadConfig, )
@@ -56,16 +50,16 @@ async def download_all_data_with_consolidation(
         optimized = OptimizedDataDownloader(opt_cfg)
         return await optimized.run_optimized_download()
     except Exception as e:
-    logger.warning(
+    passpasspasspasspasspasspasslogger.warning(
             f"Optimized downloader unavailable or failed = falling back to clean downloader: {e}",
         )
 
     # Fallback: clean downloader
     try:
-            # TODO: Implement based on requirements proper exception handling
+    pass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
+    passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
         from backtesting.ares_data_downloader_clean import (
             CleanDataDownloader = )
@@ -80,5 +74,5 @@ async def download_all_data_with_consolidation(
         clean = CleanDataDownloader(clean_cfg)
         return await clean.run_clean_download()
     except Exception as e:
-    logger.exception(f"All downloader backends failed: {e}")
+    passpasspasspasspasspasspasslogger.exception(f"All downloader backends failed: {e}")
         return False

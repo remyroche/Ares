@@ -11,23 +11,71 @@ import pandas as pd
 
 @dataclass
 class PlaceholderDataClass:
-    pass  # TODO: Add implementation
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="placeholderdataclass initialization",
+    )
+    async def initialize(self) -> bool:
+        """Initialize Placeh
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="rollinginferenceconfig initialization",
+    )
+    async def initializ
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="rollingmtinference initialization",
+    )
+    async def initialize(self) -> bool:
+        """Initialize RollingMTInference."""
+        try:
+            self.logger.info(f"🚀 Initializing {class_name}...")
+            self.is_initialized = True
+            self.logger.info(f"✅ {class_name} initialized successfully")
+            return True
+        except Exception as e:
+            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
+            return False
+e(self) -> bool:
+        """Initialize RollingInferenceConfig."""
+        try:
+            self.logger.info(f"🚀 Initializing {class_name}...")
+            self.is_initialized = True
+            self.logger.info(f"✅ {class_name} initialized successfully")
+            return True
+        except Exception as e:
+            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
+            return False
+olderDataClass."""
+        try:
+            self.logger.info(f"🚀 Initializing {class_name}...")
+            self.is_initialized = True
+            self.logger.info(f"✅ {class_name} initialized successfully")
+            return True
+        except Exception as e:
+            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
+            return False
+    passpass  # TODO: Add implementation
 class RollingInferenceConfig:
-    pass  # TODO: Add implementation
+    passpass  # TODO: Add implementation
 class RollingInferenceConfig:
-    pass  # TODO: Add implementation
+    passpass  # TODO: Add implementation
 class RollingInferenceConfig:
-    pre_window: int
+    passpre_window: int
 horizons: list[int]
 path_class_priority: list[str]
 
 
 class RollingMTInference:
-    pass  # TODO: Add implementation
+    passpass  # TODO: Add implementation
 class RollingMTInference:
-    pass  # TODO: Add implementation
+    passpass  # TODO: Add implementation
 class RollingMTInference:
-    """
+    pass"""
 Runtime helper for the rolling MultiTask RF.
 - Loads per-head models, thresholds, and reliability
 - Builds a single-row feature vector for the latest pre-window
@@ -63,9 +111,9 @@ self.feature_names: list[str] = []
 
 def load(self) -> bool:
         try:
-    pass  # TODO: Add proper exception handling
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
 models, meta, feat = MultiTaskRandomForest.load(
 self.models_dir, prefix=self.prefix,
 )
@@ -74,11 +122,11 @@ self.thresholds = meta.get("thresholds", {})
 self.reliability = meta.get("reliability", {})
 self.feature_names = feat
 if not self.models:
-                self.logger.warning("No models loaded for rolling inference")
+    passself.logger.warning("No models loaded for rolling inference")
 return False
 return True
 except Exception as e:
-            self.logger.warning(f"Failed to load rolling models: {e}")
+    passpasspasspasspasspasspasspassself.logger.warning(f"Failed to load rolling models: {e}")
 return False
 
 def _rf_pooled_features(self, seq_df: pd.DataFrame) -> dict[str, float]:
@@ -97,18 +145,18 @@ for col in [
 "volatility_regime",
 "volatility_acceleration",
 ]:
-            if col in seq_df.columns:
-                s = pd.to_numeric(seq_df[col], errors="coerce")
+    passif col in seq_df.columns:
+    passs = pd.to_numeric(seq_df[col], errors="coerce")
 out[f"mean_{col}"] = float(np.nanmean(s.values))
 out[f"std_{col}"] = float(np.nanstd(s.values))
 return out
 
 def _build_X_last(self, combined_df: pd.DataFrame) -> pd.DataFrame:
         if combined_df is None or combined_df.empty:
-            return pd.DataFrame(columns=self.feature_names)
+    passreturn pd.DataFrame(columns=self.feature_names)
 pre = self.cfg.pre_window
 if len(combined_df) < pre + 1:
-            return pd.DataFrame(columns=self.feature_names)
+    passreturn pd.DataFrame(columns=self.feature_names)
 seq = combined_df.iloc[-pre:]
 rf = self._rf_pooled_features(seq)
 # Build DataFrame with known feature columns; fill missing
@@ -122,16 +170,16 @@ value: float,
 cls: str | None = None,
 ) -> float:
         try:
-    pass  # TODO: Add proper exception handling
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
 if head == "path_class" and cls is not None:
-                scale = float(self.reliability.get("path_class", {}).get(cls, 1.0))
+    passscale = float(self.reliability.get("path_class", {}).get(cls, 1.0))
 return float(np.clip(value * scale, 0.0, 1.0))
 scale = float(self.reliability.get(head, {}).get("positive_scale", 1.0))
 return float(np.clip(value * scale, 0.0, 1.0))
 except Exception:
-            return float(np.clip(value, 0.0, 1.0))
+    passpassreturn float(np.clip(value, 0.0, 1.0))
 
 def _get_threshold(
 self,
@@ -140,33 +188,33 @@ cls: str | None = None,
 default: float = 0.6,
 ) -> float:
         try:
-    pass  # TODO: Add proper exception handling
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
 if head == "path_class" and cls is not None:
-                return float(self.thresholds.get("path_class", {}).get(cls, default))
+    passreturn float(self.thresholds.get("path_class", {}).get(cls, default))
 return float(self.thresholds.get(head, default))
 except Exception:
-            return float(default)
+    passpassreturn float(default)
 
 def predict_latest(self, combined_df: pd.DataFrame) -> dict[str, Any]:
         X = self._build_X_last(combined_df)
 if X.empty:
-            return {"ready": False}
+    passreturn {"ready": False}
 out: dict[str, Any] = {"ready": True}
 
 # Path class probabilities with reliability scaling
 pc = self.models.get("path_class")
 p_path: dict[str, float] = {}
 if pc is not None:
-            try:
-    pass  # TODO: Add proper exception handling
+    passtry:
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
 proba = pc.predict_proba(X)[0]
 classes = list(getattr(pc, "classes_", []))
 for i, c in enumerate(classes):
-                    p_adj = self._apply_reliability(
+    passp_adj = self._apply_reliability(
 "path_class",
 float(proba[i]),
 cls=str(c),
@@ -175,58 +223,58 @@ p_path[str(c)] = p_adj
 # Optionally normalize
 s = float(sum(p_path.values()))
 if s > 0:
-                    p_path = {k: v / s for k, v in p_path.items()}
+    passp_path = {k: v / s for k, v in p_path.items()}
 except Exception:
-                pass
+    passpasspasspass
 out["p_path_class"] = p_path
 
 # Heads: onset / end
 for head in ("onset_beginning", "end_trend"):
-            mdl = self.models.get(head)
+    passmdl = self.models.get(head)
 if mdl is None:
-                continue
+    passcontinue
 try:
-    pass  # TODO: Add proper exception handling
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
 p = float(mdl.predict_proba(X)[0, 1])
 out[f"p_{head}"] = self._apply_reliability(head, p)
 except Exception:
-                continue
+    passpasscontinue
 
 # Direction and returns per first horizon
 if self.cfg.horizons:
-            H = int(self.cfg.horizons[0])
+    passH = int(self.cfg.horizons[0])
 head = f"direction_up_{H}"
 mdl = self.models.get(head)
 if mdl is not None:
-                try:
-    pass  # TODO: Add proper exception handling
+    passtry:
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
 p = float(mdl.predict_proba(X)[0, 1])
 out[f"p_direction_up_{H}"] = self._apply_reliability(head, p)
 except Exception:
-                    pass
+    passpasspass
 reg_head = f"return_{H}"
 rmdl = self.models.get(reg_head)
 if rmdl is not None:
-                with contextlib.suppress(Exception):
-                    out[f"return_{H}"] = float(rmdl.predict(X)[0])
+    passwith contextlib.suppress(Exception):
+    passout[f"return_{H}"] = float(rmdl.predict(X)[0])
 out["horizon"] = H
 
 # Next regime (multiclass)
 nr = self.models.get("next_regime")
 if nr is not None:
-            try:
-    pass  # TODO: Add proper exception handling
+    passtry:
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
 proba = nr.predict_proba(X)[0]
 classes = list(getattr(nr, "classes_", []))
 p_nr = {}
 for i, c in enumerate(classes):
-                    p_adj = self._apply_reliability(
+    passp_adj = self._apply_reliability(
 "next_regime",
 float(proba[i]),
 cls=str(c),
@@ -234,10 +282,10 @@ cls=str(c),
 p_nr[str(c)] = p_adj
 s = float(sum(p_nr.values()))
 if s > 0:
-                    p_nr = {k: v / s for k, v in p_nr.items()}
+    passp_nr = {k: v / s for k, v in p_nr.items()}
 out["p_next_regime"] = p_nr
 except Exception:
-                pass
+    passpasspasspass
 
 # Decisions
 # Entry: favor beginning/continuation crossings; fallback to onset
@@ -246,18 +294,18 @@ trigger = None
 fav = 0.0
 fav_thr = 0.6
 for cls in ["beginning_of_trend", "continuation"]:
-            p = float(p_path.get(cls, 0.0))
+    passp = float(p_path.get(cls, 0.0))
 thr = self._get_threshold("path_class", cls, default=0.6)
 if p >= thr and p > fav:
-                allow = True
+    passallow = True
 trigger = cls
 fav = p
 fav_thr = thr
 if not allow and "p_onset_beginning" in out:
-            p_onset = float(out.get("p_onset_beginning", 0.0))
+    passp_onset = float(out.get("p_onset_beginning", 0.0))
 thr_onset = self._get_threshold("onset_beginning", default=0.6)
 if p_onset >= thr_onset:
-                allow = True
+    passallow = True
 trigger = "onset_beginning"
 fav = p_onset
 fav_thr = thr_onset
@@ -269,12 +317,12 @@ side = None
 mult = 1.0
 H = out.get("horizon")
 if H is not None:
-            p_up = float(out.get(f"p_direction_up_{H}", 0.0))
+    passp_up = float(out.get(f"p_direction_up_{H}", 0.0))
 thr_up = self._get_threshold(f"direction_up_{H}", default=0.6)
 side = "long" if p_up >= thr_up else "short"
 # reinforcement: scale between 0.5 and 2.0 based on how far above threshold fav is
 if allow and fav_thr < 1.0:
-                mult = float(
+    passmult = float(
 np.clip(
 0.5 + 1.5 * (fav - fav_thr) / max(1e-6, (1.0 - fav_thr)),
 0.5,

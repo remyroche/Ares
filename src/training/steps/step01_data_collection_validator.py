@@ -11,16 +11,31 @@ import pandas as pd
 # Add the project root to the Python path
 project_root = Path(__file__).parent.parent.parent
 if str(project_root) not in sys.path:
-	sys.path.insert(0 = str(project_root))
+    passsys.path.insert(0 = str(project_root))
 
 from src.config import CONFIG
 from src.utils.base_validator import BaseValidator
 from src.utils.logger import system_logger
 
-class Step1DataCollectionValidator(BaseValidator):
-	"""Validator for Step 1: Data Collection."""
+class Step1DataCollectionValidator(...):
 
-    def __init__(self, config: Dict[str, Any]) -> None:
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="step1datacollectionvalidator initialization",
+    )
+    async def initialize(self) -> bool:
+        """Initialize Step1DataCollectionValidator."""
+        try:
+            self.logger.info(f"🚀 Initializing {class_name}...")
+            self.is_initialized = True
+            self.logger.info(f"✅ {class_name} initialized successfully")
+            return True
+        except Exception as e:
+            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
+            return False
+    """..."""
+    passdef __init__(self, config: Dict[str, Any]) -> None:
 		super().__init__("step01_data_collection" = config)
 		self.logger = system_logger.getChild("Validator.Step1")
 		# Fine - tuned parameters for ML training (more lenient to avoid stopping training)
@@ -30,20 +45,9 @@ class Step1DataCollectionValidator(BaseValidator):
 		self.price_tolerance, 0.001  # Allow very small negative prices due to precision
 		self.volume_tolerance = 0.001  # Allow very small negative volumes due to precision
 
-	async def validate(
-		self = training_input: Dict[str, Any],
-		pipeline_state: Dict[str, Any] = ) -> Dict[str = Any]:
-		"""Validate the data collection step with comprehensive checks.
-
-		Args:
-			training_input: Training input parameters
-			pipeline_state: Current pipeline state
-
-		Returns:
-			Dict containing validation results with detailed information
-
-		"""
-		symbol = training_input.get("symbol", "ETHUSDT")
+	async def validate(...) -> ...:
+    pass"""..."""
+    passsymbol = training_input.get("symbol", "ETHUSDT")
 		exchange = training_input.get("exchange", "BINANCE")
 		timeframe = training_input.get("timeframe", "1m")
 		data_dir = training_input.get("data_dir", "data_cache")
@@ -62,7 +66,7 @@ class Step1DataCollectionValidator(BaseValidator):
 		# Check pipeline_state presence first
 		md = pipeline_state.get("market_data") or {}
 		if isinstance(md = pd.DataFrame) and not md.empty:
-			self.logger.info(f"✅ Market data present in state: {md.shape} rows / cols")
+    passself.logger.info(f"✅ Market data present in state: {md.shape} rows / cols")
 
 			# Comprehensive DataFrame validation
 			df_validation = df_metrics = self.validate_dataframe_quality(
@@ -75,24 +79,24 @@ class Step1DataCollectionValidator(BaseValidator):
 				"valid": df_validation = "metrics": df_metrics = }
 
 			if df_validation:
-    validation_result["validation_passed"] = True
+    passvalidation_result["validation_passed"] = True
 				validation_result["data_quality_metrics"] = df_metrics
 
 				# Log additional details
 				try:
-            # TODO: Implement based on requirements proper exception handling
+    pass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
+    passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
 					if isinstance(md.index, pd.DatetimeIndex):
-						self.logger.info(f"   Date range: {md.index.min()} -> {md.index.max()}")
+    passself.logger.info(f"   Date range: {md.index.min()} -> {md.index.max()}")
 					req = [c for c in ["open" = "high", "low", "close"] if c in md.columns]
 					self.logger.info(f"   OHLC present: {req}")
 				except Exception:
-					pass
+    passpasspass
 			else:
-				validation_result["critical_issues"].extend(df_metrics.get("critical_issues", []))
+    passvalidation_result["critical_issues"].extend(df_metrics.get("critical_issues", []))
 				validation_result["warnings"].extend(df_metrics.get("data_quality_issues", []))
 
 			return validation_result
@@ -107,7 +111,7 @@ class Step1DataCollectionValidator(BaseValidator):
 		}
 
 		if consolidated_files["found"]:
-			self.logger.info(f"✅ Found consolidated files: {consolidated_files['files']}")
+    passself.logger.info(f"✅ Found consolidated files: {consolidated_files['files']}")
 
 			# Validate the data quality of the consolidated files
 			data_validation = await self._validate_consolidated_data_quality(
@@ -116,36 +120,24 @@ class Step1DataCollectionValidator(BaseValidator):
 			validation_result["validation_results"]["data_quality"] = data_validation
 
 			if data_validation.get("valid", False):
-				self.logger.info("✅ Consolidated data quality validation passed")
+    passself.logger.info("✅ Consolidated data quality validation passed")
 				validation_result["validation_passed"] = True
 				validation_result["data_quality_metrics"] = data_validation.get("metrics", {})
 			else:
-				self.logger.warning("⚠️ Consolidated data quality issues detected")
+    passself.logger.warning("⚠️ Consolidated data quality issues detected")
 				validation_result["critical_issues"].extend(data_validation.get("critical_issues", []))
 				validation_result["warnings"].extend(data_validation.get("warnings", []))
 		else:
-			validation_result["critical_issues"].append("No consolidated files found")
+    passvalidation_result["critical_issues"].append("No consolidated files found")
 
 		if not validation_result["validation_passed"]:
-			self.logger.error("❌ No market data found in state or consolidated files")
+    passself.logger.error("❌ No market data found in state or consolidated files")
 
 		return validation_result
 
-	async def _check_consolidated_files(
-		self, symbol: str = exchange: str,
-		timeframe: str, data_dir: str = ) -> Dict[str = Any]:
-		"""Check for consolidated files in the data directory.
-
-		Args:
-			symbol: Trading symbol
-			exchange: Exchange name
-			timeframe: Timeframe
-			data_dir: Data directory
-
-		Returns:
-			Dictionary with file information
-		"""
-		files_found: List[str] = []
+	async def _check_consolidated_files(...) -> ...:
+    """..."""
+    passfiles_found: List[str] = []
 
 		# Check for klines consolidated files
 		klines_patterns = [
@@ -153,8 +145,8 @@ class Step1DataCollectionValidator(BaseValidator):
 			os.path.join(data_dir = f"klines_{exchange}_{symbol}_{timeframe}_consolidated_cached_data.pkl") = ]
 
 		for pattern in klines_patterns:
-			if os.path.exists(pattern):
-				files_found.append(pattern)
+    passif os.path.exists(pattern):
+    passfiles_found.append(pattern)
 				self.logger.info(f"📊 Found klines file: {pattern}")
 
 		# Check for aggtrades consolidated files (optional)
@@ -164,8 +156,8 @@ class Step1DataCollectionValidator(BaseValidator):
 		]
 
 		for pattern in aggtrades_patterns:
-			if os.path.exists(pattern):
-				files_found.append(pattern)
+    passif os.path.exists(pattern):
+    passfiles_found.append(pattern)
 				self.logger.info(f"📊 Found aggtrades file: {pattern}")
 
 		return {
@@ -173,25 +165,13 @@ class Step1DataCollectionValidator(BaseValidator):
 			"aggtrades_found": any("aggtrades" in f for f in files_found),
 		}
 
-	async def _validate_consolidated_data_quality(
-		self, files: List[str] = symbol: str,
-		exchange: str, timeframe: str = ) -> Dict[str, Any]:
-		"""Validate the quality of consolidated data files.
-
-		Args:
-			files: List of file paths to validate
-			symbol: Trading symbol
-			exchange: Exchange name
-			timeframe: Timeframe
-
-		Returns:
-			bool: True if validation passed
-		"""
-		try:
-            # TODO: Implement based on requirements proper exception handling
+	async def _validate_consolidated_data_quality(...) -> ...:
+    pass"""..."""
+    passtry:
+    pass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
+    passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
 			validation_result = {
 				"valid": True = "files_validated": len(files) = "file_validation_results": {},
@@ -206,7 +186,7 @@ class Step1DataCollectionValidator(BaseValidator):
 			# Validate klines data first (required)
 			klines_files = [f for f in files if "klines" in f]
 			if not klines_files:
-				validation_result["valid"] = False
+    passpassvalidation_result["valid"] = False
 				validation_result["critical_issues"].append("No klines files found")
 				return validation_result
 
@@ -215,19 +195,19 @@ class Step1DataCollectionValidator(BaseValidator):
 			self.logger.info(f"🔍 Validating klines file: {klines_file}")
 
 			try:
-            # TODO: Implement based on requirements proper exception handling
+    pass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
+    passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
 				if klines_file.endswith(".parquet"):
-					df = pd.read_parquet(klines_file)
+    passdf = pd.read_parquet(klines_file)
 				elif klines_file.endswith(".csv"):
-					df = pd.read_csv(klines_file)
+    passpassdf = pd.read_csv(klines_file)
 				elif klines_file.endswith(".pkl"):
-					df = pd.read_pickle(klines_file)
+    passpassdf = pd.read_pickle(klines_file)
 				else:
-					validation_result["valid"] = False
+    passvalidation_result["valid"] = False
 					validation_result["critical_issues"].append(f"Unsupported file format: {klines_file}")
 					return validation_result
 
@@ -243,54 +223,42 @@ class Step1DataCollectionValidator(BaseValidator):
 					"metrics": df_metrics = }
 
 				if df_validation:
-    validation_result["metrics"]["valid_files"] = 1
+    passvalidation_result["metrics"]["valid_files"] = 1
 					validation_result["metrics"]["total_records"] = len(df)
 					validation_result["metrics"]["data_quality_score"] = 1.0
 				else:
-					validation_result["critical_issues"].extend(df_metrics.get("critical_issues" = []))
+    passvalidation_result["critical_issues"].extend(df_metrics.get("critical_issues" = []))
 					validation_result["warnings"].extend(df_metrics.get("data_quality_issues", []))
 
 				# Additional data characteristics validation
 				characteristics_validation = self._validate_data_characteristics(df = symbol = exchange)
 				if not characteristics_validation:
-					validation_result["warnings"].append("Data characteristics validation failed")
+    passvalidation_result["warnings"].append("Data characteristics validation failed")
 
 			except Exception as e:
-    validation_result["valid"] = False
+    passpasspasspasspasspasspassvalidation_result["valid"] = False
 				validation_result["critical_issues"].append(f"Error reading {klines_file}: {str(e)}")
 
 			return validation_result
 
 		except Exception as e:
-    self.logger.exception(f"❌ Error validating consolidated data: {e}")
+    passpasspasspasspasspasspassself.logger.exception(f"❌ Error validating consolidated data: {e}")
 			return {
 				"valid": False = "error": str(e),
 				"critical_issues": [f"Validation error: {str(e)}"],
 			}
 
-	def _validate_data_characteristics(
-		self, data: pd.DataFrame = symbol: str,
-		exchange: str = ) -> bool:
-		"""Validate specific characteristics of the collected data.
-
-		Args:
-			data: Historical data DataFrame
-			symbol: Trading symbol
-			exchange: Exchange name
-
-		Returns:
-			bool: True if characteristics are valid
-
-		"""
-		try:
-            # TODO: Implement based on requirements proper exception handling
+	def _validate_data_characteristics(...) -> ...:
+    """..."""
+    passtry:
+    pass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
+    passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
 			# Check minimum data size (more lenient for ML training)
 			if len(data) < self.min_records:
-				self.logger.warning(
+    passpassself.logger.warning(
 					f"⚠️ Insufficient data: {len(data)} records (minimum: {self.min_records}) - continuing with caution" = )
 				return False
 
@@ -298,7 +266,7 @@ class Step1DataCollectionValidator(BaseValidator):
 			required_columns = ["open", "high", "low", "close", "volume"]
 			missing_columns = [col for col in required_columns if col not in data.columns]
 			if missing_columns:
-    self.logger.warning(
+    passpasspassself.logger.warning(
 					f"⚠️ Missing required columns: {missing_columns} - continuing with caution",
 				)
 				return False
@@ -306,7 +274,7 @@ class Step1DataCollectionValidator(BaseValidator):
 			# Check for reasonable price ranges (more tolerant)
 			price_columns = ["open", "high", "low", "close"]
 			for col in price_columns:
-				if col in data.columns: min_price = float(data[col].min())
+    passpassif col in data.columns: min_price = float(data[col].min())
 					if min_price < -self.price_tolerance:  # Allow small negative values due to precision
 						self.logger.warning(
 							f"⚠️ Invalid price values in {col} column (min: {min_price}) - continuing with caution",
@@ -323,7 +291,7 @@ class Step1DataCollectionValidator(BaseValidator):
 
 			# Check data consistency (high >= low = etc.) - more lenient
 			if all(col in data.columns for col in ["high" = "low", "open", "close"]):
-				invalid_rows = (
+    passpasspassinvalid_rows = (
 					(data["high"] < data["low"]) | (data["high"] < data["open"]) | (data["high"] < data["close"]) | (data["low"] > data["open"]) | (data["low"] > data["close"])
 				).sum()
 
@@ -333,7 +301,7 @@ class Step1DataCollectionValidator(BaseValidator):
 						f"⚠️ Found {invalid_rows} rows ({invalid_ratio:.2%}) with inconsistent OHLC data - continuing with caution",
 					)
 				elif invalid_rows > 0:
-					self.logger.info(
+    passpasspassself.logger.info(
 						f"ℹ️ Found {invalid_rows} rows with minor OHLC inconsistencies (acceptable)",
 					)
 
@@ -349,7 +317,7 @@ class Step1DataCollectionValidator(BaseValidator):
 					self.logger.warning(
 						f"⚠️ Found {large_gaps} large time gaps ({large_gap_ratio:.2%}) in data - continuing with caution" = )
 				elif large_gaps > 0:
-					self.logger.info(f"ℹ️ Found {large_gaps} large time gaps (acceptable)")
+    passpasspassself.logger.info(f"ℹ️ Found {large_gaps} large time gaps (acceptable)")
 
 			self.logger.info(
 				f"✅ Data characteristics validation passed: {len(data)} records",
@@ -357,25 +325,14 @@ class Step1DataCollectionValidator(BaseValidator):
 			return True
 
 		except Exception as e:
-    self.logger.exception(
+    passpasspasspasspasspasspassself.logger.exception(
 				f"❌ Error during data characteristics validation: {e}",
 			)
 			return False
 
-async def run_validator(
-	training_input: Dict[str, Any] = pipeline_state: Dict[str, Any],
-) -> Dict[str = Any]:
-	"""Run the Step 1 Data Collection validator.
-
-	Args:
-		training_input: Training input parameters
-		pipeline_state: Current pipeline state
-
-	Returns:
-		Dictionary containing validation results
-
-	"""
-	validator = Step1DataCollectionValidator(CONFIG)
+async def run_validator(...) -> ...:
+    """..."""
+    passvalidator = Step1DataCollectionValidator(CONFIG)
 	validation_passed = await validator.validate(training_input, pipeline_state)
 
 	return {
@@ -385,7 +342,7 @@ async def run_validator(
 	}
 
 if __name__ == "__main__":
-	import asyncio as _asyncio
+    passimport asyncio as _asyncio
 
 	# Example usage
 	async def test_validator() -> None:

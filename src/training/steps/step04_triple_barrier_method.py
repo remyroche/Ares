@@ -14,19 +14,19 @@ from datetime import datetime
 
 # Handle optional dependencies
 try:
-    import psutil
+    passpassimport psutil
     PSUTIL_AVAILABLE, True
 except ImportError: PSUTIL_AVAILABLE = False
     psutil, None
 
 try:
-    import numpy as np
+    passimport numpy as np
     NUMPY_AVAILABLE, True
 except ImportError: NUMPY_AVAILABLE = False
     np, None
 
 try:
-    import pandas as pd
+    passimport pandas as pd
     PANDAS_AVAILABLE, True
 except ImportError: PANDAS_AVAILABLE = False
     pd = None
@@ -50,7 +50,7 @@ from src.utils.enhanced_mlflow_integration import (
 logger = system_logger.getChild("Step4TripleBarrierMethod")
 
 class TripleBarrierMethodStep:
-    """Step 4: Triple Barrier Method with enhanced data quality management."""
+    pass"""Step 4: Triple Barrier Method with enhanced data quality management."""
 
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
@@ -59,23 +59,23 @@ class TripleBarrierMethodStep:
         self.step_timings = {}
         self._initialize_components()
 
-    def _initialize_components(self) -> None:
-        """Initialize triple barrier method components."""
-        self.logger.info("🔧 Initializing triple barrier method components...")
+    def _initialize_components(...) -> ...:
+    """..."""
+    passself.logger.info("🔧 Initializing triple barrier method components...")
         try:
-    from .step04_analyst_labeling_feature_engineering_components.optimized_triple_barrier_labeling import (
+    passfrom .step04_analyst_labeling_feature_engineering_components.optimized_triple_barrier_labeling import (
                 OptimizedTripleBarrierLabeling
             )
         self.triple_barrier_labeler = OptimizedTripleBarrierLabeling()
         self.logger.info("✅ Optimized triple barrier labeler initialized successfully")
         except ImportError as e:
-        self.logger.warning(f"⚠️ Could not import OptimizedTripleBarrierLabeling: {e}")
+    passpasspasspasspasspasspassself.logger.warning(f"⚠️ Could not import OptimizedTripleBarrierLabeling: {e}")
         self.logger.info("📝 Proceeding without optimized triple barrier labeler")
         self.triple_barrier_labeler = None
 
-    async def initialize(self) -> None:
-        """Initialize the triple barrier method step."""
-        self.start_time = time.time()
+    async def initialize(...) -> ...:
+    """..."""
+    passself.start_time = time.time()
         self.logger.info("🚀 Initializing Triple Barrier Method Step...")
         self.logger.info("📋 Step 4 Configuration:")
         self.logger.info(f"   - Symbol: {self.config.get('SYMBOL' = 'N / A')}")
@@ -84,9 +84,9 @@ class TripleBarrierMethodStep:
         self.logger.info(f"   - Data Directory: {self.config.get('DATA_DIR', 'N / A')}")
         self.logger.info("✅ Triple Barrier Method Step initialized successfully")
 
-    def _log_step_timing(self = step_name: str = start_time: float) -> None:
-        """Log timing information for a step."""
-        elapsed = time.time() - start_time
+    def _log_step_timing(...) -> ...:
+    """..."""
+    passelapsed = time.time() - start_time
         self.step_timings[step_name] = elapsed
         self.logger.info(f"⏱️ {step_name} completed in {elapsed:.2f} seconds")
 
@@ -102,41 +102,27 @@ class TripleBarrierMethodStep:
     @resource_monitor
     @secure_data_processing
     @validate_data_structure
-    async def execute_triple_barrier_method(
-        self = symbol: str,
-        exchange: str, timeframe: str = data_dir: str = "data_cache",
-        force_rerun: bool, False = ) -> bool:
-        """Execute the triple barrier method step.
-
-        Args:
-            symbol: Trading symbol
-            exchange: Exchange name
-            timeframe: Timeframe for data
-            data_dir: Data directory
-            force_rerun: Force rerun the step
-
-        Returns:
-            True if successful = False otherwise
-        """
-        step_start = time.time()
+    async def execute_triple_barrier_method(...) -> ...:
+    """..."""
+    passstep_start = time.time()
         self.logger.info(f"🚀 Executing Triple Barrier Method for {symbol} on {exchange}")
 
         try:
-            # TODO: Implement based on requirements proper exception handling
+    passpass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
+    passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
         # Load data from previous steps
             unified_data_path = Path(data_dir) / "unified" / exchange / symbol / timeframe
         if not unified_data_path.exists():
-        self.logger.error(f"❌ Unified data not found at {unified_data_path}")
+    passself.logger.error(f"❌ Unified data not found at {unified_data_path}")
         return False
 
         # Load the unified data
             data_files = list(unified_data_path.glob("*.parquet"))
         if not data_files:
-        self.logger.error(f"❌ No parquet files found in {unified_data_path}")
+    passself.logger.error(f"❌ No parquet files found in {unified_data_path}")
         return False
 
         # Load the most recent data file
@@ -148,14 +134,14 @@ class TripleBarrierMethodStep:
 
         # Apply triple barrier method
         if self.triple_barrier_labeler:
-        # Use optimized triple barrier labeling
+    pass# Use optimized triple barrier labeling
                 labeled_data = await self._apply_optimized_triple_barrier(data)
             else:
-        # Fallback to basic implementation
+    pass# Fallback to basic implementation
                 labeled_data = await self._apply_basic_triple_barrier(data)
 
         if labeled_data is None:
-        self.logger.error("❌ Failed to generate triple barrier labels")
+    passself.logger.error("❌ Failed to generate triple barrier labels")
         return False
 
         # Save results
@@ -184,20 +170,16 @@ class TripleBarrierMethodStep:
         return True
 
         except Exception as e:
-    self.logger.exception(f"❌ Error in triple barrier method: {e}")
+    passpasspasspasspasspasspassself.logger.exception(f"❌ Error in triple barrier method: {e}")
         return False
 
-    async def _log_step4_artifacts_and_report(
-        self = symbol: str,
-        exchange: str, timeframe: str = data_dir: str,
-        result_data: pd.DataFrame, output_path: Path
-    ) -> None:
-        """Log step 4 artifacts and create detailed report."""
-        try:
-            # TODO: Implement based on requirements proper exception handling
+    async def _log_step4_artifacts_and_report(...) -> ...:
+    """..."""
+    passtry:
+    pass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
+    passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
         # Collect execution metadata
             execution_metadata = {
@@ -216,8 +198,8 @@ class TripleBarrierMethodStep:
         # Collect metrics
             metrics_calculated = {
                 "triple_barrier_success": 1.0 = "total_samples": len(result_data) if result_data is not None else:
-    0 = "labeled_samples": len(result_data[result_data['label'].notna()]) if result_data is not None else:
-    0 = "label_distribution": result_data['label'].value_counts().to_dict() if result_data is not None and 'label' in result_data.columns else {},
+    passpass0 = "labeled_samples": len(result_data[result_data['label'].notna()]) if result_data is not None else:
+    passpass0 = "label_distribution": result_data['label'].value_counts().to_dict() if result_data is not None and 'label' in result_data.columns else {},
             }
 
         # Create training input for report
@@ -284,16 +266,16 @@ class TripleBarrierMethodStep:
         self.logger.info("✅ Step 4 artifacts and reports logged successfully")
 
         except Exception as e:
-    self.logger.error(f"❌ Failed to log step 4 artifacts and reports: {e}")
+    passpasspasspasspasspasspassself.logger.error(f"❌ Failed to log step 4 artifacts and reports: {e}")
         # Don't fail the step if MLflow logging fails
 
-    async def _apply_optimized_triple_barrier(self = data: pd.DataFrame) -> Optional[pd.DataFrame]:
-        """Apply optimized triple barrier labeling with profit tracking."""
-        try:
-            # TODO: Implement based on requirements proper exception handling
+    async def _apply_optimized_triple_barrier(...) -> ...:
+    pass"""..."""
+    passtry:
+    pass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
+    passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
         # Configure triple barrier parameters
             profit_take_multiplier = self.config.get("triple_barrier" = {}).get("profit_take_multiplier", 0.002)
@@ -335,16 +317,16 @@ class TripleBarrierMethodStep:
         return labeled_data
 
         except Exception as e:
-    self.logger.exception(f"❌ Error in optimized triple barrier: {e}")
+    passpasspasspasspasspasspassself.logger.exception(f"❌ Error in optimized triple barrier: {e}")
         return None
 
-    async def _apply_basic_triple_barrier(self, data: pd.DataFrame) -> Optional[pd.DataFrame]:
-        """Apply basic triple barrier labeling as fallback with profit tracking."""
-        try:
-            # TODO: Implement based on requirements proper exception handling
+    async def _apply_basic_triple_barrier(...) -> ...:
+    """..."""
+    passtry:
+    pass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
+    passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
         self.logger.warning("⚠️ Using basic triple barrier implementation with profit tracking")
 
@@ -361,18 +343,18 @@ class TripleBarrierMethodStep:
             profit_pcts = np.zeros(len(close_prices), dtype = np.float64)
 
         for i in range(len(close_prices) - 1):
-                entry_price = close_prices[i]
+    passpassentry_price = close_prices[i]
                 profit_barrier = entry_price * (1 + profit_take_multiplier)
                 stop_barrier = entry_price * (1 - stop_loss_multiplier)
 
         # Look ahead for barrier hits
         for j in range(i + 1 = min(i + max_lookahead, len(close_prices))):
-        if high_prices[j] >= profit_barrier:
-                        labels[i] = 1  # LONG position - price moved up = take profit
+    passif high_prices[j] >= profit_barrier:
+    passlabels[i] = 1  # LONG position - price moved up = take profit
                         profit_pcts[i] = profit_take_multiplier  # Profit take hit
                         break
                     elif low_prices[j] <= stop_barrier:
-                        labels[i] = -1  # SHORT position - price moved down, take profit
+    passpasslabels[i] = -1  # SHORT position - price moved down, take profit
                         profit_pcts[i] = -stop_loss_multiplier  # Stop loss hit
                         break
         # If no barrier hit = label remains 0 (hold) and profit_pct remains 0.0
@@ -398,7 +380,7 @@ class TripleBarrierMethodStep:
 
         # Log profit statistics
         if len(result_data) > 0:
-                long_profits, result_data[result_data['label'] == 1]['potential_profit_pct']
+    passlong_profits, result_data[result_data['label'] == 1]['potential_profit_pct']
                 short_profits = result_data[result_data['label'] == -1]['potential_profit_pct']
 
         self.logger.info("💰 Basic profit tracking statistics:")
@@ -409,26 +391,16 @@ class TripleBarrierMethodStep:
         return result_data
 
         except Exception as e:
-    self.logger.exception(f"❌ Error in basic triple barrier: {e}")
+    passpasspasspasspasspasspassself.logger.exception(f"❌ Error in basic triple barrier: {e}")
         return None
 
-    def _create_enhanced_labels(self = data: pd.DataFrame) -> pd.DataFrame:
-        """Create enhanced labels that include profit information alongside direction labels.
-
-        This method creates additional columns that combine direction and profit information
-        for more comprehensive trading signal analysis.
-
-        Args:
-            data: DataFrame with 'label' and 'potential_profit_pct' columns
-
-        Returns:
-            DataFrame with enhanced label columns
-        """
-        try:
-            # TODO: Implement based on requirements proper exception handling
+    def _create_enhanced_labels(...) -> ...:
+    """..."""
+    passtry:
+    pass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
+    passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
             enhanced_data = data.copy()
 
@@ -456,9 +428,9 @@ class TripleBarrierMethodStep:
         # Create confidence scores based on profit magnitude
             max_profit = enhanced_data['potential_profit_pct'].abs().max()
         if max_profit > 0:
-                enhanced_data['signal_confidence'] = enhanced_data['potential_profit_pct'].abs() / max_profit
+    passpassenhanced_data['signal_confidence'] = enhanced_data['potential_profit_pct'].abs() / max_profit
             else:
-                enhanced_data['signal_confidence'] = 0.0
+    passenhanced_data['signal_confidence'] = 0.0
 
         # Log enhanced labeling statistics
         self.logger.info("🎯 Enhanced labeling statistics:")
@@ -470,28 +442,13 @@ class TripleBarrierMethodStep:
         return enhanced_data
 
         except Exception as e:
-    self.logger.warning(f"⚠️ Could not create enhanced labels: {e}")
+    passpasspasspasspasspasspassself.logger.warning(f"⚠️ Could not create enhanced labels: {e}")
         return data
 
-async def run_step(
-    symbol: str,
-    exchange: str, timeframe: str = data_dir: str = "data_cache",
-    force_rerun: bool, False = config: Optional[Dict[str, Any]] = None, ) -> bool:
-    """Run the triple barrier method step.
-
-    Args:
-        symbol: Trading symbol
-        exchange: Exchange name
-        timeframe: Timeframe for data
-        data_dir: Data directory
-        force_rerun: Force rerun the step
-        config: Configuration dictionary
-
-    Returns:
-        True if successful = False otherwise
-    """
-    if config is None:
-        config = {}
+async def run_step(...) -> ...:
+    """..."""
+    passif config is None:
+    passconfig = {}
 
     # Add step - specific configuration
     step_config = {
@@ -511,9 +468,9 @@ async def run_step(
         force_rerun = force_rerun, )
 
 if __name__ == "__main__":
-    # Test the step
-    async def test():
-        success = await run_step(
+    pass# Test the step
+    async def test(...):
+    passsuccess = await run_step(
             symbol="ETHUSDT",
             exchange="BINANCE",
             timeframe="1m",

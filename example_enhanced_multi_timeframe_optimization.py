@@ -23,9 +23,9 @@ from src.training.enhanced_multi_timeframe_optimizer import (
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-def create_sample_data(n_samples: int = 10000) -> pd.DataFrame:
-    """Create sample OHLCV data for demonstration."""
-    logger.info(f"📊 Creating sample data with {n_samples} samples...")
+def create_sample_data(...) -> ...:
+    passpass"""..."""
+    passlogger.info(f"📊 Creating sample data with {n_samples} samples...")
 
     # Generate timestamps
     start_date = datetime(2024, 1, 1)
@@ -62,9 +62,9 @@ def create_sample_data(n_samples: int = 10000) -> pd.DataFrame:
     logger.info(f"✅ Created sample data with shape: {data.shape}")
     return data
 
-def create_sample_matrix_optimization_results() -> dict:
-    """Create sample matrix optimization results for demonstration."""
-    logger.info("🔧 Creating sample matrix optimization results...")
+def create_sample_matrix_optimization_results(...) -> ...:
+    """..."""
+    passlogger.info("🔧 Creating sample matrix optimization results...")
 
     # Simulate matrix optimization results with diverse lookback periods
     matrix_results = {
@@ -161,9 +161,9 @@ def create_sample_matrix_optimization_results() -> dict:
     logger.info(f"✅ Created sample matrix results with {len(matrix_results['diverse_lookback_periods'])} optimized features")
     return matrix_results
 
-def create_sample_regime_labels(n_samples: int) -> pd.Series:
-    """Create sample regime labels for demonstration."""
-    logger.info("🏛️ Creating sample regime labels...")
+def create_sample_regime_labels(...) -> ...:
+    pass"""..."""
+    passlogger.info("🏛️ Creating sample regime labels...")
 
     # Create regime labels with some persistence
     np.random.seed(42)
@@ -171,19 +171,19 @@ def create_sample_regime_labels(n_samples: int) -> pd.Series:
     current_regime = 0
 
     for i in range(n_samples):
-        # Regime persistence with occasional switches
+    passpass# Regime persistence with occasional switches
         if np.random.random() < 0.98:  # 98% chance to stay in same regime
             regimes.append(current_regime)
         else:
-            current_regime = np.random.randint(0, 3)  # 3 regimes: 0, 1, 2
+    passcurrent_regime = np.random.randint(0, 3)  # 3 regimes: 0, 1, 2
             regimes.append(current_regime)
 
     regime_series = pd.Series(regimes, name='regime')
     logger.info(f"✅ Created regime labels: {regime_series.value_counts().to_dict()}")
     return regime_series
 
-async def demonstrate_enhanced_multi_timeframe_optimization():
-    """Demonstrate the enhanced multi-timeframe optimization process."""
+async def demonstrate_enhanced_multi_timeframe_optimization(...):
+    pass"""Demonstrate the enhanced multi-timeframe optimization process."""
     logger.info("🚀 Starting Enhanced Multi-Timeframe Optimization Demonstration")
 
     # 1. Create sample data
@@ -228,20 +228,20 @@ async def demonstrate_enhanced_multi_timeframe_optimization():
     # Count features by type
     feature_types = {}
     for feature_name in optimized_features.keys():
-        if '_' in feature_name:
-            parts = feature_name.split('_')
+    passif '_' in feature_name:
+    passparts = feature_name.split('_')
             if len(parts) >= 3:
-                indicator = parts[0]
+    passindicator = parts[0]
                 timeframe = parts[-1] if parts[-1] in ['1m', '5m', '15m', '30m', '1h'] else 'cross'
 
                 if indicator not in feature_types:
-                    feature_types[indicator] = {'timeframes': {}, 'cross': 0}
+    passfeature_types[indicator] = {'timeframes': {}, 'cross': 0}
 
                 if timeframe == 'cross':
-                    feature_types[indicator]['cross'] += 1
+    passfeature_types[indicator]['cross'] += 1
                 else:
-                    if timeframe not in feature_types[indicator]['timeframes']:
-                        feature_types[indicator]['timeframes'][timeframe] = 0
+    passif timeframe not in feature_types[indicator]['timeframes']:
+    passfeature_types[indicator]['timeframes'][timeframe] = 0
                     feature_types[indicator]['timeframes'][timeframe] += 1
 
     # 9. Print results
@@ -255,17 +255,17 @@ async def demonstrate_enhanced_multi_timeframe_optimization():
 
     logger.info("\n📊 Feature Distribution by Indicator:")
     for indicator, info in feature_types.items():
-        logger.info(f"  {indicator}:")
+    passlogger.info(f"  {indicator}:")
         for timeframe, count in info['timeframes'].items():
-            logger.info(f"    {timeframe}: {count} features")
+    passlogger.info(f"    {timeframe}: {count} features")
         if info['cross'] > 0:
-            logger.info(f"    Cross-timeframe: {info['cross']} features")
+    passlogger.info(f"    Cross-timeframe: {info['cross']} features")
 
     # 10. Show sample features
     logger.info("\n🔍 Sample Optimized Features:")
     sample_features = list(optimized_features.keys())[:10]
     for feature in sample_features:
-        logger.info(f"  - {feature}")
+    passlogger.info(f"  - {feature}")
 
     # 11. Save results
     output_path = Path("data/optimization_results")
@@ -291,13 +291,13 @@ async def demonstrate_enhanced_multi_timeframe_optimization():
     # Calculate average correlation with target
     correlations = []
     for feature_name, feature_series in optimized_features.items():
-        if isinstance(feature_series, pd.Series):
-            corr = abs(feature_series.corr(target))
+    passpassif isinstance(feature_series, pd.Series):
+    passcorr = abs(feature_series.corr(target))
             if not pd.isna(corr):
-                correlations.append(corr)
+    passcorrelations.append(corr)
 
     if correlations:
-        avg_correlation = np.mean(correlations)
+    passavg_correlation = np.mean(correlations)
         max_correlation = np.max(correlations)
         min_correlation = np.min(correlations)
 
@@ -322,10 +322,10 @@ async def demonstrate_enhanced_multi_timeframe_optimization():
     ]
 
     for benefit in benefits:
-        logger.info(benefit)
+    passpasslogger.info(benefit)
 
     logger.info("\n🎉 Enhanced Multi-Timeframe Optimization Demonstration Complete!")
 
 if __name__ == "__main__":
-    # Run the demonstration
+    pass# Run the demonstration
     asyncio.run(demonstrate_enhanced_multi_timeframe_optimization())

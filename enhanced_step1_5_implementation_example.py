@@ -25,16 +25,16 @@ sys.path.insert(0, str(project_root))
 
 # Import existing utilities with fallbacks
 try:
-    from src.utils.logger import system_logger
+    passpassfrom src.utils.logger import system_logger
 except ImportError:
-    system_logger = logging.getLogger("EnhancedStep1_5")
+    passpasssystem_logger = logging.getLogger("EnhancedStep1_5")
 
 try:
-    pass  # TODO: Add implementation
+    passpass  # TODO: Add implementation
 except ImportError:
-    def handle_errors(*args, **kwargs):
-        def decorator(func):
-            return func
+    passpassdef handle_errors(...):
+    passdef decorator(...):
+    passreturn func
         return decorator
 
 
@@ -44,7 +44,23 @@ except ImportError:
 
 @dataclass
 class Step1_5Config:
-    """Enhanced configuration for Step1_5 data converter."""
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="step1_5config initialization",
+    )
+    async def initialize(self) -> bool:
+        """Initialize Step1_5Config."""
+        try:
+            self.logger.info(f"🚀 Initializing {class_name}...")
+            self.is_initialized = True
+            self.logger.info(f"✅ {class_name} initialized successfully")
+            return True
+        except Exception as e:
+            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
+            return False
+    pass"""Enhanced configuration for Step1_5 data converter."""
 
     # Basic parameters
     symbol: str = "ETHUSDT"
@@ -82,20 +98,36 @@ class Step1_5Config:
     min_rows_per_group: int = 50000
     max_rows_per_file: int = 5_000_000
 
-    def validate(self) -> List[str]:
-        """Validate configuration and return any issues."""
-        issues = []
+    def validate(...) -> ...:
+    """..."""
+    passissues = []
 
         if self.chunk_size <= 0:
-            issues.append("chunk_size must be positive")
+    passissues.append("chunk_size must be positive")
         if self.max_memory_mb <= 0:
-            issues.append("max_memory_mb must be positive")
+    passissues.append("max_memory_mb must be positive")
         if self.max_retries < 0:
-            issues.append("max_retries must be non-negative")
+    passissu
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="retryableerror initialization",
+    )
+    async def initialize(self) -> bool:
+        """Initialize RetryableError."""
+        try:
+            self.logger.info(f"🚀 Initializing {class_name}...")
+            self.is_initialized = True
+            self.logger.info(f"✅ {class_name} initialized successfully")
+            return True
+        except Exception as e:
+            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
+            return False
+es.append("max_retries must be non-negative")
         if self.max_nan_ratio < 0 or self.max_nan_ratio > 1:
-            issues.append("max_nan_ratio must be between 0 and 1")
+    passissues.append("max_nan_ratio must be between 0 and 1")
         if self.min_rows_per_group >= self.max_rows_per_file:
-            issues.append("min_rows_per_group must be less than max_rows_per_file")
+    passissues.append("min_rows_per_group must be less than max_rows_per_file")
 
         return issues
 
@@ -104,44 +136,60 @@ class Step1_5Config:
 # Enhanced Error Handling and Resilience
 # ============================================================================
 
-class RetryableError(Exception):
-    """Error that can be retried."""
-    pass
+class RetryableError(...):
+    """..."""
+    passpass
 
-class NonRetryableError(Exception):
-    """Error that should not be retried."""
-    pass
+class NonRetryableError(...):
+    """..."""
+    passpass
 
-def retry_with_backoff(max_retries: int = 3, backoff_factor: float = 2.0):
-    """Decorator for retrying operations with exponential backoff."""
-    def decorator(func):
-        @functools.wraps(func)
-        async def wrapper(*args, **kwargs):
-            last_exception = None
+def retry_with_backoff(...):
+    pass"""Decorator for retrying operations with exponential backoff."""
+    def decorator(...):
+    passpasspass@functools.wraps(func)
+        async def wrapper(...):
+    passlast_exception = None
 
             for attempt in range(max_retries + 1):
-                try:
-                    return await func(*args, **kwargs)
+    passtry:
+    passreturn await func(*args, **kwargs)
                 except RetryableError as e:
-                    last_exception = e
+    passpasspasspasspasspasspasslast_exception = e
                     if attempt < max_retries:
-                        wait_time = backoff_factor ** attempt
-                        logging.warning(f"Retryable error on attempt {attempt + 1}: {e}. Waiting {wait_time}s...")
+    passwait_time = backoff_factor ** attempt
+                        logging.warning(f"Retryable error on attempt {attempt + 1}: {e}. Wait
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="memorymonitor initialization",
+    )
+    async def initialize(self) -> bool:
+        """Initialize MemoryMonitor."""
+        try:
+            self.logger.info(f"🚀 Initializing {class_name}...")
+            self.is_initialized = True
+            self.logger.info(f"✅ {class_name} initialized successfully")
+            return True
+        except Exception as e:
+            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
+            return False
+ing {wait_time}s...")
                         await asyncio.sleep(wait_time)
                     else:
-                        logging.error(f"Max retries ({max_retries}) exceeded. Last error: {e}")
+    passlogging.error(f"Max retries ({max_retries}) exceeded. Last error: {e}")
                         raise
                 except NonRetryableError as e:
-                    logging.error(f"Non-retryable error: {e}")
+    passpasspasspasspasspasspasslogging.error(f"Non-retryable error: {e}")
                     raise
                 except Exception as e:
-                    last_exception = e
+    passpasspasspasspasspasspasslast_exception = e
                     if attempt < max_retries:
-                        wait_time = backoff_factor ** attempt
+    passwait_time = backoff_factor ** attempt
                         logging.warning(f"Unexpected error on attempt {attempt + 1}: {e}. Waiting {wait_time}s...")
                         await asyncio.sleep(wait_time)
                     else:
-                        logging.error(f"Max retries ({max_retries}) exceeded. Last error: {e}")
+    passlogging.error(f"Max retries ({max_retries}) exceeded. Last error: {e}")
                         raise
 
             raise last_exception
@@ -154,48 +202,80 @@ def retry_with_backoff(max_retries: int = 3, backoff_factor: float = 2.0):
 # ============================================================================
 
 class MemoryMonitor:
-    """Monitor memory usage during processing."""
+    pass"""Monitor memory usage during processing."""
 
-    def __init__(self):
-        self.peak_usage = 0
+    def __init__(...):
+    passself.peak_usage = 0
         self.usage_history = []
 
-    def get_usage_mb(self) -> float:
-        """Get current memory usage in MB."""
-        try:
-            import psutil
+    def get_usage_mb(...) -> ...:
+    """..."""
+    passtry:
+    passimport psutil
             process = psutil.Process()
             usage_mb = process.memory_info().rss / 1024 / 1024
             self.peak_usage = max(self.peak_usage, usage_mb)
             self.usage_history.append((time.time(), usage_mb))
             return usage_mb
         except ImportError:
-            return 0.0
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="qualityresult initialization",
+    )
+    async def initialize(self) -> bool:
+        """Initialize QualityResult."""
+        try:
+            self.logger.info(f"🚀 Initializing {class_name}...")
+            self.is_initialized = True
+            self.logger.info(f"✅ {class_name} initialized successfully")
+            return True
+        except Exception as e:
+   
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="enhanceddataqualityvalidator initialization",
+    )
+    async def initialize(self) -> bool:
+        """Initialize EnhancedDataQualityValidator."""
+        try:
+            self.logger.info(f"🚀 Initializing {class_name}...")
+            self.is_initialized = True
+            self.logger.info(f"✅ {class_name} initialized successfully")
+            return True
+        except Exception as e:
+            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
+            return False
+         self.logger.exception(f"❌ Error initializing {class_name}: {e}")
+            return False
 
-    def get_peak_usage_mb(self) -> float:
-        """Get peak memory usage in MB."""
-        return self.peak_usage
+    passpassreturn 0.0
 
-    def is_memory_pressure(self, threshold_mb: float) -> bool:
-        """Check if memory usage is above threshold."""
-        return self.get_usage_mb() > threshold_mb
+    def get_peak_usage_mb(...) -> ...:
+    """..."""
+    passreturn self.peak_usage
+
+    def is_memory_pressure(...) -> ...:
+    """..."""
+    passreturn self.get_usage_mb() > threshold_mb
 
 
-def memory_efficient(max_memory_mb: int = 1024):
-    """Decorator for memory-efficient processing."""
-    def decorator(func):
-        @functools.wraps(func)
-        async def wrapper(*args, **kwargs):
-            monitor = MemoryMonitor()
+def memory_efficient(...):
+    pass"""Decorator for memory-efficient processing."""
+    def decorator(...):
+    passpass@functools.wraps(func)
+        async def wrapper(...):
+    passmonitor = MemoryMonitor()
 
             # Check memory before processing
             initial_memory = monitor.get_usage_mb()
             logging.info(f"Memory before {func.__name__}: {initial_memory:.1f}MB")
 
             try:
-    pass  # TODO: Add proper exception handling
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
                 result = await func(*args, **kwargs)
 
                 # Check memory after processing
@@ -205,11 +285,11 @@ except Exception as e:
                 logging.info(f"Memory after {func.__name__}: {final_memory:.1f}MB (peak: {peak_memory:.1f}MB)")
 
                 if peak_memory > max_memory_mb:
-                    logging.warning(f"Peak memory usage ({peak_memory:.1f}MB) exceeded limit ({max_memory_mb}MB)")
+    passlogging.warning(f"Peak memory usage ({peak_memory:.1f}MB) exceeded limit ({max_memory_mb}MB)")
 
                 return result
             except Exception as e:
-                logging.error(f"Error in {func.__name__}: {e}")
+    passpasspasspasspasspasspasslogging.error(f"Error in {func.__name__}: {e}")
                 raise
         return wrapper
     return decorator
@@ -221,34 +301,34 @@ except Exception as e:
 
 @dataclass
 class QualityResult:
-    """Result of data quality validation."""
+    pass"""Result of data quality validation."""
     passed: bool = True
     issues: List[str] = field(default_factory=list)
     metrics: Dict[str, Any] = field(default_factory=dict)
 
-    def add_issue(self, issue_type: str, description: str):
-        """Add a quality issue."""
+    def add_issue(...):
+    pass"""Add a quality issue."""
         self.issues.append(f"{issue_type}: {description}")
         self.passed = False
 
-    def add_metric(self, name: str, value: Any):
-        """Add a quality metric."""
+    def add_metric(...):
+    pass"""Add a quality metric."""
         self.metrics[name] = value
 
 
 class EnhancedDataQualityValidator:
-    """Enhanced data quality validation with real-time monitoring."""
+    pass"""Enhanced data quality validation with real-time monitoring."""
 
-    def __init__(self, config: Step1_5Config):
-        self.config = config
+    def __init__(...):
+    passpassself.config = config
         self.logger = system_logger.getChild("DataQualityValidator")
 
-    async def validate_unified_data_quality(self, df: pd.DataFrame, context: str) -> QualityResult:
-        """Validate unified DataFrame quality with comprehensive checks."""
-        result = QualityResult()
+    async def validate_unified_data_quality(...) -> ...:
+    """..."""
+    passresult = QualityResult()
 
         if df is None or df.empty:
-            result.add_issue("empty_data", "DataFrame is None or empty")
+    passresult.add_issue("empty_data", "DataFrame is None or empty")
             return result
 
         # Basic metrics
@@ -265,95 +345,111 @@ class EnhancedDataQualityValidator:
         result.add_metric("nan_ratio", nan_ratio)
 
         if nan_ratio > self.config.max_nan_ratio:
-            result.add_issue("nan_values", f"NaN ratio {nan_ratio:.4f} exceeds threshold {self.config.max_nan_ratio}")
+    passpassresult.add_issue("nan_values", f"NaN ratio {nan_ratio:.4f} exceeds threshold {self.config.max_nan_ratio}")
 
         # Check for infinite values
         infinite_counts = {}
         for col in df.select_dtypes(include=[np.number]).columns:
-            infinite_count = np.isinf(df[col]).sum()
+    passinfinite_count = np.isinf(df[col]).sum()
             if infinite_count > 0:
-                infinite_counts[col] = infinite_count
+    passinfinite_counts[col] = infinite_count
 
         total_infinites = sum(infinite_counts.values())
         result.add_metric("infinite_count", total_infinites)
         result.add_metric("infinite_columns", infinite_counts)
 
         if total_infinites > self.config.max_infinite_count:
-            result.add_issue("infinite_values", f"Found {total_infinites} infinite values in columns: {list(infinite_counts.keys())}")
+    passresult.add_issue("infinite_values", f"Found {total_infinites} infinite values in columns: {list(infinite_counts.keys())}")
 
         # Check for constant features
         constant_features = []
         for col in df.columns:
-            unique_count = df[col].nunique()
+    passunique_count = df[col].nunique()
             if unique_count < self.config.min_unique_values:
-                constant_features.append(col)
+    passconstant_features.append(col)
 
         result.add_metric("constant_features", constant_features)
         if constant_features:
-            result.add_issue("constant_features", f"Found {len(constant_features)} constant features: {constant_features}")
+    passresult.add_issue("constant_features", f"Found {len(constant_features)} constant features: {constant_features}")
 
         # Check for unified data structure
         unified_issues = self._validate_unified_structure(df)
         result.add_metric("unified_structure_issues", unified_issues)
         if unified_issues:
-            result.add_issue("unified_structure", f"Found {len(unified_issues)} unified structure issues")
+    passpassresult.add_issue("unified_structure", f"Found {len(unified_issues)} unified structure issues")
 
         # Check for timestamp consistency
         if 'timestamp' in df.columns:
-            timestamp_issues = self._validate_timestamp_consistency(df)
+    passpasstimestamp_issues = self._validate_timestamp_consistency(df)
             result.add_metric("timestamp_issues", timestamp_issues)
             if timestamp_issues:
-                result.add_issue("timestamp_issues", f"Found {len(timestamp_issues)} timestamp issues")
+    passresult.add_issue("timestamp_issues", f"Found {len(timestamp_issues)} timestamp issues")
 
         # Check for data consistency across exchanges/symbols
         if 'exchange' in df.columns and 'symbol' in df.columns:
-            consistency_issues = self._validate_data_consistency(df)
+    passpassconsistency_issues = self._validate_data_consistency(df)
             result.add_metric("consistency_issues", consistency_issues)
             if consistency_issues:
-                result.add_issue("data_consistency", f"Found {len(consistency_issues)} consistency issues")
+    passresult.add_issue("data_consistency", f"Found {len(consistency_issues)} consistency issues")
 
         self.logger.info(f"Quality validation for {context}: {'PASSED' if result.passed else 'FAILED'} "
                         f"({len(result.issues)} issues)")
 
         return result
 
-    def _validate_unified_structure(self, df: pd.DataFrame) -> List[Dict[str, Any]]:
-        """Validate unified data structure."""
-        issues = []
+    def _validate_unified_structure(...) -> ...:
+    pass"""..."""
+    passissues = []
 
         # Check required columns
         required_columns = ['timestamp', 'open', 'high', 'low', 'close', 'volume', 'exchange', 'symbol', 'timeframe']
         missing_columns = [col for col in required_columns if col not in df.columns]
 
         if missing_columns:
-            issues.append({
+    passpassissues.append({
                 "type": "missing_columns",
                 "columns": missing_columns
             })
 
         # Check data types
         if 'timestamp' in df.columns and not pd.api.types.is_integer_dtype(df['timestamp']):
-            issues.append({
+    passissues.append({
                 "type": "timestamp_dtype",
                 "expected": "int64",
                 "actual": str(df['timestamp'].dtype)
             })
 
-        # Check for date columns if auto_add_date_columns is enabled
+        # Check for date columns if auto_add_date_colum
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="optimizedunifieddataprocessor initialization",
+    )
+    async def initialize(self) -> bool:
+        """Initialize OptimizedUnifiedDataProcessor."""
+        try:
+            self.logger.info(f"🚀 Initializing {class_name}...")
+            self.is_initialized = True
+            self.logger.info(f"✅ {class_name} initialized successfully")
+            return True
+        except Exception as e:
+            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
+            return False
+ns is enabled
         if self.config.auto_add_date_columns:
-            date_columns = ['year', 'month', 'day']
+    passpassdate_columns = ['year', 'month', 'day']
             missing_date_columns = [col for col in date_columns if col not in df.columns]
             if missing_date_columns:
-                issues.append({
+    passpassissues.append({
                     "type": "missing_date_columns",
                     "columns": missing_date_columns
                 })
 
         return issues
 
-    def _validate_timestamp_consistency(self, df: pd.DataFrame) -> List[Dict[str, Any]]:
-        """Validate timestamp consistency."""
-        issues = []
+    def _validate_timestamp_consistency(...) -> ...:
+    """..."""
+    passissues = []
 
         # Convert timestamp to datetime if needed
         timestamps = pd.to_datetime(df['timestamp'], unit='ms', utc=True)
@@ -364,7 +460,7 @@ class EnhancedDataQualityValidator:
 
         large_gaps = time_diffs[time_diffs > expected_interval * 2]
         if not large_gaps.empty:
-            issues.append({
+    passpassissues.append({
                 "type": "large_gaps",
                 "count": len(large_gaps),
                 "max_gap": large_gaps.max().total_seconds() / 60
@@ -373,21 +469,21 @@ class EnhancedDataQualityValidator:
         # Check for duplicates
         duplicates = timestamps.duplicated()
         if duplicates.any():
-            issues.append({
+    passpassissues.append({
                 "type": "duplicate_timestamps",
                 "count": duplicates.sum()
             })
 
         return issues
 
-    def _validate_data_consistency(self, df: pd.DataFrame) -> List[Dict[str, Any]]:
-        """Validate data consistency across exchanges/symbols."""
-        issues = []
+    def _validate_data_consistency(...) -> ...:
+    """..."""
+    passissues = []
 
         # Check for consistent data across exchanges
         exchange_counts = df['exchange'].value_counts()
         if len(exchange_counts) > 1:
-            # Check if all exchanges have similar data volumes
+    passpass# Check if all exchanges have similar data volumes
             mean_count = exchange_counts.mean()
             std_count = exchange_counts.std()
             cv = std_count / mean_count if mean_count > 0 else 0
@@ -402,12 +498,12 @@ class EnhancedDataQualityValidator:
         # Check for consistent data across symbols
         symbol_counts = df['symbol'].value_counts()
         if len(symbol_counts) > 1:
-            mean_count = symbol_counts.mean()
+    passpassmean_count = symbol_counts.mean()
             std_count = symbol_counts.std()
             cv = std_count / mean_count if mean_count > 0 else 0
 
             if cv > 0.5:
-                issues.append({
+    passissues.append({
                     "type": "uneven_symbol_distribution",
                     "symbol_counts": symbol_counts.to_dict(),
                     "coefficient_of_variation": cv
@@ -421,108 +517,124 @@ class EnhancedDataQualityValidator:
 # ============================================================================
 
 class OptimizedUnifiedDataProcessor:
-    """Optimized unified data processing with streaming and parallelization."""
+    pass"""Optimized unified data processing with streaming and parallelization."""
 
-    def __init__(self, config: Step1_5Config):
-        self.config = config
+    def __init__(...):
+    passpassself.config = config
         self.logger = system_logger.getChild("UnifiedDataProcessor")
         self.quality_validator = EnhancedDataQualityValidator(config)
         self.memory_monitor = MemoryMonitor()
 
     @memory_efficient(max_memory_mb=1024)
-    async def process_unified_data_streaming(self, data_sources: Dict[str, str]) -> pd.DataFrame:
-        """Process unified data using streaming approach."""
-        self.logger.info(f"Processing unified data from {len(data_sources)} sources")
+    async def process_unified_data_streaming(...) -> ...:
+    """..."""
+    passself.logger.info(f"Processing unified data from {len(data_sources)} sources")
 
         # Process each data source
         processed_chunks = []
 
         for source_name, file_path in data_sources.items():
-            if not os.path.exists(file_path):
-                self.logger.warning(f"Source file not found: {file_path}")
+    passif not os.path.exists(file_path):
+    passself.logger.warning(f"Source file not found: {file_path}")
                 continue
 
             self.logger.info(f"Processing {source_name}: {file_path}")
 
             try:
-                # Read and process source data
+    pass# Read and process source data
                 source_chunks = await self._process_source_streaming(source_name, file_path)
                 processed_chunks.extend(source_chunks)
 
             except Exception as e:
-                self.logger.error(f"Error processing {source_name}: {e}")
+    passpasspasspasspasspasspassself.logger.error(f"Error processing {source_name}: {e}")
                 continue
 
         # Combine all processed chunks
         if processed_chunks:
-            unified_data = pd.concat(processed_chunks, ignore_index=True)
+    passunified_data = pd.concat(processed_chunks, ignore_index=True)
             self.logger.info(f"Combined {len(processed_chunks)} chunks into unified data: {unified_data.shape}")
             return unified_data
         else:
-            self.logger.warning("No data processed")
+    passself.logger.warning("No data processed")
             return pd.DataFrame()
 
-    async def _process_source_streaming(self, source_name: str, file_path: str) -> List[pd.DataFrame]:
-        """Process a single data source using streaming."""
-        chunks = []
+    async def _process_source_streaming(...) -> ...:
+    """..."""
+    passchunks = []
         chunk_count = 0
 
         try:
-    pass  # TODO: Add proper exception handling
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
             for chunk in pd.read_parquet(file_path, chunksize=self.config.chunk_size):
-                chunk_count += 1
+    passchunk_count += 1
                 self.logger.debug(f"Processing {source_name} chunk {chunk_count}")
 
                 # Validate chunk quality
-                quality_result = await self.quality_validator.validate_unified_data_quality(
+                quality_result 
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="enhancedstep1_5dataconverter initialization",
+    )
+    async def initialize(self) -> bool:
+        """Initialize EnhancedStep1_5DataConverter."""
+        try:
+            self.logger.info(f"🚀 Initializing {class_name}...")
+            self.is_initialized = True
+            self.logger.info(f"✅ {class_name} initialized successfully")
+            return True
+        except Exception as e:
+            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
+            return False
+= await self.quality_validator.validate_unified_data_quality(
                     chunk, f"{source_name}_chunk_{chunk_count}"
                 )
 
                 if not quality_result.passed:
-                    self.logger.warning(f"Quality issues in {source_name} chunk {chunk_count}: {quality_result.issues}")
+    passself.logger.warning(f"Quality issues in {source_name} chunk {chunk_count}: {quality_result.issues}")
 
                 # Transform chunk to unified format
                 unified_chunk = await self._transform_to_unified_format(chunk, source_name)
 
                 if not unified_chunk.empty:
-                    chunks.append(unified_chunk)
+    passchunks.append(unified_chunk)
 
                 # Check memory pressure
                 if self.memory_monitor.is_memory_pressure(self.config.max_memory_mb * 0.8):
-                    self.logger.warning("Memory pressure detected, processing existing chunks")
+    passself.logger.warning("Memory pressure detected, processing existing chunks")
                     break
 
         except Exception as e:
-            self.logger.error(f"Error processing {source_name}: {e}")
+    passpasspasspasspasspasspassself.logger.error(f"Error processing {source_name}: {e}")
             raise
 
         return chunks
 
-    async def _transform_to_unified_format(self, chunk: pd.DataFrame, source_name: str) -> pd.DataFrame:
-        """Transform data chunk to unified format."""
-        if chunk.empty:
-            return chunk
+    async def _transform_to_unified_format(...) -> ...:
+    """..."""
+    passif chunk.empty:
+    passreturn chunk
 
         # Create unified DataFrame
         unified_chunk = pd.DataFrame()
 
         # Add common columns
         if 'timestamp' in chunk.columns:
-            unified_chunk['timestamp'] = chunk['timestamp']
+    passunified_chunk['timestamp'] = chunk['timestamp']
 
         # Add OHLCV columns based on source type
         if source_name == 'klines':
-            ohlcv_columns = ['open', 'high', 'low', 'close', 'volume']
+    passohlcv_columns = ['open', 'high', 'low', 'close', 'volume']
             for col in ohlcv_columns:
-                if col in chunk.columns:
-                    unified_chunk[col] = chunk[col]
+    passif col in chunk.columns:
+    passunified_chunk[col] = chunk[col]
 
         elif source_name == 'aggtrades':
-            # Transform aggtrades to OHLCV
+    passpass# Transform aggtrades to OHLCV
             if 'price' in chunk.columns and 'quantity' in chunk.columns:
-                # Simple aggregation - in practice, you'd want more sophisticated aggregation
+    pass# Simple aggregation - in practice, you'd want more sophisticated aggregation
                 unified_chunk['open'] = chunk['price']
                 unified_chunk['high'] = chunk['price']
                 unified_chunk['low'] = chunk['price']
@@ -536,24 +648,24 @@ except Exception as e:
 
         # Add date columns if enabled
         if self.config.auto_add_date_columns and 'timestamp' in unified_chunk.columns:
-            timestamps = pd.to_datetime(unified_chunk['timestamp'], unit='ms', utc=True)
+    passtimestamps = pd.to_datetime(unified_chunk['timestamp'], unit='ms', utc=True)
             unified_chunk['year'] = timestamps.dt.year.astype('int16')
             unified_chunk['month'] = timestamps.dt.month.astype('int8')
             unified_chunk['day'] = timestamps.dt.day.astype('int8')
 
         return unified_chunk
 
-    def _optimize_dtypes(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Optimize DataFrame data types for memory efficiency."""
-        for col in df.columns:
-            if df[col].dtype == 'float64':
-                df[col] = pd.to_numeric(df[col], downcast='float')
+    def _optimize_dtypes(...) -> ...:
+    """..."""
+    passfor col in df.columns:
+    passif df[col].dtype == 'float64':
+    passdf[col] = pd.to_numeric(df[col], downcast='float')
             elif df[col].dtype == 'int64':
-                df[col] = pd.to_numeric(df[col], downcast='integer')
+    passpassdf[col] = pd.to_numeric(df[col], downcast='integer')
             elif df[col].dtype == 'object':
-                # Try to convert to category if it has few unique values
+    passpass# Try to convert to category if it has few unique values
                 if df[col].nunique() / len(df[col]) < 0.5:
-                    df[col] = df[col].astype('category')
+    passdf[col] = df[col].astype('category')
         return df
 
 
@@ -562,15 +674,15 @@ except Exception as e:
 # ============================================================================
 
 class EnhancedStep1_5DataConverter:
-    """
+    pass"""
     Enhanced Step1_5 Data Converter
 
     This class provides an improved implementation of Step1_5 data converter
     with enhanced error handling, memory optimization, and data quality validation.
     """
 
-    def __init__(self, config: Step1_5Config):
-        self.config = config
+    def __init__(...):
+    passpassself.config = config
         self.logger = system_logger.getChild("EnhancedStep1_5")
         self.processor = OptimizedUnifiedDataProcessor(config)
         self.quality_validator = EnhancedDataQualityValidator(config)
@@ -579,13 +691,13 @@ class EnhancedStep1_5DataConverter:
         # Validate configuration
         config_issues = config.validate()
         if config_issues:
-            raise ValueError(f"Configuration validation failed: {config_issues}")
+    passraise ValueError(f"Configuration validation failed: {config_issues}")
 
         # Initialize directories
         self._initialize_directories()
 
-    def _initialize_directories(self):
-        """Initialize required directories."""
+    def _initialize_directories(...):
+    pass"""Initialize required directories."""
         directories = [
             self.config.data_dir,
             self.config.unified_dir,
@@ -594,27 +706,18 @@ class EnhancedStep1_5DataConverter:
         ]
 
         for directory in directories:
-            os.makedirs(directory, exist_ok=True)
+    passos.makedirs(directory, exist_ok=True)
             self.logger.debug(f"Initialized directory: {directory}")
 
-    async def execute(self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Execute the enhanced data conversion process.
-
-        Args:
-            training_input: Training input parameters
-            pipeline_state: Current pipeline state
-
-        Returns:
-            Updated pipeline state with conversion results
-        """
-        start_time = time.time()
+    async def execute(...) -> ...:
+    """..."""
+    passstart_time = time.time()
         self.logger.info("🔄 Starting enhanced Step1_5 data conversion...")
 
         try:
-    pass  # TODO: Add proper exception handling
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
             # Extract parameters
             symbol = training_input.get("symbol", self.config.symbol)
             exchange = training_input.get("exchange", self.config.exchange)
@@ -627,11 +730,11 @@ except Exception as e:
             unified_exists = await self._check_unified_data_exists(symbol, exchange, timeframe)
 
             if unified_exists and not self.config.force_rerun:
-                if self.config.enable_incremental:
-                    self.logger.info("✅ Unified data exists, checking for incremental updates...")
+    passpassif self.config.enable_incremental:
+    passself.logger.info("✅ Unified data exists, checking for incremental updates...")
                     incremental_success = await self._process_incremental_updates(symbol, exchange, timeframe)
                     if incremental_success:
-                        self.logger.info("✅ Incremental processing completed")
+    passpassself.logger.info("✅ Incremental processing completed")
                         pipeline_state["data_conversion_completed"] = True
                         pipeline_state["quality_check_passed"] = True
                         return pipeline_state
@@ -643,11 +746,11 @@ except Exception as e:
             conversion_success = await self._perform_full_conversion(symbol, exchange, timeframe, data_dir)
 
             if conversion_success:
-                self.logger.info("✅ Enhanced data conversion completed successfully")
+    passself.logger.info("✅ Enhanced data conversion completed successfully")
                 pipeline_state["data_conversion_completed"] = True
                 pipeline_state["quality_check_passed"] = True
             else:
-                self.logger.warning("⚠️ Data conversion completed with issues")
+    passself.logger.warning("⚠️ Data conversion completed with issues")
                 pipeline_state["data_conversion_completed"] = True
                 pipeline_state["quality_check_passed"] = False
 
@@ -658,50 +761,50 @@ except Exception as e:
             self.logger.info(f"📊 Conversion completed in {duration:.2f}s, peak memory: {peak_memory:.1f}MB")
 
         except Exception as e:
-            self.logger.exception(f"❌ Error during enhanced data conversion: {e}")
+    passpasspasspasspasspasspassself.logger.exception(f"❌ Error during enhanced data conversion: {e}")
             pipeline_state["data_conversion_completed"] = False
             pipeline_state["quality_check_passed"] = False
 
         return pipeline_state
 
-    async def _check_unified_data_exists(self, symbol: str, exchange: str, timeframe: str) -> bool:
-        """Check if unified data already exists."""
-        try:
-    pass  # TODO: Add proper exception handling
+    async def _check_unified_data_exists(...) -> ...:
+    """..."""
+    passtry:
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
             unified_base = os.path.join(self.config.unified_dir, exchange.lower(), symbol, timeframe)
             if os.path.exists(unified_base):
-                parquet_files = []
+    passparquet_files = []
                 for root, dirs, files in os.walk(unified_base):
-                    parquet_files.extend([f for f in files if f.endswith('.parquet')])
+    passparquet_files.extend([f for f in files if f.endswith('.parquet')])
 
                 if parquet_files:
-                    self.logger.info(f"✅ Found existing unified data: {len(parquet_files)} files")
+    passpassself.logger.info(f"✅ Found existing unified data: {len(parquet_files)} files")
                     return True
 
             return False
         except Exception as e:
-            self.logger.warning(f"⚠️ Error checking unified data existence: {e}")
+    passpasspasspasspasspasspassself.logger.warning(f"⚠️ Error checking unified data existence: {e}")
             return False
 
-    async def _backup_existing_data(self, symbol: str, exchange: str, timeframe: str):
-        """Backup existing unified data."""
+    async def _backup_existing_data(...):
+    pass"""Backup existing unified data."""
         try:
-            unified_base = os.path.join(self.config.unified_dir, exchange.lower(), symbol, timeframe)
+    passunified_base = os.path.join(self.config.unified_dir, exchange.lower(), symbol, timeframe)
             backup_path = os.path.join(self.config.backup_dir, f"{exchange}_{symbol}_{timeframe}_{int(time.time())}")
 
             if os.path.exists(unified_base):
-                import shutil
+    passimport shutil
                 shutil.move(unified_base, backup_path)
                 self.logger.info(f"📦 Backed up existing data to: {backup_path}")
         except Exception as e:
-            self.logger.warning(f"⚠️ Error backing up existing data: {e}")
+    passpasspasspasspasspasspassself.logger.warning(f"⚠️ Error backing up existing data: {e}")
 
-    async def _process_incremental_updates(self, symbol: str, exchange: str, timeframe: str) -> bool:
-        """Process incremental updates to existing unified data."""
-        try:
-            self.logger.info("🔍 Processing incremental updates...")
+    async def _process_incremental_updates(...) -> ...:
+    """..."""
+    passtry:
+    passself.logger.info("🔍 Processing incremental updates...")
             # Implement incremental processing logic here
             # This would compare source data timestamps with unified data timestamps
             # and only process new data
@@ -709,20 +812,20 @@ except Exception as e:
             # For now, return False to trigger full reprocessing
             return False
         except Exception as e:
-            self.logger.error(f"Error processing incremental updates: {e}")
+    passpasspasspasspasspasspasspassself.logger.error(f"Error processing incremental updates: {e}")
             return False
 
-    async def _perform_full_conversion(self, symbol: str, exchange: str, timeframe: str, data_dir: str) -> bool:
-        """Perform full data conversion."""
-        try:
-    pass  # TODO: Add proper exception handling
+    async def _perform_full_conversion(...) -> ...:
+    """..."""
+    passtry:
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
             # Identify data sources
             data_sources = await self._identify_data_sources(symbol, exchange, timeframe, data_dir)
 
             if not data_sources:
-                self.logger.warning("No data sources found for conversion")
+    passself.logger.warning("No data sources found for conversion")
                 return False
 
             self.logger.info(f"📁 Found {len(data_sources)} data sources: {list(data_sources.keys())}")
@@ -731,7 +834,7 @@ except Exception as e:
             unified_data = await self.processor.process_unified_data_streaming(data_sources)
 
             if unified_data.empty:
-                self.logger.warning("No unified data generated")
+    passself.logger.warning("No unified data generated")
                 return False
 
             # Validate unified data quality
@@ -740,7 +843,7 @@ except Exception as e:
             )
 
             if not quality_result.passed:
-                self.logger.warning(f"⚠️ Quality issues in unified data: {quality_result.issues}")
+    passself.logger.warning(f"⚠️ Quality issues in unified data: {quality_result.issues}")
                 # Continue with warning instead of failing
                 self.logger.warning("⚠️ Continuing with quality issues - review logs for details")
 
@@ -748,7 +851,7 @@ except Exception as e:
             save_success = await self._save_unified_data(unified_data, symbol, exchange, timeframe)
 
             if not save_success:
-                self.logger.error("Failed to save unified data")
+    passpasspassself.logger.error("Failed to save unified data")
                 return False
 
             # Log quality metrics
@@ -757,36 +860,36 @@ except Exception as e:
             return True
 
         except Exception as e:
-            self.logger.exception(f"Error during full conversion: {e}")
+    passpasspasspasspasspasspassself.logger.exception(f"Error during full conversion: {e}")
             return False
 
-    async def _identify_data_sources(self, symbol: str, exchange: str, timeframe: str, data_dir: str) -> Dict[str, str]:
-        """Identify available data sources for conversion."""
-        data_sources = {}
+    async def _identify_data_sources(...) -> ...:
+    """..."""
+    passdata_sources = {}
 
         # Check for klines data
         klines_file = os.path.join(data_dir, f"klines_{exchange}_{symbol}_{timeframe}_consolidated.parquet")
         if os.path.exists(klines_file):
-            data_sources['klines'] = klines_file
+    passpassdata_sources['klines'] = klines_file
 
         # Check for aggtrades data
         aggtrades_file = os.path.join(data_dir, f"aggtrades_{exchange}_{symbol}_consolidated.parquet")
         if os.path.exists(aggtrades_file):
-            data_sources['aggtrades'] = aggtrades_file
+    passpassdata_sources['aggtrades'] = aggtrades_file
 
         # Check for futures data
         futures_file = os.path.join(data_dir, f"futures_{exchange}_{symbol}_consolidated.parquet")
         if os.path.exists(futures_file):
-            data_sources['futures'] = futures_file
+    passpassdata_sources['futures'] = futures_file
 
         return data_sources
 
-    async def _save_unified_data(self, unified_data: pd.DataFrame, symbol: str, exchange: str, timeframe: str) -> bool:
-        """Save unified data to partitioned parquet format."""
-        try:
-    pass  # TODO: Add proper exception handling
+    async def _save_unified_data(...) -> ...:
+    """..."""
+    passtry:
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
             # Create output directory
             output_dir = os.path.join(self.config.unified_dir, exchange.lower(), symbol, timeframe)
             os.makedirs(output_dir, exist_ok=True)
@@ -803,9 +906,9 @@ except Exception as e:
 
             # Use pyarrow for efficient writing
             try:
-    pass  # TODO: Add proper exception handling
+    passpasspass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
                 import pyarrow as pa
                 import pyarrow.parquet as pq
 
@@ -813,7 +916,7 @@ except Exception as e:
 
                 # Write with partitioning
                 if partition_cols:
-                    pq.write_to_dataset(
+    passpasspq.write_to_dataset(
                         table,
                         output_dir,
                         partition_cols=partition_cols,
@@ -823,7 +926,7 @@ except Exception as e:
                         max_file_size=self.config.max_rows_per_file * 1024,  # Convert to bytes
                     )
                 else:
-                    pq.write_table(
+    passpq.write_table(
                         table,
                         os.path.join(output_dir, "data.parquet"),
                         compression=self.config.compression,
@@ -835,7 +938,7 @@ except Exception as e:
                 return True
 
             except ImportError:
-                # Fallback to pandas
+    passpass# Fallback to pandas
                 self.logger.warning("pyarrow not available, using pandas fallback")
                 unified_data.to_parquet(
                     os.path.join(output_dir, "data.parquet"),
@@ -846,7 +949,7 @@ except Exception as e:
                 return True
 
         except Exception as e:
-            self.logger.error(f"Error saving unified data: {e}")
+    passpasspasspasspasspasspassself.logger.error(f"Error saving unified data: {e}")
             return False
 
 
@@ -854,8 +957,8 @@ except Exception as e:
 # Usage Example
 # ============================================================================
 
-async def main():
-    """Example usage of the enhanced Step1_5 implementation."""
+async def main(...):
+    pass"""Example usage of the enhanced Step1_5 implementation."""
 
     # Create configuration
     config = Step1_5Config(
@@ -887,9 +990,9 @@ async def main():
 
     # Execute enhanced data conversion
     try:
-    pass  # TODO: Add proper exception handling
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
         result = await step1_5.execute(training_input, pipeline_state)
 
         print("=" * 60)
@@ -900,11 +1003,11 @@ except Exception as e:
         print("=" * 60)
 
     except Exception as e:
-        print(f"❌ Enhanced Step1_5 execution failed: {e}")
+    passpasspasspasspasspasspassprint(f"❌ Enhanced Step1_5 execution failed: {e}")
 
 
 if __name__ == "__main__":
-    # Set up logging
+    pass# Set up logging
     logging.basicConfig(
         level=logging.INFO,
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'

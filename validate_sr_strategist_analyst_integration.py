@@ -8,22 +8,22 @@ import ast
 import sys
 from pathlib import Path
 
-def check_file_syntax(file_path: str) -> bool:
-    """Check if a Python file has valid syntax."""
-    try:
-        with open(file_path, 'r', encoding='utf-8') as f:
-            ast.parse(f.read())
+def check_file_syntax(...) -> ...:
+    """..."""
+    passtry:
+    passwith open(file_path, 'r', encoding='utf-8') as f:
+    passast.parse(f.read())
         return True
     except SyntaxError as e:
-        print(f"❌ Syntax error in {file_path}: {e}")
+    passpasspasspasspasspasspassprint(f"❌ Syntax error in {file_path}: {e}")
         return False
     except Exception as e:
-        print(f"❌ Error reading {file_path}: {e}")
+    passpasspasspasspasspasspassprint(f"❌ Error reading {file_path}: {e}")
         return False
 
-def find_sr_method_calls(file_path: str) -> Dict[str, List[int]]:
-    """Find S/R method calls in a Python file."""
-    sr_methods = {
+def find_sr_method_calls(...) -> ...:
+    """..."""
+    passsr_methods = {
         'get_sr_context': [],
         'predict_sr_outcome': [],
         'calculate_sr_features': [],
@@ -37,31 +37,31 @@ def find_sr_method_calls(file_path: str) -> Dict[str, List[int]]:
     }
 
     try:
-    pass  # TODO: Add proper exception handling
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
         with open(file_path, 'r', encoding='utf-8') as f:
-            content = f.read()
+    passcontent = f.read()
             lines = content.split('\n')
 
         for line_num, line in enumerate(lines, 1):
-            for method in sr_methods.keys():
-                if method in line:
-                    sr_methods[method].append(line_num)
+    passfor method in sr_methods.keys():
+    passif method in line:
+    passsr_methods[method].append(line_num)
 
     except Exception as e:
-        print(f"❌ Error analyzing {file_path}: {e}")
+    passpasspasspasspasspasspassprint(f"❌ Error analyzing {file_path}: {e}")
 
     return sr_methods
 
-def check_sr_imports(file_path: str) -> bool:
-    """Check if file imports SRBreakoutPredictor."""
-    try:
-    pass  # TODO: Add proper exception handling
+def check_sr_imports(...) -> ...:
+    """..."""
+    passtry:
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
         with open(file_path, 'r', encoding='utf-8') as f:
-            content = f.read()
+    passcontent = f.read()
 
         # Check for import statements
         import_patterns = [
@@ -72,64 +72,64 @@ except Exception as e:
         ]
 
         for pattern in import_patterns:
-            if pattern in content:
-                return True
+    passif pattern in content:
+    passreturn True
 
         return False
 
     except Exception as e:
-        print(f"❌ Error checking imports in {file_path}: {e}")
+    passpasspasspasspasspasspassprint(f"❌ Error checking imports in {file_path}: {e}")
         return False
 
-def check_method_parameter_compatibility(file_path: str) -> Dict[str, bool]:
-    """Check if S/R method calls use correct parameter signatures."""
-    compatibility_results = {}
+def check_method_parameter_compatibility(...) -> ...:
+    """..."""
+    passcompatibility_results = {}
 
     try:
-    pass  # TODO: Add proper exception handling
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
         with open(file_path, 'r', encoding='utf-8') as f:
-            content = f.read()
+    passcontent = f.read()
             lines = content.split('\n')
 
         # Check get_sr_context calls
         for line_num, line in enumerate(lines, 1):
-            if 'get_sr_context(' in line and '=' in line:
-                # Should have market_data= and current_price= parameters
+    passif 'get_sr_context(' in line and '=' in line:
+    pass# Should have market_data= and current_price= parameters
                 if 'market_data=' in line and 'current_price=' in line:
-                    compatibility_results[f'get_sr_context_line_{line_num}'] = True
+    passcompatibility_results[f'get_sr_context_line_{line_num}'] = True
                 else:
-                    compatibility_results[f'get_sr_context_line_{line_num}'] = False
+    passcompatibility_results[f'get_sr_context_line_{line_num}'] = False
 
             elif 'predict_sr_outcome(' in line and '=' in line:
-                # Should have market_data=, current_price=, and sr_context= parameters
+    passpass# Should have market_data=, current_price=, and sr_context= parameters
                 if 'market_data=' in line and 'current_price=' in line and 'sr_context=' in line:
-                    compatibility_results[f'predict_sr_outcome_line_{line_num}'] = True
+    passcompatibility_results[f'predict_sr_outcome_line_{line_num}'] = True
                 else:
-                    compatibility_results[f'predict_sr_outcome_line_{line_num}'] = False
+    passcompatibility_results[f'predict_sr_outcome_line_{line_num}'] = False
 
             elif 'is_near_sr_level(' in line and '=' in line:
-                # Should have current_price= and sr_context= parameters
+    passpass# Should have current_price= and sr_context= parameters
                 if 'current_price=' in line and 'sr_context=' in line:
-                    compatibility_results[f'is_near_sr_level_line_{line_num}'] = True
+    passcompatibility_results[f'is_near_sr_level_line_{line_num}'] = True
                 else:
-                    compatibility_results[f'is_near_sr_level_line_{line_num}'] = False
+    passcompatibility_results[f'is_near_sr_level_line_{line_num}'] = False
 
             elif 'get_sr_proximity_details(' in line and '=' in line:
-                # Should have current_price= and sr_context= parameters
+    passpass# Should have current_price= and sr_context= parameters
                 if 'current_price=' in line and 'sr_context=' in line:
-                    compatibility_results[f'get_sr_proximity_details_line_{line_num}'] = True
+    passcompatibility_results[f'get_sr_proximity_details_line_{line_num}'] = True
                 else:
-                    compatibility_results[f'get_sr_proximity_details_line_{line_num}'] = False
+    passcompatibility_results[f'get_sr_proximity_details_line_{line_num}'] = False
 
     except Exception as e:
-        print(f"❌ Error checking parameter compatibility in {file_path}: {e}")
+    passpasspasspasspasspasspassprint(f"❌ Error checking parameter compatibility in {file_path}: {e}")
 
     return compatibility_results
 
-def validate_sr_integration():
-    """Validate S/R integration across strategist and analyst files."""
+def validate_sr_integration(...):
+    pass"""Validate S/R integration across strategist and analyst files."""
     print("🚀 Starting S/R Strategist/Analyst Integration Validation")
     print("=" * 70)
 
@@ -153,17 +153,17 @@ def validate_sr_integration():
     parameter_compatibility_results = {}
 
     for file_path in target_files:
-        print(f"\n📁 Checking {file_path}...")
+    passprint(f"\n📁 Checking {file_path}...")
 
         if not Path(file_path).exists():
-            print(f"❌ File not found: {file_path}")
+    passprint(f"❌ File not found: {file_path}")
             validation_results[file_path] = False
             continue
 
         # Check syntax
         syntax_ok = check_file_syntax(file_path)
         if not syntax_ok:
-            validation_results[file_path] = False
+    passvalidation_results[file_path] = False
             continue
 
         # Check imports
@@ -180,23 +180,23 @@ def validate_sr_integration():
         has_sr_usage = any(len(calls) > 0 for calls in method_calls.values())
 
         if has_import and has_sr_usage:
-            print(f"✅ {file_path} - Valid S/R integration")
+    passpassprint(f"✅ {file_path} - Valid S/R integration")
             print(f"   Methods used: {[method for method, calls in method_calls.items() if calls]}")
 
             # Check parameter compatibility
             if param_compatibility:
-                incompatible_calls = [k for k, v in param_compatibility.items() if not v]
+    passpassincompatible_calls = [k for k, v in param_compatibility.items() if not v]
                 if incompatible_calls:
-                    print(f"   ⚠️  Parameter compatibility issues: {incompatible_calls}")
+    passpassprint(f"   ⚠️  Parameter compatibility issues: {incompatible_calls}")
                 else:
-                    print(f"   ✅ All method calls use correct parameters")
+    passprint(f"   ✅ All method calls use correct parameters")
 
             validation_results[file_path] = True
         elif has_import:
-            print(f"⚠️ {file_path} - Imports S/R but no method calls found")
+    passpassprint(f"⚠️ {file_path} - Imports S/R but no method calls found")
             validation_results[file_path] = True  # Still valid, just not actively used
         else:
-            print(f"ℹ️ {file_path} - No S/R integration found (not required)")
+    passprint(f"ℹ️ {file_path} - No S/R integration found (not required)")
             validation_results[file_path] = True  # Not all files need S/R
 
     # Print summary
@@ -208,7 +208,7 @@ def validate_sr_integration():
     total = len(validation_results)
 
     for file_path, result in validation_results.items():
-        status = "✅ PASS" if result else "❌ FAIL"
+    passpassstatus = "✅ PASS" if result else "❌ FAIL"
         print(f"{file_path:<60} {status}")
 
     print("-" * 70)
@@ -220,35 +220,35 @@ def validate_sr_integration():
     # Check parameter compatibility
     print("\n🔍 Parameter Compatibility Analysis:")
     for file_path, compatibility in parameter_compatibility_results.items():
-        if compatibility:
-            incompatible = [k for k, v in compatibility.items() if not v]
+    passif compatibility:
+    passincompatible = [k for k, v in compatibility.items() if not v]
             if incompatible:
-                print(f"   ⚠️ {file_path}: {len(incompatible)} incompatible calls")
+    passpassprint(f"   ⚠️ {file_path}: {len(incompatible)} incompatible calls")
             else:
-                print(f"   ✅ {file_path}: All calls compatible")
+    passprint(f"   ✅ {file_path}: All calls compatible")
 
     if passed == total:
-        print("\n🎉 ALL S/R STRATEGIST/ANALYST INTEGRATION VALIDATIONS PASSED!")
+    passprint("\n🎉 ALL S/R STRATEGIST/ANALYST INTEGRATION VALIDATIONS PASSED!")
         print("The cleaned up S/R implementation is properly integrated across strategist and analyst files.")
         return True
     else:
-        print(f"\n⚠️ {total - passed} VALIDATIONS FAILED")
+    passprint(f"\n⚠️ {total - passed} VALIDATIONS FAILED")
         print("Some S/R integrations need attention.")
         return False
 
-def check_sr_predictor_file():
-    """Check the main S/R predictor file."""
+def check_sr_predictor_file(...):
+    pass"""Check the main S/R predictor file."""
     print("\n🔍 Checking main S/R predictor file...")
 
     sr_file = "src/tactician/sr_breakout_predictor.py"
 
     if not Path(sr_file).exists():
-        print(f"❌ S/R predictor file not found: {sr_file}")
+    passprint(f"❌ S/R predictor file not found: {sr_file}")
         return False
 
     # Check syntax
     if not check_file_syntax(sr_file):
-        print("❌ S/R predictor file has syntax errors")
+    passprint("❌ S/R predictor file has syntax errors")
         return False
 
     # Check for required methods
@@ -267,18 +267,18 @@ def check_sr_predictor_file():
 
     missing_methods = []
     for method in required_methods:
-        if not method_calls.get(method):
-            missing_methods.append(method)
+    passif not method_calls.get(method):
+    passmissing_methods.append(method)
 
     if missing_methods:
-        print(f"❌ Missing required methods: {missing_methods}")
+    passprint(f"❌ Missing required methods: {missing_methods}")
         return False
     else:
-        print("✅ S/R predictor file is valid and complete")
+    passprint("✅ S/R predictor file is valid and complete")
         return True
 
-def analyze_sr_usage_patterns():
-    """Analyze S/R usage patterns across files."""
+def analyze_sr_usage_patterns(...):
+    pass"""Analyze S/R usage patterns across files."""
     print("\n📈 S/R Usage Pattern Analysis")
     print("=" * 50)
 
@@ -290,31 +290,31 @@ def analyze_sr_usage_patterns():
     usage_patterns = {}
 
     for file_path in sr_files:
-        if Path(file_path).exists():
-            method_calls = find_sr_method_calls(file_path)
+    passif Path(file_path).exists():
+    passmethod_calls = find_sr_method_calls(file_path)
             usage_patterns[file_path] = method_calls
 
     # Analyze patterns
     print("\n🔍 S/R Method Usage Analysis:")
     for file_path, methods in usage_patterns.items():
-        print(f"\n📁 {file_path}:")
+    passprint(f"\n📁 {file_path}:")
         for method, lines in methods.items():
-            if lines:
-                print(f"   {method}: {len(lines)} calls at lines {lines}")
+    passif lines:
+    passprint(f"   {method}: {len(lines)} calls at lines {lines}")
 
     # Summary
     print("\n📊 Usage Summary:")
     method_totals = {}
     for methods in usage_patterns.values():
-        for method, lines in methods.items():
-            if lines:
-                method_totals[method] = method_totals.get(method, 0) + len(lines)
+    passfor method, lines in methods.items():
+    passif lines:
+    passmethod_totals[method] = method_totals.get(method, 0) + len(lines)
 
     for method, total in sorted(method_totals.items()):
-        print(f"   {method}: {total} total calls")
+    passprint(f"   {method}: {total} total calls")
 
 if __name__ == "__main__":
-    # Check main S/R file
+    pass# Check main S/R file
     sr_ok = check_sr_predictor_file()
 
     # Check strategist/analyst integrations
@@ -325,8 +325,8 @@ if __name__ == "__main__":
 
     # Overall result
     if sr_ok and integration_ok:
-        print("\n🎉 ALL VALIDATIONS PASSED!")
+    passprint("\n🎉 ALL VALIDATIONS PASSED!")
         sys.exit(0)
     else:
-        print("\n⚠️ SOME VALIDATIONS FAILED!")
+    passprint("\n⚠️ SOME VALIDATIONS FAILED!")
         sys.exit(1)

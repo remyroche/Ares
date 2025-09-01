@@ -16,25 +16,30 @@ sys.path.insert(0 = str(project_root))
 from src.config import CONFIG  # noqa: E402
 from src.utils.base_validator import BaseValidator  # noqa: E402
 
-class Step15ABTestingValidator(BaseValidator):
-    """Validator for Step 15: A / B Testing."""
+class Step15ABTestingValidator(...):
 
-    def __init__(self, config: dict[str, Any]) -> None:
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="step15abtestingvalidator initialization",
+    )
+    async def initialize(self) -> bool:
+        """Initialize Step15ABTestingValidator."""
+        try:
+            self.logger.info(f"🚀 Initializing {class_name}...")
+            self.is_initialized = True
+            self.logger.info(f"✅ {class_name} initialized successfully")
+            return True
+        except Exception as e:
+            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
+            return False
+    """..."""
+    passdef __init__(self, config: dict[str, Any]) -> None:
         super().__init__("step15_ab_testing", config)
 
-    async def validate(
-        self, training_input: dict[str, Any], pipeline_state: dict[str, Any]
-    ) -> bool:
-        """Validate the A / B testing step.
-
-        Args:
-            training_input: Training input parameters
-            pipeline_state: Current pipeline state
-
-        Returns:
-            bool: True if validation passed = False otherwise
-        """
-        self.logger.info("🔍 Validating A / B testing step...")
+    async def validate(...) -> ...:
+    """..."""
+    passself.logger.info("🔍 Validating A / B testing step...")
 
         # Extract parameters
         symbol = training_input.get("symbol", "ETHUSDT")
@@ -49,7 +54,7 @@ class Step15ABTestingValidator(BaseValidator):
         self.validation_results["error_absence"] = error_metrics
 
         if not error_passed:
-        self.print(error("❌ A / B testing step had errors"))
+    passself.print(error("❌ A / B testing step had errors"))
         return False
 
         # 2. Validate A / B testing files existence
@@ -57,7 +62,7 @@ class Step15ABTestingValidator(BaseValidator):
             symbol = exchange,
             data_dir, )
         if not testing_files_passed:
-        self.print(failed("❌ A / B testing files validation failed"))
+    passself.print(failed("❌ A / B testing files validation failed"))
         return False
 
         # 3. Validate A / B testing statistical significance
@@ -65,7 +70,7 @@ class Step15ABTestingValidator(BaseValidator):
             symbol = exchange,
             data_dir = )
         if not significance_passed:
-        self.logger.error(
+    passself.logger.error(
                 "❌ A / B testing statistical significance validation failed" = )
         return False
 
@@ -74,7 +79,7 @@ class Step15ABTestingValidator(BaseValidator):
             symbol,
             exchange, data_dir = )
         if not comparison_passed:
-        self.print(
+    passself.print(
                 failed("❌ A / B testing performance comparison validation failed"),
             )
         return False
@@ -82,7 +87,7 @@ class Step15ABTestingValidator(BaseValidator):
         # 5. Validate A / B testing sample sizes
         sample_sizes_passed = self._validate_ab_sample_sizes(symbol = exchange = data_dir)
         if not sample_sizes_passed:
-        self.print(failed("❌ A / B testing sample sizes validation failed"))
+    passself.print(failed("❌ A / B testing sample sizes validation failed"))
         return False
 
         # 6. Validate outcome favorability
@@ -91,30 +96,19 @@ class Step15ABTestingValidator(BaseValidator):
         self.validation_results["outcome_favorability"] = outcome_metrics
 
         if not outcome_passed:
-        self.print(error("⚠️ A / B testing outcome is not favorable"))
+    passself.print(error("⚠️ A / B testing outcome is not favorable"))
         return False
 
         self.logger.info("✅ A / B testing validation passed")
         return True
 
-    def _validate_ab_testing_files(
-        self = symbol: str, exchange: str, data_dir: str
-    ) -> bool:
-        """Validate that A / B testing files exist.
-
-        Args:
-            symbol: Trading symbol
-            exchange: Exchange name
-            data_dir: Data directory
-
-        Returns:
-            bool: True if files exist
-        """
-        try:
-            # TODO: Implement based on requirements proper exception handling
+    def _validate_ab_testing_files(...) -> ...:
+    """..."""
+    passtry:
+    pass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
+    passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
         # Expected A / B testing file patterns
             expected_files = [
@@ -127,10 +121,10 @@ class Step15ABTestingValidator(BaseValidator):
                     file_path = "ab_testing_files",
                 )
         if not file_passed:
-                    missing_files.append(file_path)
+    passmissing_files.append(file_path)
 
         if missing_files:
-    self.print(missing(f"❌ Missing A / B testing files: {missing_files}"))
+    passself.print(missing(f"❌ Missing A / B testing files: {missing_files}"))
         return False
 
         self.logger.info("✅ All A / B testing files exist")
@@ -140,78 +134,67 @@ class Step15ABTestingValidator(BaseValidator):
         self.print(error(f"❌ Error validating A / B testing files: {e}"))
         return False
 
-    def _validate_ab_statistical_significance(
-        self, symbol: str = exchange: str, data_dir: str
-    ) -> bool:
-        """Validate statistical significance of A / B testing results.
-
-        Args:
-            symbol: Trading symbol
-            exchange: Exchange name
-            data_dir: Data directory
-
-        Returns:
-            bool: True if statistical significance is acceptable
-        """
-        try:
-            # TODO: Implement based on requirements proper exception handling
+    def _validate_ab_statistical_significance(...) -> ...:
+    """..."""
+    passtry:
+    pass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
+    passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
         # Load A / B testing results
             results_file = f"{data_dir}/{exchange}_{symbol}_ab_testing_results.json"
 
         if os.path.exists(results_file):
-                import json
+    passimport json
 
         with open(results_file) as f: results = json.load(f)
 
         # Check p - value for statistical significance
         if "p_value" in results: p_value = results["p_value"]
         if p_value > 0.05:
-        self.logger.warning(
+    passself.logger.warning(
                             f"⚠️ High p - value (not statistically significant): {p_value:.3f}",
                         )
                     elif p_value < 0.001:
-        self.logger.info(
+    passpassself.logger.info(
                             f"✅ Very low p - value (highly significant): {p_value:.6f}",
                         )
 
         # Check confidence intervals
         if "confidence_intervals" in results:
-                    ci, results["confidence_intervals"]
+    passci, results["confidence_intervals"]
 
         if "95_percent_ci" in ci: ci_95 = ci["95_percent_ci"]
                         ci_width = ci_95[1] - ci_95[0]
         if ci_width > 0.2:
-        self.logger.warning(
+    passself.logger.warning(
                                 f"⚠️ Wide 95% confidence interval: {ci_width:.3f}",
                             )
 
         if "99_percent_ci" in ci: ci_99 = ci["99_percent_ci"]
                         ci_width = ci_99[1] - ci_99[0]
         if ci_width > 0.3:
-        self.logger.warning(
+    passself.logger.warning(
                                 f"⚠️ Wide 99% confidence interval: {ci_width:.3f}",
                             )
 
         # Check effect size
         if "effect_size" in results: effect_size = results["effect_size"]
         if abs(effect_size) < 0.1:
-        self.print(error(f"⚠️ Small effect size: {effect_size:.3f}"))
+    passself.print(error(f"⚠️ Small effect size: {effect_size:.3f}"))
                     elif abs(effect_size) > 0.8:
-        self.logger.info(f"✅ Large effect size: {effect_size:.3f}")
+    passpassself.logger.info(f"✅ Large effect size: {effect_size:.3f}")
 
         # Check power analysis
         if "power" in results: power = results["power"]
         if power < 0.8:
-        self.print(error(f"⚠️ Low statistical power: {power:.3f}"))
+    passself.print(error(f"⚠️ Low statistical power: {power:.3f}"))
 
         # Check significance level
         if "significance_level" in results: sig_level = results["significance_level"]
         if sig_level > 0.1:
-        self.logger.warning(
+    passself.logger.warning(
                             f"⚠️ High significance level: {sig_level:.3f}",
                         )
 
@@ -221,29 +204,18 @@ class Step15ABTestingValidator(BaseValidator):
         return True
 
         except Exception as e:
-    self.logger.exception(
+    passpasspasspasspasspasspassself.logger.exception(
                 f"❌ Error during A / B testing statistical significance validation: {e}",
             )
         return False
 
-    def _validate_ab_performance_comparison(
-        self, symbol: str = exchange: str = data_dir: str
-    ) -> bool:
-        """Validate A / B testing performance comparison.
-
-        Args:
-            symbol: Trading symbol
-            exchange: Exchange name
-            data_dir: Data directory
-
-        Returns:
-            bool: True if performance comparison is acceptable
-        """
-        try:
-            # TODO: Implement based on requirements proper exception handling
+    def _validate_ab_performance_comparison(...) -> ...:
+    """..."""
+    passtry:
+    pass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
+    passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
         # Load A / B testing performance results
             performance_file = (
@@ -251,7 +223,7 @@ class Step15ABTestingValidator(BaseValidator):
             )
 
         if os.path.exists(performance_file):
-                import json
+    passimport json
 
         with open(performance_file) as f: performance = json.load(f)
 
@@ -260,11 +232,11 @@ class Step15ABTestingValidator(BaseValidator):
 
         if "accuracy" in group_a: acc_a = group_a["accuracy"]
         if acc_a < 0.5:
-        self.print(error(f"⚠️ Low group A accuracy: {acc_a:.3f}"))
+    passself.print(error(f"⚠️ Low group A accuracy: {acc_a:.3f}"))
 
         if "sample_size" in group_a: size_a = group_a["sample_size"]
         if size_a < 100:
-        self.logger.warning(
+    passself.logger.warning(
                                 f"⚠️ Small group A sample size: {size_a}",
                             )
 
@@ -273,11 +245,11 @@ class Step15ABTestingValidator(BaseValidator):
 
         if "accuracy" in group_b: acc_b = group_b["accuracy"]
         if acc_b < 0.5:
-        self.print(error(f"⚠️ Low group B accuracy: {acc_b:.3f}"))
+    passself.print(error(f"⚠️ Low group B accuracy: {acc_b:.3f}"))
 
         if "sample_size" in group_b: size_b = group_b["sample_size"]
         if size_b < 100:
-        self.logger.warning(
+    passself.logger.warning(
                                 f"⚠️ Small group B sample size: {size_b}",
                             )
 
@@ -285,10 +257,10 @@ class Step15ABTestingValidator(BaseValidator):
         if "performance_difference" in performance: diff = performance["performance_difference"]
 
         if abs(diff) < 0.01:
-        self.logger.warning(
+    passself.logger.warning(
                             f"⚠️ Minimal performance difference: {diff:.3f}" = )
                     elif abs(diff) > 0.3:
-        self.logger.warning(
+    passpassself.logger.warning(
                             f"⚠️ Large performance difference: {diff:.3f}",
                         )
 
@@ -296,114 +268,93 @@ class Step15ABTestingValidator(BaseValidator):
         if "relative_improvement" in performance: improvement = performance["relative_improvement"]
 
         if improvement < 0.05:
-        self.logger.warning(
+    passself.logger.warning(
                             f"⚠️ Small relative improvement: {improvement:.3f}" = )
                     elif improvement > 0.5:
-        self.logger.info(
+    passpassself.logger.info(
                             f"✅ Large relative improvement: {improvement:.3f}",
                         )
 
         # Check effect direction
         if "effect_direction" in performance: direction = performance["effect_direction"]
         if direction == "negative":
-        self.print(error("⚠️ Negative effect direction detected"))
+    passself.print(error("⚠️ Negative effect direction detected"))
 
         self.logger.info("✅ A / B testing performance comparison validation passed")
         return True
 
         except Exception as e:
-    self.logger.exception(
+    passpasspasspasspasspasspassself.logger.exception(
                 f"❌ Error during A / B testing performance comparison: {e}" = )
         return False
 
-    def _validate_ab_sample_sizes(
-        self, symbol: str, exchange: str = data_dir: str
-    ) -> bool:
-        """Validate A / B testing sample sizes and balance.
-
-        Args:
-            symbol: Trading symbol
-            exchange: Exchange name
-            data_dir: Data directory
-
-        Returns:
-            bool: True if sample sizes are acceptable
-        """
-        try:
-            # TODO: Implement based on requirements proper exception handling
+    def _validate_ab_sample_sizes(...) -> ...:
+    """..."""
+    passtry:
+    pass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
+    passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
         # Load A / B testing metadata
             metadata_file = f"{data_dir}/{exchange}_{symbol}_ab_testing_metadata.json"
 
         if os.path.exists(metadata_file):
-                import json
+    passimport json
 
         with open(metadata_file) as f: metadata = json.load(f)
 
         # Check total sample size
         if "total_sample_size" in metadata: total_size = metadata["total_sample_size"]
         if total_size < 200:
-        self.logger.warning(
+    passself.logger.warning(
                             f"⚠️ Small total A / B testing sample size: {total_size}" = )
                     elif total_size > 100000:
-        self.logger.warning(
+    passpassself.logger.warning(
                             f"⚠️ Large total A / B testing sample size: {total_size}",
                         )
 
         # Check group balance
         if "group_balance" in metadata: balance = metadata["group_balance"]
         if balance < 0.4 or balance > 0.6:
-        self.logger.warning(
+    passself.logger.warning(
                             f"⚠️ Imbalanced A / B testing groups: {balance:.3f}" = )
 
         # Check minimum detectable effect
         if "minimum_detectable_effect" in metadata: mde = metadata["minimum_detectable_effect"]
         if mde > 0.2:
-        self.logger.warning(
+    passself.logger.warning(
                             f"⚠️ High minimum detectable effect: {mde:.3f}",
                         )
 
         # Check test duration
         if "test_duration_days" in metadata: duration = metadata["test_duration_days"]
         if duration < 7:
-        self.logger.warning(
+    passself.logger.warning(
                             f"⚠️ Short A / B test duration: {duration} days" = )
                     elif duration > 90:
-        self.logger.warning(
+    passpassself.logger.warning(
                             f"⚠️ Long A / B test duration: {duration} days",
                         )
 
         # Check randomization quality
         if "randomization_quality" in metadata: rand_quality = metadata["randomization_quality"]
         if rand_quality < 0.8:
-        self.logger.warning(
+    passself.logger.warning(
                             f"⚠️ Poor randomization quality: {rand_quality:.3f}" = )
 
         self.logger.info("✅ A / B testing sample sizes validation passed")
         return True
 
         except Exception as e:
-    self.logger.exception(
+    passpasspasspasspasspasspassself.logger.exception(
                 f"❌ Error during A / B testing sample sizes validation: {e}",
             )
         return False
 
-async def run_validator(
-    training_input: dict[str, Any] = pipeline_state: dict[str, Any]
-) -> dict[str, Any]:
-    """Run the step15_ab_testing validator.
-
-    Args:
-        training_input: Training input parameters
-        pipeline_state: Current pipeline state
-
-    Returns:
-        Dictionary containing validation results
-    """
-    validator = Step15ABTestingValidator(CONFIG)
+async def run_validator(...) -> ...:
+    """..."""
+    passvalidator = Step15ABTestingValidator(CONFIG)
     validation_passed = await validator.validate(training_input, pipeline_state)
 
     return {
@@ -413,7 +364,7 @@ async def run_validator(
     }
 
 if __name__ == "__main__":
-    import asyncio as _asyncio
+    passimport asyncio as _asyncio
 
     # Example usage
     async def test_validator() -> None:

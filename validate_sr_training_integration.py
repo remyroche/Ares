@@ -8,22 +8,22 @@ import ast
 import sys
 from pathlib import Path
 
-def check_file_syntax(file_path: str) -> bool:
-    """Check if a Python file has valid syntax."""
-    try:
-        with open(file_path, 'r', encoding='utf-8') as f:
-            ast.parse(f.read())
+def check_file_syntax(...) -> ...:
+    """..."""
+    passtry:
+    passwith open(file_path, 'r', encoding='utf-8') as f:
+    passast.parse(f.read())
         return True
     except SyntaxError as e:
-        print(f"❌ Syntax error in {file_path}: {e}")
+    passpasspasspasspasspasspassprint(f"❌ Syntax error in {file_path}: {e}")
         return False
     except Exception as e:
-        print(f"❌ Error reading {file_path}: {e}")
+    passpasspasspasspasspasspassprint(f"❌ Error reading {file_path}: {e}")
         return False
 
-def find_sr_method_calls(file_path: str) -> Dict[str, List[int]]:
-    """Find S/R method calls in a Python file."""
-    sr_methods = {
+def find_sr_method_calls(...) -> ...:
+    """..."""
+    passsr_methods = {
         'get_sr_context': [],
         'predict_sr_outcome': [],
         'calculate_sr_features': [],
@@ -36,31 +36,31 @@ def find_sr_method_calls(file_path: str) -> Dict[str, List[int]]:
     }
 
     try:
-    pass  # TODO: Add proper exception handling
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
         with open(file_path, 'r', encoding='utf-8') as f:
-            content = f.read()
+    passcontent = f.read()
             lines = content.split('\n')
 
         for line_num, line in enumerate(lines, 1):
-            for method in sr_methods.keys():
-                if method in line:
-                    sr_methods[method].append(line_num)
+    passfor method in sr_methods.keys():
+    passif method in line:
+    passsr_methods[method].append(line_num)
 
     except Exception as e:
-        print(f"❌ Error analyzing {file_path}: {e}")
+    passpasspasspasspasspasspassprint(f"❌ Error analyzing {file_path}: {e}")
 
     return sr_methods
 
-def check_sr_imports(file_path: str) -> bool:
-    """Check if file imports SRBreakoutPredictor."""
-    try:
-    pass  # TODO: Add proper exception handling
+def check_sr_imports(...) -> ...:
+    """..."""
+    passtry:
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
         with open(file_path, 'r', encoding='utf-8') as f:
-            content = f.read()
+    passcontent = f.read()
 
         # Check for import statements
         import_patterns = [
@@ -71,17 +71,17 @@ except Exception as e:
         ]
 
         for pattern in import_patterns:
-            if pattern in content:
-                return True
+    passif pattern in content:
+    passreturn True
 
         return False
 
     except Exception as e:
-        print(f"❌ Error checking imports in {file_path}: {e}")
+    passpasspasspasspasspasspassprint(f"❌ Error checking imports in {file_path}: {e}")
         return False
 
-def validate_sr_integration():
-    """Validate S/R integration across training files."""
+def validate_sr_integration(...):
+    pass"""Validate S/R integration across training files."""
     print("🚀 Starting S/R Training Integration Validation")
     print("=" * 60)
 
@@ -98,17 +98,17 @@ def validate_sr_integration():
     validation_results = {}
 
     for file_path in training_files:
-        print(f"\n📁 Checking {file_path}...")
+    passprint(f"\n📁 Checking {file_path}...")
 
         if not Path(file_path).exists():
-            print(f"❌ File not found: {file_path}")
+    passprint(f"❌ File not found: {file_path}")
             validation_results[file_path] = False
             continue
 
         # Check syntax
         syntax_ok = check_file_syntax(file_path)
         if not syntax_ok:
-            validation_results[file_path] = False
+    passvalidation_results[file_path] = False
             continue
 
         # Check imports
@@ -121,14 +121,14 @@ def validate_sr_integration():
         has_sr_usage = any(len(calls) > 0 for calls in method_calls.values())
 
         if has_import and has_sr_usage:
-            print(f"✅ {file_path} - Valid S/R integration")
+    passpassprint(f"✅ {file_path} - Valid S/R integration")
             print(f"   Methods used: {[method for method, calls in method_calls.items() if calls]}")
             validation_results[file_path] = True
         elif has_import:
-            print(f"⚠️ {file_path} - Imports S/R but no method calls found")
+    passpasspassprint(f"⚠️ {file_path} - Imports S/R but no method calls found")
             validation_results[file_path] = True  # Still valid, just not actively used
         else:
-            print(f"❌ {file_path} - No S/R integration found")
+    passprint(f"❌ {file_path} - No S/R integration found")
             validation_results[file_path] = False
 
     # Print summary
@@ -140,7 +140,7 @@ def validate_sr_integration():
     total = len(validation_results)
 
     for file_path, result in validation_results.items():
-        status = "✅ PASS" if result else "❌ FAIL"
+    passpassstatus = "✅ PASS" if result else "❌ FAIL"
         print(f"{file_path:<50} {status}")
 
     print("-" * 60)
@@ -150,27 +150,27 @@ def validate_sr_integration():
     print(f"Success Rate: {passed/total*100:.1f}%")
 
     if passed == total:
-        print("\n🎉 ALL S/R TRAINING INTEGRATION VALIDATIONS PASSED!")
+    passprint("\n🎉 ALL S/R TRAINING INTEGRATION VALIDATIONS PASSED!")
         print("The cleaned up S/R implementation is properly integrated across all training files.")
         return True
     else:
-        print(f"\n⚠️ {total - passed} VALIDATIONS FAILED")
+    passprint(f"\n⚠️ {total - passed} VALIDATIONS FAILED")
         print("Some S/R integrations need attention.")
         return False
 
-def check_sr_predictor_file():
-    """Check the main S/R predictor file."""
+def check_sr_predictor_file(...):
+    pass"""Check the main S/R predictor file."""
     print("\n🔍 Checking main S/R predictor file...")
 
     sr_file = "src/tactician/sr_breakout_predictor.py"
 
     if not Path(sr_file).exists():
-        print(f"❌ S/R predictor file not found: {sr_file}")
+    passprint(f"❌ S/R predictor file not found: {sr_file}")
         return False
 
     # Check syntax
     if not check_file_syntax(sr_file):
-        print("❌ S/R predictor file has syntax errors")
+    passprint("❌ S/R predictor file has syntax errors")
         return False
 
     # Check for required methods
@@ -188,18 +188,18 @@ def check_sr_predictor_file():
 
     missing_methods = []
     for method in required_methods:
-        if not method_calls.get(method):
-            missing_methods.append(method)
+    passif not method_calls.get(method):
+    passmissing_methods.append(method)
 
     if missing_methods:
-        print(f"❌ Missing required methods: {missing_methods}")
+    passprint(f"❌ Missing required methods: {missing_methods}")
         return False
     else:
-        print("✅ S/R predictor file is valid and complete")
+    passprint("✅ S/R predictor file is valid and complete")
         return True
 
 if __name__ == "__main__":
-    # Check main S/R file
+    pass# Check main S/R file
     sr_ok = check_sr_predictor_file()
 
     # Check training integrations
@@ -207,8 +207,8 @@ if __name__ == "__main__":
 
     # Overall result
     if sr_ok and training_ok:
-        print("\n🎉 ALL VALIDATIONS PASSED!")
+    passprint("\n🎉 ALL VALIDATIONS PASSED!")
         sys.exit(0)
     else:
-        print("\n⚠️ SOME VALIDATIONS FAILED!")
+    passprint("\n⚠️ SOME VALIDATIONS FAILED!")
         sys.exit(1)

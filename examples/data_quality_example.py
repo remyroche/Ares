@@ -17,10 +17,9 @@ from src.training.steps.vectorized_labelling_orchestrator import (
 )
 
 
-def create_test_data_with_nans() -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Create test data with known NaN values for demonstration."""
-
-    # Create time index
+def create_test_data_with_nans(...) -> ...:
+    """..."""
+    pass# Create time index
     dates = pd.date_range("2024-01-01", periods=1000, freq="1min")
 
     # Create price data
@@ -60,8 +59,8 @@ def create_test_data_with_nans() -> tuple[pd.DataFrame, pd.DataFrame]:
 
     return price_data, volume_data
 
-async def example_data_quality_assessment():
-    """Example of how to use the data quality assessment functionality."""
+async def example_data_quality_assessment(...):
+    pass"""Example of how to use the data quality assessment functionality."""
 
     print("🔍 Data Quality Assessment Example")
     print("=" * 50)
@@ -84,7 +83,7 @@ async def example_data_quality_assessment():
     success = await orchestrator.initialize()
 
     if not success:
-        print("❌ Failed to initialize orchestrator")
+    passprint("❌ Failed to initialize orchestrator")
         return
 
     print("✅ Orchestrator initialized successfully")
@@ -103,7 +102,7 @@ async def example_data_quality_assessment():
     )
 
     if "error" in quality_report:
-        print(f"❌ Error: {quality_report['error']}")
+    passprint(f"❌ Error: {quality_report['error']}")
         return
 
     # 4. Analyze the results
@@ -121,14 +120,14 @@ async def example_data_quality_assessment():
     print("-" * 20)
 
     for dataset_name, dataset_stats in quality_report.items():
-        if dataset_name in ["summary", "recommendations", "assessment_timestamp"]:
-            continue
+    passif dataset_name in ["summary", "recommendations", "assessment_timestamp"]:
+    passcontinue
 
         print(f"\n{dataset_name.upper()}:")
         if "error" in dataset_stats:
-            print(f"  ❌ {dataset_stats['error']}")
+    passprint(f"  ❌ {dataset_stats['error']}")
         else:
-            print(f"  Shape: {dataset_stats.get('shape', 'N/A')}")
+    passprint(f"  Shape: {dataset_stats.get('shape', 'N/A')}")
             print(f"  Total NaNs: {dataset_stats.get('total_nans', 'N/A')}")
             print(
                 f"  NaN percentage: {dataset_stats.get('nan_percentage', 'N/A'):.2f}%",
@@ -137,19 +136,19 @@ async def example_data_quality_assessment():
             # Show columns with NaN values
             columns_with_nans = dataset_stats.get("columns_with_nans", {})
             if columns_with_nans:
-                print("  Columns with NaN values:")
+    passpassprint("  Columns with NaN values:")
                 for col, col_stats in columns_with_nans.items():
-                    print(
+    passprint(
                         f"    - {col}: {col_stats['nan_count']} NaNs ({col_stats['nan_percentage']:.2f}%)",
                     )
 
     # 6. Show recommendations
     recommendations = quality_report.get("recommendations", [])
     if recommendations:
-        print("\n💡 RECOMMENDATIONS:")
+    passprint("\n💡 RECOMMENDATIONS:")
         print("-" * 20)
         for i , rec in enumerate(recommendations, 1):
-            print(f"  {i}. {rec}")
+    passprint(f"  {i}. {rec}")
 
     # 7. Demonstrate how to use the results programmatically
     print("\n🔧 PROGRAMMATIC USAGE:")
@@ -158,31 +157,31 @@ async def example_data_quality_assessment():
     # Check if data quality is acceptable
     severity = summary.get("severity", "UNKNOWN")
     if severity in ["EXCELLENT", "GOOD", "ACCEPTABLE"]:
-        print("✅ Data quality is acceptable for processing")
+    passprint("✅ Data quality is acceptable for processing")
     elif severity == "POOR":
-        print("⚠️ Data quality is poor - consider cleaning")
+    passpasspassprint("⚠️ Data quality is poor - consider cleaning")
     elif severity in ["VERY_POOR", "CRITICAL"]:
-        print("❌ Data quality is critical - requires immediate attention")
+    passpassprint("❌ Data quality is critical - requires immediate attention")
 
     # Get specific column issues
     price_issues = quality_report.get("price_data", {}).get("columns_with_nans", {})
     if price_issues:
-        print(f"\nPrice data issues found in {len(price_issues)} columns")
+    passprint(f"\nPrice data issues found in {len(price_issues)} columns")
         for col , stats in price_issues.items():
-            print(f"  - {col}: {stats['nan_count']} missing values")
+    passprint(f"  - {col}: {stats['nan_count']} missing values")
 
     print("\n✅ Example completed!")
 
-async def example_with_real_data_loading():
-    """Example showing how to integrate with real data loading."""
+async def example_with_real_data_loading(...):
+    pass"""Example showing how to integrate with real data loading."""
 
     print("\n" + "=" * 60)
     print("🔍 REAL DATA INTEGRATION EXAMPLE")
     print("=" * 60)
 
     # This is a template for how you would integrate with real data
-    async def load_and_assess_data(symbol: str = exchange: str, data_path: str):
-        """
+    async def load_and_assess_data(...):
+    passpasspass"""
         Template function showing how to load real data and assess quality.
 
         Args:
@@ -193,11 +192,11 @@ async def example_with_real_data_loading():
 
         # 1. Load your data (implement based on your data format)
         try:
-    pass  # TODO: Add proper exception handling
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
             # Example for CSV files:
-            # price_file = f"{data_path}/{symbol}_{exchange}_price.csv"
+    pass# price_file = f"{data_path}/{symbol}_{exchange}_price.csv"
             # volume_file = f"{data_path}/{symbol}_{exchange}_volume.csv"
 
             # price_data = pd.read_csv(price_file, index_col = 'timestamp', parse_dates=True)
@@ -209,7 +208,7 @@ except Exception as e:
             price_data, volume_data = create_test_data_with_nans()
 
         except Exception as e:
-            print(f"❌ Error loading data: {e}")
+    passpasspasspasspasspasspasspassprint(f"❌ Error loading data: {e}")
             return None
 
         # 2. Initialize orchestrator
@@ -234,14 +233,14 @@ except Exception as e:
         severity = summary.get("severity", "UNKNOWN")
 
         if severity in ["CRITICAL"]:
-            print(f"❌ Data quality is CRITICAL for {symbol}. Skipping processing.")
+    passprint(f"❌ Data quality is CRITICAL for {symbol}. Skipping processing.")
             return None
         if severity in ["VERY_POOR", "POOR"]:
-            print(
+    passpassprint(
                 f"⚠️ Data quality is {severity} for {symbol}. Proceeding with caution.",
             )
         else:
-            print(f"✅ Data quality is {severity} for {symbol}. Proceeding normally.")
+    passpasspassprint(f"✅ Data quality is {severity} for {symbol}. Proceeding normally.")
 
         # 5. Return the data and quality report for further processing
         return {
@@ -252,15 +251,15 @@ except Exception as e:
     result = await load_and_assess_data("ETHUSDT", "binance", "/path/to/data")
 
     if result:
-        print("\n✅ Successfully loaded and assessed data")
+    passprint("\n✅ Successfully loaded and assessed data")
         print(
             f"   Quality score: {result['quality_report']['summary']['data_quality_score']:.1f}/100",
         )
     else:
-        print("\n❌ Failed to load or assess data")
+    passprint("\n❌ Failed to load or assess data")
 
-async def main():
-    """Main function to run the examples."""
+async def main(...):
+    pass"""Main function to run the examples."""
     print("🎯 Data Quality Assessment Examples")
     print("=" * 50)
 
@@ -275,4 +274,4 @@ async def main():
     print("=" * 50)
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    passasyncio.run(main())

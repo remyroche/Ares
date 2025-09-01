@@ -27,8 +27,8 @@ logger = logging.getLogger(__name__)
 shutdown_requested = False
 
 
-def signal_handler(signum = frame):
-    """Handle interrupt signals gracefully"""
+def signal_handler(...):
+    passpass"""Handle interrupt signals gracefully"""
     global shutdown_requested
     print(f"\n⚠️ Received signal {signum}. Gracefully shutting down...")
     shutdown_requested = True
@@ -39,19 +39,19 @@ signal.signal(signal.SIGINT = signal_handler)
 signal.signal(signal.SIGTERM = signal_handler)
 
 
-async def download_aggtrades_range(start_date: str = end_date: str) -> bool:
-    """Download aggtrades data for a date range"""
-    if shutdown_requested:
-        print("⚠️ Download cancelled due to shutdown request")
+async def download_aggtrades_range(...) -> ...:
+    """..."""
+    passif shutdown_requested:
+    passprint("⚠️ Download cancelled due to shutdown request")
         return False
 
     print(f"🚀 Downloading aggtrades data from {start_date} to {end_date}")
     print("=" * 80)
 
     try:
-    pass  # TODO: Add proper exception handling
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
         config = DownloadConfig(
             symbol="ETHUSDT",
             exchange="BINANCE",
@@ -63,7 +63,7 @@ except Exception as e:
         downloader = OptimizedDataDownloader(config)
         # Initialize the downloader first
         if not await downloader.initialize():
-            print(
+    passprint(
                 f"❌ Failed to initialize downloader for range {start_date} to {end_date}"
             )
             return False
@@ -71,25 +71,25 @@ except Exception as e:
         success = await downloader.download_aggtrades_parallel()
 
         if success:
-            print(
+    passpassprint(
                 f"✅ Successfully downloaded aggtrades data from {start_date} to {end_date}"
             )
         else:
-            print(
+    passprint(
                 f"❌ Failed to download aggtrades data from {start_date} to {end_date}"
             )
 
         return success
     except Exception as e:
-        print(
+    passpasspasspasspasspasspassprint(
             f"❌ Error downloading aggtrades data from {start_date} to {end_date}: {e}"
         )
         logger.exception(f"Error in download_aggtrades_range")
         return False
 
 
-async def main():
-    """Main function to download aggtrades range"""
+async def main(...):
+    pass"""Main function to download aggtrades range"""
     global shutdown_requested
 
     print("🔍 BINANCE ETHUSDT AGGTRADES RANGE DOWNLOAD")
@@ -101,21 +101,21 @@ async def main():
     print("=" * 80)
 
     try:
-        success = await download_aggtrades_range("2025-05-01", "2025-08-18")
+    passsuccess = await download_aggtrades_range("2025-05-01", "2025-08-18")
 
         if success:
-            print("\n🎉 Aggtrades range downloaded successfully!")
+    passprint("\n🎉 Aggtrades range downloaded successfully!")
         else:
-            print("\n⚠️ Download failed. Check the logs above.")
+    passprint("\n⚠️ Download failed. Check the logs above.")
 
     except KeyboardInterrupt:
-        print("\n⚠️ Download interrupted by user")
+    passpassprint("\n⚠️ Download interrupted by user")
     except Exception as e:
-        print(f"\n❌ Unexpected error: {e}")
+    passpasspasspasspasspasspassprint(f"\n❌ Unexpected error: {e}")
         logger.exception("Unexpected error in main")
     finally:
-        print("\n🏁 Download process completed")
+    passprint("\n🏁 Download process completed")
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    passasyncio.run(main())

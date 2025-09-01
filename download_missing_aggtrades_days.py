@@ -3,7 +3,7 @@
 Download Missing Aggtrades Days for Binance ETHUSDT
 
 Based on the analysis, these are the 12 missing days:
-    pass  # TODO: Add implementation
+    passpass  # TODO: Add implementation
 - 2024-03-05, 2024-04-05, 2024-04-16, 2024-04-29
 - 2024-07-08, 2024-07-15, 2024-08-05, 2024-08-06
 - 2024-11-07, 2025-01-20, 2025-02-04, 2025-03-06
@@ -34,8 +34,8 @@ logger = logging.getLogger(__name__)
 shutdown_requested = False
 
 
-def signal_handler(signum, frame):
-    """Handle interrupt signals gracefully"""
+def signal_handler(...):
+    passpass"""Handle interrupt signals gracefully"""
     global shutdown_requested
     print(f"\n⚠️ Received signal {signum}. Gracefully shutting down...")
     shutdown_requested = True
@@ -62,19 +62,19 @@ MISSING_AGGTRADES_DAYS = [
 ]
 
 
-async def download_single_day_aggtrades(date_str: str) -> bool:
-    """Download aggtrades data for a single specific day"""
-    if shutdown_requested:
-        print(f"⚠️ Download cancelled for {date_str} due to shutdown request")
+async def download_single_day_aggtrades(...) -> ...:
+    """..."""
+    passif shutdown_requested:
+    passprint(f"⚠️ Download cancelled for {date_str} due to shutdown request")
         return False
 
     print(f"🚀 Downloading aggtrades data for {date_str}")
     print("-" * 60)
 
     try:
-    pass  # TODO: Add proper exception handling
+    passpasspass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
         config = DownloadConfig(
             symbol="ETHUSDT",
             exchange="BINANCE",
@@ -87,27 +87,27 @@ except Exception as e:
         downloader = OptimizedDataDownloader(config)
         # Initialize the downloader first
         if not await downloader.initialize():
-            print(f"❌ Failed to initialize downloader for {date_str}")
+    passprint(f"❌ Failed to initialize downloader for {date_str}")
             return False
         # Download only aggtrades data, not all data types
         success = await downloader.download_aggtrades_parallel()
 
         if success:
-            print(f"✅ Successfully downloaded aggtrades data for {date_str}")
+    passpassprint(f"✅ Successfully downloaded aggtrades data for {date_str}")
         else:
-            print(f"❌ Failed to download aggtrades data for {date_str}")
+    passpassprint(f"❌ Failed to download aggtrades data for {date_str}")
 
         return success
     except Exception as e:
-        print(f"❌ Error downloading aggtrades data for {date_str}: {e}")
+    passpasspasspasspasspasspasspassprint(f"❌ Error downloading aggtrades data for {date_str}: {e}")
         logger.exception(f"Error in download_single_day_aggtrades for {date_str}")
         return False
 
 
-async def download_missing_aggtrades_batch():
-    """Download aggtrades data for all missing days in batches"""
+async def download_missing_aggtrades_batch(...):
+    passpass"""Download aggtrades data for all missing days in batches"""
     if shutdown_requested:
-        print("⚠️ Download cancelled due to shutdown request")
+    passpassprint("⚠️ Download cancelled due to shutdown request")
         return False
 
     print("🚀 Downloading aggtrades data for all missing days")
@@ -117,8 +117,8 @@ async def download_missing_aggtrades_batch():
     total_days = len(MISSING_AGGTRADES_DAYS)
 
     for i, date_str in enumerate(MISSING_AGGTRADES_DAYS, 1):
-        if shutdown_requested:
-            print("⚠️ Download cancelled due to shutdown request")
+    passif shutdown_requested:
+    passprint("⚠️ Download cancelled due to shutdown request")
             break
 
         print(f"\n📅 Processing day {i}/{total_days}: {date_str}")
@@ -127,7 +127,7 @@ async def download_missing_aggtrades_batch():
 
         # Add a small delay between downloads to be respectful to the API
         if i < total_days:
-            print("⏳ Waiting 2 seconds before next download...")
+    passprint("⏳ Waiting 2 seconds before next download...")
             await asyncio.sleep(2)
 
     # Print summary
@@ -143,18 +143,18 @@ async def download_missing_aggtrades_batch():
     print(f"📈 Success rate: {(successful_downloads/len(results)*100):.1f}%")
 
     if failed_downloads > 0:
-        print("\n❌ Failed dates:")
+    passprint("\n❌ Failed dates:")
         for date_str, success in results.items():
-            if not success:
-                print(f"   - {date_str}")
+    passif not success:
+    passprint(f"   - {date_str}")
 
     return successful_downloads == len(results)
 
 
-async def download_missing_aggtrades_by_month():
-    """Download aggtrades data grouped by month for better efficiency"""
+async def download_missing_aggtrades_by_month(...):
+    pass"""Download aggtrades data grouped by month for better efficiency"""
     if shutdown_requested:
-        print("⚠️ Download cancelled due to shutdown request")
+    passpassprint("⚠️ Download cancelled due to shutdown request")
         return False
 
     print("🚀 Downloading aggtrades data by month for missing days")
@@ -163,16 +163,16 @@ async def download_missing_aggtrades_by_month():
     # Group missing days by month
     missing_by_month = {}
     for date_str in MISSING_AGGTRADES_DAYS:
-        month = date_str[:7]  # YYYY-MM
+    passmonth = date_str[:7]  # YYYY-MM
         if month not in missing_by_month:
-            missing_by_month[month] = []
+    passmissing_by_month[month] = []
         missing_by_month[month].append(date_str)
 
     results = {}
 
     for month, dates in missing_by_month.items():
-        if shutdown_requested:
-            print("⚠️ Download cancelled due to shutdown request")
+    passif shutdown_requested:
+    passprint("⚠️ Download cancelled due to shutdown request")
             break
 
         print(f"\n📅 Processing month {month} ({len(dates)} missing days)")
@@ -183,23 +183,23 @@ async def download_missing_aggtrades_by_month():
 
         # Calculate end date (last day of month)
         if month.endswith("-02"):
-            # February - handle leap years
+    pass# February - handle leap years
             year = int(month[:4])
             if year % 4 == 0 and (year % 100 != 0 or year % 400 == 0):
-                end_date = f"{month}-29"
+    passend_date = f"{month}-29"
             else:
-                end_date = f"{month}-28"
+    passend_date = f"{month}-28"
         elif month.endswith(("-04", "-06", "-09", "-11")):
-            # 30-day months
+    passpass# 30-day months
             end_date = f"{month}-30"
         else:
-            # 31-day months
+    pass# 31-day months
             end_date = f"{month}-31"
 
         try:
-    pass  # TODO: Add proper exception handling
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
             config = DownloadConfig(
                 symbol="ETHUSDT",
                 exchange="BINANCE",
@@ -212,33 +212,33 @@ except Exception as e:
             downloader = OptimizedDataDownloader(config)
             # Initialize the downloader first
             if not await downloader.initialize():
-                print(f"❌ Failed to initialize downloader for {month}")
+    passprint(f"❌ Failed to initialize downloader for {month}")
                 for date_str in dates:
-                    results[date_str] = False
+    passresults[date_str] = False
                 continue
             # Download only aggtrades data, not all data types
             success = await downloader.download_aggtrades_parallel()
 
             if success:
-                print(f"✅ Successfully downloaded aggtrades data for {month}")
+    passprint(f"✅ Successfully downloaded aggtrades data for {month}")
                 for date_str in dates:
-                    results[date_str] = True
+    passresults[date_str] = True
             else:
-                print(f"❌ Failed to download aggtrades data for {month}")
+    passprint(f"❌ Failed to download aggtrades data for {month}")
                 for date_str in dates:
-                    results[date_str] = False
+    passresults[date_str] = False
 
         except Exception as e:
-            print(f"❌ Error downloading aggtrades data for {month}: {e}")
+    passpasspasspasspasspasspassprint(f"❌ Error downloading aggtrades data for {month}: {e}")
             logger.exception(
                 f"Error in download_missing_aggtrades_by_month for {month}",
             )
             for date_str in dates:
-                results[date_str] = False
+    passresults[date_str] = False
 
         # Add delay between months
         if list(missing_by_month.keys()).index(month) < len(missing_by_month) - 1:
-            print("⏳ Waiting 5 seconds before next month...")
+    passprint("⏳ Waiting 5 seconds before next month...")
             await asyncio.sleep(5)
 
     # Print summary
@@ -254,23 +254,23 @@ except Exception as e:
     print(f"📈 Success rate: {(successful_downloads/len(results)*100):.1f}%")
 
     if failed_downloads > 0:
-        print("\n❌ Failed dates:")
+    passprint("\n❌ Failed dates:")
         for date_str, success in results.items():
-            if not success:
-                print(f"   - {date_str}")
+    passif not success:
+    passprint(f"   - {date_str}")
 
     return successful_downloads == len(results)
 
 
-async def main():
-    """Main function to download missing aggtrades days"""
+async def main(...):
+    pass"""Main function to download missing aggtrades days"""
     global shutdown_requested
 
     print("🔍 BINANCE ETHUSDT MISSING AGGTRADES DAYS DOWNLOAD")
     print("=" * 80)
     print("📊 Downloading 12 missing aggtrades days:")
     for i, date in enumerate(MISSING_AGGTRADES_DAYS, 1):
-        print(f"   {i:2d}. {date}")
+    passprint(f"   {i:2d}. {date}")
     print("=" * 80)
     print("💡 Press Ctrl+C to gracefully stop the download process")
     print("=" * 80)
@@ -281,33 +281,33 @@ async def main():
     print("2. Download by month (faster but downloads entire months)")
 
     while True:
-        choice = input("\nEnter choice (1 or 2): ").strip()
+    passchoice = input("\nEnter choice (1 or 2): ").strip()
         if choice in ["1", "2"]:
-            break
+    passbreak
         print("❌ Invalid choice. Please enter 1 or 2.")
 
     try:
-    pass  # TODO: Add proper exception handling
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
         if choice == "1":
-            success = await download_missing_aggtrades_batch()
+    passsuccess = await download_missing_aggtrades_batch()
         else:
-            success = await download_missing_aggtrades_by_month()
+    passsuccess = await download_missing_aggtrades_by_month()
 
         if success:
-            print("\n🎉 All missing aggtrades days downloaded successfully!")
+    passprint("\n🎉 All missing aggtrades days downloaded successfully!")
         else:
-            print("\n⚠️ Some downloads failed. Check the summary above.")
+    passprint("\n⚠️ Some downloads failed. Check the summary above.")
 
     except KeyboardInterrupt:
-        print("\n⚠️ Download interrupted by user")
+    passpassprint("\n⚠️ Download interrupted by user")
     except Exception as e:
-        print(f"\n❌ Unexpected error: {e}")
+    passpasspasspasspasspasspassprint(f"\n❌ Unexpected error: {e}")
         logger.exception("Error in main")
     finally:
-        print("\n👋 Download process completed")
+    passprint("\n👋 Download process completed")
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    passasyncio.run(main())

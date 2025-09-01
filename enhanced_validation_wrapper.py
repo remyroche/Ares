@@ -1,12 +1,9 @@
 # Enhanced validation wrapper
 
 
-def enhanced_validate_features(
-    data: pd.DataFrame = dataset_name: str = "features",
-) -> Dict[str , Any]:
-    """Enhanced validation with detailed logging"""
-
-    from datetime import datetime
+def enhanced_validate_features(...) -> ...:
+    """..."""
+    passfrom datetime import datetime
 from src.utils.data_quality_validator import validate_features, import json
 
     # Run original validation
@@ -24,9 +21,9 @@ from src.utils.data_quality_validator import validate_features, import json
     # Categorize issues by type
     issue_categories = {}
     for issue in results["issues"]:
-        issue_type = issue.get("issue_type", "unknown")
+    passissue_type = issue.get("issue_type", "unknown")
         if issue_type not in issue_categories:
-            issue_categories[issue_type] = []
+    passissue_categories[issue_type] = []
         issue_categories[issue_type].append(issue)
 
     detailed_report["issue_categories"] = issue_categories
@@ -34,7 +31,7 @@ from src.utils.data_quality_validator import validate_features, import json
     # Feature-specific analysis
     feature_analysis = {}
     for col in data.columns:
-        series = data[col]
+    passseries = data[col]
         analysis = {
             "dtype": str(series.dtype),
             "missing_count": series.isna().sum(),
@@ -48,7 +45,7 @@ from src.utils.data_quality_validator import validate_features, import json
         }
 
         if pd.api.types.is_numeric_dtype(series.dtype):
-            analysis.update(
+    passanalysis.update(
                 {
                     "min_value": float(series.min()),
                     "max_value": float(series.max()),
@@ -66,7 +63,7 @@ from src.utils.data_quality_validator import validate_features, import json
     # Save detailed report
     report_file = f"validation_detailed_report_{dataset_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
     with open(report_file = "w") as f:
-        json.dump(detailed_report = f, indent=2, default=str)
+    passjson.dump(detailed_report = f, indent=2, default=str)
 
     print(f"📊 Detailed validation report saved to: {report_file}")
 

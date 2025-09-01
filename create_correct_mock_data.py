@@ -6,7 +6,7 @@ This script creates mock data that matches what step1 actually produces
 and what the enhanced_training_manager expects for steps 1_5, 2, 3, and 4.
 
 Expected files from step1:
-    pass  # TODO: Add implementation
+    passpass  # TODO: Add implementation
 - klines_{exchange}_{symbol}_{timeframe}_consolidated.parquet
 - aggtrades_{exchange}_{symbol}_consolidated.parquet
 - futures_{exchange}_{symbol}_consolidated.parquet
@@ -20,8 +20,8 @@ from datetime import datetime, timedelta
 import numpy as np
 import pandas as pd
 
-def create_klines_data(symbol: str, exchange: str, timeframe: str, days: int = 30):
-    """Create klines data that matches step1 output format."""
+def create_klines_data(...):
+    passpass"""Create klines data that matches step1 output format."""
     print(f"📊 Creating klines data for {exchange}_{symbol}_{timeframe}")
 
     # Calculate number of records based on timeframe
@@ -52,7 +52,7 @@ def create_klines_data(symbol: str, exchange: str, timeframe: str, days: int = 3
     klines_data = []
 
     for i, timestamp in enumerate(timestamps):
-        # Realistic price movement
+    pass# Realistic price movement
         price_change = np.random.normal(0, 0.002)  # 0.2% volatility
         price = max(price * (1 + price_change), 100)
 
@@ -84,8 +84,8 @@ def create_klines_data(symbol: str, exchange: str, timeframe: str, days: int = 3
     print(f"✅ Created {len(df)} klines records")
     return df
 
-def create_aggtrades_data(symbol: str, exchange: str, days: int = 30):
-    """Create aggtrades data that matches step1 output format."""
+def create_aggtrades_data(...):
+    pass"""Create aggtrades data that matches step1 output format."""
     print(f"📊 Creating aggtrades data for {exchange}_{symbol}")
 
     # Generate timestamps (more frequent than klines)
@@ -102,11 +102,11 @@ def create_aggtrades_data(symbol: str, exchange: str, days: int = 30):
     aggtrades_data = []
 
     for timestamp in timestamps:
-        # Generate multiple trades per timestamp
+    pass# Generate multiple trades per timestamp
         num_trades = np.random.randint(1, 5)
 
         for _ in range(num_trades):
-            trade_price = base_price + np.random.normal(0, 50)
+    passtrade_price = base_price + np.random.normal(0, 50)
             quantity = np.random.uniform(0.1, 10.0)
 
             aggtrades_data.append({
@@ -123,8 +123,8 @@ def create_aggtrades_data(symbol: str, exchange: str, days: int = 30):
     print(f"✅ Created {len(df)} aggtrades records")
     return df
 
-def create_futures_data(symbol: str, exchange: str, days: int = 30):
-    """Create futures data that matches step1 output format (8h funding rate data)."""
+def create_futures_data(...):
+    pass"""Create futures data that matches step1 output format (8h funding rate data)."""
     print(f"📊 Creating futures data for {exchange}_{symbol}")
 
     # Generate 8-hour intervals for funding rate data
@@ -140,7 +140,7 @@ def create_futures_data(symbol: str, exchange: str, days: int = 30):
     futures_data = []
 
     for timestamp in timestamps:
-        # Generate futures data
+    pass# Generate futures data
         mark_price = base_price + np.random.normal(0, 100)
         index_price = mark_price + np.random.normal(0, 10)
         funding_rate = np.random.uniform(-0.01, 0.01)  # -1% to +1%
@@ -159,15 +159,15 @@ def create_futures_data(symbol: str, exchange: str, days: int = 30):
     print(f"✅ Created {len(df)} futures records")
     return df
 
-def create_unified_data(symbol: str, exchange: str, timeframe: str, days: int = 30):
-    """Create unified data that step1_5 produces."""
+def create_unified_data(...):
+    pass"""Create unified data that step1_5 produces."""
     print(f"📊 Creating unified data for {exchange}_{symbol}_{timeframe}")
 
     # Load the klines data to create unified format
     klines_file = f"data_cache/klines_{exchange}_{symbol}_{timeframe}_consolidated.parquet"
 
     if os.path.exists(klines_file):
-        klines_df = pd.read_parquet(klines_file)
+    passpassklines_df = pd.read_parquet(klines_file)
 
         # Create unified format
         unified_data = klines_df.copy()
@@ -187,18 +187,18 @@ def create_unified_data(symbol: str, exchange: str, timeframe: str, days: int = 
         print(f"✅ Created unified dataset with {len(unified_data)} records")
         return unified_data
     else:
-        print(f"❌ Klines file not found: {klines_file}")
+    passpassprint(f"❌ Klines file not found: {klines_file}")
         return None
 
-def create_features_data(symbol: str, exchange: str, timeframe: str, days: int = 30):
-    """Create features data that step2 produces."""
+def create_features_data(...):
+    pass"""Create features data that step2 produces."""
     print(f"📊 Creating features data for {exchange}_{symbol}_{timeframe}")
 
     # Load unified data
     unified_file = f"data_cache/unified_{exchange}_{symbol}_{timeframe}.parquet"
 
     if os.path.exists(unified_file):
-        unified_df = pd.read_parquet(unified_file)
+    passpassunified_df = pd.read_parquet(unified_file)
 
         # Create features dataset
         features_data = unified_df.copy()
@@ -220,11 +220,11 @@ def create_features_data(symbol: str, exchange: str, timeframe: str, days: int =
         print(f"✅ Created features dataset with {len(features_data)} records")
         return features_data
     else:
-        print(f"❌ Unified file not found: {unified_file}")
+    passpassprint(f"❌ Unified file not found: {unified_file}")
         return None
 
-def calculate_rsi(prices, period=14):
-    """Calculate RSI indicator."""
+def calculate_rsi(...):
+    pass"""Calculate RSI indicator."""
     delta = prices.diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
@@ -232,8 +232,8 @@ def calculate_rsi(prices, period=14):
     rsi = 100 - (100 / (1 + rs))
     return rsi
 
-def create_all_mock_data(symbol: str = "ETHUSDT", exchange: str = "BINANCE", days: int = 30):
-    """Create all required mock data for the pipeline."""
+def create_all_mock_data(...):
+    pass"""Create all required mock data for the pipeline."""
     print("🚀 Creating Complete Mock Data Set")
     print("=" * 60)
 
@@ -245,7 +245,7 @@ def create_all_mock_data(symbol: str = "ETHUSDT", exchange: str = "BINANCE", day
     timeframes = ["1m", "3m", "5m", "15m", "30m"]
 
     for timeframe in timeframes:
-        print(f"\n📊 Processing timeframe: {timeframe}")
+    passprint(f"\n📊 Processing timeframe: {timeframe}")
         print("-" * 40)
 
         # 1. Create klines data (step1 output)
@@ -271,7 +271,7 @@ def create_all_mock_data(symbol: str = "ETHUSDT", exchange: str = "BINANCE", day
         # 4. Create unified data (step1_5 output)
         unified_df = create_unified_data(symbol, exchange, timeframe, days)
         if unified_df is not None:
-            unified_file = f"data_cache/unified_{exchange}_{symbol}_{timeframe}.parquet"
+    passunified_file = f"data_cache/unified_{exchange}_{symbol}_{timeframe}.parquet"
             unified_df.to_parquet(unified_file, index=False)
             print(f"💾 Saved unified: {unified_file}")
 
@@ -289,13 +289,13 @@ def create_all_mock_data(symbol: str = "ETHUSDT", exchange: str = "BINANCE", day
             import json
             config_file = f"data_cache/unified_{exchange}_{symbol}_{timeframe}_config.json"
             with open(config_file, 'w') as f:
-                json.dump(config_data, f, indent=2)
+    passjson.dump(config_data, f, indent=2)
             print(f"💾 Saved config: {config_file}")
 
         # 5. Create features data (step2 output)
         features_df = create_features_data(symbol, exchange, timeframe, days)
         if features_df is not None:
-            # Split into train/val/test
+    pass# Split into train/val/test
             total_rows = len(features_df)
             train_size = int(total_rows * 0.7)
             val_size = int(total_rows * 0.15)
@@ -327,15 +327,15 @@ def create_all_mock_data(symbol: str = "ETHUSDT", exchange: str = "BINANCE", day
     training_files = list(Path("data/training").glob("*.parquet"))
 
     for file in data_cache_files:
-        size = file.stat().st_size
+    passsize = file.stat().st_size
         print(f"   📊 {file}: {size:,} bytes")
 
     for file in training_files:
-        size = file.stat().st_size
+    passsize = file.stat().st_size
         print(f"   📊 {file}: {size:,} bytes")
 
-def main():
-    """Main function to create mock data."""
+def main(...):
+    pass"""Main function to create mock data."""
     print("🎯 Creating Correct Mock Data for Enhanced Training Manager")
     print("=" * 80)
     print("This will create mock data that matches:")
@@ -351,4 +351,4 @@ def main():
     print("The enhanced_training_manager can now use this data for steps 1_5, 2, 3, and 4.")
 
 if __name__ == "__main__":
-    main()
+    passpasspassmain()

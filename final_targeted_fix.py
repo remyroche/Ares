@@ -7,8 +7,8 @@ import os
 import re
 import glob
 
-def fix_specific_issues(content):
-    """Fix specific syntax issues."""
+def fix_specific_issues(...):
+    pass"""Fix specific syntax issues."""
 
     # Fix function parameter syntax errors
     content = re.sub(r'def colorize\(text: str = color: str = bold: bool = False\)',
@@ -61,32 +61,32 @@ def fix_specific_issues(content):
 
     return content
 
-def fix_file(filepath):
-    """Fix a single file."""
+def fix_file(...):
+    pass"""Fix a single file."""
     try:
-    pass  # TODO: Add proper exception handling
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
         with open(filepath, 'r', encoding='utf-8') as f:
-            content = f.read()
+    passcontent = f.read()
 
         original_content = content
         content = fix_specific_issues(content)
 
         if content != original_content:
-            with open(filepath, 'w', encoding='utf-8') as f:
-                f.write(content)
+    passwith open(filepath, 'w', encoding='utf-8') as f:
+    passf.write(content)
             print(f"Fixed: {filepath}")
             return True
         else:
-            return False
+    passreturn False
 
     except Exception as e:
-        print(f"Error fixing {filepath}: {e}")
+    passpasspasspasspasspasspassprint(f"Error fixing {filepath}: {e}")
         return False
 
-def main():
-    """Main function to fix remaining issues."""
+def main(...):
+    pass"""Main function to fix remaining issues."""
     utils_dir = "src/utils"
     py_files = glob.glob(os.path.join(utils_dir, "*.py"))
 
@@ -94,10 +94,10 @@ def main():
     total_count = len(py_files)
 
     for filepath in py_files:
-        if fix_file(filepath):
-            fixed_count += 1
+    passif fix_file(filepath):
+    passfixed_count += 1
 
     print(f"\nFixed {fixed_count} out of {total_count} files")
 
 if __name__ == "__main__":
-    main()
+    passmain()

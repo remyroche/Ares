@@ -7,7 +7,7 @@ rather than predict regime transitions. It uses Optuna for hyperparameter optimi
 comprehensive evaluation metrics focused on market condition differentiation.
 
 Usage:
-    python optimize_hmm_regime_parameters.py --data_path path/to/feature_data.parquet
+    passpython optimize_hmm_regime_parameters.py --data_path path/to/feature_data.parquet
     python optimize_hmm_regime_parameters.py --config_path path/to/config.json --n_trials 100
 """
 
@@ -39,24 +39,36 @@ warnings.filterwarnings('ignore')
 
 
 class HMMRegimeOptimizer:
-    """Optimize HMM regime discovery parameters for distinct market condition capture."""
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
-        self.config = config or {}
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="hmmregimeoptimizer initialization",
+    )
+    async def initialize(self) -> bool:
+        """Initialize HMMRegimeOptimizer."""
+        try:
+            self.logger.info(f"🚀 Initializing {class_name}...")
+            self.is_initialized = True
+            self.logger.info(f"✅ {class_name} initialized successfully")
+            return True
+        except Exception as e:
+            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
+            return False
+    passpass"""Optimize HMM regime discovery parameters for distinct market condition capture."""
+
+    def __init__(...):
+    passpassself.config = config or {}
         self.best_params = None
         self.best_score = -np.inf
         self.optimization_history = []
         self.study = None
 
-    def create_objective_function(self, data: pd.DataFrame,
-                                feature_columns: List[str],
-                                market_condition_columns: List[str]) -> callable:
-        """Create the objective function for Optuna optimization."""
-
-        def objective(trial: optuna.Trial) -> float:
-            """Objective function to maximize regime differentiation and coherence."""
-
-            # Suggest HMM parameters
+    def create_objective_function(...) -> ...:
+    """..."""
+    passdef objective(...) -> ...:
+    """..."""
+    pass# Suggest HMM parameters
             params = self._suggest_hmm_parameters(trial)
 
             # Suggest clustering parameters
@@ -66,9 +78,9 @@ class HMMRegimeOptimizer:
             merging_params = self._suggest_regime_merging_parameters(trial)
 
             try:
-    pass  # TODO: Add proper exception handling
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
                 # Generate initial clusters with suggested parameters
                 initial_cluster_data = self._generate_initial_clusters_with_params(
                     data, feature_columns, market_condition_columns,
@@ -99,14 +111,14 @@ except Exception as e:
                 return score
 
             except Exception as e:
-                print(f"⚠️ Trial {trial.number} failed: {e}")
+    passpasspasspasspasspasspassprint(f"⚠️ Trial {trial.number} failed: {e}")
                 return -np.inf
 
         return objective
 
-    def _suggest_hmm_parameters(self, trial: optuna.Trial) -> Dict[str, Any]:
-        """Suggest HMM-specific parameters."""
-        return {
+    def _suggest_hmm_parameters(...) -> ...:
+    """..."""
+    passreturn {
             'n_components': trial.suggest_int('n_components', 2, 8),
             'covariance_type': trial.suggest_categorical('covariance_type',
                                                        ['full', 'tied', 'diag', 'spherical']),
@@ -116,22 +128,22 @@ except Exception as e:
             'reg_covar': trial.suggest_float('reg_covar', 1e-6, 1e-3, log=True)
         }
 
-    def _suggest_clustering_parameters(self, trial: optuna.Trial) -> Dict[str, Any]:
-        """Suggest clustering algorithm parameters."""
-        clustering_method = trial.suggest_categorical('clustering_method',
+    def _suggest_clustering_parameters(...) -> ...:
+    """..."""
+    passclustering_method = trial.suggest_categorical('clustering_method',
                                                      ['kmeans', 'gaussian_mixture', 'hierarchical'])
 
         params = {'clustering_method': clustering_method}
 
         if clustering_method == 'kmeans':
-            params.update({
+    passparams.update({
                 'n_clusters': trial.suggest_int('n_clusters', 3, 12),
                 'init': trial.suggest_categorical('kmeans_init', ['k-means++', 'random']),
                 'n_init': trial.suggest_int('kmeans_n_init', 5, 20),
                 'max_iter': trial.suggest_int('kmeans_max_iter', 200, 500)
             })
         elif clustering_method == 'gaussian_mixture':
-            params.update({
+    passpassparams.update({
                 'n_components': trial.suggest_int('gmm_n_components', 3, 12),
                 'covariance_type': trial.suggest_categorical('gmm_covariance_type',
                                                            ['full', 'tied', 'diag', 'spherical']),
@@ -141,9 +153,9 @@ except Exception as e:
 
         return params
 
-    def _suggest_regime_merging_parameters(self, trial: optuna.Trial) -> Dict[str, Any]:
-        """Suggest regime merging/clustering parameters to achieve 15-20 final regimes."""
-        return {
+    def _suggest_regime_merging_parameters(...) -> ...:
+    """..."""
+    passreturn {
             'initial_clusters': trial.suggest_int('initial_clusters', 25, 50),
             'target_regimes': trial.suggest_int('target_regimes', 15, 20),
             'merging_method': trial.suggest_categorical('merging_method',
@@ -155,14 +167,9 @@ except Exception as e:
             'differentiation_threshold': trial.suggest_float('differentiation_threshold', 0.4, 0.8)
         }
 
-    def _generate_initial_clusters_with_params(self, data: pd.DataFrame,
-                                             feature_columns: List[str],
-                                             market_condition_columns: List[str],
-                                             hmm_params: Dict[str, Any],
-                                             clustering_params: Dict[str, Any]) -> pd.DataFrame:
-        """Generate initial clusters using the suggested parameters."""
-
-        # Prepare features (assume feature engineering is already done in Step 2)
+    def _generate_initial_clusters_with_params(...) -> ...:
+    """..."""
+    pass# Prepare features (assume feature engineering is already done in Step 2)
         features = data[feature_columns].copy()
 
         # Handle missing values
@@ -180,17 +187,14 @@ except Exception as e:
 
         # Add market condition columns
         for col in market_condition_columns:
-            if col in data.columns:
-                result_data[f'market_{col}'] = data[col]
+    passif col in data.columns:
+    passresult_data[f'market_{col}'] = data[col]
 
         return result_data
 
-    def _apply_regime_merging(self, initial_cluster_data: pd.DataFrame,
-                            market_condition_columns: List[str],
-                            merging_params: Dict[str, Any]) -> pd.DataFrame:
-        """Apply regime merging to achieve target number of regimes."""
-
-        target_regimes = merging_params.get('target_regimes', 18)
+    def _apply_regime_merging(...) -> ...:
+    """..."""
+    passtarget_regimes = merging_params.get('target_regimes', 18)
         merging_method = merging_params.get('merging_method', 'hierarchical')
 
         # Calculate regime characteristics for merging
@@ -199,15 +203,15 @@ except Exception as e:
         )
 
         if merging_method == 'hierarchical':
-            final_regime_labels = self._hierarchical_regime_merging(
+    passpassfinal_regime_labels = self._hierarchical_regime_merging(
                 initial_cluster_data, regime_characteristics, merging_params
             )
         elif merging_method == 'kmeans':
-            final_regime_labels = self._kmeans_regime_merging(
+    passpassfinal_regime_labels = self._kmeans_regime_merging(
                 initial_cluster_data, regime_characteristics, merging_params
             )
         elif merging_method == 'dbscan':
-            final_regime_labels = self._dbscan_regime_merging(
+    passpassfinal_regime_labels = self._dbscan_regime_merging(
                 initial_cluster_data, regime_characteristics, merging_params
             )
         else:  # spectral
@@ -221,11 +225,9 @@ except Exception as e:
 
         return final_data
 
-    def _calculate_regime_characteristics(self, cluster_data: pd.DataFrame,
-                                        market_condition_columns: List[str]) -> pd.DataFrame:
-        """Calculate characteristics for each regime to enable merging using vectorized operations."""
-
-        # Filter valid market condition columns
+    def _calculate_regime_characteristics(...) -> ...:
+    """..."""
+    pass# Filter valid market condition columns
         valid_columns = [col for col in market_condition_columns if col in cluster_data.columns]
 
         # Vectorized calculation of regime characteristics for all market conditions at once
@@ -244,12 +246,9 @@ except Exception as e:
 
         return regime_stats
 
-    def _hierarchical_regime_merging(self, cluster_data: pd.DataFrame,
-                                   regime_characteristics: pd.DataFrame,
-                                   merging_params: Dict[str, Any]) -> np.ndarray:
-        """Merge regimes using hierarchical clustering."""
-
-        from sklearn.cluster import AgglomerativeClustering
+    def _hierarchical_regime_merging(...) -> ...:
+    """..."""
+    passfrom sklearn.cluster import AgglomerativeClustering
         from sklearn.preprocessing import StandardScaler
 
         # Prepare characteristics for clustering
@@ -257,7 +256,7 @@ except Exception as e:
                     if col not in ['regime_id', 'size']]
 
         if len(char_cols) == 0:
-            return cluster_data['composite_cluster_id'].values
+    passpassreturn cluster_data['composite_cluster_id'].values
 
         # Scale characteristics
         char_scaled = StandardScaler().fit_transform(regime_characteristics[char_cols])
@@ -277,12 +276,9 @@ except Exception as e:
 
         return final_labels
 
-    def _kmeans_regime_merging(self, cluster_data: pd.DataFrame,
-                             regime_characteristics: pd.DataFrame,
-                             merging_params: Dict[str, Any]) -> np.ndarray:
-        """Merge regimes using K-means clustering."""
-
-        from sklearn.cluster import KMeans
+    def _kmeans_regime_merging(...) -> ...:
+    """..."""
+    passfrom sklearn.cluster import KMeans
         from sklearn.preprocessing import StandardScaler
 
         # Prepare characteristics for clustering
@@ -290,7 +286,7 @@ except Exception as e:
                     if col not in ['regime_id', 'size']]
 
         if len(char_cols) == 0:
-            return cluster_data['composite_cluster_id'].values
+    passpassreturn cluster_data['composite_cluster_id'].values
 
         # Scale characteristics
         char_scaled = StandardScaler().fit_transform(regime_characteristics[char_cols])
@@ -307,12 +303,9 @@ except Exception as e:
 
         return final_labels
 
-    def _dbscan_regime_merging(self, cluster_data: pd.DataFrame,
-                             regime_characteristics: pd.DataFrame,
-                             merging_params: Dict[str, Any]) -> np.ndarray:
-        """Merge regimes using DBSCAN clustering."""
-
-        from sklearn.cluster import DBSCAN
+    def _dbscan_regime_merging(...) -> ...:
+    """..."""
+    passfrom sklearn.cluster import DBSCAN
         from sklearn.preprocessing import StandardScaler
 
         # Prepare characteristics for clustering
@@ -320,7 +313,7 @@ except Exception as e:
                     if col not in ['regime_id', 'size']]
 
         if len(char_cols) == 0:
-            return cluster_data['composite_cluster_id'].values
+    passpassreturn cluster_data['composite_cluster_id'].values
 
         # Scale characteristics
         char_scaled = StandardScaler().fit_transform(regime_characteristics[char_cols])
@@ -337,7 +330,7 @@ except Exception as e:
         target_regimes = merging_params.get('target_regimes', 18)
 
         if n_clusters != target_regimes:
-            # Fall back to K-means for exact target
+    pass# Fall back to K-means for exact target
             return self._kmeans_regime_merging(cluster_data, regime_characteristics, merging_params)
 
         # Map regime clusters back to data
@@ -346,12 +339,9 @@ except Exception as e:
 
         return final_labels
 
-    def _spectral_regime_merging(self, cluster_data: pd.DataFrame,
-                               regime_characteristics: pd.DataFrame,
-                               merging_params: Dict[str, Any]) -> np.ndarray:
-        """Merge regimes using spectral clustering."""
-
-        from sklearn.cluster import SpectralClustering
+    def _spectral_regime_merging(...) -> ...:
+    pass"""..."""
+    passfrom sklearn.cluster import SpectralClustering
         from sklearn.preprocessing import StandardScaler
 
         # Prepare characteristics for clustering
@@ -359,7 +349,7 @@ except Exception as e:
                     if col not in ['regime_id', 'size']]
 
         if len(char_cols) == 0:
-            return cluster_data['composite_cluster_id'].values
+    passpassreturn cluster_data['composite_cluster_id'].values
 
         # Scale characteristics
         char_scaled = StandardScaler().fit_transform(regime_characteristics[char_cols])
@@ -380,16 +370,15 @@ except Exception as e:
 
         return final_labels
 
-    def _apply_feature_selection(self, features: pd.DataFrame,
-                               feature_params: Dict[str, Any]) -> pd.DataFrame:
-        """Apply feature selection based on parameters."""
-        method = feature_params.get('feature_selection_method', 'all')
+    def _apply_feature_selection(...) -> ...:
+    """..."""
+    passmethod = feature_params.get('feature_selection_method', 'all')
 
         if method == 'all':
-            return features
+    passreturn features
 
         elif method == 'variance':
-            from sklearn.feature_selection import VarianceThreshold
+    passpassfrom sklearn.feature_selection import VarianceThreshold
             threshold = feature_params.get('variance_threshold', 0.01)
             selector = VarianceThreshold(threshold=threshold)
             selected_features = selector.fit_transform(features)
@@ -397,7 +386,7 @@ except Exception as e:
             return pd.DataFrame(selected_features, columns=selected_columns, index=features.index)
 
         elif method == 'correlation':
-            threshold = feature_params.get('correlation_threshold', 0.8)
+    passpassthreshold = feature_params.get('correlation_threshold', 0.8)
             corr_matrix = features.corr().abs()
             upper_tri = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
             to_drop = [column for column in upper_tri.columns if any(upper_tri[column] > threshold)]
@@ -405,40 +394,37 @@ except Exception as e:
 
         return features
 
-    def _apply_scaling(self, features: pd.DataFrame,
-                      feature_params: Dict[str, Any]) -> np.ndarray:
-        """Apply scaling based on parameters."""
-        method = feature_params.get('scaling_method', 'standard')
+    def _apply_scaling(...) -> ...:
+    passpass"""..."""
+    passmethod = feature_params.get('scaling_method', 'standard')
 
         if method == 'standard':
-            scaler = StandardScaler()
+    passscaler = StandardScaler()
         elif method == 'robust':
-            from sklearn.preprocessing import RobustScaler
+    passpassfrom sklearn.preprocessing import RobustScaler
             scaler = RobustScaler()
         elif method == 'minmax':
-            from sklearn.preprocessing import MinMaxScaler
+    passpassfrom sklearn.preprocessing import MinMaxScaler
             scaler = MinMaxScaler()
         else:
-            return features.values
+    passreturn features.values
 
         return scaler.fit_transform(features)
 
-    def _apply_pca(self, features_scaled: np.ndarray,
-                  feature_params: Dict[str, Any]) -> np.ndarray:
-        """Apply PCA if requested."""
-        n_components = feature_params.get('n_pca_components', 10)
+    def _apply_pca(...) -> ...:
+    """..."""
+    passn_components = feature_params.get('n_pca_components', 10)
         n_components = min(n_components, features_scaled.shape[1])
 
         pca = PCA(n_components=n_components)
         return pca.fit_transform(features_scaled)
 
-    def _apply_clustering(self, features_scaled: np.ndarray,
-                         clustering_params: Dict[str, Any]) -> np.ndarray:
-        """Apply clustering algorithm based on parameters."""
-        method = clustering_params.get('clustering_method', 'kmeans')
+    def _apply_clustering(...) -> ...:
+    """..."""
+    passmethod = clustering_params.get('clustering_method', 'kmeans')
 
         if method == 'kmeans':
-            kmeans = KMeans(
+    passkmeans = KMeans(
                 n_clusters=clustering_params.get('n_clusters', 5),
                 init=clustering_params.get('init', 'k-means++'),
                 n_init=clustering_params.get('n_init', 10),
@@ -448,7 +434,7 @@ except Exception as e:
             return kmeans.fit_predict(features_scaled)
 
         elif method == 'gaussian_mixture':
-            gmm = GaussianMixture(
+    passpassgmm = GaussianMixture(
                 n_components=clustering_params.get('n_components', 5),
                 covariance_type=clustering_params.get('covariance_type', 'full'),
                 init_params=clustering_params.get('init_params', 'kmeans'),
@@ -458,17 +444,14 @@ except Exception as e:
             return gmm.fit_predict(features_scaled)
 
         else:
-            # Default to kmeans
+    pass# Default to kmeans
             kmeans = KMeans(n_clusters=5, random_state=42)
             return kmeans.fit_predict(features_scaled)
 
-    def _evaluate_regime_quality(self, cluster_data: pd.DataFrame,
-                               market_condition_columns: List[str],
-                               merging_params: Dict[str, Any]) -> float:
-        """Evaluate regime quality focusing on differentiation and coherence."""
-
-        if 'composite_cluster_id' not in cluster_data.columns:
-            return -np.inf
+    def _evaluate_regime_quality(...) -> ...:
+    """..."""
+    passif 'composite_cluster_id' not in cluster_data.columns:
+    passreturn -np.inf
 
         scores = []
 
@@ -500,30 +483,28 @@ except Exception as e:
 
         return final_score
 
-    def _calculate_regime_differentiation_score(self, cluster_data: pd.DataFrame,
-                                             market_condition_columns: List[str]) -> float:
-        """Calculate how well regimes are differentiated from each other using vectorized operations."""
-
-        if not market_condition_columns:
-            return 0.0
+    def _calculate_regime_differentiation_score(...) -> ...:
+    """..."""
+    passif not market_condition_columns:
+    passreturn 0.0
 
         # Filter valid market condition columns
         valid_columns = [col for col in market_condition_columns if col in cluster_data.columns]
         if not valid_columns:
-            return 0.0
+    passpassreturn 0.0
 
         # Vectorized calculation of regime means for all market conditions at once
         regime_means_matrix = cluster_data.groupby('composite_cluster_id')[valid_columns].mean()
 
         if len(regime_means_matrix) < 2:
-            return 0.0
+    passpassreturn 0.0
 
         # Calculate pairwise differences using matrix operations
         n_regimes = len(regime_means_matrix)
         differentiation_scores = []
 
         for col in valid_columns:
-            # Get regime means for this column
+    pass# Get regime means for this column
             regime_means = regime_means_matrix[col].values
 
             # Calculate pairwise differences using broadcasting
@@ -539,68 +520,65 @@ except Exception as e:
             valid_differences = differences[mask]
 
             if len(valid_differences) > 0:
-                # Normalize by the overall range of the market condition
+    pass# Normalize by the overall range of the market condition
                 overall_range = cluster_data[col].max() - cluster_data[col].min()
                 if overall_range > 0:
-                    avg_difference = np.mean(valid_differences) / overall_range
+    passavg_difference = np.mean(valid_differences) / overall_range
                     differentiation_scores.append(avg_difference)
 
         return np.mean(differentiation_scores) if differentiation_scores else 0.0
 
-    def _calculate_internal_coherence_score(self, cluster_data: pd.DataFrame,
-                                          market_condition_columns: List[str]) -> float:
-        """Calculate how internally coherent each regime is using vectorized operations."""
-
-        if not market_condition_columns:
-            return 0.0
+    def _calculate_internal_coherence_score(...) -> ...:
+    pass"""..."""
+    passif not market_condition_columns:
+    passreturn 0.0
 
         # Filter valid market condition columns
         valid_columns = [col for col in market_condition_columns if col in cluster_data.columns]
         if not valid_columns:
-            return 0.0
+    passpassreturn 0.0
 
         coherence_scores = []
 
         for col in valid_columns:
-            # Vectorized calculation of coefficient of variation for all regimes at once
+    pass# Vectorized calculation of coefficient of variation for all regimes at once
             regime_stats = cluster_data.groupby('composite_cluster_id')[col].agg(['mean', 'std', 'count'])
 
             # Filter regimes with more than 1 sample
             valid_regimes = regime_stats[regime_stats['count'] > 1]
 
             if len(valid_regimes) > 0:
-                # Calculate coefficient of variation using vectorized operations
+    passpasspass# Calculate coefficient of variation using vectorized operations
                 means = valid_regimes['mean'].values
                 stds = valid_regimes['std'].values
 
                 # Avoid division by zero
                 non_zero_means = means != 0
                 if np.any(non_zero_means):
-                    cvs = stds[non_zero_means] / np.abs(means[non_zero_means])
+    passcvs = stds[non_zero_means] / np.abs(means[non_zero_means])
 
                     if len(cvs) > 0:
-                        # Lower CV means more coherent, so invert
+    pass# Lower CV means more coherent, so invert
                         avg_cv = np.mean(cvs)
                         coherence = 1.0 / (1.0 + avg_cv)
                         coherence_scores.append(coherence)
 
         return np.mean(coherence_scores) if coherence_scores else 0.0
 
-    def _calculate_regime_balance_score(self, cluster_data: pd.DataFrame) -> float:
-        """Calculate how balanced the regime sizes are using vectorized operations."""
-
-        # Vectorized calculation of regime sizes
+    def _calculate_regime_balance_score(...) -> ...:
+    pass"""..."""
+    pass# Vectorized calculation of regime sizes
         regime_sizes = cluster_data['composite_cluster_id'].value_counts().values
 
         if len(regime_sizes) < 2:
-            return 0.0
+    passreturn 0.0
 
         # Calculate coefficient of variation using vectorized operations
         mean_size = np.mean(regime_sizes)
         std_size = np.std(regime_sizes)
 
         if mean_size == 0:
-            return 0.0
+    passreturn 0.0
 
         cv = std_size / mean_size
 
@@ -609,11 +587,9 @@ except Exception as e:
 
         return balance_score
 
-    def _calculate_target_regime_penalty(self, cluster_data: pd.DataFrame,
-                                       merging_params: Dict[str, Any]) -> float:
-        """Calculate penalty for not achieving target regime count."""
-
-        target_regimes = merging_params.get('target_regimes', 18)
+    def _calculate_target_regime_penalty(...) -> ...:
+    """..."""
+    passtarget_regimes = merging_params.get('target_regimes', 18)
         actual_regimes = len(cluster_data['composite_cluster_id'].unique())
 
         # Penalty based on distance from target
@@ -621,62 +597,59 @@ except Exception as e:
 
         # Additional penalty for being outside the 15-20 range
         if actual_regimes < 15 or actual_regimes > 20:
-            penalty *= 0.5
+    passpasspenalty *= 0.5
 
         return max(0.0, penalty)
 
-    def _calculate_market_differentiation_score(self, cluster_data: pd.DataFrame,
-                                              market_condition_columns: List[str]) -> float:
-        """Calculate how well clusters differentiate market conditions."""
-
-        if not market_condition_columns:
-            return 0.0
+    def _calculate_market_differentiation_score(...) -> ...:
+    """..."""
+    passif not market_condition_columns:
+    passreturn 0.0
 
         differentiation_scores = []
 
         for col in market_condition_columns:
-            if col not in cluster_data.columns:
-                continue
+    passif col not in cluster_data.columns:
+    passcontinue
 
             # Calculate average market condition value for each cluster
             cluster_means = cluster_data.groupby('composite_cluster_id')[col].mean()
 
             if len(cluster_means) < 2:
-                continue
+    passpasscontinue
 
             # Calculate how different clusters are from each other
             differences = []
             for i, mean1 in cluster_means.items():
-                for j, mean2 in cluster_means.items():
-                    if i != j:
-                        differences.append(abs(mean1 - mean2))
+    passfor j, mean2 in cluster_means.items():
+    passif i != j:
+    passdifferences.append(abs(mean1 - mean2))
 
             if differences:
-                # Normalize by the overall range of the market condition
+    pass# Normalize by the overall range of the market condition
                 overall_range = cluster_data[col].max() - cluster_data[col].min()
                 if overall_range > 0:
-                    avg_difference = np.mean(differences) / overall_range
+    passavg_difference = np.mean(differences) / overall_range
                     differentiation_scores.append(avg_difference)
 
         return np.mean(differentiation_scores) if differentiation_scores else 0.0
 
-    def _calculate_cluster_quality_score(self, cluster_data: pd.DataFrame) -> float:
-        """Calculate traditional cluster quality metrics."""
-
-        # Prepare features for quality metrics
+    def _calculate_cluster_quality_score(...) -> ...:
+    pass"""..."""
+    pass# Prepare features for quality metrics
         feature_columns = [col for col in cluster_data.columns
                           if col not in ['composite_cluster_id', 'timestamp', 'close', 'high', 'low', 'open', 'volume']]
 
         if len(feature_columns) < 2:
-            return 0.0
+    passpassreturn 0.0
 
         features = cluster_data[feature_columns[:min(10, len(feature_columns))]].fillna(0)
         cluster_labels = cluster_data['composite_cluster_id'].values
 
         try:
-    pass  # TODO: Add proper exception handling
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
             # Silhouette score
             silhouette = silhouette_score(features, cluster_labels)
 
@@ -693,54 +666,51 @@ except Exception as e:
             return quality_score
 
         except Exception:
-            return 0.0
+    passpassreturn 0.0
 
-    def _calculate_market_consistency_score(self, cluster_data: pd.DataFrame,
-                                          market_condition_columns: List[str]) -> float:
-        """Calculate how consistent market conditions are within clusters."""
-
-        if not market_condition_columns:
-            return 0.0
+    def _calculate_market_consistency_score(...) -> ...:
+    """..."""
+    passif not market_condition_columns:
+    passreturn 0.0
 
         consistency_scores = []
 
         for col in market_condition_columns:
-            if col not in cluster_data.columns:
-                continue
+    passif col not in cluster_data.columns:
+    passcontinue
 
             # Calculate coefficient of variation within each cluster
             cluster_cvs = []
             for cluster_id in cluster_data['composite_cluster_id'].unique():
-                cluster_data_subset = cluster_data[cluster_data['composite_cluster_id'] == cluster_id]
+    passcluster_data_subset = cluster_data[cluster_data['composite_cluster_id'] == cluster_id]
                 if len(cluster_data_subset) > 1:
-                    mean_val = cluster_data_subset[col].mean()
+    passmean_val = cluster_data_subset[col].mean()
                     std_val = cluster_data_subset[col].std()
                     if mean_val != 0:
-                        cv = std_val / abs(mean_val)
+    passcv = std_val / abs(mean_val)
                         cluster_cvs.append(cv)
 
             if cluster_cvs:
-                # Lower CV means more consistency, so invert
+    pass# Lower CV means more consistency, so invert
                 avg_cv = np.mean(cluster_cvs)
                 consistency = 1.0 / (1.0 + avg_cv)
                 consistency_scores.append(consistency)
 
         return np.mean(consistency_scores) if consistency_scores else 0.0
 
-    def _calculate_cluster_balance_score(self, cluster_data: pd.DataFrame) -> float:
-        """Calculate how balanced the cluster sizes are."""
-
-        cluster_sizes = cluster_data['composite_cluster_id'].value_counts()
+    def _calculate_cluster_balance_score(...) -> ...:
+    pass"""..."""
+    passcluster_sizes = cluster_data['composite_cluster_id'].value_counts()
 
         if len(cluster_sizes) < 2:
-            return 0.0
+    passreturn 0.0
 
         # Calculate coefficient of variation of cluster sizes
         mean_size = cluster_sizes.mean()
         std_size = cluster_sizes.std()
 
         if mean_size == 0:
-            return 0.0
+    passreturn 0.0
 
         cv = std_size / mean_size
 
@@ -749,18 +719,16 @@ except Exception as e:
 
         return balance_score
 
-    def _calculate_market_separation_score(self, cluster_data: pd.DataFrame,
-                                         market_condition_columns: List[str]) -> float:
-        """Calculate how well clusters separate different market conditions."""
-
-        if not market_condition_columns:
-            return 0.0
+    def _calculate_market_separation_score(...) -> ...:
+    """..."""
+    passif not market_condition_columns:
+    passreturn 0.0
 
         separation_scores = []
 
         for col in market_condition_columns:
-            if col not in cluster_data.columns:
-                continue
+    passif col not in cluster_data.columns:
+    passcontinue
 
             # Calculate between-cluster variance vs within-cluster variance
             overall_mean = cluster_data[col].mean()
@@ -770,7 +738,7 @@ except Exception as e:
             within_ss = 0
 
             for cluster_id in cluster_data['composite_cluster_id'].unique():
-                cluster_data_subset = cluster_data[cluster_data['composite_cluster_id'] == cluster_id]
+    passcluster_data_subset = cluster_data[cluster_data['composite_cluster_id'] == cluster_id]
                 cluster_mean = cluster_data_subset[col].mean()
                 cluster_size = len(cluster_data_subset)
 
@@ -778,22 +746,16 @@ except Exception as e:
                 within_ss += ((cluster_data_subset[col] - cluster_mean) ** 2).sum()
 
             if within_ss > 0:
-                f_ratio = between_ss / within_ss
+    passf_ratio = between_ss / within_ss
                 # Normalize to 0-1 scale
                 separation = f_ratio / (1 + f_ratio)
                 separation_scores.append(separation)
 
         return np.mean(separation_scores) if separation_scores else 0.0
 
-    def optimize(self, data: pd.DataFrame,
-                feature_columns: List[str],
-                market_condition_columns: List[str],
-                n_trials: int = 100,
-                timeout: Optional[int] = None,
-                study_name: str = "hmm_regime_optimization") -> Dict[str, Any]:
-        """Run the optimization process."""
-
-        print(f"🚀 Starting HMM regime parameter optimization...")
+    def optimize(...) -> ...:
+    pass"""..."""
+    passprint(f"🚀 Starting HMM regime parameter optimization...")
         print(f"📊 Data shape: {data.shape}")
         print(f"🔧 Features: {len(feature_columns)}")
         print(f"📈 Market conditions: {len(market_condition_columns)}")
@@ -833,11 +795,9 @@ except Exception as e:
             'optimization_history': self.optimization_history
         }
 
-    def _preprocess_data_for_optimization(self, data: pd.DataFrame, feature_columns: List[str],
-                                        market_condition_columns: List[str]) -> Dict[str, Any]:
-        """Pre-process data for vectorized optimization operations."""
-
-        # Filter valid columns
+    def _preprocess_data_for_optimization(...) -> ...:
+    """..."""
+    pass# Filter valid columns
         valid_features = [col for col in feature_columns if col in data.columns]
         valid_market_conditions = [col for col in market_condition_columns if col in data.columns]
 
@@ -854,18 +814,18 @@ except Exception as e:
 
         # Pre-calculate ranges for normalization
         for col in valid_features:
-            col_data = data[col].dropna()
+    passcol_data = data[col].dropna()
             if len(col_data) > 0:
-                processed_data['feature_ranges'][col] = {
+    passprocessed_data['feature_ranges'][col] = {
                     'min': col_data.min(),
                     'max': col_data.max(),
                     'range': col_data.max() - col_data.min()
                 }
 
         for col in valid_market_conditions:
-            col_data = data[col].dropna()
+    passcol_data = data[col].dropna()
             if len(col_data) > 0:
-                processed_data['market_condition_ranges'][col] = {
+    passprocessed_data['market_condition_ranges'][col] = {
                     'min': col_data.min(),
                     'max': col_data.max(),
                     'range': col_data.max() - col_data.min()
@@ -873,16 +833,13 @@ except Exception as e:
 
         return processed_data
 
-    def _generate_initial_clusters_vectorized(self, processed_data: Dict[str, Any],
-                                            hmm_params: Dict[str, Any],
-                                            clustering_params: Dict[str, Any]) -> pd.DataFrame:
-        """Generate initial clusters using vectorized operations."""
-
-        # Use pre-processed feature matrix
+    def _generate_initial_clusters_vectorized(...) -> ...:
+    """..."""
+    pass# Use pre-processed feature matrix
         feature_matrix = processed_data['feature_matrix']
 
         if feature_matrix.size == 0:
-            # Fallback to original method
+    pass# Fallback to original method
             return self._generate_initial_clusters_with_params(
                 processed_data['data'],
                 processed_data['feature_columns'],
@@ -909,11 +866,10 @@ except Exception as e:
 
         return result_data
 
-    def generate_optimization_report(self, output_path: Optional[str] = None) -> str:
-        """Generate a comprehensive optimization report."""
-
-        if not self.study:
-            return "No optimization study available."
+    def generate_optimization_report(...) -> ...:
+    """..."""
+    passif not self.study:
+    passreturn "No optimization study available."
 
         report = []
         report.append("# HMM Regime Parameter Optimization Report")
@@ -942,24 +898,24 @@ except Exception as e:
 
         report.append("### HMM Parameters")
         for param, value in hmm_params.items():
-            report.append(f"- **{param}**: {value}")
+    passpassreport.append(f"- **{param}**: {value}")
         report.append("")
 
         report.append("### Clustering Parameters")
         for param, value in clustering_params.items():
-            report.append(f"- **{param}**: {value}")
+    passreport.append(f"- **{param}**: {value}")
         report.append("")
 
         report.append("### Regime Merging Parameters")
         for param, value in merging_params.items():
-            report.append(f"- **{param}**: {value}")
+    passreport.append(f"- **{param}**: {value}")
         report.append("")
 
         # Parameter Importance Analysis
         try:
-    pass  # TODO: Add proper exception handling
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
             importance = optuna.importance.get_param_importances(self.study)
             report.append("## Parameter Importance Analysis")
             report.append("")
@@ -974,25 +930,25 @@ except Exception as e:
             merging_importance = {k: v for k, v in importance.items() if k in ['initial_clusters', 'target_regimes', 'merging_method', 'similarity_threshold', 'min_regime_size', 'max_regime_size', 'coherence_threshold', 'differentiation_threshold']}
 
             if hmm_importance:
-                report.append("### HMM Parameter Importance")
+    passpassreport.append("### HMM Parameter Importance")
                 for param, imp in sorted(hmm_importance.items(), key=lambda x: x[1], reverse=True):
                     report.append(f"- **{param}**: {imp:.4f}")
                 report.append("")
 
             if clustering_importance:
-                report.append("### Clustering Parameter Importance")
+    passreport.append("### Clustering Parameter Importance")
                 for param, imp in sorted(clustering_importance.items(), key=lambda x: x[1], reverse=True):
                     report.append(f"- **{param}**: {imp:.4f}")
                 report.append("")
 
             if merging_importance:
-                report.append("### Regime Merging Parameter Importance")
+    passreport.append("### Regime Merging Parameter Importance")
                 for param, imp in sorted(merging_importance.items(), key=lambda x: x[1], reverse=True):
                     report.append(f"- **{param}**: {imp:.4f}")
                 report.append("")
 
         except Exception as e:
-            report.append("## Parameter Importance Analysis")
+    passpasspasspasspasspasspassreport.append("## Parameter Importance Analysis")
             report.append(f"Could not calculate parameter importance: {e}")
             report.append("")
 
@@ -1005,7 +961,7 @@ except Exception as e:
         scores = [t.value for t in completed_trials if t.value is not None]
 
         if scores:
-            report.append(f"- **Score Range**: {min(scores):.4f} - {max(scores):.4f}")
+    passpassreport.append(f"- **Score Range**: {min(scores):.4f} - {max(scores):.4f}")
             report.append(f"- **Mean Score**: {np.mean(scores):.4f}")
             report.append(f"- **Score Std**: {np.std(scores):.4f}")
             report.append(f"- **Score Improvement**: {max(scores) - min(scores):.4f}")
@@ -1014,7 +970,7 @@ except Exception as e:
         # Regime count analysis
         regime_counts = [trial_info.get('final_regimes', 0) for trial_info in self.optimization_history if 'final_regimes' in trial_info]
         if regime_counts:
-            report.append("### Regime Count Analysis")
+    passpassreport.append("### Regime Count Analysis")
             report.append(f"- **Target Range**: 15-20 regimes")
             report.append(f"- **Achieved Range**: {min(regime_counts)} - {max(regime_counts)} regimes")
             report.append(f"- **Mean Regime Count**: {np.mean(regime_counts):.1f}")
@@ -1046,26 +1002,26 @@ except Exception as e:
 
         report.append("### Parameter Recommendations")
         if best_params.get('target_regimes', 0) >= 15 and best_params.get('target_regimes', 0) <= 20:
-            report.append("✅ **Target Regime Count**: Optimal range achieved")
+    passreport.append("✅ **Target Regime Count**: Optimal range achieved")
         else:
-            report.append("⚠️ **Target Regime Count**: Consider adjusting to 15-20 range")
+    passreport.append("⚠️ **Target Regime Count**: Consider adjusting to 15-20 range")
 
         if best_params.get('merging_method') == 'hierarchical':
-            report.append("✅ **Merging Method**: Hierarchical clustering provides good interpretability")
+    passreport.append("✅ **Merging Method**: Hierarchical clustering provides good interpretability")
         elif best_params.get('merging_method') == 'kmeans':
-            report.append("✅ **Merging Method**: K-means provides balanced regime sizes")
+    passpassreport.append("✅ **Merging Method**: K-means provides balanced regime sizes")
         else:
-            report.append("✅ **Merging Method**: Alternative method may provide unique advantages")
+    passreport.append("✅ **Merging Method**: Alternative method may provide unique advantages")
 
         if best_params.get('coherence_threshold', 0) >= 0.7:
-            report.append("✅ **Coherence Threshold**: High internal coherence achieved")
+    passreport.append("✅ **Coherence Threshold**: High internal coherence achieved")
         else:
-            report.append("⚠️ **Coherence Threshold**: Consider increasing for better internal coherence")
+    passreport.append("⚠️ **Coherence Threshold**: Consider increasing for better internal coherence")
 
         if best_params.get('differentiation_threshold', 0) >= 0.6:
-            report.append("✅ **Differentiation Threshold**: Good regime differentiation achieved")
+    passpassreport.append("✅ **Differentiation Threshold**: Good regime differentiation achieved")
         else:
-            report.append("⚠️ **Differentiation Threshold**: Consider increasing for better regime separation")
+    passreport.append("⚠️ **Differentiation Threshold**: Consider increasing for better regime separation")
         report.append("")
 
         # Implementation Guide
@@ -1077,15 +1033,15 @@ except Exception as e:
         report.append("step3_config = {")
         report.append("    'hmm_parameters': {")
         for param, value in hmm_params.items():
-            report.append(f"        '{param}': {value},")
+    passreport.append(f"        '{param}': {value},")
         report.append("    },")
         report.append("    'clustering_parameters': {")
         for param, value in clustering_params.items():
-            report.append(f"        '{param}': {value},")
+    passreport.append(f"        '{param}': {value},")
         report.append("    },")
         report.append("    'regime_merging_parameters': {")
         for param, value in merging_params.items():
-            report.append(f"        '{param}': {value},")
+    passreport.append(f"        '{param}': {value},")
         report.append("    }")
         report.append("}")
         report.append("```")
@@ -1124,31 +1080,30 @@ except Exception as e:
         report_text = "\n".join(report)
 
         if output_path:
-            with open(output_path, 'w') as f:
-                f.write(report_text)
+    passwith open(output_path, 'w') as f:
+    passf.write(report_text)
             print(f"📄 Comprehensive report saved to: {output_path}")
 
         return report_text
 
-    def _calculate_optimization_time(self) -> float:
-        """Calculate total optimization time in minutes."""
-        if not self.optimization_history:
-            return 0.0
+    def _calculate_optimization_time(...) -> ...:
+    """..."""
+    passif not self.optimization_history:
+    passreturn 0.0
 
         start_time = min(trial_info['timestamp'] for trial_info in self.optimization_history)
         end_time = max(trial_info['timestamp'] for trial_info in self.optimization_history)
 
         return (end_time - start_time) / 60.0
 
-    def create_optimization_visualizations(self, output_dir: Optional[str] = None) -> None:
-        """Create visualizations for the optimization process."""
-
-        if not self.study:
-            print("No optimization study available for visualization.")
+    def create_optimization_visualizations(...) -> ...:
+    pass"""..."""
+    passif not self.study:
+    passprint("No optimization study available for visualization.")
             return
 
         if output_dir:
-            output_path = Path(output_dir)
+    passpassoutput_path = Path(output_dir)
             output_path.mkdir(exist_ok=True)
 
         # Set up plotting style
@@ -1172,9 +1127,9 @@ except Exception as e:
 
         # 2. Parameter importance
         try:
-    pass  # TODO: Add proper exception handling
+    passpasspasspass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
             importance = optuna.importance.get_param_importances(self.study)
             params = list(importance.keys())
             values = list(importance.values())
@@ -1185,14 +1140,14 @@ except Exception as e:
 
             # Color bars based on importance
             for bar, value in zip(bars, values):
-                if value > 0.1:
-                    bar.set_color('green')
+    passif value > 0.1:
+    passbar.set_color('green')
                 elif value > 0.05:
-                    bar.set_color('orange')
+    passpassbar.set_color('orange')
                 else:
-                    bar.set_color('red')
+    passbar.set_color('red')
         except Exception:
-            axes[0, 1].text(0.5, 0.5, 'Parameter importance\nnot available',
+    passpassaxes[0, 1].text(0.5, 0.5, 'Parameter importance\nnot available',
                            ha='center', va='center', transform=axes[0, 1].transAxes)
             axes[0, 1].set_title('Parameter Importance')
 
@@ -1208,17 +1163,17 @@ except Exception as e:
 
         # 4. Key parameter relationships
         try:
-    pass  # TODO: Add proper exception handling
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
             # Extract key parameters
             n_components_values = []
             clustering_methods = []
             scores_for_plot = []
 
             for trial in completed_trials:
-                if trial.value is not None:
-                    n_components_values.append(trial.params.get('n_components', 0))
+    passif trial.value is not None:
+    passn_components_values.append(trial.params.get('n_components', 0))
                     clustering_methods.append(trial.params.get('clustering_method', 'unknown'))
                     scores_for_plot.append(trial.value)
 
@@ -1235,24 +1190,23 @@ except Exception as e:
             plt.colorbar(scatter, ax=axes[1, 1], label='Trial Order')
 
         except Exception:
-            axes[1, 1].text(0.5, 0.5, 'Parameter relationship\nplot not available',
+    passpassaxes[1, 1].text(0.5, 0.5, 'Parameter relationship\nplot not available',
                            ha='center', va='center', transform=axes[1, 1].transAxes)
             axes[1, 1].set_title('Parameter Relationships')
 
         plt.tight_layout()
 
         if output_dir:
-            plt.savefig(output_path / 'optimization_results.png', dpi=300, bbox_inches='tight')
+    passplt.savefig(output_path / 'optimization_results.png', dpi=300, bbox_inches='tight')
             print(f"📊 Visualizations saved to: {output_path / 'optimization_results.png'}")
         else:
-            plt.show()
+    passplt.show()
 
         plt.close()
 
-    def save_optimization_results(self, output_path: str) -> None:
-        """Save optimization results to file."""
-
-        results = {
+    def save_optimization_results(...) -> ...:
+    """..."""
+    passresults = {
             'best_params': self.best_params,
             'best_score': self.best_score,
             'optimization_history': self.optimization_history,
@@ -1260,15 +1214,14 @@ except Exception as e:
         }
 
         with open(output_path, 'w') as f:
-            json.dump(results, f, indent=2, default=str)
+    passpassjson.dump(results, f, indent=2, default=str)
 
         print(f"💾 Optimization results saved to: {output_path}")
 
 
-def identify_market_condition_columns(data: pd.DataFrame) -> List[str]:
-    """Identify columns that represent market conditions."""
-
-    market_condition_keywords = [
+def identify_market_condition_columns(...) -> ...:
+    """..."""
+    passmarket_condition_keywords = [
         'volatility', 'momentum', 'volume', 'returns', 'price_change',
         'trend', 'regime', 'market', 'condition', 'state',
         'rsi', 'macd', 'bollinger', 'atr', 'adx'
@@ -1277,25 +1230,25 @@ def identify_market_condition_columns(data: pd.DataFrame) -> List[str]:
     market_columns = []
 
     for col in data.columns:
-        col_lower = col.lower()
+    passcol_lower = col.lower()
 
         # Check if column name contains market condition keywords
         if any(keyword in col_lower for keyword in market_condition_keywords):
-            market_columns.append(col)
+    passpassmarket_columns.append(col)
 
         # Check if column represents price-based metrics
         elif any(metric in col_lower for metric in ['close', 'high', 'low', 'open']):
-            continue  # Skip raw price data
+    passpasspasscontinue  # Skip raw price data
 
         # Check if column represents technical indicators
         elif any(indicator in col_lower for indicator in ['sma', 'ema', 'bb', 'stoch', 'cci']):
-            market_columns.append(col)
+    passpasspassmarket_columns.append(col)
 
     return market_columns
 
 
-def main():
-    """Main function to run HMM parameter optimization."""
+def main(...):
+    pass"""Main function to run HMM parameter optimization."""
     parser = argparse.ArgumentParser(description="Optimize HMM regime discovery parameters")
     parser.add_argument("--data_path", type=str, required=True, help="Path to feature data parquet file")
     parser.add_argument("--config_path", type=str, help="Path to configuration JSON file")
@@ -1313,8 +1266,8 @@ def main():
     # Load configuration
     config = {}
     if args.config_path:
-        with open(args.config_path, 'r') as f:
-            config = json.load(f)
+    passwith open(args.config_path, 'r') as f:
+    passconfig = json.load(f)
 
     # Load data
     print(f"📂 Loading data from: {args.data_path}")
@@ -1387,4 +1340,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    passpassmain()

@@ -9,34 +9,32 @@ from kelly_criterion_formula import calculate_kelly_multiplier
 
 
 class TacticianPositionSizer:
-    """
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="tacticianpositionsizer initialization",
+    )
+    async def initialize(self) -> bool:
+        """Initialize TacticianPositionSizer."""
+        try:
+            self.logger.info(f"🚀 Initializing {class_name}...")
+            self.is_initialized = True
+            self.logger.info(f"✅ {class_name} initialized successfully")
+            return True
+        except Exception as e:
+            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
+            return False
+    pass"""
     Example Tactician position sizer that uses Kelly criterion multiplier.
     """
 
-    def __init__(self, account_balance: float = 10000.0):
-        self.account_balance = account_balance
+    def __init__(...):
+    passself.account_balance = account_balance
 
-    def calculate_position_size(
-        self,
-        price_target_confidences: dict[str, float],
-        adversarial_confidences: dict[str, float],
-        base_position_size: float = 0.1,  # 10% of account as base
-        max_position_size: float = 0.5,  # 50% of account maximum
-    ) -> dict[str, float]:
-        """
-        Calculate position size using Kelly criterion multiplier.
-
-        Args:
-            price_target_confidences: Dict of confidence scores for price targets
-            adversarial_confidences: Dict of confidence scores for adverse scenarios
-            base_position_size: Base position size as fraction of account
-            max_position_size: Maximum position size as fraction of account
-
-        Returns:
-            dict: Position sizing information
-        """
-
-        # Get Kelly multiplier from the Kelly criterion formula
+    def calculate_position_size(...) -> ...:
+    """..."""
+    pass# Get Kelly multiplier from the Kelly criterion formula
         kelly_multiplier = calculate_kelly_multiplier(
             price_target_confidences=price_target_confidences,
             adversarial_confidences=adversarial_confidences,
@@ -65,7 +63,7 @@ class TacticianPositionSizer:
 
 # Example usage
 if __name__ == "__main__":
-    # Test data
+    pass# Test data
     price_target_confidences = {
         "0.5%": 0.7,
         "1.0%": 0.65,

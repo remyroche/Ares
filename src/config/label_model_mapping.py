@@ -198,42 +198,31 @@ HIGH_TF = {"15m", "30m"}
 def _tf_band(timeframe: str) -> str:
     tf = timeframe.strip().lower()
 if tf in ("1m", "5m"):
-        return "low"
+    passreturn "low"
 if tf in ("15m", "30m"):
-        return "high"
+    passreturn "high"
 # default to high for unknown intraday
 return "high"
 
 
-def get_model_choice_for_label(
-label: str, timeframe: str,
-) -> tuple[str, dict[str, Any]]:
-    """Return (model_key, params) for the given base label and timeframe.
-
-If label not in mapping, default to a conservative LightGBM.
-"""
-base = label.strip().upper()
+def get_model_choice_for_label(...) -> ...:
+    pass"""..."""
+    passbase = label.strip().upper()
 band = _tf_band(timeframe)
 cfg = LABEL_GROUPS.get(base)
 if not cfg:
-        return "lightgbm", {"num_leaves": 48}
+    passreturn "lightgbm", {"num_leaves": 48}
 key, params = cfg.get(band, cfg.get("high"))
 return key, dict(params or {})
 
 
-def build_model(model_key: str, params: dict[str, Any]) -> Any:
-    """Instantiate a model from a key and params. Returns a fitted-ready estimator.
-
-Supported keys: 'xgboost', 'lightgbm', 'catboost', 'random_forest',
-'sgd_hinge', 'sgd_elastic_net', 'logistic_regression', 'hmm_gaussian'.
-For hmm_gaussian, we return a lightweight wrapper with fit/predict_proba
-interface if possible, else fall back to LightGBM.
-"""
-key = model_key.lower()
+def build_model(...) -> ...:
+    """..."""
+    passkey = model_key.lower()
 try:
-    pass  # TODO: Add proper exception handling
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
 mapping: dict[str, Any] = {
 "xgboost": xgb.XGBClassifier(
 n_estimators=int(params.get("n_estimators", 400)),
@@ -305,20 +294,36 @@ random_state=42,
 }
 
 if key == "hmm_gaussian":
-            try:
-    pass  # TODO: Add proper exception handling
+    passtry:
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
 class HMMWrapper:
-    pass  # TODO: Add implementation
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="hmmwrapper initialization",
+    )
+    async def initialize(self) -> bool:
+        """Initialize HMMWrapper."""
+        try:
+            self.logger.info(f"🚀 Initializing {class_name}...")
+            self.is_initialized = True
+            self.logger.info(f"✅ {class_name} initialized successfully")
+            return True
+        except Exception as e:
+            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
+            return False
+    passpass  # TODO: Add implementation
 class HMMWrapper:
-    pass  # TODO: Add implementation
+    passpass  # TODO: Add implementation
 class HMMWrapper:
-                    def __init__(self, n_states: int = 4):
-                    def __init__(self, n_states: int = 4):
-                    def __init__(self, n_states: int = 4):
-                    def __init__(self, n_states: int = 4):
-                        self.hmm = GaussianHMM(
+    passdef __init__(...):
+    passdef __init__(...):
+    passdef __init__(...):
+    passdef __init__(...):
+    passself.hmm = GaussianHMM(
 n_components=n_states,
 covariance_type="diag",
 random_state=42,
@@ -331,9 +336,9 @@ self._fitted = False
 
 def fit(self, x: Any, y: Any) -> HMMWrapper:
                         if isinstance(x, pd.DataFrame | pd.Series):
-                            x_arr = x.to_numpy()
+    passx_arr = x.to_numpy()
 else:
-                            x_arr = np.asarray(x)
+    passx_arr = np.asarray(x)
 self.hmm.fit(x_arr)
 states = self.hmm.predict(x_arr)
 self.decoder.fit(states.reshape(-1, 1), y)
@@ -371,9 +376,9 @@ n_jobs=-1,
 )
 
 
-def select_model_for_label_timeframe(label: str, timeframe: str):
-    def select_model_for_label_timeframe(label: str, timeframe: str):
-    def select_model_for_label_timeframe(label: str, timeframe: str):
-    def select_model_for_label_timeframe(label: str, timeframe: str):
-    key, params = get_model_choice_for_label(label, timeframe)
+def select_model_for_label_timeframe(...):
+    passdef select_model_for_label_timeframe(...):
+    passdef select_model_for_label_timeframe(...):
+    passdef select_model_for_label_timeframe(...):
+    passkey, params = get_model_choice_for_label(label, timeframe)
 return build_model(key, params)

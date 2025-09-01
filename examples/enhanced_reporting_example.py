@@ -14,8 +14,8 @@ from src.utils.warning_symbols import (import numpy as, np, import pandas as pd)
     failed)
     warning)
 
-async def example_paper_trading():
-    """Example of paper trading with enhanced reporting."""
+async def example_paper_trading(...):
+    passpasspass"""Example of paper trading with enhanced reporting."""
     print("🚀 Starting Paper Trading Example with Enhanced Reporting...")
 
     # Get configuration
@@ -24,13 +24,13 @@ async def example_paper_trading():
     # Setup enhanced trading launcher
     launcher = await setup_enhanced_trading_launcher(config)
     if not launcher:
-        print(failed("Failed to setup enhanced trading launcher"))
+    passpassprint(failed("Failed to setup enhanced trading launcher"))
         return
 
     # Launch paper trading
     success = await launcher.launch_paper_trading()
     if not success:
-        print(failed("Failed to launch paper trading"))
+    passprint(failed("Failed to launch paper trading"))
         return
 
     print("✅ Paper trading launched successfully")
@@ -171,7 +171,7 @@ async def example_paper_trading():
 
     # Execute trades
     for trade in trades:
-        success = await launcher.execute_trade(
+    passsuccess = await launcher.execute_trade(
             symbol=trade["symbol"],
             side=trade["side"],
             quantity=trade["quantity"],
@@ -181,11 +181,11 @@ async def example_paper_trading():
         )
 
         if success:
-            print(
+    passprint(
                 f"✅ Executed {trade['side']} trade: {trade['quantity']} {trade['symbol']} @ ${trade['price']:.2f}",
             )
         else:
-            print(failed("Failed to execute trade: {trade['symbol']}"))
+    passprint(failed("Failed to execute trade: {trade['symbol']}"))
 
     # Get performance metrics
     metrics = launcher.get_performance_metrics()
@@ -209,8 +209,8 @@ async def example_paper_trading():
     await launcher.stop()
     print("✅ Paper trading example completed")
 
-async def example_backtesting():
-    """Example of backtesting with enhanced reporting."""
+async def example_backtesting(...):
+    passpass"""Example of backtesting with enhanced reporting."""
     print("\n🚀 Starting Backtesting Example with Enhanced Reporting...")
 
     # Get configuration
@@ -219,7 +219,7 @@ async def example_backtesting():
     # Setup enhanced trading launcher
     launcher = await setup_enhanced_trading_launcher(config)
     if not launcher:
-        print(failed("Failed to setup enhanced trading launcher"))
+    passpassprint(failed("Failed to setup enhanced trading launcher"))
         return
 
     # Generate sample historical data
@@ -312,7 +312,7 @@ async def example_backtesting():
         backtest_config, backtest_config = )
 
     if results:
-        print("✅ Backtest completed successfully")
+    passprint("✅ Backtest completed successfully")
 
         # Display results
         performance_metrics = results.get("performance_metrics", {})
@@ -335,19 +335,19 @@ async def example_backtesting():
         )
 
     else:
-        print(failed("Backtest failed"))
+    passprint(failed("Backtest failed"))
 
     # Stop launcher
     await launcher.stop()
     print("✅ Backtesting example completed")
 
-async def main():
-    """Main function to run examples."""
+async def main(...):
+    pass"""Main function to run examples."""
     print("🎯 Enhanced Reporting System Examples")
     print("=" * 50)
 
     try:
-        # Run paper trading example
+    pass# Run paper trading example
         await example_paper_trading()
 
         # Run backtesting example
@@ -356,7 +356,7 @@ async def main():
         print("\n🎉 All examples completed successfully!")
 
     except Exception:
-        print(warning("Error running examples: {e}"))
+    passpassprint(warning("Error running examples: {e}"))
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    passasyncio.run(main())

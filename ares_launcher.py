@@ -3,7 +3,7 @@
 Ares Comprehensive Launcher
 
 This script provides a unified interface for launching the Ares trading bot with various modes:
-    pass  # TODO: Add implementation
+    passpasspass  # TODO: Add implementation
 1. Paper trading for robust trade information and performance metrics
 2. Enhanced backtesting with cached wavelet features for efficiency (uses existing data)
 3. Enhanced model training with efficiency optimizations for large datasets (uses existing data)
@@ -13,7 +13,7 @@ This script provides a unified interface for launching the Ares trading bot with
 7. Wavelet feature precomputation for fast backtesting
 
 Usage:
-    # Paper trading (robust trade info and performance metrics)
+    passpass# Paper trading (robust trade info and performance metrics)
     python ares_launcher.py paper --symbol ETHUSDT --exchange BINANCE
 
     # Challenger paper trading (with challenger model)
@@ -83,11 +83,11 @@ import logging
 
 # Try to import requests for GUI health checks
 try:
-    import requests
+    passpasspassimport requests
 
     REQUESTS_AVAILABLE = True
 except ImportError:
-    REQUESTS_AVAILABLE = False
+    passpassREQUESTS_AVAILABLE = False
 
 from src.config import CONFIG
     FULL_TRAINING_LOOKBACK_DAYS,
@@ -119,10 +119,26 @@ sys.path.insert(0, str(project_root))
 
 
 class AresLauncher:
-    """Comprehensive launcher for Ares trading bot."""
 
-    def __init__(self):
-        # Initialize comprehensive logging
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="areslauncher initialization",
+    )
+    async def initialize(self) -> bool:
+        """Initialize AresLauncher."""
+        try:
+            self.logger.info(f"🚀 Initializing {class_name}...")
+            self.is_initialized = True
+            self.logger.info(f"✅ {class_name} initialized successfully")
+            return True
+        except Exception as e:
+            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
+            return False
+    pass"""Comprehensive launcher for Ares trading bot."""
+
+    def __init__(...):
+    passpass# Initialize comprehensive logging
         self.comprehensive_logger = setup_comprehensive_logging(CONFIG)
 
         # Ensure comprehensive logging is available for all existing logging calls
@@ -130,9 +146,9 @@ class AresLauncher:
 
         # Initialize observability backends (Sentry/OTLP) if configured
         try:
-            init_observability({})
+    passpasspassinit_observability({})
         except Exception as _obs_exc:
-            logging.getLogger(__name__).warning(
+    passpasspasspasspasspasspasslogging.getLogger(__name__).warning(
                 f"Observability init skipped: {_obs_exc}"
             )
 
@@ -157,8 +173,8 @@ class AresLauncher:
         default_return=None,
         context="setup_logging",
     )
-    def setup_logging(self):
-        """Setup comprehensive logging for the launcher."""
+    def setup_logging(...):
+    passpass"""Setup comprehensive logging for the launcher."""
         # Comprehensive logging is already set up in __init__
         # Log launcher startup information
         self.comprehensive_logger.log_launcher_start("INITIALIZATION")
@@ -171,15 +187,15 @@ class AresLauncher:
         self.logger.info(f"Log directory: {self.comprehensive_logger.log_dir}")
         self.logger.info(f"Log level: {CONFIG.get('logging', {}).get('level', 'INFO')}")
         if self.global_logger:
-            self.logger.info(
+    passself.logger.info(
                 f"Global log file: ares_global_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log",
             )
         if self.full_log_path:
-            self.logger.info(f"Full run log: {self.full_log_path}")
+    passself.logger.info(f"Full run log: {self.full_log_path}")
         if self.trades_log_path:
-            self.logger.info(f"Trades log: {self.trades_log_path}")
+    passself.logger.info(f"Trades log: {self.trades_log_path}")
         if self.backtest_log_path:
-            self.logger.info(f"Backtest log: {self.backtest_log_path}")
+    passself.logger.info(f"Backtest log: {self.backtest_log_path}")
         self.logger.info("=" * 80)
 
     @handle_errors(
@@ -187,55 +203,50 @@ class AresLauncher:
         default_return=None,
         context="setup_signal_handling",
     )
-    def setup_signal_handling(self):
-        """Set up centralized signal handling."""
+    def setup_signal_handling(...):
+    pass"""Set up centralized signal handling."""
         self.signal_handler = setup_signal_handlers()
         self.signal_handler.register_shutdown_callback(self.cleanup)
         self.logger.info("✅ Centralized signal handling set up")
 
     @handle_errors(exceptions=(Exception,), default_return=None, context="cleanup")
-    def cleanup(self):
-        """Cleanup processes on exit."""
+    def cleanup(...):
+    pass"""Cleanup processes on exit."""
         self.logger.info("🧹 Cleaning up processes...")
 
         # Terminate GUI process
         if self.gui_process and self.gui_process.poll() is None:
-            self.logger.info("🔄 Terminating GUI process...")
+    passself.logger.info("🔄 Terminating GUI process...")
             self.gui_process.terminate()
             try:
-                self.gui_process.wait(timeout=5)
+    passself.gui_process.wait(timeout=5)
             except subprocess.TimeoutExpired:
-                self.gui_process.kill()
+    passpassself.gui_process.kill()
 
         # Terminate portfolio process
         if self.portfolio_process and self.portfolio_process.poll() is None:
-            self.logger.info("🔄 Terminating portfolio process...")
+    passself.logger.info("🔄 Terminating portfolio process...")
             self.portfolio_process.terminate()
             try:
-                self.portfolio_process.wait(timeout=5)
+    passself.portfolio_process.wait(timeout=5)
             except subprocess.TimeoutExpired:
-                self.portfolio_process.kill()
+    passpassself.portfolio_process.kill()
 
         # Terminate any other tracked processes
         for process in self.processes:
-            if process.poll() is None:
-                self.logger.info(f"🔄 Terminating process {process.pid}...")
+    passif process.poll() is None:
+    passself.logger.info(f"🔄 Terminating process {process.pid}...")
                 process.terminate()
                 try:
-                    process.wait(timeout=3)
+    passprocess.wait(timeout=3)
                 except subprocess.TimeoutExpired:
-                    process.kill()
+    passpassprocess.kill()
 
         self.logger.info("✅ Cleanup completed")
 
     @handle_errors(exceptions=(Exception,), default_return=False, context="launch_gui")
-    def launch_gui(
-        self,
-        mode: str | None = None,
-        symbol: str | None = None,
-        exchange: str | None = None,
-    ):
-        """Launch the GUI server."""
+    def launch_gui(...):
+    pass"""Launch the GUI server."""
         self.logger.info("🚀 Launching GUI server...")
 
         # Prefer unified start script which runs API and frontend
@@ -248,13 +259,13 @@ class AresLauncher:
         # Otherwise Vite proxy will forward /api to API_PORT
 
         if script_path.exists():
-            cmd = ["bash", str(script_path)]
+    passcmd = ["bash", str(script_path)]
         else:
-            # Fallback: start API only (legacy behaviour)
+    pass# Fallback: start API only (legacy behaviour)
             cmd = [sys.executable, "GUI/api_server.py"]
             # Pass optional mode args if provided and using api_server directly
             if mode and symbol and exchange:
-                cmd.extend(["--mode", mode, "--symbol", symbol, "--exchange", exchange])
+    passcmd.extend(["--mode", mode, "--symbol", symbol, "--exchange", exchange])
 
         self.gui_process = subprocess.Popen(
             cmd,
@@ -271,15 +282,15 @@ class AresLauncher:
 
         # Health check: if requests is available, ping frontend then API
         if self.gui_process.poll() is None:
-            if REQUESTS_AVAILABLE:
-                try:
-                    fp = int(env.get("FRONTEND_PORT", "3000"))
+    passif REQUESTS_AVAILABLE:
+    passtry:
+    passfp = int(env.get("FRONTEND_PORT", "3000"))
                     ap = int(env.get("API_PORT", "8000"))
                     requests.get(f"http://localhost:{fp}", timeout=2)
                     requests.get(f"http://localhost:{ap}/docs", timeout=2)
                     self.logger.info("✅ GUI (frontend+API) appears healthy")
                 except Exception as _hc_exc:
-                    self.logger.warning(f"GUI health check skipped/failed: {_hc_exc}")
+    passpasspasspasspasspasspassself.logger.warning(f"GUI health check skipped/failed: {_hc_exc}")
             self.logger.info("✅ GUI server is running")
             return True
 
@@ -292,8 +303,8 @@ class AresLauncher:
         default_return=False,
         context="launch_portfolio_manager",
     )
-    def launch_portfolio_manager(self):
-        """Launch the portfolio manager."""
+    def launch_portfolio_manager(...):
+    pass"""Launch the portfolio manager."""
         self.logger.info("🚀 Launching portfolio manager...")
 
         self.portfolio_process = subprocess.Popen(
@@ -308,10 +319,10 @@ class AresLauncher:
         )
         return True
 
-    def _normalize_step_name(self, step_name: str | None) -> str | None:
-        """Normalize legacy step names to the current ones used by the orchestrator."""
-        if not step_name:
-            return None
+    def _normalize_step_name(...) -> ...:
+    pass"""..."""
+    passif not step_name:
+    passreturn None
         mapping = {
             # Legacy -> Current
             "step2_market_regime_classification": "step2_processing_labeling_feature_engineering",
@@ -320,106 +331,97 @@ class AresLauncher:
         }
         normalized = mapping.get(step_name, step_name)
         if normalized != step_name:
-            self.logger.info(
+    passself.logger.info(
                 f"🔁 Normalized requested step '{step_name}' -> '{normalized}'"
             )
         return normalized
 
-    def _clear_checkpoint_files(
-        self, symbol: str, exchange: str, timeframe: str = "1m"
-    ) -> None:
-        """Remove enhanced training checkpoints to guarantee a fresh start."""
-        try:
-    pass  # TODO: Add proper exception handling
+    def _clear_checkpoint_files(...) -> ...:
+    """..."""
+    passtry:
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
             ns_dir = Path("checkpoints") / exchange / symbol / timeframe
             target_file = ns_dir / "training_progress.json"
             if target_file.exists():
-                target_file.unlink()
+    passtarget_file.unlink()
                 self.logger.info(f"🗑️  Cleared checkpoint: {target_file}")
 
             # Also clear any individual step checkpoint files
             for checkpoint_file in ns_dir.glob("*.json"):
-                if checkpoint_file.name != "training_progress.json":
-                    checkpoint_file.unlink()
+    passif checkpoint_file.name != "training_progress.json":
+    passcheckpoint_file.unlink()
                     self.logger.info(f"🗑️  Cleared step checkpoint: {checkpoint_file}")
 
         except (OSError, IOError) as e:
-            self.logger.warning(f"Failed to clear checkpoint: {e}")
+    passpasspasspasspasspasspassself.logger.warning(f"Failed to clear checkpoint: {e}")
 
-    def _force_fresh_start_from_step(self, orchestrator, start_step: str) -> None:
-        """Clear progress from the specified start step onward to enforce a fresh run."""
-        try:
-    pass  # TODO: Add proper exception handling
+    def _force_fresh_start_from_step(...) -> ...:
+    """..."""
+    passtry:
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
             steps = orchestrator.list_available_steps()
             if start_step not in steps:
-                self.logger.warning(
+    passself.logger.warning(
                     f"Cannot clear progress: step '{start_step}' is not in available steps"
                 )
                 return
 
             # Find the index of the starting step
             try:
-                start_index = steps.index(start_step)
+    passstart_index = steps.index(start_step)
             except ValueError:
-                self.logger.warning(f"⚠️ Unknown step {start_step}, clearing all progress")
+    passpassself.logger.warning(f"⚠️ Unknown step {start_step}, clearing all progress")
                 start_index = 0
 
             # Clear progress for the starting step and all subsequent steps
             steps_to_clear = steps[start_index:]
 
             for step in steps_to_clear:
-                if orchestrator.clear_progress(step):
-                    self.logger.info(f"🧹 Cleared progress for '{step}' (force)")
+    passif orchestrator.clear_progress(step):
+    passself.logger.info(f"🧹 Cleared progress for '{step}' (force)")
                 else:
-                    self.logger.warning(f"⚠️ Failed to clear progress for '{step}'")
+    passpassself.logger.warning(f"⚠️ Failed to clear progress for '{step}'")
 
             self.logger.info(f"✅ Cleared progress for {len(steps_to_clear)} steps: {steps_to_clear}")
 
         except (OSError, IOError) as e:
-            self.logger.warning(
+    passpasspasspasspasspasspassself.logger.warning(
                 f"Failed clearing progress from step '{start_step}': {e}"
             )
 
-    def _run_unified_training(
-        self,
-        symbol: str,
-        exchange: str,
-        training_mode: str,
-        lookback_days: int = None,
-        with_gui: bool = False,
-    ):
-        """Run unified training with enhanced training manager using centralized mode configuration."""
+    def _run_unified_training(...):
+    pass"""Run unified training with enhanced training manager using centralized mode configuration."""
         # Get the training mode configuration
         try:
-            mode_config = get_training_mode_config(training_mode)
+    passpassmode_config = get_training_mode_config(training_mode)
         except ValueError as e:
-            self.logger.error(f"❌ Invalid training mode: {e}")
+    passpasspasspasspasspasspassself.logger.error(f"❌ Invalid training mode: {e}")
             print(f"❌ Invalid training mode: {e}")
             return False
 
         # Use the mode's default lookback_days if not provided
         if lookback_days is None:
-            lookback_days = mode_config.lookback_days
+    passlookback_days = mode_config.lookback_days
 
         # Set environment variables for training mode
         import os
 
         if training_mode == "light":
-            os.environ["LIGHT_TRAINING_MODE"] = "1"
+    passpassos.environ["LIGHT_TRAINING_MODE"] = "1"
             os.environ["BLANK_TRAINING_MODE"] = "0"
             os.environ["FULL_TRAINING_MODE"] = "0"
             print(f"💡 LIGHT TRAINING MODE: Set LIGHT_TRAINING_MODE=1")
         elif training_mode == "blank":
-            os.environ["BLANK_TRAINING_MODE"] = "1"
+    passpassos.environ["BLANK_TRAINING_MODE"] = "1"
             os.environ["LIGHT_TRAINING_MODE"] = "0"
             os.environ["FULL_TRAINING_MODE"] = "0"
             print(f"🧪 BLANK TRAINING MODE: Set BLANK_TRAINING_MODE=1")
         elif training_mode == "full":
-            os.environ["FULL_TRAINING_MODE"] = "1"
+    passpassos.environ["FULL_TRAINING_MODE"] = "1"
             os.environ["LIGHT_TRAINING_MODE"] = "0"
             os.environ["BLANK_TRAINING_MODE"] = "0"
             print(f"🚀 FULL TRAINING MODE: Set FULL_TRAINING_MODE=1")
@@ -440,8 +442,8 @@ except Exception as e:
             default_return=False,
             context="enhanced_training_pipeline",
         )
-        async def run_enhanced_training():
-            """Execute enhanced training using EnhancedTrainingManager with comprehensive error handling."""
+        async def run_enhanced_training(...):
+    passpass"""Execute enhanced training using EnhancedTrainingManager with comprehensive error handling."""
             from src.database.sqlite_manager import SQLiteManager
             from src.training.enhanced_training_manager import EnhancedTrainingManager
             from src.utils.logger import system_logger
@@ -466,9 +468,9 @@ except Exception as e:
             print("=" * 80)
 
             try:
-    pass  # TODO: Add proper exception handling
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
                 # Initialize database manager
                 logger.info("📊 STEP 0: Initializing Database Manager...")
                 print("   📊 Setting up database manager...")
@@ -498,7 +500,7 @@ except Exception as e:
 
                 # Override lookback_days if provided
                 if lookback_days != mode_config.lookback_days:
-                    training_config["enhanced_training_manager"]["lookback_days"] = lookback_days
+    passtraining_config["enhanced_training_manager"]["lookback_days"] = lookback_days
                     logger.info(f"📈 Overriding lookback_days to: {lookback_days}")
 
                 training_manager = EnhancedTrainingManager(training_config)
@@ -511,7 +513,7 @@ except Exception as e:
 
                 # Initialize the training manager
                 if not await training_manager.initialize():
-                    logger.error("❌ Failed to initialize enhanced training manager")
+    passlogger.error("❌ Failed to initialize enhanced training manager")
                     print("❌ Failed to initialize enhanced training manager")
                     return False
 
@@ -530,7 +532,7 @@ except Exception as e:
                 )
 
                 if success:
-                    logger.info("=" * 80)
+    passlogger.info("=" * 80)
                     logger.info("🎉 ENHANCED TRAINING PIPELINE COMPLETED SUCCESSFULLY")
                     logger.info("=" * 80)
                     logger.info(
@@ -546,25 +548,25 @@ except Exception as e:
                     print("   ✅ Enhanced training completed successfully!")
                     return True
                 else:
-                    logger.error("❌ Enhanced training pipeline failed")
+    passlogger.error("❌ Enhanced training pipeline failed")
                     print("❌ Enhanced training pipeline failed")
                     return False
 
             except Exception as e:
-                logger.error(f"💥 ENHANCED TRAINING PIPELINE FAILED: {str(e)}")
+    passpasspasspasspasspasspasslogger.error(f"💥 ENHANCED TRAINING PIPELINE FAILED: {str(e)}")
                 logger.error(f"📋 Error details: {type(e).__name__}: {str(e)}")
                 print(f"💥 ENHANCED TRAINING PIPELINE FAILED: {str(e)}")
                 print(f"📋 Error details: {type(e).__name__}: {str(e)}")
                 return False
 
             finally:
-                # Cleanup
+    pass# Cleanup
                 try:
-                    if "db_manager" in locals():
-                        await db_manager.stop()
+    passif "db_manager" in locals():
+    passawait db_manager.stop()
                         logger.info("🧹 Database manager cleaned up successfully")
                 except Exception as cleanup_error:
-                    logger.warning(f"⚠️ Database cleanup warning: {cleanup_error}")
+    passpasspasspasspasspasspasslogger.warning(f"⚠️ Database cleanup warning: {cleanup_error}")
 
         # Run the async training
         print("🔄 Starting async training execution...")
@@ -574,7 +576,7 @@ except Exception as e:
         success = asyncio.run(run_enhanced_training())
 
         if success:
-            self.logger.info(f"✅ {mode_display} completed successfully")
+    passself.logger.info(f"✅ {mode_display} completed successfully")
             print(f"✅ {mode_display} completed successfully")
             print("🎉 Training pipeline finished!")
             return True
@@ -588,13 +590,8 @@ except Exception as e:
         default_return=False,
         context="run_enhanced_blank_training",
     )
-    def run_enhanced_blank_training(
-        self,
-        symbol: str,
-        exchange: str,
-        with_gui: bool = False,
-    ):
-        """Run enhanced blank training using unified training method."""
+    def run_enhanced_blank_training(...):
+    pass"""Run enhanced blank training using unified training method."""
         # Note: The system still processes all available data files during consolidation,
         # but then filters to the specified lookback period. For blank training,
         # we use a smaller lookback period to reduce processing time.
@@ -610,13 +607,8 @@ except Exception as e:
         default_return=False,
         context="run_light_training",
     )
-    def run_light_training(
-        self,
-        symbol: str,
-        exchange: str,
-        with_gui: bool = False,
-    ):
-        """Run light training using unified training method with 30 days."""
+    def run_light_training(...):
+    pass"""Run light training using unified training method with 30 days."""
         # Light training uses only 30 days for very quick testing
         return self._run_unified_training(
             symbol=symbol,
@@ -630,8 +622,8 @@ except Exception as e:
         default_return=False,
         context="show_training_modes",
     )
-    def show_training_modes(self):
-        """Display available training modes and their configurations."""
+    def show_training_modes(...):
+    passpasspass"""Display available training modes and their configurations."""
         print("=" * 80)
         print("🎯 AVAILABLE TRAINING MODES")
         print("=" * 80)
@@ -646,7 +638,7 @@ except Exception as e:
         print("-" * 80)
 
         for mode, data in comparison.items():
-            intensity_pct = f"{data['intensity_percentage']*100:.0f}%"
+    passintensity_pct = f"{data['intensity_percentage']*100:.0f}%"
             print(f"{mode:<8} {intensity_pct:<12} {data['max_trials']:<12} {data['n_trials']:<10} {data['estimated_duration_minutes']:<10}min {data['lookback_days']:<10}days")
 
         print("\n" + "=" * 80)
@@ -657,10 +649,10 @@ except Exception as e:
         recommendations = get_mode_recommendations()
 
         for mode_name, description in modes.items():
-            try:
-    pass  # TODO: Add proper exception handling
+    passtry:
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
                 config = get_training_mode_config(mode_name)
                 recommendation = recommendations.get(mode_name, "No specific recommendation available.")
                 intensity_pct = f"{get_intensity_percentage(mode_name)*100:.0f}%"
@@ -681,7 +673,7 @@ except Exception as e:
                 print(f"   Recommendation: {recommendation}")
 
             except ValueError as e:
-                print(f"\n❌ Error loading {mode_name} mode: {e}")
+    passpasspasspasspasspasspassprint(f"\n❌ Error loading {mode_name} mode: {e}")
 
         print("\n" + "=" * 80)
         print("💡 USAGE EXAMPLES")
@@ -701,13 +693,8 @@ except Exception as e:
         default_return=False,
         context="run_full_training",
     )
-    def run_full_training(
-        self,
-        symbol: str,
-        exchange: str,
-        with_gui: bool = False,
-    ):
-        """Run full training using unified training method with full parameters."""
+    def run_full_training(...):
+    pass"""Run full training using unified training method with full parameters."""
         # Full training uses complete dataset and full training parameters
         return self._run_unified_training(
             symbol=symbol,
@@ -721,29 +708,24 @@ except Exception as e:
         default_return=False,
         context="resume_training",
     )
-    def resume_training(
-        self,
-        symbol: str,
-        exchange: str,
-        with_gui: bool = False,
-    ):
-        """Resume training from the last checkpoint."""
+    def resume_training(...):
+    passpass"""Resume training from the last checkpoint."""
         self.logger.info(f"🔄 Resuming training for {symbol} on {exchange}")
         print(f"🔄 Resuming training for {symbol} on {exchange}")
 
         # Check if checkpoint exists
         checkpoint_file = Path("checkpoints/training_progress.json")
         if not checkpoint_file.exists():
-            self.logger.error("❌ No checkpoint found to resume from")
+    passpassself.logger.error("❌ No checkpoint found to resume from")
             print("❌ No checkpoint found to resume from")
             return False
 
         try:
-    pass  # TODO: Add proper exception handling
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
             with open(checkpoint_file, "r") as f:
-                checkpoint_data = json.load(f)
+    passcheckpoint_data = json.load(f)
 
             training_mode = checkpoint_data.get("training_mode", "blank")
             lookback_days = checkpoint_data.get("lookback_days", 30)
@@ -761,7 +743,7 @@ except Exception as e:
             )
 
         except Exception as e:
-            self.logger.error(f"❌ Failed to resume training: {e}")
+    passpasspasspasspasspasspassself.logger.error(f"❌ Failed to resume training: {e}")
             print(f"❌ Failed to resume training: {e}")
             return False
 
@@ -770,15 +752,15 @@ except Exception as e:
         default_return=False,
         context="precompute_wavelet_features",
     )
-    def precompute_wavelet_features(self, symbol: str, exchange: str) -> bool:
-        """Precompute wavelet features for backtesting if they don't exist."""
-        self.logger.info(f"🔧 Precomputing wavelet features for {symbol} on {exchange}")
+    def precompute_wavelet_features(...) -> ...:
+    """..."""
+    passself.logger.info(f"🔧 Precomputing wavelet features for {symbol} on {exchange}")
         print(f"🔧 Precomputing wavelet features for {symbol} on {exchange}")
 
         try:
-    pass  # TODO: Add proper exception handling
+    passpasspass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
             # Import the precomputation system
             import asyncio
             from src.training.steps.precompute_wavelet_features import (
@@ -791,7 +773,7 @@ except Exception as e:
             init_success = asyncio.run(precomputer.initialize())
 
             if not init_success:
-                self.logger.error("❌ Failed to initialize wavelet precomputer")
+    passself.logger.error("❌ Failed to initialize wavelet precomputer")
                 return False
 
             # Check if cache already exists
@@ -801,7 +783,7 @@ except Exception as e:
             import os
 
             if os.path.exists(cache_dir) and len(os.listdir(cache_dir)) > 0:
-                self.logger.info(
+    passself.logger.info(
                     "✅ Wavelet features already cached, skipping precomputation"
                 )
                 print("✅ Wavelet features already cached, skipping precomputation")
@@ -811,7 +793,7 @@ except Exception as e:
             data_path = f"data_cache/aggtrades_{exchange}_{symbol}_consolidated.parquet"
 
             if not os.path.exists(data_path):
-                self.logger.error(f"❌ Consolidated data file not found: {data_path}")
+    passpassself.logger.error(f"❌ Consolidated data file not found: {data_path}")
                 self.logger.error("Please run data loading first")
                 return False
 
@@ -824,7 +806,7 @@ except Exception as e:
             )
 
             if success:
-                self.logger.info(
+    passself.logger.info(
                     "✅ Wavelet feature precomputation completed successfully"
                 )
                 print("✅ Wavelet feature precomputation completed successfully")
@@ -834,12 +816,12 @@ except Exception as e:
                 print(f"📊 Precomputation Statistics: {stats}")
                 return True
             else:
-                self.logger.error("❌ Wavelet feature precomputation failed")
+    passself.logger.error("❌ Wavelet feature precomputation failed")
                 print("❌ Wavelet feature precomputation failed")
                 return False
 
         except Exception as e:
-            self.logger.error(f"❌ Failed to precompute wavelet features: {e}")
+    passpasspasspasspasspasspassself.logger.error(f"❌ Failed to precompute wavelet features: {e}")
             print(f"❌ Failed to precompute wavelet features: {e}")
             return False
 
@@ -848,8 +830,8 @@ except Exception as e:
         default_return=False,
         context="run_backtesting",
     )
-    def run_backtesting(self, symbol: str, exchange: str, with_gui: bool = False):
-        """Run enhanced backtesting using cached wavelet features by default."""
+    def run_backtesting(...):
+    pass"""Run enhanced backtesting using cached wavelet features by default."""
         self.logger.info(
             f"📊 Running backtesting with cached wavelet features for {symbol} on {exchange}"
         )
@@ -859,16 +841,16 @@ except Exception as e:
         print("=" * 80)
 
         if with_gui:
-            if not self.launch_gui("backtesting", symbol, exchange):
-                return False
+    passpasspassif not self.launch_gui("backtesting", symbol, exchange):
+    passreturn False
 
         try:
-    pass  # TODO: Add proper exception handling
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
             # First, ensure wavelet features are precomputed
             if not self.precompute_wavelet_features(symbol, exchange):
-                self.logger.warning(
+    passself.logger.warning(
                     "⚠️ Wavelet precomputation failed, continuing with direct computation"
                 )
                 print(
@@ -888,7 +870,7 @@ except Exception as e:
             # Initialize the backtesting system
             init_success = asyncio.run(backtester.initialize())
             if not init_success:
-                self.logger.error("❌ Failed to initialize backtesting system")
+    passpassself.logger.error("❌ Failed to initialize backtesting system")
                 return False
 
             # Load data for backtesting
@@ -899,7 +881,7 @@ except Exception as e:
             import os
 
             if not os.path.exists(data_path):
-                self.logger.error(f"❌ Consolidated data file not found: {data_path}")
+    passpassself.logger.error(f"❌ Consolidated data file not found: {data_path}")
                 self.logger.error(
                     "Please run data loading first: python ares_launcher.py load --symbol ETHUSDT --exchange BINANCE"
                 )
@@ -914,7 +896,7 @@ except Exception as e:
             )
 
             if price_data is None or price_data.empty:
-                self.logger.error("❌ Failed to load price data for backtesting")
+    passself.logger.error("❌ Failed to load price data for backtesting")
                 return False
 
             # Run backtest with cached features
@@ -941,7 +923,7 @@ except Exception as e:
             )
 
             if "error" in results:
-                self.logger.error(f"❌ Backtesting failed: {results['error']}")
+    passself.logger.error(f"❌ Backtesting failed: {results['error']}")
                 print(f"❌ Backtesting failed: {results['error']}")
                 return False
 
@@ -976,31 +958,25 @@ except Exception as e:
             return True
 
         except Exception as e:
-            self.logger.error(f"❌ Failed to run backtesting: {e}")
+    passpasspasspasspasspasspasspassself.logger.error(f"❌ Failed to run backtesting: {e}")
             print(f"❌ Failed to run backtesting: {e}")
             return False
 
-    def _run_unified_trading(
-        self,
-        symbol: str,
-        exchange: str,
-        trading_mode: str,
-        with_gui: bool = False,
-    ):
-        """Unified trading method for both paper and live trading modes."""
+    def _run_unified_trading(...):
+    pass"""Unified trading method for both paper and live trading modes."""
         mode_display = "paper trading" if trading_mode == "PAPER" else "live trading"
         self.logger.info(f"📊 Running {mode_display} for {symbol} on {exchange}")
         print(f"📊 Running {mode_display} for {symbol} on {exchange}")
         print("=" * 80)
 
         if with_gui:
-            if not self.launch_gui(trading_mode.lower(), symbol, exchange):
-                return False
+    passpassif not self.launch_gui(trading_mode.lower(), symbol, exchange):
+    passreturn False
 
         try:
-    pass  # TODO: Add proper exception handling
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
             # Set environment variable for trading mode
             import os
 
@@ -1023,18 +999,18 @@ except Exception as e:
 
             # Read output in real-time
             while True:
-                output = process.stdout.readline()
+    passpasspassoutput = process.stdout.readline()
                 if output == "" and process.poll() is not None:
-                    break
+    passbreak
                 if output:
-                    print(output.strip())  # Print to terminal in real-time
+    passprint(output.strip())  # Print to terminal in real-time
                     self.logger.info(output.strip())  # Also log it
 
             # Get the final return code
             return_code = process.poll()
 
             if return_code == 0:
-                self.logger.info(f"✅ {mode_display} completed successfully")
+    passself.logger.info(f"✅ {mode_display} completed successfully")
                 print(f"✅ {mode_display} completed successfully")
                 return True
             self.logger.error(
@@ -1044,7 +1020,7 @@ except Exception as e:
             return False
 
         except Exception as e:
-            self.logger.error(f"❌ Failed to run {mode_display}: {e}")
+    passpasspasspasspasspasspassself.logger.error(f"❌ Failed to run {mode_display}: {e}")
             print(f"❌ Failed to run {mode_display}: {e}")
             return False
 
@@ -1053,8 +1029,8 @@ except Exception as e:
         default_return=False,
         context="run_paper_trading",
     )
-    def run_paper_trading(self, symbol: str, exchange: str, with_gui: bool = False):
-        """Run paper trading using unified trading method."""
+    def run_paper_trading(...):
+    pass"""Run paper trading using unified trading method."""
         return self._run_unified_trading(
             symbol=symbol,
             exchange=exchange,
@@ -1067,8 +1043,8 @@ except Exception as e:
         default_return=False,
         context="run_live_trading",
     )
-    def run_live_trading(self, symbol: str, exchange: str, with_gui: bool = False):
-        """Run live trading using unified trading method."""
+    def run_live_trading(...):
+    pass"""Run live trading using unified trading method."""
         return self._run_unified_trading(
             symbol=symbol,
             exchange=exchange,
@@ -1083,17 +1059,17 @@ except Exception as e:
         default_return=False,
         context="run_portfolio_trading",
     )
-    def run_portfolio_trading(self, with_gui: bool = False):
-        """Run portfolio trading with optional GUI."""
+    def run_portfolio_trading(...):
+    passpass"""Run portfolio trading with optional GUI."""
         self.logger.info("📈 Running portfolio trading")
 
         if with_gui:
-            if not self.launch_gui("portfolio"):
-                return False
+    passpassif not self.launch_gui("portfolio"):
+    passreturn False
 
         # Launch portfolio manager
         if not self.launch_portfolio_manager():
-            return False
+    passreturn False
 
         # Launch individual trading bots for each supported token
         supported_tokens = CONFIG.get("SUPPORTED_TOKENS", {}).get(
@@ -1102,11 +1078,11 @@ except Exception as e:
         )
 
         for token in supported_tokens:
-            self.logger.info(f"🚀 Launching trading bot for {token}")
+    passself.logger.info(f"🚀 Launching trading bot for {token}")
             try:
-    pass  # TODO: Add proper exception handling
+    passpasspass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
                 process = subprocess.Popen(
                     [sys.executable, "src/ares_pipeline.py", token, "BINANCE"],
                     stdout=subprocess.PIPE,
@@ -1118,7 +1094,7 @@ except Exception as e:
                     f"✅ Trading bot for {token} started with PID {process.pid}",
                 )
             except Exception as e:
-                self.logger.error(f"❌ Failed to launch trading bot for {token}: {e}")
+    passpasspasspasspasspasspasspasspassself.logger.error(f"❌ Failed to launch trading bot for {token}: {e}")
 
         return True
 
@@ -1127,8 +1103,8 @@ except Exception as e:
         default_return=False,
         context="run_gui_only",
     )
-    def run_gui_only(self):
-        """Run GUI only mode."""
+    def run_gui_only(...):
+    pass"""Run GUI only mode."""
         self.logger.info("🖥️ Running GUI only mode")
         return self.launch_gui()
 
@@ -1137,8 +1113,8 @@ except Exception as e:
         default_return=False,
         context="run_gui_with_mode",
     )
-    def run_gui_with_mode(self, mode: str, symbol: str, exchange: str):
-        """Run GUI with specific mode."""
+    def run_gui_with_mode(...):
+    pass"""Run GUI with specific mode."""
         self.logger.info(f"🖥️ Running GUI with mode: {mode}")
         return self.launch_gui(mode, symbol, exchange)
 
@@ -1147,38 +1123,33 @@ except Exception as e:
         default_return=None,
         context="wait_for_user_input",
     )
-    def wait_for_user_input(self):
-        """Wait for user input to stop the launcher."""
+    def wait_for_user_input(...):
+    pass"""Wait for user input to stop the launcher."""
         self.logger.info("⏸️ Press Enter to stop the launcher...")
         try:
-            input()
+    passpassinput()
         except KeyboardInterrupt:
-            self.logger.info("🛑 Received keyboard interrupt")
+    passpassself.logger.info("🛑 Received keyboard interrupt")
         finally:
-            self.cleanup()
+    passself.cleanup()
 
     @handle_errors(
         exceptions=(Exception,),
         default_return=False,
         context="run_challenger_trading",
     )
-    def run_challenger_trading(
-        self,
-        symbol: str,
-        exchange: str,
-        with_gui: bool = False,
-    ):
-        """Run challenger trading with optional GUI."""
+    def run_challenger_trading(...):
+    pass"""Run challenger trading with optional GUI."""
         self.logger.info(f"🏆 Running challenger trading for {symbol} on {exchange}")
 
         if with_gui:
-            if not self.launch_gui("challenger", symbol, exchange):
-                return False
+    passpasspassif not self.launch_gui("challenger", symbol, exchange):
+    passreturn False
 
         try:
-    pass  # TODO: Add proper exception handling
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
             # Run the challenger trading script
             process = subprocess.Popen(
                 [sys.executable, "scripts/setup_challenger_model.py", symbol, exchange],
@@ -1191,13 +1162,13 @@ except Exception as e:
             stdout, stderr = process.communicate()
 
             if process.returncode == 0:
-                self.logger.info("✅ Challenger trading completed successfully")
+    passself.logger.info("✅ Challenger trading completed successfully")
                 return True
             self.logger.error(f"❌ Challenger trading failed: {stderr}")
             return False
 
         except Exception as e:
-            self.logger.error(f"❌ Failed to run challenger trading: {e}")
+    passpasspasspasspasspasspassself.logger.error(f"❌ Failed to run challenger trading: {e}")
             return False
 
     @handle_errors(
@@ -1205,25 +1176,20 @@ except Exception as e:
         default_return=False,
         context="run_comprehensive_training",
     )
-    def run_comprehensive_training(
-        self,
-        symbol: str,
-        exchange: str,
-        with_gui: bool = False,
-    ):
-        """Run enhanced comprehensive training pipeline with efficiency optimizations."""
+    def run_comprehensive_training(...):
+    pass"""Run enhanced comprehensive training pipeline with efficiency optimizations."""
         self.logger.info(
             f"🧠 Running enhanced comprehensive training for {symbol} on {exchange}",
         )
 
         if with_gui:
-            if not self.launch_gui("blank", symbol, exchange):
-                return False
+    passpasspassif not self.launch_gui("blank", symbol, exchange):
+    passreturn False
 
         try:
-    pass  # TODO: Add proper exception handling
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
             # Run multi-timeframe training with blank mode for quick testing
             print(
                 f"🚀 Starting multi-timeframe blank training for {symbol} on {exchange}...",
@@ -1246,18 +1212,18 @@ except Exception as e:
 
             # Read output in real-time
             while True:
-                output = process.stdout.readline()
+    passpasspassoutput = process.stdout.readline()
                 if output == "" and process.poll() is not None:
-                    break
+    passbreak
                 if output:
-                    print(output.strip())  # Print to terminal in real-time
+    passprint(output.strip())  # Print to terminal in real-time
                     self.logger.info(output.strip())  # Also log it
 
             # Get the final return code
             return_code = process.poll()
 
             if return_code == 0:
-                self.logger.info(
+    passself.logger.info(
                     "✅ Enhanced comprehensive training completed successfully",
                 )
                 print("✅ Enhanced comprehensive training completed successfully")
@@ -1271,7 +1237,7 @@ except Exception as e:
             return False
 
         except Exception as e:
-            self.logger.error(f"❌ Failed to run enhanced comprehensive training: {e}")
+    passpasspasspasspasspasspassself.logger.error(f"❌ Failed to run enhanced comprehensive training: {e}")
             return False
 
     @handle_errors(
@@ -1279,26 +1245,20 @@ except Exception as e:
         default_return=False,
         context="run_multi_timeframe_training",
     )
-    def run_multi_timeframe_training(
-        self,
-        symbol: str,
-        exchange: str,
-        with_gui: bool = False,
-        quick_test: bool = False,
-    ):
-        """Run multi-timeframe training with ensemble creation."""
+    def run_multi_timeframe_training(...):
+    pass"""Run multi-timeframe training with ensemble creation."""
         self.logger.info(
             f"🎯 Running multi-timeframe training for {symbol} on {exchange}",
         )
 
         if with_gui:
-            if not self.launch_gui("multi-timeframe", symbol, exchange):
-                return False
+    passpasspassif not self.launch_gui("multi-timeframe", symbol, exchange):
+    passreturn False
 
         try:
-    pass  # TODO: Add proper exception handling
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
             # Run the multi-timeframe training script
             print(f"🚀 Starting multi-timeframe training for {symbol} on {exchange}...")
 
@@ -1313,7 +1273,7 @@ except Exception as e:
 
             # Add quick-test flag for blank mode
             if quick_test:
-                cmd.append("--quick-test")
+    passpasscmd.append("--quick-test")
                 self.logger.info(
                     "🧪 Running in quick-test mode (limited data/parameters)",
                 )
@@ -1330,18 +1290,18 @@ except Exception as e:
 
             # Read output in real-time
             while True:
-                output = process.stdout.readline()
+    passoutput = process.stdout.readline()
                 if output == "" and process.poll() is not None:
-                    break
+    passbreak
                 if output:
-                    print(output.strip())  # Print to terminal in real-time
+    passprint(output.strip())  # Print to terminal in real-time
                     self.logger.info(output.strip())  # Also log it
 
             # Get the final return code
             return_code = process.poll()
 
             if return_code == 0:
-                self.logger.info("✅ Multi-timeframe training completed successfully")
+    passself.logger.info("✅ Multi-timeframe training completed successfully")
                 print("✅ Multi-timeframe training completed successfully")
                 return True
             self.logger.error(
@@ -1351,7 +1311,7 @@ except Exception as e:
             return False
 
         except Exception as e:
-            self.logger.error(f"❌ Failed to run multi-timeframe training: {e}")
+    passpasspasspasspasspasspassself.logger.error(f"❌ Failed to run multi-timeframe training: {e}")
             return False
 
     @handle_errors(
@@ -1359,23 +1319,18 @@ except Exception as e:
         default_return=False,
         context="run_blank_training",
     )
-    def run_blank_training(
-        self,
-        symbol: str,
-        exchange: str,
-        with_gui: bool = False,
-    ):
-        """Run standard blank training pipeline for quick testing."""
+    def run_blank_training(...):
+    pass"""Run standard blank training pipeline for quick testing."""
         self.logger.info(f"🧪 Running blank training for {symbol} on {exchange}")
 
         if with_gui:
-            if not self.launch_gui("blank", symbol, exchange):
-                return False
+    passpassif not self.launch_gui("blank", symbol, exchange):
+    passreturn False
 
         try:
-    pass  # TODO: Add proper exception handling
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
             # Run the standard blank training script
             print(f"🚀 Starting blank training for {symbol} on {exchange}...")
             process = subprocess.Popen(
@@ -1397,18 +1352,18 @@ except Exception as e:
 
             # Read output in real-time
             while True:
-                output = process.stdout.readline()
+    passpassoutput = process.stdout.readline()
                 if output == "" and process.poll() is not None:
-                    break
+    passbreak
                 if output:
-                    print(output.strip())  # Print to terminal in real-time
+    passprint(output.strip())  # Print to terminal in real-time
                     self.logger.info(output.strip())  # Also log it
 
             # Get the final return code
             return_code = process.poll()
 
             if return_code == 0:
-                self.logger.info("✅ Blank training completed successfully")
+    passself.logger.info("✅ Blank training completed successfully")
                 print("✅ Blank training completed successfully")
                 return True
             self.logger.error(
@@ -1418,7 +1373,7 @@ except Exception as e:
             return False
 
         except Exception as e:
-            self.logger.error(f"❌ Failed to run blank training: {e}")
+    passpasspasspasspasspasspassself.logger.error(f"❌ Failed to run blank training: {e}")
             return False
 
 
@@ -1428,15 +1383,8 @@ except Exception as e:
         default_return=False,
         context="run_step_based_training",
     )
-    def run_step_based_training(
-        self,
-        symbol: str,
-        exchange: str,
-        start_step: str = "step2_processing_labeling_feature_engineering",
-        force_rerun: bool = False,
-        with_gui: bool = False,
-    ):
-        """Run enhanced 16-step training pipeline using the step orchestrator."""
+    def run_step_based_training(...):
+    pass"""Run enhanced 16-step training pipeline using the step orchestrator."""
         self.logger.info(
             f"🚀 Running enhanced 16-step training pipeline for {symbol} on {exchange}"
         )
@@ -1454,15 +1402,8 @@ except Exception as e:
         default_return=False,
         context="run_step_based_full_training",
     )
-    def run_step_based_full_training(
-        self,
-        symbol: str,
-        exchange: str,
-        start_step: str = "step2_processing_labeling_feature_engineering",
-        force_rerun: bool = False,
-        with_gui: bool = False,
-    ):
-        """Run step-based full training starting from a specific step with full parameters."""
+    def run_step_based_full_training(...):
+    passpass"""Run step-based full training starting from a specific step with full parameters."""
         self.logger.info(
             f"🚀 Running step-based full training for {symbol} on {exchange}"
         )
@@ -1483,16 +1424,8 @@ except Exception as e:
         default_return=False,
         context="run_step_based_training_with_validation",
     )
-    async def run_step_based_training_with_validation(
-        self,
-        symbol: str,
-        exchange: str,
-        start_step: str,
-        training_mode: str = "blank",
-        force_rerun: bool = False,
-        with_gui: bool = False,
-    ):
-        """Run step-based training with comprehensive validation of previous steps."""
+    async def run_step_based_training_with_validation(...):
+    passpasspass"""Run step-based training with comprehensive validation of previous steps."""
         self.logger.info(
             f"🚀 Running step-based training with validation for {symbol} on {exchange}"
         )
@@ -1502,7 +1435,7 @@ except Exception as e:
         # Validate previous steps before proceeding
         validation_success = await self._validate_previous_steps(symbol, exchange, start_step)
         if not validation_success:
-            self.logger.error(f"❌ Cannot start from {start_step} - previous step validation failed")
+    passself.logger.error(f"❌ Cannot start from {start_step} - previous step validation failed")
             return False
 
         # Run the step pipeline with the specified training mode
@@ -1520,15 +1453,8 @@ except Exception as e:
         default_return=False,
         context="run_step2_with_existing_data",
     )
-    async def run_step2_with_existing_data(
-        self,
-        symbol: str,
-        exchange: str,
-        start_step: str = "step2_feature_engineering",
-        force_rerun: bool = False,
-        with_gui: bool = False,
-    ):
-        """Run step2 with existing data from step1 and step1_5 without triggering new downloads."""
+    async def run_step2_with_existing_data(...):
+    passpass"""Run step2 with existing data from step1 and step1_5 without triggering new downloads."""
         self.logger.info(
             f"🚀 Running step2 with existing data for {symbol} on {exchange}"
         )
@@ -1538,9 +1464,9 @@ except Exception as e:
 
         # Use existing validator orchestrator to validate step1 and step1_5
         try:
-    pass  # TODO: Add proper exception handling
+    passpasspasspass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
             from src.utils.validator_orchestrator import ValidatorOrchestrator
 
             # Create validator orchestrator
@@ -1577,7 +1503,7 @@ except Exception as e:
             can_start = step1_passed and step1_5_passed
 
             if not can_start:
-                self.logger.error("❌ Cannot start from step2 - data validation failed")
+    passself.logger.error("❌ Cannot start from step2 - data validation failed")
                 self.logger.error("Please run step1 and step1_5 first to collect and process data")
                 return False
 
@@ -1587,16 +1513,16 @@ except Exception as e:
             total_warnings = len(step1_warnings) + len(step1_5_warnings)
 
             if total_warnings > 0:
-                self.logger.warning(f"⚠️ Data validation found {total_warnings} warnings - proceeding with existing data")
+    passself.logger.warning(f"⚠️ Data validation found {total_warnings} warnings - proceeding with existing data")
                 for warning in step1_warnings:
-                    self.logger.warning(f"   • Step1: {warning}")
+    passpassself.logger.warning(f"   • Step1: {warning}")
                 for warning in step1_5_warnings:
-                    self.logger.warning(f"   • Step1_5: {warning}")
+    passself.logger.warning(f"   • Step1_5: {warning}")
 
             self.logger.info("✅ Data validation passed - proceeding with existing data")
 
         except Exception as e:
-            self.logger.warning(f"⚠️ Could not run existing validators: {e}")
+    passpasspasspasspasspasspasspassself.logger.warning(f"⚠️ Could not run existing validators: {e}")
             self.logger.warning("Proceeding with basic file existence check")
 
             # Fallback to basic check
@@ -1604,7 +1530,7 @@ except Exception as e:
                 f"data_cache/aggtrades_{exchange}_{symbol}_consolidated.parquet"
             )
             if not os.path.exists(consolidated_file):
-                self.logger.error(
+    passpassself.logger.error(
                     f"❌ Consolidated data file not found: {consolidated_file}"
                 )
                 self.logger.error(
@@ -1622,14 +1548,14 @@ except Exception as e:
             training_mode="blank",  # Use blank mode for step2 with existing data
         )
 
-    async def _validate_previous_steps(self, symbol: str, exchange: str, start_step: str) -> bool:
-        """Validate all previous steps before starting from a specific step."""
-        self.logger.info(f"🔍 Validating previous steps before starting from {start_step}")
+    async def _validate_previous_steps(...) -> ...:
+    passpass"""..."""
+    passself.logger.info(f"🔍 Validating previous steps before starting from {start_step}")
 
         try:
-    pass  # TODO: Add proper exception handling
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
             from src.utils.validator_orchestrator import ValidatorOrchestrator
             from src.utils.step_dependency_validator import StepDependencyValidator
 
@@ -1652,7 +1578,7 @@ except Exception as e:
             steps_to_validate = self._get_required_steps(start_step, step_dependencies)
 
             if not steps_to_validate:
-                self.logger.info(f"✅ No previous steps to validate for {start_step}")
+    passself.logger.info(f"✅ No previous steps to validate for {start_step}")
                 return True
 
             self.logger.info(f"🔍 Validating {len(steps_to_validate)} previous steps: {steps_to_validate}")
@@ -1662,24 +1588,24 @@ except Exception as e:
             all_passed = True
 
             for step in steps_to_validate:
-                self.logger.info(f"🔍 Validating {step}...")
+    passself.logger.info(f"🔍 Validating {step}...")
                 try:
-    pass  # TODO: Add proper exception handling
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
                     result = await validator_orchestrator.run_step_validator(
                         step, training_input, {}, CONFIG
                     )
                     validation_results[step] = result
 
                     if result.get("validation_passed", False):
-                        self.logger.info(f"✅ {step} validation passed")
+    passself.logger.info(f"✅ {step} validation passed")
                     else:
-                        self.logger.error(f"❌ {step} validation failed: {result.get('error', 'Unknown error')}")
+    passself.logger.error(f"❌ {step} validation failed: {result.get('error', 'Unknown error')}")
                         all_passed = False
 
                 except Exception as e:
-                    self.logger.error(f"❌ Error validating {step}: {e}")
+    passpasspasspasspasspasspassself.logger.error(f"❌ Error validating {step}: {e}")
                     validation_results[step] = {"validation_passed": False, "error": str(e)}
                     all_passed = False
 
@@ -1689,12 +1615,12 @@ except Exception as e:
             return all_passed
 
         except Exception as e:
-            self.logger.error(f"❌ Error in step validation: {e}")
+    passpasspasspasspasspasspassself.logger.error(f"❌ Error in step validation: {e}")
             return False
 
-    def _get_required_steps(self, start_step: str, step_dependencies: dict) -> list:
-        """Get all steps that need to be validated before starting from a specific step."""
-        required_steps = []
+    def _get_required_steps(...) -> ...:
+    """..."""
+    passrequired_steps = []
         step_order = [
             "step1_data_collection",           # Step 1: Data Collection
             "step1_5_data_converter",          # Step 1.5: Data Converter
@@ -1723,16 +1649,16 @@ except Exception as e:
         ]
 
         try:
-            start_index = step_order.index(start_step)
+    passstart_index = step_order.index(start_step)
             required_steps = step_order[:start_index]
         except ValueError:
-            self.logger.warning(f"⚠️ Unknown step {start_step}, skipping validation")
+    passpassself.logger.warning(f"⚠️ Unknown step {start_step}, skipping validation")
             return []
 
         return required_steps
 
-    def _print_validation_report(self, validation_results: dict, symbol: str, exchange: str, start_step: str):
-        """Print a formatted validation report."""
+    def _print_validation_report(...):
+    pass"""Print a formatted validation report."""
         print("\n" + "="*80)
         print(f"📊 STEP VALIDATION REPORT")
         print(f"🎯 Symbol: {symbol}")
@@ -1742,24 +1668,24 @@ except Exception as e:
 
         all_passed = True
         for step, result in validation_results.items():
-            passed = result.get("validation_passed", False)
+    passpassed = result.get("validation_passed", False)
             status = "✅ PASSED" if passed else "❌ FAILED"
             print(f"{step:<35} {status}")
 
             if not passed:
-                all_passed = False
+    passall_passed = False
                 error = result.get("error", "Unknown error")
                 print(f"   Error: {error}")
 
         print("="*80)
         if all_passed:
-            print("🎉 All previous steps validated successfully!")
+    passprint("🎉 All previous steps validated successfully!")
         else:
-            print("❌ Some previous steps failed validation")
+    passprint("❌ Some previous steps failed validation")
         print("="*80)
 
-    def _print_step2_validation_report(self, step1_result: dict, step1_5_result: dict, symbol: str, exchange: str):
-        """Print a formatted validation report for step2 readiness."""
+    def _print_step2_validation_report(...):
+    pass"""Print a formatted validation report for step2 readiness."""
         print("\n" + "="*80)
         print(f"📊 DATA VALIDATION REPORT FOR STEP2")
         print(f"🎯 Symbol: {symbol}")
@@ -1772,9 +1698,9 @@ except Exception as e:
         step1_warnings = step1_result.get("warnings", [])
         print(f"📁 Step1 Data Collection: {step1_status}")
         if step1_warnings:
-            print(f"   ⚠️  Found {len(step1_warnings)} warnings")
+    passprint(f"   ⚠️  Found {len(step1_warnings)} warnings")
             for warning in step1_warnings:
-                print(f"     • {warning}")
+    passprint(f"     • {warning}")
 
         # Step1_5 status
         step1_5_passed = step1_5_result.get("validation_passed", False)
@@ -1782,23 +1708,23 @@ except Exception as e:
         step1_5_warnings = step1_5_result.get("warnings", [])
         print(f"🔄 Step1_5 Data Converter: {step1_5_status}")
         if step1_5_warnings:
-            print(f"   ⚠️  Found {len(step1_5_warnings)} warnings")
+    passprint(f"   ⚠️  Found {len(step1_5_warnings)} warnings")
             for warning in step1_5_warnings:
-                print(f"     • {warning}")
+    passprint(f"     • {warning}")
 
         # Show validation details if available
         if step1_result.get("details"):
-            print(f"   📋 Step1 Details: {step1_result['details']}")
+    passprint(f"   📋 Step1 Details: {step1_result['details']}")
         if step1_5_result.get("details"):
-            print(f"   📋 Step1_5 Details: {step1_5_result['details']}")
+    passprint(f"   📋 Step1_5 Details: {step1_5_result['details']}")
 
         # Overall assessment
         can_start = step1_passed and step1_5_passed
         if can_start:
-            print(f"\n✅ READY TO START FROM STEP2")
+    passprint(f"\n✅ READY TO START FROM STEP2")
             print(f"   Proceeding with existing data...")
         else:
-            print(f"\n❌ NOT READY FOR STEP2")
+    passpassprint(f"\n❌ NOT READY FOR STEP2")
             print(f"   Data validation failed - missing or invalid data")
 
         print("="*80 + "\n")
@@ -1808,17 +1734,12 @@ except Exception as e:
         default_return=False,
         context="run_data_loading",
     )
-    def run_data_loading(
-        self,
-        symbol: str,
-        exchange: str,
-        lookback_days: int = FULL_TRAINING_LOOKBACK_DAYS,
-    ) -> bool:
-        """Run data loading and consolidation for the specified symbol and exchange."""
-        try:
-    pass  # TODO: Add proper exception handling
+    def run_data_loading(...) -> ...:
+    """..."""
+    passtry:
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
             self.logger.info(f"🔄 Starting data loading for {symbol} on {exchange}")
 
             # Set environment variable for blank training mode
@@ -1831,7 +1752,7 @@ except Exception as e:
             download_script = "backtesting/ares_data_downloader_optimized.py"
 
             if not os.path.exists(download_script):
-                self.logger.error(f"❌ Download script not found: {download_script}")
+    passself.logger.error(f"❌ Download script not found: {download_script}")
                 return False
 
             # Run the download script
@@ -1857,7 +1778,7 @@ except Exception as e:
             )
 
             if download_result.returncode != 0:
-                self.logger.error(f"❌ Download failed: {download_result.stderr}")
+    passpassself.logger.error(f"❌ Download failed: {download_result.stderr}")
                 return False
 
             self.logger.info("✅ Data download completed successfully")
@@ -1867,7 +1788,7 @@ except Exception as e:
             consolidate_script = "src/training/steps/step1_data_collection.py"
 
             if not os.path.exists(consolidate_script):
-                self.logger.error(
+    passself.logger.error(
                     f"❌ Consolidation script not found: {consolidate_script}",
                 )
                 return False
@@ -1902,7 +1823,7 @@ except Exception as e:
             )
 
             if consolidate_result.returncode != 0:
-                self.logger.error(
+    passself.logger.error(
                     f"❌ Consolidation failed: {consolidate_result.stderr}",
                 )
                 return False
@@ -1911,25 +1832,25 @@ except Exception as e:
 
             # Step 3: Convert consolidated data to ETHUSDT_1h.csv format
             if symbol == "ETHUSDT" and exchange == "BINANCE":
-                self.logger.info(
+    passself.logger.info(
                     "🔄 Step 3: Converting data to ETHUSDT_1h.csv format..."
                 )
                 from src.analyst.data_utils import create_ethusdt_1h_csv
 
                 conversion_success = create_ethusdt_1h_csv()
                 if conversion_success:
-                    self.logger.info("✅ Data conversion completed successfully")
+    passself.logger.info("✅ Data conversion completed successfully")
                 else:
-                    self.logger.warning("⚠️ Data conversion failed, but continuing...")
+    passself.logger.warning("⚠️ Data conversion failed, but continuing...")
             else:
-                self.logger.info(
+    passself.logger.info(
                     f"⏭️ Skipping ETHUSDT_1h.csv conversion for {symbol} on {exchange}"
                 )
 
             return True
 
         except Exception as e:
-            self.logger.error(f"❌ Data loading failed: {e}")
+    passpasspasspasspasspasspasspassself.logger.error(f"❌ Data loading failed: {e}")
             return False
 
     @handle_errors(
@@ -1937,14 +1858,8 @@ except Exception as e:
         default_return=False,
         context="run_regime_operations",
     )
-    async def run_regime_operations(
-        self,
-        symbol: str,
-        exchange: str,
-        subcommand: str,
-        with_gui: bool = False,
-    ):
-        """Run regime operations (HMM labeling or ML training) with optional GUI."""
+    async def run_regime_operations(...):
+    pass"""Run regime operations (HMM labeling or ML training) with optional GUI."""
         self.logger.info(f"🧠 Running regime operations for {symbol} on {exchange}")
         self.logger.info(f"📋 Subcommand: {subcommand}")
         self.logger.info(f"🖥️ GUI mode: {with_gui}")
@@ -1953,13 +1868,13 @@ except Exception as e:
         )
 
         if with_gui:
-            if not self.launch_gui("regime", symbol, exchange):
-                return False
+    passif not self.launch_gui("regime", symbol, exchange):
+    passreturn False
 
         try:
-    pass  # TODO: Add proper exception handling
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
             self.logger.info("📦 Importing required modules...")
             # Import UnifiedRegimeClassifier
             from src.analyst.unified_regime_classifier import UnifiedRegimeClassifier
@@ -1973,14 +1888,14 @@ except Exception as e:
             self.logger.info("✅ Unified regime classifier initialized successfully")
 
             if subcommand == "load":
-                print(
+    passprint(
                     f"🚀 Starting unified regime classifier training for {symbol} on {exchange}...",
                 )
 
                 # Load historical data from data directory
                 data_file = f"data/{symbol}_1h.csv"
                 if not os.path.exists(data_file):
-                    self.logger.error(f"❌ Data file not found: {data_file}")
+    passpassself.logger.error(f"❌ Data file not found: {data_file}")
                     print(f"❌ Data file not found: {data_file}")
                     print(
                         "Please run data loading first: python ares_launcher.py load --symbol ETHUSDT --exchange BINANCE",
@@ -1992,7 +1907,7 @@ except Exception as e:
                 historical_data = load_klines_data(data_file)
 
                 if historical_data is None or historical_data.empty:
-                    self.logger.error("❌ Failed to load historical data")
+    passself.logger.error("❌ Failed to load historical data")
                     print("❌ Failed to load historical data")
                     return False
 
@@ -2000,7 +1915,7 @@ except Exception as e:
                 success = await regime_classifier.train_complete_system(historical_data)
 
                 if success:
-                    self.logger.info(
+    passself.logger.info(
                         "✅ Unified regime classifier training completed successfully",
                     )
                     print(
@@ -2012,7 +1927,7 @@ except Exception as e:
                 return False
 
             if subcommand == "train":
-                self.logger.info(
+    passself.logger.info(
                     f"🚀 Starting unified regime classifier training for {symbol} on {exchange} (2 years data)...",
                 )
                 self.logger.info("📊 Training configuration:")
@@ -2027,7 +1942,7 @@ except Exception as e:
                 # Load historical data from data directory
                 data_file = f"data/{symbol}_1h.csv"
                 if not os.path.exists(data_file):
-                    self.logger.error(f"❌ Data file not found: {data_file}")
+    passpassself.logger.error(f"❌ Data file not found: {data_file}")
                     print(f"❌ Data file not found: {data_file}")
                     print(
                         "Please run data loading first: python ares_launcher.py load --symbol ETHUSDT --exchange BINANCE",
@@ -2039,7 +1954,7 @@ except Exception as e:
                 historical_data = load_klines_data(data_file)
 
                 if historical_data is None or historical_data.empty:
-                    self.logger.error("❌ Failed to load historical data")
+    passself.logger.error("❌ Failed to load historical data")
                     print("❌ Failed to load historical data")
                     return False
 
@@ -2047,7 +1962,7 @@ except Exception as e:
                 success = await regime_classifier.train_complete_system(historical_data)
 
                 if success:
-                    self.logger.info(
+    passself.logger.info(
                         "✅ Unified regime classifier training completed successfully",
                     )
                     print(
@@ -2059,7 +1974,7 @@ except Exception as e:
                 return False
 
             if subcommand == "train_blank":
-                print(
+    passprint(
                     f"🚀 Starting unified regime classifier training for {symbol} on {exchange} (30 days data)...",
                 )
 
@@ -2074,7 +1989,7 @@ except Exception as e:
                 )
 
                 if historical_data is None or historical_data.empty:
-                    self.logger.error("❌ Failed to load historical data")
+    passpassself.logger.error("❌ Failed to load historical data")
                     print("❌ Failed to load historical data")
                     return False
 
@@ -2082,7 +1997,7 @@ except Exception as e:
                 success = await regime_classifier.train_complete_system(historical_data)
 
                 if success:
-                    self.logger.info(
+    passself.logger.info(
                         "✅ Unified regime classifier training completed successfully",
                     )
                     print(
@@ -2098,21 +2013,13 @@ except Exception as e:
             return False
 
         except Exception as e:
-            self.logger.error(f"❌ Failed to run regime operations: {e}")
+    passpasspasspasspasspasspassself.logger.error(f"❌ Failed to run regime operations: {e}")
             print(f"❌ Failed to run regime operations: {e}")
             return False
 
-    def _run_step_pipeline(
-        self,
-        symbol: str,
-        exchange: str,
-        start_step: str,
-        force_rerun: bool,
-        with_gui: bool,
-        training_mode: str,
-    ) -> bool:
-        """Common implementation for step-based training (blank/full) to reduce duplication."""
-        # Normalize and log step
+    def _run_step_pipeline(...) -> ...:
+    """..."""
+    pass# Normalize and log step
         start_step = self._normalize_step_name(start_step)
         self.logger.info(f"Starting from step: {start_step}")
 
@@ -2122,21 +2029,21 @@ except Exception as e:
 
         # Set training mode environment
         if training_mode == "light":
-            os.environ["LIGHT_TRAINING_MODE"] = "1"
+    passos.environ["LIGHT_TRAINING_MODE"] = "1"
             os.environ["BLANK_TRAINING_MODE"] = "0"
             os.environ["FULL_TRAINING_MODE"] = "0"
             self.logger.info(
                 "💡 LIGHT TRAINING MODE: Set LIGHT_TRAINING_MODE=1 for step-based training (30 days)"
             )
         elif training_mode == "blank":
-            os.environ["BLANK_TRAINING_MODE"] = "1"
+    passpasspassos.environ["BLANK_TRAINING_MODE"] = "1"
             os.environ["LIGHT_TRAINING_MODE"] = "0"
             os.environ["FULL_TRAINING_MODE"] = "0"
             self.logger.info(
                 "🧪 BLANK TRAINING MODE: Set BLANK_TRAINING_MODE=1 for step-based training (180 days)"
             )
         elif training_mode == "full":
-            os.environ["FULL_TRAINING_MODE"] = "1"
+    passpasspassos.environ["FULL_TRAINING_MODE"] = "1"
             os.environ["LIGHT_TRAINING_MODE"] = "0"
             os.environ["BLANK_TRAINING_MODE"] = "0"
             self.logger.info(
@@ -2145,7 +2052,7 @@ except Exception as e:
 
         # Prevent blank mode with step1 data collection
         if training_mode == "blank" and start_step == "step1_data_collection":
-            self.logger.error("❌ Cannot use blank mode with step1_data_collection")
+    passpasspassself.logger.error("❌ Cannot use blank mode with step1_data_collection")
             self.logger.error(
                 "Blank mode is designed for quick testing with limited data"
             )
@@ -2162,19 +2069,19 @@ except Exception as e:
             return False
 
         if with_gui:
-            if not self.launch_gui("training", symbol, exchange):
-                return False
+    passpassif not self.launch_gui("training", symbol, exchange):
+    passreturn False
 
         try:
-    pass  # TODO: Add proper exception handling
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
             # Initialize step orchestrator
             orchestrator = StepOrchestrator(symbol, exchange)
 
             # When forcing, set env flags and clear progress/checkpoints from the start step
             if force_rerun:
-                # Set FORCE for fresh runs; EnhancedTrainingManager recognizes this env flag.
+    pass# Set FORCE for fresh runs; EnhancedTrainingManager recognizes this env flag.
                 os.environ["FORCE"] = "1"
                 self._force_fresh_start_from_step(orchestrator, start_step)
                 self._clear_checkpoint_files(symbol, exchange, timeframe="1m")
@@ -2192,22 +2099,22 @@ except Exception as e:
             )
 
             if success:
-                self.logger.info(
+    passpassself.logger.info(
                     "✅ Step-based training pipeline completed successfully"
                 )
                 return True
             else:
-                self.logger.error("❌ Step-based training pipeline failed")
+    passself.logger.error("❌ Step-based training pipeline failed")
                 return False
 
         except Exception as e:
-            self.logger.error(f"❌ Failed to run step-based training pipeline: {e}")
+    passpasspasspasspasspasspassself.logger.error(f"❌ Failed to run step-based training pipeline: {e}")
             return False
 
 
-def parse_arguments() -> argparse.Namespace:
-    """Parse and validate command line arguments."""
-    parser = argparse.ArgumentParser(
+def parse_arguments(...) -> ...:
+    """..."""
+    passparser = argparse.ArgumentParser(
         description="Ares Trading Bot Launcher",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
@@ -2402,11 +2309,11 @@ Examples:
     return parser.parse_args()
 
 
-def validate_arguments(args: argparse.Namespace) -> None:
-    """Validate parsed arguments."""
-    if args.command == "gui" and args.mode:
-        if not args.symbol or not args.exchange:
-            raise ValueError(
+def validate_arguments(...) -> ...:
+    passpass"""..."""
+    passif args.command == "gui" and args.mode:
+    passif not args.symbol or not args.exchange:
+    passraise ValueError(
                 "Symbol and exchange are required when using gui with mode",
             )
 
@@ -2415,7 +2322,7 @@ def validate_arguments(args: argparse.Namespace) -> None:
         getattr(args, "force", False) or getattr(args, "force_rerun", False)
     )
     if args.command == "load" and force_flag:
-        raise ValueError(
+    passpassraise ValueError(
             "The --force flag is not available for the 'load' command. "
             "The load command is designed to be safe and only downloads missing data."
         )
@@ -2439,13 +2346,13 @@ def validate_arguments(args: argparse.Namespace) -> None:
     ]
 
     if args.command in commands_requiring_symbol:
-        if not args.symbol:
-            raise ValueError(f"Symbol is required for {args.command} command")
+    passpassif not args.symbol:
+    passraise ValueError(f"Symbol is required for {args.command} command")
 
 
-def initialize_launcher() -> tuple[AresLauncher, object]:
-    """Initialize launcher with signal handling."""
-    signal_handler = setup_signal_handlers()
+def initialize_launcher(...) -> ...:
+    pass"""..."""
+    passsignal_handler = setup_signal_handlers()
     launcher = AresLauncher()
     launcher.setup_logging()
 
@@ -2455,9 +2362,9 @@ def initialize_launcher() -> tuple[AresLauncher, object]:
     return launcher, signal_handler
 
 
-def execute_command(launcher: AresLauncher, args: argparse.Namespace) -> bool:
-    """Execute the requested command based on parsed arguments."""
-    print(f"🔍 DEBUG: Executing command: {args.command}")
+def execute_command(...) -> ...:
+    """..."""
+    passprint(f"🔍 DEBUG: Executing command: {args.command}")
     print(f"🔍 DEBUG: Symbol: {args.symbol}, Exchange: {args.exchange}")
 
     # Normalize input step name to current naming, and collapse force flags
@@ -2794,49 +2701,49 @@ def execute_command(launcher: AresLauncher, args: argparse.Namespace) -> bool:
     }
 
     if args.command in command_handlers:
-        print(f"🔍 DEBUG: Found command handler for '{args.command}'")
+    passprint(f"🔍 DEBUG: Found command handler for '{args.command}'")
         success = command_handlers[args.command]()
         print(f"🔍 DEBUG: Command execution result: {success}")
         if not success:
-            return False
+    passreturn False
         if args.gui:
-            launcher.wait_for_user_input()
+    passlauncher.wait_for_user_input()
         return True
 
     if args.command == "gui":
-        return execute_gui_command(launcher, args)
+    passreturn execute_gui_command(launcher, args)
 
     print(f"❌ ERROR: Unknown command: {args.command}")
     return False
 
 
-def execute_gui_command(launcher: AresLauncher, args: argparse.Namespace) -> bool:
-    """Execute GUI-specific commands."""
-    if args.mode:
-        if not args.symbol or not args.exchange:
-            launcher.logger.error(
+def execute_gui_command(...) -> ...:
+    """..."""
+    passif args.mode:
+    passif not args.symbol or not args.exchange:
+    passlauncher.logger.error(
                 "❌ Symbol and exchange are required when mode is specified",
             )
             return False
         success = launcher.run_gui_with_mode(args.mode, args.symbol, args.exchange)
         if not success:
-            return False
+    passreturn False
         launcher.wait_for_user_input()
         return True
     success = launcher.run_gui_only()
     if not success:
-        return False
+    passreturn False
     launcher.wait_for_user_input()
     return True
 
 
 @handle_errors(exceptions=(Exception,), default_return=1, context="main")
-def main():
-    """Main entry point for the Ares launcher."""
+def main(...):
+    pass"""Main entry point for the Ares launcher."""
     try:
-    pass  # TODO: Add proper exception handling
+    passpasspass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
         # Parse and validate arguments
         args = parse_arguments()
         validate_arguments(args)
@@ -2847,9 +2754,9 @@ except Exception as e:
         # Log command execution
         command_info = f"Command: {args.command}"
         if hasattr(args, "symbol") and args.symbol:
-            command_info += f" - Symbol: {args.symbol}"
+    passcommand_info += f" - Symbol: {args.symbol}"
         if hasattr(args, "exchange") and args.exchange:
-            command_info += f" - Exchange: {args.exchange}"
+    passcommand_info += f" - Exchange: {args.exchange}"
 
         launcher.comprehensive_logger.log_launcher_start(
             args.command,
@@ -2861,30 +2768,30 @@ except Exception as e:
         success = execute_command(launcher, args)
 
         if success:
-            launcher.comprehensive_logger.log_launcher_end(0)
+    passlauncher.comprehensive_logger.log_launcher_end(0)
             return 0
         launcher.comprehensive_logger.log_launcher_end(1)
         return 1
 
     except Exception as e:
-        # Log error if launcher is available
+    passpasspasspasspasspasspass# Log error if launcher is available
         if "launcher" in locals():
-            launcher.comprehensive_logger.log_error(
+    passlauncher.comprehensive_logger.log_error(
                 f"Main function exception: {e}",
                 exc_info=True,
             )
             launcher.comprehensive_logger.log_launcher_end(1)
         else:
-            print(f"💥 ERROR: Exception in main: {e}")
+    passprint(f"💥 ERROR: Exception in main: {e}")
             import traceback
 
             traceback.print_exc()
         return 1
     finally:
-        # Ensure cleanup happens
+    pass# Ensure cleanup happens
         if "launcher" in locals():
-            launcher.cleanup()
+    passlauncher.cleanup()
 
 
 if __name__ == "__main__":
-    main()
+    passmain()

@@ -6,14 +6,9 @@ from typing import Any
 from src.config.environment import get_environment_settings
 
 
-def get_system_config() -> dict[str, Any]:
-    """Get the complete system configuration.
-
-Returns:
-        dict: Complete system configuration
-
-"""
-settings = get_environment_settings()
+def get_system_config(...) -> ...:
+    """..."""
+    passsettings = get_environment_settings()
 
 return {
 # --- Logging Configuration ---
@@ -97,67 +92,37 @@ return {
 }
 
 
-def get_logging_config() -> dict[str, Any]:
-    """Get logging configuration.
-
-Returns:
-        dict: Logging configuration
-
-"""
-system_config = get_system_config()
+def get_logging_config(...) -> ...:
+    """..."""
+    passsystem_config = get_system_config()
 return system_config.get("logging", {})
 
 
-def get_database_config() -> dict[str, Any]:
-    """Get database configuration.
-
-Returns:
-        dict: Database configuration
-
-"""
-system_config = get_system_config()
+def get_database_config(...) -> ...:
+    """..."""
+    passsystem_config = get_system_config()
 return system_config.get("database", {})
 
 
-def get_checkpointing_config() -> dict[str, Any]:
-    """Get checkpointing configuration.
-
-Returns:
-        dict: Checkpointing configuration
-
-"""
-system_config = get_system_config()
+def get_checkpointing_config(...) -> ...:
+    """..."""
+    passsystem_config = get_system_config()
 return system_config.get("checkpointing", {})
 
 
-def get_reporting_config() -> dict[str, Any]:
-    """Get reporting configuration.
-
-Returns:
-        dict: Reporting configuration
-
-"""
-system_config = get_system_config()
+def get_reporting_config(...) -> ...:
+    """..."""
+    passsystem_config = get_system_config()
 return system_config.get("reporting", {})
 
 
-def get_mlflow_config() -> dict[str, Any]:
-    """Get MLflow configuration.
-
-Returns:
-        dict: MLflow configuration
-
-"""
-system_config = get_system_config()
+def get_mlflow_config(...) -> ...:
+    """..."""
+    passsystem_config = get_system_config()
 return system_config.get("mlflow", {})
 
 
-def get_version_info() -> dict[str, Any]:
-    """Get version information.
-
-Returns:
-        dict: Version information
-
-"""
-system_config = get_system_config()
+def get_version_info(...) -> ...:
+    """..."""
+    passsystem_config = get_system_config()
 return system_config.get("version", {})

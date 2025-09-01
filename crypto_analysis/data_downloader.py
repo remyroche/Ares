@@ -25,15 +25,31 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 class BinanceDataDownloader:
-    def __init__(self):
-        self.base_url = "https://api.binance.com/api/v3"
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="binancedatadownloader initialization",
+    )
+    async def initialize(self) -> bool:
+        """Initialize BinanceDataDownloader."""
+        try:
+            self.logger.info(f"🚀 Initializing {class_name}...")
+            self.is_initialized = True
+            self.logger.info(f"✅ {class_name} initialized successfully")
+            return True
+        except Exception as e:
+            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
+            return False
+    passpassdef __init__(...):
+    passself.base_url = "https://api.binance.com/api/v3"
         self.session = requests.Session()
         self.session.headers.update({
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
         })
 
-    def get_klines(self, symbol, interval, start_time, end_time, limit=1000):
-        """
+    def get_klines(...):
+    pass"""
         Fetch klines data from Binance API
 
         Args:
@@ -56,19 +72,19 @@ class BinanceDataDownloader:
         }
 
         try:
-            response = self.session.get(url, params=params)
+    passresponse = self.session.get(url, params=params)
             response.raise_for_status()
             return response.json()
         except requests.exceptions.RequestException as e:
-            logger.error(f"Error fetching data for {symbol}: {e}")
+    passpasspasspasspasspasspasslogger.error(f"Error fetching data for {symbol}: {e}")
             return []
 
-    def download_asset_data(self, symbol, start_date, end_date, interval='15m'):
-        """
+    def download_asset_data(...):
+    pass"""
         Download complete data for a single asset
 
         Args:
-            symbol (str): Trading pair symbol
+    passsymbol (str): Trading pair symbol
             start_date (datetime): Start date
             end_date (datetime): End date
             interval (str): Kline interval
@@ -86,12 +102,12 @@ class BinanceDataDownloader:
         current_start = start_ms
 
         while current_start < end_ms:
-            current_end = min(current_start + (1000 * 15 * 60 * 1000), end_ms)  # 1000 * 15 minutes in ms
+    passpasspasscurrent_end = min(current_start + (1000 * 15 * 60 * 1000), end_ms)  # 1000 * 15 minutes in ms
 
             klines = self.get_klines(symbol, interval, current_start, current_end)
 
             if not klines:
-                logger.warning(f"No data received for {symbol} at {datetime.fromtimestamp(current_start/1000)}")
+    passlogger.warning(f"No data received for {symbol} at {datetime.fromtimestamp(current_start/1000)}")
                 current_start = current_end
                 continue
 
@@ -103,10 +119,10 @@ class BinanceDataDownloader:
 
             # Progress logging
             if len(all_data) % 10000 == 0:
-                logger.info(f"Downloaded {len(all_data)} klines for {symbol}")
+    passpasslogger.info(f"Downloaded {len(all_data)} klines for {symbol}")
 
         if not all_data:
-            logger.error(f"No data downloaded for {symbol}")
+    passpasslogger.error(f"No data downloaded for {symbol}")
             return pd.DataFrame()
 
         # Convert to DataFrame
@@ -121,7 +137,7 @@ class BinanceDataDownloader:
                           'taker_buy_base_asset_volume', 'taker_buy_quote_asset_volume']
 
         for col in numeric_columns:
-            df[col] = pd.to_numeric(df[col], errors='coerce')
+    passpassdf[col] = pd.to_numeric(df[col], errors='coerce')
 
         # Convert timestamps
         df['open_time'] = pd.to_datetime(df['open_time'], unit='ms')
@@ -141,17 +157,17 @@ class BinanceDataDownloader:
 
         # Ensure all numeric columns are float64 for optimal Parquet storage
         for col in ['open', 'high', 'low', 'close', 'volume', 'quote_asset_volume']:
-            df[col] = df[col].astype('float64')
+    passdf[col] = df[col].astype('float64')
 
         logger.info(f"Successfully downloaded {len(df)} klines for {symbol}")
         return df
 
-    def download_multiple_assets(self, symbols, start_date, end_date, interval='15m'):
-        """
+    def download_multiple_assets(...):
+    passpass"""
         Download data for multiple assets
 
         Args:
-            symbols (list): List of trading pair symbols
+    passsymbols (list): List of trading pair symbols
             start_date (datetime): Start date
             end_date (datetime): End date
             interval (str): Kline interval
@@ -162,18 +178,18 @@ class BinanceDataDownloader:
         all_data = []
 
         for symbol in symbols:
-            try:
-                df = self.download_asset_data(symbol, start_date, end_date, interval)
+    passpasstry:
+    passdf = self.download_asset_data(symbol, start_date, end_date, interval)
                 if not df.empty:
-                    all_data.append(df)
+    passall_data.append(df)
                 else:
-                    logger.warning(f"Skipping {symbol} due to empty data")
+    passlogger.warning(f"Skipping {symbol} due to empty data")
             except Exception as e:
-                logger.error(f"Error downloading {symbol}: {e}")
+    passpasspasspasspasspasspasslogger.error(f"Error downloading {symbol}: {e}")
                 continue
 
         if not all_data:
-            logger.error("No data downloaded for any asset")
+    passlogger.error("No data downloaded for any asset")
             return pd.DataFrame()
 
         # Combine all data
@@ -183,8 +199,8 @@ class BinanceDataDownloader:
         logger.info(f"Total data downloaded: {len(combined_df)} klines across {len(all_data)} assets")
         return combined_df
 
-def verify_parquet_file(parquet_file, original_df):
-    """
+def verify_parquet_file(...):
+    pass"""
     Verify that the Parquet file was created correctly and contains the expected data
 
     Args:
@@ -192,19 +208,19 @@ def verify_parquet_file(parquet_file, original_df):
         original_df (pd.DataFrame): Original DataFrame for comparison
     """
     try:
-    pass  # TODO: Add proper exception handling
+    passpasspass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
         # Read the Parquet file back
         loaded_df = pd.read_parquet(parquet_file)
 
         # Basic verification
         if len(loaded_df) != len(original_df):
-            logger.error(f"Data length mismatch: Original {len(original_df)}, Loaded {len(loaded_df)}")
+    passlogger.error(f"Data length mismatch: Original {len(original_df)}, Loaded {len(loaded_df)}")
             return False
 
         if loaded_df.columns.tolist() != original_df.columns.tolist():
-            logger.error(f"Column mismatch: Original {original_df.columns.tolist()}, Loaded {loaded_df.columns.tolist()}")
+    passlogger.error(f"Column mismatch: Original {original_df.columns.tolist()}, Loaded {loaded_df.columns.tolist()}")
             return False
 
         # Check data integrity for a few random rows
@@ -212,12 +228,12 @@ except Exception as e:
         sample_indices = original_df.sample(n=sample_size).index
 
         for idx in sample_indices:
-            if idx in loaded_df.index:
-                original_row = original_df.loc[idx]
+    passif idx in loaded_df.index:
+    passoriginal_row = original_df.loc[idx]
                 loaded_row = loaded_df.loc[idx]
 
                 if not original_row.equals(loaded_row):
-                    logger.warning(f"Data mismatch at index {idx}")
+    passlogger.warning(f"Data mismatch at index {idx}")
                     return False
 
         # File size check
@@ -231,11 +247,11 @@ except Exception as e:
         return True
 
     except Exception as e:
-        logger.error(f"Error verifying Parquet file: {e}")
+    passpasspasspasspasspasspasslogger.error(f"Error verifying Parquet file: {e}")
         return False
 
-def main():
-    """Main function to download cryptocurrency data"""
+def main(...):
+    pass"""Main function to download cryptocurrency data"""
 
     # Define assets to download
     assets = [
@@ -257,7 +273,7 @@ def main():
     df = downloader.download_multiple_assets(assets, start_date, end_date, interval='15m')
 
     if df.empty:
-        logger.error("No data downloaded. Exiting.")
+    passpasslogger.error("No data downloaded. Exiting.")
         return
 
     # Create output directory
@@ -268,9 +284,9 @@ def main():
     output_file = output_dir / f"crypto_15m_data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.parquet"
 
     try:
-    pass  # TODO: Add proper exception handling
+    passpasspass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
         # Save with optimal Parquet settings
         df.to_parquet(
             output_file,
@@ -285,7 +301,7 @@ except Exception as e:
         verify_parquet_file(output_file, df)
 
     except Exception as e:
-        logger.error(f"Error saving Parquet file: {e}")
+    passpasspasspasspasspasspasspasslogger.error(f"Error saving Parquet file: {e}")
         # Fallback to CSV if Parquet fails
         csv_file = output_file.with_suffix('.csv')
         df.to_csv(csv_file)
@@ -305,9 +321,9 @@ except Exception as e:
     print("\nPer-asset summary:")
     print("-" * 30)
     for symbol in sorted(df['symbol'].unique()):
-        asset_data = df[df['symbol'] == symbol]
+    passasset_data = df[df['symbol'] == symbol]
         print(f"{symbol:10} | {len(asset_data):8,} klines | "
               f"Volume: {asset_data['volume'].sum():12.0f}")
 
 if __name__ == "__main__":
-    main()
+    passmain()

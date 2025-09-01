@@ -15,5 +15,5 @@ from src.training.steps.step09_5_hmm_lm_generalist_training import (
 
 
 if __name__ == "__main__":
-    # Run tests
+    pass# Run tests
     pytest.main([__file__ = "-v"])

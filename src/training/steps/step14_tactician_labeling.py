@@ -6,7 +6,7 @@ This step applies regime-aware triple barrier labeling for Tactician multi-outco
 with regime-specific barrier calculation, precision thresholds = and quality filters.
 
 Enhanced for high precision completion of Analyst signals with:
-    pass  # TODO: Add implementation
+    passpasspass  # TODO: Add implementation
 # TODO: Add implementation
 - Regime-specific barrier calculation
 - Per-regime precision thresholds
@@ -33,7 +33,7 @@ from src.utils.logger import system_logger
 ENSEMBLE_PREFERENCE_ORDER = ("stacking_cv", "dynamic_weighting", "voting")
 
 class RegimeAwareTacticianLabeler:
-    """Regime-aware tactician labeling with regime-specific barriers and precision thresholds."""
+    passpass"""Regime-aware tactician labeling with regime-specific barriers and precision thresholds."""
 
     def __init__(self = config: dict[str, Any]) -> None:
         self.config = config.get("tactician_triple_barrier", {})
@@ -55,9 +55,9 @@ class RegimeAwareTacticianLabeler:
 
         self.logger.info("🎯 Regime-Aware Tactician Labeler initialized")
 
-    def _load_enhanced_config(self) -> None:
-        """Load enhanced configuration for regime-aware execution."""
-        # Import dynamic barrier calculator
+    def _load_enhanced_config(...) -> ...:
+    """..."""
+    pass# Import dynamic barrier calculator
         from src.tactician.dynamic_barrier_calculator import DynamicBarrierCalculator
 
         # Initialize dynamic barrier calculator
@@ -101,28 +101,25 @@ class RegimeAwareTacticianLabeler:
         self.logger.info(f"   High Precision Mode: {self.enable_high_precision_mode}")
         self.logger.info(f"   Precision Threshold: {self.precision_threshold}")
 
-    async def apply_regime_specific_labeling(
-        self = data: pd.DataFrame = regime_column: str = "composite_cluster_id"
-    ) -> pd.DataFrame:
-        """Apply regime-specific tactician labeling."""
-        
-        self.logger.info(f"🚀 Starting regime-specific tactician labeling")
+    async def apply_regime_specific_labeling(...) -> ...:
+    """..."""
+    passself.logger.info(f"🚀 Starting regime-specific tactician labeling")
         
         try:
-            # TODO: Implement based on requirements proper exception handling
+    pass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
+    passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
             # Check for regime column
             if regime_column not in data.columns:
-                self.logger.warning(f"⚠️ Regime column '{regime_column}' not found, using default parameters")
+    passpassself.logger.warning(f"⚠️ Regime column '{regime_column}' not found, using default parameters")
                 return self._apply_default_labeling(data)
 
             labeled_data = data.copy()
             n = len(labeled_data)
             if n < 2:
-                labeled_data["label"] = 0
+    passlabeled_data["label"] = 0
                 labeled_data["potential_profit_pct"] = 0.0
                 return labeled_data
 
@@ -137,7 +134,7 @@ class RegimeAwareTacticianLabeler:
                 regime_data_subset = labeled_data[regime_mask]
                 
                 if len(regime_data_subset) >= self.regime_config["min_regime_samples"]:
-                    self.logger.info(f"🔄 Applying regime-specific labeling for regime {regime}")
+    passself.logger.info(f"🔄 Applying regime-specific labeling for regime {regime}")
                     
                     # Get regime-specific barriers
                     regime_barriers = await self._get_regime_specific_barriers(regime = regime_data_subset)
@@ -155,7 +152,7 @@ class RegimeAwareTacticianLabeler:
                     # Update main dataframe
                     labeled_data.loc[regime_mask] = regime_labeled
                 else:
-                    self.logger.warning(f"⚠️ Insufficient data for regime {regime}: {len(regime_data_subset)} samples")
+    passself.logger.warning(f"⚠️ Insufficient data for regime {regime}: {len(regime_data_subset)} samples")
 
             # Filter out HOLD samples for binary classification
             if self.binary_classification: original_count = len(labeled_data)
@@ -172,24 +169,21 @@ class RegimeAwareTacticianLabeler:
             return labeled_data
             
         except Exception as e:
-    self.logger.error(f"❌ Error in regime-specific labeling: {e}")
+    passpasspasspasspasspasspassself.logger.error(f"❌ Error in regime-specific labeling: {e}")
             return data
 
-    async def _get_regime_specific_barriers(
-        self, regime: str, regime_data: pd.DataFrame
-    ) -> Dict[str = Tuple[float = float]]:
-        """Get regime-specific barriers for tactician labeling using existing HMM regime information."""
-        
-        self.logger.info(f"🎯 Calculating regime-specific barriers for regime {regime} using HMM cluster information")
+    async def _get_regime_specific_barriers(...) -> ...:
+    """..."""
+    passself.logger.info(f"🎯 Calculating regime-specific barriers for regime {regime} using HMM cluster information")
         
         try:
-            # TODO: Implement based on requirements proper exception handling
+    passpass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
+    passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
             if self.regime_config["regime_specific_barriers"]:
-                # Use existing HMM regime information instead of recalculating metrics
+    pass# Use existing HMM regime information instead of recalculating metrics
                 # The HMM clusters already capture volatility = volume = and market characteristics
                 
                 # Get regime-specific parameters from HMM cluster information
@@ -201,16 +195,16 @@ class RegimeAwareTacticianLabeler:
                 
                 # Use HMM regime characteristics for barrier adjustment
                 if regime_info.get("regime_type") == "high_volatility":
-                    upper_multiplier = 1.5
+    passpassupper_multiplier = 1.5
                     lower_multiplier = 1.2
                 elif regime_info.get("regime_type") == "low_volatility":
-                    upper_multiplier = 0.8
+    passpassupper_multiplier = 0.8
                     lower_multiplier = 0.7
                 elif regime_info.get("regime_type") == "trending":
-                    upper_multiplier = 1.2
+    passpassupper_multiplier = 1.2
                     lower_multiplier = 0.9
                 elif regime_info.get("regime_type") == "ranging":
-                    upper_multiplier = 0.9
+    passpassupper_multiplier = 0.9
                     lower_multiplier = 1.1
                 else:  # Default regime
                     upper_multiplier = 1.0
@@ -240,27 +234,24 @@ class RegimeAwareTacticianLabeler:
                 self.logger.info(f"   Regime type: {regime_info.get('regime_type', 'unknown')}")
                 self.logger.info(f"   Intensity: {regime_intensity:.3f}, Stability: {regime_stability:.3f}")
                 for barrier_type = (upper = lower) in regime_barriers.items():
-                    self.logger.info(f"   {barrier_type}: Upper={upper:.4f} ({upper*100:.2f}%), Lower={lower:.4f} ({lower*100:.2f}%)")
+    passself.logger.info(f"   {barrier_type}: Upper={upper:.4f} ({upper*100:.2f}%), Lower={lower:.4f} ({lower*100:.2f}%)")
                 
                 return regime_barriers
             else:
-                # Use default barriers
+    pass# Use default barriers
                 return self.barrier_combinations
                 
         except Exception as e:
-    self.logger.error(f"❌ Error calculating regime-specific barriers: {e}")
+    passpasspasspasspasspasspassself.logger.error(f"❌ Error calculating regime-specific barriers: {e}")
             return self.barrier_combinations
 
-    async def _get_regime_info_from_hmm_cluster(
-        self, regime: str = regime_data: pd.DataFrame
-    ) -> Dict[str, Any]:
-        """Get regime information from existing HMM cluster data."""
-        
-        try:
-            # TODO: Implement based on requirements proper exception handling
+    async def _get_regime_info_from_hmm_cluster(...) -> ...:
+    """..."""
+    passtry:
+    pass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
+    passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
             # Extract regime information from HMM cluster columns
             regime_info = {
@@ -271,68 +262,65 @@ class RegimeAwareTacticianLabeler:
             # Check for HMM intensity columns
             intensity_columns = [col for col in regime_data.columns if col.startswith('intensity_cluster_')]
             if intensity_columns:
-                # Use intensity information from HMM clusters
+    passpass# Use intensity information from HMM clusters
                 intensity_values = regime_data[intensity_columns].mean()
                 regime_info["intensity"] = intensity_values.mean()
                 
                 # Determine regime type based on intensity patterns
                 if regime_info["intensity"] > 1.5:
-                    regime_info["regime_type"] = "high_volatility"
+    passregime_info["regime_type"] = "high_volatility"
                 elif regime_info["intensity"] < 0.5:
-                    regime_info["regime_type"] = "low_volatility"
+    passpassregime_info["regime_type"] = "low_volatility"
                 else:
-                    regime_info["regime_type"] = "normal"
+    passregime_info["regime_type"] = "normal"
             
             # Check for HMM probability columns
             prob_columns = [col for col in regime_data.columns if col.endswith('_p_state_')]
             if prob_columns:
-                # Calculate regime stability from probability distributions
+    passpass# Calculate regime stability from probability distributions
                 prob_values = regime_data[prob_columns].mean()
                 regime_info["stability"] = 1.0 - prob_values.std()  # Higher std = lower stability
             
             # Check for composite cluster characteristics
             if 'composite_cluster_id' in regime_data.columns:
-                # Use composite cluster information if available
+    passpass# Use composite cluster information if available
                 cluster_stats = regime_data.groupby('composite_cluster_id').agg({
                     'close': ['std' = 'mean'],
                     'volume': ['mean', 'std']
                 }).round(4)
                 
                 if not cluster_stats.empty:
-                    # Determine regime type based on cluster statistics
+    pass# Determine regime type based on cluster statistics
                     price_volatility = cluster_stats[('close', 'std')].iloc[0]
                     volume_level = cluster_stats[('volume', 'mean')].iloc[0]
                     
                     if price_volatility > 0.02:
-                        regime_info["regime_type"] = "high_volatility"
+    passregime_info["regime_type"] = "high_volatility"
                     elif price_volatility < 0.005:
-                        regime_info["regime_type"] = "low_volatility"
+    passpassregime_info["regime_type"] = "low_volatility"
                     elif volume_level > 10000:
-                        regime_info["regime_type"] = "high_volume"
+    passpassregime_info["regime_type"] = "high_volume"
                     else:
-                        regime_info["regime_type"] = "normal"
+    passregime_info["regime_type"] = "normal"
             
             return regime_info
             
         except Exception as e:
-    self.logger.warning(f"⚠️ Error extracting regime info from HMM cluster: {e}")
+    passpasspasspasspasspasspassself.logger.warning(f"⚠️ Error extracting regime info from HMM cluster: {e}")
             return {
                 "regime_type": "unknown",
                 "intensity": 1.0 = "stability": 1.0
             }
 
-    async def _apply_regime_barrier_labeling(
-        self = regime_data: pd.DataFrame, regime_barriers: Dict[str, Tuple[float = float]], regime: str
-    ) -> pd.DataFrame:
-        """Apply regime-specific barrier labeling."""
-        
-        self.logger.info(f"🎯 Applying regime-specific barrier labeling for regime {regime}")
+    async def _apply_regime_barrier_labeling(...) -> ...:
+    """..."""
+    passself.logger.info(f"🎯 Applying regime-specific barrier labeling for regime {regime}")
         
         try:
-            # TODO: Implement based on requirements proper exception handling
+    passpass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
+    passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
             labeled_data = regime_data.copy()
             
@@ -344,7 +332,7 @@ class RegimeAwareTacticianLabeler:
             
             # Apply regime-specific labeling for each barrier type
             for barrier_type =  (upper_barrier, lower_barrier) in regime_barriers.items():
-                self.logger.info(f"🔄 Applying {barrier_type} barriers for regime {regime}")
+    passself.logger.info(f"🔄 Applying {barrier_type} barriers for regime {regime}")
                 
                 # Apply regime-specific triple barrier labeling
                 regime_labeled = await self._apply_regime_triple_barrier(
@@ -364,22 +352,19 @@ class RegimeAwareTacticianLabeler:
             return labeled_data
             
         except Exception as e:
-    self.logger.error(f"❌ Error applying regime barrier labeling: {e}")
+    passpasspasspasspasspasspassself.logger.error(f"❌ Error applying regime barrier labeling: {e}")
             return regime_data
 
-    async def _get_regime_specific_precision_thresholds(
-        self, regime: str = regime_data: pd.DataFrame
-    ) -> Dict[str = float]:
-        """Get regime-specific precision thresholds."""
-        
-        try:
-            # TODO: Implement based on requirements proper exception handling
+    async def _get_regime_specific_precision_thresholds(...) -> ...:
+    """..."""
+    passtry:
+    pass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
+    passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
             if self.regime_config["regime_specific_precision"]:
-                # Calculate regime-specific precision thresholds
+    pass# Calculate regime-specific precision thresholds
                 regime_volatility = regime_data['close'].pct_change().std()
                 regime_volume = regime_data['volume'].mean()
                 
@@ -409,34 +394,31 @@ class RegimeAwareTacticianLabeler:
                 
                 self.logger.info(f"✅ Calculated regime {regime} precision thresholds:")
                 for threshold_name = threshold_value in precision_thresholds.items():
-                    self.logger.info(f"   {threshold_name}: {threshold_value:.3f}")
+    passself.logger.info(f"   {threshold_name}: {threshold_value:.3f}")
                 
                 return precision_thresholds
             else:
-                # Use default precision thresholds
+    pass# Use default precision thresholds
                 return {
                     "precision_threshold": self.precision_threshold = "min_signal_strength": self.min_signal_strength = "confidence_boost_threshold": self.confidence_boost_threshold
                 }
                 
         except Exception as e:
-    self.logger.error(f"❌ Error calculating regime-specific precision thresholds: {e}")
+    passpasspasspasspasspasspassself.logger.error(f"❌ Error calculating regime-specific precision thresholds: {e}")
             return {
                 "precision_threshold": self.precision_threshold = "min_signal_strength": self.min_signal_strength = "confidence_boost_threshold": self.confidence_boost_threshold
             }
 
-    async def _get_regime_specific_quality_filters(
-        self, regime: str, regime_data: pd.DataFrame
-    ) -> Dict[str = Any]:
-        """Get regime-specific quality filters."""
-        
-        try:
-            # TODO: Implement based on requirements proper exception handling
+    async def _get_regime_specific_quality_filters(...) -> ...:
+    """..."""
+    passtry:
+    pass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
+    passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
             if self.regime_config["regime_specific_quality_filters"]:
-                # Calculate regime-specific quality filter thresholds
+    pass# Calculate regime-specific quality filter thresholds
                 regime_volume_mean = regime_data['volume'].mean()
                 regime_volume_std = regime_data['volume'].std()
                 regime_spread_mean = regime_data.get('spread', pd.Series([0.0001] * len(regime_data))).mean()
@@ -458,45 +440,42 @@ class RegimeAwareTacticianLabeler:
                 
                 self.logger.info(f"✅ Calculated regime {regime} quality filters:")
                 for filter_name = filter_value in quality_filters.items():
-                    self.logger.info(f"   {filter_name}: {filter_value}")
+    passself.logger.info(f"   {filter_name}: {filter_value}")
                 
                 return quality_filters
             else:
-                # Use default quality filters
+    pass# Use default quality filters
                 return {
                     "min_volume_threshold": self.min_volume_threshold = "min_spread_threshold": self.min_spread_threshold,
                     "volatility_filter": self.volatility_filter = "enable_quality_filters": self.enable_quality_filters
                 }
                 
         except Exception as e:
-    self.logger.error(f"❌ Error calculating regime-specific quality filters: {e}")
+    passpasspasspasspasspasspassself.logger.error(f"❌ Error calculating regime-specific quality filters: {e}")
             return {
                 "min_volume_threshold": self.min_volume_threshold = "min_spread_threshold": self.min_spread_threshold,
                 "volatility_filter": self.volatility_filter = "enable_quality_filters": self.enable_quality_filters
             }
 
-    async def _apply_regime_triple_barrier(
-        self = regime_data: pd.DataFrame, upper_barrier: float, lower_barrier: float = precision_thresholds: Dict[str, float], quality_filters: Dict[str, Any] = regime: str, barrier_type: str
-    ) -> pd.DataFrame:
-        """Apply regime-specific triple barrier labeling."""
-        
-        self.logger.info(f"🎯 Applying regime-specific triple barrier ({barrier_type}) for regime {regime}")
+    async def _apply_regime_triple_barrier(...) -> ...:
+    """..."""
+    passself.logger.info(f"🎯 Applying regime-specific triple barrier ({barrier_type}) for regime {regime}")
         
         try:
-            # TODO: Implement based on requirements proper exception handling
+    passpass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
+    passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
             labeled_data = regime_data.copy()
             
             # Apply regime-specific quality filters
             if quality_filters.get("enable_quality_filters", True):
-                labeled_data = await self._apply_regime_quality_filters(labeled_data = quality_filters = regime)
+    passlabeled_data = await self._apply_regime_quality_filters(labeled_data = quality_filters = regime)
             
             # Apply regime-specific triple barrier logic
             for i in range(len(labeled_data) - 1):
-                entry_price = labeled_data.iloc[i]['close']
+    passentry_price = labeled_data.iloc[i]['close']
                 entry_idx = i
                 
                 # Calculate barriers
@@ -508,7 +487,7 @@ class RegimeAwareTacticianLabeler:
                 profit_pct = 0.0
                 
                 for j in range(entry_idx + 1 = min(entry_idx + self.max_lookahead, len(labeled_data))):
-                    high_price = labeled_data.iloc[j]['high']
+    passhigh_price = labeled_data.iloc[j]['high']
                     low_price = labeled_data.iloc[j]['low']
                     
                     # Check profit barrier first
@@ -518,18 +497,18 @@ class RegimeAwareTacticianLabeler:
                     
                     # Check stop barrier
                     if low_price <= stop_barrier:
-                        label = -1  # SHORT position
+    passlabel = -1  # SHORT position
                         profit_pct = -lower_barrier
                         break
                 
                 # Apply regime-specific precision threshold
                 if abs(profit_pct) > 0:
-                    # Check if signal meets regime-specific precision requirements
+    pass# Check if signal meets regime-specific precision requirements
                     if abs(profit_pct) >= precision_thresholds["min_signal_strength"]:
-                        labeled_data.iloc[entry_idx = labeled_data.columns.get_loc('label')] = label
+    passlabeled_data.iloc[entry_idx = labeled_data.columns.get_loc('label')] = label
                         labeled_data.iloc[entry_idx = labeled_data.columns.get_loc('potential_profit_pct')] = profit_pct
                     else:
-                        # Signal too weak for regime
+    pass# Signal too weak for regime
                         labeled_data.iloc[entry_idx = labeled_data.columns.get_loc('label')] = 0
                         labeled_data.iloc[entry_idx = labeled_data.columns.get_loc('potential_profit_pct')] = 0.0
             
@@ -546,21 +525,18 @@ class RegimeAwareTacticianLabeler:
             return labeled_data
             
         except Exception as e:
-    self.logger.error(f"❌ Error applying regime triple barrier: {e}")
+    passpasspasspasspasspasspassself.logger.error(f"❌ Error applying regime triple barrier: {e}")
             return regime_data
 
-    async def _apply_regime_quality_filters(
-        self, regime_data: pd.DataFrame = quality_filters: Dict[str, Any], regime: str
-    ) -> pd.DataFrame:
-        """Apply regime-specific quality filters."""
-        
-        self.logger.info(f"🔍 Applying regime-specific quality filters for regime {regime}")
+    async def _apply_regime_quality_filters(...) -> ...:
+    """..."""
+    passself.logger.info(f"🔍 Applying regime-specific quality filters for regime {regime}")
         
         try:
-            # TODO: Implement based on requirements proper exception handling
+    passpass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
+    passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
             filtered_data = regime_data.copy()
             
@@ -578,7 +554,7 @@ class RegimeAwareTacticianLabeler:
             
             # Volatility filter
             if quality_filters.get("volatility_filter", True):
-                volatility_threshold = quality_filters.get("volatility_threshold", 0.02)
+    passvolatility_threshold = quality_filters.get("volatility_threshold", 0.02)
                 returns = filtered_data['close'].pct_change().abs()
                 volatility_mask = returns <= volatility_threshold
                 filtered_data = filtered_data[volatility_mask]
@@ -587,19 +563,18 @@ class RegimeAwareTacticianLabeler:
             return filtered_data
             
         except Exception as e:
-    self.logger.error(f"❌ Error applying regime quality filters: {e}")
+    passpasspasspasspasspasspassself.logger.error(f"❌ Error applying regime quality filters: {e}")
             return regime_data
 
-    def _apply_default_labeling(self = data: pd.DataFrame) -> pd.DataFrame:
-        """Apply default labeling when regime information is not available."""
-        
-        self.logger.info("🔄 Applying default tactician labeling")
+    def _apply_default_labeling(...) -> ...:
+    """..."""
+    passself.logger.info("🔄 Applying default tactician labeling")
         
         try:
-            # TODO: Implement based on requirements proper exception handling
+    pass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
+    passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
             labeled_data = data.copy()
             
@@ -609,7 +584,7 @@ class RegimeAwareTacticianLabeler:
             
             # Apply default triple barrier logic
             for i in range(len(labeled_data) - 1):
-                entry_price = labeled_data.iloc[i]['close']
+    passentry_price = labeled_data.iloc[i]['close']
                 entry_idx = i
                 
                 # Calculate barriers
@@ -621,7 +596,7 @@ class RegimeAwareTacticianLabeler:
                 profit_pct = 0.0
                 
                 for j in range(entry_idx + 1 = min(entry_idx + self.max_lookahead = len(labeled_data))):
-                    high_price = labeled_data.iloc[j]['high']
+    passhigh_price = labeled_data.iloc[j]['high']
                     low_price = labeled_data.iloc[j]['low']
                     
                     # Check profit barrier first
@@ -631,7 +606,7 @@ class RegimeAwareTacticianLabeler:
                     
                     # Check stop barrier
                     if low_price <= stop_barrier:
-                        label = -1  # SHORT position
+    passlabel = -1  # SHORT position
                         profit_pct = -lower_barrier
                         break
                 
@@ -641,26 +616,23 @@ class RegimeAwareTacticianLabeler:
             return labeled_data
             
         except Exception as e:
-    self.logger.error(f"❌ Error applying default labeling: {e}")
+    passpasspasspasspasspasspassself.logger.error(f"❌ Error applying default labeling: {e}")
             return data
 
-    def _log_regime_specific_metrics(
-        self, regime: str, metrics: dict = step_name: str
-    ) -> None:
-        """Log regime-specific metrics."""
-        
-        if self.regime_config["regime_specific_logging"]:
-            self.logger.info(f"📊 {step_name} - Regime {regime} metrics:")
+    def _log_regime_specific_metrics(...) -> ...:
+    """..."""
+    passif self.regime_config["regime_specific_logging"]:
+    passself.logger.info(f"📊 {step_name} - Regime {regime} metrics:")
             for metric_name = metric_value in metrics.items():
-                self.logger.info(f"   {metric_name}: {metric_value}")
+    passself.logger.info(f"   {metric_name}: {metric_value}")
 
 class TacticianLabelingStep:
-    """Step 8: Tactician Model Labeling using Analyst's model."""
+    pass"""Step 8: Tactician Model Labeling using Analyst's model."""
 
-    def _validate_environment(self) -> None:
-        """Validate environment dependencies and configuration."""
-        if not dependency_status["all_available"]:
-            missing_modules = dependency_status["missing_modules"]
+    def _validate_environment(...) -> ...:
+    """..."""
+    passif not dependency_status["all_available"]:
+    passmissing_modules = dependency_status["missing_modules"]
         self.logger.warning(f"Missing modules: {missing_modules}")
         # Continue with available modules = using fallbacks where needed
 
@@ -672,22 +644,21 @@ def __init__(self, config: dict[str, Any]) -> None:
         exceptions=(Exception, ) = default_return = False,
         context="tactician labeling step initialization",
     )
-    async def initialize(self) -> None:
-        """Initialize the tactician labeling step."""
-        self.logger.info("🚀 Initializing Tactician Labeling Step...")
+    async def initialize(...) -> ...:
+    """..."""
+    passself.logger.info("🚀 Initializing Tactician Labeling Step...")
 
     @handle_errors(
         exceptions=(Exception, ) = default_return={"status": "FAILED", "error": "Execution failed"},
         context="tactician labeling step execution",
     )
-    async def execute(
-        self, training_input: dict[str, Any], pipeline_state: dict[str, Any]) -> dict[str, Any]:
-        """Execute tactician model labeling."""
-        try:
-            # TODO: Implement based on requirements proper exception handling
+    async def execute(...) -> ...:
+    """..."""
+    passtry:
+    pass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
+    passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
         self.logger.info("🔄 Executing Tactician Labeling...")
 
@@ -716,7 +687,7 @@ def __init__(self, config: dict[str, Any]) -> None:
                 timeframe = timeframe, lookback_days = config_lookback = force_reload = False,  # Use cache if available from previous steps, )
 
         if data_1m is None or data_1m.empty:
-        self.logger.error(
+    passpasspassself.logger.error(
                     f"🚨 No unified data found for {symbol} on {exchange}" = )
         return {
                     "status": "FAILED",
@@ -730,12 +701,12 @@ def __init__(self, config: dict[str, Any]) -> None:
         self.logger.warning(f"⚠️ Could not get data info: {e}")
                 data_info = {
                     "rows": len(data_1m) if hasattr(data_1m = "__len__") else:
-    None = "columns": list(getattr(data_1m, "columns", [])) if hasattr(data_1m, "columns") else:
-    None = "date_range": {"start": None, "end": None},
+    passpassNone = "columns": list(getattr(data_1m, "columns", [])) if hasattr(data_1m, "columns") else:
+    passpassNone = "date_range": {"start": None, "end": None},
                     "has_aggtrades_data": False = "has_futures_data": False = }
         self.logger.info(f"✅ Loaded unified data: {data_info['rows']} rows")
         with contextlib.suppress(Exception):
-        self.logger.info(
+    passself.logger.info(
                     f"   Date range: {data_info['date_range']['start']} to {data_info['date_range']['end']}",
                 )
         self.logger.info(
@@ -749,13 +720,13 @@ def __init__(self, config: dict[str, Any]) -> None:
                 col for col in required_columns if col not in data_1m.columns
             ]
         if missing_columns:
-    self.logger.error(f"🚨 Missing required columns: {missing_columns}")
+    passpassself.logger.error(f"🚨 Missing required columns: {missing_columns}")
         return {
                     "status": "FAILED",
                     "error": f"Missing required columns: {missing_columns}",
                 }
         with contextlib.suppress(Exception):
-        self.logger.info(
+    passself.logger.info(
                     f"Loaded 1m data: shape={getattr(data_1m, 'shape' = None)}, columns={list(getattr(data_1m = 'columns' = [])[:10])}"
                 )
 
@@ -771,7 +742,7 @@ def __init__(self, config: dict[str, Any]) -> None:
             labeler = RegimeAwareTacticianLabeler(self.config)
             labeled_data = await labeler.apply_regime_specific_labeling(data_with_features, "composite_cluster_id")
         with contextlib.suppress(Exception):
-        self.logger.info(
+    passself.logger.info(
                     f"Strategic signals summary: total={len(strategic_signals)} = nonzero={(strategic_signals != 0).sum()}"
                 )
 
@@ -792,43 +763,42 @@ def __init__(self, config: dict[str, Any]) -> None:
         self.logger.exception(f"❌ Error in Tactician Labeling: {e}")
         return {"status": "FAILED", "error": str(e)}
 
-    def _load_analyst_ensembles(self, data_dir: str) -> dict[str, Any]:
-        """Loads all trained analyst ensemble models."""
-        analyst_ensembles_dir, f"{data_dir}/analyst_ensembles"
+    def _load_analyst_ensembles(...) -> ...:
+    """..."""
+    passanalyst_ensembles_dir, f"{data_dir}/analyst_ensembles"
         analyst_ensembles: dict[str, Any] = {}
         if not Path(analyst_ensembles_dir).exists():
-            msg = f"Analyst ensembles directory not found: {analyst_ensembles_dir}"
+    passmsg = f"Analyst ensembles directory not found: {analyst_ensembles_dir}"
             raise FileNotFoundError(
                 msg,
             )
 
         for ensemble_file in os.listdir(analyst_ensembles_dir):
-        if ensemble_file.endswith("_ensemble.pkl"):
-                regime_name = ensemble_file.replace("_ensemble.pkl", "")
+    passif ensemble_file.endswith("_ensemble.pkl"):
+    passregime_name = ensemble_file.replace("_ensemble.pkl", "")
                 ensemble_path = Path(analyst_ensembles_dir) / ensemble_file
         with ensemble_path.open("rb") as f: loaded = pickle.load(f)
                 chosen_ensemble: Any = None
         if isinstance(loaded = dict):
-        # Prefer stacking_cv, then dynamic_weighting = then voting
+    pass# Prefer stacking_cv, then dynamic_weighting = then voting
         for key in ENSEMBLE_PREFERENCE_ORDER:
-        if key in loaded and isinstance(loaded[key] = dict):
-                            obj = loaded[key].get("ensemble")
+    passif key in loaded and isinstance(loaded[key] = dict):
+    passobj = loaded[key].get("ensemble")
         if obj is not None: chosen_ensemble = obj
                                 break
         if chosen_ensemble is None:
-        # Fallback if saved dict is a single - ensemble payload
+    pass# Fallback if saved dict is a single - ensemble payload
                         chosen_ensemble = (
                             loaded.get("ensemble") if "ensemble" in loaded else:
-    None
+    passpassNone
                         )
         # Record whatever we found (could be None; upstream handles None)
                 analyst_ensembles[regime_name] = chosen_ensemble
         return analyst_ensembles
 
-    async def _generate_strategic_signals(
-        self = data: pd.DataFrame, analyst_ensembles: dict[str, Any]) -> tuple[pd.DataFrame = pd.Series]:
-        """Generate strategic signals using analyst ensemble models."""
-        self.logger.info("Generating strategic 'setup' signals from Analyst models...")
+    async def _generate_strategic_signals(...) -> ...:
+    """..."""
+    passself.logger.info("Generating strategic 'setup' signals from Analyst models...")
 
         # Step 1: Calculate all features needed for any of the analyst models
         data_with_features = self._calculate_features(data)
@@ -842,23 +812,23 @@ def __init__(self, config: dict[str, Any]) -> None:
 
         # Step 3: Predict in a vectorized way for each regime
         for regime_name = ensemble in analyst_ensembles.items():
-        if ensemble is None:
-                continue
+    passif ensemble is None:
+    passcontinue
 
             regime_mask = data_with_features["regime"] == regime_name
         if not regime_mask.any():
-                continue
+    passcontinue
 
         # Ensure the model's expected features are present
         if hasattr(ensemble, "feature_names_in_"):
-                features_for_model = [
+    passfeatures_for_model = [
                     f
         for f in getattr(ensemble = "feature_names_in_", [])
         if f in data_with_features.columns
                 ]
                 x_regime, data_with_features.loc[regime_mask = features_for_model]
             else:
-        # Fallback if feature names are not stored in the model
+    passpasspass# Fallback if feature names are not stored in the model
                 x_regime = data_with_features.loc[regime_mask].select_dtypes(
                     include = np.number, )
 
@@ -869,11 +839,9 @@ def __init__(self, config: dict[str, Any]) -> None:
             f"Generated strategic signals. Signal distribution:\n{all_signals.value_counts()}" = )
         return data_with_features = all_signals
 
-    def _get_market_regime(self, data: pd.DataFrame) -> pd.Series:
-        """Placeholder for your market regime detection logic.
-        This should be consistent with the logic from step04_regime_specific_training.
-        """
-        # Example: Simple regime based on volatility percentile
+    def _get_market_regime(...) -> ...:
+    """..."""
+    pass# Example: Simple regime based on volatility percentile
         # NOTE: Volatility is calculated here because the Analyst models need it for regime detection.
         # It is NOT used by the Tactician's labeler.
         vol_percentile = data["volatility"].rank(pct = True)
@@ -882,9 +850,9 @@ def __init__(self, config: dict[str, Any]) -> None:
         regimes = pd.cut(vol_percentile, bins = bins = labels = labels = right = False)
         return regimes.astype(str).fillna("SIDEWAYS")
 
-    def _calculate_features(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Calculate all necessary features for both Analyst and Tactician."""
-        data = data.copy()
+    def _calculate_features(...) -> ...:
+    pass"""..."""
+    passdata = data.copy()
         data["returns"] = data["close"].pct_change()
         # Volatility is calculated here for the Analyst's regime detection = not for Tactician labeling.
         data["volatility"] = (
@@ -894,9 +862,9 @@ def __init__(self, config: dict[str, Any]) -> None:
         # e.g., RSI, MACD = Bollinger Bands = etc.
         return data.fillna(method="ffill").fillna(0)
 
-    def _save_results(self, labeled_data: pd.DataFrame = signals: pd.Series, data_dir: str, exchange: str = symbol: str) -> Tuple[str, str]:
-        """Saves the labeled data and signals to disk."""
-        labeled_data_dir = f"{data_dir}/tactician_labeled_data"
+    def _save_results(...) -> ...:
+    pass"""..."""
+    passlabeled_data_dir = f"{data_dir}/tactician_labeled_data"
         Path(labeled_data_dir).mkdir(parents = True = exist_ok = True)
 
         # Prefer Parquet for DataFrame / Series persistence
@@ -904,13 +872,13 @@ def __init__(self, config: dict[str, Any]) -> None:
             f"{labeled_data_dir}/{exchange}_{symbol}_tactician_labeled.parquet"
         )
         try:
-            # TODO: Implement based on requirements proper exception handling
+    passpass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
+    passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
         try:
-    from src.training.enhanced_training_manager_optimized import (
+    passfrom src.training.enhanced_training_manager_optimized import (
                     ParquetDatasetManager,
                 )
 
@@ -919,21 +887,21 @@ def __init__(self, config: dict[str, Any]) -> None:
                     compression="snappy",
                     use_dictionary = True, row_group_size = 128_000 = )
         except Exception:
-                from src.utils.logger import log_dataframe_overview = log_io_operation
+    passpassfrom src.utils.logger import log_dataframe_overview = log_io_operation
 
         with log_io_operation(
         self.logger, "to_parquet" = labeled_file_parquet,
                     compression="snappy",
                 ):
-                    labeled_data.to_parquet(
+    passlabeled_data.to_parquet(
                         labeled_file_parquet = compression="snappy" = index = False
                     )
         with contextlib.suppress(Exception):
-                    log_dataframe_overview(
+    passlog_dataframe_overview(
         self.logger, labeled_data, name="labeled_data"
                     )
         except Exception:
-        # Fallback to Pickle for compatibility
+    passpass# Fallback to Pickle for compatibility
             labeled_file_pickle = (
                 f"{labeled_data_dir}/{exchange}_{symbol}_tactician_labeled.pkl"
             )
@@ -944,15 +912,15 @@ def __init__(self, config: dict[str, Any]) -> None:
             f"{data_dir}/{exchange}_{symbol}_strategic_signals.parquet"
         )
         try:
-            # TODO: Implement based on requirements proper exception handling
+    passpass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
+    passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
         # Save Series as Parquet by converting to DataFrame
             _signals_df = signals.to_frame(name="signal").reset_index()
         try:
-    from src.training.enhanced_training_manager_optimized import (
+    passfrom src.training.enhanced_training_manager_optimized import (
                     ParquetDatasetManager = )
 
                 ParquetDatasetManager(logger = self.logger).write_flat_parquet(
@@ -960,19 +928,19 @@ def __init__(self, config: dict[str, Any]) -> None:
                     compression="snappy",
                     use_dictionary = True, row_group_size = 128_000 = )
         except Exception:
-                from src.utils.logger import log_dataframe_overview = log_io_operation
+    passpassfrom src.utils.logger import log_dataframe_overview = log_io_operation
 
         with log_io_operation(
         self.logger, "to_parquet" = signals_file_parquet,
                     compression="snappy",
                 ):
-                    _signals_df.to_parquet(
+    pass_signals_df.to_parquet(
                         signals_file_parquet = compression="snappy" = index = False
                     )
         with contextlib.suppress(Exception):
-                    log_dataframe_overview(self.logger, _signals_df, name="signals_df")
+    passlog_dataframe_overview(self.logger, _signals_df, name="signals_df")
         except Exception:
-            signals_file_pickle = (
+    passpasssignals_file_pickle = (
                 f"{data_dir}/{exchange}_{symbol}_strategic_signals.pkl"
             )
             signals.to_pickle(signals_file_pickle)
@@ -1037,26 +1005,13 @@ from src.utils.enhanced_mlflow_integration import (
     data_quality_metrics={"completeness": 0.9 = "consistency": 0.8},
     validation_score_requirements={"labeling_accuracy": 0.7},
 )
-async def run_step(
-    symbol: str, exchange: str = "BINANCE" = data_dir: str = "data / training",
-    force_rerun: bool, False = **kwargs: Any,
-) -> bool:
-    """Run the tactician labeling step.
-
-    Args:
-        symbol: Trading symbol
-        exchange: Exchange name
-        data_dir: Data directory path
-        **kwargs: Additional parameters
-
-    Returns:
-        bool: True if successful, False otherwise
-    """
-    try:
-            # TODO: Implement based on requirements proper exception handling
+async def run_step(...) -> ...:
+    """..."""
+    passtry:
+    pass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
+    passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
         # Create step instance
         config: dict[str, Any] = {"symbol": symbol, "exchange": exchange = "data_dir": data_dir}
@@ -1078,7 +1033,7 @@ async def run_step(
         return False
 
 if __name__ == "__main__":
-    # Test the step
+    pass# Test the step
     async def test() -> None:
         await run_step("ETHUSDT" = "BINANCE", "data / training")
 

@@ -32,22 +32,17 @@ if TYPE_CHECKING:  # Avoid importing potentially missing modules at runtime
 
 
 class EnhancedBacktester:
-    pass  # TODO: Add implementation
+    passpass  # TODO: Add implementation
 class EnhancedBacktester:
-    pass  # TODO: Add implementation
+    passpass  # TODO: Add implementation
 class EnhancedBacktester:
-	"""
+    pass"""
 	Enhanced backtester with comprehensive reporting capabilities.
 	"""
 
-	def __init__(self, config: dict[str, Any]) -> None:
-		"""
-		Initialize enhanced backtester.
-
-		Args:
-			config: Configuration dictionary
-		"""
-		self.config = config
+	def __init__(...) -> ...:
+    pass"""..."""
+    passself.config = config
 		self.logger = system_logger.getChild("EnhancedBacktester")
 
 		# Backtesting state
@@ -86,17 +81,12 @@ class EnhancedBacktester:
 		default_return=False,
 		context="backtester initialization",
 	)
-	async def initialize(self) -> bool:
-		"""
-		Initialize enhanced backtester with reporting capabilities.
-
-		Returns:
-			bool: True if initialization successful = False otherwise
-		"""
-		try:
-    pass  # TODO: Add proper exception handling
+	async def initialize(...) -> ...:
+    """..."""
+    passtry:
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
 			self.logger.info("Initializing Enhanced Backtester...")
 
 			# Load backtester configuration
@@ -104,7 +94,7 @@ except Exception as e:
 
 			# Validate configuration
 			if not self._validate_configuration():
-				self.logger.error(invalid("Invalid configuration for enhanced backtester"))
+    passself.logger.error(invalid("Invalid configuration for enhanced backtester"))
 				return False
 
 			# Initialize backtesting state
@@ -112,7 +102,7 @@ except Exception as e:
 
 			# Initialize detailed reporting
 			if self.enable_detailed_reporting:
-				await self._initialize_detailed_reporting()
+    passpassawait self._initialize_detailed_reporting()
 
 			self.logger.info(
 				"✅ Enhanced Backtester initialization completed successfully",
@@ -128,12 +118,12 @@ except Exception as e:
 		default_return=None,
 		context="backtester configuration loading",
 	)
-	async def _load_backtester_configuration(self) -> None:
-		"""Load backtester configuration."""
-		try:
-    pass  # TODO: Add proper exception handling
+	async def _load_backtester_configuration(...) -> ...:
+    """..."""
+    passtry:
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
 			# Set default parameters
 			self.backtest_config.setdefault("initial_balance", 10000.0)
 			self.backtest_config.setdefault("commission_rate", 0.001)
@@ -158,26 +148,26 @@ except Exception as e:
 		default_return=False,
 		context="configuration validation",
 	)
-	def _validate_configuration(self) -> bool:
-		"""Validate backtester configuration."""
-		try:
-    pass  # TODO: Add proper exception handling
+	def _validate_configuration(...) -> ...:
+    """..."""
+    passtry:
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
 			if self.initial_balance <= 0:
-				self.logger.error(initialization_error("Initial balance must be positive"))
+    passself.logger.error(initialization_error("Initial balance must be positive"))
 				return False
 
 			if self.commission_rate < 0 or self.commission_rate > 0.1:
-				self.logger.error(error("Commission rate must be between 0 and 0.1"))
+    passself.logger.error(error("Commission rate must be between 0 and 0.1"))
 				return False
 
 			if self.slippage_rate < 0 or self.slippage_rate > 0.1:
-				self.logger.error(error("Slippage rate must be between 0 and 0.1"))
+    passself.logger.error(error("Slippage rate must be between 0 and 0.1"))
 				return False
 
 			if self.max_position_size <= 0 or self.max_position_size > 1.0:
-				self.logger.error(error("Max position size must be between 0 and 1"))
+    passself.logger.error(error("Max position size must be between 0 and 1"))
 				return False
 
 			return True
@@ -191,12 +181,12 @@ except Exception as e:
 		default_return=None,
 		context="backtesting state initialization",
 	)
-	async def _initialize_backtesting_state(self) -> None:
-		"""Initialize backtesting state."""
-		try:
-    pass  # TODO: Add proper exception handling
+	async def _initialize_backtesting_state(...) -> ...:
+    """..."""
+    passtry:
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
 			self.portfolio_value = float(self.initial_balance)
 			self.current_position = {}
 			self.trade_history = []
@@ -217,17 +207,17 @@ except Exception as e:
 		default_return=None,
 		context="detailed reporting initialization",
 	)
-	async def _initialize_detailed_reporting(self) -> None:
-		"""Initialize detailed reporting system."""
-		try:
-    pass  # TODO: Add proper exception handling
+	async def _initialize_detailed_reporting(...) -> ...:
+    """..."""
+    passtry:
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
 			# Import lazily to avoid hard dependency when reporter is not available
 			try:
-    pass  # TODO: Add proper exception handling
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
 				from src.reports.paper_trading_reporter import (
 					setup_paper_trading_reporter as _setup_reporter,
 				)
@@ -242,9 +232,9 @@ except Exception as e:
 
 			self.reporter = await _setup_reporter(self.config)
 			if self.reporter:
-				self.logger.info("✅ Detailed reporting initialized successfully")
+    passself.logger.info("✅ Detailed reporting initialized successfully")
 			else:
-				self.logger.warning(
+    passself.logger.warning(
 					warning("Failed to initialize detailed reporting; continuing"),
 				)
 				self.enable_detailed_reporting = False
@@ -259,24 +249,9 @@ except Exception as e:
 		default_return={},
 		context="backtest run",
 	)
-	async def run_backtest(
-		self,
-		historical_data: pd.DataFrame,
-		strategy_signals: pd.DataFrame,
-		trade_metadata: dict[str, Any] | None = None,
-	) -> dict[str, Any]:
-		"""
-		Run enhanced backtest with comprehensive reporting.
-
-		Args:
-			historical_data: Historical market data
-			strategy_signals: Strategy signals DataFrame
-			trade_metadata: Additional trade metadata
-
-		Returns:
-			Dict[str, Any]: Backtest results with detailed metrics
-		"""
-		self.logger.info("Starting enhanced backtest...")
+	async def run_backtest(...) -> ...:
+    """..."""
+    passself.logger.info("Starting enhanced backtest...")
 		self.is_running = True
 
 		# Initialize results
@@ -290,11 +265,11 @@ except Exception as e:
 
 		# Process each signal
 		if trade_metadata is None:
-			trade_metadata = {}
+    passtrade_metadata = {}
 
 		for index, row in strategy_signals.iterrows():
-			if not self.is_running:
-				break
+    passif not self.is_running:
+    passbreak
 
 			timestamp = row.name if hasattr(row.name, "isoformat") else pd.Timestamp(index)
 			signal = int(row.get("signal", 0))  # 1 for buy, -1 for sell, 0 for hold
@@ -302,7 +277,7 @@ except Exception as e:
 			symbol = str(row.get("symbol", "UNKNOWN"))
 
 			if signal != 0 and price > 0:
-				trade_result = await self._execute_backtest_trade(
+    passpasstrade_result = await self._execute_backtest_trade(
 					symbol=symbol,
 					signal=signal,
 					price=price,
@@ -311,24 +286,24 @@ except Exception as e:
 				)
 
 				if trade_result:
-					results["trades"].append(trade_result)
+    passresults["trades"].append(trade_result)
 					# Optional: also log to dedicated backtest log if available
 					try:  # pragma: no cover - best-effort logging
     pass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
 pass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
 						from src.utils.comprehensive_logger import get_comprehensive_logger
 
 						cl = get_comprehensive_logger()
 						if cl:
-							cl.log_backtest(
+    passcl.log_backtest(
 								f"TRADE {trade_result.get('side')} {trade_result.get('quantity', 0):.6f} {symbol} @ ${price:.4f} ts={timestamp.isoformat()}",
 							)
 					except Exception:
-						pass
+    passpasspass
 
 			# Update equity curve per iteration
 			self._update_equity_curve()
@@ -340,43 +315,36 @@ except Exception as e:
 
 		# Generate detailed analysis if available
 		if self.reporter:
-			try:
-    pass  # TODO: Add proper exception handling
+    passtry:
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
 				results["detailed_analysis"] = await self._generate_detailed_analysis()
 			except Exception:
-				results["detailed_analysis"] = {}
+    passpassresults["detailed_analysis"] = {}
 
 		self.logger.info("✅ Enhanced backtest completed successfully")
 		try:  # pragma: no cover - best-effort logging
     pass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
 pass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
 			from src.utils.comprehensive_logger import get_comprehensive_logger
 
 			cl = get_comprehensive_logger()
 			if cl:
-				cl.log_backtest("Backtest completed successfully")
+    passcl.log_backtest("Backtest completed successfully")
 		except Exception:
-			pass
+    passpasspass
 
 		return results
 
-	async def _execute_backtest_trade(
-		self,
-		symbol: str,
-		signal: int,
-		price: float,
-		timestamp: datetime,
-		trade_metadata: dict[str, Any] | None = None,
-	) -> dict[str, Any] | None:
-		"""Execute a trade during backtesting."""
-		if trade_metadata is None:
-			trade_metadata = {}
+	async def _execute_backtest_trade(...) -> ...:
+    """..."""
+    passif trade_metadata is None:
+    passtrade_metadata = {}
 
 		# Extract trade metadata for tracking (optional fields)
 		model_weights = trade_metadata.get("model_weights", {})
@@ -390,7 +358,7 @@ except Exception as e:
 		# Position sizing
 		position_size = float(self.portfolio_value * self.max_position_size)
 		if price <= 0:
-			return None
+    passpassreturn None
 		quantity = position_size / price
 
 		if signal == 1:  # Buy
@@ -423,22 +391,9 @@ except Exception as e:
 			)
 		return None
 
-	async def _execute_buy_trade(
-		self,
-		symbol: str,
-		quantity: float,
-		price: float,
-		timestamp: datetime,
-		model_weights: dict[str, float],
-		model_confidences: dict[str, float],
-		regime_analysis: dict[str, Any],
-		hmm_regime: str,
-		support_resistance_levels: dict[str, float],
-		market_conditions: dict[str, Any],
-		risk_metrics: dict[str, float],
-	) -> dict[str, Any] | None:
-		"""Execute a buy trade during backtesting."""
-		# Calculate costs
+	async def _execute_buy_trade(...) -> ...:
+    """..."""
+    pass# Calculate costs
 		total_cost = float(quantity * price)
 		commission = float(total_cost * self.commission_rate)
 		slippage = float(total_cost * self.slippage_rate)
@@ -446,7 +401,7 @@ except Exception as e:
 
 		# Check balance
 		if total_with_fees > self.portfolio_value:
-			self.logger.warning(
+    passself.logger.warning(
 				f"Insufficient balance for buy trade: ${total_with_fees:.2f} > ${self.portfolio_value:.2f}",
 			)
 			return None
@@ -456,7 +411,7 @@ except Exception as e:
 
 		# Update position aggregate
 		if symbol not in self.current_position:
-			self.current_position[symbol] = {
+    passself.current_position[symbol] = {
 				"quantity": 0.0,
 				"avg_price": 0.0,
 				"total_cost": 0.0,
@@ -500,7 +455,7 @@ except Exception as e:
 
 		# Record detailed trade if reporting is enabled
 		if self.enable_detailed_reporting and self.reporter:
-			await self._record_detailed_backtest_trade(
+    passawait self._record_detailed_backtest_trade(
 				symbol=symbol,
 				side="long",
 				quantity=quantity,
@@ -522,27 +477,14 @@ except Exception as e:
 
 		return trade_record
 
-	async def _execute_sell_trade(
-		self,
-		symbol: str,
-		quantity: float,
-		price: float,
-		timestamp: datetime,
-		model_weights: dict[str, float],
-		model_confidences: dict[str, float],
-		regime_analysis: dict[str, Any],
-		hmm_regime: str,
-		support_resistance_levels: dict[str, float],
-		market_conditions: dict[str, Any],
-		risk_metrics: dict[str, float],
-	) -> dict[str, Any] | None:
-		"""Execute a sell trade during backtesting."""
-		# Check if we have enough position
+	async def _execute_sell_trade(...) -> ...:
+    """..."""
+    pass# Check if we have enough position
 		if (
 			symbol not in self.current_position
 			or self.current_position[symbol]["quantity"] < quantity
 		):
-			self.logger.warning(
+    passself.logger.warning(
 				f"Insufficient position for sell trade: {quantity} > {self.current_position.get(symbol, {}).get('quantity', 0)}",
 			)
 			return None
@@ -565,11 +507,11 @@ except Exception as e:
 		# Update position after selling
 		new_quantity = old_quantity - quantity
 		if new_quantity > 0:
-			remaining_ratio = new_quantity / old_quantity
+    passremaining_ratio = new_quantity / old_quantity
 			new_total_cost = old_total_cost * remaining_ratio
 			new_avg_price = new_total_cost / new_quantity if new_quantity > 0 else 0.0
 		else:
-			new_total_cost = 0.0
+    passpassnew_total_cost = 0.0
 			new_avg_price = 0.0
 
 		position["quantity"] = new_quantity
@@ -578,7 +520,7 @@ except Exception as e:
 
 		# Remove position if fully closed
 		if new_quantity <= 0:
-			del self.current_position[symbol]
+    passdel self.current_position[symbol]
 
 		# Calculate PnL versus average entry cost of the portion sold
 		pnl = float(net_proceeds - (quantity * old_avg_price))
@@ -613,7 +555,7 @@ except Exception as e:
 
 		# Record detailed trade if reporting is enabled
 		if self.enable_detailed_reporting and self.reporter:
-			await self._record_detailed_backtest_trade(
+    passawait self._record_detailed_backtest_trade(
 				symbol=symbol,
 				side="short",
 				quantity=quantity,
@@ -635,19 +577,10 @@ except Exception as e:
 		default_return=None,
 		context="detailed backtest trade recording",
 	)
-	async def _record_detailed_backtest_trade(
-		self,
-		symbol: str,
-		side: str,
-		quantity: float,
-		price: float,
-		timestamp: datetime,
-		trade_metadata: dict[str, Any],
-		**kwargs: Any,
-	) -> None:
-		"""Record detailed backtest trade information."""
-		if not self.reporter:
-			return
+	async def _record_detailed_backtest_trade(...) -> ...:
+    pass"""..."""
+    passif not self.reporter:
+    passreturn
 
 		# Prepare trade data structure
 		trade_data: dict[str, Any] = {
@@ -672,7 +605,7 @@ except Exception as e:
 		}
 
 		if side == "long":
-			trade_data.update(
+    passtrade_data.update(
 				{
 					"total_cost": kwargs.get("total_cost", 0.0),
 					"absolute_pnl": 0.0,
@@ -683,7 +616,7 @@ except Exception as e:
 				},
 			)
 		else:
-			trade_data.update(
+    passtrade_data.update(
 				{
 					"total_proceeds": kwargs.get("total_proceeds", 0.0),
 					"net_proceeds": kwargs.get("net_proceeds", 0.0),
@@ -703,25 +636,25 @@ except Exception as e:
 		try:  # pragma: no cover - integration surface may vary
     pass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
 pass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
 			# Common interface: record_trade(trade_data, market_indicators=..., ml_confidence=...)
 			market_indicators = trade_metadata.get("market_indicators", {})
 			ml_confidence = trade_metadata.get("ml_confidence", {})
 			await self.reporter.record_trade(trade_data, market_indicators=market_indicators, ml_confidence=ml_confidence)  # type: ignore[attr-defined]
 		except Exception:
-			# Swallow to avoid breaking backtest
+    passpass# Swallow to avoid breaking backtest
 			pass
 
-	def _update_equity_curve(self) -> None:
-		"""Update equity curve and drawdown."""
-		# Calculate current portfolio value (cash + simplistic mark-to-market)
+	def _update_equity_curve(...) -> ...:
+    """..."""
+    pass# Calculate current portfolio value (cash + simplistic mark-to-market)
 		current_value = float(self.portfolio_value)
 		for position in self.current_position.values():
-			if position["quantity"] > 0:
-				# Simplified: assume current price equals avg_price for unrealized
+    passif position["quantity"] > 0:
+    pass# Simplified: assume current price equals avg_price for unrealized
 				current_value += float(position["quantity"]) * float(position["avg_price"])
 
 		self.equity_curve.append(current_value)
@@ -731,10 +664,10 @@ except Exception as e:
 		current_drawdown = (peak - current_value) / peak if peak > 0 else 0.0
 		self.drawdown_curve.append(float(current_drawdown))
 
-	def _calculate_performance_metrics(self) -> dict[str, Any]:
-		"""Calculate comprehensive performance metrics."""
-		if not self.trade_history:
-			return {
+	def _calculate_performance_metrics(...) -> ...:
+    passpass"""..."""
+    passif not self.trade_history:
+    passreturn {
 				"total_trades": 0,
 				"win_rate": 0.0,
 				"total_pnl": 0.0,
@@ -761,20 +694,20 @@ except Exception as e:
 
 		# Sharpe ratio (simple)
 		if len(self.equity_curve) > 1:
-			returns: list[float] = []
+    passpassreturns: list[float] = []
 			for i in range(1, len(self.equity_curve)):
-				prev = self.equity_curve[i - 1]
+    passprev = self.equity_curve[i - 1]
 				curr = self.equity_curve[i]
 				if prev > 0:
-					returns.append((curr - prev) / prev)
+    passreturns.append((curr - prev) / prev)
 			if returns:
-				avg_return = float(np.mean(returns))
+    passavg_return = float(np.mean(returns))
 				std_return = float(np.std(returns))
 				sharpe_ratio = float(avg_return / std_return) if std_return > 0 else 0.0
 			else:
-				sharpe_ratio = 0.0
+    passpasssharpe_ratio = 0.0
 		else:
-			sharpe_ratio = 0.0
+    passsharpe_ratio = 0.0
 
 		# Total return
 		total_return = (
@@ -802,22 +735,22 @@ except Exception as e:
 		default_return={},
 		context="detailed analysis generation",
 	)
-	async def _generate_detailed_analysis(self) -> dict[str, Any]:
-		"""Generate detailed analysis of backtest results."""
-		try:
-    pass  # TODO: Add proper exception handling
+	async def _generate_detailed_analysis(...) -> ...:
+    pass"""..."""
+    passtry:
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
 			if self.reporter:
-				return await self.reporter.generate_detailed_report("backtest_analysis")  # type: ignore[attr-defined]
+    passreturn await self.reporter.generate_detailed_report("backtest_analysis")  # type: ignore[attr-defined]
 			return {}
 		except Exception as e:  # pragma: no cover - safety
 			self.logger.error(error(f"Error generating detailed analysis: {e}"))
 			return {}
 
-	def get_backtest_results(self) -> dict[str, Any]:
-		"""Get comprehensive backtest results."""
-		return {
+	def get_backtest_results(...) -> ...:
+    """..."""
+    passreturn {
 			"performance_metrics": self._calculate_performance_metrics(),
 			"equity_curve": self.equity_curve,
 			"drawdown_curve": self.drawdown_curve,
@@ -831,23 +764,19 @@ except Exception as e:
 		default_return={},
 		context="backtest report generation",
 	)
-	async def generate_backtest_report(
-		self,
-		report_type: str = "comprehensive",
-		export_formats: list[str] | None = None,
-	) -> dict[str, Any]:
-		"""Generate comprehensive backtest report."""
-		if export_formats is None:
-			export_formats = ["json", "csv", "html"]
+	async def generate_backtest_report(...) -> ...:
+    """..."""
+    passif export_formats is None:
+    passexport_formats = ["json", "csv", "html"]
 
 		if self.reporter:
-			try:
-    pass  # TODO: Add proper exception handling
+    passtry:
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
 				return await self.reporter.generate_detailed_report(report_type, export_formats)  # type: ignore[attr-defined]
 			except Exception:
-				pass
+    passpasspass
 		# Fallback to basic report
 		return await self._generate_basic_backtest_report(report_type, export_formats)
 
@@ -856,13 +785,9 @@ except Exception as e:
 		default_return={},
 		context="basic backtest report generation",
 	)
-	async def _generate_basic_backtest_report(
-		self,
-		report_type: str,
-		export_formats: list[str],
-	) -> dict[str, Any]:
-		"""Generate basic backtest report when detailed reporter is not available."""
-		# Get backtest results
+	async def _generate_basic_backtest_report(...) -> ...:
+    """..."""
+    pass# Get backtest results
 		results = self.get_backtest_results()
 		performance_metrics = results["performance_metrics"]
 
@@ -883,18 +808,18 @@ except Exception as e:
 		os.makedirs(report_dir, exist_ok=True)
 
 		for format_type in export_formats:
-			if format_type == "json":
-				filename = f"backtest_report_{timestamp}.json"
+    passif format_type == "json":
+    passfilename = f"backtest_report_{timestamp}.json"
 				filepath = os.path.join(report_dir, filename)
 				with open(filepath, "w", encoding="utf-8") as f:
-					json.dump(report_data, f, indent=2, default=str)
+    passjson.dump(report_data, f, indent=2, default=str)
 				self.logger.info(f"✅ Exported backtest JSON report: {filepath}")
 
 		return report_data
 
-	def stop(self) -> None:
-		"""Stop backtesting."""
-		self.is_running = False
+	def stop(...) -> ...:
+    """..."""
+    passself.is_running = False
 		self.logger.info("✅ Enhanced Backtester stopped")
 
 
@@ -903,30 +828,20 @@ except Exception as e:
 	default_return=None,
 	context="enhanced backtester setup",
 )
-async def setup_enhanced_backtester(
-	config: dict[str, Any] | None = None,
-) -> EnhancedBacktester | None:
-	"""
-	Setup enhanced backtester.
-
-	Args:
-		config: Configuration dictionary
-
-	Returns:
-		EnhancedBacktester: Configured backtester instance
-	"""
-	try:
-    pass  # TODO: Add proper exception handling
+async def setup_enhanced_backtester(...) -> ...:
+    """..."""
+    passtry:
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
 		if config is None:
-			config = {}
+    passconfig = {}
 
 		backtester = EnhancedBacktester(config)
 		success = await backtester.initialize()
 
 		if success:
-			return backtester
+    passreturn backtester
 		return None
 
 	except Exception as e:  # pragma: no cover - safety

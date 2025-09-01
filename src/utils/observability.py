@@ -7,19 +7,16 @@ from src.utils.warning_symbols import failed
 
 logger = logging.getLogger(__name__)
 
-def init_sentry() -> None:
-    """Initialize Sentry if SENTRY_DSN is provided.
-
-Set SENTRY_ENV and SENTRY_TRACES_SAMPLE_RATE as needed.
-"""
-dsn, os.getenv("SENTRY_DSN")
+def init_sentry(...) -> ...:
+    """..."""
+    passdsn, os.getenv("SENTRY_DSN")
 if not dsn:
-        return
+    passreturn
 
 try:
-    pass  # TODO: Add proper exception handling
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
 import sentry_sdk
 from sentry_sdk.integrations.aiohttp import AioHttpIntegration
 from sentry_sdk.integrations.fastapi import FastApiIntegration
@@ -41,16 +38,16 @@ logger.info("Sentry initialized")
 except Exception:  # pragma: no cover
 print(failed("Failed to initialize Sentry: {exc}"))
 
-def init_otlp_logging() -> None:
-    """Initialize OpenTelemetry logging exporter if OTLP endpoint is provided."""
-endpoint, os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
+def init_otlp_logging(...) -> ...:
+    """..."""
+    passendpoint, os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
 if not endpoint:
-        return
+    passreturn
 
 try:
-    pass  # TODO: Add proper exception handling
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
 # Minimal setup for OTLP logging exporter
 from opentelemetry import _logs as otel_logs
 from opentelemetry.exporter.otlp.proto.http._log_exporter import OTLPLogExporter
@@ -69,7 +66,7 @@ logger.info("OpenTelemetry logging exporter initialized")
 except Exception:  # pragma: no cover
 print(failed("Failed to initialize OTLP logging: {exc}"))
 
-def init_observability(_: dict[str, Any] | None = None) -> None:
-    """Initialize production observability hooks: Sentry and OTLP if configured."""
-init_sentry()
+def init_observability(...) -> ...:
+    """..."""
+    passinit_sentry()
 init_otlp_logging()

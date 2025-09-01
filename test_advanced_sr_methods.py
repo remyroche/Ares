@@ -9,35 +9,101 @@ import numpy as np
 
 # Mock the imports to avoid dependency issues
 class MockLogger:
-    def info(self, msg): print(f"INFO: {msg}")
+
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="mocklogger initialization",
+    )
+    async def initialize(self) -> bool:
+        """Initialize MockLogger."""
+        try:
+            self.logger.info(f"🚀 Initializing {class_name}...")
+            self.is_initialized = True
+            self.logger.info(f"✅ {class_name} initialized successfully")
+            return True
+        except Exception as e:
+            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
+            return False
+    def __init__(self, config: dict[str, Any] | None = None) -> None:
+        """Initialize MockLogger."""
+        s
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="mocksystemlogger initialization",
+    )
+    async def initialize(self) -> bool:
+        """Initialize MockSystemLogger."""
+        try:
+            self.logger.info(f"🚀 Initializing {class_name}...")
+            self.is_initialized = True
+            self.logger.info(f"✅ {class_name} initialized successfully")
+            return True
+        except Exception as e:
+            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
+            return False
+elf.config = config or {}
+        self.logger = system_logger.get
+    def __init__(self, config: dict[str, Any] | None = None) -> None:
+        """Initialize MockSystemLogger."""
+      
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="mockcentralizeddecorators initialization",
+    )
+    async def initialize(self) -> bool:
+        """Initialize MockCentralizedDecorators."""
+        try:
+            self.logger.info(f"🚀 Initializing {class_name}...")
+            self.is_initialized = True
+            self.logger.info(f"✅ {class_name} initialized successfully")
+            return True
+        except Exception as e:
+            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
+            return False
+  self.config = config or {}
+        self.logger = system_logger.getChild("MockSystemLogger")
+        self.is_initialized = False
+Child("MockLogger")
+        self.is_initialized = False
+    passpassdef info(self, msg): print(f"INFO: {msg}")
     def error(self, msg): print(f"ERROR: {msg}")
     def warning(self, msg): print(f"WARNING: {msg}")
 
 class MockSystemLogger:
-    def getChild(self, name): return MockLogger()
+    
+    def __init__(self, config: dict[str, Any] | None = None) -> None:
+        """Initialize MockCentralizedDecorators."""
+        self.config = config or {}
+        self.logger = system_logger.getChild("MockCentralizedDecorators")
+        self.is_initialized = False
+passdef getChild(self, name): return MockLogger()
 
 # Mock the decorators
-def validate_data_quality(validation_level="WARNING"):
-    def decorator(func):
-        return func
+def validate_data_quality(...):
+    passdef decorator(...):
+    passreturn func
     return decorator
 
 def handle_errors(exceptions=(Exception,), default_return=None, context=""):
-    def decorator(func):
-        return func
+    def decorator(...):
+    passreturn func
     return decorator
 
-def handle_specific_errors(error_handlers=None, default_return=None, context=""):
-    def decorator(func):
-        return func
+def handle_specific_errors(...):
+    passdef decorator(...):
+    passreturn func
     return decorator
 
 # Mock the centralized decorators
 class MockCentralizedDecorators:
-    @staticmethod
-    def validate_data_quality(validation_level="WARNING"):
-        def decorator(func):
-            return func
+    pass@staticmethod
+    def validate_data_quality(...):
+    passdef decorator(...):
+    passreturn func
         return decorator
 
 # Create mock modules
@@ -52,8 +118,8 @@ sys.modules['src.utils.centralized_decorators'] = MockCentralizedDecorators()
 # Now import the actual SRBreakoutPredictor
 from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
 
-def create_sample_market_data():
-    """Create sample market data for testing."""
+def create_sample_market_data(...):
+    pass"""Create sample market data for testing."""
     np.random.seed(42)
 
     # Create 100 data points
@@ -64,7 +130,7 @@ def create_sample_market_data():
     prices = [base_price]
 
     for i in range(1, 100):
-        # Add trend and random walk
+    passpass# Add trend and random walk
         trend = 0.001 * np.sin(i * 0.1)  # Cyclical trend
         random_walk = np.random.normal(0, 0.005)  # Random component
         new_price = prices[-1] * (1 + trend + random_walk)
@@ -73,7 +139,7 @@ def create_sample_market_data():
     # Create OHLCV data
     data = []
     for i, price in enumerate(prices):
-        # Create realistic OHLC from base price
+    pass# Create realistic OHLC from base price
         volatility = 0.01 * (1 + 0.5 * np.sin(i * 0.2))  # Variable volatility
         high = price * (1 + np.random.uniform(0, volatility))
         low = price * (1 - np.random.uniform(0, volatility))
@@ -95,8 +161,8 @@ def create_sample_market_data():
 
     return pd.DataFrame(data, index=dates)
 
-def create_multi_timeframe_data():
-    """Create sample multi-timeframe data."""
+def create_multi_timeframe_data(...):
+    pass"""Create sample multi-timeframe data."""
     base_data = create_sample_market_data()
 
     # Create different timeframes by resampling
@@ -134,8 +200,8 @@ def create_multi_timeframe_data():
 
     return multi_tf_data
 
-async def test_advanced_sr_methods():
-    """Test all advanced S/R methods."""
+async def test_advanced_sr_methods(...):
+    pass"""Test all advanced S/R methods."""
     print("🚀 Testing Advanced S/R Methods")
     print("=" * 60)
 
@@ -172,69 +238,69 @@ async def test_advanced_sr_methods():
     print(f"✅ Initialization: {'SUCCESS' if init_success else 'FAILED'}")
 
     if not init_success:
-        print("❌ Cannot proceed with tests - initialization failed")
+    passprint("❌ Cannot proceed with tests - initialization failed")
         return
 
     # Test 1: Fibonacci Levels
     print("\n🔢 Testing Fibonacci Levels...")
     try:
-        fib_levels = await sr_predictor.calculate_fibonacci_levels(market_data)
+    passfib_levels = await sr_predictor.calculate_fibonacci_levels(market_data)
         print(f"✅ Fibonacci Levels: {len(fib_levels)} levels calculated")
         for level_name, price in list(fib_levels.items())[:5]:  # Show first 5
             print(f"   {level_name}: {price:.2f}")
     except Exception as e:
-        print(f"❌ Fibonacci Levels Error: {e}")
+    passpasspasspasspasspasspassprint(f"❌ Fibonacci Levels Error: {e}")
 
     # Test 2: Elliott Wave Analysis
     print("\n🌊 Testing Elliott Wave Analysis...")
     try:
-        elliott_levels = await sr_predictor.detect_elliott_wave_levels(market_data)
+    passelliott_levels = await sr_predictor.detect_elliott_wave_levels(market_data)
         print(f"✅ Elliott Wave: {elliott_levels.get('pattern_type', 'unknown')} pattern detected")
         print(f"   Confidence: {elliott_levels.get('confidence', 0):.2f}")
         if 'wave1' in elliott_levels:
-            print(f"   Wave 1: {elliott_levels['wave1']}")
+    passprint(f"   Wave 1: {elliott_levels['wave1']}")
     except Exception as e:
-        print(f"❌ Elliott Wave Error: {e}")
+    passpasspasspasspasspasspassprint(f"❌ Elliott Wave Error: {e}")
 
     # Test 3: Order Flow Analysis
     print("\n📊 Testing Order Flow Analysis...")
     try:
-        order_flow = await sr_predictor.analyze_order_flow_levels(market_data)
+    passorder_flow = await sr_predictor.analyze_order_flow_levels(market_data)
         print(f"✅ Order Flow Analysis: POC at {order_flow.get('poc', 0):.2f}")
         print(f"   Value Area: {order_flow.get('value_area', {}).get('low', 0):.2f} - {order_flow.get('value_area', {}).get('high', 0):.2f}")
         print(f"   HVN Levels: {len(order_flow.get('hvn_levels', []))}")
         print(f"   Imbalances: {len(order_flow.get('imbalances', []))}")
     except Exception as e:
-        print(f"❌ Order Flow Error: {e}")
+    passpasspasspasspasspasspassprint(f"❌ Order Flow Error: {e}")
 
     # Test 4: Multi-Timeframe Confluence
     print("\n⏰ Testing Multi-Timeframe Confluence...")
     try:
-        mtf_confluence = await sr_predictor.detect_multi_timeframe_confluence(multi_tf_data)
+    passmtf_confluence = await sr_predictor.detect_multi_timeframe_confluence(multi_tf_data)
         print(f"✅ Multi-Timeframe Confluence: {len(mtf_confluence)} strong confluence levels")
         for level_key, level_data in list(mtf_confluence.items())[:3]:  # Show first 3
             print(f"   {level_key}: {level_data['type']} at {level_data['price']:.2f} ({len(level_data['timeframes'])} timeframes)")
     except Exception as e:
-        print(f"❌ Multi-Timeframe Confluence Error: {e}")
+    passpasspasspasspasspasspassprint(f"❌ Multi-Timeframe Confluence Error: {e}")
 
     # Test 5: Comprehensive S/R Analysis
     print("\n🎯 Testing Comprehensive S/R Analysis...")
     try:
-        comprehensive = await sr_predictor.get_comprehensive_sr_analysis(market_data, multi_tf_data)
+    passcomprehensive = await sr_predictor.get_comprehensive_sr_analysis(market_data, multi_tf_data)
         print(f"✅ Comprehensive Analysis: {len(comprehensive.get('analysis_methods', []))} methods used")
         print(f"   Methods: {comprehensive.get('analysis_methods', [])}")
         print(f"   Current Price: {comprehensive.get('current_price', 0):.2f}")
         print(f"   Nearest Support: {comprehensive.get('nearest_support', 0):.2f}")
         print(f"   Nearest Resistance: {comprehensive.get('nearest_resistance', 0):.2f}")
     except Exception as e:
-        print(f"❌ Comprehensive Analysis Error: {e}")
+    passpasspasspasspasspasspassprint(f"❌ Comprehensive Analysis Error: {e}")
 
     # Test 6: Basic S/R Context (should include advanced methods)
     print("\n🔍 Testing Enhanced S/R Context...")
     try:
-    pass  # TODO: Add proper exception handling
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
         current_price = market_data['close'].iloc[-1]
         sr_context = await sr_predictor.get_sr_context(market_data, current_price)
         print(f"✅ Enhanced S/R Context: {len(sr_context)} context elements")
@@ -242,16 +308,16 @@ except Exception as e:
         # Check for advanced methods in context
         advanced_methods = ['fibonacci_levels', 'elliott_wave_levels', 'order_flow_analysis']
         for method in advanced_methods:
-            if method in sr_context:
-                print(f"   ✅ {method}: Included in context")
+    passif method in sr_context:
+    passprint(f"   ✅ {method}: Included in context")
             else:
-                print(f"   ❌ {method}: Missing from context")
+    passprint(f"   ❌ {method}: Missing from context")
     except Exception as e:
-        print(f"❌ Enhanced S/R Context Error: {e}")
+    passpasspasspasspasspasspassprint(f"❌ Enhanced S/R Context Error: {e}")
 
     print("\n" + "=" * 60)
     print("🎉 Advanced S/R Methods Testing Complete!")
     print("=" * 60)
 
 if __name__ == "__main__":
-    asyncio.run(test_advanced_sr_methods())
+    passasyncio.run(test_advanced_sr_methods())

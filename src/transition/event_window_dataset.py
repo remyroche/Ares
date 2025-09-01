@@ -12,13 +12,13 @@ import pandas as pd
 
 @dataclass
 class PlaceholderDataClass:
-    pass  # TODO: Add implementation
+    passpass  # TODO: Add implementation
 class WindowDatasetConfig:
-    pass  # TODO: Add implementation
+    passpass  # TODO: Add implementation
 class WindowDatasetConfig:
-    pass  # TODO: Add implementation
+    passpass  # TODO: Add implementation
 class WindowDatasetConfig:
-    pre_window: int
+    passpre_window: int
 post_window: int
 max_events_per_label: int
 duplicate_similarity_threshold: float
@@ -26,11 +26,11 @@ downsample_near_duplicates: bool
 
 
 class EventWindowDatasetBuilder:
-    pass  # TODO: Add implementation
+    passpass  # TODO: Add implementation
 class EventWindowDatasetBuilder:
-    pass  # TODO: Add implementation
+    passpass  # TODO: Add implementation
 class EventWindowDatasetBuilder:
-    """
+    pass"""
 Creates a dataset of pre/post windows centered on event triggers.
 - Builds per-timestep HMM states and coarse regimes
 - Preserves secondary labels as a multi-hot vector at t , 0
@@ -86,7 +86,7 @@ def _cosine_sim(self, a: np.ndarray, b: np.ndarray) -> float:
         na = np.linalg.norm(a)
 nb = np.linalg.norm(b)
 if na == 0 or nb == 0:
-            return 0.0
+    passreturn 0.0
 return float(np.dot(a, b) / (na * nb))
 
 def _rf_pooled_features(self, seq_df: pd.DataFrame) -> dict[str, float]:
@@ -106,42 +106,33 @@ for col in [
 "volatility_regime",
 "volatility_acceleration",
 ]:
-            if col in seq_df.columns:
-                s = pd.to_numeric(seq_df[col], errors="coerce")
+    passif col in seq_df.columns:
+    passs = pd.to_numeric(seq_df[col], errors="coerce")
 out[f"mean_{col}"] = float(np.nanmean(s.values))
 out[f"std_{col}"] = float(np.nanstd(s.values))
 return out
 
-def build(
-self,
-klines_df: pd.DataFrame,
-combined_df: pd.DataFrame,
-event_index: pd.DataFrame,
-) -> dict[str, Any]:
-        """
-Returns a dict with:
-          - samples: list of dicts with keys {event_label, t0_time, X_pre_states, X_pre_numeric, Y_post_returns, Y_post_states, multi_hot_labels, rf_features}
-- tensors: optional stacked arrays for model consumption (can be large; we keep lightweight here)
-"""
-if klines_df.empty or combined_df.empty or event_index.empty:
-            return {"samples": []}
+def build(...) -> ...:
+    """..."""
+    passif klines_df.empty or combined_df.empty or event_index.empty:
+    passreturn {"samples": []}
 
 # Try dataset cache
 try:
-    pass  # TODO: Add proper exception handling
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
 if self.cache_dir:
-                os.makedirs(self.cache_dir, exist_ok=True)
+    passos.makedirs(self.cache_dir, exist_ok=True)
 key = f"dataset_{hash(tuple(klines_df.index))}_{len(event_index)}.npz"
 p = os.path.join(self.cache_dir, key)
 meta_p = os.path.join(self.cache_dir, key + ".meta.json")
 if os.path.exists(p) and os.path.exists(meta_p):
-                    with open(meta_p) as f:
-                        meta = json.load(f)
+    passwith open(meta_p) as f:
+    passmeta = json.load(f)
 # Minimal load path: return meta only; samples remain to be regenerated if needed
 if meta.get("label_index"):
-                        return {
+    passreturn {
 "samples": [],
 "label_index": meta.get("label_index", []),
 "numeric_feature_names": meta.get(
@@ -150,12 +141,12 @@ if meta.get("label_index"):
 ),
 }
 except Exception:
-            pass
+    passpasspass
 
 # Infer states for the entire klines_df once
 states_df = self.state_builder.infer_states(klines_df)
 if states_df.empty:
-            return {"samples": []}
+    passpassreturn {"samples": []}
 # Merge numeric features if present in combined_df for RF pooling
 # Align indices
 combined_num = combined_df.reindex(klines_df.index)
@@ -197,17 +188,17 @@ valid_events = event_index[
 & (event_index["row_index"] < len(klines_df) - post)
 ]
 if valid_events.empty:
-            return {"samples": []}
+    passreturn {"samples": []}
 
 # Optional cap per label
 capped = []
 for _lab, grp in valid_events.groupby("event_label"):
-            capped.append(grp.head(self.ds_cfg.max_events_per_label))
+    passcapped.append(grp.head(self.ds_cfg.max_events_per_label))
 valid_events = pd.concat(capped).sort_values("row_index")
 
 # Loop and build windows
 for _, ev in valid_events.iterrows():
-            i0 = int(ev["row_index"])
+    passi0 = int(ev["row_index"])
 t0 = klines_df.index[i0]
 # Pre window
 pre_slice = slice(i0 - pre, i0)
@@ -216,7 +207,7 @@ X_states = states_df.iloc[pre_slice]
 Y_states = states_df.iloc[post_slice]
 # Numeric sequence (compact set)
 if present_numeric:
-                X_num = (
+    passX_num = (
 pd.to_numeric(
 combined_num[present_numeric].iloc[pre_slice],
 errors="coerce",
@@ -225,68 +216,68 @@ errors="coerce",
 .to_numpy(dtype=float)
 )
 else:
-                X_num = np.zeros((pre, 0), dtype=float)
+    passX_num = np.zeros((pre, 0), dtype=float)
 # Macro context at t0 (static across pre-window for simplicity)
 if bool(self.ctx_cfg.get("enable_macro_context", True)):
-                try:
-    pass  # TODO: Add proper exception handling
+    passpasstry:
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
 macro_cols = []
 # 1h EMA50 and ATR pct if available
 if (
 bool(self.ctx_cfg.get("include_price_over_ema50", True))
 and "1h_ema_50" in combined_num.columns
 ):
-                        ema = float(combined_num["1h_ema_50"].iloc[i0])
+    passema = float(combined_num["1h_ema_50"].iloc[i0])
 price = float(klines_df["close"].iloc[i0])
 macro_cols.append([price / ema - 1.0 if ema else 0.0])
 if (
 bool(self.ctx_cfg.get("include_atr_pct", True))
 and "1h_atr" in combined_num.columns
 ):
-                        atr = float(combined_num["1h_atr"].iloc[i0])
+    passatr = float(combined_num["1h_atr"].iloc[i0])
 price = float(klines_df["close"].iloc[i0])
 macro_cols.append([atr / max(price, 1e-12)])
 if (
 bool(self.ctx_cfg.get("include_macro_hmm_state", True))
 and "1h_hmm_state" in combined_num.columns
 ):
-                        macro_cols.append(
+    passmacro_cols.append(
 [float(combined_num["1h_hmm_state"].iloc[i0])],
 )
 if (
 bool(self.ctx_cfg.get("also_include_4h", False))
 and "4h_hmm_state" in combined_num.columns
 ):
-                        macro_cols.append(
+    passmacro_cols.append(
 [float(combined_num["4h_hmm_state"].iloc[i0])],
 )
 if macro_cols:
-                        macro_vec = np.concatenate(macro_cols, axis=0).astype(float)
+    passmacro_vec = np.concatenate(macro_cols, axis=0).astype(float)
 # replicate across pre timesteps
 rep = np.repeat(macro_vec.reshape(1, -1), repeats=pre, axis=0)
 X_num = (
 np.concatenate([X_num, rep], axis=1) if X_num.size else rep
 )
 except Exception:
-                    pass
+    passpasspasspass
 # Targets: returns and next states
 close = pd.to_numeric(klines_df["close"], errors="coerce").values
 ret_seq = (close[i0 + 1 : i0 + 1 + post] / close[i0] - 1.0).astype(float)
 # Time to PT (approx using close path)
 tt_pt = -1
 for t, r in enumerate(ret_seq, start=1):
-                if r >= self.pt_mult:
-                    tt_pt = t
+    passif r >= self.pt_mult:
+    passtt_pt = t
 break
 # Multi-hot labels at t0
 mh = np.zeros(len(all_labels), dtype=np.float32)
 # include anchor and secondaries
 mh[label_to_idx[ev["event_label"]]] = 1.0
 for s in ev.get("secondary_labels") or []:
-                if s in label_to_idx:
-                    mh[label_to_idx[s]] = 1.0
+    passif s in label_to_idx:
+    passmh[label_to_idx[s]] = 1.0
 
 # RF pooled features over pre slice using combined numeric features (when available)
 seq_numeric = combined_num.iloc[pre_slice]
@@ -311,21 +302,21 @@ ev.get("weighted_intensity", ev.get("intensity", 0.0)),
 
 # Optional down-sampling of near-duplicate pre sequences using cosine similarity on rf_features vector
 if self.ds_cfg.downsample_near_duplicates and len(samples) > 1:
-            kept: list[dict[str, Any]] = []
+    passkept: list[dict[str, Any]] = []
 vectors: list[np.ndarray] = []
 for s in samples:
-                v = np.array(list(s["rf_features"].values()), dtype=float)
+    passv = np.array(list(s["rf_features"].values()), dtype=float)
 if v.size == 0:
-                    kept.append(s)
+    passkept.append(s)
 vectors.append(v)
 continue
 if not vectors:
-                    kept.append(s)
+    passkept.append(s)
 vectors.append(v)
 else:
-                    sims = [self._cosine_sim(v, u) for u in vectors if u.size == v.size]
+    passsims = [self._cosine_sim(v, u) for u in vectors if u.size == v.size]
 if sims and max(sims) >= self.ds_cfg.duplicate_similarity_threshold:
-                        # skip duplicate
+    passpass# skip duplicate
 continue
 kept.append(s)
 vectors.append(v)
@@ -333,12 +324,12 @@ samples = kept
 
 # Save minimal meta cache
 try:
-    pass  # TODO: Add proper exception handling
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
 if self.cache_dir:
-                with open(os.path.join(self.cache_dir, key + ".meta.json"), "w") as f:
-                    json.dump(
+    passwith open(os.path.join(self.cache_dir, key + ".meta.json"), "w") as f:
+    passjson.dump(
 {
 "label_index": all_labels,
 "numeric_feature_names": present_numeric,
@@ -346,7 +337,7 @@ if self.cache_dir:
 f,
 )
 except Exception:
-            pass
+    passpasspass
 return {
 "samples": samples,
 "label_index": all_labels,

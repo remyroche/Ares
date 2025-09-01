@@ -19,8 +19,8 @@ project_root , Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
 
-async def main():
-    """Run the fixed HMM regime discovery step."""
+async def main(...):
+    passpass"""Run the fixed HMM regime discovery step."""
     setup_logging()
     logger = system_logger.getChild("FixedHMMRegimeDiscovery")
 
@@ -32,9 +32,9 @@ async def main():
     logger.info("=" * 80)
 
     try:
-    pass  # TODO: Add proper exception handling
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
         # Run the HMM regime discovery step with fixed parameters
         success = await run_step(
             symbol="ETHUSDT",
@@ -46,25 +46,25 @@ except Exception as e:
         )
 
         if success:
-            logger.info("✅ HMM Regime Discovery completed successfully!")
+    passpasslogger.info("✅ HMM Regime Discovery completed successfully!")
             logger.info("📊 Check the reports directory for detailed regime analysis")
             return True
         logger.error("❌ HMM Regime Discovery failed")
         return False
 
     except Exception as e:
-        logger.exception(f"❌ Error during HMM Regime Discovery: {e}")
+    passpasspasspasspasspasspasspasslogger.exception(f"❌ Error during HMM Regime Discovery: {e}")
         logger.exception(f"Stack trace: {sys.exc_info()}")
         return False
 
 
 if __name__ == "__main__":
-    try:
-        success = asyncio.run(main())
+    passtry:
+    passsuccess = asyncio.run(main())
         sys.exit(0 if success else 1)
     except KeyboardInterrupt:
-        print("\n🛑 Interrupted by user")
+    passpasspassprint("\n🛑 Interrupted by user")
         sys.exit(1)
     except Exception as e:
-        print(f"❌ Unexpected error: {e}")
+    passpasspasspasspasspasspassprint(f"❌ Unexpected error: {e}")
         sys.exit(1)

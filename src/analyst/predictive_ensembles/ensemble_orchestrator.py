@@ -16,17 +16,33 @@ from .regime_ensembles.volatile_regime_ensemble import VolatileRegimeEnsemble
 
 
 class RegimePredictiveEnsembles:
-    """
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="regimepredictiveensembles initialization",
+    )
+    async def initialize(self) -> bool:
+        """Initialize RegimePredictiveEnsembles."""
+        try:
+            self.logger.info(f"🚀 Initializing {class_name}...")
+            self.is_initialized = True
+            self.logger.info(f"✅ {class_name} initialized successfully")
+            return True
+        except Exception as e:
+            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
+            return False
+    pass"""
 Orchestrates the training and prediction workflows for all specialized ensembles.
 Now includes checkpointing for ensemble models and a sophisticated global meta-learner
 for final prediction combining outputs from all regime-specific ensembles and market context.
 """
 
-def __init__(self, config):
-    def __init__(self, config):
-    def __init__(self, config):
-    def __init__(self, config):
-        self.config = config.get("analyst", {})
+def __init__(...):
+    passpassdef __init__(...):
+    passdef __init__(...):
+    passdef __init__(...):
+    passself.config = config.get("analyst", {})
 self.logger = system_logger.getChild("PredictiveEnsembles.Orchestrator")
 
 # Initialize all possible ensemble instances - updated for new regime classification
@@ -76,13 +92,8 @@ self.overall_confidence_threshold = self.config.get(
 0.55,
 )
 
-def train_all_models(
-self,
-asset: str,
-prepared_data: pd.DataFrame,
-model_path_prefix: str | None = None,
-):
-        """
+def train_all_models(...):
+    pass"""
 Orchestrates the training of all regime-specific ensembles.
 It splits the prepared data by regime and passes the relevant slice to each ensemble.
 After individual ensembles are trained, it trains a global meta-learner.
@@ -98,11 +109,11 @@ f"Orchestrator: Starting training for all ensembles for asset {asset} (prefix: {
 
 # HMM COMPOSITE CLUSTERS ONLY - NO FALLBACKS
 if "composite_cluster_id" in prepared_data.columns:
-            self.logger.info("🎯 Using HMM composite regime data for ensemble training (PARAMOUNT)")
+    passself.logger.info("🎯 Using HMM composite regime data for ensemble training (PARAMOUNT)")
 regime_column = "composite_cluster_id"
 regime_prefix = "hmm_composite_"
 else:
-            self.logger.error(
+    passpassself.logger.error(
 "🚨 HMM composite_cluster_id column is missing from prepared data. Halting training.",
 )
 self.logger.error("   HMM composite clusters are paramount - no fallbacks allowed")
@@ -110,7 +121,7 @@ self.logger.error("   Please ensure step03_hmm_regime_discovery completed succes
 return
 
 if "target" not in prepared_data.columns:
-            self.logger.error(
+    passself.logger.error(
 "Prepared data is missing 'target' column. Halting training.",
 )
 return
@@ -125,21 +136,21 @@ f"📊 Found {len(unique_regimes)} unique regimes: {unique_regimes}"
 )
 
 for regime_id in unique_regimes:
-            regime_key = f"{regime_prefix}{regime_id}"
+    passregime_key = f"{regime_prefix}{regime_id}"
 self.logger.info(f"--- Processing ensemble for {regime_key} ---")
 
 # Filter data for the current regime
 regime_data = prepared_data[prepared_data[regime_column] == regime_id]
 
 if regime_data.empty or len(regime_data["target"].unique()) < 2:
-                self.logger.warning(
+    passpassself.logger.warning(
 f"Insufficient or single-class data for {regime_key}. Skipping training.",
 )
 continue
 
 # Get or create ensemble instance for this regime
 if regime_key not in self.regime_ensembles:
-                self.logger.info(f"🆕 Creating new ensemble instance for {regime_key}")
+    passpassself.logger.info(f"🆕 Creating new ensemble instance for {regime_key}")
 # Create a new ensemble instance for this HMM composite regime
 # Use VolatileRegimeEnsemble for all regimes since we're using advanced HMM categorization
 ensemble_instance = VolatileRegimeEnsemble(self.config, regime_key)
@@ -156,22 +167,22 @@ historical_targets = regime_data["target"]
 # Construct the specific model path for this ensemble and fold
 model_file_name = f"{regime_key.lower()}_ensemble.joblib"
 if model_path_prefix:
-                full_model_path = f"{model_path_prefix}{model_file_name}"
+    passpassfull_model_path = f"{model_path_prefix}{model_file_name}"
 else:
-                full_model_path = os.path.join(
+    passfull_model_path = os.path.join(
 self.model_storage_dir,
 f"final_{model_file_name}",
 )
 
 # Try to load the model first
 if os.path.exists(full_model_path):
-                self.logger.info(
+    passself.logger.info(
 f"Attempting to load {regime_key} ensemble from {full_model_path}...",
 )
 if ensemble_instance.load_model(full_model_path):
-                    self.logger.info(f"Successfully loaded {regime_key} ensemble.")
+    passself.logger.info(f"Successfully loaded {regime_key} ensemble.")
 else:
-                    self.logger.warning(
+    passself.logger.warning(
 f"Failed to load {regime_key} ensemble from {full_model_path}. Retraining.",
 )
 ensemble_instance.train_ensemble(
@@ -179,7 +190,7 @@ historical_features,
 historical_targets,
 )
 else:
-                # If not loaded, train the model
+    pass# If not loaded, train the model
 ensemble_instance.train_ensemble(
 historical_features,
 historical_targets,
@@ -187,7 +198,7 @@ historical_targets,
 
 # Save the trained model
 if ensemble_instance.trained:
-                ensemble_instance.save_model(full_model_path)
+    passensemble_instance.save_model(full_model_path)
 
 # Collect predictions from this trained ensemble for meta-learner training
 # Use the full historical_features (not just regime_data) to get predictions for all time points
@@ -200,7 +211,7 @@ historical_features,
 
 # Add regime key to prediction outputs for meta-learner
 for idx, row in ensemble_predictions_on_full_data.iterrows():
-                    meta_learner_data.append(
+    passmeta_learner_data.append(
 {
 "timestamp": idx,
 "regime": regime_key,
@@ -215,29 +226,21 @@ idx,
 },
 )
 else:
-                self.logger.warning(
+    passpasspassself.logger.warning(
 f"Ensemble {regime_key} was not trained/loaded successfully. Skipping for meta-learner.",
 )
 
 # Train the global meta-learner
 if meta_learner_data:
-            self._train_global_meta_learner(meta_learner_data)
+    passpassself._train_global_meta_learner(meta_learner_data)
 else:
-            self.logger.warning(
+    passself.logger.warning(
 "No data collected for global meta-learner training. Skipping.",
 )
 
-def get_all_predictions(
-self,
-asset: str,
-current_features: pd.DataFrame,
-**kwargs,
-) -> dict[str, Any]:
-        """
-Gets a prediction by identifying the current regime and delegating to the
-appropriate trained ensemble. The final prediction is made by the global meta-learner.
-"""
-# Get comprehensive regime information
+def get_all_predictions(...) -> ...:
+    pass"""..."""
+    pass# Get comprehensive regime information
 regime_info = self.get_current_regime_info(current_features)
 primary_regime = regime_info["regime_name"]
 current_expert = regime_info["expert"]
@@ -250,10 +253,10 @@ combined_base_predictions = {}  # To return all base model predictions
 
 # First, get prediction from the current regime expert
 if current_expert is not None:
-            try:
-    # Exception handling placeholder - implement specific error handling as needed
+    passtry:
+    pass# Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
+    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
 prediction_output = current_expert.get_prediction(
 current_features,
 **kwargs,
@@ -271,13 +274,13 @@ confidence,  # Use intensity confidence as fallback
 
 # Get detailed base predictions from the primary expert
 if hasattr(current_expert, "_get_meta_features"):
-                    base_preds_dict = current_expert._get_meta_features(
+    passbase_preds_dict = current_expert._get_meta_features(
 current_features,
 is_live=True,
 **kwargs,
 )
 for model_name, pred_value in base_preds_dict.items():
-                        unique_model_name = f"{primary_regime}_{model_name}"
+    passunique_model_name = f"{primary_regime}_{model_name}"
 combined_base_predictions[unique_model_name] = pred_value
 
 self.logger.info(
@@ -285,7 +288,7 @@ f"Primary expert ({primary_regime}) prediction: {prediction_output.get('predicti
 )
 
 except Exception as e:
-                self.logger.error(
+    passpasspasspasspasspasspassself.logger.error(
 f"Error getting prediction from {primary_regime} expert: {e}"
 )
 ensemble_predictions_for_meta[primary_regime] = "HOLD"
@@ -293,17 +296,17 @@ ensemble_confidences_for_meta[primary_regime] = 0.0
 
 # Load and get predictions from other ensembles for meta-learner
 for regime_key, ensemble_instance in self.regime_ensembles.items():
-            if regime_key == primary_regime:
-                continue  # Skip primary expert as we already processed it
+    passif regime_key == primary_regime:
+    passcontinue  # Skip primary expert as we already processed it
 
 if not ensemble_instance.trained:
-                # Attempt to load the final model if not already loaded (e.g., at startup)
+    pass# Attempt to load the final model if not already loaded (e.g., at startup)
 final_model_file_name = os.path.join(
 self.model_storage_dir,
 f"final_{regime_key.lower()}_ensemble.joblib",
 )
 if not ensemble_instance.load_model(final_model_file_name):
-                    self.logger.warning(
+    passself.logger.warning(
 f"Could not load final model for {regime_key}. Skipping its prediction.",
 )
 continue
@@ -325,13 +328,13 @@ ensemble_confidences_for_meta[regime_key] = prediction_output.get(
 
 # Get detailed base predictions from each ensemble and combine
 if hasattr(ensemble_instance, "_get_meta_features"):
-                base_preds_dict = ensemble_instance._get_meta_features(
+    passpassbase_preds_dict = ensemble_instance._get_meta_features(
 current_features,
 is_live=True,
 **kwargs,
 )
 for model_name, pred_value in base_preds_dict.items():
-                    # Prefix model names with regime to avoid clashes if model names are not unique
+    pass# Prefix model names with regime to avoid clashes if model names are not unique
 unique_model_name = f"{regime_key}_{model_name}"
 combined_base_predictions[unique_model_name] = pred_value
 
@@ -357,11 +360,11 @@ return {
 "ensemble_weights": current_ensemble_weights_snapshot,
 }
 
-def _train_global_meta_learner(self, meta_learner_raw_data: list[dict[str, Any]]):
-    def _train_global_meta_learner(self, meta_learner_raw_data: list[dict[str, Any]]):
-    def _train_global_meta_learner(self, meta_learner_raw_data: list[dict[str, Any]]):
-    def _train_global_meta_learner(self, meta_learner_raw_data: list[dict[str, Any]]):
-        """
+def _train_global_meta_learner(...):
+    passdef _train_global_meta_learner(...):
+    passdef _train_global_meta_learner(...):
+    passdef _train_global_meta_learner(...):
+    pass"""
 Trains the global meta-learner using outputs from individual ensembles
 and high-level market context.
 """
@@ -381,7 +384,7 @@ meta_df = pd.get_dummies(meta_df, columns=["regime"], prefix="regime")
 # Initialize columns to 0 or 'HOLD' to handle cases where an ensemble might not have predicted
 all_regimes = list(self.regime_ensembles.keys())
 for r in all_regimes:
-            meta_df[f"{r}_prediction"] = meta_df.apply(
+    passmeta_df[f"{r}_prediction"] = meta_df.apply(
 lambda row: row["prediction"] if row[f"regime_{r}"] == 1 else "HOLD",
 axis=1,
 )
@@ -396,7 +399,7 @@ meta_df.drop(columns=["prediction", "confidence"], inplace=True)
 # One-hot encode the prediction columns (BUY, SELL, HOLD)
 prediction_cols = [f"{r}_prediction" for r in all_regimes]
 for col in prediction_cols:
-            meta_df = pd.get_dummies(meta_df, columns=[col], prefix=col)
+    passpassmeta_df = pd.get_dummies(meta_df, columns=[col], prefix=col)
 
 # Define features (X) and target (y) for the meta-learner
 meta_features = [
@@ -425,8 +428,8 @@ y_meta = meta_df["true_target"].copy()
 
 # Handle potential missing columns from meta_features (e.g., if a regime never occurred)
 for col in meta_features:
-            if col not in X_meta.columns:
-                X_meta[col] = 0  # Add missing columns with default value
+    passpassif col not in X_meta.columns:
+    passX_meta[col] = 0  # Add missing columns with default value
 
 # Encode target labels (BUY, SELL, HOLD) to integers
 self.global_meta_label_encoder = LabelEncoder()
@@ -440,7 +443,7 @@ best_score = -np.inf
 best_scaler = None
 best_pca = None
 for train_index, val_index in skf.split(X_meta, y_encoded):
-            X_train_raw, X_val_raw = X_meta.iloc[train_index], X_meta.iloc[val_index]
+    passpassX_train_raw, X_val_raw = X_meta.iloc[train_index], X_meta.iloc[val_index]
 y_train, y_val = y_encoded[train_index], y_encoded[val_index]
 
 scaler = StandardScaler()
@@ -449,14 +452,14 @@ X_val = scaler.transform(X_val_raw)
 
 # Optional PCA after scaling to reduce dimensionality (fit on train only)
 if self.global_meta_config.get("use_pca", False):
-                n_components = min(
+    passn_components = min(
 self.global_meta_config.get("pca_components", 16), X_train.shape[1]
 )
 pca = PCA(n_components=n_components)
 X_train = pca.fit_transform(X_train)
 X_val = pca.transform(X_val)
 else:
-                pca = None
+    passpca = None
 
 model = LGBMClassifier(
 **self.global_meta_config,
@@ -471,7 +474,7 @@ callbacks=[LGBMClassifier.early_stopping(10, verbose=False)],
 # Use model.score on validation data
 score = model.score(X_val, y_val)
 if score > best_score:
-                best_score = score
+    passbest_score = score
 best_model = model
 best_scaler = scaler
 best_pca = pca
@@ -484,22 +487,14 @@ self.global_meta_pca = best_pca
 self.logger.info("Global meta-learner trained successfully.")
 self._save_global_meta_learner()
 
-def _predict_with_global_meta_learner(
-self,
-primary_regime: str,
-ensemble_predictions: dict[str, str],
-ensemble_confidences: dict[str, float],
-current_features: pd.DataFrame,
-) -> tuple[str, float]:
-        """
-Uses the trained global meta-learner to make the final prediction.
-"""
-if (
+def _predict_with_global_meta_learner(...) -> ...:
+    pass"""..."""
+    passif (
 not self.global_meta_learner
 or not self.global_meta_scaler
 or not self.global_meta_label_encoder
 ):
-            self.logger.warning(
+    passself.logger.warning(
 "Global meta-learner not trained/loaded. Defaulting to HOLD.",
 )
 return "HOLD", 0.0
@@ -510,7 +505,7 @@ meta_input_data = {"regime": primary_regime}
 # Add predictions and confidences from each ensemble
 all_regimes = list(self.regime_ensembles.keys())
 for r in all_regimes:
-            pred = ensemble_predictions.get(r, "HOLD")
+    passpred = ensemble_predictions.get(r, "HOLD")
 conf = ensemble_confidences.get(r, 0.0)
 meta_input_data[f"{r}_prediction"] = pred
 meta_input_data[f"{r}_confidence"] = conf
@@ -528,7 +523,7 @@ prefix="regime",
 # One-hot encode the prediction columns (BUY, SELL, HOLD)
 prediction_cols_for_dummies = [f"{r}_prediction" for r in all_regimes]
 for col in prediction_cols_for_dummies:
-            meta_input_df = pd.get_dummies(meta_input_df, columns=[col], prefix=col)
+    passmeta_input_df = pd.get_dummies(meta_input_df, columns=[col], prefix=col)
 
 # Ensure all columns that the meta-learner was trained on are present, fill missing with 0
 trained_features = (
@@ -540,7 +535,7 @@ else []
 # Align to training columns without masking missing features silently
 missing_cols = list(set(trained_features) - set(meta_input_df.columns))
 if missing_cols:
-            self.logger.warning(f"Missing meta features at inference: {missing_cols}")
+    passpassself.logger.warning(f"Missing meta features at inference: {missing_cols}")
 X_meta_live = meta_input_df.reindex(columns=trained_features)
 # Impute remaining NaNs with 0 after logging (explicit)
 X_meta_live = X_meta_live.fillna(0)
@@ -549,7 +544,7 @@ X_meta_live = X_meta_live.fillna(0)
 X_meta_live_scaled = self.global_meta_scaler.transform(X_meta_live)
 # Optional PCA at inference if trained
 if hasattr(self, "global_meta_pca") and self.global_meta_pca is not None:
-            X_meta_live_scaled = self.global_meta_pca.transform(X_meta_live_scaled)
+    passpassX_meta_live_scaled = self.global_meta_pca.transform(X_meta_live_scaled)
 
 # Make prediction
 proba = self.global_meta_learner.predict_proba(X_meta_live_scaled)[0]
@@ -562,22 +557,22 @@ final_confidence = proba[predicted_label_idx]
 
 # Apply overall confidence threshold
 if final_confidence < self.overall_confidence_threshold:
-            final_prediction = "HOLD"
+    passfinal_prediction = "HOLD"
 self.logger.info(
 f"Global meta-learner confidence ({final_confidence:.2f}) below threshold ({self.overall_confidence_threshold}). Final decision: HOLD.",
 )
 
 return final_prediction, final_confidence
 
-def _save_global_meta_learner(self):
-    def _save_global_meta_learner(self):
-    def _save_global_meta_learner(self):
-    def _save_global_meta_learner(self):
-        """Saves the global meta-learner and its scaler/encoder."""
+def _save_global_meta_learner(...):
+    passdef _save_global_meta_learner(...):
+    passdef _save_global_meta_learner(...):
+    passdef _save_global_meta_learner(...):
+    pass"""Saves the global meta-learner and its scaler/encoder."""
 try:
-    # Exception handling placeholder - implement specific error handling as needed
+    pass# Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
+    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
 dump(self.global_meta_learner, self.global_meta_learner_path)
 dump(self.global_meta_scaler, self.global_meta_scaler_path)
 dump(self.global_meta_label_encoder, self.global_meta_label_encoder_path)
@@ -585,25 +580,25 @@ self.logger.info(
 "Global meta-learner, scaler, and label encoder saved successfully.",
 )
 except Exception as e:
-            self.logger.error(
+    passpasspasspasspasspasspassself.logger.error(
 f"Error saving global meta-learner components: {e}",
 exc_info=True,
 )
 
-def _load_global_meta_learner(self):
-    def _load_global_meta_learner(self):
-    def _load_global_meta_learner(self):
-    def _load_global_meta_learner(self):
-        """Loads the global meta-learner and its scaler/encoder."""
+def _load_global_meta_learner(...):
+    passdef _load_global_meta_learner(...):
+    passdef _load_global_meta_learner(...):
+    passdef _load_global_meta_learner(...):
+    pass"""Loads the global meta-learner and its scaler/encoder."""
 if (
 os.path.exists(self.global_meta_learner_path)
 and os.path.exists(self.global_meta_scaler_path)
 and os.path.exists(self.global_meta_label_encoder_path)
 ):
-            try:
-    # Exception handling placeholder - implement specific error handling as needed
+    passtry:
+    pass# Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
+    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
 self.global_meta_learner = load(self.global_meta_learner_path)
 self.global_meta_scaler = load(self.global_meta_scaler_path)
 self.global_meta_label_encoder = load(
@@ -613,7 +608,7 @@ self.logger.info(
 "Global meta-learner, scaler, and label encoder loaded.",
 )
 except Exception as e:
-                self.logger.error(
+    passpasspasspasspasspasspassself.logger.error(
 f"Error loading global meta-learner components: {e}",
 exc_info=True,
 )
@@ -621,35 +616,29 @@ self.global_meta_learner = None  # Reset on failure
 self.global_meta_scaler = None
 self.global_meta_label_encoder = None
 else:
-            self.logger.info(
+    passself.logger.info(
 "Global meta-learner components not found. Will train on first run.",
 )
 
-def get_current_regime(self, current_features: pd.DataFrame) -> str:
-        """
-Determines the current market regime from composite_cluster_id.
-HMM composite clusters are paramount - no fallbacks allowed.
-"""
-if current_features.empty:
-            return "UNKNOWN"
+def get_current_regime(...) -> ...:
+    """..."""
+    passif current_features.empty:
+    passreturn "UNKNOWN"
 
 # HMM COMPOSITE CLUSTERS ONLY - NO FALLBACKS
 if "composite_cluster_id" in current_features.columns:
-            cluster_id = current_features["composite_cluster_id"].iloc[-1]
+    passcluster_id = current_features["composite_cluster_id"].iloc[-1]
 return self._map_cluster_to_regime(cluster_id)
 else:
-            self.logger.error("🚨 HMM composite_cluster_id column is missing from current features")
+    passself.logger.error("🚨 HMM composite_cluster_id column is missing from current features")
 self.logger.error("   HMM composite clusters are paramount - no fallbacks allowed")
 return "UNKNOWN"
 
-def _map_cluster_to_regime(self, cluster_id: int, timeframe: str = "1m") -> str:
-        """
-Maps HMM composite cluster IDs to regime ensemble names.
-Uses dynamic regime mapping based on Step 1.7 results.
-"""
-# Try to use dynamic regime mapper if available
+def _map_cluster_to_regime(...) -> ...:
+    """..."""
+    pass# Try to use dynamic regime mapper if available
 if hasattr(self, "dynamic_mapper") and self.dynamic_mapper:
-            return self.dynamic_mapper.map_cluster_to_regime(cluster_id, timeframe)
+    passreturn self.dynamic_mapper.map_cluster_to_regime(cluster_id, timeframe)
 
 # Fallback to static mapping if dynamic mapper not available
 fallback_mapping = {
@@ -680,40 +669,34 @@ regime = fallback_mapping.get(cluster_id, f"UNKNOWN_REGIME_{cluster_id}")
 self.logger.debug(f"Mapped cluster_id {cluster_id} to regime {regime}")
 return regime
 
-def get_regime_expert(self, cluster_id: int) -> Any:
-        """
-Get the appropriate regime expert based on composite_cluster_id.
-Returns the ensemble instance for the given cluster.
-"""
-regime_name = self._map_cluster_to_regime(cluster_id)
+def get_regime_expert(...) -> ...:
+    """..."""
+    passregime_name = self._map_cluster_to_regime(cluster_id)
 
 if regime_name in self.regime_ensembles:
-            ensemble = self.regime_ensembles[regime_name]
+    passensemble = self.regime_ensembles[regime_name]
 
 # Ensure the ensemble is loaded
 if not ensemble.trained:
-                final_model_file_name = os.path.join(
+    passfinal_model_file_name = os.path.join(
 self.model_storage_dir,
 f"final_{regime_name.lower()}_ensemble.joblib",
 )
 if not ensemble.load_model(final_model_file_name):
-                    self.logger.warning(
+    passself.logger.warning(
 f"Could not load final model for {regime_name}. Returning None."
 )
 return None
 
 return ensemble
 else:
-            self.logger.warning(f"No ensemble found for regime {regime_name}")
+    passpassself.logger.warning(f"No ensemble found for regime {regime_name}")
 return None
 
-def get_current_regime_info(self, current_features: pd.DataFrame) -> dict[str, Any]:
-        """
-Get comprehensive current regime information including cluster ID and expert.
-HMM composite clusters are paramount - no fallbacks allowed.
-"""
-if current_features.empty:
-            return {
+def get_current_regime_info(...) -> ...:
+    pass"""..."""
+    passif current_features.empty:
+    passreturn {
 "cluster_id": -1,
 "regime_name": "UNKNOWN",
 "expert": None,
@@ -722,7 +705,7 @@ if current_features.empty:
 
 # HMM COMPOSITE CLUSTERS ONLY - NO FALLBACKS
 if "composite_cluster_id" not in current_features.columns:
-            self.logger.error("🚨 HMM composite_cluster_id column is missing from current features")
+    passself.logger.error("🚨 HMM composite_cluster_id column is missing from current features")
 self.logger.error("   HMM composite clusters are paramount - no fallbacks allowed")
 return {
 "cluster_id": -1,
@@ -743,7 +726,7 @@ expert = self.get_regime_expert(cluster_id)
 # Get confidence from intensity if available
 confidence = 0.0
 if "intensity_cluster_" + str(cluster_id) in current_features.columns:
-            confidence = float(
+    passconfidence = float(
 current_features[f"intensity_cluster_{cluster_id}"].iloc[-1]
 )
 
@@ -757,31 +740,31 @@ if not current_features.empty
 else None,
 }
 
-def save_model(self, ensemble_instance: Any, path: str):
-    def save_model(self, ensemble_instance: Any, path: str):
-    def save_model(self, ensemble_instance: Any, path: str):
-    def save_model(self, ensemble_instance: Any, path: str):
-        """Saves a trained ensemble instance to a file."""
+def save_model(...):
+    passdef save_model(...):
+    passdef save_model(...):
+    passdef save_model(...):
+    pass"""Saves a trained ensemble instance to a file."""
 try:
-    # Exception handling placeholder - implement specific error handling as needed
+    pass# Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
+    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
 dump(ensemble_instance, path)
 self.logger.info(f"Successfully saved trained ensemble to {path}")
 except Exception as e:
-            self.logger.error(
+    passpasspasspasspasspasspassself.logger.error(
 f"Error saving ensemble model to {path}: {e}",
 exc_info=True,
 )
 
-def load_model(self, ensemble_instance: Any, path: str) -> bool:
-        """Loads a trained ensemble instance from a file."""
-if not os.path.exists(path):
-            return False
+def load_model(...) -> ...:
+    """..."""
+    passif not os.path.exists(path):
+    passreturn False
 try:
-    # Exception handling placeholder - implement specific error handling as needed
+    pass# Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
+    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
 loaded_ensemble = load(path)
 # Update the existing instance's state instead of replacing it
 ensemble_instance.__dict__.update(loaded_ensemble.__dict__)
@@ -789,25 +772,25 @@ ensemble_instance.trained = True  # Ensure 'trained' flag is set
 self.logger.info(f"Successfully loaded pre-trained ensemble from {path}")
 return True
 except Exception as e:
-            self.logger.error(
+    passpasspasspasspasspasspassself.logger.error(
 f"Error loading ensemble model from {path}: {e}",
 exc_info=True,
 )
 return False
 
-def load_weights(self, weights: dict[str, Any]):
-    def load_weights(self, weights: dict[str, Any]):
-    def load_weights(self, weights: dict[str, Any]):
-    def load_weights(self, weights: dict[str, Any]):
-        """Loads updated weights into the ensembles for dynamic weighting."""
+def load_weights(...):
+    passdef load_weights(...):
+    passdef load_weights(...):
+    passdef load_weights(...):
+    pass"""Loads updated weights into the ensembles for dynamic weighting."""
 for regime, ensemble_weights in weights.items():
-            if regime in self.regime_ensembles:
-                # Assuming BaseEnsemble has an attribute 'ensemble_weights'
+    passif regime in self.regime_ensembles:
+    pass# Assuming BaseEnsemble has an attribute 'ensemble_weights'
 self.regime_ensembles[regime].ensemble_weights = ensemble_weights
 
-def get_current_weights(self) -> dict[str, Any]:
-        """Returns the current weights of all ensembles."""
-return {
+def get_current_weights(...) -> ...:
+    """..."""
+    passreturn {
 regime: ens.ensemble_weights
 for regime, ens in self.regime_ensembles.items()
 }

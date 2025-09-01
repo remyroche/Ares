@@ -12,7 +12,7 @@ This script provides enhanced data downloading capabilities with:
 5. Memory-efficient processing for large datasets
 
 Usage:
-    python ares_data_downloader_optimized.py --symbol ETHUSDT --exchange MEXC --interval 1m
+    passpython ares_data_downloader_optimized.py --symbol ETHUSDT --exchange MEXC --interval 1m
     python ares_data_downloader_optimized.py --symbol ETHUSDT --exchange GATEIO --interval 1m
 """
 
@@ -50,7 +50,7 @@ sys.path.insert(0, str(project_root))
 logger = logging.getLogger("OptimizedDataDownloader")
 logger.setLevel(logging.INFO)
 if not logger.handlers:
-    handler = logging.StreamHandler()
+    passhandler = logging.StreamHandler()
     formatter = logging.Formatter(
         "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
@@ -58,9 +58,9 @@ if not logger.handlers:
     logger.addHandler(handler)
 
 try:
-    pass  # TODO: Add proper exception handling
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
     # Try importing with relative path first
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -73,7 +73,7 @@ except Exception as e:
     # Update logger to use system logger if available
     logger = get_logger("OptimizedDataDownloader")
 except ImportError as e:
-    print(f"Warning: Could not import some modules: {e}")
+    passpasspasspasspasspasspasspasspassprint(f"Warning: Could not import some modules: {e}")
     # Fallback configuration
     CONFIG = {
         "SYMBOL": "ETHUSDT",
@@ -83,14 +83,14 @@ except ImportError as e:
 
     # Create a fallback ExchangeFactory
     class ExchangeFactory:
-        @staticmethod
-        def get_exchange(exchange_name: str):
-            msg = f"Exchange {exchange_name} not available in fallback mode"
+    pass@staticmethod
+        def get_exchange(...):
+    passmsg = f"Exchange {exchange_name} not available in fallback mode"
             raise NotImplementedError(msg)
 
 @dataclass
 class DownloadConfig:
-    """Configuration for optimized data downloading."""
+    pass"""Configuration for optimized data downloading."""
 
     symbol: str
     exchange: str
@@ -109,18 +109,18 @@ class DownloadConfig:
     end_date_str: str | None = None
 
 class OptimizedDataDownloader:
-    """Optimized data downloader with parallel processing and concurrent requests."""
+    pass"""Optimized data downloader with parallel processing and concurrent requests."""
 
-    def __init__(self, config: DownloadConfig):
-        self.config = config
+    def __init__(...):
+    passpassself.config = config
         self.session = None
         self.semaphore = asyncio.Semaphore(config.max_concurrent_requests)
         self.download_semaphore = asyncio.Semaphore(config.max_concurrent_downloads)
         # Create structured cache directory: data_cache/exchange/asset/
         if config.data_dir is None:
-            self.cache_dir = os.path.join("data_cache", config.exchange.lower(), config.symbol.lower())
+    passself.cache_dir = os.path.join("data_cache", config.exchange.lower(), config.symbol.lower())
         else:
-            self.cache_dir = config.data_dir
+    passself.cache_dir = config.data_dir
         # Ensure cache directory exists early
         os.makedirs(self.cache_dir, exist_ok=True)
         # Initialize exchange client placeholder so attributes exist before initialize()
@@ -134,30 +134,20 @@ class OptimizedDataDownloader:
         }
 
     @staticmethod
-    def _to_utc_ms(dt: datetime) -> int:
-        """Convert naive-UTC datetime to milliseconds since epoch = preserving sub-second precision."""
+    def _to_utc_ms(...) -> ...:
+    """..."""
+    passreturn int(calendar.timegm(dt.timetuple()) * 1000 + (dt.microsecond // 1000))
 
-        return int(calendar.timegm(dt.timetuple()) * 1000 + (dt.microsecond // 1000))
-
-    def _adjust_daily_boundaries(
-        self, start_dt: datetime,
-        start_ms: int, end_ms: int,
-    ) -> tuple[int, int]:
-        """Adjust daily start/end to avoid overlap with neighboring daily CSVs.
-
-        - If previous day's CSV exists = set start to max(original start, prev_day_last_ts+1)
-        - If next day's CSV exists = set end to min(original end, next_day_first_ts)
-        - If neighbor files are empty/unreadable, ignore adjustment for that side
-        """
-
-        def find_last_timestamp(csv_path: Path) -> int | None:
+    def _adjust_daily_boundaries(...) -> ...:
+    """..."""
+    passdef find_last_timestamp(csv_path: Path) -> int | None:
             try:
-    pass  # TODO: Add proper exception handling
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
 
                 if not csv_path.exists() or csv_path.stat().st_size == 0:
-                    return None
+    passreturn None
                 # Read timestamp column and compute max to be robust to unsorted files
                 df = pd.read_csv(
                     csv_path, usecols=["timestamp"],
@@ -165,28 +155,28 @@ except Exception as e:
                     low_memory=False
                 )
                 if df.empty or "timestamp" not in df.columns:
-                    return None
+    passreturn None
                 return int(df["timestamp"].max().value // 1_000_000)
             except Exception:
-                return None
+    passpassreturn None
 
         def find_first_timestamp(csv_path: Path) -> int | None:
             try:
-    pass  # TODO: Add proper exception handling
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
                 if not csv_path.exists() or csv_path.stat().st_size == 0:
-                    return None
+    passreturn None
                 df = pd.read_csv(
                     csv_path, usecols=["timestamp"],
                     parse_dates=["timestamp"],
                     low_memory=False
                 )
                 if df.empty or "timestamp" not in df.columns:
-                    return None
+    passreturn None
                 return int(df["timestamp"].min().value // 1_000_000)
             except Exception:
-                return None
+    passpassreturn None
 
         prev_day = (start_dt - timedelta(days=1)).strftime("%Y-%m-%d")
         next_day = (start_dt + timedelta(days=1)).strftime("%Y-%m-%d")
@@ -204,78 +194,62 @@ except Exception as e:
 
         prev_last = find_last_timestamp(prev_csv)
         if prev_last is not None:
-            effective_start_ms = max(effective_start_ms, prev_last + 1)
+    passeffective_start_ms = max(effective_start_ms, prev_last + 1)
 
         next_first = find_first_timestamp(next_csv)
         if next_first is not None:
-            effective_end_ms = min(effective_end_ms, next_first)
+    passeffective_end_ms = min(effective_end_ms, next_first)
 
         return effective_start_ms, effective_end_ms
 
-    async def _fetch_aggtrades_from_binance_vision(
-        self, symbol: str,
-        day_dt: datetime, effective_start_ms: int,
-        effective_end_ms: int, market_segment: str = "um",
-    ) -> list[dict]:
-        """Download aggregated trades from Binance Data (binance.vision) for a specific day.
-
-        Args:
-            symbol: Trading symbol (e.g., ETHUSDT)
-            day_dt: Datetime object representing the day (UTC) to fetch
-            effective_start_ms: Lower bound (inclusive) in ms to filter rows
-            effective_end_ms: Upper bound (exclusive) in ms to filter rows
-            market_segment: 'um' for USDT-M futures, 'cm' for COIN-M futures
-
-        Returns:
-            List of trade dicts with keys matching Binance aggTrades API ('a','p','q','f','l','T','m').
-        """
-
-        base_url = "https://data.binance.vision"
+    async def _fetch_aggtrades_from_binance_vision(...) -> ...:
+    """..."""
+    passbase_url = "https://data.binance.vision"
         date_str = day_dt.strftime("%Y-%m-%d")
         # Futures USDT-M (fapi) dataset path
         path = f"data/futures/{market_segment}/daily/aggTrades/{symbol}/{symbol}-aggTrades-{date_str}.zip"
         url = f"{base_url}/{path}"
 
         try:
-    pass  # TODO: Add proper exception handling
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
 
             # Use certifi CA bundle to avoid SSL verification issues on some systems
 
             ssl_context = ssl.create_default_context(cafile=certifi.where())
 
             async with self.session.get(url, ssl=ssl_context) as resp:
-                if resp.status != 200:
-                    logger.info(
+    passif resp.status != 200:
+    passlogger.info(
                         f"Binance Vision: no file for {symbol} {date_str} (status {resp.status})",
                     )
                     return []
                 content = await resp.read()
 
             with zipfile.ZipFile(io.BytesIO(content)) as zf:
-                # Pick first CSV entry
+    passpass# Pick first CSV entry
                 csv_names = [n for n in zf.namelist() if n.endswith(".csv")]
                 if not csv_names:
-                    logger.warning(
+    passpasslogger.warning(
                         f"Binance Vision: archive for {symbol} {date_str} has no CSV entries",
                     )
                     return []
                 with zf.open(csv_names[0]) as f:
-                    df = pd.read_csv(
+    passpassdf = pd.read_csv(
                         f, header=None,
                         names=["a", "p", "q", "f", "l", "T", "m", "M"],
                         low_memory=False
                     )
 
             if df.empty:
-                return []
+    passreturn []
 
             # Coerce types to expected numeric/bool
             for col in ["a", "f", "l", "T"]:
-                df[col] = pd.to_numeric(df[col], errors="coerce")
+    passdf[col] = pd.to_numeric(df[col], errors="coerce")
             for col in ["p", "q"]:
-                df[col] = pd.to_numeric(df[col], errors="coerce")
+    passdf[col] = pd.to_numeric(df[col], errors="coerce")
             # Normalize boolean 'm'
             df["m"] = (
                 df["m"]
@@ -297,29 +271,28 @@ except Exception as e:
             # Filter to the effective time window
             df = df[(df["T"] >= effective_start_ms) & (df["T"] < effective_end_ms)]
             if df.empty:
-                return []
+    passpassreturn []
 
             # Convert to list of dicts compatible with _process_aggtrades_data
             return df[["a", "p", "q", "f", "l", "T", "m"]].to_dict(
                 orient="records",
             )
         except Exception as e:
-
-            error_details = traceback.format_exc()
+    passpasspasspasspasspasspasspasserror_details = traceback.format_exc()
             logger.warning(
                 f"Binance Vision fallback failed for {symbol} {date_str}: {e}\n{error_details}",
             )
             return []
 
-    async def initialize(self):
-        """Initialize the downloader and exchange client."""
+    async def initialize(...):
+    pass"""Initialize the downloader and exchange client."""
         print("🔧 STEP 1: Initializing optimized downloader...")
         logger.info("🔧 STEP 1: Initializing optimized downloader...")
 
         try:
-    pass  # TODO: Add proper exception handling
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
 
             print(f"   📊 Exchange: {self.config.exchange}")
             print(f"   📊 Symbol: {self.config.symbol}")
@@ -336,9 +309,9 @@ except Exception as e:
             logger.info("🔌 Creating exchange client...")
 
             try:
-    pass  # TODO: Add proper exception handling
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
 
                 self.exchange_client = ExchangeFactory.get_exchange(
                     self.config.exchange.lower(),
@@ -353,7 +326,7 @@ except Exception as e:
                     f"✅ Exchange client created: {type(self.exchange_client).__name__}",
                 )
             except Exception as e:
-                print(f"🔍 DEBUG: Failed to create exchange client: {e}")
+    passpasspasspasspasspasspassprint(f"🔍 DEBUG: Failed to create exchange client: {e}")
                 print(f"🔍 DEBUG: Error type: {type(e)}")
                 raise
 
@@ -382,53 +355,53 @@ except Exception as e:
             )
             return True
         except Exception:
-            print(failed("STEP 1 FAILED: Failed to initialize downloader: {e}"))
+    passpassprint(failed("STEP 1 FAILED: Failed to initialize downloader: {e}"))
             print(failed("❌ STEP 1 FAILED: Failed to initialize downloader: {e}"))
             return False
 
-    async def cleanup(self):
-        """Clean up resources."""
+    async def cleanup(...):
+    pass"""Clean up resources."""
         if self.session:
-            await self.session.close()
+    passawait self.session.close()
         if self.exchange_client and hasattr(self.exchange_client, "close"):
-            await self.exchange_client.close()
+    passawait self.exchange_client.close()
 
-    def _find_latest_aggtrades_timestamp(self) -> datetime | None:
-        """Find the latest timestamp using partitioned dataset manifest or dataset scan; fallback to CSV tail."""
-        try:
-    pass  # TODO: Add proper exception handling
+    def _find_latest_aggtrades_timestamp(...) -> ...:
+    """..."""
+    passtry:
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
             from src.data.parquet_dataset_manager import ParquetDatasetManager
 
             pdm = ParquetDatasetManager(logger=logger)
             # Prefer partitioned parquet manifest
             base_dir = os.path.join(self.cache_dir, "parquet", "aggtrades")
             if os.path.isdir(base_dir):
-                latest_ms = pdm.get_latest_timestamp_from_manifest(
+    passlatest_ms = pdm.get_latest_timestamp_from_manifest(
                     base_dir) or pdm.get_latest_timestamp(base_dir)
                 if latest_ms is not None:
-                    return datetime.fromtimestamp(int(latest_ms) / 1000)
+    passreturn datetime.fromtimestamp(int(latest_ms) / 1000)
         except Exception:
-            pass
+    passpasspass
 
         # Fallback: previous CSV tail logic
 
         try:
-    pass  # TODO: Add proper exception handling
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
             pattern = f"aggtrades_{self.config.exchange}_{self.config.symbol}_*.csv"
             files = glob.glob(os.path.join(self.cache_dir, pattern))
             if not files:
-                print("🔍 DEBUG: No existing aggtrades files found")
+    passprint("🔍 DEBUG: No existing aggtrades files found")
                 return None
             latest_timestamp = None
             for file_path in files:
-                try:
-    pass  # TODO: Add proper exception handling
+    passtry:
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
 
                     result = subprocess.run(
                         ["tail", "-100", file_path],
@@ -436,59 +409,56 @@ except Exception as e:
                         check=False
                     )
                     if result.returncode != 0:
-                        continue
+    passcontinue
                     lines = result.stdout.strip().split("\n")
                     if len(lines) < 2:
-                        continue
+    passcontinue
                     data_lines = lines[1:]
                     timestamps = []
                     for line in data_lines:
-                        if "," in line:
-                            ts = line.split(",")[0]
+    passif "," in line:
+    passts = line.split(",")[0]
                             try:
-
-                                timestamps.append(
+    passtimestamps.append(
                                     datetime.strptime(ts, "%Y-%m-%d %H:%M:%S.%f"),
                                 )
                             except ValueError:
-                                try:
-
-                                    timestamps.append(
+    passpasstry:
+    passtimestamps.append(
                                         datetime.strptime(ts, "%Y-%m-%d %H:%M:%S"),
                                     )
                                 except ValueError:
-                                    try:
-
-                                        timestamps.append(
+    passpasstry:
+    passtimestamps.append(
                                             datetime.fromtimestamp(int(ts) / 1000),
                                         )
                                     except Exception:
-                                        continue
+    passpasscontinue
                     if timestamps:
-                        file_latest = max(timestamps)
+    passfile_latest = max(timestamps)
                         if latest_timestamp is None or file_latest > latest_timestamp:
-                            latest_timestamp = file_latest
+    passlatest_timestamp = file_latest
                 except Exception:
-                    continue
+    passpasscontinue
             if latest_timestamp:
-                return latest_timestamp + timedelta(seconds=1)
+    passreturn latest_timestamp + timedelta(seconds=1)
             return None
         except Exception:
-            return None
+    passpassreturn None
 
-    def get_time_periods(self, data_type: str) -> list[tuple[datetime, datetime]]:
-        """Get time periods for downloading data = excluding already downloaded periods."""
-        print(f"📅 STEP 2: Calculating time periods for {data_type}...")
+    def get_time_periods(...) -> ...:
+    """..."""
+    passprint(f"📅 STEP 2: Calculating time periods for {data_type}...")
         print(f"🔍 DEBUG: Force mode: {getattr(self.config, 'force', False)}")
         logger.info(f"📅 STEP 2: Calculating time periods for {data_type}...")
 
         # For aggtrades = allow explicit backfill range; otherwise use latest-timestamp heuristic
         if data_type == "aggtrades":
-            if self.config.start_date_str and self.config.end_date_str:
-                try:
-    pass  # TODO: Add proper exception handling
+    passpassif self.config.start_date_str and self.config.end_date_str:
+    passtry:
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
 
                     start_date = datetime.strptime(
                         self.config.start_date_str, "%Y-%m-%d",
@@ -500,38 +470,38 @@ except Exception as e:
                         f"🔍 DEBUG: Using explicit date range for aggtrades: {start_date} to {end_date}",
                     )
                 except Exception as e:
-                    print(
+    passpasspasspasspasspasspassprint(
                         f"⚠️ Invalid explicit date range: {e}; falling back to latest-timestamp mode",
                     )
                     latest_timestamp = self._find_latest_aggtrades_timestamp()
                     if latest_timestamp:
-                        print(
+    passprint(
                             f"🔍 DEBUG: Found latest aggtrades timestamp: {latest_timestamp}",
                         )
                         start_date = latest_timestamp
                         end_date = datetime.now()
                     else:
-                        end_date = datetime.now()
+    passend_date = datetime.now()
                         max_days = 365 * self.config.lookback_years
                         start_date = end_date - timedelta(days=max_days)
             else:
-                latest_timestamp = self._find_latest_aggtrades_timestamp()
+    passlatest_timestamp = self._find_latest_aggtrades_timestamp()
                 if latest_timestamp:
-                    print(
+    passprint(
                         f"🔍 DEBUG: Found latest aggtrades timestamp: {latest_timestamp}",
                     )
                     start_date = latest_timestamp
                     end_date = datetime.now()
                 else:
-                    end_date = datetime.now()
+    passend_date = datetime.now()
                     max_days = 365 * self.config.lookback_years
                     start_date = end_date - timedelta(days=max_days)
         # For other data types, use explicit date range if provided, otherwise standard lookback
         elif self.config.start_date_str and self.config.end_date_str:
-            try:
-    pass  # TODO: Add proper exception handling
+    passpasstry:
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
 
                 start_date = datetime.strptime(
                     self.config.start_date_str, "%Y-%m-%d",
@@ -543,14 +513,14 @@ except Exception as e:
                     f"🔍 DEBUG: Using explicit date range for {data_type}: {start_date} to {end_date}",
                 )
             except Exception as e:
-                print(
+    passpasspasspasspasspasspassprint(
                     f"⚠️ Invalid explicit date range: {e}; falling back to standard lookback",
                 )
                 end_date = datetime.now()
                 max_days = 365 * self.config.lookback_years
                 start_date = end_date - timedelta(days=max_days)
         else:
-            end_date = datetime.now()
+    passend_date = datetime.now()
             max_days = 365 * self.config.lookback_years
             start_date = end_date - timedelta(days=max_days)
 
@@ -564,7 +534,7 @@ except Exception as e:
         logger.info(f"📊 Total days: {(end_date - start_date).days}")
 
         if data_type == "klines":
-            print("   📈 Processing klines (monthly periods)...")
+    passprint("   📈 Processing klines (monthly periods)...")
             logger.info("📈 Processing klines (monthly periods)...")
             # Monthly periods for klines
             periods = []
@@ -579,7 +549,7 @@ except Exception as e:
             skip_count = 0
 
             while current < end_date:
-                next_month = current.replace(day=28) + timedelta(days=4)
+    passpassnext_month = current.replace(day=28) + timedelta(days=4)
                 next_month = next_month.replace(day=1)
                 period_end = min(next_month, end_date)
 
@@ -593,12 +563,12 @@ except Exception as e:
                     or not os.path.exists(filepath)
                     or os.path.getsize(filepath) == 0
                 ):
-                    periods.append((current, period_end))
+    passperiods.append((current, period_end))
                     month_count += 1
                     print(f"   📥 Will download: {filename}")
                     logger.info(f"📥 Will download: {filename}")
                 else:
-                    skip_count += 1
+    passskip_count += 1
                     print(f"   📁 Skipping existing: {filename}")
                     logger.info(f"📁 Skipping existing: {filename}")
 
@@ -612,7 +582,7 @@ except Exception as e:
             )
             return periods
         if data_type == "aggtrades":
-            print("   📊 Processing aggtrades (daily periods)...")
+    passprint("   📊 Processing aggtrades (daily periods)...")
             logger.info("📊 Processing aggtrades (daily periods)...")
             # Daily periods for aggtrades
             periods: list[tuple[datetime , datetime]] = []
@@ -626,29 +596,29 @@ except Exception as e:
 
             def _csv_ts_bounds(path: str) -> tuple[int | None , int | None]:
                 try:
-    pass  # TODO: Add proper exception handling
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
 
                     if not os.path.exists(path) or os.path.getsize(path) == 0:
-                        return None
+    passreturn None
                     df_cov = pd.read_csv(
                         path, usecols=["timestamp"],
                         parse_dates=["timestamp"],
                         low_memory=False
                     )  # type: ignore[arg-type]
                     if df_cov.empty:
-                        return None
+    passreturn None
                     first_ms = int(df_cov["timestamp"].iloc[0].value // 1_000_000)
                     last_ms = int(df_cov["timestamp"].iloc[-1].value // 1_000_000)
                     return first_ms, last_ms
                 except Exception:
-                    return None
+    passpassreturn None
 
             # Create daily periods from current to end_date
             # Reduce logging verbosity for routine file checks
             while current < end_date:
-                period_end = current + timedelta(days=1)
+    passpassperiod_end = current + timedelta(days=1)
                 filename = f"aggtrades_{self.config.exchange}_{self.config.symbol}_{current.strftime('%Y-%m-%d')}.csv"
                 filepath = os.path.join(self.cache_dir, filename)
                 force_mode = getattr(self.config, "force", False)
@@ -662,25 +632,25 @@ except Exception as e:
                     or not os.path.exists(filepath)
                     or os.path.getsize(filepath) == 0
                 ):
-                    periods.append((current, period_end))
+    passpassperiods.append((current, period_end))
                     scheduled_count += 1
                     logger.info(f"📥 Will download: {filename}")
                 else:
-                    # Verify coverage; schedule top-ups for missing prefix/suffix
+    pass# Verify coverage; schedule top-ups for missing prefix/suffix
                     # Only log at DEBUG level to reduce verbosity
                     logger.debug(f"🔍 Checking coverage: {filename}")
                     cov_first_ms, cov_last_ms = _csv_ts_bounds(filepath)
 
                     if cov_first_ms is None or cov_last_ms is None:
-                        # Unreadable or empty after parse → full day
+    pass# Unreadable or empty after parse → full day
                         periods.append((current, period_end))
                         scheduled_count += 1
                         logger.info(f"📥 Coverage unknown → re-download: {filename}")
                     else:
-                        missing = False
+    passmissing = False
                         # Prefix gap
                         if cov_first_ms > day_start_ms:
-                            # Build timezone-aware UTC datetimes for precise slicing
+    pass# Build timezone-aware UTC datetimes for precise slicing
 
                             gap_start_dt = current.replace(tzinfo=UTC)
                             gap_end_dt = _dt.fromtimestamp(
@@ -695,7 +665,7 @@ except Exception as e:
                             )
                         # Suffix gap
                         if cov_last_ms < day_end_ms - 1:
-                            pass  # TODO: Add proper implementation
+    passpass  # TODO: Add proper implementation
                             gap_start_dt = _dt.fromtimestamp(
                                 (cov_last_ms + 1) / 1000.0,
                                 tz=UTC)
@@ -708,7 +678,7 @@ except Exception as e:
                                 f"📥 Will top-up suffix: {gap_start_dt} → {gap_end_dt}",
                             )
                         if not missing:
-                            fully_covered_count += 1
+    passfully_covered_count += 1
                             # Only log at DEBUG level to reduce verbosity
                             logger.debug(f"✅ Already fully covered: {filename}")
 
@@ -737,7 +707,7 @@ except Exception as e:
         skip_count = 0
 
         while current < end_date:
-            next_month = current.replace(day=28) + timedelta(days=4)
+    passpassnext_month = current.replace(day=28) + timedelta(days=4)
             next_month = next_month.replace(day=1)
             period_end = min(next_month, end_date)
 
@@ -751,12 +721,12 @@ except Exception as e:
                 or not os.path.exists(filepath)
                 or os.path.getsize(filepath) == 0
             ):
-                periods.append((current, period_end))
+    passperiods.append((current, period_end))
                 month_count += 1
                 print(f"   📥 Will download: {filename}")
                 logger.info(f"📥 Will download: {filename}")
             else:
-                skip_count += 1
+    passskip_count += 1
                 print(f"   📁 Skipping existing: {filename}")
                 logger.info(f"📁 Skipping existing: {filename}")
 
@@ -770,9 +740,9 @@ except Exception as e:
         )
         return periods
 
-    async def download_klines_parallel(self) -> bool:
-        """Download klines data with parallel processing."""
-        print("🚀 STEP 3: Starting parallel klines download...")
+    async def download_klines_parallel(...) -> ...:
+    """..."""
+    passprint("🚀 STEP 3: Starting parallel klines download...")
         print("🔍 DEBUG: About to get time periods for klines...")
         logger.info("🚀 STEP 3: Starting parallel klines download...")
 
@@ -784,7 +754,7 @@ except Exception as e:
         logger.info(f"📊 Found {len(periods)} monthly periods to download")
 
         if not periods:
-            print("   ⚠️ No klines periods to download - all data already exists")
+    passprint("   ⚠️ No klines periods to download - all data already exists")
             logger.info("⚠️ No klines periods to download - all data already exists")
             return True
 
@@ -794,7 +764,7 @@ except Exception as e:
         # Create tasks for parallel download
         tasks = []
         for i, (start_dt, end_dt) in enumerate(periods):
-            print(
+    passprint(
                 f"   📋 Task {i+1}: {start_dt.strftime('%Y-%m')} to {end_dt.strftime('%Y-%m')}",
             )
             logger.info(
@@ -816,13 +786,13 @@ except Exception as e:
         success_count = 0
         error_count = 0
         for i, result in enumerate(results):
-            if isinstance(result, Exception):
-                error_count += 1
+    passif isinstance(result, Exception):
+    passerror_count += 1
                 print(f"   ❌ Task {i+1} failed: {result}")
                 print(failed("❌ Task {i+1} failed: {result}"))
                 self.stats["errors"] += 1
             elif result:
-                success_count += 1
+    passpasssuccess_count += 1
                 self.stats["klines_downloaded"] += 1
                 print(f"   ✅ Task {i+1} completed successfully")
                 logger.info(f"✅ Task {i+1} completed successfully")
@@ -837,11 +807,9 @@ except Exception as e:
         logger.info(f"📁 CSV Files: {success_count} monthly klines files created")
         return success_count > 0
 
-    async def _download_klines_period(
-        self, start_dt: datetime,
-        end_dt: datetime) -> bool:
-        """Download klines for a specific time period."""
-        print(
+    async def _download_klines_period(...) -> ...:
+    """..."""
+    passprint(
             f"🔍 DEBUG: Starting klines download for {start_dt.strftime('%Y-%m')} to {end_dt.strftime('%Y-%m')}",
         )
         print(
@@ -850,11 +818,11 @@ except Exception as e:
         print(f"🔍 DEBUG: Exchange client type: {type(self.exchange_client)}")
 
         async with self.download_semaphore:
-            print(f"🔍 DEBUG: Acquired semaphore for {start_dt.strftime('%Y-%m')}")
+    passprint(f"🔍 DEBUG: Acquired semaphore for {start_dt.strftime('%Y-%m')}")
             try:
-    pass  # TODO: Add proper exception handling
+    passpasspass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
 
                 # Generate filename for this month
                 filename = f"klines_{self.config.exchange}_{self.config.symbol}_{self.config.interval}_{start_dt.strftime('%Y-%m')}.csv"
@@ -898,7 +866,7 @@ except Exception as e:
                 max_batches = 1000  # Safety limit to prevent infinite loops
 
                 while current_start_time < end_ms and batch_count < max_batches:
-                    batch_count += 1
+    passpassbatch_count += 1
                     progress_percent = min(
                         100,
                         (current_start_time - start_ms) / (end_ms - start_ms) * 100,
@@ -923,9 +891,9 @@ except Exception as e:
                     )
 
                     try:
-    pass  # TODO: Add proper exception handling
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
 
                         print("🔍 DEBUG: Making actual API call...")
                         batch_klines = await self.exchange_client.get_historical_klines(
@@ -938,12 +906,12 @@ except Exception as e:
                             f"🔍 DEBUG: Received {len(batch_klines) if batch_klines else 0} klines",
                         )
                     except Exception as e:
-                        print(f"🔍 DEBUG: API call failed with error: {e}")
+    passpasspasspasspasspasspasspassprint(f"🔍 DEBUG: API call failed with error: {e}")
                         print(f"🔍 DEBUG: Error type: {type(e)}")
                         raise
 
                     if not batch_klines:
-                        print(f"         ⚠️ No more klines found in batch {batch_count}")
+    passprint(f"         ⚠️ No more klines found in batch {batch_count}")
                         logger.info(f"⚠️ No more klines found in batch {batch_count}")
                         break
 
@@ -959,7 +927,7 @@ except Exception as e:
 
                     # Find the latest timestamp in this batch to continue from
                     if batch_klines:
-                        latest_kline = max(
+    passlatest_kline = max(
                             batch_klines, key=lambda x: x[0]
                             if isinstance(x, list) and len(x) > 0
                             else 0,
@@ -971,7 +939,7 @@ except Exception as e:
                         )
 
                         if latest_time <= current_start_time:
-                            print(
+    passprint(
                                 "         ⚠️ No progress in timestamp = stopping pagination",
                             )
                             logger.warning(
@@ -983,7 +951,7 @@ except Exception as e:
                             latest_time + 1
                         )  # Start from next millisecond
                     else:
-                        break
+    passbreak
 
                     # Rate limiting between batches
                     await asyncio.sleep(self.config.rate_limit_delay)
@@ -1000,7 +968,7 @@ except Exception as e:
                 logger.info(f"📊 Received {len(klines) if klines else 0} klines")
 
                 if not klines:
-                    print(
+    passprint(
                         f"         ⚠️ No klines received for {start_dt.strftime('%Y-%m')}",
                     )
                     logger.warning(
@@ -1009,7 +977,7 @@ except Exception as e:
 
                     # For MEXC = create synthetic klines when no historical data is available
                     if self.config.exchange.upper() == "MEXC":
-                        print("         🔧 Creating synthetic klines for MEXC...")
+    passpassprint("         🔧 Creating synthetic klines for MEXC...")
                         logger.info("🔧 Creating synthetic klines for MEXC...")
 
                         # Create synthetic klines based on realistic historical patterns
@@ -1017,19 +985,19 @@ except Exception as e:
 
                         # Use realistic base price based on the date (historical ETH prices)
                         if start_dt.year == 2022:
-                            base_price = (
+    passpassbase_price = (
                                 1500.0 + (start_dt.month - 1) * 50
                             )  # Gradual increase through 2022
                         elif start_dt.year == 2023:
-                            base_price = (
+    passpassbase_price = (
                                 2000.0 + (start_dt.month - 1) * 100
                             )  # Gradual increase through 2023
                         elif start_dt.year == 2024:
-                            base_price = (
+    passpassbase_price = (
                                 3000.0 + (start_dt.month - 1) * 50
                             )  # Gradual increase through 2024
                         else:
-                            base_price = 3500.0  # Default for 2025+
+    passbase_price = 3500.0  # Default for 2025+
 
                         # Calculate number of minutes in the month
                         days_in_month = (end_dt - start_dt).days
@@ -1041,9 +1009,9 @@ except Exception as e:
 
                         current_price = base_price
                         for i in range(minutes_in_month):
-                            # Simulate realistic price movement
+    pass# Simulate realistic price movement
                             if i > 0:
-                                # Simulate price changes with some volatility
+    pass# Simulate price changes with some volatility
                                 change_percent = random.uniform(
                                     -0.1,
                                     0.1,
@@ -1106,7 +1074,7 @@ except Exception as e:
                         # Use synthetic klines instead of empty list
                         klines = synthetic_klines
                     else:
-                        return False
+    passreturn False
 
                 # Process and save data immediately
                 print("         🔄 Processing data...")
@@ -1126,12 +1094,11 @@ except Exception as e:
                 df.to_csv(filepath, index=False)
                 # Also save Parquet for efficient downstream processing
                 try:
-
-                    parquet_path = os.path.splitext(filepath)[0] + ".parquet"
+    passpassparquet_path = os.path.splitext(filepath)[0] + ".parquet"
                     df.to_parquet(parquet_path, compression="zstd", index=False)
                     logger.info(f"🧩 Saved Parquet sibling: {parquet_path}")
                 except Exception as _e:
-                    logger.warning(f"Could not save Parquet sibling: {_e}")
+    passpasspasspasspasspasspasslogger.warning(f"Could not save Parquet sibling: {_e}")
 
                 file_size = os.path.getsize(filepath)
                 print(f"         ✅ NEW CSV FILE CREATED: {filename}")
@@ -1145,16 +1112,16 @@ except Exception as e:
                 return True
 
             except Exception as e:
-                print(
+    passpasspasspasspasspasspassprint(
                     f"         ❌ Error downloading klines for {start_dt.strftime('%Y-%m')}: {e}",
                 )
                 logger.exception(
                     f"❌ Error downloading klines for {start_dt.strftime('%Y-%m')}: {e}",
                 )
 
-    async def download_aggtrades_parallel(self) -> bool:
-        """Download aggregated trades data with parallel processing."""
-        print("🚀 STEP 3B: Starting parallel aggtrades download...")
+    async def download_aggtrades_parallel(...) -> ...:
+    """..."""
+    passprint("🚀 STEP 3B: Starting parallel aggtrades download...")
         logger.info("🚀 STEP 3B: Starting parallel aggtrades download...")
 
         periods = self.get_time_periods("aggtrades")
@@ -1162,7 +1129,7 @@ except Exception as e:
         logger.info(f"📊 Found {len(periods)} daily periods to download")
 
         if not periods:
-            print("   ⚠️ No aggtrades periods to download - all data already exists")
+    passprint("   ⚠️ No aggtrades periods to download - all data already exists")
             logger.info("⚠️ No aggtrades periods to download - all data already exists")
             return True
 
@@ -1172,7 +1139,7 @@ except Exception as e:
         # Create tasks for parallel download
         tasks = []
         for i , (start_dt, end_dt) in enumerate(periods):
-            if i < 5 or i % 50 == 0:  # Show first 5 and every 50th
+    passif i < 5 or i % 50 == 0:  # Show first 5 and every 50th
                 print(
                     f"   📋 Task {i+1}: {start_dt.strftime('%Y-%m-%d')} to {end_dt.strftime('%Y-%m-%d')}",
                 )
@@ -1206,14 +1173,14 @@ except Exception as e:
         success_count = 0
         error_count = 0
         for i , result in enumerate(results):
-            if isinstance(result , Exception):
-                error_count += 1
+    passif isinstance(result , Exception):
+    passerror_count += 1
                 if i < 5 or i % 50 == 0:  # Show first 5 and every 50th
                     print(f"   ❌ Task {i+1} failed: {result}")
                     print(failed("❌ Task {i+1} failed: {result}"))
                 self.stats["errors"] += 1
             elif result:
-                success_count += 1
+    passpasssuccess_count += 1
                 self.stats["aggtrades_downloaded"] += 1
                 if i < 5 or i % 50 == 0:  # Show first 5 and every 50th
                     print(f"   ✅ Task {i+1} completed successfully")
@@ -1229,15 +1196,13 @@ except Exception as e:
         logger.info(f"📁 CSV Files: {success_count} daily aggtrades files created")
         return success_count > 0
 
-    async def _download_aggtrades_period(
-        self, start_dt: datetime,
-        end_dt: datetime) -> bool:
-        """Download aggregated trades for a specific time period."""
-        async with self.download_semaphore:
-            try:
-    pass  # TODO: Add proper exception handling
+    async def _download_aggtrades_period(...) -> ...:
+    """..."""
+    passasync with self.download_semaphore:
+    passtry:
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
 
                 # Generate filename for this day
                 filename = f"aggtrades_{self.config.exchange}_{self.config.symbol}_{start_dt.strftime('%Y-%m-%d')}.csv"
@@ -1262,7 +1227,7 @@ except Exception as e:
 
                 # If fully covered by neighbors = skip gracefully
                 if effective_start_ms >= effective_end_ms:
-                    print(
+    passpasspassprint(
                         "         ⏭️ Skipping day: fully covered by neighboring data (no safe gap to download)",
                     )
                     logger.info(
@@ -1286,13 +1251,12 @@ except Exception as e:
                 # Prefer Binance Vision archive for older dates to avoid API empties
                 prefer_archive = False
                 try:
-
-                    now_utc = datetime.utcnow()
+    passpassnow_utc = datetime.utcnow()
                     prefer_archive = (
                         now_utc - start_dt
                     ).days >= 7 and self.config.exchange.upper() == "BINANCE"
                 except Exception:
-                    pass
+    passpasspass
 
                 # Download data - try multiple approaches for MEXC
                 print(f"         🔌 Making API call to {self.config.exchange}...")
@@ -1300,7 +1264,7 @@ except Exception as e:
 
                 # For MEXC = use synthetic data since the API doesn't return historical data properly
                 if self.config.exchange.upper() == "MEXC":
-                    print(
+    passpassprint(
                         "         🔧 Using MEXC-specific approach with synthetic data...",
                     )
                     logger.info(
@@ -1323,7 +1287,7 @@ except Exception as e:
                     )
 
                     if not klines:
-                        # If no klines for this specific day = create comprehensive synthetic data
+    passpasspass# If no klines for this specific day = create comprehensive synthetic data
                         print(
                             f"         🔧 No klines for {start_dt.strftime('%Y-%m-%d')}, creating comprehensive synthetic data...",
                         )
@@ -1337,34 +1301,34 @@ except Exception as e:
                         # Use realistic base price based on the date (historical ETH prices)
                         # Historical ETH prices: 2022-2023 range from ~$1000 to ~$4000
                         if start_dt.year == 2022:
-                            base_price = (
+    passbase_price = (
                                 1500.0 + (start_dt.month - 1) * 50
                             )  # Gradual increase through 2022
                         elif start_dt.year == 2023:
-                            base_price = (
+    passpassbase_price = (
                                 2000.0 + (start_dt.month - 1) * 100
                             )  # Gradual increase through 2023
                         elif start_dt.year == 2024:
-                            base_price = (
+    passpassbase_price = (
                                 3000.0 + (start_dt.month - 1) * 50
                             )  # Gradual increase through 2024
                         else:
-                            base_price = 3500.0  # Default for 2025+
+    passbase_price = 3500.0  # Default for 2025+
 
                         base_volume = 1000.0  # Base volume
 
                         # Create 1440 synthetic trades (one per minute for 24 hours)
                         for i in range(1440):
-                            # Simulate realistic price movement with volatility
+    pass# Simulate realistic price movement with volatility
 
                             random.seed(
                                 hash(start_dt.strftime("%Y-%m-%d")) + i)  # Deterministic but varied
 
                             # Create realistic price movements
                             if i == 0:
-                                current_price = base_price
+    passpasscurrent_price = base_price
                             else:
-                                # Simulate price changes with some volatility
+    pass# Simulate price changes with some volatility
                                 change_percent = random.uniform(
                                     -0.5,
                                     0.5,
@@ -1409,11 +1373,11 @@ except Exception as e:
                             f"✅ Created {len(trades)} comprehensive synthetic trades for {start_dt.strftime('%Y-%m-%d')} (base price: ${base_price:.2f})",
                         )
                     else:
-                        # Convert klines to trade-like format
+    pass# Convert klines to trade-like format
                         trades = []
                         for kline in klines:
-                            if isinstance(kline , dict) and "T" in kline:
-                                # Convert kline to trade format
+    passif isinstance(kline , dict) and "T" in kline:
+    pass# Convert kline to trade format
                                 trade = {
                                     "a": int(kline["T"] / 1000),  # Use timestamp as ID
                                     "p": float(kline.get("c", 0)),  # Close price
@@ -1432,12 +1396,12 @@ except Exception as e:
                             f"✅ Created {len(trades)} synthetic trades from klines",
                         )
                 else:
-                    # For BINANCE and older dates, try archive first
+    pass# For BINANCE and older dates, try archive first
                     if prefer_archive:
-                        try:
-    pass  # TODO: Add proper exception handling
+    passtry:
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
 
                             vision_trades = (
                                 await self._fetch_aggtrades_from_binance_vision(
@@ -1447,16 +1411,16 @@ except Exception as e:
                                 )
                             )
                             if vision_trades:
-                                df = self._process_aggtrades_data(vision_trades)
+    passdf = self._process_aggtrades_data(vision_trades)
                                 merged_df = self._merge_existing_aggtrades(
                                     filepath, df,
                                     start_dt, end_dt,
                                 )
                                 merged_df.to_csv(filepath, index=False)
                                 try:
-    pass  # TODO: Add proper exception handling
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
                                     parquet_path = (
                                         os.path.splitext(filepath)[0] + ".parquet"
                                     )
@@ -1468,7 +1432,7 @@ except Exception as e:
                                         f"🧩 Saved Parquet sibling: {parquet_path}",
                                     )
                                 except Exception as _e:
-                                    logger.warning(
+    passpasspasspasspasspasspasslogger.warning(
                                         f"Could not save Parquet sibling: {_e}",
                                     )
                                 file_size = os.path.getsize(filepath)
@@ -1489,7 +1453,7 @@ except Exception as e:
                                 )
                                 return True
                         except Exception as _e:
-                            logger.info(
+    passpasspasspasspasspasspasslogger.info(
                                 f"Archive-first attempt skipped due to error: {_e}",
                             )
 
@@ -1510,7 +1474,7 @@ except Exception as e:
                         current_start_time < effective_end_ms
                         and batch_count < max_batches
                     ):
-                        batch_count += 1
+    passpasspassbatch_count += 1
                         print(
                             f"         📥 Batch {batch_count}: Downloading from {datetime.fromtimestamp(current_start_time/1000)}...",
                         )
@@ -1542,7 +1506,7 @@ except Exception as e:
                         logging.getLogger().setLevel(original_level)
 
                         if not batch_trades:
-                            print(
+    passpassprint(
                                 f"         ⚠️ No more trades found in batch {batch_count}",
                             )
                             logger.info(
@@ -1562,9 +1526,9 @@ except Exception as e:
 
                         # Find the latest timestamp in this batch to continue from
                         if batch_trades:
-                            # Debug: print first few trades to see structure
+    pass# Debug: print first few trades to see structure
                             if batch_count == 1:
-                                print(
+    passprint(
                                     f"         🔍 DEBUG: First trade structure: {batch_trades[0] if batch_trades else 'No trades'}",
                                 )
                                 logger.info(
@@ -1574,7 +1538,7 @@ except Exception as e:
                             # Find the latest timestamp - try different possible field names
                             latest_time = 0
                             for trade in batch_trades:
-                                # Try different possible timestamp field names
+    passpass# Try different possible timestamp field names
                                 timestamp = (
                                     trade.get("T")
                                     or trade.get("timestamp")
@@ -1582,7 +1546,7 @@ except Exception as e:
                                     or trade.get("t")
                                 )
                                 if timestamp and timestamp > latest_time:
-                                    latest_time = timestamp
+    passlatest_time = timestamp
 
                             print(
                                 f"         🔍 DEBUG: Latest timestamp in batch: {latest_time} ({datetime.fromtimestamp(latest_time/1000) if latest_time > 0 else 'None'})",
@@ -1592,7 +1556,7 @@ except Exception as e:
                             )
 
                             if latest_time <= current_start_time:
-                                print(
+    passprint(
                                     "         ⚠️ No progress in timestamp = stopping pagination",
                                 )
                                 logger.warning(
@@ -1610,14 +1574,14 @@ except Exception as e:
                                 f"🔄 Next batch will start from: {current_start_time} ({datetime.fromtimestamp(current_start_time/1000)})",
                             )
                         else:
-                            break
+    passbreak
 
                         # Rate limiting between batches
                         await asyncio.sleep(self.config.rate_limit_delay)
 
                                             # Process and save data incrementally
                         if all_trades:
-                            print(
+    passprint(
                                 f"         🔄 Processing {len(all_trades)} total trades...",
                             )
                             logger.info(f"🔄 Processing {len(all_trades)} total trades...")
@@ -1641,12 +1605,11 @@ except Exception as e:
                         merged_df.to_csv(filepath, index = False)
                         # Also save Parquet for efficient downstream processing
                         try:
-
-                            parquet_path = os.path.splitext(filepath)[0] + ".parquet"
+    passpassparquet_path = os.path.splitext(filepath)[0] + ".parquet"
                             df.to_parquet(parquet_path, compression = "zstd", index=False)
                             logger.info(f"🧩 Saved Parquet sibling: {parquet_path}")
                         except Exception as _e:
-                            logger.warning(f"Could not save Parquet sibling: {_e}")
+    passpasspasspasspasspasspasslogger.warning(f"Could not save Parquet sibling: {_e}")
 
                         file_size = os.path.getsize(filepath)
                         print(f"         ✅ CSV FILE UPDATED: {filename}")
@@ -1671,21 +1634,21 @@ except Exception as e:
                         f"⚠️ Empty aggtrades for {start_dt.strftime('%Y-%m-%d')}, trying CCXT fallback...",
                     )
                     try:
-    pass  # TODO: Add proper exception handling
+    passpasspass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
 
                         # First try CCXT aggregate trades
                         ccxt_trades: list[dict] = []
                         if hasattr(
                             self.exchange_client, "get_historical_agg_trades_ccxt",
                         ):
-                            ccxt_trades = await self.exchange_client.get_historical_agg_trades_ccxt(
+    passccxt_trades = await self.exchange_client.get_historical_agg_trades_ccxt(
                                 self.config.symbol, effective_start_ms,
                                 effective_end_ms, limit=1000,
                             )
                         if not ccxt_trades:
-                            print(
+    passprint(
                                 "         🔁 CCXT empty, trying Binance Vision archive...",
                             )
                             logger.info(
@@ -1699,7 +1662,7 @@ except Exception as e:
                                 )
                             )
                             if not vision_trades:
-                                print(
+    passprint(
                                     f"         ⚠️ No aggtrades available from API/CCXT/Vision for {start_dt.strftime('%Y-%m-%d')}",
                                 )
                                 logger.warning(
@@ -1715,12 +1678,11 @@ except Exception as e:
                         )
                         merged_df.to_csv(filepath, index=False)
                         try:
-
-                            parquet_path = os.path.splitext(filepath)[0] + ".parquet"
+    passpassparquet_path = os.path.splitext(filepath)[0] + ".parquet"
                             df.to_parquet(parquet_path, compression = "zstd", index=False)
                             logger.info(f"🧩 Saved Parquet sibling: {parquet_path}")
                         except Exception as _e:
-                            logger.warning(f"Could not save Parquet sibling: {_e}")
+    passpasspasspasspasspasspasslogger.warning(f"Could not save Parquet sibling: {_e}")
                         file_size = os.path.getsize(filepath)
                         print(f"         ✅ CSV FILE UPDATED (archive): {filename}")
                         print(f"            📊 Size: {file_size:,} bytes")
@@ -1733,11 +1695,11 @@ except Exception as e:
                         )
                         return True
                     except Exception as _e:
-                        logger.warning(f"Archive fallbacks failed: {_e}")
+    passpasspasspasspasspasspasslogger.warning(f"Archive fallbacks failed: {_e}")
                     return False
 
             except Exception as e:
-                print(
+    passpasspasspasspasspasspassprint(
                     f"         ❌ Error downloading aggtrades for {start_dt.strftime('%Y-%m-%d')}: {e}",
                 )
                 logger.exception(
@@ -1745,9 +1707,9 @@ except Exception as e:
                 )
                 return False
 
-    async def download_futures_parallel(self) -> bool:
-        """Download futures data with parallel processing."""
-        print("🚀 STEP 3C: Starting parallel futures download...")
+    async def download_futures_parallel(...) -> ...:
+    """..."""
+    passprint("🚀 STEP 3C: Starting parallel futures download...")
         logger.info("🚀 STEP 3C: Starting parallel futures download...")
 
         periods = self.get_time_periods("futures")
@@ -1755,7 +1717,7 @@ except Exception as e:
         logger.info(f"📊 Found {len(periods)} daily periods to download")
 
         if not periods:
-            print("   ⚠️ No futures periods to download - all data already exists")
+    passprint("   ⚠️ No futures periods to download - all data already exists")
             logger.info("⚠️ No futures periods to download - all data already exists")
             return True
 
@@ -1765,7 +1727,7 @@ except Exception as e:
         # Create tasks for parallel download
         tasks = []
         for i , (start_dt, end_dt) in enumerate(periods):
-            if i < 5 or i % 50 == 0:  # Show first 5 and every 50th
+    passif i < 5 or i % 50 == 0:  # Show first 5 and every 50th
                 print(
                     f"   📋 Task {i+1}: {start_dt.strftime('%Y-%m-%d')} to {end_dt.strftime('%Y-%m-%d')}",
                 )
@@ -1788,14 +1750,14 @@ except Exception as e:
         success_count = 0
         error_count = 0
         for i , result in enumerate(results):
-            if isinstance(result , Exception):
-                error_count += 1
+    passif isinstance(result , Exception):
+    passerror_count += 1
                 if i < 5 or i % 50 == 0:  # Show first 5 and every 50th
                     print(f"   ❌ Task {i+1} failed: {result}")
                     print(failed("❌ Task {i+1} failed: {result}"))
                 self.stats["errors"] += 1
             elif result:
-                success_count += 1
+    passpasssuccess_count += 1
                 self.stats["futures_downloaded"] += 1
                 if i < 5 or i % 50 == 0:  # Show first 5 and every 50th
                     print(f"   ✅ Task {i+1} completed successfully")
@@ -1811,15 +1773,13 @@ except Exception as e:
         logger.info(f"📁 CSV Files: {success_count} daily futures files created")
         return success_count > 0
 
-    async def _download_futures_period(
-        self, start_dt: datetime,
-        end_dt: datetime) -> bool:
-        """Download futures data for a specific time period."""
-        async with self.download_semaphore:
-            try:
-    pass  # TODO: Add proper exception handling
+    async def _download_futures_period(...) -> ...:
+    """..."""
+    passasync with self.download_semaphore:
+    passtry:
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
 
                 # Generate filename for this month
                 filename = f"futures_{self.config.exchange}_{self.config.symbol}_{start_dt.strftime('%Y-%m')}.csv"
@@ -1856,7 +1816,7 @@ except Exception as e:
                 max_batches = 1000  # Safety limit to prevent infinite loops
 
                 while current_start_time < end_ms and batch_count < max_batches:
-                    batch_count += 1
+    passpasspassbatch_count += 1
                     print(
                         f"         📥 Batch {batch_count}: Downloading futures from {datetime.fromtimestamp(current_start_time/1000)}...",
                     )
@@ -1882,7 +1842,7 @@ except Exception as e:
                     batch_futures = batch_futures_response.get("funding_rates", []) if isinstance(batch_futures_response, dict) else []
 
                     if not batch_futures:
-                        print(
+    passprint(
                             f"         ⚠️ No more futures data found in batch {batch_count}",
                         )
                         logger.info(
@@ -1902,7 +1862,7 @@ except Exception as e:
 
                     # Find the latest timestamp in this batch to continue from
                     if batch_futures:
-                        # For funding rates = use fundingTime field
+    pass# For funding rates = use fundingTime field
                         latest_future = max(
                             batch_futures, key=lambda x: x.get("fundingTime", 0)
                             if isinstance(x, dict)
@@ -1915,7 +1875,7 @@ except Exception as e:
                         )
 
                         if latest_time <= current_start_time:
-                            print(
+    passprint(
                                 "         ⚠️ No progress in timestamp = stopping pagination",
                             )
                             logger.warning(
@@ -1927,7 +1887,7 @@ except Exception as e:
                             latest_time + 1
                         )  # Start from next millisecond
                     else:
-                        break
+    passbreak
 
                     # Rate limiting between batches
                     await asyncio.sleep(self.config.rate_limit_delay)
@@ -1948,7 +1908,7 @@ except Exception as e:
                 )
 
                 if not futures_data:
-                    print(
+    passprint(
                         f"         ⚠️ No futures data received for {start_dt.strftime('%Y-%m')}",
                     )
                     logger.warning(
@@ -1974,12 +1934,11 @@ except Exception as e:
                 df.to_csv(filepath, index=False)
                 # Also save Parquet for efficient downstream processing
                 try:
-
-                    parquet_path = os.path.splitext(filepath)[0] + ".parquet"
+    passpassparquet_path = os.path.splitext(filepath)[0] + ".parquet"
                     df.to_parquet(parquet_path, compression = "zstd", index=False)
                     logger.info(f"🧩 Saved Parquet sibling: {parquet_path}")
                 except Exception as _e:
-                    logger.warning(f"Could not save Parquet sibling: {_e}")
+    passpasspasspasspasspasspasslogger.warning(f"Could not save Parquet sibling: {_e}")
 
                 file_size = os.path.getsize(filepath)
                 print(f"         ✅ NEW CSV FILE CREATED: {filename}")
@@ -1993,7 +1952,7 @@ except Exception as e:
                 return True
 
             except Exception as e:
-                print(
+    passpasspasspasspasspasspassprint(
                     f"         ❌ Error downloading futures for {start_dt.strftime('%Y-%m')}: {e}",
                 )
                 logger.exception(
@@ -2001,9 +1960,9 @@ except Exception as e:
                 )
                 return False
 
-    def _process_klines_data(self, klines: list[list]) -> pd.DataFrame:
-        """Process klines data into a DataFrame."""
-        df = pd.DataFrame(
+    def _process_klines_data(...) -> ...:
+    """..."""
+    passdf = pd.DataFrame(
             klines, columns = [
                 "open_time",
                 "open",
@@ -2030,10 +1989,10 @@ except Exception as e:
         # Select relevant columns
         return df[["timestamp", "open", "high", "low", "close", "volume"]]
 
-    def _process_aggtrades_data(self, trades: list[dict]) -> pd.DataFrame:
-        """Process aggregated trades data into a DataFrame."""
-        if not trades:
-            return pd.DataFrame()
+    def _process_aggtrades_data(...) -> ...:
+    """..."""
+    passif not trades:
+    passreturn pd.DataFrame()
 
         # Convert to DataFrame
         df = pd.DataFrame(trades)
@@ -2053,38 +2012,26 @@ except Exception as e:
 
         # Convert timestamp
         if "timestamp" in df.columns:
-            df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
+    passdf["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
 
         # Convert numeric columns
         numeric_cols = ["price", "quantity"]
         for col in numeric_cols:
-            if col in df.columns:
-                df[col] = pd.to_numeric(df[col], errors="coerce")
+    passif col in df.columns:
+    passdf[col] = pd.to_numeric(df[col], errors="coerce")
 
         return df
 
-    def _merge_existing_aggtrades(
-        self, filepath: str,
-        new_df: pd.DataFrame, day_start_dt: datetime,
-        day_end_dt: datetime) -> pd.DataFrame:
-        """Merge new aggtrade rows into an existing daily CSV without losing data.
-
-        - Reads existing CSV if present
-        - Concatenates with new rows
-        - Deduplicates (prefer 'agg_trade_id' if available; otherwise by key columns)
-        - Clips to [day_start = day_end) and sorts by timestamp
-        - Returns merged DataFrame ready to be saved
-        """
-
-        # Normalize timezone handling to naive UTC for comparison
+    def _merge_existing_aggtrades(...) -> ...:
+    """..."""
+    pass# Normalize timezone handling to naive UTC for comparison
 
         def _naive_utc(dt: datetime) -> datetime:
             try:
-
-                if dt.tzinfo is not None:
-                    return dt.astimezone(UTC).replace(tzinfo=None)
+    passif dt.tzinfo is not None:
+    passreturn dt.astimezone(UTC).replace(tzinfo=None)
             except Exception:
-                pass
+    passpasspass
             return dt
 
         start_dt_naive = _naive_utc(day_start_dt)
@@ -2093,35 +2040,33 @@ except Exception as e:
         frames: list[pd.DataFrame] = []
         # Read existing file if present
         try:
-
-            if os.path.exists(filepath) and os.path.getsize(filepath) > 0:
-                existing_df = pd.read_csv(
+    passpassif os.path.exists(filepath) and os.path.getsize(filepath) > 0:
+    passexisting_df = pd.read_csv(
                     filepath, parse_dates=["timestamp"],
                     low_memory=False
                 )
                 frames.append(existing_df)
         except Exception:
-            pass
+    passpasspass
 
         # Ensure new df has parsed timestamps
         if "timestamp" in new_df.columns and not pd.api.types.is_datetime64_any_dtype(
             new_df["timestamp"],
         ):
-            try:
-
-                new_df = new_df.copy()
+    passtry:
+    passnew_df = new_df.copy()
                 new_df["timestamp"] = pd.to_datetime(new_df["timestamp"])
             except Exception:
-                pass
+    passpasspass
 
         frames.append(new_df)
         merged = pd.concat(frames, ignore_index=True) if len(frames) > 1 else new_df
 
         # Deduplicate
         if "agg_trade_id" in merged.columns:
-            merged = merged.drop_duplicates(subset=["agg_trade_id"], keep="first")
+    passmerged = merged.drop_duplicates(subset=["agg_trade_id"], keep="first")
         else:
-            dedup_keys = [
+    passdedup_keys = [
                 c
                 for c in [
                     "timestamp",
@@ -2133,37 +2078,37 @@ except Exception as e:
                 if c in merged.columns
             ]
             if dedup_keys:
-                merged = merged.drop_duplicates(subset=dedup_keys, keep="first")
+    passpassmerged = merged.drop_duplicates(subset=dedup_keys, keep="first")
             else:
-                merged = merged.drop_duplicates(keep="first")
+    passmerged = merged.drop_duplicates(keep="first")
 
         # Clip to the day window and sort
         if "timestamp" in merged.columns:
-            merged = merged[
+    passmerged = merged[
                 (merged["timestamp"] >= start_dt_naive)
                 & (merged["timestamp"] < end_dt_naive)
             ]
             merged = merged.sort_values(by="timestamp")
         return merged.reset_index(drop=True)
 
-    def _process_futures_data(self, futures_data: list[dict]) -> pd.DataFrame:
-        """Process futures data into a DataFrame."""
-        if not futures_data:
-            return pd.DataFrame()
+    def _process_futures_data(...) -> ...:
+    """..."""
+    passif not futures_data:
+    passreturn pd.DataFrame()
 
         df = pd.DataFrame(futures_data)
 
         # Convert fundingTime to timestamp for funding rates
         if "fundingTime" in df.columns:
-            df["timestamp"] = pd.to_datetime(df["fundingTime"], unit="ms")
+    passpassdf["timestamp"] = pd.to_datetime(df["fundingTime"], unit="ms")
         elif "timestamp" in df.columns:
-            df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
+    passpassdf["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
 
         return df
 
-    async def run_optimized_download(self) -> bool:
-        """Run the complete optimized download process."""
-        start_time = time.time()
+    async def run_optimized_download(...) -> ...:
+    """..."""
+    passstart_time = time.time()
 
         print("=" * 80)
         print("🚀 STARTING OPTIMIZED DATA DOWNLOAD PROCESS")
@@ -2190,9 +2135,9 @@ except Exception as e:
         )
 
         try:
-    pass  # TODO: Add proper exception handling
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
 
             # Initialize
             print("🔍 DEBUG: Starting initialization...")
@@ -2201,7 +2146,7 @@ except Exception as e:
             print("🔍 DEBUG: Config symbol:", self.config.symbol)
 
             if not await self.initialize():
-                print(failed("INITIALIZATION FAILED - Aborting download process"))
+    passprint(failed("INITIALIZATION FAILED - Aborting download process"))
                 print(failed("❌ INITIALIZATION FAILED - Aborting download process"))
                 return False
 
@@ -2243,13 +2188,13 @@ except Exception as e:
             success_count = 0
             error_count = 0
             for i, result in enumerate(results):
-                data_types = ["Klines", "Aggtrades", "Futures"]
+    passdata_types = ["Klines", "Aggtrades", "Futures"]
                 if isinstance(result, Exception):
-                    error_count += 1
+    passerror_count += 1
                     print(f"   ❌ {data_types[i]} download failed: {result}")
                     print(failed("❌ {data_types[i]} download failed: {result}"))
                 elif result:
-                    success_count += 1
+    passpasssuccess_count += 1
                     print(f"   ✅ {data_types[i]} download completed successfully")
                     logger.info(f"✅ {data_types[i]} download completed successfully")
 
@@ -2311,18 +2256,18 @@ except Exception as e:
             return success_count > 0
 
         except Exception:
-            print(critical("CRITICAL ERROR in optimized download: {e}"))
+    passpassprint(critical("CRITICAL ERROR in optimized download: {e}"))
             print(critical("❌ CRITICAL ERROR in optimized download: {e}"))
             return False
         finally:
-            print("🧹 Cleaning up resources...")
+    passprint("🧹 Cleaning up resources...")
             logger.info("🧹 Cleaning up resources...")
             await self.cleanup()
             print("✅ Cleanup completed")
             logger.info("✅ Cleanup completed")
 
-async def main():
-    """Main function for the optimized data downloader."""
+async def main(...):
+    pass"""Main function for the optimized data downloader."""
     parser = argparse.ArgumentParser(
         description="Optimized data downloader for Ares trading bot",
     )
@@ -2377,11 +2322,10 @@ async def main():
     # Setup logging - handle import error gracefully
     logger = None
     try:
-
-        setup_logging()
+    passpasssetup_logging()
         logger = get_logger("OptimizedDataDownloader")
     except NameError:
-        # Fallback logging setup
+    passpass# Fallback logging setup
         logging.basicConfig(
             level=logging.INFO,
             format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -2407,11 +2351,11 @@ async def main():
     success = await downloader.run_optimized_download()
 
     if success:
-        logger.info("✅ Optimized download completed successfully")
+    passlogger.info("✅ Optimized download completed successfully")
         sys.exit(0)
     else:
-        print(failed("❌ Optimized download failed"))
+    passprint(failed("❌ Optimized download failed"))
         sys.exit(1)
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    passasyncio.run(main())

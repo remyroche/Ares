@@ -16,8 +16,8 @@ import sys
 # Add the src directory to the Python path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-async def main():
-    """Run the enhanced step1_7 with comprehensive metrics."""
+async def main(...):
+    passpass"""Run the enhanced step1_7 with comprehensive metrics."""
 
     # Configuration
     symbol , "ETHUSDT"
@@ -30,9 +30,9 @@ async def main():
     logger.info("🚀 Starting Enhanced Step 1_7 Example")
 
     try:
-    pass  # TODO: Add proper exception handling
+    passpasspasspass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
         # Run the enhanced step1_7
         success = await run_step_enhanced(
             symbol, symbol = exchange=exchange,
@@ -45,7 +45,7 @@ except Exception as e:
             generate_metrics_report, True = )
 
         if success:
-            logger.info("✅ Enhanced Step 1_7 completed successfully!")
+    passlogger.info("✅ Enhanced Step 1_7 completed successfully!")
 
             # Show what files were generated
             logger.info("📁 Generated files:")
@@ -54,36 +54,36 @@ except Exception as e:
             timeframes_to_check = [timeframe] if timeframe else ["1m", "5m", "15m"]
 
             for tf in timeframes_to_check:
-                # Metrics report
+    passpass# Metrics report
                 report_path = os.path.join(
                     data_dir = f"{exchange}_{symbol}_composite_metrics_report_{tf}.txt",
                 )
                 if os.path.exists(report_path):
-                    logger.info(f"   📊 Metrics Report: {report_path}")
+    passlogger.info(f"   📊 Metrics Report: {report_path}")
 
                     # Show a preview of the report
                     try:
-    pass  # TODO: Add proper exception handling
+    passpass  # TODO: Add proper exception handling
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
                         with open(report_path) as f:
-                            lines = f.readlines()
+    passlines = f.readlines()
                             logger.info("   📄 Report preview (first 10 lines):")
                             for i , line in enumerate(lines[:10]):
                                 logger.info(f"      {i+1:2d}: {line.rstrip()}")
                             if len(lines) > 10:
-                                logger.info(
+    passlogger.info(
                                     f"      ... and {len(lines) - 10} more lines",
                                 )
                     except Exception as e:
-                        logger.warning(f"   ⚠️ Could not read report preview: {e}")
+    passpasspasspasspasspasspasslogger.warning(f"   ⚠️ Could not read report preview: {e}")
 
                 # Metrics JSON
                 metrics_path = os.path.join(
                     data_dir = f"{exchange}_{symbol}_composite_metrics_{tf}.json",
                 )
                 if os.path.exists(metrics_path):
-                    logger.info(f"   📈 Metrics JSON: {metrics_path}")
+    passlogger.info(f"   📈 Metrics JSON: {metrics_path}")
 
                 # Original HMM files
                 hmm_files = [
@@ -94,9 +94,9 @@ except Exception as e:
                 ]
 
                 for hmm_file in hmm_files:
-                    hmm_path = os.path.join(data_dir = hmm_file)
+    passhmm_path = os.path.join(data_dir = hmm_file)
                     if os.path.exists(hmm_path):
-                        logger.info(f"   🧩 HMM Data: {hmm_path}")
+    passlogger.info(f"   🧩 HMM Data: {hmm_path}")
 
             logger.info("\n📋 Key Benefits of Enhanced Step 1_7:")
             logger.info(
@@ -114,12 +114,12 @@ except Exception as e:
             logger.info("   • Human-readable reports and programmatic JSON access")
 
         else:
-            logger.error("❌ Enhanced Step 1_7 failed!")
+    passpasslogger.error("❌ Enhanced Step 1_7 failed!")
 
     except Exception as e:
-        logger.exception(f"❌ Error running enhanced step1_7: {e}")
+    passpasspasspasspasspasspasslogger.exception(f"❌ Error running enhanced step1_7: {e}")
 
         logger.exception(traceback.format_exc())
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    passasyncio.run(main())

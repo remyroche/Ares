@@ -452,7 +452,7 @@ class FinalRegimeClusteringStep:
         scaler = StandardScaler()
         features_scaled = scaler.fit_transform(composite_features)
 
-        # Initialize enhanced clustering
+        # Initialize enhanced clustering with HMM reliability focus
         from src.training.steps.enhanced_regime_clustering import EnhancedRegimeClustering
         
         enhanced_config = {
@@ -476,7 +476,13 @@ class FinalRegimeClusteringStep:
             # Automated K-means settings
             "auto_k_means": True,
             "max_k_for_auto": 8,  # Reduced for faster execution
-            "k_selection_method": "silhouette"  # "silhouette" or "elbow"
+            "k_selection_method": "silhouette",  # "silhouette" or "elbow"
+            
+            # HMM reliability settings
+            "hmm_reliability_focus": True,
+            "hmm_entropy_penalty_weight": 0.15,  # Weight for HMM transition entropy penalty
+            "min_hmm_state_duration": 5,  # Minimum expected state duration
+            "hmm_transition_smoothness_weight": 0.1  # Weight for transition smoothness
         }
         
         enhanced_clustering = EnhancedRegimeClustering(enhanced_config)

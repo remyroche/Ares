@@ -94,6 +94,12 @@ class EnhancedRegimeClustering:
         self.max_k_for_auto = config.get("max_k_for_auto", 10)
         self.k_selection_method = config.get("k_selection_method", "silhouette")  # "silhouette" or "elbow"
         
+        # HMM reliability parameters
+        self.hmm_reliability_focus = config.get("hmm_reliability_focus", False)
+        self.hmm_entropy_penalty_weight = config.get("hmm_entropy_penalty_weight", 0.15)
+        self.min_hmm_state_duration = config.get("min_hmm_state_duration", 5)
+        self.hmm_transition_smoothness_weight = config.get("hmm_transition_smoothness_weight", 0.1)
+        
     def calculate_composite_score(self, features: np.ndarray, labels: np.ndarray) -> Dict[str, float]:
         """Calculate comprehensive quality metrics and composite score."""
         try:
@@ -156,6 +162,21 @@ class EnhancedRegimeClustering:
                 0.1 * volatility_penalty
             )
             
+            # Calculate HMM reliability metrics if enabled
+            hmm_entropy_penalty = 0.0
+            hmm_transition_smoothness = 0.0
+            hmm_reliability_score = 0.0
+            
+            if self.hmm_reliability_focus and n_clusters >= 2:
+                hmm_metrics = self._calculate_hmm_reliability_metrics(valid_features, valid_labels)
+                hmm_entropy_penalty = hmm_metrics["entropy_penalty"]
+                hmm_transition_smoothness = hmm_metrics["transition_smoothness"]
+                hmm_reliability_score = hmm_metrics["reliability_score"]
+                
+                # Adjust composite score with HMM reliability
+                composite_score -= self.hmm_entropy_penalty_weight * hmm_entropy_penalty
+                composite_score += self.hmm_transition_smoothness_weight * hmm_transition_smoothness
+            
             return {
                 "composite_score": composite_score,
                 "silhouette": sil_score,
@@ -167,7 +188,10 @@ class EnhancedRegimeClustering:
                 "coverage": coverage,
                 "cluster_sizes": cluster_sizes,
                 "mean_cluster_size": mean_size,
-                "std_cluster_size": std_size
+                "std_cluster_size": std_size,
+                "hmm_entropy_penalty": hmm_entropy_penalty,
+                "hmm_transition_smoothness": hmm_transition_smoothness,
+                "hmm_reliability_score": hmm_reliability_score
             }
             
         except Exception as e:
@@ -473,6 +497,120 @@ class EnhancedRegimeClustering:
             "quality_improvement": final_score_dict["composite_score"] - initial_score
         }
     
+    def _calculate_hmm_reliability_metrics(self, features: np.ndarray, labels: np.ndarray) -> Dict[str, float]:
+        """Calculate HMM reliability metrics for cluster quality assessment."""
+        try:
+            from hmmlearn import hmm
+            
+            # Convert cluster labels to state sequence
+            unique_labels = sorted(set(labels))
+            state_sequence = np.array([unique_labels.index(label) for label in labels])
+            
+            if len(unique_labels) < 2:
+                return {
+                    "entropy_penalty": 1.0,
+                    "transition_smoothness": 0.0,
+                    "reliability_score": 0.0
+                }
+            
+            # Fit a simple HMM to the state sequence
+            n_states = len(unique_labels)
+            
+            # Create a simple HMM model
+            model = hmm.GaussianHMM(n_components=n_states, covariance_type="full", random_state=42)
+            
+            # Prepare data for HMM (use features as observations)
+            try:
+                model.fit(features.reshape(-1, 1) if features.ndim == 1 else features)
+                
+                # Get transition matrix
+                transition_matrix = model.transmat_
+                
+                # Calculate transition entropy (penalty for high entropy)
+                transition_entropy = 0.0
+                for i in range(n_states):
+                    for j in range(n_states):
+                        if transition_matrix[i, j] > 0:
+                            transition_entropy -= transition_matrix[i, j] * np.log2(transition_matrix[i, j])
+                
+                # Normalize entropy (max entropy is log2(n_states))
+                max_entropy = np.log2(n_states) if n_states > 1 else 1.0
+                normalized_entropy = transition_entropy / max_entropy if max_entropy > 0 else 1.0
+                
+                # Entropy penalty (higher entropy = more penalty)
+                entropy_penalty = normalized_entropy
+                
+                # Calculate transition smoothness (prefer diagonal-heavy matrices)
+                diagonal_sum = np.sum(np.diag(transition_matrix))
+                off_diagonal_sum = np.sum(transition_matrix) - diagonal_sum
+                total_sum = np.sum(transition_matrix)
+                
+                if total_sum > 0:
+                    diagonal_ratio = diagonal_sum / total_sum
+                    transition_smoothness = diagonal_ratio
+                else:
+                    transition_smoothness = 0.0
+                
+                # Calculate state duration statistics
+                state_durations = []
+                current_state = state_sequence[0]
+                current_duration = 1
+                
+                for i in range(1, len(state_sequence)):
+                    if state_sequence[i] == current_state:
+                        current_duration += 1
+                    else:
+                        state_durations.append(current_duration)
+                        current_state = state_sequence[i]
+                        current_duration = 1
+                
+                state_durations.append(current_duration)
+                
+                # Calculate duration reliability
+                if state_durations:
+                    mean_duration = np.mean(state_durations)
+                    duration_reliability = min(1.0, mean_duration / self.min_hmm_state_duration)
+                else:
+                    duration_reliability = 0.0
+                
+                # Overall reliability score
+                reliability_score = (
+                    0.4 * (1.0 - entropy_penalty) +  # Lower entropy is better
+                    0.4 * transition_smoothness +     # Higher smoothness is better
+                    0.2 * duration_reliability        # Longer durations are better
+                )
+                
+                return {
+                    "entropy_penalty": entropy_penalty,
+                    "transition_smoothness": transition_smoothness,
+                    "reliability_score": reliability_score,
+                    "mean_state_duration": mean_duration if state_durations else 0.0,
+                    "transition_entropy": transition_entropy
+                }
+                
+            except Exception as e:
+                self.logger.warning(f"HMM fitting failed: {e}")
+                return {
+                    "entropy_penalty": 1.0,
+                    "transition_smoothness": 0.0,
+                    "reliability_score": 0.0
+                }
+                
+        except ImportError:
+            self.logger.warning("hmmlearn not available, skipping HMM reliability metrics")
+            return {
+                "entropy_penalty": 0.0,
+                "transition_smoothness": 0.0,
+                "reliability_score": 0.0
+            }
+        except Exception as e:
+            self.logger.error(f"Error calculating HMM reliability metrics: {e}")
+            return {
+                "entropy_penalty": 1.0,
+                "transition_smoothness": 0.0,
+                "reliability_score": 0.0
+            }
+    
     def analyze_cluster_characteristics(self, features: np.ndarray, labels: np.ndarray, 
                                       feature_names: List[str]) -> Dict[str, Any]:
         """Analyze characteristics of each cluster."""
@@ -613,6 +751,21 @@ class EnhancedRegimeClustering:
         report.append(f"• Davies-Bouldin Score: {final_score_dict['davies_bouldin']:.4f}")
         report.append(f"• Skew Penalty: {final_score_dict['skew_penalty']:.4f}")
         report.append(f"• Volatility Penalty: {final_score_dict['volatility_penalty']:.4f}")
+        
+        # HMM Reliability Metrics
+        if self.hmm_reliability_focus and "hmm_reliability_score" in final_score_dict:
+            report.append("")
+            report.append("🎯 HMM RELIABILITY METRICS")
+            report.append("-" * 40)
+            report.append(f"• HMM Reliability Score: {final_score_dict['hmm_reliability_score']:.4f}")
+            report.append(f"• Transition Entropy Penalty: {final_score_dict['hmm_entropy_penalty']:.4f}")
+            report.append(f"• Transition Smoothness: {final_score_dict['hmm_transition_smoothness']:.4f}")
+            report.append("")
+            report.append("   HMM Reliability Interpretation:")
+            report.append("   • Higher reliability score = better HMM state transitions")
+            report.append("   • Lower entropy penalty = more predictable transitions")
+            report.append("   • Higher smoothness = more stable state persistence")
+        
         report.append("")
         
         # Cluster Analysis

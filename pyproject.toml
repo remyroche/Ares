@@ -45,6 +45,9 @@ shap = "^0.42.1"
 numba = "^0.58.0"
 cloudpickle = "^2.0.0"
 
+# Enhanced clustering dependencies
+lime = "^0.2.0"  # Local Interpretable Model-agnostic Explanations
+
 
 # Monitoring and metrics
 prometheus-client = "^0.19.0"

@@ -69,16 +69,16 @@ def calculate_triple_barrier_probability(self, model, X_test, market_data):
     # Uses EXISTING model outputs
     y_pred_proba = model.predict_proba(X_test)  # ← Standard model output
     confidence = self.calculate_confidence_from_proba(y_pred_proba)
-    
+
     # Combines with market data analysis
     returns = market_data['close'].pct_change().dropna()
     volatility = returns.rolling(window=volatility_window).std().mean()
-    
+
     # Statistical calculation
     volatility_factor = max(0.1, 1 - volatility * 10)
     target_ratio = profit_target / stop_loss
     ratio_factor = min(1.0, 2.0 / target_ratio)
-    
+
     final_prob = confidence * volatility_factor * ratio_factor
     return self.validate_probability(final_prob, "triple_barrier")
 ```
@@ -89,11 +89,11 @@ def calculate_direction_probability(self, model, X_test, y_test):
     # Uses EXISTING model outputs
     y_pred = model.predict(X_test)  # ← Standard model output
     y_pred_proba = model.predict_proba(X_test)  # ← Standard model output
-    
+
     # Statistical calculation
     accuracy = accuracy_score(y_test, y_pred)
     confidence = self.calculate_confidence_from_proba(y_pred_proba)
-    
+
     direction_prob = (accuracy + confidence) / 2
     return self.validate_probability(direction_prob, "direction")
 ```
@@ -104,11 +104,11 @@ def calculate_magnitude_probability(self, model, X_test, market_data):
     # Uses EXISTING model outputs
     y_pred_proba = model.predict_proba(X_test)  # ← Standard model output
     confidence = self.calculate_confidence_from_proba(y_pred_proba)
-    
+
     # Combines with market data analysis
     returns = market_data['close'].pct_change().dropna()
     volatility = returns.std()
-    
+
     # Statistical calculation
     magnitude_prob = confidence * (1 - volatility * 5) * threshold_factor
     return self.validate_probability(magnitude_prob, "magnitude")
@@ -120,12 +120,12 @@ def calculate_barrier_avoidance_probability(self, model, X_test, market_data):
     # Uses EXISTING model outputs
     y_pred_proba = model.predict_proba(X_test)  # ← Standard model output
     confidence = self.calculate_confidence_from_proba(y_pred_proba)
-    
+
     # Combines with market data analysis
     returns = market_data['close'].pct_change().dropna()
     adverse_prob = (returns.abs() > adverse_threshold).mean()
     volatility = returns.std()
-    
+
     # Statistical calculation
     base_avoidance = 1 - adverse_prob
     volatility_adjustment = max(0.1, 1 - volatility * 10)
@@ -200,14 +200,14 @@ class MultiOutputModel:
         self.triple_barrier_model = lgb.LGBMClassifier()
         self.magnitude_model = lgb.LGBMClassifier()
         self.avoidance_model = lgb.LGBMClassifier()
-    
+
     def fit(self, X_train, y_train, market_data):
         # Train separate models for each probability type
         self.direction_model.fit(X_train, y_train['direction'])
         self.triple_barrier_model.fit(X_train, y_train['triple_barrier'])
         self.magnitude_model.fit(X_train, y_train['magnitude'])
         self.avoidance_model.fit(X_train, y_train['avoidance'])
-    
+
     def predict_probabilities(self, X_test, market_data):
         return {
             "direction_probability": self.direction_model.predict_proba(X_test),

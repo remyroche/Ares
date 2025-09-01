@@ -13,7 +13,7 @@ from typing import Any, Dict, List
 def get_enhanced_feature_optimization_config() -> dict[str, Any]:
     """
     Get enhanced feature engineering optimization configuration.
-    
+
     Returns:
         dict: Configuration dictionary
     """
@@ -224,7 +224,7 @@ def get_enhanced_feature_optimization_config() -> dict[str, Any]:
 def get_meta_optimization_objectives() -> dict[str, Any]:
     """
     Get meta-optimization objective definitions.
-    
+
     Returns:
         dict: Objective definitions
     """
@@ -271,7 +271,7 @@ def get_meta_optimization_objectives() -> dict[str, Any]:
 def get_parameter_importance_weights() -> dict[str, float]:
     """
     Get parameter importance weights for different features.
-    
+
     Returns:
         dict: Parameter importance weights
     """
@@ -322,7 +322,7 @@ def get_parameter_importance_weights() -> dict[str, float]:
 def get_optimization_strategies() -> dict[str, Any]:
     """
     Get optimization strategies for different scenarios.
-    
+
     Returns:
         dict: Optimization strategies
     """
@@ -363,7 +363,7 @@ def get_optimization_strategies() -> dict[str, Any]:
 def get_enhanced_output_schema() -> dict[str, Any]:
     """
     Get enhanced optimization output schema.
-    
+
     Returns:
         dict: Output schema
     """

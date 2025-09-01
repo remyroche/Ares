@@ -19,14 +19,14 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 def test_model_configuration_framework():
     """Test the model configuration framework without PyTorch."""
     print("🧪 Testing Model Configuration Framework...")
-    
+
     try:
         # Test the configuration structure
         config = {
             "timeframe": "5m",
             "model_architectures": {
                 "1m": "cnn",
-                "5m": "tcn", 
+                "5m": "tcn",
                 "15m": "transformer",
                 "30m": "lightgbm",
                 "1h": "lstm",
@@ -79,22 +79,22 @@ def test_model_configuration_framework():
                 }
             }
         }
-        
+
         print("   ✅ Configuration structure is valid")
-        
+
         # Test timeframe mapping
         timeframes = ["1m", "5m", "15m", "30m", "1h"]
         expected_models = ["cnn", "tcn", "transformer", "lightgbm", "hmm_regime"]
-        
+
         for timeframe, expected_model in zip(timeframes, expected_models):
             if timeframe in config["model_architectures"]:
                 model_type = config["model_architectures"][timeframe]
                 assert model_type == expected_model, f"Expected {expected_model} for {timeframe}, got {model_type}"
                 print(f"   ✅ {timeframe} → {expected_model.upper()}")
-        
+
         print("✅ Model configuration framework test PASSED")
         return True
-        
+
     except Exception as e:
         print(f"❌ Model configuration framework test failed: {e}")
         import traceback
@@ -104,7 +104,7 @@ def test_model_configuration_framework():
 def test_advanced_neural_models_structure():
     """Test the advanced neural models module structure."""
     print("🧪 Testing Advanced Neural Models Structure...")
-    
+
     try:
         # Test if the module can be imported (without PyTorch)
         try:
@@ -123,19 +123,19 @@ def test_advanced_neural_models_structure():
                 }
             else:
                 raise e
-        
+
         # Test configuration structure
         expected_model_types = ['tcn', 'cnn', 'transformer', 'lstm', 'gru']
-        
+
         for model_type in expected_model_types:
             assert model_type in NEURAL_MODEL_CONFIGS, f"Missing config for {model_type}"
             config = NEURAL_MODEL_CONFIGS[model_type]
             assert isinstance(config, dict), f"Config for {model_type} should be a dict"
             print(f"   ✅ {model_type.upper()} configuration structure valid")
-        
+
         print("✅ Advanced neural models structure test PASSED")
         return True
-        
+
     except Exception as e:
         print(f"❌ Advanced neural models structure test failed: {e}")
         import traceback
@@ -145,7 +145,7 @@ def test_advanced_neural_models_structure():
 def test_multi_output_trainer_enhancements():
     """Test the enhanced multi-output trainer without PyTorch."""
     print("🧪 Testing Multi-Output Trainer Enhancements...")
-    
+
     try:
         # Test if the enhanced trainer can be imported
         try:
@@ -157,13 +157,13 @@ def test_multi_output_trainer_enhancements():
                 return True
             else:
                 raise e
-        
+
         # Test configuration with advanced models
         config = {
             "timeframe": "5m",
             "model_architectures": {
                 "1m": "cnn",
-                "5m": "tcn", 
+                "5m": "tcn",
                 "15m": "transformer",
                 "30m": "lightgbm",
                 "1h": "lstm",
@@ -178,24 +178,24 @@ def test_multi_output_trainer_enhancements():
                 "gru": {"hidden_size": 128, "num_layers": 2, "bidirectional": True}
             }
         }
-        
+
         # Test trainer initialization
         trainer = MultiOutputProbabilityTrainer(config)
         print("   ✅ Trainer initialized with advanced configuration")
-        
+
         # Test timeframe configuration
         assert hasattr(trainer, 'timeframe'), "Trainer should have timeframe attribute"
         assert hasattr(trainer, 'model_architectures'), "Trainer should have model_architectures attribute"
         assert hasattr(trainer, 'neural_config'), "Trainer should have neural_config attribute"
         print("   ✅ Advanced attributes properly set")
-        
+
         # Test model configuration method
         assert hasattr(trainer, '_configure_models_for_timeframe'), "Trainer should have configuration method"
         print("   ✅ Model configuration method available")
-        
+
         print("✅ Multi-output trainer enhancements test PASSED")
         return True
-        
+
     except Exception as e:
         print(f"❌ Multi-output trainer enhancements test failed: {e}")
         import traceback
@@ -205,14 +205,14 @@ def test_multi_output_trainer_enhancements():
 def test_training_steps_integration():
     """Test the integration with training steps."""
     print("🧪 Testing Training Steps Integration...")
-    
+
     try:
         # Test Step 6 configuration
         step6_config = {
             "timeframe": "5m",
             "model_architectures": {
                 "1m": "cnn",
-                "5m": "tcn", 
+                "5m": "tcn",
                 "15m": "transformer",
                 "30m": "lightgbm",
                 "1h": "lstm",
@@ -227,15 +227,15 @@ def test_training_steps_integration():
                 "gru": {"hidden_size": 128, "num_layers": 2, "bidirectional": True}
             }
         }
-        
+
         print("   ✅ Step 6 configuration structure valid")
-        
+
         # Test Step 9 configuration
         step9_config = {
             "timeframe": "1m",
             "model_architectures": {
                 "1m": "cnn",
-                "5m": "tcn", 
+                "5m": "tcn",
                 "15m": "transformer",
                 "30m": "lightgbm",
                 "1h": "lstm",
@@ -250,15 +250,15 @@ def test_training_steps_integration():
                 "gru": {"hidden_size": 128, "num_layers": 2, "bidirectional": True}
             }
         }
-        
+
         print("   ✅ Step 9 configuration structure valid")
-        
+
         # Test Enhanced Step 6 configuration
         enhanced_step6_config = {
             "timeframe": "15m",
             "model_architectures": {
                 "1m": "cnn",
-                "5m": "tcn", 
+                "5m": "tcn",
                 "15m": "transformer",
                 "30m": "lightgbm",
                 "1h": "lstm",
@@ -273,19 +273,19 @@ def test_training_steps_integration():
                 "gru": {"hidden_size": 128, "num_layers": 2, "bidirectional": True}
             }
         }
-        
+
         print("   ✅ Enhanced Step 6 configuration structure valid")
-        
+
         # Verify timeframe-specific model selection
         assert step6_config["model_architectures"][step6_config["timeframe"]] == "tcn"
         assert step9_config["model_architectures"][step9_config["timeframe"]] == "cnn"
         assert enhanced_step6_config["model_architectures"][enhanced_step6_config["timeframe"]] == "transformer"
-        
+
         print("   ✅ Timeframe-specific model selection working")
-        
+
         print("✅ Training steps integration test PASSED")
         return True
-        
+
     except Exception as e:
         print(f"❌ Training steps integration test failed: {e}")
         import traceback
@@ -295,7 +295,7 @@ def test_training_steps_integration():
 def test_model_type_coverage():
     """Test that all required model types are covered."""
     print("🧪 Testing Model Type Coverage...")
-    
+
     try:
         # Define all required model types
         required_model_types = [
@@ -308,7 +308,7 @@ def test_model_type_coverage():
             "transformer",   # Transformer with attention
             "hmm_regime"    # Hidden Markov Model for regime definition
         ]
-        
+
         # Test model architecture mapping
         model_architectures = {
             "1m": "cnn",      # CNN for 1-minute data (Tactician)
@@ -317,24 +317,24 @@ def test_model_type_coverage():
             "30m": "lightgbm",    # LightGBM for 30-minute data (Analyst)
             "1h": "hmm_regime"    # HMM regime definition only
         }
-        
+
         # Check that all model types in the mapping are supported
         for timeframe, model_type in model_architectures.items():
             assert model_type in required_model_types, f"Model type {model_type} not in required list"
             print(f"   ✅ {timeframe} → {model_type.upper()} (supported)")
-        
+
         # Check that all required model types are covered in some way
         covered_types = set(model_architectures.values())
         missing_types = set(required_model_types) - covered_types
-        
+
         if missing_types:
             print(f"   ⚠️ Missing model types in timeframe mapping: {missing_types}")
         else:
             print("   ✅ All required model types are covered")
-        
+
         print("✅ Model type coverage test PASSED")
         return True
-        
+
     except Exception as e:
         print(f"❌ Model type coverage test failed: {e}")
         import traceback
@@ -345,7 +345,7 @@ def run_core_integration_tests():
     """Run all core integration tests."""
     print("🚀 Starting Advanced Models Core Integration Tests")
     print("=" * 70)
-    
+
     tests = [
         ("Model Configuration Framework", test_model_configuration_framework),
         ("Advanced Neural Models Structure", test_advanced_neural_models_structure),
@@ -353,40 +353,40 @@ def run_core_integration_tests():
         ("Training Steps Integration", test_training_steps_integration),
         ("Model Type Coverage", test_model_type_coverage)
     ]
-    
+
     results = {}
-    
+
     for test_name, test_func in tests:
         print(f"\n{'='*70}")
         print(f"Running {test_name} test...")
-        
+
         try:
             result = test_func()
             results[test_name] = result
-            
+
             if result:
                 print(f"✅ {test_name} PASSED")
             else:
                 print(f"❌ {test_name} FAILED")
-                
+
         except Exception as e:
             print(f"❌ {test_name} ERROR: {e}")
             results[test_name] = False
-    
+
     # Summary
     print(f"\n{'='*70}")
     print("CORE INTEGRATION TEST SUMMARY")
     print(f"{'='*70}")
-    
+
     passed = sum(1 for result in results.values() if result)
     total = len(results)
-    
+
     for test_name, result in results.items():
         status = "✅ PASSED" if result else "❌ FAILED"
         print(f"{test_name}: {status}")
-    
+
     print(f"\nOverall: {passed}/{total} tests passed")
-    
+
     if passed == total:
         print("🎉 ALL CORE INTEGRATION TESTS PASSED!")
         print("\n🎯 ADVANCED MODELS INTEGRATION STATUS: FRAMEWORK COMPLETE")
@@ -403,7 +403,7 @@ def run_core_integration_tests():
         print("   3. Test with real data and neural networks")
     else:
         print(f"⚠️ {total - passed} tests failed. Please check the implementation.")
-    
+
     return passed == total
 
 if __name__ == "__main__":

@@ -135,15 +135,15 @@ if download_all_data_with_consolidation is None:
 # ----------------------------------------------------------------------------
 class ColumnVerifier:
     """Utility class for verifying and calculating missing columns."""
-    
+
     def __init__(self, logger=None):
         self.logger = logger or system_logger.getChild("ColumnVerifier")
-        
+
         # Define required columns for different data types
         self.required_klines_columns = ["timestamp", "open", "high", "low", "close", "volume"]
         self.required_aggtrades_columns = ["timestamp", "price", "quantity"]
         self.required_futures_columns = ["timestamp", "fundingRate"]
-        
+
         # Define optional calculated columns
         self.optional_calculated_columns = {
             "price_returns": ["close_return", "open_return", "high_return", "low_return"],
@@ -151,21 +151,21 @@ class ColumnVerifier:
             "volume_features": ["volume_return", "volume_ma", "volume_ratio"],
             "technical_indicators": ["sma_20", "ema_12", "rsi", "macd"]
         }
-    
+
     def verify_missing_columns(self, df: pd.DataFrame, data_type: str = "unified") -> dict[str, Any]:
         """
         Verify which columns are missing from the dataframe.
-        
+
         Args:
             df: DataFrame to check
             data_type: Type of data ("klines", "aggtrades", "futures", "unified")
-            
+
         Returns:
             Dictionary with missing columns information
         """
         try:
             self.logger.info(f"🔍 Verifying missing columns for {data_type} data...")
-            
+
             missing_info = {
                 "data_type": data_type,
                 "total_columns": len(df.columns),
@@ -175,7 +175,7 @@ class ColumnVerifier:
                 "can_calculate": {},
                 "verification_passed": True
             }
-            
+
             # Check required columns based on data type
             if data_type == "klines":
                 required_columns = self.required_klines_columns
@@ -185,34 +185,34 @@ class ColumnVerifier:
                 required_columns = self.required_futures_columns
             else:  # unified
                 required_columns = self.required_klines_columns  # Base requirement
-            
+
             # Check for missing required columns
             missing_required = [col for col in required_columns if col not in df.columns]
             missing_info["missing_required"] = missing_required
-            
+
             if missing_required:
                 missing_info["verification_passed"] = False
                 self.logger.warning(f"⚠️ Missing required columns: {missing_required}")
-            
+
             # Check for missing optional calculated columns
             for category, columns in self.optional_calculated_columns.items():
                 missing_optional = [col for col in columns if col not in df.columns]
                 missing_info["missing_optional"][category] = missing_optional
-                
+
                 # Check if we can calculate these columns
                 can_calculate = self._check_calculation_feasibility(df, category, missing_optional)
                 missing_info["can_calculate"][category] = can_calculate
-                
+
                 if missing_optional:
                     self.logger.info(f"📊 Missing {category} columns: {missing_optional}")
                     if can_calculate:
                         self.logger.info(f"   ✅ Can calculate: {can_calculate}")
                     else:
                         self.logger.warning(f"   ❌ Cannot calculate: {[col for col in missing_optional if col not in can_calculate]}")
-            
+
             self.logger.info(f"✅ Column verification completed. Verification passed: {missing_info['verification_passed']}")
             return missing_info
-            
+
         except Exception as e:
             self.logger.exception(f"❌ Error during column verification: {e}")
             return {
@@ -220,173 +220,173 @@ class ColumnVerifier:
                 "verification_passed": False,
                 "error": str(e)
             }
-    
+
     def _check_calculation_feasibility(self, df: pd.DataFrame, category: str, missing_columns: list[str]) -> list[str]:
         """
         Check which missing columns can be calculated based on available data.
-        
+
         Args:
             df: DataFrame with available data
             category: Category of columns to check
             missing_columns: List of missing columns
-            
+
         Returns:
             List of columns that can be calculated
         """
         can_calculate = []
-        
+
         if category == "price_returns":
             # Check if we have price columns for returns calculation
             price_columns = ["close", "open", "high", "low"]
             available_prices = [col for col in price_columns if col in df.columns]
-            
+
             for col in missing_columns:
                 if col.endswith("_return"):
                     base_col = col.replace("_return", "")
                     if base_col in available_prices:
                         can_calculate.append(col)
-        
+
         elif category == "vwap":
             # Check if we have required columns for VWAP calculation
             if "close" in df.columns and "volume" in df.columns:
                 can_calculate.extend([col for col in missing_columns if col in ["vwap", "vwap_return", "price_vwap_ratio", "price_vwap_deviation"]])
-        
+
         elif category == "volume_features":
             # Check if we have volume column
             if "volume" in df.columns:
                 can_calculate.extend([col for col in missing_columns if col in ["volume_return", "volume_ma", "volume_ratio"]])
-        
+
         elif category == "technical_indicators":
             # Check if we have price column for technical indicators
             if "close" in df.columns:
                 can_calculate.extend([col for col in missing_columns if col in ["sma_20", "ema_12", "rsi", "macd"]])
-        
+
         return can_calculate
-    
+
     def calculate_missing_columns(self, df: pd.DataFrame, missing_info: dict[str, Any]) -> pd.DataFrame:
         """
         Calculate missing columns that can be computed.
-        
+
         Args:
             df: DataFrame to enhance
             missing_info: Output from verify_missing_columns
-            
+
         Returns:
             Enhanced DataFrame with calculated columns
         """
         try:
             self.logger.info("🔄 Calculating missing columns...")
-            
+
             # Create a copy to avoid modifying original
             enhanced_df = df.copy()
             calculated_columns = []
-            
+
             # Calculate price returns
             if "price_returns" in missing_info["can_calculate"]:
                 calculated_returns = self._calculate_price_returns(enhanced_df, missing_info["can_calculate"]["price_returns"])
                 enhanced_df = pd.concat([enhanced_df, calculated_returns], axis=1)
                 calculated_columns.extend(calculated_returns.columns)
-            
+
             # Calculate VWAP features
             if "vwap" in missing_info["can_calculate"]:
                 calculated_vwap = self._calculate_vwap_features(enhanced_df, missing_info["can_calculate"]["vwap"])
                 enhanced_df = pd.concat([enhanced_df, calculated_vwap], axis=1)
                 calculated_columns.extend(calculated_vwap.columns)
-            
+
             # Calculate volume features
             if "volume_features" in missing_info["can_calculate"]:
                 calculated_volume = self._calculate_volume_features(enhanced_df, missing_info["can_calculate"]["volume_features"])
                 enhanced_df = pd.concat([enhanced_df, calculated_volume], axis=1)
                 calculated_columns.extend(calculated_volume.columns)
-            
+
             # Calculate technical indicators
             if "technical_indicators" in missing_info["can_calculate"]:
                 calculated_technical = self._calculate_technical_indicators(enhanced_df, missing_info["can_calculate"]["technical_indicators"])
                 enhanced_df = pd.concat([enhanced_df, calculated_technical], axis=1)
                 calculated_columns.extend(calculated_technical.columns)
-            
+
             if calculated_columns:
                 self.logger.info(f"✅ Calculated {len(calculated_columns)} columns: {calculated_columns}")
             else:
                 self.logger.info("ℹ️ No columns were calculated")
-            
+
             return enhanced_df
-            
+
         except Exception as e:
             self.logger.exception(f"❌ Error calculating missing columns: {e}")
             return df
-    
+
     def _calculate_price_returns(self, df: pd.DataFrame, missing_returns: list[str]) -> pd.DataFrame:
         """Calculate price return columns."""
         calculated = pd.DataFrame(index=df.index)
-        
+
         for col in missing_returns:
             if col.endswith("_return"):
                 base_col = col.replace("_return", "")
                 if base_col in df.columns:
                     calculated[col] = df[base_col].pct_change()
-        
+
         return calculated
-    
+
     def _calculate_vwap_features(self, df: pd.DataFrame, missing_vwap: list[str]) -> pd.DataFrame:
         """Calculate VWAP-related features."""
         calculated = pd.DataFrame(index=df.index)
-        
+
         # Calculate VWAP if needed
         if "vwap" in missing_vwap and "close" in df.columns and "volume" in df.columns:
             calculated["vwap"] = (df["close"] * df["volume"]).rolling(window=20).sum() / df["volume"].rolling(window=20).sum()
-        
+
         # Calculate VWAP return if needed
         if "vwap_return" in missing_vwap and "vwap" in calculated.columns:
             calculated["vwap_return"] = calculated["vwap"].pct_change()
-        
+
         # Calculate price-VWAP ratio if needed
         if "price_vwap_ratio" in missing_vwap and "vwap" in calculated.columns and "close" in df.columns:
             calculated["price_vwap_ratio"] = df["close"] / calculated["vwap"]
-        
+
         # Calculate price-VWAP deviation if needed
         if "price_vwap_deviation" in missing_vwap and "vwap" in calculated.columns and "close" in df.columns:
             calculated["price_vwap_deviation"] = (df["close"] - calculated["vwap"]) / calculated["vwap"]
-        
+
         return calculated
-    
+
     def _calculate_volume_features(self, df: pd.DataFrame, missing_volume: list[str]) -> pd.DataFrame:
         """Calculate volume-related features."""
         calculated = pd.DataFrame(index=df.index)
-        
+
         if "volume_return" in missing_volume and "volume" in df.columns:
             calculated["volume_return"] = df["volume"].pct_change()
-        
+
         if "volume_ma" in missing_volume and "volume" in df.columns:
             calculated["volume_ma"] = df["volume"].rolling(window=20).mean()
-        
+
         if "volume_ratio" in missing_volume and "volume" in df.columns:
             calculated["volume_ratio"] = df["volume"] / df["volume"].rolling(window=20).mean()
-        
+
         return calculated
-    
+
     def _calculate_technical_indicators(self, df: pd.DataFrame, missing_technical: list[str]) -> pd.DataFrame:
         """Calculate technical indicators."""
         calculated = pd.DataFrame(index=df.index)
-        
+
         if "sma_20" in missing_technical and "close" in df.columns:
             calculated["sma_20"] = df["close"].rolling(window=20).mean()
-        
+
         if "ema_12" in missing_technical and "close" in df.columns:
             calculated["ema_12"] = df["close"].ewm(span=12).mean()
-        
+
         if "rsi" in missing_technical and "close" in df.columns:
             delta = df["close"].diff()
             gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
             loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
             rs = gain / loss
             calculated["rsi"] = 100 - (100 / (1 + rs))
-        
+
         if "macd" in missing_technical and "close" in df.columns:
             ema_12 = df["close"].ewm(span=12).mean()
             ema_26 = df["close"].ewm(span=26).mean()
             calculated["macd"] = ema_12 - ema_26
-        
+
         return calculated
 
 
@@ -911,21 +911,21 @@ class UnifiedDataConverter:
 		self.config = config
 		self.logger = system_logger.getChild("UnifiedDataConverter")
 		self.standards = pipeline_standards
-		
+
 		# Validate environment on initialization
 		self._validate_environment()
-		
+
 		# Initialize with default data_cache, will be updated in execute method
 		self.data_cache_dir = "data_cache"
 		self.unified_dir = os.path.join(self.data_cache_dir, "unified")
 		self.backup_dir = os.path.join(self.data_cache_dir, "backup_pre_unified")
 		os.makedirs(self.unified_dir, exist_ok=True)
 		os.makedirs(self.backup_dir, exist_ok=True)
-	
+
 	def _validate_environment(self) -> None:
 		"""Validate environment dependencies."""
 		self.logger.info("🔍 Validating environment dependencies...")
-		
+
 		missing_modules = [module for module, available in dependency_status.items() if not available]
 		if missing_modules:
 			self.logger.warning(f"⚠️ Missing optional modules: {missing_modules}")
@@ -996,18 +996,18 @@ class UnifiedDataConverter:
 			verify_ok = await self._verify_unified_data_quality(symbol, exchange, timeframe)
 			if not verify_ok:
 				self.logger.warning("⚠️ Data quality verification found issues")
-			
+
 			# Run comprehensive data quality validation
 			try:
 				from src.utils.comprehensive_data_quality_validator import validate_step1_5_quality
-				
+
 				self.logger.info("🔍 Running comprehensive Step1.5 data quality validation...")
 				validation_result = validate_step1_5_quality(
 					symbol=symbol,
 					exchange=exchange,
 					data_dir=self.data_cache_dir
 				)
-				
+
 				if validation_result["validation_passed"]:
 					self.logger.info("✅ Comprehensive Step1.5 data quality validation passed")
 				else:
@@ -1016,10 +1016,10 @@ class UnifiedDataConverter:
 						self.logger.warning(f"   - {issue}")
 					if len(validation_result["issues"]) > 5:
 						self.logger.warning(f"   ... and {len(validation_result['issues']) - 5} more issues")
-					
+
 					# Continue with warning instead of failing
 					self.logger.warning("⚠️ Continuing with data quality issues - review logs for details")
-				
+
 			except Exception as e:
 				self.logger.warning(f"⚠️ Comprehensive Step1.5 data quality validation failed: {e} - continuing anyway")
 
@@ -1325,10 +1325,10 @@ class UnifiedDataConverter:
 			if daily_futures is not None and not daily_futures.empty:
 				unified = await self._merge_daily_futures(unified, daily_futures)
 			unified = await self._fill_missing_values(unified)
-			
+
 			# Step 1.5 Enhancement: Column verification and calculation
 			unified = await self._verify_and_calculate_missing_columns(unified, symbol, exchange, timeframe)
-			
+
 			if "timestamp" in unified.columns:
 				unified = unified.sort_values("timestamp").reset_index(drop=True)
 			return unified
@@ -1538,19 +1538,19 @@ class UnifiedDataConverter:
 		"""Load klines data with standardized validation."""
 		try:
 			data_cache_dir = self.data_cache_dir
-			
+
 			# Use standardized file naming
 			parquet_file = self.standards.generate_file_name("klines", exchange, symbol, timeframe)
 			parquet_path = os.path.join(data_cache_dir, parquet_file)
-			
+
 			if os.path.exists(parquet_path):
 				self.logger.info(f"📊 Loading klines from parquet: {parquet_path}")
 				df = pd.read_parquet(parquet_path)
-				
+
 				# Standardize timestamps and validate schema
 				df = self.standards.standardize_timestamp(df, "timestamp")
 				df = self.standards.enforce_schema(df, "klines")
-				
+
 				# Validate data quality
 				validation_result = self.standards.validate_data_quality(df, "klines")
 				if validation_result.passed:
@@ -1559,45 +1559,45 @@ class UnifiedDataConverter:
 					self.logger.warning(f"   ⚠️ Loaded {len(df)} klines rows but validation found issues")
 					for issue in validation_result.issues[:3]:
 						self.logger.warning(f"      - {issue.message}")
-				
+
 				return df
-			
+
 			# Try CSV fallback
 			csv_path = os.path.join(data_cache_dir, f"klines_{exchange}_{symbol}_{timeframe}_consolidated.csv")
 			if os.path.exists(csv_path):
 				self.logger.info(f"📊 Loading klines from CSV: {csv_path}")
 				df = pd.read_csv(csv_path)
-				
+
 				# Standardize timestamps and validate schema
 				df = self.standards.standardize_timestamp(df, "timestamp")
 				df = self.standards.enforce_schema(df, "klines")
-				
+
 				self.logger.info(f"   ✅ Loaded {len(df)} klines rows")
 				return df
-			
+
 			# Try PKL fallback
 			pkl_path = os.path.join(data_cache_dir, f"klines_{exchange}_{symbol}_{timeframe}_consolidated_cached_data.pkl")
 			if os.path.exists(pkl_path):
 				self.logger.info(f"📊 Loading klines from PKL: {pkl_path}")
 				df = pd.read_pickle(pkl_path)
-				
+
 				# Standardize timestamps and validate schema
 				df = self.standards.standardize_timestamp(df, "timestamp")
 				df = self.standards.enforce_schema(df, "klines")
-				
+
 				self.logger.info(f"   ✅ Loaded {len(df)} klines rows")
 				return df
-			
+
 			# Attempt to download
 			self.logger.info("🔄 No klines data found, attempting to download klines directly...")
 			klines_df = await self._download_klines_data(symbol, exchange, timeframe)
 			if klines_df is not None and not klines_df.empty:
 				self.logger.info(f"✅ Successfully downloaded klines data: {len(klines_df)} rows")
 				return klines_df
-			
+
 			self.logger.warning(f"⚠️ No klines data found for {exchange}_{symbol}_{timeframe}")
 			return None
-			
+
 		except Exception as e:
 			self.logger.exception(f"❌ Failed to load klines data: {e}")
 			return None
@@ -1606,26 +1606,26 @@ class UnifiedDataConverter:
 		"""Download klines data with standardized validation."""
 		try:
 			self.logger.info(f"🔄 Downloading klines data for {exchange}_{symbol}_{timeframe}")
-			
+
 			# Call downloader (tests patch this symbol)
 			ok: bool
 			if asyncio.iscoroutinefunction(download_all_data_with_consolidation):  # type: ignore
 				ok = await download_all_data_with_consolidation(symbol=symbol, exchange_name=exchange, interval=timeframe)  # type: ignore
 			else:
 				ok = download_all_data_with_consolidation(symbol=symbol, exchange_name=exchange, interval=timeframe)  # type: ignore
-			
+
 			if not ok:
 				self.logger.error("❌ Failed to download klines data")
 				return None
-			
+
 			self.logger.info("🔄 Attempting to load downloaded klines data...")
 			pattern = os.path.join(self.data_cache_dir, f"klines_{exchange}_{symbol}_{timeframe}_*.csv")
 			klines_files = sorted(glob.glob(pattern))
-			
+
 			if not klines_files:
 				self.logger.warning(f"⚠️ No klines files found after download: {pattern}")
 				return None
-			
+
 			frames: list[pd.DataFrame] = []
 			for fp in klines_files:
 				try:
@@ -1635,18 +1635,18 @@ class UnifiedDataConverter:
 					self.logger.debug(f"📊 Loaded {len(df)} rows from {os.path.basename(fp)}")
 				except Exception as e:
 					self.logger.warning(f"⚠️ Failed to load {fp}: {e}")
-			
+
 			if not frames:
 				self.logger.error("❌ No valid klines data found after download")
 				return None
-			
+
 			combined = pd.concat(frames, ignore_index=True)
 			combined = combined.drop_duplicates().sort_values("timestamp").reset_index(drop=True)
-			
+
 			# Standardize timestamps and enforce schema
 			combined = self.standards.standardize_timestamp(combined, "timestamp")
 			combined = self.standards.enforce_schema(combined, "klines")
-			
+
 			# Validate downloaded data
 			validation_result = self.standards.validate_data_quality(combined, "klines")
 			if validation_result.passed:
@@ -1655,15 +1655,15 @@ class UnifiedDataConverter:
 				self.logger.warning(f"⚠️ Downloaded data validation found issues:")
 				for issue in validation_result.issues[:3]:
 					self.logger.warning(f"   - {issue.message}")
-			
+
 			# Save with standardized naming
 			out_file = self.standards.generate_file_name("klines", exchange, symbol, timeframe)
 			out_path = os.path.join(self.data_cache_dir, out_file)
 			combined.to_parquet(out_path, index=False)
-			
+
 			self.logger.info(f"💾 Saved consolidated klines to: {out_path}")
 			return combined
-			
+
 		except Exception as e:
 			self.logger.exception(f"❌ Failed to download klines data: {e}")
 			return None
@@ -1712,44 +1712,44 @@ class UnifiedDataConverter:
 	async def _verify_and_calculate_missing_columns(self, unified: pd.DataFrame, symbol: str, exchange: str, timeframe: str) -> pd.DataFrame:
 		"""
 		Step 1.5 Enhancement: Verify missing columns and calculate them if possible.
-		
+
 		Args:
 			unified: DataFrame with unified data
 			symbol: Trading symbol
 			exchange: Exchange name
 			timeframe: Timeframe
-			
+
 		Returns:
 			Enhanced DataFrame with calculated columns
 		"""
 		try:
 			self.logger.info("🔍 Step 1.5 Enhancement: Verifying and calculating missing columns...")
-			
+
 			# Initialize column verifier
 			column_verifier = ColumnVerifier(self.logger)
-			
+
 			# Verify missing columns
 			missing_info = column_verifier.verify_missing_columns(unified, data_type="unified")
-			
+
 			# Log verification results
 			if missing_info["verification_passed"]:
 				self.logger.info("✅ Column verification passed - all required columns present")
 			else:
 				self.logger.warning(f"⚠️ Column verification found missing required columns: {missing_info['missing_required']}")
-			
+
 			# Log optional column status
 			for category, missing_optional in missing_info["missing_optional"].items():
 				if missing_optional:
 					can_calculate = missing_info["can_calculate"].get(category, [])
 					self.logger.info(f"📊 {category}: {len(missing_optional)} missing, {len(can_calculate)} can be calculated")
-			
+
 			# Calculate missing columns if any can be calculated
 			has_calculable = any(len(can_calc) > 0 for can_calc in missing_info["can_calculate"].values())
-			
+
 			if has_calculable:
 				self.logger.info("🔄 Calculating missing columns...")
 				enhanced_unified = column_verifier.calculate_missing_columns(unified, missing_info)
-				
+
 				# Log what was calculated
 				original_columns = set(unified.columns)
 				new_columns = set(enhanced_unified.columns) - original_columns
@@ -1762,7 +1762,7 @@ class UnifiedDataConverter:
 			else:
 				self.logger.info("ℹ️ No calculable missing columns found")
 				return unified
-				
+
 		except Exception as e:
 			self.logger.exception(f"❌ Error during column verification and calculation: {e}")
 			self.logger.warning("⚠️ Continuing with original data without column enhancements")

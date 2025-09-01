@@ -21,7 +21,7 @@ from src.training.steps.step1.enhanced_data_quality_manager import EnhancedDataQ
 async def basic_quality_check():
     # Initialize the quality manager
     manager = EnhancedDataQualityManager("data_cache")
-    
+
     # Run a comprehensive quality check
     results = await manager.comprehensive_quality_check(
         symbol="ETHUSDT",
@@ -31,7 +31,7 @@ async def basic_quality_check():
         fill_gaps=True,
         validate_format=True
     )
-    
+
     print(f"Quality check success: {results['success']}")
     print(f"Gaps detected: {len(results['gaps_detected'])}")
     print(f"Gaps filled: {len(results['gaps_filled'])}")
@@ -57,7 +57,7 @@ async def run_complete_pipeline():
         run_all_steps=True,
         force_rerun=True
     )
-    
+
     if success:
         print("🎉 Complete pipeline executed successfully!")
     else:
@@ -84,13 +84,13 @@ async def start_monitoring():
         data_cache_path="data_cache",
         interval_seconds=300  # Check every 5 minutes
     )
-    
+
     # Add custom alert callbacks
     def custom_alert_handler(alert):
         print(f"🚨 Alert: {alert.alert_type} - {alert.message}")
-    
+
     monitor.add_alert_callback(custom_alert_handler)
-    
+
     # Keep monitoring running
     try:
         await asyncio.sleep(3600)  # Monitor for 1 hour
@@ -106,22 +106,22 @@ asyncio.run(start_monitoring())
 ```python
 import asyncio
 from src.training.steps.step1.data_quality_monitor import (
-    DataQualityMonitor, 
+    DataQualityMonitor,
     create_email_alert_callback,
     create_slack_alert_callback
 )
 
 async def setup_monitoring_with_callbacks():
     monitor = DataQualityMonitor("data_cache")
-    
+
     # Add email alerts for critical issues
     email_callback = create_email_alert_callback("admin@example.com")
     monitor.add_alert_callback(email_callback)
-    
+
     # Add Slack alerts for all issues
     slack_callback = create_slack_alert_callback("https://hooks.slack.com/...")
     monitor.add_alert_callback(slack_callback)
-    
+
     # Custom callback for logging
     def log_alert(alert):
         if alert.severity == "critical":
@@ -130,9 +130,9 @@ async def setup_monitoring_with_callbacks():
             print(f"⚠️ HIGH: {alert}")
         else:
             print(f"ℹ️ INFO: {alert}")
-    
+
     monitor.add_alert_callback(log_alert)
-    
+
     # Start monitoring
     await monitor.start_monitoring(
         symbols=["ETHUSDT"],
@@ -158,9 +158,9 @@ async def start_dashboard():
         host="0.0.0.0",
         port=8080
     )
-    
+
     print("🌐 Dashboard started at http://localhost:8080")
-    
+
     # Keep the dashboard running
     try:
         await asyncio.sleep(float('inf'))
@@ -179,23 +179,23 @@ import asyncio
 
 async def dashboard_api_examples():
     base_url = "http://localhost:8080"
-    
+
     async with aiohttp.ClientSession() as session:
         # Get system status
         async with session.get(f"{base_url}/api/status") as response:
             status = await response.json()
             print(f"System status: {status['overall_status']}")
-        
+
         # Get quality metrics
         async with session.get(f"{base_url}/api/metrics") as response:
             metrics = await response.json()
             print(f"Total gaps: {metrics.get('total_gaps', 0)}")
-        
+
         # Get recent alerts
         async with session.get(f"{base_url}/api/alerts?limit=10") as response:
             alerts = await response.json()
             print(f"Recent alerts: {len(alerts)}")
-        
+
         # Run a quality check
         async with session.post(
             f"{base_url}/api/quality-check?symbol=ETHUSDT&exchange=BINANCE&timeframe=1m"
@@ -223,7 +223,7 @@ async def run_enhanced_step1():
         data_dir="data_cache",
         force_rerun=True
     )
-    
+
     if success:
         print("✅ Step1 completed with enhanced quality checks")
     else:
@@ -247,7 +247,7 @@ async def run_enhanced_step1_5():
         data_dir="data_cache",
         force_rerun=True
     )
-    
+
     if success:
         print("✅ Step1_5 completed with enhanced validation")
     else:
@@ -271,7 +271,7 @@ async def run_enhanced_step3():
         data_dir="data_cache",
         force_rerun=True
     )
-    
+
     if success:
         print("✅ Step3 completed with automatic data recovery")
     else:
@@ -290,7 +290,7 @@ from src.training.steps.step1.data_quality_monitor import DataQualityMonitor
 
 async def custom_thresholds():
     monitor = DataQualityMonitor("data_cache")
-    
+
     # Set custom quality thresholds
     custom_thresholds = {
         "gap_threshold": 5,  # Alert if more than 5 gaps
@@ -299,9 +299,9 @@ async def custom_thresholds():
         "min_data_rows": 5000,  # Alert if less than 5000 rows
         "max_null_ratio": 0.05  # Alert if more than 5% null values
     }
-    
+
     monitor.set_quality_thresholds(custom_thresholds)
-    
+
     # Start monitoring with custom thresholds
     await monitor.start_monitoring(
         symbols=["ETHUSDT"],
@@ -320,12 +320,12 @@ from src.training.steps.step1.enhanced_data_quality_manager import EnhancedDataQ
 
 async def batch_quality_checks():
     manager = EnhancedDataQualityManager("data_cache")
-    
+
     # Define symbols to check
     symbols = ["ETHUSDT", "BTCUSDT", "ADAUSDT", "DOTUSDT", "LINKUSDT"]
     exchanges = ["BINANCE"]
     timeframes = ["1m", "5m"]
-    
+
     # Run quality checks for all combinations
     tasks = []
     for symbol in symbols:
@@ -337,14 +337,14 @@ async def batch_quality_checks():
                     timeframe=timeframe
                 )
                 tasks.append(task)
-    
+
     # Execute all quality checks concurrently
     results = await asyncio.gather(*tasks, return_exceptions=True)
-    
+
     # Process results
     successful_checks = 0
     failed_checks = 0
-    
+
     for result in results:
         if isinstance(result, Exception):
             failed_checks += 1
@@ -353,7 +353,7 @@ async def batch_quality_checks():
             successful_checks += 1
         else:
             failed_checks += 1
-    
+
     print(f"✅ Successful checks: {successful_checks}")
     print(f"❌ Failed checks: {failed_checks}")
 
@@ -370,27 +370,27 @@ from src.training.steps.step1.data_quality_monitor import DataQualityMonitor
 
 async def generate_quality_report():
     monitor = DataQualityMonitor("data_cache")
-    
+
     # Generate monitoring report
     report = monitor.generate_monitoring_report()
-    
+
     # Save report to file
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     report_file = f"quality_report_{timestamp}.txt"
-    
+
     with open(report_file, "w") as f:
         f.write(report)
-    
+
     print(f"📊 Quality report saved to: {report_file}")
-    
+
     # Get performance metrics
     metrics = monitor.get_performance_metrics()
-    
+
     # Save metrics as JSON
     metrics_file = f"quality_metrics_{timestamp}.json"
     with open(metrics_file, "w") as f:
         json.dump(metrics, f, indent=2, default=str)
-    
+
     print(f"📈 Performance metrics saved to: {metrics_file}")
 
 asyncio.run(generate_quality_report())
@@ -406,20 +406,20 @@ from src.training.steps.step1.enhanced_data_quality_manager import EnhancedDataQ
 
 async def test_automatic_recovery():
     manager = EnhancedDataQualityManager("data_cache")
-    
+
     # Try to get data for step3/step4 (this will trigger automatic recovery if data is missing)
     results = await manager.get_data_for_step3_step4(
         symbol="ETHUSDT",
         exchange="BINANCE",
         timeframe="1m"
     )
-    
+
     if results["success"]:
         print("✅ Data is ready for step3/step4")
     else:
         print("❌ Data is not ready for step3/step4")
         print(f"Missing requirements: {results.get('missing_for_steps', [])}")
-        
+
         # The system will automatically try to fix missing data
         print("🔄 Automatic recovery will be attempted...")
 
@@ -434,18 +434,18 @@ from src.training.steps.step1.enhanced_data_quality_manager import EnhancedDataQ
 
 async def manual_data_recovery():
     manager = EnhancedDataQualityManager("data_cache")
-    
+
     # Manually trigger data recovery
     recovery_results = await manager._fix_missing_data_for_steps(
         symbol="ETHUSDT",
         exchange="BINANCE",
         timeframe="1m"
     )
-    
+
     print(f"Recovery success: {recovery_results['success']}")
     print(f"Step1 success: {recovery_results.get('step1_success', False)}")
     print(f"Step1_5 success: {recovery_results.get('step1_5_success', False)}")
-    
+
     if recovery_results.get("still_missing"):
         print(f"Still missing: {recovery_results['still_missing']}")
 
@@ -548,29 +548,29 @@ except ImportError as e:
 # Issue: Data not found
 async def check_data_availability():
     manager = EnhancedDataQualityManager("data_cache")
-    
+
     # Check if data files exist
     import os
     klines_file = "data_cache/klines_BINANCE_ETHUSDT_1m_consolidated.parquet"
     aggtrades_file = "data_cache/aggtrades_BINANCE_ETHUSDT_consolidated.parquet"
-    
+
     if not os.path.exists(klines_file):
         print(f"❌ Klines file not found: {klines_file}")
-    
+
     if not os.path.exists(aggtrades_file):
         print(f"❌ Aggtrades file not found: {aggtrades_file}")
 
 # Issue: Monitoring not starting
 async def debug_monitoring():
     monitor = DataQualityMonitor("data_cache")
-    
+
     # Check if components are available
     if not monitor.gap_detector:
         print("⚠️ Gap detector not available")
-    
+
     if not monitor.gap_filler:
         print("⚠️ Gap filler not available")
-    
+
     if not monitor.validator:
         print("⚠️ Validator not available")
 
@@ -583,7 +583,7 @@ asyncio.run(debug_monitoring())
 # Issue: Slow quality checks
 async def optimize_performance():
     manager = EnhancedDataQualityManager("data_cache")
-    
+
     # Use memory-efficient processing
     results = await manager.comprehensive_quality_check(
         symbol="ETHUSDT",
@@ -593,13 +593,13 @@ async def optimize_performance():
         fill_gaps=False,  # Don't auto-fill during monitoring
         validate_format=True
     )
-    
+
     # Check processing time
     import time
     start_time = time.time()
     # ... run quality check ...
     end_time = time.time()
-    
+
     if end_time - start_time > 30:
         print("⚠️ Quality check is taking too long")
         print("Consider reducing data size or optimizing processing")
@@ -608,10 +608,10 @@ async def optimize_performance():
 async def monitor_memory_usage():
     import psutil
     import os
-    
+
     process = psutil.Process(os.getpid())
     memory_usage = process.memory_info().rss / 1024 / 1024  # MB
-    
+
     if memory_usage > 1000:  # More than 1GB
         print(f"⚠️ High memory usage: {memory_usage:.2f} MB")
         print("Consider using memory-efficient processing")
@@ -655,29 +655,29 @@ else:
 async def robust_quality_check():
     try:
         manager = EnhancedDataQualityManager("data_cache")
-        
+
         results = await manager.comprehensive_quality_check(
             symbol="ETHUSDT",
             exchange="BINANCE",
             timeframe="1m"
         )
-        
+
         return results
-        
+
     except Exception as e:
         logger.error(f"Quality check failed: {e}")
-        
+
         # Fallback: try basic check
         try:
             # Basic file existence check
             import os
             klines_file = "data_cache/klines_BINANCE_ETHUSDT_1m_consolidated.parquet"
-            
+
             if os.path.exists(klines_file):
                 return {"success": True, "message": "Basic check passed"}
             else:
                 return {"success": False, "message": "Data file not found"}
-                
+
         except Exception as fallback_error:
             logger.error(f"Fallback check also failed: {fallback_error}")
             return {"success": False, "error": str(e)}
@@ -688,7 +688,7 @@ async def robust_quality_check():
 ```python
 async def setup_production_monitoring():
     monitor = DataQualityMonitor("data_cache")
-    
+
     # Set production thresholds
     monitor.set_quality_thresholds({
         "gap_threshold": 5,
@@ -697,19 +697,19 @@ async def setup_production_monitoring():
         "min_data_rows": 50000,
         "max_null_ratio": 0.05
     })
-    
+
     # Add production alert callbacks
     def production_alert_handler(alert):
         if alert.severity in ["high", "critical"]:
             # Send to production monitoring system
             print(f"🚨 PRODUCTION ALERT: {alert}")
-            
+
             # Could integrate with PagerDuty, Slack, etc.
             # send_pagerduty_alert(alert)
             # send_slack_alert(alert)
-    
+
     monitor.add_alert_callback(production_alert_handler)
-    
+
     # Start monitoring
     await monitor.start_monitoring(
         symbols=["ETHUSDT", "BTCUSDT"],

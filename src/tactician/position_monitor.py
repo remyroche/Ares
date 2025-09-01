@@ -96,17 +96,17 @@ class PositionMonitor:
         # Configuration
         self.monitor_config = config.get("position_monitor", {})
         self.monitoring_interval = self.monitor_config.get("monitoring_interval", 10)  # seconds
-        
+
         # Load step12 confidence optimization config
         step12_config = config.get("step12_confidence_optimization", {})
         position_monitor_config = step12_config.get("position_monitor", {})
-        
+
         # Confidence thresholds for step12 optimization
         self.confidence_threshold = position_monitor_config.get("confidence_threshold", 0.6)
         self.high_confidence_threshold = position_monitor_config.get("high_confidence_threshold", 0.6)
         self.low_confidence_threshold = position_monitor_config.get("low_confidence_threshold", 0.3)
         self.very_low_confidence_threshold = position_monitor_config.get("very_low_confidence_threshold", 0.3)
-        
+
         self.pnl_threshold = position_monitor_config.get("pnl_threshold", -0.05)  # -5%
         self.max_position_age = position_monitor_config.get("max_position_age", 3600)  # 1 hour
 
@@ -540,53 +540,53 @@ class PositionMonitor:
             # Check if auto-refresh is enabled
             step12_config = self.config.get("step12_confidence_optimization", {})
             auto_refresh = step12_config.get("auto_refresh", True)
-            
+
             if not auto_refresh:
                 return
-            
+
             # Check if we need to refresh (based on interval)
             current_time = datetime.now()
             if hasattr(self, '_last_step12_refresh'):
                 time_since_refresh = (current_time - self._last_step12_refresh).total_seconds()
                 refresh_interval = step12_config.get("refresh_interval", 300)  # 5 minutes default
-                
+
                 if time_since_refresh < refresh_interval:
                     return
-            
+
             # Try to load updated step12 configuration
             updated_config = self._load_updated_step12_config()
             if updated_config:
                 # Update confidence thresholds
                 position_monitor_config = updated_config.get("position_monitor", {})
-                
+
                 self.high_confidence_threshold = position_monitor_config.get("high_confidence_threshold", self.high_confidence_threshold)
                 self.low_confidence_threshold = position_monitor_config.get("low_confidence_threshold", self.low_confidence_threshold)
                 self.very_low_confidence_threshold = position_monitor_config.get("very_low_confidence_threshold", self.very_low_confidence_threshold)
-                
+
                 self._last_step12_refresh = current_time
                 self.logger.info("✅ Refreshed step12 confidence thresholds automatically")
-                
+
         except Exception as e:
             self.logger.error(failed(f"❌ Error in step12 auto-refresh: {e}"))
 
     def _load_updated_step12_config(self) -> Optional[Dict[str, Any]]:
         """
         Load updated step12 configuration from results files.
-        
+
         Returns:
             Dict: Updated configuration or None if no updates found
         """
         try:
             step12_config = self.config.get("step12_confidence_optimization", {})
             result_paths = step12_config.get("step12_results_paths", [])
-            
+
             for path in result_paths:
                 if Path(path).exists():
                     try:
                         with open(path, 'r') as f:
                             import yaml
                             updated_config = yaml.safe_load(f)
-                            
+
                         # Check if this is newer than our current config
                         if "timestamp" in updated_config:
                             config_time = datetime.fromisoformat(updated_config["timestamp"])
@@ -597,13 +597,13 @@ class PositionMonitor:
                                 return updated_config
                         else:
                             return updated_config
-                            
+
                     except Exception as e:
                         self.logger.warning(f"Could not load step12 config from {path}: {e}")
                         continue
-            
+
             return None
-            
+
         except Exception as e:
             self.logger.error(failed(f"❌ Error loading updated step12 config: {e}"))
             return None

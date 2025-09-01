@@ -265,14 +265,14 @@ from src.utils.database_security import database_security_manager, DatabaseType
 with database_security_manager.get_secure_connection(DatabaseType.SQLITE, params) as conn:
     # Execute secure queries
     results = database_security_manager.execute_secure_query(
-        conn, 
-        "SELECT * FROM users WHERE id = ?", 
+        conn,
+        "SELECT * FROM users WHERE id = ?",
         (user_id,)
     )
-    
+
     # Encrypt sensitive data
     encrypted_data = database_security_manager.encrypt_sensitive_data(
-        user_data, 
+        user_data,
         ["password", "api_key"]
     )
 ```
@@ -289,8 +289,8 @@ api_key = configuration_security_manager.get_config_value(config, "exchange.api_
 
 # Update configuration securely
 updated_config = configuration_security_manager.set_config_value(
-    config, 
-    "database.port", 
+    config,
+    "database.port",
     5433
 )
 ```
@@ -302,14 +302,14 @@ from src.utils.steps_1_7_compatibility_framework import steps_1_7_compatibility
 class DataCollectionStep:
     def __init__(self, config):
         self.compatibility = steps_1_7_compatibility
-        
+
     def execute(self, inputs):
         # Process data
         outputs = self._process_data(inputs)
-        
+
         # Validate step contract
         self.compatibility.validate_step_contract("step1_data_collection", inputs, outputs)
-        
+
         return outputs
 ```
 

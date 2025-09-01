@@ -248,8 +248,8 @@ timestamp_formats = [
 
 # Normalize timestamps
 normalized_data = data_formatting_framework.normalize_timestamps(
-    data, 
-    "timestamp", 
+    data,
+    "timestamp",
     "unix_seconds"
 )
 ```
@@ -269,8 +269,8 @@ missing_value_strategies = [
 
 # Handle missing values
 filled_data = data_formatting_framework.handle_missing_values(
-    data, 
-    "forward_fill", 
+    data,
+    "forward_fill",
     limit=5
 )
 ```
@@ -287,30 +287,30 @@ class DataProcessingStep:
     def __init__(self, config):
         self.quality_framework = data_quality_framework
         self.formatting_framework = data_formatting_framework
-        
+
     def process_data(self, input_data):
         # 1. Validate input data quality
         quality_results = self.quality_framework.validate_data(input_data)
         if not quality_results["overall_passed"]:
             raise ValueError("Input data quality validation failed")
-        
+
         # 2. Format data to standard format
         formatted_data = self.formatting_framework.standardize_format(
-            input_data, 
+            input_data,
             DataFormat.KLINES
         )
-        
+
         # 3. Clean data if needed
         cleaned_data = self.quality_framework.clean_data(formatted_data)
-        
+
         # 4. Process data
         processed_data = self._process_data(cleaned_data)
-        
+
         # 5. Validate output quality
         output_quality = self.quality_framework.validate_data(processed_data)
         if not output_quality["overall_passed"]:
             raise ValueError("Output data quality validation failed")
-        
+
         return processed_data
 ```
 
@@ -319,7 +319,7 @@ class DataProcessingStep:
 ```python
 def ensure_cross_step_consistency(step_data_dict):
     """Ensure data consistency across pipeline steps."""
-    
+
     # Format all data to consistent formats
     formatted_data = {}
     for step_name, data in step_data_dict.items():
@@ -335,13 +335,13 @@ def ensure_cross_step_consistency(step_data_dict):
             formatted_data[step_name] = data_formatting_framework.standardize_format(
                 data, DataFormat.LABELS
             )
-    
+
     # Validate consistency
     for step_name, data in formatted_data.items():
         quality_results = data_quality_framework.validate_data(data)
         if not quality_results["overall_passed"]:
             raise ValueError(f"Data quality validation failed for {step_name}")
-    
+
     return formatted_data
 ```
 
@@ -350,19 +350,19 @@ def ensure_cross_step_consistency(step_data_dict):
 ```python
 def monitor_data_quality(data_stream):
     """Monitor data quality in real-time."""
-    
+
     quality_history = []
-    
+
     for data in data_stream:
         # Validate quality
         quality_results = data_quality_framework.validate_data(data)
-        
+
         # Calculate quality score
         quality_score = data_quality_framework.calculate_quality_score(data)
-        
+
         # Generate quality report
         quality_report = data_quality_framework.get_quality_report(data)
-        
+
         # Store quality metrics
         quality_history.append({
             "timestamp": datetime.now().isoformat(),
@@ -370,11 +370,11 @@ def monitor_data_quality(data_stream):
             "validation_results": quality_results,
             "quality_metrics": quality_report["quality_metrics"]
         })
-        
+
         # Alert if quality drops
         if quality_score < 0.8:
             logger.warning(f"Data quality score dropped to {quality_score:.2%}")
-        
+
         yield data
 ```
 

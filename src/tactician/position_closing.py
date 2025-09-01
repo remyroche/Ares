@@ -33,16 +33,16 @@ class PositionCloser:
 
         # Configuration from step17 optimization results
         self.position_config = config.get("position_closing", {})
-        
+
         # Load step17 optimized parameters
         step17_config = config.get("step17_optimization", {})
         tpsl_optimization = step17_config.get("tpsl", {})
-        
+
         # Load optimized position closing parameters
         self.atr_multiplier = tpsl_optimization.get("atr_multiplier", 2.0)
         self.confidence_threshold = tpsl_optimization.get("confidence_threshold", 0.7)
         self.min_hold_time = tpsl_optimization.get("min_hold_time", 300)  # 5 minutes
-        
+
         # Load additional optimized parameters
         self.stop_loss_multiplier = tpsl_optimization.get("stop_loss_multiplier", 1.5)
         self.take_profit_multiplier = tpsl_optimization.get("take_profit_multiplier", 2.0)
@@ -111,28 +111,28 @@ class PositionCloser:
         """
         Refresh configuration from step17 optimization results.
         This method is called automatically when step17 completes.
-        
+
         Args:
             step17_results: Step17 optimization results
         """
         try:
             if "tpsl" in step17_results:
                 tpsl_optimization = step17_results["tpsl"]
-                
+
                 # Update position closing parameters
                 self.atr_multiplier = tpsl_optimization.get("atr_multiplier", self.atr_multiplier)
                 self.confidence_threshold = tpsl_optimization.get("confidence_threshold", self.confidence_threshold)
                 self.min_hold_time = tpsl_optimization.get("min_hold_time", self.min_hold_time)
-                
+
                 # Update additional parameters
                 self.stop_loss_multiplier = tpsl_optimization.get("stop_loss_multiplier", self.stop_loss_multiplier)
                 self.take_profit_multiplier = tpsl_optimization.get("take_profit_multiplier", self.take_profit_multiplier)
                 self.trailing_stop_enabled = tpsl_optimization.get("trailing_stop_enabled", self.trailing_stop_enabled)
                 self.trailing_stop_distance = tpsl_optimization.get("trailing_stop_distance", self.trailing_stop_distance)
                 self.max_hold_time = tpsl_optimization.get("max_hold_time", self.max_hold_time)
-                
+
                 self.logger.info("✅ Position closer configuration refreshed from step17 results")
-                
+
         except Exception as e:
             self.logger.error(f"Error refreshing step17 configuration: {e}")
 

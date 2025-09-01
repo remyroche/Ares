@@ -48,7 +48,7 @@ async def validate_step3_5_final_regime_clustering(
 ) -> bool:
     # Automatic validation with BaseValidator integration
     # - Prerequisites validation
-    # - Input validation  
+    # - Input validation
     # - Output validation
     # - Data quality validation
     # - Performance monitoring
@@ -194,11 +194,11 @@ from src.utils.enhanced_validation_decorators import (
 
 class Step3_5FinalRegimeClusteringValidator(BaseValidator):
     """Validator for Step 3.5: Final Regime Clustering."""
-    
+
     def __init__(self, config: dict[str, Any]) -> None:
         super().__init__("step03_5_final_regime_clustering", config)
         self.logger = system_logger.getChild("Validator.Step3_5")
-    
+
     @validate_step3_5_comprehensive
     async def validate_step3_5_final_regime_clustering(
         self, symbol: str, exchange: str, data_dir: str, training_input: dict[str, Any]
@@ -210,10 +210,10 @@ class Step3_5FinalRegimeClusteringValidator(BaseValidator):
         # - Output validation
         # - Data quality validation
         # - Performance monitoring
-        
+
         # Your validation logic here
         return True
-    
+
     @smart_validation_cache(ttl_seconds=300)  # Cache for 5 minutes
     async def _validate_final_regime_file(self, regime_file: Path) -> bool:
         """Validate a final regime clustering file with caching."""
@@ -221,13 +221,13 @@ class Step3_5FinalRegimeClusteringValidator(BaseValidator):
         file_exists, file_metrics = self.validate_file_exists(str(regime_file), "regime file")
         if not file_exists:
             return False
-        
+
         # Use BaseValidator's DataFrame validation
         df = pd.read_parquet(regime_file)
         df_valid, df_metrics = self.validate_dataframe_quality(
             df, min_rows=100, required_columns=["timestamp", "final_regime_id"]
         )
-        
+
         return df_valid
 ```
 

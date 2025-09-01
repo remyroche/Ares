@@ -191,14 +191,14 @@ from pathlib import Path
 
 def analyze_specific_features(features_df: pd.DataFrame, feature_names: List[str]) -> Dict[str, Any]:
     """Analyze specific features in detail"""
-    
+
     results = {}
-    
+
     for feature in feature_names:
         if feature not in features_df.columns:
             results[feature] = {"error": "Feature not found"}
             continue
-            
+
         series = features_df[feature]
         analysis = {
             "dtype": str(series.dtype),
@@ -215,56 +215,56 @@ def analyze_specific_features(features_df: pd.DataFrame, feature_names: List[str
             "max_value": series.max() if np.issubdtype(series.dtype, np.number) else None,
             "extreme_values": (series.abs() > 1e6).sum() if np.issubdtype(series.dtype, np.number) else 0
         }
-        
+
         results[feature] = analysis
-    
+
     return results
 
 def print_feature_analysis(results: Dict[str, Any]):
     """Print detailed feature analysis"""
-    
+
     print("=" * 80)
     print("DETAILED FEATURE ANALYSIS")
     print("=" * 80)
-    
+
     for feature, analysis in results.items():
         if "error" in analysis:
             print(f"\\n❌ {feature}: {analysis['error']}")
             continue
-            
+
         print(f"\\n📊 {feature}:")
         print(f"  Data Type: {analysis['dtype']}")
         print(f"  Total Values: {analysis['total_values']:,}")
         print(f"  Missing Values: {analysis['missing_values']:,} ({analysis['missing_percentage']:.2f}%)")
         print(f"  Infinite Values: {analysis['infinite_values']:,} ({analysis['infinite_percentage']:.2f}%)")
-        
+
         if analysis['variance'] is not None:
             print(f"  Variance: {analysis['variance']:.2e}")
             print(f"  Unique Values: {analysis['unique_values']:,}")
             print(f"  Most Common: {analysis['most_common_value']} ({analysis['most_common_count']:,} times)")
             print(f"  Value Range: [{analysis['min_value']:.6f}, {analysis['max_value']:.6f}]")
             print(f"  Extreme Values (>1M): {analysis['extreme_values']:,}")
-        
+
         # Issue classification
         issues = []
         if analysis['missing_percentage'] > 50:
             issues.append("CRITICAL: >50% missing values")
         elif analysis['missing_percentage'] > 10:
             issues.append("WARNING: >10% missing values")
-            
+
         if analysis['infinite_percentage'] > 5:
             issues.append("ERROR: >5% infinite values")
         elif analysis['infinite_percentage'] > 1:
             issues.append("WARNING: >1% infinite values")
-            
+
         if analysis['variance'] is not None and analysis['variance'] == 0:
             issues.append("ERROR: Zero variance")
         elif analysis['variance'] is not None and analysis['variance'] < 1e-10:
             issues.append("WARNING: Very low variance")
-            
+
         if analysis['extreme_values'] > 0:
             issues.append(f"WARNING: {analysis['extreme_values']} extreme values")
-            
+
         if issues:
             print(f"  Issues: {', '.join(issues)}")
         else:

@@ -344,17 +344,17 @@ class Supervisor:
         """Initialize the enhanced prediction service."""
         try:
             from src.supervisor.enhanced_prediction_service import EnhancedPredictionService
-            
+
             self.enhanced_prediction_service = EnhancedPredictionService(self.config)
             success = await self.enhanced_prediction_service.initialize()
-            
+
             if success:
                 self.logger.info("✅ Enhanced Prediction Service initialized successfully")
             else:
                 self.logger.warning("⚠️ Enhanced Prediction Service initialization failed")
-            
+
             return success
-            
+
         except Exception as e:
             self.logger.error(f"❌ Error initializing Enhanced Prediction Service: {e}")
             return False
@@ -375,7 +375,7 @@ class Supervisor:
     ) -> Dict[str, Any]:
         """
         Get Analyst predictions using calibrated confidence scores from ML models.
-        
+
         The Analyst decides if we enter a position based on calibrated confidence scores.
         """
         try:
@@ -387,12 +387,12 @@ class Supervisor:
             calibrated_confidence = await self.enhanced_prediction_service.get_calibrated_confidence_scores(
                 market_data, regime_info, symbol, exchange
             )
-            
+
             # Step 2: Analyst decides if we enter a position using Analyst models
             analyst_decision = await self._analyst_decide_position_entry(
                 market_data, regime_info, calibrated_confidence["analyst_models"], symbol, exchange
             )
-            
+
             return {
                 "calibrated_confidence_scores": calibrated_confidence,
                 "analyst_decision": analyst_decision,
@@ -428,7 +428,7 @@ class Supervisor:
     ) -> Dict[str, Any]:
         """
         Get Tactician predictions using calibrated confidence scores from ML models.
-        
+
         The Tactician decides when, how much, and with what leverage based on calibrated confidence scores.
         Must agree with Analyst on trade direction.
         """
@@ -441,12 +441,12 @@ class Supervisor:
             calibrated_confidence = await self.enhanced_prediction_service.get_calibrated_confidence_scores(
                 market_data, regime_info, symbol, exchange
             )
-            
+
             # Step 2: Tactician decides execution parameters using Tactician models
             tactician_decision = await self._tactician_calculate_execution_parameters(
                 market_data, analyst_signals, calibrated_confidence["tactician_models"], symbol, exchange
             )
-            
+
             return {
                 "calibrated_confidence_scores": calibrated_confidence,
                 "tactician_decision": tactician_decision,
@@ -493,20 +493,20 @@ class Supervisor:
                     "individual_confidences": {},
                     "entry_reason": "no_analyst_confidence"
                 }
-            
+
             avg_confidence = sum(analyst_confidence_scores.values()) / len(analyst_confidence_scores)
             max_confidence = max(analyst_confidence_scores.values())
-            
+
             # Determine trade direction from Analyst models
             trade_direction = self._analyst_determine_trade_direction(analyst_confidence_scores, market_data)
-            
+
             # Decision logic
             should_enter = (
-                avg_confidence > self.enhanced_prediction_service.entry_threshold and 
+                avg_confidence > self.enhanced_prediction_service.entry_threshold and
                 max_confidence > self.enhanced_prediction_service.max_confidence_threshold and
                 trade_direction != "neutral"
             )
-            
+
             return {
                 "should_enter_position": should_enter,
                 "trade_direction": trade_direction,
@@ -529,8 +529,8 @@ class Supervisor:
             }
 
     def _analyst_determine_trade_direction(
-        self, 
-        confidence_scores: Dict[str, float], 
+        self,
+        confidence_scores: Dict[str, float],
         market_data: pd.DataFrame
     ) -> str:
         """Determine trade direction based on Analyst model confidences."""
@@ -538,14 +538,14 @@ class Supervisor:
             # Logic to determine if models suggest long, short, or neutral
             # This would be based on the specific Analyst model outputs
             bullish_confidence = sum(
-                conf for name, conf in confidence_scores.items() 
+                conf for name, conf in confidence_scores.items()
                 if "bullish" in name.lower() or "long" in name.lower()
             )
             bearish_confidence = sum(
-                conf for name, conf in confidence_scores.items() 
+                conf for name, conf in confidence_scores.items()
                 if "bearish" in name.lower() or "short" in name.lower()
             )
-            
+
             # If no directional models, use overall confidence pattern
             if bullish_confidence == 0 and bearish_confidence == 0:
                 # Use price momentum as fallback
@@ -554,7 +554,7 @@ class Supervisor:
                     if abs(price_change) > 0.001:  # 0.1% threshold
                         return "long" if price_change > 0 else "short"
                 return "neutral"
-            
+
             # Determine direction based on confidence
             if bullish_confidence > bearish_confidence and bullish_confidence > 0.6:
                 return "long"
@@ -562,7 +562,7 @@ class Supervisor:
                 return "short"
             else:
                 return "neutral"
-                
+
         except Exception as e:
             self.logger.error(error(f"❌ Error determining trade direction: {e}"))
             return "neutral"
@@ -589,10 +589,10 @@ class Supervisor:
         try:
             # Import enhanced execution manager
             from src.tactician.enhanced_execution_manager import EnhancedExecutionManager
-            
+
             # Initialize enhanced execution manager
             enhanced_manager = EnhancedExecutionManager(self.config)
-            
+
             # Check if Analyst wants to enter
             analyst_decision = analyst_signals.get("analyst_decision", {})
             if not analyst_decision.get("should_enter_position", False):
@@ -600,19 +600,19 @@ class Supervisor:
                     "should_execute": False,
                     "reason": "analyst_no_entry"
                 }
-            
+
             # Calculate average tactician confidence
             if not tactician_confidence_scores:
                 return {
                     "should_execute": False,
                     "reason": "no_tactician_confidence"
                 }
-            
+
             avg_tactician_confidence = sum(tactician_confidence_scores.values()) / len(tactician_confidence_scores)
-            
+
             # Get current price for execution calculations
             current_price = market_data['close'].iloc[-1] if not market_data.empty else 0.0
-            
+
             # Use enhanced execution manager for high precision parameters
             execution_params = enhanced_manager.calculate_execution_parameters(
                 market_data=market_data,
@@ -620,10 +620,10 @@ class Supervisor:
                 tactician_confidence=avg_tactician_confidence,
                 current_price=current_price
             )
-            
+
             if not execution_params.get("should_execute", False):
                 return execution_params
-            
+
             # Add additional metadata
             execution_params.update({
                 "symbol": symbol,
@@ -633,13 +633,13 @@ class Supervisor:
                 "barrier_types": ["upper_barrier", "lower_barrier"],
                 "timeframes": ["1m", "5m"]
             })
-            
+
             self.logger.info(f"🎯 Enhanced Tactician Execution Parameters:")
             self.logger.info(f"   Symbol: {symbol}")
             self.logger.info(f"   Direction: {execution_params.get('trade_direction', 'unknown')}")
             self.logger.info(f"   Precision Score: {execution_params.get('precision_score', 0.0):.3f}")
             self.logger.info(f"   Combined Confidence: {execution_params.get('combined_confidence', 0.0):.3f}")
-            
+
             return execution_params
 
         except Exception as e:
@@ -651,8 +651,8 @@ class Supervisor:
             }
 
     def _tactician_determine_direction(
-        self, 
-        confidence_scores: Dict[str, float], 
+        self,
+        confidence_scores: Dict[str, float],
         market_data: pd.DataFrame
     ) -> str:
         """Determine trade direction based on Tactician model confidences."""
@@ -660,14 +660,14 @@ class Supervisor:
             # Logic to determine if Tactician models suggest long, short, or neutral
             # This would be based on the specific Tactician model outputs (lower timeframe)
             bullish_confidence = sum(
-                conf for name, conf in confidence_scores.items() 
+                conf for name, conf in confidence_scores.items()
                 if "bullish" in name.lower() or "long" in name.lower()
             )
             bearish_confidence = sum(
-                conf for name, conf in confidence_scores.items() 
+                conf for name, conf in confidence_scores.items()
                 if "bearish" in name.lower() or "short" in name.lower()
             )
-            
+
             # If no directional models, use overall confidence pattern
             if bullish_confidence == 0 and bearish_confidence == 0:
                 # Use short-term price momentum as fallback
@@ -676,7 +676,7 @@ class Supervisor:
                     if abs(recent_change) > 0.0005:  # 0.05% threshold for short-term
                         return "long" if recent_change > 0 else "short"
                 return "neutral"
-            
+
             # Determine direction based on confidence
             if bullish_confidence > bearish_confidence and bullish_confidence > 0.6:
                 return "long"
@@ -684,7 +684,7 @@ class Supervisor:
                 return "short"
             else:
                 return "neutral"
-                
+
         except Exception as e:
             self.logger.error(error(f"❌ Error determining tactician direction: {e}"))
             return "neutral"
@@ -738,7 +738,7 @@ class Supervisor:
     ) -> dict[str, Any]:
         """
         Integrate ML profit predictions with existing Analyst components.
-        
+
         This function enhances the Analyst's decision-making by incorporating:
         1. ML profit predictions from steps 6-14
         2. Enhanced confidence scores with barrier analysis
@@ -799,7 +799,7 @@ class Supervisor:
     ) -> dict[str, Any]:
         """
         Integrate ML profit predictions with existing Tactician components.
-        
+
         This function enhances the Tactician's execution by providing:
         1. ML profit predictions with triple barrier probabilities
         2. Enhanced confidence scores for leverage decisions
@@ -870,7 +870,7 @@ class Supervisor:
                 direction = prediction_data.get("direction", 0)
                 magnitude = prediction_data.get("magnitude", 0.0)
                 confidence = enhanced_confidence.get(prediction_name, {}).get("enhanced_confidence", 0.5)
-                
+
                 enhanced_signals["directional_signals"][prediction_name] = {
                     "direction": direction,
                     "magnitude": magnitude,
@@ -934,10 +934,10 @@ class Supervisor:
                 direction = prediction_data.get("direction", 0)
                 magnitude = prediction_data.get("magnitude", 0.0)
                 confidence = enhanced_confidence.get(prediction_name, {}).get("enhanced_confidence", 0.5)
-                
+
                 # Determine execution urgency based on confidence and magnitude
                 execution_urgency = confidence * magnitude
-                
+
                 enhanced_signals["execution_signals"][prediction_name] = {
                     "direction": direction,
                     "magnitude": magnitude,
@@ -950,10 +950,10 @@ class Supervisor:
             for prediction_name, prediction_data in ml_profit_data.items():
                 confidence = enhanced_confidence.get(prediction_name, {}).get("enhanced_confidence", 0.5)
                 magnitude = prediction_data.get("magnitude", 0.0)
-                
+
                 # Calculate position size based on confidence and magnitude
                 position_size_factor = confidence * min(1.0, magnitude * 10)  # Scale magnitude
-                
+
                 enhanced_signals["position_signals"][prediction_name] = {
                     "position_size_factor": position_size_factor,
                     "confidence": confidence,
@@ -973,10 +973,10 @@ class Supervisor:
             # Process timing signals
             for prediction_name, prediction_data in ml_profit_data.items():
                 confidence = enhanced_confidence.get(prediction_name, {}).get("enhanced_confidence", 0.5)
-                
+
                 # Determine timing based on confidence and volatility
                 timing_urgency = "immediate" if confidence > 0.8 else "normal" if confidence > 0.6 else "cautious"
-                
+
                 enhanced_signals["timing_signals"][prediction_name] = {
                     "timing_urgency": timing_urgency,
                     "confidence": confidence,
@@ -1002,7 +1002,7 @@ class Supervisor:
     ) -> dict[str, Any]:
         """
         Generate position decision signals (should we take a position?).
-        
+
         This provides signals to the Tactician about whether to take positions,
         but does NOT calculate position sizing - that's the Tactician's responsibility.
         """
@@ -1017,20 +1017,20 @@ class Supervisor:
                 confidence_data = enhanced_confidence.get(prediction_name, {})
                 optimized_confidence = confidence_data.get("optimized_confidence", 0.5)
                 triple_barrier_probs = confidence_data.get("triple_barrier_details", {})
-                
+
                 # Determine if we should take a position based on confidence
                 should_take_position = optimized_confidence > self.enhanced_prediction_service.direction_confidence_threshold
-                
+
                 # Get the best triple barrier probability for decision making
                 best_probability = 0.0
                 best_scenario = None
-                
+
                 if triple_barrier_probs:
                     for scenario_name, scenario_data in triple_barrier_probs.items():
                         if scenario_data["probability"] > best_probability:
                             best_probability = scenario_data["probability"]
                             best_scenario = scenario_name
-                
+
                 position_decisions["position_recommendations"][prediction_name] = {
                     "should_take_position": should_take_position,
                     "confidence": optimized_confidence,
@@ -1043,15 +1043,15 @@ class Supervisor:
 
             # Calculate aggregate position signal
             total_recommendations = len(position_decisions["position_recommendations"])
-            strong_recommendations = sum(1 for rec in position_decisions["position_recommendations"].values() 
+            strong_recommendations = sum(1 for rec in position_decisions["position_recommendations"].values()
                                        if rec["recommendation_strength"] == "strong")
-            moderate_recommendations = sum(1 for rec in position_decisions["position_recommendations"].values() 
+            moderate_recommendations = sum(1 for rec in position_decisions["position_recommendations"].values()
                                          if rec["recommendation_strength"] == "moderate")
-            
+
             if total_recommendations > 0:
                 strong_ratio = strong_recommendations / total_recommendations
                 moderate_ratio = moderate_recommendations / total_recommendations
-                
+
                 if strong_ratio > 0.5:
                     aggregate_signal = "strong_buy"
                 elif moderate_ratio > 0.5:
@@ -1091,7 +1091,7 @@ class Supervisor:
     ) -> dict[str, Any]:
         """
         Generate leverage inputs for the Tactician.
-        
+
         This provides confidence and probability data to help the Tactician
         make leverage decisions, but does NOT calculate leverage itself.
         """
@@ -1107,7 +1107,7 @@ class Supervisor:
                 confidence_data = enhanced_confidence.get(prediction_name, {})
                 optimized_confidence = confidence_data.get("optimized_confidence", 0.5)
                 triple_barrier_max_prob = confidence_data.get("triple_barrier_max_probability", 0.5)
-                
+
                 leverage_inputs["confidence_inputs"][prediction_name] = {
                     "model_confidence": prediction_data.get("model_confidence", 0.5),
                     "optimized_confidence": optimized_confidence,
@@ -1120,11 +1120,11 @@ class Supervisor:
             for prediction_name, prediction_data in ml_profit_data.items():
                 confidence_data = enhanced_confidence.get(prediction_name, {})
                 triple_barrier_probs = confidence_data.get("triple_barrier_details", {})
-                
+
                 # Extract probability information for leverage decisions
                 probabilities = []
                 scenarios = []
-                
+
                 for scenario_name, scenario_data in triple_barrier_probs.items():
                     probabilities.append(scenario_data["probability"])
                     scenarios.append({
@@ -1132,7 +1132,7 @@ class Supervisor:
                         "probability": scenario_data["probability"],
                         "risk_reward_ratio": scenario_data["risk_reward_ratio"]
                     })
-                
+
                 leverage_inputs["probability_inputs"][prediction_name] = {
                     "all_probabilities": probabilities,
                     "max_probability": max(probabilities) if probabilities else 0.5,
@@ -1185,7 +1185,7 @@ class Supervisor:
             for prediction_name, prediction_data in ml_profit_data.items():
                 confidence = prediction_data.get("confidence", 0.5)
                 barrier_data = barrier_analysis.get(prediction_name, {})
-                
+
                 total_confidence += confidence
                 total_expected_value += barrier_data.get("expected_value", 0.0)
                 total_risk_reward += barrier_data.get("risk_reward_ratio", 0.0)
@@ -1211,7 +1211,7 @@ class Supervisor:
             # Calculate individual risk metrics
             for prediction_name, prediction_data in ml_profit_data.items():
                 barrier_data = barrier_analysis.get(prediction_name, {})
-                
+
                 risk_metrics["individual_risks"][prediction_name] = {
                     "confidence": prediction_data.get("confidence", 0.5),
                     "expected_value": barrier_data.get("expected_value", 0.0),
@@ -1221,7 +1221,7 @@ class Supervisor:
 
             # Calculate portfolio implications
             current_volatility = market_data['close'].pct_change().std()
-            
+
             risk_metrics["portfolio_implications"] = {
                 "market_volatility": current_volatility,
                 "recommended_position_size": "reduced" if current_volatility > 0.03 else "normal" if current_volatility > 0.02 else "increased",
@@ -1470,13 +1470,13 @@ class Supervisor:
         try:
             # Coordinate Analyst-Strategist
             await self._coordinate_analyst_strategist()
-            
+
             # Coordinate Strategist-Tactician
             await self._coordinate_strategist_tactician()
-            
+
             # Coordinate Training Manager
             await self._coordinate_training_manager()
-            
+
         except Exception:
             self.print(error("Error coordinating components: {e}"))
 
@@ -1518,7 +1518,7 @@ class Supervisor:
     async def _coordinate_strategist_tactician(self) -> None:
         """
         Coordinate Strategist and Tactician components.
-        
+
         Strategy Coordination:
         - Strategist provides trading strategies and market analysis
         - Tactician handles position sizing and execution tactics

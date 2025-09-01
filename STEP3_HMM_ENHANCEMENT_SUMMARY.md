@@ -12,7 +12,7 @@ The enhanced HMM regime discovery now includes **7 major feature categories**:
 
 #### 🚀 **Momentum Features**
 - **Price Momentum**: 5, 10, 20-period price momentum
-- **Volume Momentum**: 5, 10, 20-period volume momentum  
+- **Volume Momentum**: 5, 10, 20-period volume momentum
 - **RSI Momentum**: RSI change over 5 periods
 - **MACD Momentum**: MACD change over 5 periods
 
@@ -44,7 +44,7 @@ The enhanced HMM regime discovery now includes **7 major feature categories**:
 
 #### 🔄 **Feature Interactions**
 - **Momentum × Volume**: Price momentum × volume ratio
-- **Volatility × Volume**: Volatility × volume ratio  
+- **Volatility × Volume**: Volatility × volume ratio
 - **RSI × Momentum**: RSI × price momentum
 
 ### 2. Proper HMM Implementation
@@ -69,7 +69,7 @@ The system automatically interprets HMM states based on feature characteristics:
 ```python
 # State characteristics analyzed:
 - price_momentum_10_mean
-- volatility_20_mean  
+- volatility_20_mean
 - volume_ratio_10_mean
 - rsi_mean
 - adx_mean
@@ -137,7 +137,7 @@ from src.training.steps.step3_hmm_regime_discovery import run_step
 
 success = await run_step(
     symbol="ETHUSDT",
-    exchange="BINANCE", 
+    exchange="BINANCE",
     timeframe="1m",
     data_dir="data_cache",
     force_rerun=True
@@ -208,11 +208,11 @@ The enhanced HMM regime discovery integrates seamlessly with:
 
 The enhanced Step 3 HMM Regime Discovery now provides:
 
-✅ **Comprehensive feature engineering** with momentum, S/R, volume, and volatility  
-✅ **Proper HMM implementation** using hmmlearn library  
-✅ **Robust fallback mechanism** for different environments  
-✅ **Automatic regime interpretation** with meaningful labels  
-✅ **Detailed logging and validation** for transparency  
-✅ **Seamless integration** with existing pipeline  
+✅ **Comprehensive feature engineering** with momentum, S/R, volume, and volatility
+✅ **Proper HMM implementation** using hmmlearn library
+✅ **Robust fallback mechanism** for different environments
+✅ **Automatic regime interpretation** with meaningful labels
+✅ **Detailed logging and validation** for transparency
+✅ **Seamless integration** with existing pipeline
 
 This enhancement significantly improves the quality and accuracy of regime discovery, providing a solid foundation for subsequent training steps and trading strategies.

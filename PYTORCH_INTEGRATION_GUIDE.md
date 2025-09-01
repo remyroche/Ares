@@ -116,7 +116,7 @@ class SimpleTradingModel(nn.Module):
         self.dropout = nn.Dropout(0.2)
         self.fc2 = nn.Linear(hidden_size, hidden_size // 2)
         self.fc3 = nn.Linear(hidden_size // 2, num_classes)
-        
+
     def forward(self, x):
         x = self.relu(self.fc1(x))
         x = self.dropout(x)
@@ -137,19 +137,19 @@ class LSTMTradingModel(nn.Module):
         super(LSTMTradingModel, self).__init__()
         self.hidden_size = hidden_size
         self.num_layers = num_layers
-        
-        self.lstm = nn.LSTM(input_size, hidden_size, num_layers, 
+
+        self.lstm = nn.LSTM(input_size, hidden_size, num_layers,
                            batch_first=True, dropout=dropout)
         self.dropout = nn.Dropout(dropout)
         self.fc = nn.Linear(hidden_size, num_classes)
-        
+
     def forward(self, x):
         # x shape: (batch_size, sequence_length, input_size)
         lstm_out, _ = self.lstm(x)
-        
+
         # Take the last output
         lstm_out = lstm_out[:, -1, :]
-        
+
         # Apply dropout and final classification
         out = self.dropout(lstm_out)
         out = self.fc(out)
@@ -184,11 +184,11 @@ model.train()
 for epoch in range(num_epochs):
     for batch_X, batch_y in dataloader:
         optimizer.zero_grad()
-        
+
         # Forward pass
         outputs = model(batch_X)
         loss = criterion(outputs, batch_y)
-        
+
         # Backward pass
         loss.backward()
         optimizer.step()
@@ -206,17 +206,17 @@ class TradingLightningModule(pl.LightningModule):
         self.model = model
         self.learning_rate = learning_rate
         self.criterion = nn.CrossEntropyLoss()
-    
+
     def forward(self, x):
         return self.model(x)
-    
+
     def training_step(self, batch, batch_idx):
         x, y = batch
         outputs = self(x)
         loss = self.criterion(outputs, y)
         self.log('train_loss', loss)
         return loss
-    
+
     def configure_optimizers(self):
         return optim.Adam(self.parameters(), lr=self.learning_rate)
 

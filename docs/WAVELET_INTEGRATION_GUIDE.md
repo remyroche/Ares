@@ -34,15 +34,15 @@ This is the core component that integrates all features from the original advanc
 def _prepare_stationary_series(self, price_data: pd.DataFrame) -> dict[str, np.ndarray]:
     """Prepare stationary series for wavelet analysis using price differences."""
     stationary_series = {}
-    
+
     # Price differences (first difference) - primary focus
     price_diff = price_data["close"].diff().dropna().values
     stationary_series["price_diff"] = price_diff
-    
+
     # Second differences (acceleration)
     price_diff_2 = price_data["close"].diff().diff().dropna().values
     stationary_series["price_diff_2"] = price_diff_2
-    
+
     # Use price differences as primary series (not raw prices)
     stationary_series["close"] = price_diff
 ```
@@ -150,11 +150,11 @@ live_features = await feature_engineer.engineer_features(
 )
 
 # Wavelet features for live trading
-live_wavelet_features = {k: v for k, v in live_features.items() 
+live_wavelet_features = {k: v for k, v in live_features.items()
                         if 'wavelet' in k.lower()}
 
 # Trading decision based on wavelet energy
-energy_features = {k: v for k, v in live_wavelet_features.items() 
+energy_features = {k: v for k, v in live_wavelet_features.items()
                   if 'energy' in k.lower()}
 avg_energy = np.mean(list(energy_features.values()))
 

@@ -101,7 +101,7 @@ config = {
     "TIMEFRAME": "1m",
     "DATA_DIR": "data_cache",
     "LOOKBACK_DAYS": 30,
-    
+
     # Triple barrier configuration
     "triple_barrier": {
         "profit_take_multiplier": 0.002,
@@ -109,7 +109,7 @@ config = {
         "time_barrier_minutes": 30,
         "max_lookahead": 100,
     },
-    
+
     # Labeling configuration
     "labeling": {
         "enable_meta_labeling": True,
@@ -117,7 +117,7 @@ config = {
         "enable_volatility_labels": True,
         "composite_label_strategy": "weighted_combination",
     },
-    
+
     # Feature engineering configuration
     "vectorized_advanced_features": {
         "enable_difference_acceleration_features": True,
@@ -132,14 +132,14 @@ config = {
         "enable_meta_labeling": False,
         "enable_explicit_meta_labels": False,
     },
-    
+
     # HMM configuration
     "hmm_regime_discovery": {
         "n_components": 4,
         "covariance_type": "full",
         "random_state": 42,
     },
-    
+
     # Training configuration
     "method_a_mixture_of_experts": {
         "enable_method_a": True,

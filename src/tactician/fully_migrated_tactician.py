@@ -32,7 +32,7 @@ def handle_errors(func):
 class FullyMigratedTactician:
     """
     Fully migrated Tactician using only enhanced scenario-based predictions.
-    
+
     This replaces the old multi-output system entirely with:
     - Fractal scenario analysis (17 scenarios: 8 profit, 8 risk, 1 neutral)
     - All step7 technical indicators
@@ -43,20 +43,20 @@ class FullyMigratedTactician:
     def __init__(self, config: Dict[str, Any]) -> None:
         """
         Initialize fully migrated Tactician.
-        
+
         Args:
             config: Configuration dictionary with step17 optimization parameters
         """
         self.config = config
         self.logger = logger
-        
+
         # Load step17 optimization parameters
         step17_config = config.get("step17_optimization", {})
         tactician_config = step17_config.get("fully_migrated_tactician", {})
-        
+
         # Enhanced scenario predictor
         self.scenario_predictor = None
-        
+
         # Decision thresholds (configurable for step17)
         self.decision_thresholds = {
             "entry_profit_threshold": tactician_config.get("entry_profit_threshold", 0.6),
@@ -69,7 +69,7 @@ class FullyMigratedTactician:
             "position_size_multiplier": tactician_config.get("position_size_multiplier", 1.0),
             "leverage_multiplier": tactician_config.get("leverage_multiplier", 1.0)
         }
-        
+
         # Risk management parameters (configurable for step17)
         self.risk_management = {
             "max_position_size": tactician_config.get("max_position_size", 0.1),
@@ -79,7 +79,7 @@ class FullyMigratedTactician:
             "max_drawdown": tactician_config.get("max_drawdown", 0.05),
             "correlation_threshold": tactician_config.get("correlation_threshold", 0.8)
         }
-        
+
         # Performance tracking
         self.performance_metrics = {
             "total_trades": 0,
@@ -91,7 +91,7 @@ class FullyMigratedTactician:
             "sharpe_ratio": 0.0,
             "profit_factor": 0.0
         }
-        
+
         # State management
         self.is_initialized = False
         self.current_position = None
@@ -100,30 +100,30 @@ class FullyMigratedTactician:
     async def initialize(self) -> bool:
         """
         Initialize fully migrated Tactician.
-        
+
         Returns:
             bool: True if initialization successful, False otherwise
         """
         try:
             self.logger.info("Initializing Fully Migrated Tactician...")
-            
+
             # Initialize enhanced scenario predictor
             self.scenario_predictor = EnhancedScenarioBasedPredictor(self.config)
             success = await self.scenario_predictor.initialize()
-            
+
             if not success:
                 self.logger.error("Failed to initialize enhanced scenario predictor")
                 return False
-            
+
             # Validate configuration
             if not self._validate_configuration():
                 self.logger.error("Invalid configuration for fully migrated Tactician")
                 return False
-            
+
             self.is_initialized = True
             self.logger.info("✅ Fully Migrated Tactician initialized successfully")
             return True
-            
+
         except Exception as e:
             self.logger.error(f"❌ Fully Migrated Tactician initialization failed: {e}")
             return False
@@ -131,7 +131,7 @@ class FullyMigratedTactician:
     def _validate_configuration(self) -> bool:
         """
         Validate fully migrated Tactician configuration.
-        
+
         Returns:
             bool: True if configuration is valid, False otherwise
         """
@@ -141,18 +141,18 @@ class FullyMigratedTactician:
                 if threshold < 0 or threshold > 1:
                     self.logger.error(f"Invalid threshold for {threshold_name}")
                     return False
-            
+
             # Validate risk management parameters
             if self.risk_management["max_position_size"] <= 0:
                 self.logger.error("Invalid max_position_size")
                 return False
-            
+
             if self.risk_management["max_leverage"] <= 0:
                 self.logger.error("Invalid max_leverage")
                 return False
-            
+
             return True
-            
+
         except Exception as e:
             self.logger.error(f"❌ Configuration validation failed: {e}")
             return False
@@ -168,14 +168,14 @@ class FullyMigratedTactician:
     ) -> Dict[str, Any]:
         """
         Generate predictions using only enhanced scenario analysis.
-        
+
         Args:
             market_data: Market data with OHLCV
             analyst_barriers: Analyst's barrier values (for reference)
             symbol: Trading symbol
             timeframe: Current timeframe
             analyst_confidence: Analyst's confidence score
-            
+
         Returns:
             dict: Enhanced predictions and decisions
         """
@@ -183,26 +183,26 @@ class FullyMigratedTactician:
             if not self.is_initialized:
                 self.logger.error("Tactician not initialized")
                 return self._generate_error_predictions(symbol, timeframe)
-            
+
             # Extract comprehensive features
             features = self.scenario_predictor.extract_comprehensive_features(market_data)
             features = features.reshape(1, -1)  # Reshape for single prediction
-            
+
             # Generate scenario predictions
             scenario_predictions = await self.scenario_predictor.predict_scenarios(
                 features, market_data
             )
-            
+
             # Make trading decisions
             trading_decisions = self._make_trading_decisions(
                 scenario_predictions, analyst_confidence, market_data
             )
-            
+
             # Calculate position sizing and leverage
             position_management = self._calculate_position_management(
                 scenario_predictions, trading_decisions, analyst_barriers
             )
-            
+
             result = {
                 "scenario_predictions": scenario_predictions,
                 "trading_decisions": trading_decisions,
@@ -216,10 +216,10 @@ class FullyMigratedTactician:
                     "n_scenarios": len(self.scenario_predictor.scenarios)
                 }
             }
-            
+
             self.logger.info(f"Generated fully migrated predictions for {symbol}")
             return result
-            
+
         except Exception as e:
             self.logger.error(f"❌ Prediction generation failed: {e}")
             return self._generate_error_predictions(symbol, timeframe)
@@ -232,26 +232,26 @@ class FullyMigratedTactician:
     ) -> Dict[str, Any]:
         """
         Make trading decisions based on scenario analysis.
-        
+
         Args:
             scenario_predictions: Scenario predictions
             analyst_confidence: Analyst's confidence score
             market_data: Market data
-            
+
         Returns:
             dict: Trading decisions
         """
         try:
             scenario_analysis = scenario_predictions.get("scenario_analysis", {})
             confidence = scenario_predictions.get("confidence", 0.0)
-            
+
             # Extract key metrics
             profit_zone_prob = scenario_analysis.get("profit_zone_probability", 0.0)
             risk_zone_prob = scenario_analysis.get("risk_zone_probability", 0.0)
             risk_reward_ratio = scenario_analysis.get("risk_reward_ratio", 0.0)
             scenario_dominance = scenario_analysis.get("scenario_dominance", 0.0)
             dominant_zone = scenario_analysis.get("dominant_zone", "neutral")
-            
+
             # Entry decision logic
             entry_conditions = [
                 profit_zone_prob > self.decision_thresholds["entry_profit_threshold"],
@@ -262,9 +262,9 @@ class FullyMigratedTactician:
                 dominant_zone == "profit",
                 analyst_confidence > 0.5  # Require some analyst confidence
             ]
-            
+
             entry_signal = all(entry_conditions)
-            
+
             # Exit decision logic (for existing positions)
             exit_signal = False
             if self.current_position:
@@ -274,22 +274,22 @@ class FullyMigratedTactician:
                     dominant_zone == "risk"
                 ]
                 exit_signal = any(exit_conditions)
-            
+
             # Direction decision
             direction = "LONG" if entry_signal and dominant_zone == "profit" else "NEUTRAL"
             if exit_signal:
                 direction = "EXIT"
-            
+
             # Confidence scoring
             decision_confidence = self._calculate_decision_confidence(
                 scenario_analysis, confidence, analyst_confidence
             )
-            
+
             # Reasoning
             reasoning = self._generate_decision_reasoning(
                 entry_signal, exit_signal, scenario_analysis, confidence, analyst_confidence
             )
-            
+
             return {
                 "entry_signal": entry_signal,
                 "exit_signal": exit_signal,
@@ -306,7 +306,7 @@ class FullyMigratedTactician:
                     "scenario_name": scenario_predictions.get("scenario_name", "Neutral")
                 }
             }
-            
+
         except Exception as e:
             self.logger.error(f"❌ Trading decision making failed: {e}")
             return {
@@ -326,45 +326,45 @@ class FullyMigratedTactician:
     ) -> Dict[str, Any]:
         """
         Calculate position sizing and leverage based on scenario analysis.
-        
+
         Args:
             scenario_predictions: Scenario predictions
             trading_decisions: Trading decisions
             analyst_barriers: Analyst's barrier values
-            
+
         Returns:
             dict: Position management parameters
         """
         try:
             scenario_analysis = scenario_predictions.get("scenario_analysis", {})
             confidence = scenario_predictions.get("confidence", 0.0)
-            
+
             # Base position size from confidence
             base_position_size = confidence * self.risk_management["max_position_size"]
-            
+
             # Adjust based on scenario dominance
             scenario_dominance = scenario_analysis.get("scenario_dominance", 0.0)
             dominance_multiplier = 1.0 + (scenario_dominance - 0.5) * 0.5
-            
+
             # Adjust based on risk-reward ratio
             risk_reward_ratio = scenario_analysis.get("risk_reward_ratio", 1.0)
             ratio_multiplier = min(risk_reward_ratio / 2.0, 1.5)
-            
+
             # Final position size
             position_size = base_position_size * dominance_multiplier * ratio_multiplier
             position_size = min(position_size, self.risk_management["max_position_size"])
-            
+
             # Leverage calculation
             base_leverage = 1.0 + (confidence - 0.5) * 2.0
             leverage = min(base_leverage, self.risk_management["max_leverage"])
-            
+
             # Stop loss and take profit
             analyst_upper = analyst_barriers.get("upper_barrier", 0.02)
             analyst_lower = analyst_barriers.get("lower_barrier", -0.01)
-            
+
             stop_loss = analyst_lower * self.risk_management["stop_loss_multiplier"]
             take_profit = analyst_upper * self.risk_management["take_profit_multiplier"]
-            
+
             return {
                 "position_size": position_size,
                 "leverage": leverage,
@@ -377,7 +377,7 @@ class FullyMigratedTactician:
                     "ratio_multiplier": ratio_multiplier
                 }
             }
-            
+
         except Exception as e:
             self.logger.error(f"❌ Position management calculation failed: {e}")
             return {
@@ -396,35 +396,35 @@ class FullyMigratedTactician:
     ) -> float:
         """
         Calculate decision confidence combining scenario analysis and analyst confidence.
-        
+
         Args:
             scenario_analysis: Scenario analysis results
             model_confidence: Model confidence
             analyst_confidence: Analyst confidence
-            
+
         Returns:
             float: Combined decision confidence
         """
         try:
             # Base confidence from model
             base_confidence = model_confidence
-            
+
             # Boost from scenario dominance
             scenario_dominance = scenario_analysis.get("scenario_dominance", 0.0)
             dominance_boost = scenario_dominance * 0.2
-            
+
             # Boost from risk-reward ratio
             risk_reward_ratio = scenario_analysis.get("risk_reward_ratio", 1.0)
             ratio_boost = min((risk_reward_ratio - 1.0) * 0.1, 0.2)
-            
+
             # Analyst confidence boost
             analyst_boost = analyst_confidence * 0.1
-            
+
             # Final confidence
             final_confidence = base_confidence + dominance_boost + ratio_boost + analyst_boost
-            
+
             return np.clip(final_confidence, 0.0, 1.0)
-            
+
         except Exception as e:
             self.logger.error(f"❌ Decision confidence calculation failed: {e}")
             return 0.5
@@ -439,47 +439,47 @@ class FullyMigratedTactician:
     ) -> str:
         """
         Generate human-readable reasoning for decisions.
-        
+
         Args:
             entry_signal: Entry signal
             exit_signal: Exit signal
             scenario_analysis: Scenario analysis results
             model_confidence: Model confidence
             analyst_confidence: Analyst confidence
-            
+
         Returns:
             str: Decision reasoning
         """
         try:
             reasoning_parts = []
-            
+
             if entry_signal:
                 reasoning_parts.append("ENTRY SIGNAL: Strong scenario analysis indicates favorable conditions")
-                
+
                 profit_prob = scenario_analysis.get("profit_zone_probability", 0.0)
                 risk_prob = scenario_analysis.get("risk_zone_probability", 0.0)
                 risk_reward = scenario_analysis.get("risk_reward_ratio", 0.0)
                 dominance = scenario_analysis.get("scenario_dominance", 0.0)
-                
+
                 reasoning_parts.append(f"Profit probability: {profit_prob:.1%}")
                 reasoning_parts.append(f"Risk probability: {risk_prob:.1%}")
                 reasoning_parts.append(f"Risk-reward ratio: {risk_reward:.2f}")
                 reasoning_parts.append(f"Scenario dominance: {dominance:.1%}")
                 reasoning_parts.append(f"Model confidence: {model_confidence:.1%}")
                 reasoning_parts.append(f"Analyst confidence: {analyst_confidence:.1%}")
-                
+
             elif exit_signal:
                 reasoning_parts.append("EXIT SIGNAL: Risk conditions detected")
                 risk_prob = scenario_analysis.get("risk_zone_probability", 0.0)
                 reasoning_parts.append(f"Risk probability: {risk_prob:.1%}")
-                
+
             else:
                 reasoning_parts.append("NO SIGNAL: Conditions not favorable for entry")
                 dominant_zone = scenario_analysis.get("dominant_zone", "neutral")
                 reasoning_parts.append(f"Dominant zone: {dominant_zone}")
-            
+
             return " | ".join(reasoning_parts)
-            
+
         except Exception as e:
             self.logger.error(f"❌ Decision reasoning generation failed: {e}")
             return f"Error generating reasoning: {e}"
@@ -487,11 +487,11 @@ class FullyMigratedTactician:
     def _generate_error_predictions(self, symbol: str, timeframe: str) -> Dict[str, Any]:
         """
         Generate error predictions when something goes wrong.
-        
+
         Args:
             symbol: Trading symbol
             timeframe: Timeframe
-            
+
         Returns:
             dict: Error predictions
         """
@@ -543,7 +543,7 @@ class FullyMigratedTactician:
     def update_position(self, position_data: Dict[str, Any]) -> None:
         """
         Update current position information.
-        
+
         Args:
             position_data: Position data
         """
@@ -553,45 +553,45 @@ class FullyMigratedTactician:
                 **position_data,
                 "timestamp": datetime.now().isoformat()
             })
-            
+
             # Keep only last 100 positions
             if len(self.position_history) > 100:
                 self.position_history = self.position_history[-100:]
-                
+
         except Exception as e:
             self.logger.error(f"❌ Position update failed: {e}")
 
     def update_performance_metrics(self, trade_result: Dict[str, Any]) -> None:
         """
         Update performance metrics with trade result.
-        
+
         Args:
             trade_result: Trade result data
         """
         try:
             self.performance_metrics["total_trades"] += 1
-            
+
             if trade_result.get("profit", 0) > 0:
                 self.performance_metrics["winning_trades"] += 1
                 self.performance_metrics["total_profit"] += trade_result["profit"]
             else:
                 self.performance_metrics["losing_trades"] += 1
                 self.performance_metrics["total_loss"] += abs(trade_result.get("profit", 0))
-            
+
             # Calculate derived metrics
             win_rate = self.performance_metrics["winning_trades"] / max(self.performance_metrics["total_trades"], 1)
             profit_factor = self.performance_metrics["total_profit"] / max(self.performance_metrics["total_loss"], 0.001)
-            
+
             self.performance_metrics["win_rate"] = win_rate
             self.performance_metrics["profit_factor"] = profit_factor
-            
+
         except Exception as e:
             self.logger.error(f"❌ Performance metrics update failed: {e}")
 
     def get_performance_summary(self) -> Dict[str, Any]:
         """
         Get performance summary.
-        
+
         Returns:
             dict: Performance summary
         """
@@ -610,7 +610,7 @@ class FullyMigratedTactician:
     def get_configuration_summary(self) -> Dict[str, Any]:
         """
         Get configuration summary for step17 optimization.
-        
+
         Returns:
             dict: Configuration summary
         """

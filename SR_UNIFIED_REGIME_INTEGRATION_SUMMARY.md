@@ -31,7 +31,7 @@ Successfully implemented full integration of `SRBreakoutPredictor` into `Unified
 # New initialization method
 async def initialize_sr_predictor(self) -> bool:
     """Initialize the SRBreakoutPredictor for enhanced S/R analysis."""
-    
+
 # Enhanced S/R configuration
 self.sr_config = {
     "sr_breakout_predictor": {
@@ -61,10 +61,10 @@ self.sr_config = {
 ```python
 async def _calculate_enhanced_sr_levels(self, df_window: pd.DataFrame) -> dict:
     """Calculate enhanced S/R levels using centralized SRBreakoutPredictor."""
-    
+
     # Get comprehensive S/R context
     sr_context = await self.sr_predictor.get_sr_context(df_window, current_price)
-    
+
     # Extract enhanced features
     support_levels = sr_context.get("support_levels", [])
     resistance_levels = sr_context.get("resistance_levels", [])
@@ -83,10 +83,10 @@ async def _calculate_enhanced_sr_levels(self, df_window: pd.DataFrame) -> dict:
 ```python
 async def _analyze_enhanced_volume_levels(self, df_window: pd.DataFrame) -> dict:
     """Analyzes enhanced volume levels using SRBreakoutPredictor's order flow analysis."""
-    
+
     # Get comprehensive S/R context including order flow
     sr_context = await self.sr_predictor.get_sr_context(df_window, current_price)
-    
+
     # Extract order flow analysis
     order_flow_analysis = sr_context.get("order_flow_analysis", {})
     volume_profile = order_flow_analysis.get("volume_profile", {})
@@ -104,14 +104,14 @@ async def _analyze_enhanced_volume_levels(self, df_window: pd.DataFrame) -> dict
 ```python
 async def _classify_enhanced_location(self, features_df: pd.DataFrame) -> list[str]:
     """Enhanced location classification using centralized SRBreakoutPredictor."""
-    
+
     # Priority-based classification:
     # 1. Elliott Wave levels (highest priority)
     # 2. Fibonacci levels
     # 3. Enhanced S/R levels
     # 4. Volume levels (POC, HVNs)
     # 5. Confluence zones (S/R + Volume alignment)
-    
+
     # Enhanced location labels:
     # - ENHANCED_SUPPORT/RESISTANCE
     # - FIBONACCI_*_SUPPORT/RESISTANCE

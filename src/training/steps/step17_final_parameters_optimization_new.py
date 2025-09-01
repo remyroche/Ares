@@ -202,12 +202,12 @@ class FinalParametersOptimizationStepNew:
 
             optimization_results = {}
             categories = [
-                "confidence", 
-                "position_sizing", 
-                "leverage", 
-                "tpsl", 
-                "ensemble", 
-                "sr", 
+                "confidence",
+                "position_sizing",
+                "leverage",
+                "tpsl",
+                "ensemble",
+                "sr",
                 "two_tier",
                 "technical_indicators",
                 "system_monitoring",
@@ -217,15 +217,15 @@ class FinalParametersOptimizationStepNew:
 
             for category in categories:
                 self.logger.info(f"Optimizing {category} parameters...")
-                
+
                 category_results = await self._optimize_category(
                     category,
                     calibration_results,
                     previous_results.get(category) if previous_results else None,
                 )
-                
+
                 optimization_results[category] = category_results
-                
+
                 # Update the configuration with optimized parameters
                 if category_results and "best_params" in category_results:
                     update_optimizable_config(category, category_results["best_params"])
@@ -352,9 +352,9 @@ class FinalParametersOptimizationStepNew:
         try:
             # This is a simplified evaluation - in practice, you would run a full backtest
             # For now, we'll use a simple scoring based on parameter ranges and calibration results
-            
+
             base_score = 0.0
-            
+
             if category == "confidence":
                 # Higher confidence thresholds generally lead to better precision
                 base_score = self._evaluate_confidence_params(params, calibration_results)
@@ -388,7 +388,7 @@ class FinalParametersOptimizationStepNew:
             elif category == "regime_transitions":
                 # Regime transition parameters
                 base_score = self._evaluate_regime_transitions_params(params, calibration_results)
-            
+
             return base_score
 
         except Exception as e:
@@ -398,7 +398,7 @@ class FinalParametersOptimizationStepNew:
     def _evaluate_confidence_params(self, params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
         """Evaluate confidence threshold parameters."""
         score = 0.0
-        
+
         # Higher base entry threshold is generally better (but not too high)
         if "base_entry_threshold" in params:
             threshold = params["base_entry_threshold"]
@@ -408,23 +408,23 @@ class FinalParametersOptimizationStepNew:
                 score += 0.2
             else:
                 score += 0.1
-        
+
         # Analyst vs tactician threshold balance
         if "analyst_confidence_threshold" in params and "tactician_confidence_threshold" in params:
             analyst_thresh = params["analyst_confidence_threshold"]
             tactician_thresh = params["tactician_confidence_threshold"]
-            
+
             if tactician_thresh > analyst_thresh:
                 score += 0.2
             if 0.1 <= (tactician_thresh - analyst_thresh) <= 0.2:
                 score += 0.1
-        
+
         return score
 
     def _evaluate_position_sizing_params(self, params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
         """Evaluate position sizing parameters."""
         score = 0.0
-        
+
         # Reasonable position size ranges
         if "base_position_size" in params:
             base_size = params["base_position_size"]
@@ -434,7 +434,7 @@ class FinalParametersOptimizationStepNew:
                 score += 0.2
             else:
                 score += 0.1
-        
+
         # Risk management
         if "max_position_size" in params:
             max_size = params["max_position_size"]
@@ -442,13 +442,13 @@ class FinalParametersOptimizationStepNew:
                 score += 0.2
             else:
                 score += 0.1
-        
+
         return score
 
     def _evaluate_leverage_params(self, params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
         """Evaluate leverage parameters."""
         score = 0.0
-        
+
         # Conservative leverage settings
         if "safe_leverage_multiplier" in params:
             multiplier = params["safe_leverage_multiplier"]
@@ -458,13 +458,13 @@ class FinalParametersOptimizationStepNew:
                 score += 0.2
             else:
                 score += 0.1
-        
+
         return score
 
     def _evaluate_tpsl_params(self, params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
         """Evaluate TP/SL parameters."""
         score = 0.0
-        
+
         # Risk-reward ratio
         if "tp_long" in params and "sl_long" in params:
             tp = params["tp_long"]
@@ -475,13 +475,13 @@ class FinalParametersOptimizationStepNew:
                 score += 0.2
             else:
                 score += 0.1
-        
+
         return score
 
     def _evaluate_ensemble_params(self, params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
         """Evaluate ensemble parameters."""
         score = 0.0
-        
+
         # Weight balance
         if "analyst_weight" in params and "tactician_weight" in params and "strategist_weight" in params:
             weights = [params["analyst_weight"], params["tactician_weight"], params["strategist_weight"]]
@@ -489,29 +489,29 @@ class FinalParametersOptimizationStepNew:
                 score += 0.3
             else:
                 score += 0.1
-        
+
         return score
 
     def _evaluate_sr_params(self, params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
         """Evaluate S/R parameters."""
         score = 0.0
-        
+
         # Strength score weights should sum to 1.0
-        weight_params = ["touch_count_weight", "total_volume_weight", "level_age_weight", 
+        weight_params = ["touch_count_weight", "total_volume_weight", "level_age_weight",
                         "bounce_rate_weight", "isolation_score_weight"]
         weights = [params.get(param, 0.0) for param in weight_params]
-        
+
         if abs(sum(weights) - 1.0) < 0.1:
             score += 0.3
         else:
             score += 0.1
-        
+
         return score
 
     def _evaluate_two_tier_params(self, params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
         """Evaluate two-tier system parameters."""
         score = 0.0
-        
+
         # Tier weights should sum to 1.0
         if "tier1_weight" in params and "tier2_weight" in params:
             tier1_weight = params["tier1_weight"]
@@ -520,7 +520,7 @@ class FinalParametersOptimizationStepNew:
                 score += 0.3
             else:
                 score += 0.1
-        
+
         # Reasonable thresholds
         if "direction_threshold" in params:
             threshold = params["direction_threshold"]
@@ -528,20 +528,20 @@ class FinalParametersOptimizationStepNew:
                 score += 0.2
             else:
                 score += 0.1
-        
+
         if "timing_threshold" in params:
             threshold = params["timing_threshold"]
             if 0.7 <= threshold <= 0.9:
                 score += 0.2
             else:
                 score += 0.1
-        
+
         return score
 
     def _evaluate_technical_indicators_params(self, params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
         """Evaluate technical indicator parameters."""
         score = 0.0
-        
+
         # RSI parameters
         if "rsi_period" in params:
             rsi_period = params["rsi_period"]
@@ -549,7 +549,7 @@ class FinalParametersOptimizationStepNew:
                 score += 0.2
             else:
                 score += 0.1
-        
+
         # MACD parameters
         if "macd_fast_period" in params and "macd_slow_period" in params:
             fast = params["macd_fast_period"]
@@ -558,7 +558,7 @@ class FinalParametersOptimizationStepNew:
                 score += 0.2
             else:
                 score += 0.1
-        
+
         # ADX parameters
         if "adx_trend_threshold" in params and "adx_sideways_threshold" in params:
             trend = params["adx_trend_threshold"]
@@ -567,7 +567,7 @@ class FinalParametersOptimizationStepNew:
                 score += 0.2
             else:
                 score += 0.1
-        
+
         # Volatility parameters
         if "volatility_threshold" in params:
             vol_thresh = params["volatility_threshold"]
@@ -575,13 +575,13 @@ class FinalParametersOptimizationStepNew:
                 score += 0.2
             else:
                 score += 0.1
-        
+
         return score
 
     def _evaluate_system_monitoring_params(self, params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
         """Evaluate system monitoring parameters."""
         score = 0.0
-        
+
         # Monitoring intervals should be reasonable
         if "analysis_interval" in params:
             interval = params["analysis_interval"]
@@ -589,7 +589,7 @@ class FinalParametersOptimizationStepNew:
                 score += 0.2
             else:
                 score += 0.1
-        
+
         # History limits should be reasonable
         if "max_history" in params:
             max_hist = params["max_history"]
@@ -597,7 +597,7 @@ class FinalParametersOptimizationStepNew:
                 score += 0.2
             else:
                 score += 0.1
-        
+
         # System performance parameters
         if "memory_threshold" in params:
             mem_thresh = params["memory_threshold"]
@@ -605,7 +605,7 @@ class FinalParametersOptimizationStepNew:
                 score += 0.2
             else:
                 score += 0.1
-        
+
         # Learning rate should be reasonable
         if "learning_rate" in params:
             lr = params["learning_rate"]
@@ -613,13 +613,13 @@ class FinalParametersOptimizationStepNew:
                 score += 0.2
             else:
                 score += 0.1
-        
+
         return score
 
     def _evaluate_training_optimization_params(self, params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
         """Evaluate training optimization parameters."""
         score = 0.0
-        
+
         # Step 2: Market Regime Classification
         if "adx_trend_threshold" in params and "adx_sideways_threshold" in params:
             trend = params["adx_trend_threshold"]
@@ -628,7 +628,7 @@ class FinalParametersOptimizationStepNew:
                 score += 0.2
             else:
                 score += 0.1
-        
+
         # Step 4: Processing & Labeling
         if "min_label_balance" in params and "max_label_balance" in params:
             min_balance = params["min_label_balance"]
@@ -637,7 +637,7 @@ class FinalParametersOptimizationStepNew:
                 score += 0.2
             else:
                 score += 0.1
-        
+
         # Step 6: Analyst Enhancement
         if "stability_threshold" in params:
             stability = params["stability_threshold"]
@@ -645,7 +645,7 @@ class FinalParametersOptimizationStepNew:
                 score += 0.2
             else:
                 score += 0.1
-        
+
         # Model hyperparameters
         if "lgb_learning_rate" in params:
             lr = params["lgb_learning_rate"]
@@ -653,7 +653,7 @@ class FinalParametersOptimizationStepNew:
                 score += 0.2
             else:
                 score += 0.1
-        
+
         # Performance thresholds
         if "model_performance_threshold" in params:
             perf_thresh = params["model_performance_threshold"]
@@ -661,13 +661,13 @@ class FinalParametersOptimizationStepNew:
                 score += 0.2
             else:
                 score += 0.1
-        
+
         return score
 
     def _evaluate_regime_transitions_params(self, params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
         """Evaluate regime transition parameters."""
         score = 0.0
-        
+
         # Transition detection thresholds
         if "transition_intensity_threshold" in params:
             threshold = params["transition_intensity_threshold"]
@@ -675,7 +675,7 @@ class FinalParametersOptimizationStepNew:
                 score += 0.2
             else:
                 score += 0.1
-        
+
         # Transition confidence thresholds
         if "transition_confidence_threshold" in params:
             confidence_thresh = params["transition_confidence_threshold"]
@@ -683,7 +683,7 @@ class FinalParametersOptimizationStepNew:
                 score += 0.2
             else:
                 score += 0.1
-        
+
         # Model blending during transitions
         if "step09_5_weight" in params and "step10_weight" in params and "regime_expert_weight" in params:
             step09_5_w = params["step09_5_weight"]
@@ -694,7 +694,7 @@ class FinalParametersOptimizationStepNew:
                 score += 0.2
             else:
                 score += 0.1
-        
+
         # Transition timing
         if "transition_lookback_periods" in params:
             lookback = params["transition_lookback_periods"]
@@ -702,7 +702,7 @@ class FinalParametersOptimizationStepNew:
                 score += 0.2
             else:
                 score += 0.1
-        
+
         # Risk management during transitions
         if "transition_risk_multiplier" in params:
             risk_mult = params["transition_risk_multiplier"]
@@ -710,7 +710,7 @@ class FinalParametersOptimizationStepNew:
                 score += 0.2
             else:
                 score += 0.1
-        
+
         return score
 
     async def _load_calibration_results(
@@ -753,12 +753,12 @@ class FinalParametersOptimizationStepNew:
 
             # Check that all categories have results
             expected_categories = [
-                "confidence", 
-                "position_sizing", 
-                "leverage", 
-                "tpsl", 
-                "ensemble", 
-                "sr", 
+                "confidence",
+                "position_sizing",
+                "leverage",
+                "tpsl",
+                "ensemble",
+                "sr",
                 "two_tier",
                 "technical_indicators",
                 "system_monitoring",
@@ -828,38 +828,38 @@ class FinalParametersOptimizationStepNew:
             self.logger.error(f"Error setting up optimization storage: {e}")
 
     async def _deliver_step12_results(
-        self, 
-        optimization_results: dict[str, Any], 
+        self,
+        optimization_results: dict[str, Any],
         duration: float
     ) -> None:
         """
         Deliver step12 results for tactician confidence optimization.
         This method automatically creates the step12 results file that the tactician
         will automatically load to update ML confidence factors and confidence thresholds.
-        
+
         Args:
             optimization_results: Results from final parameters optimization
             duration: Optimization duration in seconds
         """
         try:
             self.logger.info("🚀 Delivering step12 results for tactician confidence optimization...")
-            
+
             # Extract tactician-specific optimization results
             tactician_results = self._extract_tactician_optimization_results(optimization_results)
-            
+
             # Create step12 results structure
             step12_results = {
                 "timestamp": datetime.now().isoformat(),
                 "step12_version": "1.0",
                 "optimization_completed": True,
-                
+
                 # ML Confidence Factors (automatically loaded by Tactician)
                 "ml_confidence_factors": tactician_results.get("ml_confidence_factors", {
                     "price_deviation_prediction": 1.35,    # 35% confidence enhancement
-                    "price_direction_prediction": 1.28,    # 28% confidence enhancement  
+                    "price_direction_prediction": 1.28,    # 28% confidence enhancement
                     "price_target_confidence": 1.42        # 42% confidence enhancement
                 }),
-                
+
                 # Optimized Confidence Thresholds (automatically loaded by Position Monitor)
                 "position_monitor": tactician_results.get("position_monitor", {
                     "high_confidence_threshold": 0.65,     # Optimized from step17
@@ -867,14 +867,14 @@ class FinalParametersOptimizationStepNew:
                     "very_low_confidence_threshold": 0.25, # Optimized from step17
                     "confidence_threshold": 0.65           # Legacy compatibility
                 }),
-                
+
                 # Position Opening Requirements (optimized)
                 "position_opening": tactician_results.get("position_opening", {
                     "require_both_barriers": True,
                     "min_barrier_confidence": 0.72,        # Optimized from step17
                     "combined_confidence_threshold": 0.78   # Optimized from step17
                 }),
-                
+
                 # Step 17 Performance Results
                 "optimization_results": {
                     "objective": "maximize_sharpe_ratio",
@@ -884,14 +884,14 @@ class FinalParametersOptimizationStepNew:
                     "best_profit_factor": tactician_results.get("best_profit_factor", 1.85),
                     "best_total_return": tactician_results.get("best_total_return", 0.42),
                     "best_barrier_hit_rate": tactician_results.get("best_barrier_hit_rate", 0.12),
-                    
+
                     # Best performing confidence threshold combination
                     "best_thresholds": tactician_results.get("best_thresholds", {
                         "high_confidence": 0.65,
                         "low_confidence": 0.35,
                         "very_low_confidence": 0.25
                     }),
-                    
+
                     # Best performing ML confidence factors
                     "best_ml_factors": tactician_results.get("best_ml_factors", {
                         "price_deviation_prediction": 1.35,
@@ -899,7 +899,7 @@ class FinalParametersOptimizationStepNew:
                         "price_target_confidence": 1.42
                     })
                 },
-                
+
                 # Backtest Results Summary
                 "backtest_summary": {
                     "start_date": "2024-01-01",
@@ -911,7 +911,7 @@ class FinalParametersOptimizationStepNew:
                     "losing_trades": tactician_results.get("losing_trades", 399),
                     "average_trade_duration": "45m"
                 },
-                
+
                 # Validation Results
                 "validation": {
                     "thresholds_ordered_correctly": True,
@@ -920,49 +920,49 @@ class FinalParametersOptimizationStepNew:
                     "overall_valid": True
                 }
             }
-            
+
             # Save step12 results to multiple locations for redundancy
             step12_paths = [
                 "step12_results.yaml",
-                "step12_ml_confidence_factors.yaml", 
+                "step12_ml_confidence_factors.yaml",
                 "src/config/step12_results.yaml",
                 "src/config/step12_ml_confidence_factors.yaml"
             ]
-            
+
             import yaml
             for path in step12_paths:
                 try:
                     # Ensure directory exists
                     os.makedirs(os.path.dirname(path), exist_ok=True)
-                    
+
                     with open(path, 'w') as f:
                         yaml.dump(step12_results, f, default_flow_style=False, indent=2)
-                    
+
                     self.logger.info(f"✅ Step12 results delivered to: {path}")
                 except Exception as e:
                     self.logger.warning(f"⚠️ Could not save step12 results to {path}: {e}")
-            
+
             self.logger.info("🎯 Step12 results successfully delivered for tactician confidence optimization!")
-            
+
         except Exception as e:
             self.logger.error(f"❌ Error delivering step12 results: {e}")
 
     def _extract_tactician_optimization_results(
-        self, 
+        self,
         optimization_results: dict[str, Any]
     ) -> dict[str, Any]:
         """
         Extract tactician-specific optimization results from the full optimization results.
-        
+
         Args:
             optimization_results: Full optimization results from step17
-            
+
         Returns:
             Dict containing tactician-specific results
         """
         try:
             tactician_results = {}
-            
+
             # Extract confidence optimization results
             if "confidence" in optimization_results:
                 confidence_results = optimization_results["confidence"]
@@ -973,7 +973,7 @@ class FinalParametersOptimizationStepNew:
                         "price_direction_prediction": confidence_results["best_value"].get("price_direction_boost", 1.28),
                         "price_target_confidence": confidence_results["best_value"].get("price_target_boost", 1.42)
                     }
-            
+
             # Extract position sizing optimization results
             if "position_sizing" in optimization_results:
                 position_results = optimization_results["position_sizing"]
@@ -985,7 +985,7 @@ class FinalParametersOptimizationStepNew:
                         "very_low_confidence_threshold": position_results["best_value"].get("very_low_confidence_threshold", 0.25),
                         "confidence_threshold": position_results["best_value"].get("high_confidence_threshold", 0.65)
                     }
-            
+
             # Extract position opening requirements
             if "tpsl" in optimization_results:
                 tpsl_results = optimization_results["tpsl"]
@@ -995,7 +995,7 @@ class FinalParametersOptimizationStepNew:
                         "min_barrier_confidence": tpsl_results["best_value"].get("min_barrier_confidence", 0.72),
                         "combined_confidence_threshold": tpsl_results["best_value"].get("combined_confidence_threshold", 0.78)
                     }
-            
+
             # Extract performance metrics
             if "ensemble" in optimization_results:
                 ensemble_results = optimization_results["ensemble"]
@@ -1008,7 +1008,7 @@ class FinalParametersOptimizationStepNew:
                         "best_total_return": ensemble_results["best_value"].get("total_return", 0.42),
                         "best_barrier_hit_rate": ensemble_results["best_value"].get("barrier_hit_rate", 0.12)
                     })
-            
+
             # Set default values if not found
             if "ml_confidence_factors" not in tactician_results:
                 tactician_results["ml_confidence_factors"] = {
@@ -1016,7 +1016,7 @@ class FinalParametersOptimizationStepNew:
                     "price_direction_prediction": 1.28,
                     "price_target_confidence": 1.42
                 }
-            
+
             if "position_monitor" not in tactician_results:
                 tactician_results["position_monitor"] = {
                     "high_confidence_threshold": 0.65,
@@ -1024,16 +1024,16 @@ class FinalParametersOptimizationStepNew:
                     "very_low_confidence_threshold": 0.25,
                     "confidence_threshold": 0.65
                 }
-            
+
             if "position_opening" not in tactician_results:
                 tactician_results["position_opening"] = {
                     "require_both_barriers": True,
                     "min_barrier_confidence": 0.72,
                     "combined_confidence_threshold": 0.78
                 }
-            
+
             return tactician_results
-            
+
         except Exception as e:
             self.logger.error(f"Error extracting tactician optimization results: {e}")
             # Return default values

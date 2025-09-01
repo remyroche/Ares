@@ -174,13 +174,13 @@ class HMMLMGeneralistTrainingStep:
             await self._save_generalist_model(model_result, exchange, symbol, data_dir)
 
             self.logger.info("✅ HMM-LM Generalist Training completed successfully")
-            
+
             # Log artifacts and create detailed report
             await self._log_step9_5_artifacts_and_report(
             # Standardized naming pattern: {exchange}_{symbol}_{timestamp}_{step_num}_{artifact_type}
                 training_input, pipeline_state, model_result
             )
-            
+
             return {
                 "status": "SUCCESS",
                 "model_trained": True,
@@ -205,7 +205,7 @@ class HMMLMGeneralistTrainingStep:
             symbol = training_input.get("symbol", "ETHUSDT")
             exchange = training_input.get("exchange", "BINANCE")
             data_dir = training_input.get("data_dir", "data/training")
-            
+
             # Collect execution metadata
             execution_metadata = {
                 "start_time": datetime.now().isoformat(),
@@ -216,14 +216,14 @@ class HMMLMGeneralistTrainingStep:
                 "data_quality_score": 1.0,
                 "processing_efficiency": 1.0,
             }
-            
+
             # Collect artifacts generated
             artifacts_generated = [
                 f"{exchange}_{symbol}_hmm_lm_generalist_model.pkl",
                 f"{exchange}_{symbol}_hmm_lm_generalist_metadata.json",
                 f"{exchange}_{symbol}_hmm_lm_generalist_vocabulary.json",
             ]
-            
+
             # Collect metrics
             metrics_calculated = {
                 "hmm_lm_training_success": 1.0,
@@ -232,7 +232,7 @@ class HMMLMGeneralistTrainingStep:
                 "timeframes_count": len(self.timeframes) if hasattr(self, 'timeframes') else 0,
                 "model_trained": 1.0,
             }
-            
+
             # Create step data for report
             step_data = {
                 "model_result": model_result,
@@ -240,7 +240,7 @@ class HMMLMGeneralistTrainingStep:
                 "hmm_states": self.hmm_states if hasattr(self, 'hmm_states') else 0,
                 "timeframes": self.timeframes if hasattr(self, 'timeframes') else [],
             }
-            
+
             # Create detailed report
             report_data = create_detailed_step_report(
                 step_name="step09_5_hmm_lm_generalist_training",
@@ -251,7 +251,7 @@ class HMMLMGeneralistTrainingStep:
                 metrics_calculated=metrics_calculated,
                 errors_encountered=[]
             )
-            
+
             # Log the report
             report_name = log_step_report(
                 config=self.config,
@@ -269,7 +269,7 @@ class HMMLMGeneralistTrainingStep:
                 }
             )
             self.logger.info(f"✅ Logged HMM-LM generalist training report: {report_name}")
-            
+
             # Log model result
             if model_result:
                 model_report_name = log_step_report(
@@ -287,7 +287,7 @@ class HMMLMGeneralistTrainingStep:
                 }
                 )
                 self.logger.info(f"✅ Logged HMM-LM model result: {model_report_name}")
-            
+
             # Log metrics
             log_step_metrics(
                 config=self.config,
@@ -301,9 +301,9 @@ class HMMLMGeneralistTrainingStep:
                     "project_version": self.config.get("project_version", "1.0.0"),
                 }
             )
-            
+
             self.logger.info("✅ Step 9.5 artifacts and reports logged successfully")
-            
+
         except Exception as e:
             self.logger.error(f"❌ Failed to log step 9.5 artifacts and reports: {e}")
             # Don't fail the step if MLflow logging fails
@@ -469,31 +469,31 @@ class HMMLMGeneralistTrainingStep:
             return []
 
     def _detect_regime_changes_enhanced(
-        self, 
-        df: pd.DataFrame, 
-        profit_take_multiplier: float, 
+        self,
+        df: pd.DataFrame,
+        profit_take_multiplier: float,
         stop_loss_multiplier: float
     ) -> list[dict[str, Any]]:
         """Enhanced regime change detection using probability-based approach."""
         events: list[dict[str, Any]] = []
-        
+
         try:
             # Get regime data
             regime_col = "composite_cluster_id"
             regimes = df[regime_col].fillna(-1).astype(int)
-            
+
             # Calculate regime probabilities if available
             regime_probs = self._calculate_regime_probabilities(df)
-            
+
             # Calculate regime stability and entropy
             regime_stability = self._calculate_regime_stability(regime_probs)
             regime_entropy = self._calculate_regime_entropy(regime_probs)
-            
+
             # Detect regime changes using multiple signals
             regime_changes = self._detect_regime_changes_multi_signal(
                 regimes, regime_stability, regime_entropy
             )
-            
+
             # Process each potential regime change
             for i in range(len(regimes)):
                 event: dict[str, Any] = {
@@ -505,35 +505,35 @@ class HMMLMGeneralistTrainingStep:
                     "regime_confidence": 0.0,
                     "transition_probability": 0.0,
                 }
-                
+
                 if i > 0 and regime_changes[i]:
                     prev_regime = int(regimes.iloc[i - 1])
                     curr_regime = int(regimes.iloc[i])
-                    
+
                     if prev_regime >= 0 and curr_regime >= 0:
                         # Calculate transition probability
                         transition_prob = self._calculate_transition_probability(
                             prev_regime, curr_regime, regime_probs, i
                         )
-                        
+
                         # Determine regime change type
                         if 0 <= prev_regime < self.hmm_states and 0 <= curr_regime < self.hmm_states:
                             event["regime_change"] = f"transition_{prev_regime}_to_{curr_regime}"
                             event["transition_probability"] = transition_prob
-                            
+
                             # Calculate regime confidence
                             event["regime_confidence"] = float(regime_stability[i])
-                            
+
                             # Enhanced TPSL analysis
                             tpsl_outcomes = self._calculate_enhanced_tpsl_outcomes(
                                 df, i, profit_take_multiplier, stop_loss_multiplier
                             )
                             event.update(tpsl_outcomes)
-                
+
                 events.append(event)
-            
+
             return events
-            
+
         except Exception as e:
             self.logger.exception(f"❌ Enhanced regime change detection failed: {e}")
             return []
@@ -543,7 +543,7 @@ class HMMLMGeneralistTrainingStep:
         try:
             # Look for probability features
             prob_cols = [col for col in df.columns if col.endswith("_p_state_")]
-            
+
             if prob_cols:
                 # Use existing probability features
                 probs = df[prob_cols].values
@@ -558,15 +558,15 @@ class HMMLMGeneralistTrainingStep:
                     regimes = df[regime_col].fillna(-1).astype(int)
                     n_states = max(regimes.max() + 1, self.hmm_states)
                     probs = np.zeros((len(regimes), n_states))
-                    
+
                     for i, regime in enumerate(regimes):
                         if regime >= 0:
                             probs[i, regime] = 1.0
-                    
+
                     return probs
                 else:
                     return np.zeros((len(df), self.hmm_states))
-                    
+
         except Exception as e:
             self.logger.warning(f"⚠️ Error calculating regime probabilities: {e}")
             return np.zeros((len(df), self.hmm_states))
@@ -591,44 +591,44 @@ class HMMLMGeneralistTrainingStep:
             return np.zeros(len(regime_probs))
 
     def _detect_regime_changes_multi_signal(
-        self, 
-        regimes: pd.Series, 
-        stability: np.ndarray, 
+        self,
+        regimes: pd.Series,
+        stability: np.ndarray,
         entropy: np.ndarray
     ) -> np.ndarray:
         """Detect regime changes using multiple signals."""
         try:
             changes = np.zeros(len(regimes), dtype=bool)
-            
+
             # Signal 1: Simple state comparison
             state_changes = np.diff(regimes.values, prepend=regimes.iloc[0]) != 0
-            
+
             # Signal 2: Stability drops
             stability_threshold = np.percentile(stability, 25)  # Bottom 25%
             stability_changes = stability < stability_threshold
-            
+
             # Signal 3: High entropy (uncertainty)
             entropy_threshold = np.percentile(entropy, 75)  # Top 25%
             entropy_changes = entropy > entropy_threshold
-            
+
             # Combine signals with persistence filter
             for i in range(1, len(regimes)):
                 if state_changes[i] and stability_changes[i] and entropy_changes[i]:
                     # Check persistence (avoid noise)
                     if i >= 3:  # Minimum persistence of 3 bars
                         changes[i] = True
-            
+
             return changes
-            
+
         except Exception as e:
             self.logger.warning(f"⚠️ Error in multi-signal regime change detection: {e}")
             return np.zeros(len(regimes), dtype=bool)
 
     def _calculate_transition_probability(
-        self, 
-        from_regime: int, 
-        to_regime: int, 
-        regime_probs: np.ndarray, 
+        self,
+        from_regime: int,
+        to_regime: int,
+        regime_probs: np.ndarray,
         index: int
     ) -> float:
         """Calculate transition probability between regimes."""
@@ -643,10 +643,10 @@ class HMMLMGeneralistTrainingStep:
             return 0.0
 
     def _calculate_enhanced_tpsl_outcomes(
-        self, 
-        df: pd.DataFrame, 
-        index: int, 
-        profit_take_multiplier: float, 
+        self,
+        df: pd.DataFrame,
+        index: int,
+        profit_take_multiplier: float,
         stop_loss_multiplier: float
     ) -> dict[str, Any]:
         """Calculate enhanced TPSL outcomes with confidence scoring."""
@@ -658,40 +658,40 @@ class HMMLMGeneralistTrainingStep:
                 "time_to_target": 0,
                 "tpsl_confidence": 0.0,
             }
-            
+
             if "close" in df.columns and index < len(df) - 1:
                 current_price = float(df.iloc[index]["close"])
                 future_prices = df.iloc[index + 1 : index + 31]["close"].values
-                
+
                 if len(future_prices) > 0:
                     # Calculate profit target and stop loss levels
                     profit_target = current_price * (1 + profit_take_multiplier)
                     stop_loss = current_price * (1 - stop_loss_multiplier)
-                    
+
                     # Enhanced TPSL detection with confidence
                     profit_target_hit = 0
                     stop_loss_hit = 0
                     time_to_target = 0
                     confidence_factors = []
-                    
+
                     for j, future_price in enumerate(future_prices):
                         fp = float(future_price)
-                        
+
                         if fp >= profit_target and profit_target_hit == 0:
                             profit_target_hit = 1
                             time_to_target = j + 1
                             confidence_factors.append(1.0 - (j / 30))  # Higher confidence for earlier hits
-                            
+
                         elif fp <= stop_loss and stop_loss_hit == 0:
                             stop_loss_hit = 1
                             if time_to_target == 0:
                                 time_to_target = j + 1
                             confidence_factors.append(1.0 - (j / 30))
-                    
+
                     # Calculate TPSL confidence
                     if confidence_factors:
                         outcomes["tpsl_confidence"] = float(np.mean(confidence_factors))
-                    
+
                     # Enhanced price direction determination
                     if profit_target_hit == 1 and stop_loss_hit == 0:
                         outcomes["price_direction"] = 0  # Up
@@ -705,13 +705,13 @@ class HMMLMGeneralistTrainingStep:
                             outcomes["price_direction"] = 2  # Down
                     else:
                         outcomes["price_direction"] = 1  # Sideways
-                    
+
                     outcomes["profit_target_hit"] = profit_target_hit
                     outcomes["stop_loss_hit"] = stop_loss_hit
                     outcomes["time_to_target"] = time_to_target
-            
+
             return outcomes
-            
+
         except Exception as e:
             self.logger.warning(f"⚠️ Error calculating enhanced TPSL outcomes: {e}")
             return {

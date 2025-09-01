@@ -107,7 +107,7 @@ confidence_params = {
         "step": 0.02
     },
     "tactician_confidence_threshold": {
-        "type": "float", 
+        "type": "float",
         "min": 0.5,
         "max": 0.95,
         "step": 0.02
@@ -185,13 +185,13 @@ def objective(trial):
         "tactician_confidence_threshold": trial.suggest_float("tactician_confidence_threshold", 0.5, 0.95, step=0.02),
         "ensemble_confidence_threshold": trial.suggest_float("ensemble_confidence_threshold", 0.5, 0.95, step=0.02),
     }
-    
+
     # Evaluate multiple objectives
     win_rate = evaluate_win_rate(params)
     profit_factor = evaluate_profit_factor(params)
     sharpe_ratio = evaluate_sharpe_ratio(params)
     max_drawdown = evaluate_max_drawdown(params)
-    
+
     return win_rate, profit_factor, sharpe_ratio, -max_drawdown
 
 # Create multi-objective study
@@ -460,11 +460,11 @@ def objective_with_constraints(trial):
         "param1": trial.suggest_float("param1", 0, 1),
         "param2": trial.suggest_float("param2", 0, 1),
     }
-    
+
     # Check constraints
     if params["param1"] + params["param2"] > 1.5:
         raise optuna.TrialPruned()
-    
+
     return evaluate_parameters(params)
 ```
 
@@ -483,10 +483,10 @@ study.optimize(objective, n_trials=100, callbacks=callbacks)
 async def run_optimization_pipeline():
     # Step 11: Confidence Calibration
     await run_step11()
-    
+
     # Step 12: Hyperparameter Optimization
     await run_step12()
-    
+
     # Step 13: Walk-Forward Validation
     await run_step13()
 ```
@@ -497,7 +497,7 @@ async def continuous_optimization():
     while True:
         # Run optimization
         await run_step12()
-        
+
         # Wait for next cycle
         await asyncio.sleep(3600)  # 1 hour
 ```
@@ -507,10 +507,10 @@ async def continuous_optimization():
 async def ab_testing_optimization():
     # Optimize parameters for variant A
     params_a = await optimize_parameters(variant="A")
-    
+
     # Optimize parameters for variant B
     params_b = await optimize_parameters(variant="B")
-    
+
     # Compare results
     comparison = compare_variants(params_a, params_b)
 ```

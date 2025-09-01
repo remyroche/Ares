@@ -111,14 +111,14 @@ class RegimeDataSplittingStep:
         self.config = config
         self.logger = system_logger.getChild("Step8.RegimeSplit")
         self.standards = pipeline_standards
-        
+
         # Validate environment on initialization
         self._validate_environment()
 
     def _validate_environment(self) -> None:
         """Validate environment dependencies."""
         self.logger.info("🔍 Validating environment dependencies...")
-        
+
         missing_modules = [module for module, available in dependency_status.items() if not available]
         if missing_modules:
             self.logger.warning(f"⚠️ Missing optional modules: {missing_modules}")
@@ -188,13 +188,13 @@ class RegimeDataSplittingStep:
 
             # Ensure data is sorted by timestamp for proper lookback periods
             unified_data = unified_data.sort_index()
-            
+
             # Create unified dataset with regime labels (no splitting into separate files)
             self.logger.info("🔀 Creating unified dataset with regime labels...")
-            
+
             # Save unified dataset with regime labels
             success = self._save_unified_regime_dataset(unified_data, unique_clusters)
-            
+
             if not success:
                 self.logger.error("🚨 Failed to save unified regime dataset")
                 return {"success": False, "error": "Failed to save unified regime dataset"}
@@ -208,10 +208,10 @@ class RegimeDataSplittingStep:
                 json.dump(summary, f, indent=2)
 
             self.logger.info("✅ Unified HMM composite regime data creation completed successfully")
-            
+
             # Log artifacts and create detailed report
             await self._log_step8_artifacts_and_report(unified_data, summary)
-            
+
             return {"success": True, "regime_summary": summary}
         except Exception as e:
             self.logger.exception(f"❌ Unified HMM composite regime data creation failed: {e}")
@@ -227,7 +227,7 @@ class RegimeDataSplittingStep:
             symbol = self.config.get("symbol", "ETHUSDT")
             exchange = self.config.get("exchange", "BINANCE")
             timeframe = self.config.get("timeframe", "1m")
-            
+
             # Collect execution metadata
             execution_metadata = {
                 "start_time": datetime.now().isoformat(),
@@ -238,14 +238,14 @@ class RegimeDataSplittingStep:
                 "data_quality_score": 1.0,
                 "processing_efficiency": 1.0,
             }
-            
+
             # Collect artifacts generated
             artifacts_generated = [
                 f"{exchange}_{symbol}_{timeframe}_unified_regime_data.parquet",
                 f"{exchange}_{symbol}_{timeframe}_regime_labels.json",
                 f"{exchange}_{symbol}_{timeframe}_regime_statistics.json"
             ]
-            
+
             # Collect metrics
             metrics_calculated = {
                 "regime_creation_success": 1.0,
@@ -253,7 +253,7 @@ class RegimeDataSplittingStep:
                 "total_samples": len(unified_data),
                 "regime_ids": summary.get("regime_ids", []),
             }
-            
+
             # Create training input for report
             training_input = {
                 "symbol": symbol,
@@ -264,7 +264,7 @@ class RegimeDataSplittingStep:
                 "lookback_period": self.config.get("lookback_days", 1095),
                 "project_version": self.config.get("project_version", "1.0.0"),
             }
-            
+
             # Create step data for report
             step_data = {
                 "regime_summary": summary,
@@ -272,7 +272,7 @@ class RegimeDataSplittingStep:
                 "regime_ids": summary.get("regime_ids", []),
                 "approach": "unified_dataset_with_labels",
             }
-            
+
             # Create detailed report
             report_data = create_detailed_step_report(
                 step_name="step08_regime_data_splitting",
@@ -283,7 +283,7 @@ class RegimeDataSplittingStep:
                 metrics_calculated=metrics_calculated,
                 errors_encountered=[]
             )
-            
+
             # Log the report
             report_name = log_step_report(
                 config=self.config,
@@ -301,7 +301,7 @@ class RegimeDataSplittingStep:
                 }
             )
             self.logger.info(f"✅ Logged unified regime data creation report: {report_name}")
-            
+
             # Log regime summary
             if summary:
                 summary_report_name = log_step_report(
@@ -319,7 +319,7 @@ class RegimeDataSplittingStep:
                     }
                 )
                 self.logger.info(f"✅ Logged unified regime summary: {summary_report_name}")
-            
+
             # Log metrics
             log_step_metrics(
                 config=self.config,
@@ -334,9 +334,9 @@ class RegimeDataSplittingStep:
                     "approach": "unified_dataset_with_labels",
                 }
             )
-            
+
             self.logger.info("✅ Step 8 artifacts and reports logged successfully")
-            
+
         except Exception as e:
             self.logger.error(f"❌ Failed to log step 8 artifacts and reports: {e}")
             # Don't fail the step if MLflow logging fails
@@ -348,16 +348,16 @@ class RegimeDataSplittingStep:
         try:
             data_dir = self.config.get("data_dir", "data/training")
             os.makedirs(data_dir, exist_ok=True)
-            
+
             symbol = self.config.get("symbol", "ETHUSDT")
             exchange = self.config.get("exchange", "BINANCE")
             timeframe = self.config.get("timeframe", "1m")
-            
+
             # Save unified dataset with regime labels
             unified_file = os.path.join(data_dir, f"{exchange}_{symbol}_{timeframe}_unified_regime_data.parquet")
             unified_data.to_parquet(unified_file, index=True)
             self.logger.info(f"✅ Saved unified regime dataset: {len(unified_data)} rows -> {unified_file}")
-            
+
             # Create regime labels mapping
             regime_labels = {
                 "regime_column": "composite_cluster_id",
@@ -379,21 +379,21 @@ class RegimeDataSplittingStep:
                     ]
                 }
             }
-            
+
             labels_file = os.path.join(data_dir, f"{exchange}_{symbol}_{timeframe}_regime_labels.json")
             with open(labels_file, 'w') as f:
                 json.dump(regime_labels, f, indent=2)
             self.logger.info(f"✅ Saved regime labels mapping: {labels_file}")
-            
+
             # Create regime statistics
             regime_stats = self._create_regime_statistics(unified_data, unique_clusters)
             stats_file = os.path.join(data_dir, f"{exchange}_{symbol}_{timeframe}_regime_statistics.json")
             with open(stats_file, 'w') as f:
                 json.dump(regime_stats, f, indent=2)
             self.logger.info(f"✅ Saved regime statistics: {stats_file}")
-            
+
             return True
-            
+
         except Exception as e:
             self.logger.exception(f"❌ Failed to save unified regime dataset: {e}")
             return False
@@ -413,11 +413,11 @@ class RegimeDataSplittingStep:
                     }
                 }
             }
-            
+
             # Calculate statistics for each regime
             for cluster_id in unique_clusters:
                 regime_data = unified_data[unified_data["composite_cluster_id"] == cluster_id]
-                
+
                 if len(regime_data) > 0:
                     regime_stats = {
                         "data_points": len(regime_data),
@@ -427,7 +427,7 @@ class RegimeDataSplittingStep:
                             "end": regime_data.index.max().isoformat()
                         }
                     }
-                    
+
                     # Add price statistics if available
                     if 'close' in regime_data.columns:
                         regime_stats["price_stats"] = {
@@ -436,11 +436,11 @@ class RegimeDataSplittingStep:
                             "min": float(regime_data['close'].min()),
                             "max": float(regime_data['close'].max())
                         }
-                    
+
                     stats["regime_details"][f"regime_{cluster_id}"] = regime_stats
-            
+
             return stats
-            
+
         except Exception as e:
             self.logger.exception(f"❌ Error creating regime statistics: {e}")
             return {}
@@ -495,9 +495,9 @@ class RegimeDataSplittingStep:
     context="Unified Regime Data Creation",
 )
 @secure_data_processing(
-    backup_before=True, 
-    integrity_checks=True, 
-    memory_cleanup=True, 
+    backup_before=True,
+    integrity_checks=True,
+    memory_cleanup=True,
     data_validation=True,
 )
 @prevent_data_leakage(
@@ -513,9 +513,9 @@ class RegimeDataSplittingStep:
     auto_cleanup=True,
 )
 @memory_efficient(
-    chunk_size=20000, 
-    streaming_processing=True, 
-    memory_pool=True, 
+    chunk_size=20000,
+    streaming_processing=True,
+    memory_pool=True,
     cleanup_frequency=40,
 )
 @debug_training_step(
@@ -543,19 +543,19 @@ class RegimeDataSplittingStep:
 @auto_fix_data_quality_issues
 @handle_errors(exceptions=(Exception,), default_return=False, context="step08_regime_data_splitting")
 async def run_step(
-    symbol: str, 
-    exchange: str, 
-    data_dir: str = None, 
-    timeframe: str = "1m", 
+    symbol: str,
+    exchange: str,
+    data_dir: str = None,
+    timeframe: str = "1m",
     force_rerun: bool = False,
     **kwargs,
 ) -> bool:
     """Run the unified HMM composite regime data creation step with standardized data quality management."""
-    
+
     # Use standardized path construction
     if data_dir is None:
         data_dir = pipeline_standards.build_path("processed_data", exchange, symbol)
-    
+
     config = {
         "symbol": symbol,
         "exchange": exchange,

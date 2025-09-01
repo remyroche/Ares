@@ -125,7 +125,7 @@ class HMMBasedTrainingStep:
         self.models = {}
         self.scalers = {}
         self.label_encoders = {}
-        
+
         # Validate environment on initialization
         self._validate_environment()
 
@@ -146,7 +146,7 @@ class HMMBasedTrainingStep:
         # Initialize S/R outcome model trainer
         self.sr_outcome_trainer = None
         self.sr_outcome_model_trained = False
-        
+
         # Initialize probability generator for enhanced prediction service
         if model_probability_generator is not None:
             self.probability_generator = model_probability_generator.ModelProbabilityGenerator()
@@ -157,7 +157,7 @@ class HMMBasedTrainingStep:
     def _validate_environment(self) -> None:
         """Validate environment dependencies."""
         self.logger.info("🔍 Validating environment dependencies...")
-        
+
         missing_modules = [module for module, available in dependency_status.items() if not available]
         if missing_modules:
             self.logger.warning(f"⚠️ Missing optional modules: {missing_modules}")
@@ -1295,41 +1295,41 @@ class HMMBasedTrainingStep:
             data_dir = self.config.get("data_dir", "data/training")
             symbol = self.config.get("symbol", "ETHUSDT")
             exchange = self.config.get("exchange", "BINANCE")
-            
+
             # Try to load unified regime dataset first (new approach)
             unified_regime_file = os.path.join(
-                data_dir, 
+                data_dir,
                 f"{exchange}_{symbol}_{timeframe}_unified_regime_data.parquet"
             )
-            
+
             if os.path.exists(unified_regime_file):
                 self.logger.info(f"✅ Loading unified regime dataset: {unified_regime_file}")
                 unified_data = pd.read_parquet(unified_regime_file)
-                
+
                 # Load regime labels mapping
                 labels_file = os.path.join(
-                    data_dir, 
+                    data_dir,
                     f"{exchange}_{symbol}_{timeframe}_regime_labels.json"
                 )
-                
+
                 if os.path.exists(labels_file):
                     with open(labels_file) as f:
                         regime_labels = json.load(f)
-                    
+
                     regime_ids = regime_labels.get("regime_ids", [])
                     self.logger.info(f"📊 Found {len(regime_ids)} regimes in unified dataset")
-                    
+
                     # Create regime splits from unified dataset
                     regime_splits = {}
                     for regime_id in regime_ids:
                         regime_data = unified_data[unified_data["composite_cluster_id"] == regime_id].copy()
-                        
+
                         if len(regime_data) > 0:
                             # Split into train/validation/test (80/10/10)
                             total_len = len(regime_data)
                             train_end = int(total_len * 0.8)
                             val_end = int(total_len * 0.9)
-                            
+
                             regime_splits[f"regime_{regime_id}"] = {
                                 "data": {
                                     "train": regime_data.iloc[:train_end],
@@ -1339,19 +1339,19 @@ class HMMBasedTrainingStep:
                                 "description": f"Regime {regime_id} from unified dataset",
                                 "total_samples": total_len
                             }
-                            
+
                             self.logger.info(
                                 f"✅ Created splits for regime {regime_id}: "
                                 f"train={len(regime_data.iloc[:train_end])}, "
                                 f"val={len(regime_data.iloc[train_end:val_end])}, "
                                 f"test={len(regime_data.iloc[val_end:])}"
                             )
-                    
+
                     self.logger.info(f"📊 Created {len(regime_splits)} regime splits from unified dataset")
                     return regime_splits
                 else:
                     self.logger.warning(f"⚠️ Regime labels file not found: {labels_file}")
-            
+
             # Fallback to legacy approach for backward compatibility
             self.logger.warning("⚠️ Falling back to legacy regime data loading approach")
             regime_data_dir = os.path.join(data_dir, "regime_data")
@@ -2249,7 +2249,7 @@ class HMMBasedTrainingStep:
 
             # Initialize multi-output probability trainer
             from ..multi_output_probability_trainer import MultiOutputProbabilityTrainer
-            
+
             # Configure multi-output training with advanced models
             multi_output_config = {
                 "use_lightgbm": True,
@@ -2317,9 +2317,9 @@ class HMMBasedTrainingStep:
                     }
                 }
             }
-            
+
             multi_output_trainer = MultiOutputProbabilityTrainer(multi_output_config)
-            
+
             # Generate multi-output targets
             y_train_multi = multi_output_trainer.prepare_multi_output_targets(
                 X_train, y_train, market_data.iloc[:len(X_train)]
@@ -2327,23 +2327,23 @@ class HMMBasedTrainingStep:
             y_test_multi = multi_output_trainer.prepare_multi_output_targets(
                 X_test, y_test, market_data.iloc[len(X_train):]
             )
-            
+
             # Train multi-output model
             trained_models = multi_output_trainer.train_multi_output_model(
                 X_train, y_train_multi, X_test, y_test_multi
             )
-            
+
             # Generate probability outputs
             price_action_probabilities = multi_output_trainer.predict_probabilities(
                 X_test, market_data.iloc[len(X_train):]
             )
-            
+
             # Calculate overall metrics
             overall_metrics = {}
             for prob_type, prob_value in price_action_probabilities.items():
                 if prob_type != "generation_timestamp" and prob_type != "model_type":
                     overall_metrics[f"{prob_type}_value"] = prob_value
-            
+
             # Prepare model data for saving
             model_data = {
                 "multi_output_trainer": multi_output_trainer,
@@ -2369,7 +2369,7 @@ class HMMBasedTrainingStep:
                 )
                 self.logger.info(f"✅ Saved multi-output LightGBM model with probabilities to {model_path}")
                 self.logger.info(f"   Probability outputs: {probability_outputs}")
-                
+
             except Exception as save_error:
                 self.logger.error(f"❌ Failed to save multi-output model: {save_error}")
                 # Fallback to simple save
@@ -2462,7 +2462,7 @@ class HMMBasedTrainingStep:
                 pickle.dump(model_data, f)
 
             self.logger.info(f"✅ Saved {timeframe} model to {model_path}")
-            
+
             # Log model to MLflow
             try:
                 if result.get("best_model"):
@@ -2521,7 +2521,7 @@ class HMMBasedTrainingStep:
             self.logger.info(
                 f"✅ Saved comprehensive training summary to {summary_path}",
             )
-            
+
             # Log training summary to MLflow with standardized naming
             try:
                 summary_artifact_name = log_step_artifact_with_standardized_name(
@@ -2536,7 +2536,7 @@ class HMMBasedTrainingStep:
                     }
                 )
                 self.logger.info(f"✅ Logged training summary: {summary_artifact_name}")
-                
+
                 # Log comprehensive training report
                 report_data = {
                     "training_summary": summary,
@@ -2546,7 +2546,7 @@ class HMMBasedTrainingStep:
                     "training_results": training_results,
                     "execution_timestamp": datetime.now().isoformat(),
                 }
-                
+
                 report_name = log_step_report(
                     config=self.config,
                     step_name="step09_hmm_based_training",
@@ -2559,7 +2559,7 @@ class HMMBasedTrainingStep:
                     }
                 )
                 self.logger.info(f"✅ Logged HMM training report: {report_name}")
-                
+
                 # Log training metrics
                 all_metrics = {}
                 for timeframe, result in training_results.items():
@@ -2571,7 +2571,7 @@ class HMMBasedTrainingStep:
                         all_metrics[f"step09_{timeframe}_avg_precision"] = result["avg_precision"]
                     if "avg_recall" in result:
                         all_metrics[f"step09_{timeframe}_avg_recall"] = result["avg_recall"]
-                
+
                 if all_metrics:
                     log_step_metrics(
                         config=self.config,
@@ -2582,7 +2582,7 @@ class HMMBasedTrainingStep:
                             "models_trained": len(training_results),
                         }
                     )
-                    
+
             except Exception as e:
                 self.logger.warning(f"⚠️ Failed to log training summary to MLflow: {e}")
 
@@ -4199,58 +4199,58 @@ class TCNTrainer:
         """Enhanced pre-filter features using data-driven methods (VIF, MI, SHAP, RF)."""
         try:
             self.logger.info(f"🔍 Enhanced pre-filtering: {len(feature_columns)} features")
-            
+
             # Stage 1: Data quality filtering
             X_clean = X[feature_columns].copy()
-            
+
             # Remove features with too many NaN values (>10%)
             nan_ratio = X_clean.isna().sum() / len(X_clean)
             high_nan_features = nan_ratio[nan_ratio > 0.1].index.tolist()
             X_clean = X_clean.drop(columns=high_nan_features)
-            
+
             # Remove features with infinite values
             inf_features = []
             for col in X_clean.columns:
                 if np.isinf(X_clean[col]).any():
                     inf_features.append(col)
             X_clean = X_clean.drop(columns=inf_features)
-            
+
             # Fill remaining NaN values
             X_clean = X_clean.fillna(method="ffill").fillna(method="bfill").fillna(0)
-            
+
             self.logger.info(
                 f"   Data quality filtering: {len(feature_columns)} -> {len(X_clean.columns)} features",
             )
-            
+
             # Stage 2: Variance filtering
             variance = X_clean.var()
             high_variance_mask = variance > 1e-6
             high_variance_features = [
                 col for col in X_clean.columns if high_variance_mask[col]
             ]
-            
+
             self.logger.info(
                 f"   Variance filtering: {len(X_clean.columns)} -> {len(high_variance_features)} features",
             )
-            
+
             # Stage 3: VIF filtering (multicollinearity)
             try:
                 from src.utils.vif_calculator import calculate_vif_robust
-                
+
                 X_vif = X_clean[high_variance_features]
                 vif_scores = calculate_vif_robust(X_vif)
-                
+
                 # Remove features with high VIF (>10)
                 low_vif_features = vif_scores[vif_scores <= 10.0].index.tolist()
-                
+
                 self.logger.info(
                     f"   VIF filtering: {len(high_variance_features)} -> {len(low_vif_features)} features",
                 )
-                
+
             except Exception as e:
                 self.logger.warning(f"VIF filtering failed: {e}, skipping")
                 low_vif_features = high_variance_features
-            
+
             # Stage 4: Correlation filtering
             uncorr_features = low_vif_features
             if len(low_vif_features) > 1:
@@ -4259,7 +4259,7 @@ class TCNTrainer:
                 upper_tri = corr_matrix.where(
                     np.triu(np.ones(corr_matrix.shape), k=1).astype(bool)
                 )
-                
+
                 # Find features to drop
                 to_drop = [
                     column for column in upper_tri.columns
@@ -4268,11 +4268,11 @@ class TCNTrainer:
                 uncorr_features = [
                     col for col in low_vif_features if col not in to_drop
                 ]
-            
+
             self.logger.info(
                 f"   Correlation filtering: {len(low_vif_features)} -> {len(uncorr_features)} features",
             )
-            
+
             # Stage 5: Mutual Information filtering (if target available)
             try:
                 # Try to get target from the data
@@ -4281,90 +4281,90 @@ class TCNTrainer:
                     if col.lower() in ['label', 'target', 'direction', 'y']:
                         target_col = col
                         break
-                
+
                 if target_col and target_col in X.columns:
                     y = X[target_col]
-                    
+
                     # Calculate mutual information
                     from sklearn.feature_selection import mutual_info_classif, mutual_info_regression
-                    
+
                     # Determine task type
                     task_type = "classification" if len(y.unique()) < 10 else "regression"
-                    
+
                     if task_type == "classification":
                         mi_scores = mutual_info_classif(X_clean[uncorr_features], y, random_state=42)
                     else:
                         mi_scores = mutual_info_regression(X_clean[uncorr_features], y, random_state=42)
-                    
+
                     # Remove features with low MI (<0.01)
                     mi_series = pd.Series(mi_scores, index=uncorr_features)
                     high_mi_features = mi_series[mi_scores >= 0.01].index.tolist()
-                    
+
                     self.logger.info(
                         f"   MI filtering: {len(uncorr_features)} -> {len(high_mi_features)} features",
                     )
-                    
+
                     uncorr_features = high_mi_features
-                    
+
             except Exception as e:
                 self.logger.warning(f"MI filtering failed: {e}, skipping")
-            
+
             # Stage 6: SHAP-based filtering (if target available)
             try:
                 if target_col and target_col in X.columns and len(uncorr_features) > 50:
                     from src.analyst.meta_label_relevance import compute_shap_importance
-                    
+
                     # Calculate SHAP importance
                     shap_scores = compute_shap_importance(
                         X_clean[uncorr_features], y, task=task_type
                     )
-                    
+
                     if shap_scores:
                         # Remove bottom 20% of features by SHAP importance
                         shap_series = pd.Series(shap_scores)
                         threshold = shap_series.quantile(0.2)
                         high_shap_features = shap_series[shap_series >= threshold].index.tolist()
-                        
+
                         self.logger.info(
                             f"   SHAP filtering: {len(uncorr_features)} -> {len(high_shap_features)} features",
                         )
-                        
+
                         uncorr_features = high_shap_features
-                        
+
             except Exception as e:
                 self.logger.warning(f"SHAP filtering failed: {e}, skipping")
-            
+
             # Stage 7: RandomForest importance filtering (if target available)
             try:
                 if target_col and target_col in X.columns and len(uncorr_features) > 30:
                     from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
-                    
+
                     # Train RF for feature importance
                     if task_type == "classification":
                         rf = RandomForestClassifier(n_estimators=100, random_state=42, n_jobs=-1)
                     else:
                         rf = RandomForestRegressor(n_estimators=100, random_state=42, n_jobs=-1)
-                    
+
                     rf.fit(X_clean[uncorr_features], y)
                     rf_importance = pd.Series(rf.feature_importances_, index=uncorr_features)
-                    
+
                     # Remove bottom 20% of features by RF importance
                     threshold = rf_importance.quantile(0.2)
                     high_rf_features = rf_importance[rf_importance >= threshold].index.tolist()
-                    
+
                     self.logger.info(
                         f"   RF filtering: {len(uncorr_features)} -> {len(high_rf_features)} features",
                     )
-                    
+
                     uncorr_features = high_rf_features
-                    
+
             except Exception as e:
                 self.logger.warning(f"RF filtering failed: {e}, skipping")
-            
+
             self.logger.info(
                 f"✅ Enhanced pre-filtering completed: {len(feature_columns)} -> {len(uncorr_features)} features",
             )
-            
+
             return uncorr_features
 
         except Exception as e:

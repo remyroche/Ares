@@ -16,12 +16,12 @@ sys.path.insert(0, str(project_root))
 
 class FractionalLabelingTester:
     """Test fractional labeling implementation."""
-    
+
     def __init__(self):
         """Initialize the tester."""
         self.output_dir = Path("data/fractional_performance/fractional_labeling_test")
         self.output_dir.mkdir(parents=True, exist_ok=True)
-        
+
         # Test configuration
         self.test_config = {
             "profit_take_multiplier": 0.002,
@@ -40,32 +40,32 @@ class FractionalLabelingTester:
                 "max_confidence_threshold": 0.95,
             }
         }
-    
+
     def generate_test_data(self, n_samples: int = 1000) -> Dict[str, Any]:
         """Generate synthetic test data.
-        
+
         Args:
             n_samples: Number of samples to generate
-            
+
         Returns:
             Dictionary with test data
         """
         # Simulate realistic price data
         import random
-        
+
         random.seed(42)
-        
+
         # Generate price series with trend and volatility
         base_price = 100
         prices = [base_price]
-        
+
         for i in range(n_samples - 1):
             # Add trend and noise
             trend = 0.0001  # Small positive trend
             noise = random.gauss(0, 0.02)  # 2% volatility
             new_price = prices[-1] * (1 + trend + noise)
             prices.append(new_price)
-        
+
         # Create OHLCV data
         data = {
             'open': prices,
@@ -74,28 +74,28 @@ class FractionalLabelingTester:
             'close': prices,
             'volume': [random.randint(1000, 10000) for _ in range(n_samples)]
         }
-        
+
         # Ensure high >= close >= low
         for i in range(n_samples):
             data['high'][i] = max(data['high'][i], data['close'][i])
             data['low'][i] = min(data['low'][i], data['close'][i])
-        
+
         return data
-    
+
     def test_baseline_labeling(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """Test baseline binary labeling.
-        
+
         Args:
             data: Test data
-            
+
         Returns:
             Dictionary with baseline labeling results
         """
         print("🧪 Testing baseline binary labeling...")
-        
+
         # Simulate baseline labeling results
         n_samples = len(data['close'])
-        
+
         # Generate binary labels (-1, 1)
         labels = []
         for i in range(n_samples):
@@ -110,12 +110,12 @@ class FractionalLabelingTester:
                     labels.append(0)  # No barrier hit
             else:
                 labels.append(0)
-        
+
         # Calculate statistics
         positive_labels = sum(1 for l in labels if l == 1)
         negative_labels = sum(1 for l in labels if l == -1)
         neutral_labels = sum(1 for l in labels if l == 0)
-        
+
         baseline_results = {
             'method': 'baseline_binary',
             'total_samples': n_samples,
@@ -127,49 +127,49 @@ class FractionalLabelingTester:
             'neutral_ratio': neutral_labels / n_samples,
             'labels': labels
         }
-        
+
         print(f"   ✅ Baseline labeling complete:")
         print(f"      Positive: {positive_labels} ({positive_labels/n_samples:.2%})")
         print(f"      Negative: {negative_labels} ({negative_labels/n_samples:.2%})")
         print(f"      Neutral: {neutral_labels} ({neutral_labels/n_samples:.2%})")
-        
+
         return baseline_results
-    
+
     def test_fractional_labeling(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """Test fractional labeling.
-        
+
         Args:
             data: Test data
-            
+
         Returns:
             Dictionary with fractional labeling results
         """
         print("🧪 Testing fractional labeling...")
-        
+
         # Simulate fractional labeling results
         n_samples = len(data['close'])
-        
+
         # Generate fractional labels (continuous values between -1 and 1)
         fractional_labels = []
         confidence_scores = []
         distance_scores = []
         time_scores = []
         volatility_scores = []
-        
+
         for i in range(n_samples):
             if i < n_samples - 1:
                 price_change = (data['close'][i+1] - data['close'][i]) / data['close'][i]
-                
+
                 # Calculate distance score (how close to barriers)
                 distance_score = min(abs(price_change) / 0.002, 1.0)
-                
+
                 # Calculate time score (simplified)
                 time_score = 0.5 + 0.5 * (i % 10) / 10  # Varies over time
-                
+
                 # Calculate volatility score
                 volatility = abs(price_change)
                 volatility_score = min(volatility / 0.02, 1.0)
-                
+
                 # Combine into fractional label
                 weights = self.test_config['fractional_config']
                 fractional_label = (
@@ -177,19 +177,19 @@ class FractionalLabelingTester:
                     weights['time_weight'] * time_score +
                     weights['volatility_weight'] * volatility_score
                 )
-                
+
                 # Apply sign based on direction
                 if price_change > 0:
                     fractional_label = abs(fractional_label)
                 else:
                     fractional_label = -abs(fractional_label)
-                
+
                 # Clamp to [-1, 1]
                 fractional_label = max(-1.0, min(1.0, fractional_label))
-                
+
                 # Calculate confidence score
                 confidence = 0.5 + 0.5 * abs(fractional_label)
-                
+
                 fractional_labels.append(fractional_label)
                 confidence_scores.append(confidence)
                 distance_scores.append(distance_score)
@@ -201,16 +201,16 @@ class FractionalLabelingTester:
                 distance_scores.append(0.0)
                 time_scores.append(0.5)
                 volatility_scores.append(0.0)
-        
+
         # Filter by confidence threshold
         min_confidence = self.test_config['fractional_config']['min_confidence_threshold']
         high_confidence_indices = [i for i, conf in enumerate(confidence_scores) if conf >= min_confidence]
-        
+
         # Calculate statistics
         positive_labels = sum(1 for l in fractional_labels if l > 0.1)
         negative_labels = sum(1 for l in fractional_labels if l < -0.1)
         neutral_labels = sum(1 for l in fractional_labels if -0.1 <= l <= 0.1)
-        
+
         fractional_results = {
             'method': 'fractional_continuous',
             'total_samples': n_samples,
@@ -230,7 +230,7 @@ class FractionalLabelingTester:
             'mean_fractional_label': sum(fractional_labels) / len(fractional_labels),
             'label_std': (sum((l - sum(fractional_labels)/len(fractional_labels))**2 for l in fractional_labels) / len(fractional_labels))**0.5
         }
-        
+
         print(f"   ✅ Fractional labeling complete:")
         print(f"      Total samples: {n_samples}")
         print(f"      Filtered samples: {len(high_confidence_indices)} ({len(high_confidence_indices)/n_samples:.2%})")
@@ -240,21 +240,21 @@ class FractionalLabelingTester:
         print(f"      Mean confidence: {fractional_results['mean_confidence']:.4f}")
         print(f"      Mean fractional label: {fractional_results['mean_fractional_label']:.4f}")
         print(f"      Label std: {fractional_results['label_std']:.4f}")
-        
+
         return fractional_results
-    
+
     def compare_results(self, baseline_results: Dict[str, Any], fractional_results: Dict[str, Any]) -> Dict[str, Any]:
         """Compare baseline and fractional labeling results.
-        
+
         Args:
             baseline_results: Baseline labeling results
             fractional_results: Fractional labeling results
-            
+
         Returns:
             Dictionary with comparison results
         """
         print("📊 Comparing labeling methods...")
-        
+
         comparison = {
             'comparison_timestamp': datetime.now().isoformat(),
             'baseline_results': baseline_results,
@@ -262,24 +262,24 @@ class FractionalLabelingTester:
             'improvements': {},
             'analysis': {}
         }
-        
+
         # Compare label distributions
         baseline_positive_ratio = baseline_results['positive_ratio']
         fractional_positive_ratio = fractional_results['positive_ratio']
-        
+
         baseline_negative_ratio = baseline_results['negative_ratio']
         fractional_negative_ratio = fractional_results['negative_ratio']
-        
+
         # Calculate improvements
         positive_improvement = (fractional_positive_ratio - baseline_positive_ratio) / baseline_positive_ratio if baseline_positive_ratio > 0 else 0
         negative_improvement = (fractional_negative_ratio - baseline_negative_ratio) / baseline_negative_ratio if baseline_negative_ratio > 0 else 0
-        
+
         comparison['improvements'] = {
             'positive_label_improvement': positive_improvement,
             'negative_label_improvement': negative_improvement,
             'total_label_improvement': (fractional_positive_ratio + fractional_negative_ratio) - (baseline_positive_ratio + baseline_negative_ratio)
         }
-        
+
         # Analysis
         comparison['analysis'] = {
             'fractional_advantages': [
@@ -301,18 +301,18 @@ class FractionalLabelingTester:
                 'Monitor performance improvements'
             ]
         }
-        
+
         print(f"   📈 Comparison results:")
         print(f"      Positive label improvement: {positive_improvement:+.2%}")
         print(f"      Negative label improvement: {negative_improvement:+.2%}")
         print(f"      Total label improvement: {comparison['improvements']['total_label_improvement']:+.2%}")
-        
+
         return comparison
-    
-    def export_results(self, test_data: Dict[str, Any], baseline_results: Dict[str, Any], 
+
+    def export_results(self, test_data: Dict[str, Any], baseline_results: Dict[str, Any],
                       fractional_results: Dict[str, Any], comparison: Dict[str, Any]):
         """Export test results to files.
-        
+
         Args:
             test_data: Test data used
             baseline_results: Baseline labeling results
@@ -320,27 +320,27 @@ class FractionalLabelingTester:
             comparison: Comparison results
         """
         print("💾 Exporting test results...")
-        
+
         # Export test data
         test_data_file = self.output_dir / "test_data.json"
         with open(test_data_file, 'w') as f:
             json.dump(test_data, f, indent=2)
-        
+
         # Export baseline results
         baseline_file = self.output_dir / "baseline_results.json"
         with open(baseline_file, 'w') as f:
             json.dump(baseline_results, f, indent=2)
-        
+
         # Export fractional results
         fractional_file = self.output_dir / "fractional_results.json"
         with open(fractional_file, 'w') as f:
             json.dump(fractional_results, f, indent=2)
-        
+
         # Export comparison
         comparison_file = self.output_dir / "comparison_results.json"
         with open(comparison_file, 'w') as f:
             json.dump(comparison, f, indent=2)
-        
+
         # Create summary report
         summary_file = self.output_dir / "test_summary.md"
         with open(summary_file, 'w') as f:
@@ -379,36 +379,36 @@ class FractionalLabelingTester:
 3. Validate performance improvements
 4. Optimize parameters based on results
 """)
-        
+
         print(f"   ✅ Results exported to: {self.output_dir}")
-    
+
     def run_complete_test(self, n_samples: int = 1000):
         """Run complete fractional labeling test.
-        
+
         Args:
             n_samples: Number of samples to test
         """
         print("🚀 Starting fractional labeling implementation test...")
         print(f"📊 Testing with {n_samples} samples")
-        
+
         # Generate test data
         test_data = self.generate_test_data(n_samples)
-        
+
         # Test baseline labeling
         baseline_results = self.test_baseline_labeling(test_data)
-        
+
         # Test fractional labeling
         fractional_results = self.test_fractional_labeling(test_data)
-        
+
         # Compare results
         comparison = self.compare_results(baseline_results, fractional_results)
-        
+
         # Export results
         self.export_results(test_data, baseline_results, fractional_results, comparison)
-        
+
         print("\n✅ Fractional labeling test complete!")
         print(f"📁 Results saved to: {self.output_dir}")
-        
+
         return {
             'test_data': test_data,
             'baseline_results': baseline_results,
@@ -421,7 +421,7 @@ def main():
     """Main function to run fractional labeling test."""
     tester = FractionalLabelingTester()
     results = tester.run_complete_test(n_samples=1000)
-    
+
     print("\n🎯 Key Findings:")
     print("   • Fractional labeling provides continuous labels instead of binary")
     print("   • Confidence scoring enables better filtering")

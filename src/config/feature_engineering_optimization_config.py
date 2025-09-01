@@ -13,7 +13,7 @@ from typing import Any, Dict, List
 def get_feature_engineering_optimization_config() -> dict[str, Any]:
     """
     Get feature engineering optimization configuration.
-    
+
     Returns:
         dict: Configuration dictionary
     """
@@ -132,7 +132,7 @@ def get_feature_engineering_optimization_config() -> dict[str, Any]:
 def get_optimized_timeframe_config() -> dict[str, Any]:
     """
     Get optimized timeframe configuration for high leverage trading.
-    
+
     Returns:
         dict: Optimized timeframe configuration
     """
@@ -200,7 +200,7 @@ def get_optimized_timeframe_config() -> dict[str, Any]:
 def get_feature_optimization_validation_rules() -> dict[str, Any]:
     """
     Get validation rules for feature optimization results.
-    
+
     Returns:
         dict: Validation rules
     """
@@ -237,7 +237,7 @@ def get_feature_optimization_validation_rules() -> dict[str, Any]:
 def get_optimization_output_schema() -> dict[str, Any]:
     """
     Get schema for optimization output files.
-    
+
     Returns:
         dict: Output schema
     """

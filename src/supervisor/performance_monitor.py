@@ -45,13 +45,13 @@ class PerformanceMonitor:
         )
         self.model_performance_history: dict[str, list] = {}
         self.drift_alerts: list[dict[str, Any]] = []
-        
+
         # Real-time performance tracking
         self.real_time_config: dict[str, Any] = self.monitor_config.get("real_time_tracking", {})
         self.enable_real_time_tracking: bool = self.real_time_config.get("enable_real_time_tracking", True)
         self.performance_window: int = self.real_time_config.get("performance_window", 100)
         self.retraining_threshold: float = self.real_time_config.get("retraining_threshold", 0.1)
-        
+
         # Performance tracking state
         self.model_predictions: dict[str, list] = {}
         self.model_outcomes: dict[str, list] = {}
@@ -534,7 +534,7 @@ class PerformanceMonitor:
         default_return=None, context="adaptive model selection",
     )
     async def select_best_models(
-        self, model_names: list[str], 
+        self, model_names: list[str],
         current_regime: str = None, required_count: int = 3
     ) -> list[str]:
         """Select best performing models based on real-time metrics."""

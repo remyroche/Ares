@@ -18,7 +18,7 @@ from .base_types import (
 )
 
 # Trading action enums
-OrderType = Literal["market", "limit", "stop", "stop_limit", "trailing_stop"]
+OrderType , Literal["market", "limit", "stop", "stop_limit", "trailing_stop"]
 OrderSide = Literal["buy", "sell"]
 OrderStatus = Literal[
     "pending",

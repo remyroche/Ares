@@ -60,7 +60,7 @@ model_data = {
 
 ### **Analyst Models (Higher Timeframe)**
 1. **Step 6**: `hmm_profit` models
-2. **Step 6**: `analyst_profit` models  
+2. **Step 6**: `analyst_profit` models
 3. **Step 7**: `analyst_ensemble` models
 4. **Step 11**: `calibrated` models
 5. **Step 12**: `optimized` models
@@ -87,11 +87,11 @@ Each step needs functions to generate the 4 required probabilities:
 ```python
 def generate_price_action_probabilities(self, model, X_test, y_test, market_data):
     """Generate price action probabilities for a trained model."""
-    
+
     # Get model predictions
     y_pred_proba = model.predict_proba(X_test)
     y_pred = model.predict(X_test)
-    
+
     # Calculate probabilities based on model type and data
     probabilities = {
         "triple_barrier_probability": self._calculate_triple_barrier_probability(model, X_test, market_data),
@@ -99,7 +99,7 @@ def generate_price_action_probabilities(self, model, X_test, y_test, market_data
         "magnitude_probability": self._calculate_magnitude_probability(model, X_test, market_data),
         "barrier_avoidance_probability": self._calculate_barrier_avoidance_probability(model, X_test, market_data)
     }
-    
+
     return probabilities
 
 def _calculate_triple_barrier_probability(self, model, X_test, market_data):

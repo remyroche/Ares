@@ -1,0 +1,1001 @@
+================================================================================
+SYNTAX ERROR SCAN REPORT
+================================================================================
+
+📊 SUMMARY
+----------------------------------------
+Files processed: 812
+Files with errors: 98
+Total errors: 98
+
+🔍 ERROR TYPES BREAKDOWN
+----------------------------------------
+SyntaxError: 69 (70.4%)
+IndentationError: 29 (29.6%)
+
+📁 FILES WITH ERRORS
+----------------------------------------
+
+kelly_criterion_fix.py (1 errors):
+   Location: /workspace/kelly_criterion_fix.py
+  - SyntaxError: 1
+    1. SyntaxError: invalid syntax. Maybe you meant '==' or '...
+
+create_regime_splits.py (1 errors):
+   Location: /workspace/create_regime_splits.py
+  - SyntaxError: 1
+    1. SyntaxError: invalid syntax...
+
+create_30m_hmm_artifacts.py (1 errors):
+   Location: /workspace/create_30m_hmm_artifacts.py
+  - IndentationError: 1
+    1. IndentationError: IndentationError...
+
+test_tactician_multi_outcome_predictions_updated.py (1 errors):
+   Location: /workspace/test_tactician_multi_outcome_predictions_updated.py
+  - SyntaxError: 1
+    1. SyntaxError: 'await' outside async function...
+
+simulate_regime_merging_from_existing_data.py (1 errors):
+   Location: /workspace/simulate_regime_merging_from_existing_data.py
+  - SyntaxError: 1
+    1. SyntaxError: invalid syntax...
+
+download_futures_only.py (1 errors):
+   Location: /workspace/download_futures_only.py
+  - IndentationError: 1
+    1. IndentationError: IndentationError...
+
+detect_and_fill_gaps_immediate.py (1 errors):
+   Location: /workspace/detect_and_fill_gaps_immediate.py
+  - IndentationError: 1
+    1. IndentationError: IndentationError...
+
+comprehensive_gap_filler.py (1 errors):
+   Location: /workspace/comprehensive_gap_filler.py
+  - SyntaxError: 1
+    1. SyntaxError: invalid syntax...
+
+download_missing_aggtrades_2023_2024.py (1 errors):
+   Location: /workspace/download_missing_aggtrades_2023_2024.py
+  - SyntaxError: 1
+    1. SyntaxError: unmatched ')'...
+
+run_30m_hmm_step.py (1 errors):
+   Location: /workspace/run_30m_hmm_step.py
+  - IndentationError: 1
+    1. IndentationError: IndentationError...
+
+extract_feature_details.py (1 errors):
+   Location: /workspace/extract_feature_details.py
+  - SyntaxError: 1
+    1. SyntaxError: invalid syntax...
+
+sr_weight_optimization_backtest.py (1 errors):
+   Location: /workspace/sr_weight_optimization_backtest.py
+  - SyntaxError: 1
+    1. SyntaxError: unmatched ')'...
+
+debug_low_variance_features.py (1 errors):
+   Location: /workspace/debug_low_variance_features.py
+  - SyntaxError: 1
+    1. SyntaxError: invalid syntax...
+
+implement_feature_specific_validation.py (1 errors):
+   Location: /workspace/implement_feature_specific_validation.py
+  - IndentationError: 1
+    1. IndentationError: IndentationError...
+
+check_existing_data.py (1 errors):
+   Location: /workspace/check_existing_data.py
+  - IndentationError: 1
+    1. IndentationError: IndentationError...
+
+automated_syntax_fixer.py (1 errors):
+   Location: /workspace/automated_syntax_fixer.py
+  - SyntaxError: 1
+    1. SyntaxError: unterminated string literal (detected at line 143)...
+
+feature_analysis_script.py (1 errors):
+   Location: /workspace/feature_analysis_script.py
+  - SyntaxError: 1
+    1. SyntaxError: invalid syntax...
+
+gap_filler_clean.py (1 errors):
+   Location: /workspace/gap_filler_clean.py
+  - IndentationError: 1
+    1. IndentationError: IndentationError...
+
+fix_import_errors.py (1 errors):
+   Location: /workspace/fix_import_errors.py
+  - SyntaxError: 1
+    1. SyntaxError: invalid syntax...
+
+debug_hmm_combinations.py (1 errors):
+   Location: /workspace/debug_hmm_combinations.py
+  - SyntaxError: 1
+    1. SyntaxError: invalid syntax...
+
+test_surrogate_optimization.py (1 errors):
+   Location: /workspace/test_surrogate_optimization.py
+  - SyntaxError: 1
+    1. SyntaxError: Generator expression must be parenthesized...
+
+cleanup_script.py (1 errors):
+   Location: /workspace/cleanup_script.py
+  - SyntaxError: 1
+    1. SyntaxError: positional argument follows keyword argument...
+
+download_aggtrades_range.py (1 errors):
+   Location: /workspace/download_aggtrades_range.py
+  - SyntaxError: 1
+    1. SyntaxError: unmatched ')'...
+
+test_tactician_multi_outcome_predictions.py (1 errors):
+   Location: /workspace/test_tactician_multi_outcome_predictions.py
+  - SyntaxError: 1
+    1. SyntaxError: 'await' outside async function...
+
+fix_data_issues.py (1 errors):
+   Location: /workspace/fix_data_issues.py
+  - IndentationError: 1
+    1. IndentationError: IndentationError...
+
+debug_clustering.py (1 errors):
+   Location: /workspace/debug_clustering.py
+  - SyntaxError: 1
+    1. SyntaxError: invalid syntax...
+
+run_fixed_hmm_regime_discovery.py (1 errors):
+   Location: /workspace/run_fixed_hmm_regime_discovery.py
+  - SyntaxError: 1
+    1. SyntaxError: positional argument follows keyword argument...
+
+identify_deleted_aggtrades.py (1 errors):
+   Location: /workspace/identify_deleted_aggtrades.py
+  - SyntaxError: 1
+    1. SyntaxError: invalid syntax...
+
+debug_interaction_flow.py (1 errors):
+   Location: /workspace/debug_interaction_flow.py
+  - SyntaxError: 1
+    1. SyntaxError: invalid syntax...
+
+diagnose_regime_data.py (1 errors):
+   Location: /workspace/diagnose_regime_data.py
+  - IndentationError: 1
+    1. IndentationError: IndentationError...
+
+fix_remaining_errors.py (1 errors):
+   Location: /workspace/fix_remaining_errors.py
+  - SyntaxError: 1
+    1. SyntaxError: invalid syntax...
+
+enhanced_validation_wrapper.py (1 errors):
+   Location: /workspace/enhanced_validation_wrapper.py
+  - SyntaxError: 1
+    1. SyntaxError: invalid syntax...
+
+test_multi_output_prediction.py (1 errors):
+   Location: /workspace/test_multi_output_prediction.py
+  - SyntaxError: 1
+    1. SyntaxError: expected 'except' or 'finally' block...
+
+fix_exception_handling.py (1 errors):
+   Location: /workspace/fix_exception_handling.py
+  - SyntaxError: 1
+    1. SyntaxError: invalid syntax...
+
+simulate_regime_merging_optimization.py (1 errors):
+   Location: /workspace/simulate_regime_merging_optimization.py
+  - SyntaxError: 1
+    1. SyntaxError: invalid syntax...
+
+conservative_syntax_fixer.py (1 errors):
+   Location: /workspace/conservative_syntax_fixer.py
+  - SyntaxError: 1
+    1. SyntaxError: unterminated string literal (detected at line 70)...
+
+feature_specific_validation.py (1 errors):
+   Location: /workspace/feature_specific_validation.py
+  - SyntaxError: 1
+    1. SyntaxError: invalid syntax...
+
+download_missing_futures.py (1 errors):
+   Location: /workspace/download_missing_futures.py
+  - SyntaxError: 1
+    1. SyntaxError: unmatched ')'...
+
+diagnose_interaction_features.py (1 errors):
+   Location: /workspace/diagnose_interaction_features.py
+  - SyntaxError: 1
+    1. SyntaxError: invalid syntax...
+
+comprehensive_gap_filler_v2.py (1 errors):
+   Location: /workspace/comprehensive_gap_filler_v2.py
+  - IndentationError: 1
+    1. IndentationError: IndentationError...
+
+download_remaining_aggtrades.py (1 errors):
+   Location: /workspace/download_remaining_aggtrades.py
+  - SyntaxError: 1
+    1. SyntaxError: unmatched ')'...
+
+test_step2_profit_integration.py (1 errors):
+   Location: /workspace/test_step2_profit_integration.py
+  - SyntaxError: 1
+    1. SyntaxError: expected 'except' or 'finally' block...
+
+test_comprehensive_data_quality_validation.py (1 errors):
+   Location: /workspace/test_comprehensive_data_quality_validation.py
+  - SyntaxError: 1
+    1. SyntaxError: expected 'except' or 'finally' block...
+
+scripts/update_logging_warnings.py (1 errors):
+   Location: /workspace/scripts/update_logging_warnings.py
+  - SyntaxError: 1
+    1. SyntaxError: no binding for nonlocal 'changes_made' found...
+
+src/supervisor/global_portfolio_manager.py (1 errors):
+   Location: /workspace/src/supervisor/global_portfolio_manager.py
+  - IndentationError: 1
+    1. IndentationError: IndentationError...
+
+src/tactician/sr_weight_optimizer.py (1 errors):
+   Location: /workspace/src/tactician/sr_weight_optimizer.py
+  - SyntaxError: 1
+    1. SyntaxError: expected 'except' or 'finally' block...
+
+src/tactician/sr_breakout_predictor.py (1 errors):
+   Location: /workspace/src/tactician/sr_breakout_predictor.py
+  - SyntaxError: 1
+    1. SyntaxError: expected 'except' or 'finally' block...
+
+src/training/model_trainer.py (1 errors):
+   Location: /workspace/src/training/model_trainer.py
+  - SyntaxError: 1
+    1. SyntaxError: expected 'except' or 'finally' block...
+
+src/training/enhanced_training_manager.py (1 errors):
+   Location: /workspace/src/training/enhanced_training_manager.py
+  - IndentationError: 1
+    1. IndentationError: IndentationError...
+
+src/training/step_orchestrator.py (1 errors):
+   Location: /workspace/src/training/step_orchestrator.py
+  - IndentationError: 1
+    1. IndentationError: IndentationError...
+
+src/training/steps/step10_unified_regime_intelligence.py (1 errors):
+   Location: /workspace/src/training/steps/step10_unified_regime_intelligence.py
+  - SyntaxError: 1
+    1. SyntaxError: invalid syntax...
+
+src/training/steps/step14_tactician_labeling.py (1 errors):
+   Location: /workspace/src/training/steps/step14_tactician_labeling.py
+  - IndentationError: 1
+    1. IndentationError: IndentationError...
+
+src/training/steps/step09_5_multi_timeframe_hmm_ensemble.py (1 errors):
+   Location: /workspace/src/training/steps/step09_5_multi_timeframe_hmm_ensemble.py
+  - SyntaxError: 1
+    1. SyntaxError: invalid syntax...
+
+src/training/steps/step20_ab_testing.py (1 errors):
+   Location: /workspace/src/training/steps/step20_ab_testing.py
+  - IndentationError: 1
+    1. IndentationError: IndentationError...
+
+src/training/steps/step16_confidence_calibration.py (1 errors):
+   Location: /workspace/src/training/steps/step16_confidence_calibration.py
+  - IndentationError: 1
+    1. IndentationError: IndentationError...
+
+src/training/steps/step21_saving.py (1 errors):
+   Location: /workspace/src/training/steps/step21_saving.py
+  - SyntaxError: 1
+    1. SyntaxError: expected 'except' or 'finally' block...
+
+src/training/steps/step05_labeling.py (1 errors):
+   Location: /workspace/src/training/steps/step05_labeling.py
+  - SyntaxError: 1
+    1. SyntaxError: invalid syntax...
+
+src/training/steps/vectorized_advanced_feature_engineering.py (1 errors):
+   Location: /workspace/src/training/steps/vectorized_advanced_feature_engineering.py
+  - SyntaxError: 1
+    1. SyntaxError: expected 'except' or 'finally' block...
+
+src/training/steps/step02_5_sr_optimization.py (1 errors):
+   Location: /workspace/src/training/steps/step02_5_sr_optimization.py
+  - SyntaxError: 1
+    1. SyntaxError: invalid syntax...
+
+src/training/steps/step07_enhanced_matrix_operations.py (1 errors):
+   Location: /workspace/src/training/steps/step07_enhanced_matrix_operations.py
+  - SyntaxError: 1
+    1. SyntaxError: invalid syntax...
+
+src/training/steps/step19_monte_carlo_validation.py (1 errors):
+   Location: /workspace/src/training/steps/step19_monte_carlo_validation.py
+  - IndentationError: 1
+    1. IndentationError: IndentationError...
+
+src/training/steps/step03_hmm_regime_discovery.py (1 errors):
+   Location: /workspace/src/training/steps/step03_hmm_regime_discovery.py
+  - SyntaxError: 1
+    1. SyntaxError: invalid syntax...
+
+src/training/steps/step02_data_reading.py (1 errors):
+   Location: /workspace/src/training/steps/step02_data_reading.py
+  - SyntaxError: 1
+    1. SyntaxError: invalid syntax...
+
+src/training/steps/step06_feature_engineering_validator.py (1 errors):
+   Location: /workspace/src/training/steps/step06_feature_engineering_validator.py
+  - SyntaxError: 1
+    1. SyntaxError: closing parenthesis ')' does not match opening parenthesis '['...
+
+src/training/steps/step09_5_hmm_lm_generalist_training.py (1 errors):
+   Location: /workspace/src/training/steps/step09_5_hmm_lm_generalist_training.py
+  - SyntaxError: 1
+    1. SyntaxError: invalid syntax...
+
+src/training/steps/step17_final_parameters_optimization.py (1 errors):
+   Location: /workspace/src/training/steps/step17_final_parameters_optimization.py
+  - IndentationError: 1
+    1. IndentationError: IndentationError...
+
+src/training/steps/step12_analyst_enhancement.py (1 errors):
+   Location: /workspace/src/training/steps/step12_analyst_enhancement.py
+  - IndentationError: 1
+    1. IndentationError: IndentationError...
+
+src/training/steps/step18_walk_forward_validation.py (1 errors):
+   Location: /workspace/src/training/steps/step18_walk_forward_validation.py
+  - IndentationError: 1
+    1. IndentationError: IndentationError...
+
+src/training/steps/step15_tactician_specialist_training.py (1 errors):
+   Location: /workspace/src/training/steps/step15_tactician_specialist_training.py
+  - SyntaxError: 1
+    1. SyntaxError: invalid syntax...
+
+src/training/steps/step04_triple_barrier_method.py (1 errors):
+   Location: /workspace/src/training/steps/step04_triple_barrier_method.py
+  - SyntaxError: 1
+    1. SyntaxError: invalid syntax...
+
+src/training/steps/step17_final_parameters_optimization/sr_optuna_optimization.py (1 errors):
+   Location: /workspace/src/training/steps/step17_final_parameters_optimization/sr_optuna_optimization.py
+  - SyntaxError: 1
+    1. SyntaxError: expected 'except' or 'finally' block...
+
+src/utils/observability.py (1 errors):
+   Location: /workspace/src/utils/observability.py
+  - SyntaxError: 1
+    1. SyntaxError: invalid syntax...
+
+src/utils/step_dependency_validator.py (1 errors):
+   Location: /workspace/src/utils/step_dependency_validator.py
+  - IndentationError: 1
+    1. IndentationError: IndentationError...
+
+src/utils/enhanced_validation_decorators.py (1 errors):
+   Location: /workspace/src/utils/enhanced_validation_decorators.py
+  - SyntaxError: 1
+    1. SyntaxError: '(' was never closed...
+
+src/utils/model_performance_monitor.py (1 errors):
+   Location: /workspace/src/utils/model_performance_monitor.py
+  - SyntaxError: 1
+    1. SyntaxError: invalid syntax...
+
+src/utils/enhanced_config_management.py (1 errors):
+   Location: /workspace/src/utils/enhanced_config_management.py
+  - SyntaxError: 1
+    1. SyntaxError: expected 'except' or 'finally' block...
+
+src/utils/enhanced_memory_management.py (1 errors):
+   Location: /workspace/src/utils/enhanced_memory_management.py
+  - SyntaxError: 1
+    1. SyntaxError: expected 'except' or 'finally' block...
+
+src/utils/centralized_decorators_v2.py (1 errors):
+   Location: /workspace/src/utils/centralized_decorators_v2.py
+  - SyntaxError: 1
+    1. SyntaxError: expected 'except' or 'finally' block...
+
+src/utils/vif_validation_decorators_simple.py (1 errors):
+   Location: /workspace/src/utils/vif_validation_decorators_simple.py
+  - SyntaxError: 1
+    1. SyntaxError: expected 'except' or 'finally' block...
+
+src/utils/validator_orchestrator.py (1 errors):
+   Location: /workspace/src/utils/validator_orchestrator.py
+  - IndentationError: 1
+    1. IndentationError: IndentationError...
+
+src/utils/enhanced_data_quality_validator.py (1 errors):
+   Location: /workspace/src/utils/enhanced_data_quality_validator.py
+  - SyntaxError: 1
+    1. SyntaxError: expected 'except' or 'finally' block...
+
+src/utils/data_quality_decorators.py (1 errors):
+   Location: /workspace/src/utils/data_quality_decorators.py
+  - SyntaxError: 1
+    1. SyntaxError: expected 'except' or 'finally' block...
+
+src/utils/enhanced_error_handling.py (1 errors):
+   Location: /workspace/src/utils/enhanced_error_handling.py
+  - SyntaxError: 1
+    1. SyntaxError: expected 'except' or 'finally' block...
+
+src/utils/prometheus_metrics.py (1 errors):
+   Location: /workspace/src/utils/prometheus_metrics.py
+  - SyntaxError: 1
+    1. SyntaxError: invalid syntax...
+
+src/utils/comprehensive_data_quality_validator.py (1 errors):
+   Location: /workspace/src/utils/comprehensive_data_quality_validator.py
+  - SyntaxError: 1
+    1. SyntaxError: expected 'except' or 'finally' block...
+
+analysis/model_training_quality_analysis.py (1 errors):
+   Location: /workspace/analysis/model_training_quality_analysis.py
+  - IndentationError: 1
+    1. IndentationError: IndentationError...
+
+analysis/backtesting_quality_analysis.py (1 errors):
+   Location: /workspace/analysis/backtesting_quality_analysis.py
+  - IndentationError: 1
+    1. IndentationError: IndentationError...
+
+analysis/data_collection_quality_analysis.py (1 errors):
+   Location: /workspace/analysis/data_collection_quality_analysis.py
+  - IndentationError: 1
+    1. IndentationError: IndentationError...
+
+analysis/data_preparation_quality_analysis.py (1 errors):
+   Location: /workspace/analysis/data_preparation_quality_analysis.py
+  - IndentationError: 1
+    1. IndentationError: IndentationError...
+
+GUI/api_server.py (1 errors):
+   Location: /workspace/GUI/api_server.py
+  - IndentationError: 1
+    1. IndentationError: IndentationError...
+
+examples/enhanced_step1_7_usage_example.py (1 errors):
+   Location: /workspace/examples/enhanced_step1_7_usage_example.py
+  - IndentationError: 1
+    1. IndentationError: IndentationError...
+
+examples/enhanced_nan_analysis_example.py (1 errors):
+   Location: /workspace/examples/enhanced_nan_analysis_example.py
+  - SyntaxError: 1
+    1. SyntaxError: invalid syntax...
+
+examples/regime_expert_usage_example.py (1 errors):
+   Location: /workspace/examples/regime_expert_usage_example.py
+  - SyntaxError: 1
+    1. SyntaxError: positional argument follows keyword argument...
+
+examples/enhanced_reporting_example.py (1 errors):
+   Location: /workspace/examples/enhanced_reporting_example.py
+  - SyntaxError: 1
+    1. SyntaxError: unmatched ')'...
+
+examples/enhanced_trading_integration_example.py (1 errors):
+   Location: /workspace/examples/enhanced_trading_integration_example.py
+  - SyntaxError: 1
+    1. SyntaxError: invalid syntax...
+
+examples/data_quality_example.py (1 errors):
+   Location: /workspace/examples/data_quality_example.py
+  - SyntaxError: 1
+    1. SyntaxError: invalid syntax...
+
+examples/enhanced_training_integration_example.py (1 errors):
+   Location: /workspace/examples/enhanced_training_integration_example.py
+  - IndentationError: 1
+    1. IndentationError: IndentationError...
+
+examples/autoencoder_feature_analysis_example.py (1 errors):
+   Location: /workspace/examples/autoencoder_feature_analysis_example.py
+  - SyntaxError: 1
+    1. SyntaxError: invalid syntax...
+
+================================================================================
+DETAILED ERROR BREAKDOWN
+================================================================================
+
+kelly_criterion_fix.py:
+Location: /workspace/kelly_criterion_fix.py
+----------------------
+  1. SyntaxError: invalid syntax. Maybe you meant '==' or ':=' instead of '='?
+
+create_regime_splits.py:
+Location: /workspace/create_regime_splits.py
+-----------------------
+  1. SyntaxError: invalid syntax
+
+create_30m_hmm_artifacts.py:
+Location: /workspace/create_30m_hmm_artifacts.py
+---------------------------
+  1. Sorry: IndentationError: unexpected indent (create_30m_hmm_artifacts.py, line 7)
+
+test_tactician_multi_outcome_predictions_updated.py:
+Location: /workspace/test_tactician_multi_outcome_predictions_updated.py
+---------------------------------------------------
+  1. SyntaxError: 'await' outside async function
+
+simulate_regime_merging_from_existing_data.py:
+Location: /workspace/simulate_regime_merging_from_existing_data.py
+---------------------------------------------
+  1. SyntaxError: invalid syntax
+
+download_futures_only.py:
+Location: /workspace/download_futures_only.py
+------------------------
+  1. Sorry: IndentationError: expected an indented block after 'if' statement on line 83 (download_futures_only.py, line 84)
+
+detect_and_fill_gaps_immediate.py:
+Location: /workspace/detect_and_fill_gaps_immediate.py
+---------------------------------
+  1. Sorry: IndentationError: unexpected indent (detect_and_fill_gaps_immediate.py, line 9)
+
+comprehensive_gap_filler.py:
+Location: /workspace/comprehensive_gap_filler.py
+---------------------------
+  1. SyntaxError: invalid syntax
+
+download_missing_aggtrades_2023_2024.py:
+Location: /workspace/download_missing_aggtrades_2023_2024.py
+---------------------------------------
+  1. SyntaxError: unmatched ')'
+
+run_30m_hmm_step.py:
+Location: /workspace/run_30m_hmm_step.py
+-------------------
+  1. Sorry: IndentationError: unexpected indent (run_30m_hmm_step.py, line 7)
+
+extract_feature_details.py:
+Location: /workspace/extract_feature_details.py
+--------------------------
+  1. SyntaxError: invalid syntax
+
+sr_weight_optimization_backtest.py:
+Location: /workspace/sr_weight_optimization_backtest.py
+----------------------------------
+  1. SyntaxError: unmatched ')'
+
+debug_low_variance_features.py:
+Location: /workspace/debug_low_variance_features.py
+------------------------------
+  1. SyntaxError: invalid syntax
+
+implement_feature_specific_validation.py:
+Location: /workspace/implement_feature_specific_validation.py
+----------------------------------------
+  1. Sorry: IndentationError: unexpected indent (implement_feature_specific_validation.py, line 7)
+
+check_existing_data.py:
+Location: /workspace/check_existing_data.py
+----------------------
+  1. Sorry: IndentationError: expected an indented block after 'if' statement on line 37 (check_existing_data.py, line 38)
+
+automated_syntax_fixer.py:
+Location: /workspace/automated_syntax_fixer.py
+-------------------------
+  1. SyntaxError: unterminated string literal (detected at line 143)
+
+feature_analysis_script.py:
+Location: /workspace/feature_analysis_script.py
+--------------------------
+  1. SyntaxError: invalid syntax
+
+gap_filler_clean.py:
+Location: /workspace/gap_filler_clean.py
+-------------------
+  1. Sorry: IndentationError: expected an indented block after 'for' statement on line 270 (gap_filler_clean.py, line 271)
+
+fix_import_errors.py:
+Location: /workspace/fix_import_errors.py
+--------------------
+  1. SyntaxError: invalid syntax
+
+debug_hmm_combinations.py:
+Location: /workspace/debug_hmm_combinations.py
+-------------------------
+  1. SyntaxError: invalid syntax
+
+test_surrogate_optimization.py:
+Location: /workspace/test_surrogate_optimization.py
+------------------------------
+  1. SyntaxError: Generator expression must be parenthesized
+
+cleanup_script.py:
+Location: /workspace/cleanup_script.py
+-----------------
+  1. SyntaxError: positional argument follows keyword argument
+
+download_aggtrades_range.py:
+Location: /workspace/download_aggtrades_range.py
+---------------------------
+  1. SyntaxError: unmatched ')'
+
+test_tactician_multi_outcome_predictions.py:
+Location: /workspace/test_tactician_multi_outcome_predictions.py
+-------------------------------------------
+  1. SyntaxError: 'await' outside async function
+
+fix_data_issues.py:
+Location: /workspace/fix_data_issues.py
+------------------
+  1. Sorry: IndentationError: expected an indented block after 'if' statement on line 31 (fix_data_issues.py, line 32)
+
+debug_clustering.py:
+Location: /workspace/debug_clustering.py
+-------------------
+  1. SyntaxError: invalid syntax
+
+run_fixed_hmm_regime_discovery.py:
+Location: /workspace/run_fixed_hmm_regime_discovery.py
+---------------------------------
+  1. SyntaxError: positional argument follows keyword argument
+
+identify_deleted_aggtrades.py:
+Location: /workspace/identify_deleted_aggtrades.py
+-----------------------------
+  1. SyntaxError: invalid syntax
+
+debug_interaction_flow.py:
+Location: /workspace/debug_interaction_flow.py
+-------------------------
+  1. SyntaxError: invalid syntax
+
+diagnose_regime_data.py:
+Location: /workspace/diagnose_regime_data.py
+-----------------------
+  1. Sorry: IndentationError: unexpected indent (diagnose_regime_data.py, line 7)
+
+fix_remaining_errors.py:
+Location: /workspace/fix_remaining_errors.py
+-----------------------
+  1. SyntaxError: invalid syntax
+
+enhanced_validation_wrapper.py:
+Location: /workspace/enhanced_validation_wrapper.py
+------------------------------
+  1. SyntaxError: invalid syntax
+
+test_multi_output_prediction.py:
+Location: /workspace/test_multi_output_prediction.py
+-------------------------------
+  1. SyntaxError: expected 'except' or 'finally' block
+
+fix_exception_handling.py:
+Location: /workspace/fix_exception_handling.py
+-------------------------
+  1. SyntaxError: invalid syntax
+
+simulate_regime_merging_optimization.py:
+Location: /workspace/simulate_regime_merging_optimization.py
+---------------------------------------
+  1. SyntaxError: invalid syntax
+
+conservative_syntax_fixer.py:
+Location: /workspace/conservative_syntax_fixer.py
+----------------------------
+  1. SyntaxError: unterminated string literal (detected at line 70)
+
+feature_specific_validation.py:
+Location: /workspace/feature_specific_validation.py
+------------------------------
+  1. SyntaxError: invalid syntax
+
+download_missing_futures.py:
+Location: /workspace/download_missing_futures.py
+---------------------------
+  1. SyntaxError: unmatched ')'
+
+diagnose_interaction_features.py:
+Location: /workspace/diagnose_interaction_features.py
+--------------------------------
+  1. SyntaxError: invalid syntax
+
+comprehensive_gap_filler_v2.py:
+Location: /workspace/comprehensive_gap_filler_v2.py
+------------------------------
+  1. Sorry: IndentationError: expected an indented block after 'for' statement on line 331 (comprehensive_gap_filler_v2.py, line 332)
+
+download_remaining_aggtrades.py:
+Location: /workspace/download_remaining_aggtrades.py
+-------------------------------
+  1. SyntaxError: unmatched ')'
+
+test_step2_profit_integration.py:
+Location: /workspace/test_step2_profit_integration.py
+--------------------------------
+  1. SyntaxError: expected 'except' or 'finally' block
+
+test_comprehensive_data_quality_validation.py:
+Location: /workspace/test_comprehensive_data_quality_validation.py
+---------------------------------------------
+  1. SyntaxError: expected 'except' or 'finally' block
+
+scripts/update_logging_warnings.py:
+Location: /workspace/scripts/update_logging_warnings.py
+----------------------------------
+  1. SyntaxError: no binding for nonlocal 'changes_made' found
+
+src/supervisor/global_portfolio_manager.py:
+Location: /workspace/src/supervisor/global_portfolio_manager.py
+------------------------------------------
+  1. Sorry: IndentationError: unindent does not match any outer indentation level (global_portfolio_manager.py, line 253)
+
+src/tactician/sr_weight_optimizer.py:
+Location: /workspace/src/tactician/sr_weight_optimizer.py
+------------------------------------
+  1. SyntaxError: expected 'except' or 'finally' block
+
+src/tactician/sr_breakout_predictor.py:
+Location: /workspace/src/tactician/sr_breakout_predictor.py
+--------------------------------------
+  1. SyntaxError: expected 'except' or 'finally' block
+
+src/training/model_trainer.py:
+Location: /workspace/src/training/model_trainer.py
+-----------------------------
+  1. SyntaxError: expected 'except' or 'finally' block
+
+src/training/enhanced_training_manager.py:
+Location: /workspace/src/training/enhanced_training_manager.py
+-----------------------------------------
+  1. Sorry: IndentationError: unexpected indent (enhanced_training_manager.py, line 1175)
+
+src/training/step_orchestrator.py:
+Location: /workspace/src/training/step_orchestrator.py
+---------------------------------
+  1. Sorry: IndentationError: unexpected indent (step_orchestrator.py, line 306)
+
+src/training/steps/step10_unified_regime_intelligence.py:
+Location: /workspace/src/training/steps/step10_unified_regime_intelligence.py
+--------------------------------------------------------
+  1. SyntaxError: invalid syntax
+
+src/training/steps/step14_tactician_labeling.py:
+Location: /workspace/src/training/steps/step14_tactician_labeling.py
+-----------------------------------------------
+  1. Sorry: IndentationError: unindent does not match any outer indentation level (step14_tactician_labeling.py, line 413)
+
+src/training/steps/step09_5_multi_timeframe_hmm_ensemble.py:
+Location: /workspace/src/training/steps/step09_5_multi_timeframe_hmm_ensemble.py
+-----------------------------------------------------------
+  1. SyntaxError: invalid syntax
+
+src/training/steps/step20_ab_testing.py:
+Location: /workspace/src/training/steps/step20_ab_testing.py
+---------------------------------------
+  1. Sorry: IndentationError: unindent does not match any outer indentation level (step20_ab_testing.py, line 33)
+
+src/training/steps/step16_confidence_calibration.py:
+Location: /workspace/src/training/steps/step16_confidence_calibration.py
+---------------------------------------------------
+  1. Sorry: IndentationError: unindent does not match any outer indentation level (step16_confidence_calibration.py, line 43)
+
+src/training/steps/step21_saving.py:
+Location: /workspace/src/training/steps/step21_saving.py
+-----------------------------------
+  1. SyntaxError: expected 'except' or 'finally' block
+
+src/training/steps/step05_labeling.py:
+Location: /workspace/src/training/steps/step05_labeling.py
+-------------------------------------
+  1. SyntaxError: invalid syntax
+
+src/training/steps/vectorized_advanced_feature_engineering.py:
+Location: /workspace/src/training/steps/vectorized_advanced_feature_engineering.py
+-------------------------------------------------------------
+  1. SyntaxError: expected 'except' or 'finally' block
+
+src/training/steps/step02_5_sr_optimization.py:
+Location: /workspace/src/training/steps/step02_5_sr_optimization.py
+----------------------------------------------
+  1. SyntaxError: invalid syntax
+
+src/training/steps/step07_enhanced_matrix_operations.py:
+Location: /workspace/src/training/steps/step07_enhanced_matrix_operations.py
+-------------------------------------------------------
+  1. SyntaxError: invalid syntax
+
+src/training/steps/step19_monte_carlo_validation.py:
+Location: /workspace/src/training/steps/step19_monte_carlo_validation.py
+---------------------------------------------------
+  1. Sorry: IndentationError: unindent does not match any outer indentation level (step19_monte_carlo_validation.py, line 29)
+
+src/training/steps/step03_hmm_regime_discovery.py:
+Location: /workspace/src/training/steps/step03_hmm_regime_discovery.py
+-------------------------------------------------
+  1. SyntaxError: invalid syntax
+
+src/training/steps/step02_data_reading.py:
+Location: /workspace/src/training/steps/step02_data_reading.py
+-----------------------------------------
+  1. SyntaxError: invalid syntax
+
+src/training/steps/step06_feature_engineering_validator.py:
+Location: /workspace/src/training/steps/step06_feature_engineering_validator.py
+----------------------------------------------------------
+  1. SyntaxError: closing parenthesis ')' does not match opening parenthesis '['
+
+src/training/steps/step09_5_hmm_lm_generalist_training.py:
+Location: /workspace/src/training/steps/step09_5_hmm_lm_generalist_training.py
+---------------------------------------------------------
+  1. SyntaxError: invalid syntax
+
+src/training/steps/step17_final_parameters_optimization.py:
+Location: /workspace/src/training/steps/step17_final_parameters_optimization.py
+----------------------------------------------------------
+  1. Sorry: IndentationError: unindent does not match any outer indentation level (step17_final_parameters_optimization.py, line 45)
+
+src/training/steps/step12_analyst_enhancement.py:
+Location: /workspace/src/training/steps/step12_analyst_enhancement.py
+------------------------------------------------
+  1. Sorry: IndentationError: unexpected indent (step12_analyst_enhancement.py, line 3627)
+
+src/training/steps/step18_walk_forward_validation.py:
+Location: /workspace/src/training/steps/step18_walk_forward_validation.py
+----------------------------------------------------
+  1. Sorry: IndentationError: unindent does not match any outer indentation level (step18_walk_forward_validation.py, line 32)
+
+src/training/steps/step15_tactician_specialist_training.py:
+Location: /workspace/src/training/steps/step15_tactician_specialist_training.py
+----------------------------------------------------------
+  1. SyntaxError: invalid syntax
+
+src/training/steps/step04_triple_barrier_method.py:
+Location: /workspace/src/training/steps/step04_triple_barrier_method.py
+--------------------------------------------------
+  1. SyntaxError: invalid syntax
+
+src/training/steps/step17_final_parameters_optimization/sr_optuna_optimization.py:
+Location: /workspace/src/training/steps/step17_final_parameters_optimization/sr_optuna_optimization.py
+---------------------------------------------------------------------------------
+  1. SyntaxError: expected 'except' or 'finally' block
+
+src/utils/observability.py:
+Location: /workspace/src/utils/observability.py
+--------------------------
+  1. SyntaxError: invalid syntax
+
+src/utils/step_dependency_validator.py:
+Location: /workspace/src/utils/step_dependency_validator.py
+--------------------------------------
+  1. Sorry: IndentationError: unexpected indent (step_dependency_validator.py, line 289)
+
+src/utils/enhanced_validation_decorators.py:
+Location: /workspace/src/utils/enhanced_validation_decorators.py
+-------------------------------------------
+  1. SyntaxError: '(' was never closed
+
+src/utils/model_performance_monitor.py:
+Location: /workspace/src/utils/model_performance_monitor.py
+--------------------------------------
+  1. SyntaxError: invalid syntax
+
+src/utils/enhanced_config_management.py:
+Location: /workspace/src/utils/enhanced_config_management.py
+---------------------------------------
+  1. SyntaxError: expected 'except' or 'finally' block
+
+src/utils/enhanced_memory_management.py:
+Location: /workspace/src/utils/enhanced_memory_management.py
+---------------------------------------
+  1. SyntaxError: expected 'except' or 'finally' block
+
+src/utils/centralized_decorators_v2.py:
+Location: /workspace/src/utils/centralized_decorators_v2.py
+--------------------------------------
+  1. SyntaxError: expected 'except' or 'finally' block
+
+src/utils/vif_validation_decorators_simple.py:
+Location: /workspace/src/utils/vif_validation_decorators_simple.py
+---------------------------------------------
+  1. SyntaxError: expected 'except' or 'finally' block
+
+src/utils/validator_orchestrator.py:
+Location: /workspace/src/utils/validator_orchestrator.py
+-----------------------------------
+  1. Sorry: IndentationError: unexpected indent (validator_orchestrator.py, line 413)
+
+src/utils/enhanced_data_quality_validator.py:
+Location: /workspace/src/utils/enhanced_data_quality_validator.py
+--------------------------------------------
+  1. SyntaxError: expected 'except' or 'finally' block
+
+src/utils/data_quality_decorators.py:
+Location: /workspace/src/utils/data_quality_decorators.py
+------------------------------------
+  1. SyntaxError: expected 'except' or 'finally' block
+
+src/utils/enhanced_error_handling.py:
+Location: /workspace/src/utils/enhanced_error_handling.py
+------------------------------------
+  1. SyntaxError: expected 'except' or 'finally' block
+
+src/utils/prometheus_metrics.py:
+Location: /workspace/src/utils/prometheus_metrics.py
+-------------------------------
+  1. SyntaxError: invalid syntax
+
+src/utils/comprehensive_data_quality_validator.py:
+Location: /workspace/src/utils/comprehensive_data_quality_validator.py
+-------------------------------------------------
+  1. SyntaxError: expected 'except' or 'finally' block
+
+analysis/model_training_quality_analysis.py:
+Location: /workspace/analysis/model_training_quality_analysis.py
+-------------------------------------------
+  1. Sorry: IndentationError: expected an indented block after 'if' statement on line 85 (model_training_quality_analysis.py, line 86)
+
+analysis/backtesting_quality_analysis.py:
+Location: /workspace/analysis/backtesting_quality_analysis.py
+----------------------------------------
+  1. Sorry: IndentationError: unexpected indent (backtesting_quality_analysis.py, line 185)
+
+analysis/data_collection_quality_analysis.py:
+Location: /workspace/analysis/data_collection_quality_analysis.py
+--------------------------------------------
+  1. Sorry: IndentationError: expected an indented block after 'for' statement on line 133 (data_collection_quality_analysis.py, line 134)
+
+analysis/data_preparation_quality_analysis.py:
+Location: /workspace/analysis/data_preparation_quality_analysis.py
+---------------------------------------------
+  1. Sorry: IndentationError: unindent does not match any outer indentation level (data_preparation_quality_analysis.py, line 144)
+
+GUI/api_server.py:
+Location: /workspace/GUI/api_server.py
+-----------------
+  1. Sorry: IndentationError: expected an indented block after function definition on line 56 (api_server.py, line 57)
+
+examples/enhanced_step1_7_usage_example.py:
+Location: /workspace/examples/enhanced_step1_7_usage_example.py
+------------------------------------------
+  1. Sorry: IndentationError: unexpected indent (enhanced_step1_7_usage_example.py, line 9)
+
+examples/enhanced_nan_analysis_example.py:
+Location: /workspace/examples/enhanced_nan_analysis_example.py
+-----------------------------------------
+  1. SyntaxError: invalid syntax
+
+examples/regime_expert_usage_example.py:
+Location: /workspace/examples/regime_expert_usage_example.py
+---------------------------------------
+  1. SyntaxError: positional argument follows keyword argument
+
+examples/enhanced_reporting_example.py:
+Location: /workspace/examples/enhanced_reporting_example.py
+--------------------------------------
+  1. SyntaxError: unmatched ')'
+
+examples/enhanced_trading_integration_example.py:
+Location: /workspace/examples/enhanced_trading_integration_example.py
+------------------------------------------------
+  1. SyntaxError: invalid syntax
+
+examples/data_quality_example.py:
+Location: /workspace/examples/data_quality_example.py
+--------------------------------
+  1. SyntaxError: invalid syntax
+
+examples/enhanced_training_integration_example.py:
+Location: /workspace/examples/enhanced_training_integration_example.py
+-------------------------------------------------
+  1. Sorry: IndentationError: unexpected indent (enhanced_training_integration_example.py, line 7)
+
+examples/autoencoder_feature_analysis_example.py:
+Location: /workspace/examples/autoencoder_feature_analysis_example.py
+------------------------------------------------
+  1. SyntaxError: invalid syntax

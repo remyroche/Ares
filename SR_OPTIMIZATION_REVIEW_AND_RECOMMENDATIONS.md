@@ -146,14 +146,14 @@ def _calculate_comprehensive_strength(self, level_data: Dict[str, Any]) -> float
         # Ensure level_data is a dictionary, not an integer
         if not isinstance(level_data, dict):
             return 0.5  # Default strength
-        
+
         # Calculate strength using proper dictionary access
         touch_count = level_data.get("touch_count", 0)
         volume_score = level_data.get("volume_score", 0.5)
         age_score = level_data.get("age_score", 0.5)
         bounce_rate = level_data.get("bounce_rate", 0.5)
         isolation_score = level_data.get("isolation_score", 0.5)
-        
+
         # Weighted combination
         strength = (
             touch_count * 0.3 +
@@ -162,7 +162,7 @@ def _calculate_comprehensive_strength(self, level_data: Dict[str, Any]) -> float
             bounce_rate * 0.2 +
             isolation_score * 0.1
         )
-        
+
         return max(0.0, min(1.0, strength))
     except Exception as e:
         self.logger.error(f"Error calculating comprehensive strength: {e}")
@@ -175,18 +175,18 @@ def _calculate_comprehensive_strength(self, level_data: Dict[str, Any]) -> float
 async def _run_optuna_optimization(self, training_data, target_data, target_timeframe):
     try:
         study = optuna.create_study(direction="maximize")
-        
+
         # Define objective function that doesn't use asyncio.run()
         async def objective(trial):
             params = self._suggest_timeframe_parameters(trial, target_timeframe)
             return await self._evaluate_parameters_basic(params, training_data, target_data, target_timeframe)
-        
+
         # Run optimization with proper async handling
         for i in range(self.n_trials):
             trial = study.ask()
             value = await objective(trial)
             study.tell(trial, value)
-        
+
         return self._create_optimization_result(study, target_timeframe)
     except Exception as e:
         self.logger.error(f"Optuna optimization failed: {e}")
@@ -200,29 +200,29 @@ async def _run_optuna_optimization(self, training_data, target_data, target_time
 # Enhanced S/R detection with better sensitivity for 1-30m timeframes
 def _detect_sr_levels_enhanced(self, market_data: pd.DataFrame, timeframe: str) -> List[Dict]:
     levels = []
-    
+
     # Get timeframe-specific parameters
     config = self.timeframe_config[timeframe]
     touch_threshold = config["touch_threshold"]
     min_touches = config["min_touches"]
-    
+
     # Enhanced fractal detection
     fractal_levels = self._detect_fractal_levels(market_data, touch_threshold)
-    
+
     # Enhanced volume-weighted detection
     volume_levels = self._detect_volume_levels(market_data, touch_threshold)
-    
+
     # Enhanced pivot point detection
     pivot_levels = self._detect_pivot_levels(market_data, touch_threshold)
-    
+
     # Combine and filter levels
     all_levels = fractal_levels + volume_levels + pivot_levels
-    
+
     # Filter by minimum touches and strength
     for level in all_levels:
         if level["touches"] >= min_touches and level["strength"] >= 0.3:
             levels.append(level)
-    
+
     return levels
 ```
 
@@ -236,44 +236,44 @@ async def _analyze_level_interactions_enhanced(self, market_data, level_price, l
     bounces = 0
     breakouts = 0
     false_breakouts = 0
-    
+
     # Use timeframe-specific thresholds
     timeframe_config = self.timeframe_config.get(self.current_timeframe, {})
     touch_threshold = timeframe_config.get("touch_threshold", 0.001)
     bounce_threshold = timeframe_config.get("bounce_threshold", 0.005)
     breakout_threshold = timeframe_config.get("breakout_threshold", 0.01)
-    
+
     # Enhanced touch detection with volume confirmation
     for i in range(len(market_data) - self.confirmation_periods):
         high = market_data['high'].iloc[i]
         low = market_data['low'].iloc[i]
         volume = market_data['volume'].iloc[i]
-        
+
         # Check if price touches the level
         touch_zone_upper = level_price * (1 + touch_threshold)
         touch_zone_lower = level_price * (1 - touch_threshold)
-        
+
         if low <= touch_zone_upper and high >= touch_zone_lower:
             # Volume confirmation
             avg_volume = market_data['volume'].rolling(20).mean().iloc[i]
             volume_confirmed = volume > avg_volume * 1.2
-            
+
             if volume_confirmed:
                 touches += 1
-                
+
                 # Analyze outcome
                 outcome = await self._analyze_touch_outcome_enhanced(
-                    market_data, i, level_price, level_type, 
+                    market_data, i, level_price, level_type,
                     bounce_threshold, breakout_threshold
                 )
-                
+
                 if outcome == "bounce":
                     bounces += 1
                 elif outcome == "breakout":
                     breakouts += 1
                 elif outcome == "false_breakout":
                     false_breakouts += 1
-    
+
     return touches, bounces, breakouts, false_breakouts
 ```
 
@@ -283,17 +283,17 @@ async def _analyze_level_interactions_enhanced(self, market_data, level_price, l
 ```python
 def _multi_objective_optimization(self, market_data, target_timeframe):
     """Multi-objective optimization considering multiple performance metrics."""
-    
+
     def objective(trial):
         # Suggest parameters
         params = self._suggest_timeframe_parameters(trial, target_timeframe)
-        
+
         # Evaluate multiple objectives
         bounce_rate = self._evaluate_bounce_rate(params, market_data)
         volume_confirmation = self._evaluate_volume_confirmation(params, market_data)
         level_accuracy = self._evaluate_level_accuracy(params, market_data)
         false_breakout_rate = self._evaluate_false_breakout_rate(params, market_data)
-        
+
         # Combined score with timeframe-specific weights
         weights = self._get_timeframe_weights(target_timeframe)
         combined_score = (
@@ -302,9 +302,9 @@ def _multi_objective_optimization(self, market_data, target_timeframe):
             level_accuracy * weights["accuracy"] +
             (1 - false_breakout_rate) * weights["false_breakout"]
         )
-        
+
         return combined_score
-    
+
     return objective
 ```
 
@@ -340,7 +340,7 @@ After implementing these recommendations, we expect:
 
 ### 1m Timeframe
 - **S/R Validation Score**: 0.25 → 0.65+ (160% improvement)
-- **Bounce Rate**: 0% → 55%+ 
+- **Bounce Rate**: 0% → 55%+
 - **Volume Confirmation**: 0% → 45%+
 - **Level Detection Accuracy**: 0% → 35%+
 

@@ -12,7 +12,7 @@ from typing import Any, Dict, List
 def get_matrix_diverse_lookback_config() -> dict[str, Any]:
     """
     Get matrix-based diverse lookback period optimization configuration.
-    
+
     Returns:
         dict: Configuration dictionary
     """
@@ -526,7 +526,7 @@ def get_matrix_diverse_lookback_config() -> dict[str, Any]:
 def get_matrix_optimization_objectives() -> dict[str, Any]:
     """
     Get matrix optimization objective definitions.
-    
+
     Returns:
         dict: Objective definitions
     """
@@ -574,7 +574,7 @@ def get_matrix_optimization_objectives() -> dict[str, Any]:
 def get_vector_operation_settings() -> dict[str, Any]:
     """
     Get vector operation settings for efficient computation.
-    
+
     Returns:
         dict: Vector operation settings
     """
@@ -636,7 +636,7 @@ def get_vector_operation_settings() -> dict[str, Any]:
 def get_file_output_settings() -> dict[str, Any]:
     """
     Get file output settings for saving optimization results.
-    
+
     Returns:
         dict: File output settings
     """
@@ -679,7 +679,7 @@ def get_file_output_settings() -> dict[str, Any]:
 def get_integration_settings() -> dict[str, Any]:
     """
     Get integration settings for subsequent steps.
-    
+
     Returns:
         dict: Integration settings
     """

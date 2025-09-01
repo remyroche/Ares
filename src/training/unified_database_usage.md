@@ -112,9 +112,9 @@ Step 10 now uses the unified validation data:
 async def _load_validation_data(self, data_dir: str) -> tuple[np.ndarray, np.ndarray]:
     # Try unified data manager first (preferred method)
     from src.training.data_manager import UnifiedDataManager
-    
+
     data_manager = UnifiedDataManager(data_dir=data_dir, symbol=symbol, exchange=exchange)
-    
+
     try:
         # Load validation split from unified database
         X_val, y_val = data_manager.get_features_and_labels('validation', 'tactician_label')
@@ -130,7 +130,7 @@ async def _load_validation_data(self, data_dir: str) -> tuple[np.ndarray, np.nda
 
 The splits maintain strict temporal ordering:
 - **Training Period**: Earliest 80% of the data chronologically
-- **Validation Period**: Next 10% of the data chronologically  
+- **Validation Period**: Next 10% of the data chronologically
 - **Test Period**: Latest 10% of the data chronologically
 
 This ensures:
@@ -151,7 +151,7 @@ The system respects the `lookback_days` parameter:
 # If current date is 2025-01-01
 # Lookback period: 2023-01-01 to 2025-01-01
 # Training: 2023-01-01 to 2024-07-12 (80%)
-# Validation: 2024-07-12 to 2024-10-21 (10%) 
+# Validation: 2024-07-12 to 2024-10-21 (10%)
 # Test: 2024-10-21 to 2025-01-01 (10%)
 ```
 
@@ -259,21 +259,21 @@ def my_training_step(data_dir, symbol, exchange):
     # Check if unified database exists
     if not check_unified_database_exists(data_dir, symbol, exchange):
         raise FileNotFoundError("Unified database not found. Run step 4 first.")
-    
+
     # Load training data
     X_train, y_train = load_training_data(data_dir, symbol, exchange, "train")
-    
+
     # Process data and create new features
     enhanced_data = enhance_features(X_train, y_train)
-    
+
     # Update database with new features
     update_dataset_with_new_features(data_dir, enhanced_data, "train", symbol, exchange)
-    
+
     # Validate integrity
     validation = validate_dataset_integrity(data_dir, symbol, exchange)
     if validation["status"] != "SUCCESS":
         raise ValueError(f"Database validation failed: {validation['issues']}")
-    
+
     return enhanced_data
 ```
 

@@ -9,7 +9,7 @@ The Enhanced MLflow Integration ensures that all models in the `enhanced_trainin
 Every model and artifact logged to MLflow is automatically associated with:
 
 1. **Asset** - The trading asset/symbol (e.g., "ETHUSDT")
-2. **Exchange** - The trading exchange (e.g., "BINANCE") 
+2. **Exchange** - The trading exchange (e.g., "BINANCE")
 3. **Lookback Period** - The data lookback period used for training (e.g., "2_years")
 4. **Project Version** - The current project version (from `ARES_VERSION`)
 5. **Date** - The training date (automatically set to current timestamp)
@@ -80,7 +80,7 @@ await self._save_to_mlflow(training_summary, symbol, exchange)
 # This automatically logs:
 # - Enhanced training metadata (asset, exchange, lookback_period, project_version, date)
 # - Parameters with metadata
-# - Metrics with metadata  
+# - Metrics with metadata
 # - Artifacts with metadata
 ```
 
@@ -168,7 +168,7 @@ log_model_with_metadata(
     model=trained_model,
     model_name="analyst_model",
     asset="ETHUSDT",
-    exchange="BINANCE", 
+    exchange="BINANCE",
     lookback_period="2_years",
     additional_metadata={
         "model_type": "analyst",
@@ -303,7 +303,7 @@ The enhanced MLflow integration automatically extracts metadata from the enhance
 # Configuration keys that are automatically extracted:
 config = {
     "trading_symbol": "ETHUSDT",      # -> asset
-    "exchange_name": "BINANCE",       # -> exchange  
+    "exchange_name": "BINANCE",       # -> exchange
     "lookback_years": 2,              # -> lookback_period (2_years)
     "project_version": "0.1.0",       # -> project_version
     # ... other config

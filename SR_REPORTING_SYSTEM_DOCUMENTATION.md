@@ -32,7 +32,7 @@ sr_config = {
     "sr_breakout_predictor": {
         # Enable/disable reporting system
         "enable_detailed_reporting": True,
-        
+
         # Report storage settings
         "report_directory": "reports/sr_analysis",
         "report_format": "json",  # json, csv, html
@@ -407,6 +407,6 @@ if latest:
 
 ---
 
-**Version**: 1.0  
-**Last Updated**: December 2024  
+**Version**: 1.0
+**Last Updated**: December 2024
 **Compatibility**: SRBreakoutPredictor v2.0+

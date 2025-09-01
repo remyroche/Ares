@@ -102,14 +102,14 @@ class RegimeDataSplittingStep:
         self.standards = pipeline_standards
         self.start_time = None
         self.step_timings = {}
-        
+
         # Validate environment on initialization
         self._validate_environment()
 
     def _validate_environment(self) -> None:
         """Validate environment dependencies."""
         self.logger.info("🔍 Validating environment dependencies...")
-        
+
         missing_modules = [module for module, available in dependency_status.items() if not available]
         if missing_modules:
             self.logger.warning(f"⚠️ Missing optional modules: {missing_modules}")
@@ -142,63 +142,63 @@ class RegimeDataSplittingStep:
     @comprehensive_data_validation
     @memory_efficient
     async def split_data_by_regimes(
-        self, 
-        symbol: str, 
-        exchange: str, 
-        timeframe: str, 
+        self,
+        symbol: str,
+        exchange: str,
+        timeframe: str,
         data_dir: str
     ) -> bool:
         """Create unified dataset with regime labels for regime-aware processing."""
         step_start = time.time()
         self.logger.info(f"🔀 Creating unified dataset with regime labels for {symbol} on {exchange} ({timeframe})")
-        
+
         try:
             # Load HMM regime data
             regime_data = await self._load_regime_data(symbol, exchange, timeframe, data_dir)
             if regime_data is None:
                 return False
-            
+
             # Get unique regime IDs
             regime_ids = regime_data['composite_cluster_id'].unique()
             num_regimes = len(regime_ids)
-            
+
             self.logger.info(f"📊 Found {num_regimes} regimes: {sorted(regime_ids)}")
-            
+
             # Validate regime count
             if num_regimes < 3:
                 self.logger.error(f"❌ Too few regimes: {num_regimes} (minimum 3 required)")
                 return False
-            
+
             if num_regimes > 20:
                 self.logger.warning(f"⚠️ Many regimes detected: {num_regimes} (maximum 20 supported)")
                 # Continue but with memory optimization
-            
+
             # Create unified dataset with regime labels
             success = await self._create_unified_regime_dataset(
                 regime_data, regime_ids, symbol, exchange, timeframe, data_dir
             )
-            
+
             if success:
                 self._log_step_timing("Regime Data Splitting", step_start)
                 self.logger.info(f"✅ Successfully created unified dataset with {num_regimes} regime labels")
-                
+
                 # Save regime metadata
                 await self._save_regime_metadata(regime_ids, data_dir, symbol, exchange, timeframe)
-                
+
                 return True
             else:
                 self.logger.error("❌ Failed to create unified regime dataset")
                 return False
-                
+
         except Exception as e:
             self.logger.exception(f"❌ Error in regime data splitting: {e}")
             return False
 
     async def _load_regime_data(
-        self, 
-        symbol: str, 
-        exchange: str, 
-        timeframe: str, 
+        self,
+        symbol: str,
+        exchange: str,
+        timeframe: str,
         data_dir: str
     ) -> Optional[pd.DataFrame]:
         """Load HMM regime data with standardized validation."""
@@ -208,55 +208,55 @@ class RegimeDataSplittingStep:
             if not unified_data_path.exists():
                 self.logger.error(f"❌ Unified data path not found: {unified_data_path}")
                 return None
-            
+
             # Load regime clusters using standardized naming
             regime_file = Path(data_dir) / "hmm_regimes" / f"{exchange}_{symbol}_{timeframe}_composite_clusters.parquet"
             if not regime_file.exists():
                 self.logger.error(f"❌ Regime file not found: {regime_file}")
                 return None
-            
+
             # Load data
             unified_files = list(unified_data_path.glob("**/*.parquet"))
             if not unified_files:
                 self.logger.error(f"❌ No unified data files found in {unified_data_path}")
                 return None
-            
+
             # Load and concatenate unified data
             unified_data = []
             for file_path in sorted(unified_files):
                 df = pd.read_parquet(file_path)
-                
+
                 # Standardize timestamps and validate schema
                 df = self.standards.standardize_timestamp(df, "timestamp")
                 df = self.standards.enforce_schema(df, "unified")
-                
+
                 unified_data.append(df)
-            
+
             unified_df = pd.concat(unified_data, ignore_index=True)
             regime_df = pd.read_parquet(regime_file)
-            
+
             # Standardize timestamps in regime data
             regime_df = self.standards.standardize_timestamp(regime_df, "timestamp")
-            
+
             # Merge unified data with regime information
             merged_data = pd.merge(
-                unified_df, 
-                regime_df[['timestamp', 'composite_cluster_id']], 
-                on='timestamp', 
+                unified_df,
+                regime_df[['timestamp', 'composite_cluster_id']],
+                on='timestamp',
                 how='inner'
             )
-            
+
             self.logger.info(f"✅ Loaded {len(merged_data)} data points with regime information")
             return merged_data
-            
+
         except Exception as e:
             self.logger.exception(f"❌ Error loading regime data: {e}")
             return None
 
     async def _create_unified_regime_dataset(
-        self, 
-        data: pd.DataFrame, 
-        regime_ids: List[int], 
+        self,
+        data: pd.DataFrame,
+        regime_ids: List[int],
         symbol: str,
         exchange: str,
         timeframe: str,
@@ -266,28 +266,28 @@ class RegimeDataSplittingStep:
         try:
             # Ensure data is sorted by timestamp for proper lookback
             data = data.sort_values('timestamp').reset_index(drop=True)
-            
+
             # Create training directory
             training_dir = Path(data_dir) / "training"
             training_dir.mkdir(parents=True, exist_ok=True)
-            
+
             # Save unified dataset with regime labels
             unified_file = training_dir / f"{exchange}_{symbol}_{timeframe}_unified_regime_data.parquet"
             data.to_parquet(unified_file, index=False)
-            
+
             self.logger.info(f"✅ Saved unified regime dataset: {len(data)} rows -> {unified_file}")
-            
+
             # Create regime statistics summary
             regime_stats = self._calculate_regime_statistics(data, regime_ids)
-            
+
             # Save regime statistics
             stats_file = training_dir / f"{exchange}_{symbol}_{timeframe}_regime_statistics.json"
             import json
             with open(stats_file, 'w') as f:
                 json.dump(regime_stats, f, indent=2)
-            
+
             self.logger.info(f"✅ Saved regime statistics: {stats_file}")
-            
+
             # Create regime labels mapping for easy access
             regime_labels = {
                 "regime_column": "composite_cluster_id",
@@ -299,22 +299,22 @@ class RegimeDataSplittingStep:
                     "end": data['timestamp'].max().isoformat()
                 }
             }
-            
+
             labels_file = training_dir / f"{exchange}_{symbol}_{timeframe}_regime_labels.json"
             with open(labels_file, 'w') as f:
                 json.dump(regime_labels, f, indent=2)
-            
+
             self.logger.info(f"✅ Saved regime labels mapping: {labels_file}")
-            
+
             return True
-            
+
         except Exception as e:
             self.logger.exception(f"❌ Error creating unified regime dataset: {e}")
             return False
 
     def _calculate_regime_statistics(
-        self, 
-        data: pd.DataFrame, 
+        self,
+        data: pd.DataFrame,
         regime_ids: List[int]
     ) -> Dict[str, Any]:
         """Calculate statistics for each regime."""
@@ -336,11 +336,11 @@ class RegimeDataSplittingStep:
                     }
                 }
             }
-            
+
             # Calculate statistics for each regime
             for regime_id in regime_ids:
                 regime_data = data[data['composite_cluster_id'] == regime_id]
-                
+
                 if len(regime_data) > 0:
                     regime_stats = {
                         "data_points": len(regime_data),
@@ -350,7 +350,7 @@ class RegimeDataSplittingStep:
                             "end": regime_data['timestamp'].max().isoformat()
                         }
                     }
-                    
+
                     # Add price statistics if available
                     if 'close' in regime_data.columns:
                         regime_stats["price_stats"] = {
@@ -359,11 +359,11 @@ class RegimeDataSplittingStep:
                             "min": float(regime_data['close'].min()),
                             "max": float(regime_data['close'].max())
                         }
-                    
+
                     stats["regime_details"][f"regime_{regime_id}"] = regime_stats
-            
+
             return stats
-            
+
         except Exception as e:
             self.logger.exception(f"❌ Error calculating regime statistics: {e}")
             return {}
@@ -393,14 +393,14 @@ class RegimeDataSplittingStep:
                     ]
                 }
             }
-            
+
             metadata_file = Path(data_dir) / "training" / f"{exchange}_{symbol}_{timeframe}_regime_metadata.json"
             import json
             with open(metadata_file, 'w') as f:
                 json.dump(metadata, f, indent=2)
-            
+
             self.logger.info(f"✅ Regime metadata saved: {metadata_file}")
-            
+
         except Exception as e:
             self.logger.exception(f"❌ Error saving regime metadata: {e}")
 
@@ -427,7 +427,7 @@ async def run_step(
     config: dict[str, Any] = None,
 ) -> bool:
     """Run Step 4: Regime Data Splitting with standardized data quality management.
-    
+
     Args:
         symbol: Trading symbol
         exchange: Exchange name
@@ -435,31 +435,31 @@ async def run_step(
         data_dir: Data directory (will use standardized path if None)
         force_rerun: Force rerun flag
         config: Configuration dictionary
-        
+
     Returns:
         bool: Success status
     """
     logger.info("🚀 Starting Step 4: Regime Data Splitting with Standardized Data Quality Management")
-    
+
     # Use standardized path construction
     if data_dir is None:
         data_dir = pipeline_standards.build_path("processed_data", exchange, symbol)
-    
+
     try:
         # Initialize step
         step = RegimeDataSplittingStep(config or {})
         await step.initialize()
-        
+
         # Execute regime data splitting
         success = await step.split_data_by_regimes(symbol, exchange, timeframe, data_dir)
-        
+
         if success:
             logger.info("✅ Step 4: Regime Data Splitting completed successfully")
         else:
             logger.error("❌ Step 4: Regime Data Splitting failed")
-        
+
         return success
-        
+
     except Exception as e:
         logger.exception(f"❌ Error in Step 4: {e}")
         return False
@@ -473,7 +473,7 @@ if __name__ == "__main__":
             "exchange": "BINANCE",
             "timeframe": "1m"
         }
-        
+
         success = await run_step(
             symbol="ETHUSDT",
             exchange="BINANCE",
@@ -482,7 +482,7 @@ if __name__ == "__main__":
             force_rerun=False,
             config=test_config
         )
-        
+
         print(f"Test result: {success}")
 
     asyncio.run(test())

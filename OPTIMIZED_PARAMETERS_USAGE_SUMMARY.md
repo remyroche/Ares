@@ -39,12 +39,12 @@ if advanced_params:
     if "fibonacci_sensitivity" in advanced_params:
         self.fibonacci_sensitivity = advanced_params["fibonacci_sensitivity"]
         self.logger.info(f"Applied optimized Fibonacci sensitivity: {self.fibonacci_sensitivity}")
-    
+
     # Apply Elliott Wave parameters
     if "elliott_confidence_threshold" in advanced_params:
         self.elliott_confidence_threshold = advanced_params["elliott_confidence_threshold"]
         self.logger.info(f"Applied optimized Elliott confidence threshold: {self.elliott_confidence_threshold}")
-    
+
     # Apply Order Flow parameters
     if "order_flow_hvn_threshold" in advanced_params:
         self.order_flow_hvn_threshold = advanced_params["order_flow_hvn_threshold"]
@@ -103,13 +103,13 @@ async def calculate_fibonacci_levels(self, market_data: pd.DataFrame) -> dict[st
         high = market_data['high'].max()
         low = market_data['low'].min()
         swing_range = high - low
-        
+
         # Apply optimized sensitivity to filter levels
         sensitivity_threshold = swing_range * (1 - self.fibonacci_sensitivity)
-        
+
         # Calculate Fibonacci levels with sensitivity filtering
         fib_levels = {}
-        
+
         # Standard retracement levels
         retracement_levels = [0, 0.236, 0.382, 0.500, 0.618, 0.786, 1.0]
         for level in retracement_levels:
@@ -117,14 +117,14 @@ async def calculate_fibonacci_levels(self, market_data: pd.DataFrame) -> dict[st
             # Only include levels that meet sensitivity threshold
             if abs(fib_price - low) >= sensitivity_threshold or abs(fib_price - high) >= sensitivity_threshold:
                 fib_levels[f'fib_{int(level * 1000)}'] = fib_price
-        
+
         # Extension levels (only if sensitivity allows)
         if self.fibonacci_sensitivity > 0.6:  # Only include extensions for higher sensitivity
             extension_levels = [1.272, 1.618, 2.618]
             for level in extension_levels:
                 fib_price = high + (level - 1) * swing_range
                 fib_levels[f'fib_{int(level * 1000)}'] = fib_price
-        
+
         self.logger.info(f"✅ Calculated Fibonacci levels with sensitivity {self.fibonacci_sensitivity}: {len(fib_levels)} levels")
         return fib_levels
 ```
@@ -135,11 +135,11 @@ async def detect_elliott_wave_levels(self, market_data: pd.DataFrame) -> dict[st
     """Detect Elliott Wave patterns and associated S/R levels."""
     try:
         # ... existing wave detection logic ...
-        
+
         if len(wave_points) >= 5:
             # Calculate confidence based on pattern quality and optimized threshold
             pattern_confidence = self._calculate_elliott_pattern_confidence(wave_points)
-            
+
             elliott_levels = {
                 'wave1': {'high': wave1_high, 'low': wave1_low},
                 'wave2_retracement': wave2_retracement,
@@ -149,7 +149,7 @@ async def detect_elliott_wave_levels(self, market_data: pd.DataFrame) -> dict[st
                 'pattern_type': 'impulse',
                 'confidence': pattern_confidence
             }
-            
+
             # Only return high-confidence patterns based on optimized threshold
             if pattern_confidence >= self.elliott_confidence_threshold:
                 self.logger.info(f"✅ Detected Elliott Wave pattern with confidence {pattern_confidence:.3f} (threshold: {self.elliott_confidence_threshold})")
@@ -164,10 +164,10 @@ def _calculate_elliott_pattern_confidence(self, wave_points: list[dict[str, Any]
     try:
         if len(wave_points) < 5:
             return 0.3
-        
+
         # Calculate confidence based on wave relationships
         confidence_factors = []
-        
+
         # Wave 2 should retrace 50-78.6% of wave 1
         wave1_range = wave_points[1]['high'] - wave_points[0]['low']
         wave2_retracement = (wave_points[1]['high'] - wave_points[2]['low']) / wave1_range
@@ -175,7 +175,7 @@ def _calculate_elliott_pattern_confidence(self, wave_points: list[dict[str, Any]
             confidence_factors.append(1.0)
         else:
             confidence_factors.append(0.5)
-        
+
         # Wave 3 should be the longest (1.618x wave 1)
         wave3_range = wave_points[3]['high'] - wave_points[2]['low']
         wave3_ratio = wave3_range / wave1_range
@@ -183,17 +183,17 @@ def _calculate_elliott_pattern_confidence(self, wave_points: list[dict[str, Any]
             confidence_factors.append(1.0)
         else:
             confidence_factors.append(0.7)
-        
+
         # Wave 4 should retrace 23.6-38.2% of wave 3
         wave4_retracement = (wave_points[3]['high'] - wave_points[4]['low']) / wave3_range
         if 0.236 <= wave4_retracement <= 0.382:
             confidence_factors.append(1.0)
         else:
             confidence_factors.append(0.6)
-        
+
         # Calculate average confidence
         return np.mean(confidence_factors) if confidence_factors else 0.3
-        
+
     except Exception as e:
         self.logger.error(f"Error calculating Elliott pattern confidence: {e}")
         return 0.3
@@ -205,7 +205,7 @@ async def _calculate_volume_profile(self, market_data: pd.DataFrame) -> dict[str
     """Calculate volume profile for order flow analysis."""
     try:
         # ... existing volume profile calculation ...
-        
+
         # Find HVN (High Volume Nodes) using optimized threshold
         avg_volume = total_volume / len(volume_profile)
         hvn_levels = [
@@ -213,10 +213,10 @@ async def _calculate_volume_profile(self, market_data: pd.DataFrame) -> dict[str
             for level, volume in volume_profile.items()
             if volume > avg_volume * self.order_flow_hvn_threshold  # Use optimized threshold
         ]
-        
+
         # Sort HVN by strength
         hvn_levels.sort(key=lambda x: x['strength'], reverse=True)
-        
+
         return {
             'poc': poc_level,
             'value_area_high': value_area_high,
@@ -232,16 +232,16 @@ async def detect_multi_timeframe_confluence(self, market_data: dict[str, pd.Data
     """Detect S/R levels that appear across multiple timeframes using optimized weights."""
     try:
         confluence_levels = {}
-        
+
         # Use optimized timeframe weights
         timeframes = list(self.timeframe_weights.keys())
-        
+
         for tf in timeframes:
             if tf in market_data:
                 # Detect S/R levels for this timeframe
                 tf_support = await self._detect_support_levels(market_data[tf])
                 tf_resistance = await self._detect_resistance_levels(market_data[tf])
-                
+
                 # Add to confluence analysis with weighted strength
                 for level in tf_support:
                     level_key = f"{level['price']:.2f}"
@@ -253,7 +253,7 @@ async def detect_multi_timeframe_confluence(self, market_data: dict[str, pd.Data
                             'strength': 0,
                             'methods': []
                         }
-                    
+
                     confluence_levels[level_key]['timeframes'].append(tf)
                     # Apply timeframe weight to strength calculation
                     tf_weight = self.timeframe_weights.get(tf, 0.1)

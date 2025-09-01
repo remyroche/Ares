@@ -44,12 +44,12 @@ The hyperparameter optimization has been updated to focus on **actual win/loss a
 ```python
 def calculate_win_amount(params):
     base_win = 0.02  # 2% base win
-    
+
     # Factors that increase win amount
     confidence_factor = params.get("analyst_confidence_threshold", 0.7) * 0.01
     position_size_factor = params.get("base_position_size", 0.05) * 0.5
     volatility_factor = params.get("target_volatility", 0.15) * 0.1
-    
+
     return base_win + confidence_factor + position_size_factor + volatility_factor
 ```
 
@@ -57,12 +57,12 @@ def calculate_win_amount(params):
 ```python
 def calculate_loss_amount(params):
     base_loss = 0.015  # 1.5% base loss
-    
+
     # Factors that affect loss amount
     stop_loss_factor = params.get("stop_loss_atr_multiplier", 2.0) * 0.005
     position_size_factor = params.get("base_position_size", 0.05) * 0.3
     risk_factor = params.get("max_position_size", 0.25) * 0.1
-    
+
     return base_loss + stop_loss_factor + position_size_factor + risk_factor
 ```
 
@@ -104,7 +104,7 @@ def calculate_composite_score(metrics):
     avg_win_amount = metrics.average_win
     avg_loss_amount = abs(metrics.average_loss)
     win_loss_amount_ratio = avg_win_amount / avg_loss_amount
-    
+
     # Primary focus on win rate and actual win/loss amounts
     weights = {
         "win_rate": 0.35,                    # 35% weight on win rate
@@ -112,23 +112,23 @@ def calculate_composite_score(metrics):
         "sharpe_ratio": 0.15,                # 15% weight on risk-adjusted return
         "max_drawdown": 0.15                 # 15% weight on risk management
     }
-    
+
     # Calculate weighted score
     composite_score = sum(
         weights[metric] * normalized_metrics[metric]
         for metric in weights.keys()
     )
-    
+
     # Bonuses and penalties
     if metrics.win_rate > 0.6 and win_loss_amount_ratio > 2.0:
         composite_score *= 1.15  # 15% bonus for excellent performance
-    
+
     if avg_win_amount > avg_loss_amount * 2.5 and metrics.win_rate > 0.5:
         composite_score *= 1.1  # 10% bonus for large wins relative to losses
-    
+
     if avg_win_amount < avg_loss_amount * 0.5:
         composite_score *= 0.8  # 20% penalty for small wins vs large losses
-    
+
     return composite_score
 ```
 

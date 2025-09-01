@@ -15,6 +15,7 @@ from src.utils.confidence import normalize_dual_confidence
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.warning_symbols import error, initialization_error, missing
 from src.utils.centralized_decorators import validate_data_quality
+from kelly_criterion_formula import calculate_kelly_multiplier
 
 
 class PositionSizer:
@@ -23,7 +24,7 @@ class PositionSizer:
     - Position sizing decisions based on ML confidence scores and Kelly criterion
     - Integration with Strategist for strategy input
     - Position size optimization for high leverage trading
-    
+
     This is the primary component responsible for position sizing across the system.
     """
 
@@ -40,23 +41,23 @@ class PositionSizer:
 
         # Load configuration from step17 optimization results
         self.sizing_config: dict[str, Any] = self.config.get("position_sizing", {})
-        
+
         # Load step17 optimized parameters
         step17_config = self.config.get("step17_optimization", {})
         position_sizing_optimization = step17_config.get("position_sizing", {})
-        
+
         # Load optimized position sizing parameters
         self.kelly_multiplier: float = position_sizing_optimization.get("kelly_multiplier", 0.25)
         self.max_position_size: float = position_sizing_optimization.get("max_position_size", 0.5)
         self.min_position_size: float = position_sizing_optimization.get("min_position_size", 0.01)
         self.confidence_threshold: float = position_sizing_optimization.get("confidence_threshold", 0.6)
-        
+
         # NEW: Combined confidence threshold for position sizing (optimizable in step17)
         self.positionsize_combined_threshold: float = position_sizing_optimization.get("positionsize_combined_threshold", 0.7)
-        
+
         # Load optimized component weights
         # Removed config-driven weights; internal weighting is handled without exposed params
-        
+
         # Load additional optimized parameters
         # Removed deprecated parameters: risk_adjustment_factor, confidence_boost_threshold,
         # volatility_adjustment, market_regime_multiplier
@@ -129,28 +130,28 @@ class PositionSizer:
         """
         Refresh configuration from step17 optimization results.
         This method is called automatically when step17 completes.
-        
+
         Args:
             step17_results: Step17 optimization results
         """
         try:
             if "position_sizing" in step17_results:
                 position_sizing_optimization = step17_results["position_sizing"]
-                
+
                 # Update position sizing parameters
                 self.kelly_multiplier = position_sizing_optimization.get("kelly_multiplier", self.kelly_multiplier)
                 self.max_position_size = position_sizing_optimization.get("max_position_size", self.max_position_size)
                 self.min_position_size = position_sizing_optimization.get("min_position_size", self.min_position_size)
                 self.confidence_threshold = position_sizing_optimization.get("confidence_threshold", self.confidence_threshold)
-                
+
                 # Update component weights
                 # Removed: no longer updating ml_weight/kelly_weight from config
-                
+
                 # Update additional parameters
                 # Removed: deprecated parameters no longer refreshed
-                
+
                 self.logger.info("✅ Position sizer configuration refreshed from step17 results")
-                
+
         except Exception as e:
             self.logger.error(f"Error refreshing step17 configuration: {e}")
 
@@ -202,7 +203,7 @@ class PositionSizer:
         try:
             # NEW: Extract combined confidence from Tactician multi-output predictions
             combined_confidence = ml_predictions.get("combined_confidence", 0.5)
-            
+
             # Extract ML confidence scores (for backward compatibility)
             price_target_confidences = ml_predictions.get(
                 "price_target_confidences",
@@ -286,54 +287,20 @@ class PositionSizer:
     ) -> float:
         """Calculate position size using Kelly criterion based on ML confidence scores."""
         try:
-            # Get average confidence for target levels (0.5% to 2.0%)
-            target_levels = [0.5, 1.0, 1.5, 2.0]
-            confidences = []
-
-            for level in target_levels:
-                closest_level = min(
-                    price_target_confidences.keys(),
-                    key=lambda x: abs(float(x.replace("%", "")) - level),
-                )
-                confidence = price_target_confidences.get(closest_level, 0.5)
-                confidences.append(confidence)
-
-            # Calculate average confidence
-            avg_confidence = sum(confidences) / len(confidences)
-
-            # Get average adverse risk
-            adverse_risks = []
-            for level in target_levels:
-                closest_level = min(
-                    adversarial_confidences.keys(),
-                    key=lambda x: abs(float(x.replace("%", "")) - level),
-                )
-                risk = adversarial_confidences.get(closest_level, 0.3)
-                adverse_risks.append(risk)
-
-            avg_adverse_risk = sum(adverse_risks) / len(adverse_risks)
-
-            # CORRECT Kelly criterion: f = (bp - q) / b
-            # where b = odds received, p = probability of win, q = probability of loss
-            # For our case: b = 1 (1:1 odds), so f = p - q
-            # where p = avg_confidence (probability of win)
-            # and q = avg_adverse_risk (probability of loss)
-
-            # Ensure probabilities are valid (0 <= p, q <= 1 and p + q <= 1)
-            p = max(0.0, min(1.0, avg_confidence))
-            q = max(0.0, min(1.0, avg_adverse_risk))
-
-            # If p + q > 1, normalize them
-            if p + q > 1.0:
-                total = p + q
-                p = p / total
-                q = q / total
-
-            # Calculate Kelly fraction
-            kelly_fraction = p - q
-
-            # Apply Kelly multiplier for conservative sizing
-            kelly_position_size = kelly_fraction * self.kelly_multiplier
+            # Use the new Kelly criterion formula module
+            kelly_multiplier = calculate_kelly_multiplier(
+                price_target_confidences=price_target_confidences,
+                adversarial_confidences=adversarial_confidences,
+                kelly_multiplier=self.kelly_multiplier,
+            )
+            
+            # The Kelly multiplier is already scaled by the conservative multiplier
+            # and normalized to 0-1 range, so we can use it directly
+            # Scale it to our position size range
+            kelly_position_size = (
+                self.min_position_size
+                + (self.max_position_size - self.min_position_size) * kelly_multiplier
+            )
 
             # Ensure within bounds
             return max(
@@ -416,11 +383,11 @@ class PositionSizer:
             # Calculate weighted position size
             # Combine Kelly and ML sizes multiplicatively as requested
             weighted_size = (kelly_position_size * ml_position_size)
- 
+
             return max(
                 self.min_position_size, min(self.max_position_size, weighted_size),
             )
- 
+
         except Exception as e:
             self.print(error(f"Error calculating weighted position size: {e}"))
             return max(self.min_position_size, min(self.max_position_size, kelly_position_size))

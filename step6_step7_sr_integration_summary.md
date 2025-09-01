@@ -12,7 +12,7 @@ This document summarizes the comprehensive integration of all features from `src
 
 #### New Function: `_add_sr_features()`
 - **Enhanced SR Context Features**: Now includes all advanced analysis features from SR breakout predictor
-- **Enhanced Strength Features**: 
+- **Enhanced Strength Features**:
   - `sr_enhanced_support_strength`
   - `sr_enhanced_resistance_strength`
 - **Clustering Features**:

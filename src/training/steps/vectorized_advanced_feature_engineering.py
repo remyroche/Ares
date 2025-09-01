@@ -313,7 +313,7 @@ class WaveletFeatureCache:
         """
         try:
             cache_path = Path(self.cache_dir)
-            
+
             if self.cache_format == "parquet":
                 features_file = (
                     cache_path / "features" / f"{cache_key}_features.parquet"
@@ -1428,13 +1428,13 @@ class VectorizedAdvancedFeatureEngineering:
         self.sr_distance_calculator = None
         self.wavelet_analyzer = None
         self.wavelet_cache = None
-        
+
         # Initialize profit-based feature engineering
         self.profit_feature_engineer = None
 
         # Initialize optimized resampler
         self.optimized_resampler = OptimizedResampler()
-        
+
         # Initialize fractional differentiation
         self.fractional_feature_generator = None
         self.enable_fractional_diff = FEATURE_OPTIMIZATION_CONFIG.get("enable_fractional_differentiation", True)
@@ -2300,10 +2300,10 @@ class VectorizedAdvancedFeatureEngineering:
     #     context="vectorized advanced feature engineering",
     # )
     async def engineer_features(
-        self, 
-        price_data: pd.DataFrame, 
-        volume_data: pd.DataFrame, 
-        order_flow_data: pd.DataFrame | None = None, 
+        self,
+        price_data: pd.DataFrame,
+        volume_data: pd.DataFrame,
+        order_flow_data: pd.DataFrame | None = None,
         sr_levels: dict[str, Any] | None = None
     ) -> dict[str, Any]:
         """Engineer advanced features for improved prediction accuracy using vectorized operations.
@@ -2761,16 +2761,16 @@ class VectorizedAdvancedFeatureEngineering:
                     for col in volume_data.columns:
                         if col not in combined_data.columns:
                             combined_data[col] = volume_data[col]
-                
+
                 # Generate fractional differentiation features
                 fractional_features = self.fractional_feature_generator.generate_features(combined_data)
-                
+
                 # Extract only the new fractional differentiation features
                 frac_diff_features = {}
                 for col in fractional_features.columns:
                     if 'frac_diff' in col and col not in combined_data.columns:
                         frac_diff_features[col] = fractional_features[col].values
-                
+
                 self.logger.info(f"🔍 Generated {len(frac_diff_features)} fractional differentiation features")
                 if frac_diff_features:
                     self.logger.info(f"🔍 Fractional differentiation feature names: {list(frac_diff_features.keys())}")
@@ -2890,13 +2890,13 @@ class VectorizedAdvancedFeatureEngineering:
                 if volume_data is not None and not volume_data.empty:
                     # Merge volume data if available
                     profit_data = profit_data.join(volume_data, how='left')
-                
+
                 profit_features = self.profit_feature_engineer.apply_all_features(profit_data)
-                
+
                 # Extract only the new profit-based features (excluding original columns)
                 original_columns = set(price_data.columns)
                 profit_feature_columns = [col for col in profit_features.columns if col not in original_columns]
-                
+
                 if profit_feature_columns:
                     profit_feature_dict = {col: profit_features[col] for col in profit_feature_columns}
                     self.logger.info(f"🔍 Generated {len(profit_feature_dict)} profit-based features")
@@ -4059,7 +4059,7 @@ class VectorizedAdvancedFeatureEngineering:
 
             # Use enhanced multi-timeframe optimizer by default
             from src.training.enhanced_multi_timeframe_optimizer import (
-                EnhancedMultiTimeframeOptimizer, 
+                EnhancedMultiTimeframeOptimizer,
                 OptimizedTimeframeConfig
             )
             from src.training.comprehensive_feature_optimizer import (
@@ -4069,10 +4069,10 @@ class VectorizedAdvancedFeatureEngineering:
 
             # Check if matrix optimization results are available
             matrix_results = self._get_matrix_optimization_results()
-            
+
             if matrix_results and self._should_use_optimized_features():
                 self.logger.info("🚀 Using enhanced multi-timeframe optimizer with optimized lookback periods")
-                
+
                 # Configure enhanced optimizer
                 config = OptimizedTimeframeConfig(
                     base_timeframes=["1m", "5m", "15m", "30m", "1h"],
@@ -4085,21 +4085,21 @@ class VectorizedAdvancedFeatureEngineering:
                         "min_diversity_score": 0.15
                     }
                 )
-                
+
                 # Initialize enhanced optimizer
                 enhanced_optimizer = EnhancedMultiTimeframeOptimizer(config, matrix_results)
-                
+
                 # Generate optimized multi-timeframe features
                 features = await enhanced_optimizer.generate_optimized_multi_timeframe_features(
                     data=price_data,
                     target=self._create_target_variable(price_data),
                     regime_labels=self._get_regime_labels()
                 )
-                
+
                 # Also generate comprehensive features if enabled
                 if self._should_generate_comprehensive_features():
                     self.logger.info("🔧 Generating comprehensive optimized features")
-                    
+
                     comprehensive_config = ComprehensiveFeatureConfig(
                         interaction_features=True,
                         difference_acceleration_features=True,
@@ -4112,28 +4112,28 @@ class VectorizedAdvancedFeatureEngineering:
                         ohlcv_price_features=True,
                         parallel_processing=True
                     )
-                    
+
                     comprehensive_optimizer = ComprehensiveFeatureOptimizer(
-                        comprehensive_config, 
+                        comprehensive_config,
                         matrix_results
                     )
-                    
+
                     comprehensive_features = await comprehensive_optimizer.generate_comprehensive_features(
                         data=price_data,
                         target=self._create_target_variable(price_data),
                         regime_labels=self._get_regime_labels()
                     )
-                    
+
                     # Merge features
                     features.update(comprehensive_features)
                     self.logger.info(f"✅ Generated {len(comprehensive_features)} comprehensive features")
-                
+
                 # Save optimization results
                 output_path = "data/optimization_results"
                 enhanced_optimizer.save_optimization_results(output_path)
-                
+
                 self.logger.info(f"✅ Generated {len(features)} optimized multi-timeframe features using enhanced system")
-                
+
             else:
                 self.logger.info("⚠️ Using traditional multi-timeframe features (no matrix optimization results available)")
                 features = await self._generate_traditional_multi_timeframe_features(
@@ -4152,7 +4152,7 @@ class VectorizedAdvancedFeatureEngineering:
             return await self._generate_traditional_multi_timeframe_features(
                 price_data, volume_data, order_flow_data
             )
-    
+
     def _get_matrix_optimization_results(self) -> Optional[Dict[str, Any]]:
         """Get matrix optimization results if available."""
         try:
@@ -4161,36 +4161,36 @@ class VectorizedAdvancedFeatureEngineering:
             if Path(matrix_results_path).exists():
                 with open(matrix_results_path, 'r') as f:
                     return json.load(f)
-            
+
             # Check for comprehensive optimization results
             comprehensive_results_path = "data/optimization_results/comprehensive_feature_optimization_results.json"
             if Path(comprehensive_results_path).exists():
                 with open(comprehensive_results_path, 'r') as f:
                     return json.load(f)
-            
+
             return None
         except Exception as e:
             self.logger.debug(f"⚠️ Could not load matrix optimization results: {e}")
             return None
-    
+
     def _should_use_optimized_features(self) -> bool:
         """Determine if optimized features should be used."""
         # Check environment variable or configuration
         use_optimized = os.getenv('USE_OPTIMIZED_FEATURES', 'true').lower() == 'true'
         return use_optimized
-    
+
     def _should_generate_comprehensive_features(self) -> bool:
         """Determine if comprehensive features should be generated."""
         # Check environment variable or configuration
         generate_comprehensive = os.getenv('GENERATE_COMPREHENSIVE_FEATURES', 'true').lower() == 'true'
         return generate_comprehensive
-    
+
     def _create_target_variable(self, data: pd.DataFrame) -> pd.Series:
         """Create target variable for optimization."""
         # Use future returns as target
         target = data['close'].pct_change(5).shift(-5).fillna(0)
         return target
-    
+
     def _get_regime_labels(self) -> Optional[pd.Series]:
         """Get regime labels if available."""
         try:
@@ -4202,11 +4202,11 @@ class VectorizedAdvancedFeatureEngineering:
         except Exception as e:
             self.logger.debug(f"⚠️ Could not load regime labels: {e}")
             return None
-    
+
     async def _generate_traditional_multi_timeframe_features(
-        self, 
-        price_data: pd.DataFrame, 
-        volume_data: pd.DataFrame, 
+        self,
+        price_data: pd.DataFrame,
+        volume_data: pd.DataFrame,
         order_flow_data: pd.DataFrame | None = None
     ) -> Dict[str, Any]:
         """Generate traditional multi-timeframe features (fallback method)."""

@@ -272,7 +272,7 @@ class Step3_5FinalRegimeClusteringValidator(BaseValidator):
             # Check if step03_hmm_regime_discovery output exists using BaseValidator
             step03_output_dir = Path("data/training")
             step03_files = list(step03_output_dir.glob(f"{exchange}_{symbol}_{timeframe}*hmm*.parquet"))
-            
+
             if not step03_files:
                 validation_result["validation_passed"] = False
                 validation_result["errors"].append(
@@ -284,7 +284,7 @@ class Step3_5FinalRegimeClusteringValidator(BaseValidator):
                     file_valid, file_metrics = self.validate_file_exists(str(file_path), "step3 output file")
                     if not file_valid:
                         validation_result["warnings"].append(f"File validation failed: {file_path}")
-                
+
                 validation_result["details"]["step03_files_found"] = len(step03_files)
                 validation_result["details"]["step03_files"] = [str(f) for f in step03_files]
 
@@ -326,11 +326,11 @@ class Step3_5FinalRegimeClusteringValidator(BaseValidator):
             # Check if all expected files exist using BaseValidator
             missing_files = []
             existing_files = []
-            
+
             for filename in expected_files:
                 file_path = output_dir / filename
                 file_valid, file_metrics = self.validate_file_exists(str(file_path), f"expected file: {filename}")
-                
+
                 if file_valid:
                     existing_files.append(str(file_path))
                 else:
@@ -382,36 +382,36 @@ async def run_validator(
         Dictionary containing validation results
     """
     logger.info("🔍 Validating Step 3.5: Final Regime Clustering")
-    
+
     try:
         # Extract parameters
         symbol = training_input.get("symbol", "ETHUSDT")
         exchange = training_input.get("exchange", "BINANCE")
         timeframe = training_input.get("timeframe", "1m")
         data_dir = training_input.get("data_dir", "data_cache")
-        
+
         # Initialize validator with BaseValidator inheritance
         config = training_input.get("config", {})
         validator = Step3_5FinalRegimeClusteringValidator(config)
-        
+
         # Validate prerequisites using BaseValidator methods
         prereq_result = validator.validate_step_prerequisites(symbol, exchange, timeframe)
-        
+
         # Validate step execution
         step_result = await validator.validate_step3_5_final_regime_clustering(
             symbol, exchange, data_dir, training_input
         )
-        
+
         # Validate outputs using BaseValidator methods
         output_result = validator.validate_step_output(symbol, exchange, timeframe)
-        
+
         # Combine results
         validation_passed = (
-            prereq_result["validation_passed"] and 
-            step_result and 
+            prereq_result["validation_passed"] and
+            step_result and
             output_result["validation_passed"]
         )
-        
+
         return {
             "step_name": "step03_5_final_regime_clustering",
             "validation_passed": validation_passed,
@@ -421,7 +421,7 @@ async def run_validator(
             "warnings": prereq_result["warnings"] + output_result["warnings"],
             "errors": prereq_result["errors"] + output_result["errors"]
         }
-        
+
     except Exception as e:
         error_context = {
             "step": "step03_5_final_regime_clustering",
@@ -443,16 +443,16 @@ async def run_validator(
 if __name__ == "__main__":
     # Test the validator
     import asyncio
-    
+
     test_input = {
         "symbol": "ETHUSDT",
-        "exchange": "BINANCE", 
+        "exchange": "BINANCE",
         "timeframe": "1m",
         "data_dir": "data_cache",
         "config": {}
     }
-    
+
     test_state = {}
-    
+
     result = asyncio.run(run_validator(test_input, test_state))
     print(json.dumps(result, indent=2))

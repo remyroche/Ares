@@ -16,10 +16,10 @@ sys.path.append(str(Path(__file__).parent / "src"))
 
 class SRUnifiedRegimeIntegrationValidator:
     """Validator for S/R UnifiedRegimeClassifier integration."""
-    
+
     def __init__(self):
         self.logger = None  # No logger dependency
-        
+
     def check_file_syntax(self, file_path: str) -> bool:
         """Check if a Python file has valid syntax."""
         try:
@@ -33,21 +33,21 @@ class SRUnifiedRegimeIntegrationValidator:
         except Exception as e:
             print(f"❌ Error reading {file_path}: {e}")
             return False
-    
+
     def test_unified_regime_classifier_integration(self) -> Dict[str, Any]:
         """Test UnifiedRegimeClassifier integration with SRBreakoutPredictor."""
         print("🔍 Testing UnifiedRegimeClassifier S/R integration...")
-        
+
         sr_file = "src/analyst/unified_regime_classifier.py"
         path = Path(sr_file)
-        
+
         if not path.exists():
             return {
                 "exists": False,
                 "compatible": False,
                 "error": "UnifiedRegimeClassifier file not found"
             }
-        
+
         try:
             # Check syntax
             if not self.check_file_syntax(sr_file):
@@ -57,13 +57,13 @@ class SRUnifiedRegimeIntegrationValidator:
                     "compatible": False,
                     "error": "Syntax error in UnifiedRegimeClassifier"
                 }
-            
+
             with open(path, 'r', encoding='utf-8') as f:
                 content = f.read()
-            
+
             # Check for SRBreakoutPredictor import
             sr_import = "from src.tactician.sr_breakout_predictor import SRBreakoutPredictor" in content
-            
+
             # Check for enhanced S/R methods
             enhanced_methods = {
                 "initialize_sr_predictor": "async def initialize_sr_predictor" in content,
@@ -76,7 +76,7 @@ class SRUnifiedRegimeIntegrationValidator:
                 "add_enhanced_sr_features": "async def _add_enhanced_sr_features" in content,
                 "add_basic_sr_features": "def _add_basic_sr_features" in content,
             }
-            
+
             # Check for enhanced S/R features
             enhanced_features = {
                 "sr_proximity": "sr_proximity" in content,
@@ -91,7 +91,7 @@ class SRUnifiedRegimeIntegrationValidator:
                 "sr_bounce_rate": "sr_bounce_rate" in content,
                 "sr_isolation_score": "sr_isolation_score" in content,
             }
-            
+
             # Check for configuration patterns
             config_patterns = {
                 "sr_config": "sr_config" in content,
@@ -101,7 +101,7 @@ class SRUnifiedRegimeIntegrationValidator:
                 "dbscan_clustering": "dbscan_clustering" in content,
                 "enhanced_strength": "enable_enhanced_strength" in content,
             }
-            
+
             # Check for async method updates
             async_methods = {
                 "calculate_features": "async def _calculate_features" in content,
@@ -112,7 +112,7 @@ class SRUnifiedRegimeIntegrationValidator:
                 "train_location_classifier": "async def train_location_classifier" in content,
                 "train_basic_ensemble": "async def train_basic_ensemble" in content,
             }
-            
+
             # Check for enhanced location classification
             enhanced_location_labels = {
                 "ENHANCED_SUPPORT": "ENHANCED_SUPPORT" in content,
@@ -124,7 +124,7 @@ class SRUnifiedRegimeIntegrationValidator:
                 "ENHANCED_POC": "ENHANCED_POC" in content,
                 "ENHANCED_HVN": "ENHANCED_HVN" in content,
             }
-            
+
             return {
                 "exists": True,
                 "syntax_valid": True,
@@ -136,28 +136,28 @@ class SRUnifiedRegimeIntegrationValidator:
                 "enhanced_location_labels": enhanced_location_labels,
                 "compatible": True
             }
-            
+
         except Exception as e:
             return {
                 "exists": True,
                 "error": str(e),
                 "compatible": False
             }
-    
+
     def test_sr_breakout_predictor_compatibility(self) -> Dict[str, Any]:
         """Test SRBreakoutPredictor compatibility with integration."""
         print("🔍 Testing SRBreakoutPredictor compatibility...")
-        
+
         sr_file = "src/tactician/sr_breakout_predictor.py"
         path = Path(sr_file)
-        
+
         if not path.exists():
             return {
                 "exists": False,
                 "compatible": False,
                 "error": "SRBreakoutPredictor file not found"
             }
-        
+
         try:
             # Check syntax
             if not self.check_file_syntax(sr_file):
@@ -167,10 +167,10 @@ class SRUnifiedRegimeIntegrationValidator:
                     "compatible": False,
                     "error": "Syntax error in SRBreakoutPredictor"
                 }
-            
+
             with open(path, 'r', encoding='utf-8') as f:
                 content = f.read()
-            
+
             # Check for required methods that UnifiedRegimeClassifier uses
             required_methods = {
                 "get_sr_context": "async def get_sr_context" in content,
@@ -183,7 +183,7 @@ class SRUnifiedRegimeIntegrationValidator:
                 "calculate_bounce_rate": "async def calculate_bounce_rate" in content,
                 "calculate_isolation_score": "async def calculate_isolation_score" in content,
             }
-            
+
             # Check for enhanced features
             enhanced_features = {
                 "enhanced_strength_support": "enhanced_strength_support" in content,
@@ -198,7 +198,7 @@ class SRUnifiedRegimeIntegrationValidator:
                 "nearest_resistance": "nearest_resistance" in content,
                 "sr_zone_width": "sr_zone_width" in content,
             }
-            
+
             return {
                 "exists": True,
                 "syntax_valid": True,
@@ -206,84 +206,84 @@ class SRUnifiedRegimeIntegrationValidator:
                 "enhanced_features": enhanced_features,
                 "compatible": True
             }
-            
+
         except Exception as e:
             return {
                 "exists": True,
                 "error": str(e),
                 "compatible": False
             }
-    
+
     def print_integration_report(self, unified_results: Dict[str, Any], sr_results: Dict[str, Any]) -> None:
         """Print comprehensive integration report."""
         print("\n" + "=" * 80)
         print("📊 S/R UNIFIEDREGIMECLASSIFIER INTEGRATION REPORT")
         print("=" * 80)
-        
+
         # SRBreakoutPredictor compatibility
         print(f"\n🔧 SRBreakoutPredictor Compatibility:")
         if sr_results.get("compatible", False):
             print("   ✅ SRBreakoutPredictor is compatible with integration")
-            
+
             required_methods = sr_results.get("required_methods", {})
             print(f"   📊 Required Methods Available:")
             for method, available in required_methods.items():
                 status = "✅" if available else "❌"
                 print(f"      {status} {method}: {available}")
-            
+
             enhanced_features = sr_results.get("enhanced_features", {})
             print(f"   🚀 Enhanced Features Available:")
             for feature, available in enhanced_features.items():
                 status = "✅" if available else "❌"
                 print(f"      {status} {feature}: {available}")
-            
+
         else:
             print(f"   ❌ SRBreakoutPredictor compatibility issues: {sr_results.get('error', 'Unknown error')}")
-        
+
         # UnifiedRegimeClassifier integration
         print(f"\n🔧 UnifiedRegimeClassifier Integration:")
         if unified_results.get("compatible", False):
             print("   ✅ UnifiedRegimeClassifier integration is complete")
-            
+
             sr_import = unified_results.get("sr_import", False)
             print(f"   📦 SRBreakoutPredictor Import: {'✅ Available' if sr_import else '❌ Not Found'}")
-            
+
             enhanced_methods = unified_results.get("enhanced_methods", {})
             print(f"   📊 Enhanced Methods Implemented:")
             for method, available in enhanced_methods.items():
                 status = "✅" if available else "❌"
                 print(f"      {status} {method}: {available}")
-            
+
             enhanced_features = unified_results.get("enhanced_features", {})
             print(f"   🚀 Enhanced S/R Features Added:")
             for feature, available in enhanced_features.items():
                 status = "✅" if available else "❌"
                 print(f"      {status} {feature}: {available}")
-            
+
             config_patterns = unified_results.get("config_patterns", {})
             print(f"   ⚙️ Configuration Patterns Available:")
             for pattern, available in config_patterns.items():
                 status = "✅" if available else "❌"
                 print(f"      {status} {pattern}: {available}")
-            
+
             async_methods = unified_results.get("async_methods", {})
             print(f"   🔄 Async Method Updates:")
             for method, available in async_methods.items():
                 status = "✅" if available else "❌"
                 print(f"      {status} {method}: {available}")
-            
+
             enhanced_location_labels = unified_results.get("enhanced_location_labels", {})
             print(f"   🎯 Enhanced Location Labels:")
             for label, available in enhanced_location_labels.items():
                 status = "✅" if available else "❌"
                 print(f"      {status} {label}: {available}")
-            
+
         else:
             print(f"   ❌ UnifiedRegimeClassifier integration issues: {unified_results.get('error', 'Unknown error')}")
-        
+
         # Integration Summary
         print(f"\n💡 INTEGRATION SUMMARY:")
-        
+
         if sr_results.get("compatible", False) and unified_results.get("compatible", False):
             print("   ✅ Full integration successful!")
             print("   🚀 Enhanced S/R analysis now available in HMM regime classification")
@@ -299,28 +299,28 @@ class SRUnifiedRegimeIntegrationValidator:
             print("   📈 Improved regime analysis with S/R context")
         else:
             print("   ❌ Integration incomplete - issues need to be resolved")
-            
+
             if not sr_results.get("compatible", False):
                 print("   🔧 SRBreakoutPredictor needs to be fixed")
             if not unified_results.get("compatible", False):
                 print("   🔧 UnifiedRegimeClassifier integration needs to be completed")
-        
+
         print("=" * 80)
 
 
 def main():
     """Main validation function."""
     validator = SRUnifiedRegimeIntegrationValidator()
-    
+
     # Test SRBreakoutPredictor compatibility
     sr_results = validator.test_sr_breakout_predictor_compatibility()
-    
+
     # Test UnifiedRegimeClassifier integration
     unified_results = validator.test_unified_regime_classifier_integration()
-    
+
     # Print comprehensive report
     validator.print_integration_report(unified_results, sr_results)
-    
+
     # Return success/failure
     if sr_results.get("compatible", False) and unified_results.get("compatible", False):
         print("\n🎉 S/R UnifiedRegimeClassifier Integration Validation PASSED!")

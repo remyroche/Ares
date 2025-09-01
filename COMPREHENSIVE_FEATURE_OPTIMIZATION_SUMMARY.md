@@ -81,7 +81,7 @@ This document summarizes the comprehensive enhancements made to the feature engi
 ```python
 class EnhancedMultiTimeframeOptimizer:
     """Enhanced Multi-Timeframe Optimizer that uses optimized lookback periods."""
-    
+
     async def generate_optimized_multi_timeframe_features(
         self, data: pd.DataFrame, target: pd.Series, regime_labels: Optional[pd.Series] = None
     ) -> Dict[str, Any]:
@@ -100,7 +100,7 @@ class EnhancedMultiTimeframeOptimizer:
 ```python
 class ComprehensiveFeatureOptimizer:
     """Comprehensive feature optimizer for all feature types."""
-    
+
     async def generate_comprehensive_features(
         self, data: pd.DataFrame, target: pd.Series, regime_labels: Optional[pd.Series] = None
     ) -> Dict[str, Any]:
@@ -118,7 +118,7 @@ class ComprehensiveFeatureOptimizer:
 ```python
 def get_enhanced_multi_timeframe_config() -> Dict[str, Any]:
     """Get configuration for enhanced multi-timeframe optimization."""
-    
+
 def get_timeframe_period_mapping() -> Dict[str, Dict[str, List[int]]]:
     """Get mapping of timeframes to optimized periods."""
 ```
@@ -173,10 +173,10 @@ def vectorized_rsi(prices: np.ndarray, period: int) -> np.ndarray:
     deltas = np.diff(prices, prepend=prices[0])
     gains = np.where(deltas > 0, deltas, 0)
     losses = np.where(deltas < 0, -deltas, 0)
-    
+
     avg_gains = np.convolve(gains, np.ones(period)/period, mode='valid')
     avg_losses = np.convolve(losses, np.ones(period)/period, mode='valid')
-    
+
     rs = avg_gains / (avg_losses + 1e-8)
     rsi = 100 - (100 / (1 + rs))
     return rsi
@@ -205,15 +205,15 @@ class PerformanceMonitor:
         def wrapper(*args, **kwargs):
             start_time = time.time()
             start_memory = psutil.Process().memory_info().rss / 1024 / 1024
-            
+
             result = func(*args, **kwargs)
-            
+
             end_time = time.time()
             end_memory = psutil.Process().memory_info().rss / 1024 / 1024
-            
+
             execution_time = end_time - start_time
             memory_used = end_memory - start_memory
-            
+
             self.logger.info(f"{func.__name__}: {execution_time:.2f}s, {memory_used:.2f}MB")
             return result
         return wrapper
@@ -232,14 +232,14 @@ The existing `_engineer_multi_timeframe_features_vectorized` method has been enh
 
 ```python
 async def _engineer_multi_timeframe_features_vectorized(
-    self, price_data: pd.DataFrame, volume_data: pd.DataFrame, 
+    self, price_data: pd.DataFrame, volume_data: pd.DataFrame,
     order_flow_data: pd.DataFrame | None = None, sr_levels: dict[str, Any] | None = None
 ) -> dict[str, Any]:
     """Engineer multi-timeframe features with optimized lookback periods."""
-    
+
     # Check if matrix optimization results are available
     matrix_results = self._get_matrix_optimization_results()
-    
+
     if matrix_results and self._should_use_optimized_features():
         # Use enhanced optimizer
         enhanced_optimizer = EnhancedMultiTimeframeOptimizer(config, matrix_results)
@@ -248,7 +248,7 @@ async def _engineer_multi_timeframe_features_vectorized(
             target=self._create_target_variable(price_data),
             regime_labels=self._get_regime_labels()
         )
-        
+
         # Generate comprehensive features if enabled
         if self._should_generate_comprehensive_features():
             comprehensive_optimizer = ComprehensiveFeatureOptimizer(config, matrix_results)
@@ -263,7 +263,7 @@ async def _engineer_multi_timeframe_features_vectorized(
         features = await self._generate_traditional_multi_timeframe_features(
             price_data, volume_data, order_flow_data
         )
-    
+
     return features
 ```
 
@@ -352,7 +352,7 @@ export MEMORY_LIMIT_MB=4096
 ### **Basic Usage:**
 ```python
 from src.training.enhanced_multi_timeframe_optimizer import (
-    EnhancedMultiTimeframeOptimizer, 
+    EnhancedMultiTimeframeOptimizer,
     OptimizedTimeframeConfig
 )
 

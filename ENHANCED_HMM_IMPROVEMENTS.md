@@ -22,16 +22,16 @@ def _detect_regime_changes_advanced(self, hmm_probs, hmm_states, threshold=0.1, 
     # Calculate regime stability and entropy
     regime_stability = np.max(hmm_probs, axis=1)
     regime_entropy = -np.sum(hmm_probs * np.log(hmm_probs + 1e-10), axis=1)
-    
+
     # Multiple signals for regime change detection
     stability_changes = np.diff(regime_stability) < -threshold
     entropy_confirmation = regime_entropy[1:] > np.percentile(regime_entropy, 75)
-    
+
     # Combine signals with persistence filter
     confirmed_transitions = self._apply_persistence_filter(
         stability_changes & entropy_confirmation, hmm_states, min_persistence
     )
-    
+
     return confirmed_transitions
 ```
 
@@ -57,15 +57,15 @@ if volatility > 0.02:  # Fixed threshold
 def _calculate_adaptive_regime_boundaries(self, features):
     # Extract regime characteristics
     regime_features = self._extract_regime_characteristics(features)
-    
+
     # Scale features for clustering
     scaler = StandardScaler()
     scaled_features = scaler.fit_transform(regime_features)
-    
+
     # Use DBSCAN for adaptive boundary detection
     clustering = DBSCAN(eps=0.1, min_samples=5)
     regime_boundaries = clustering.fit_predict(scaled_features)
-    
+
     return regime_boundaries
 ```
 
@@ -82,10 +82,10 @@ def _calculate_adaptive_regime_boundaries(self, features):
 def _model_regime_persistence(self, regime_sequence):
     # Calculate regime durations
     durations = self._calculate_regime_durations(regime_sequence)
-    
+
     # Fit multiple statistical distributions
     distribution_fits = {}
-    
+
     # Weibull distribution (most common for duration modeling)
     shape, loc, scale = weibull_min.fit(durations)
     distribution_fits["weibull"] = {
@@ -94,10 +94,10 @@ def _model_regime_persistence(self, regime_sequence):
         "mean_duration": float(scale * np.exp(1/shape)),
         "survival_function": lambda t: weibull_min.sf(t, shape, loc, scale)
     }
-    
+
     # Select best fitting distribution using AIC
     best_distribution = self._select_best_distribution(distribution_fits)
-    
+
     return best_distribution
 ```
 
@@ -113,23 +113,23 @@ def _model_regime_persistence(self, regime_sequence):
 ```python
 def _detect_regime_changes_multi_signal(self, hmm_states, stability, entropy):
     changes = np.zeros(len(hmm_states), dtype=bool)
-    
+
     # Signal 1: State transitions (40% weight)
     state_changes = np.diff(hmm_states, prepend=hmm_states[0]) != 0
-    
+
     # Signal 2: Stability drops (30% weight)
     stability_threshold = np.percentile(stability, 25)
     stability_changes = stability < stability_threshold
-    
+
     # Signal 3: High entropy (20% weight)
     entropy_threshold = np.percentile(entropy, 75)
     entropy_changes = entropy > entropy_threshold
-    
+
     # Signal 4: Stability acceleration (10% weight)
     stability_acceleration = np.diff(stability, prepend=stability[0])
     acceleration_threshold = np.percentile(stability_acceleration, 25)
     acceleration_changes = stability_acceleration < acceleration_threshold
-    
+
     # Weighted combination
     for i in range(1, len(hmm_states)):
         signal_score = 0
@@ -137,10 +137,10 @@ def _detect_regime_changes_multi_signal(self, hmm_states, stability, entropy):
         if stability_changes[i]: signal_score += 0.3
         if entropy_changes[i]: signal_score += 0.2
         if acceleration_changes[i]: signal_score += 0.1
-        
+
         if signal_score >= 0.5 and i >= self.min_persistence:
             changes[i] = True
-    
+
     return changes
 ```
 
@@ -156,26 +156,26 @@ def _detect_regime_changes_multi_signal(self, hmm_states, stability, entropy):
 ```python
 def _calculate_prediction_confidence(self, stability, entropy, transition_probs):
     confidence_scores = np.zeros(len(stability))
-    
+
     for i in range(len(stability)):
         # Base confidence from stability
         stability_confidence = stability[i]
-        
+
         # Entropy penalty (high entropy reduces confidence)
         entropy_penalty = entropy[i] / np.max(entropy) if np.max(entropy) > 0 else 0
-        
+
         # Transition probability boost
         transition_boost = transition_probs[i] if i < len(transition_probs) else 0
-        
+
         # Combined confidence score
         confidence = (
             stability_confidence * 0.4 +
             (1 - entropy_penalty) * 0.3 +
             transition_boost * 0.3
         )
-        
+
         confidence_scores[i] = np.clip(confidence, 0, 1)
-    
+
     return confidence_scores
 ```
 

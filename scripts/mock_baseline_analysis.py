@@ -11,7 +11,7 @@ from typing import Dict, Any
 
 def create_mock_baseline_metrics() -> Dict[str, Any]:
     """Create mock baseline performance metrics.
-    
+
     Returns:
         Dictionary with mock baseline metrics
     """
@@ -37,20 +37,20 @@ def create_mock_baseline_metrics() -> Dict[str, Any]:
             'volume_sma': 0.026
         }
     }
-    
+
     return baseline_metrics
 
 
 def create_mock_performance_tracker():
     """Create mock performance tracking files."""
-    
+
     # Create output directory
     output_dir = Path("data/fractional_performance/baseline")
     output_dir.mkdir(parents=True, exist_ok=True)
-    
+
     # Mock performance metrics
     baseline_metrics = create_mock_baseline_metrics()
-    
+
     # Save baseline metrics
     metrics_file = output_dir / "performance_metrics.json"
     metrics_data = {
@@ -59,10 +59,10 @@ def create_mock_performance_tracker():
         'historical': [baseline_metrics.copy()],
         'last_updated': datetime.now().isoformat()
     }
-    
+
     with open(metrics_file, 'w') as f:
         json.dump(metrics_data, f, indent=2)
-    
+
     # Create mock baseline report
     report_file = output_dir / "baseline_report.json"
     report_data = {
@@ -83,18 +83,18 @@ def create_mock_performance_tracker():
             }
         }
     }
-    
+
     with open(report_file, 'w') as f:
         json.dump(report_data, f, indent=2)
-    
+
     return baseline_metrics
 
 
 def create_mock_dashboard():
     """Create mock performance dashboard."""
-    
+
     output_dir = Path("data/fractional_performance/baseline")
-    
+
     # Create simple HTML dashboard
     dashboard_content = """
     <!DOCTYPE html>
@@ -117,7 +117,7 @@ def create_mock_dashboard():
             <p>Last updated: """ + datetime.now().strftime('%Y-%m-%d %H:%M:%S') + """</p>
             <p>Total checks: 1</p>
         </div>
-        
+
         <div class="metrics">
             <div class="metric-card">
                 <div class="metric-label">Sharpe Ratio</div>
@@ -144,7 +144,7 @@ def create_mock_dashboard():
                 <div class="metric-value">0.0892</div>
             </div>
         </div>
-        
+
         <div class="chart">
             <h3>Performance Charts</h3>
             <p>Charts will be generated when matplotlib is available</p>
@@ -152,7 +152,7 @@ def create_mock_dashboard():
     </body>
     </html>
     """
-    
+
     dashboard_file = output_dir / "performance_dashboard.html"
     with open(dashboard_file, 'w') as f:
         f.write(dashboard_content)
@@ -161,14 +161,14 @@ def create_mock_dashboard():
 def main():
     """Main function to create mock baseline analysis."""
     print("🔍 Creating mock baseline performance metrics...")
-    
+
     # Create mock baseline metrics
     baseline_metrics = create_mock_baseline_metrics()
-    
+
     # Create performance tracking files
     create_mock_performance_tracker()
     create_mock_dashboard()
-    
+
     # Print results
     print("\n📊 Mock Baseline Performance Metrics:")
     print(f"  Model Accuracy: {baseline_metrics.get('model_accuracy', 0):.4f}")
@@ -178,11 +178,11 @@ def main():
     print(f"  Profit Factor: {baseline_metrics.get('profit_factor', 0):.4f}")
     print(f"  Total Return: {baseline_metrics.get('total_return', 0):.4f}")
     print(f"  Volatility: {baseline_metrics.get('volatility', 0):.4f}")
-    
+
     print(f"\n📈 Data Statistics:")
     print(f"  Samples: {baseline_metrics.get('data_samples', 0)}")
     print(f"  Features: {baseline_metrics.get('feature_count', 0)}")
-    
+
     print("\n✅ Mock baseline performance analysis complete!")
     print("📁 Results saved to: data/fractional_performance/baseline/")
     print("\n📋 Next Steps:")

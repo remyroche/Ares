@@ -144,12 +144,12 @@ Triple Barrier Captured Changes:
     Short Positions: 450
     Average Post-Hit Movement: 0.0250
     Max Post-Hit Movement: 0.0850
-  
+
   Lower Barrier Hits (Without Upper First):
     Total Count: 1185
     Long Positions: 420
     Short Positions: 765
-  
+
   Upper Barrier Post-Hit Analysis:
     Total Post-Hit Movements: 1250
     Mean Post-Hit Movement: 0.0250
@@ -158,7 +158,7 @@ Triple Barrier Captured Changes:
       Small (≤1%): 450
       Medium (1-5%): 600
       Large (>5%): 200
-  
+
   Summary Statistics:
     Total Barrier Hits: 2435
     Upper First Hits: 1250

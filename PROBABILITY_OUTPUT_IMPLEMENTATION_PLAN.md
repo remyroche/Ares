@@ -24,19 +24,19 @@ class ModelProbabilityGenerator:
     def generate_price_action_probabilities(self, model, X_test, y_test, market_data):
         """Generate all 4 required probabilities."""
         pass
-    
+
     def _calculate_triple_barrier_probability(self, model, X_test, market_data):
         """Calculate probability of reaching profit target without hitting stop-loss."""
         pass
-    
+
     def _calculate_direction_probability(self, model, X_test, y_test):
         """Calculate probability of price moving in predicted direction."""
         pass
-    
+
     def _calculate_magnitude_probability(self, model, X_test, market_data):
         """Calculate probability of price moving by expected magnitude."""
         pass
-    
+
     def _calculate_barrier_avoidance_probability(self, model, X_test, market_data):
         """Calculate probability of avoiding adverse price movements."""
         pass
@@ -86,13 +86,13 @@ def save_model_with_probabilities(model_data, model_path, price_action_probabili
 def _train_model_with_probabilities(self, model, X_train, X_test, y_train, y_test, market_data):
     # Train model
     model.fit(X_train, y_train)
-    
+
     # Generate probability outputs
     probability_generator = ModelProbabilityGenerator()
     price_action_probabilities = probability_generator.generate_price_action_probabilities(
         model, X_test, y_test, market_data
     )
-    
+
     # Return model data with probabilities
     return {
         "model": model,
@@ -116,13 +116,13 @@ def _train_model_with_probabilities(self, model, X_train, X_test, y_train, y_tes
 # Update each training function
 async def _train_lightgbm(self, X_train, X_test, y_train, y_test, symbol, exchange):
     # Existing training code...
-    
+
     # Generate probability outputs
     probability_generator = ModelProbabilityGenerator()
     price_action_probabilities = probability_generator.generate_price_action_probabilities(
         model, X_test, y_test, self.market_data
     )
-    
+
     return {
         "model": model,
         "accuracy": accuracy,

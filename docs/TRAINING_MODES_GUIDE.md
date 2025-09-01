@@ -11,7 +11,7 @@ The Ares trading system now features a centralized training mode configuration s
 - **Lookback Period**: 30 days
 - **Computational Intensity**: Low (2% of full intensity)
 - **Estimated Duration**: 5 minutes
-- **Best For**: 
+- **Best For**:
   - Rapid prototyping
   - Code testing
   - Development iterations
@@ -300,7 +300,7 @@ All pipeline steps have been updated to use the centralized training mode config
 
 #### **Modified Steps**
 1. **Step 12: Final Parameters Optimization** - All optimization sections now use configurable trials
-2. **Step 6: Analyst Enhancement** - All model types now use configurable trials  
+2. **Step 6: Analyst Enhancement** - All model types now use configurable trials
 3. **Step 5.5: Unified Regime Intelligence** - HPO uses configurable trials and timeout
 4. **SR Outcome Model Trainer** - Both LightGBM and XGBoost use configurable trials
 
@@ -355,7 +355,7 @@ If you're migrating from the old system:
    ```bash
    # Old
    python ares_launcher.py short-blank --symbol ETHUSDT --exchange BINANCE
-   
+
    # New
    python ares_launcher.py light --symbol ETHUSDT --exchange BINANCE
    ```
@@ -364,7 +364,7 @@ If you're migrating from the old system:
    ```python
    # Old: Direct constant usage
    from src.config.constants import BLANK_TRAINING_LOOKBACK_DAYS
-   
+
    # New: Use centralized configuration
    from src.config.training_modes import get_training_mode_config
    config = get_training_mode_config("blank")

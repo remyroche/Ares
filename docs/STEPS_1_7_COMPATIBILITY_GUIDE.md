@@ -146,7 +146,7 @@ except Exception as e:
     error_record = standardized_error_handler.handle_step_error(
         e, "step1", {"operation": "data_collection", "data_context": {"rows": 1000}}
     )
-    
+
     # Get recovery strategy
     strategy = standardized_error_handler.get_recovery_strategy(e)
     print(f"Recovery action: {strategy['action']}")
@@ -318,19 +318,19 @@ class DataCollectionStep:
     def __init__(self, config):
         self.compatibility = steps_1_7_compatibility
         self.error_handler = standardized_error_handler
-        
+
     def execute(self, inputs):
         try:
             # Step execution
             outputs = self._process_data(inputs)
-            
+
             # Validate contract
             self.compatibility.validate_step_contract(
                 "step1_data_collection", inputs, outputs
             )
-            
+
             return outputs
-            
+
         except Exception as e:
             self.error_handler.handle_step_error(e, "step1", {"inputs": inputs})
             raise
@@ -342,22 +342,22 @@ class DataCollectionStep:
 class PipelineOrchestrator:
     def __init__(self):
         self.compatibility = steps_1_7_compatibility
-        
+
     def run_pipeline(self, config):
         step_data = {}
         step_configs = {}
-        
+
         for step_name in ["step1", "step2", "step3", "step4", "step5", "step6", "step7"]:
             # Execute step
             step_outputs = self._execute_step(step_name, step_data, config)
             step_data[step_name] = step_outputs
             step_configs[step_name] = config
-            
+
             # Validate consistency
             self.compatibility.validate_cross_step_consistency(
                 step_data, list(step_data.keys())
             )
-            
+
             # Validate configuration compatibility
             self.compatibility.validate_configuration_compatibility(step_configs)
 ```

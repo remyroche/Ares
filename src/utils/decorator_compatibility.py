@@ -164,7 +164,7 @@ decorator_registry.register(
 )
 
 decorator_registry.register(
-    name="check_input", 
+    name="check_input",
     decorator=check_input,
     version="1.0",
     description="Legacy decorator - use pa_check_input instead",
@@ -175,7 +175,7 @@ decorator_registry.register(
 
 decorator_registry.register(
     name="check_output",
-    decorator=check_output, 
+    decorator=check_output,
     version="1.0",
     description="Legacy decorator - use pa_check_output instead",
     tags=["legacy", "deprecated"],
@@ -188,9 +188,9 @@ __all__ = [
     # New enhanced decorators
     "smart_error_recovery",
     "cached_validation",
-    "enhanced_validation", 
+    "enhanced_validation",
     "performance_monitor_v2",
-    
+
     # Legacy compatibility decorators
     "validate_call",
     "check_input",
@@ -201,20 +201,20 @@ __all__ = [
     "guard_nulls",
     "error_handler",
     "tracing",
-    
+
     # Enhanced decorator aliases
     "smart_recovery",
     "cached",
     "validation",
     "performance",
-    
+
     # Configuration helpers
     "get_decorator_config",
     "set_decorator_config",
     "list_available_decorators",
     "get_decorator_usage_stats",
     "search_decorators",
-    
+
     # Registry access
     "decorator_registry",
     "global_config"

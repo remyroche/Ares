@@ -13,7 +13,7 @@ The `SRBreakoutPredictor` class serves as the central hub for all S/R-related fu
 ```
 SRBreakoutPredictor
 ├── Core S/R Detection Methods
-├── Feature Calculation Methods  
+├── Feature Calculation Methods
 ├── Outcome Prediction Methods
 ├── Optimization Interface
 └── Unified Configuration
@@ -162,17 +162,17 @@ await sr_predictor.set_weights(weights)
 async def _add_sr_features(features: pd.DataFrame, market_data: pd.DataFrame, config: dict) -> pd.DataFrame:
     """Add comprehensive S/R features using centralized logic."""
     from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
-    
+
     sr_predictor = SRBreakoutPredictor(config)
     await sr_predictor.initialize()
-    
+
     # Calculate comprehensive S/R features
     sr_features = await sr_predictor.calculate_comprehensive_sr_features(market_data)
-    
+
     # Add S/R features to DataFrame
     for feature_name, feature_series in sr_features.items():
         features[f"sr_{feature_name}"] = feature_series
-    
+
     await sr_predictor.cleanup()
     return features
 ```
@@ -187,11 +187,11 @@ async def analyze_market_with_sr_monitoring(self, market_data, current_price, re
     """Use centralized S/R logic for market analysis."""
     sr_context = await self.sr_predictor.get_sr_context(market_data, current_price)
     is_near_sr = self.sr_predictor.is_near_sr_level(current_price, sr_context)
-    
+
     if is_near_sr:
         sr_proximity_details = self.sr_predictor.get_sr_proximity_details(current_price, sr_context)
         sr_outcome = await self.sr_predictor.predict_sr_outcome(market_data, current_price, sr_context)
-        
+
         # Process S/R opportunity
         analysis_result = {
             'sr_monitoring': {
@@ -212,7 +212,7 @@ async def analyze_market_with_sr_monitoring(self, market_data, current_price, re
 async def _get_sr_decision(self, market_data: pd.DataFrame) -> Optional[Dict[str, Any]]:
     """Get SR breakout decision using centralized logic."""
     prediction = await self.sr_predictor.predict_breakout(market_data)
-    
+
     if prediction:
         return {
             "breakout_direction": prediction.get("direction"),
@@ -237,24 +237,24 @@ sr_breakout_predictor:
   min_sr_strength: 0.3
   max_sr_levels: 10
   sr_lookback_periods: 100
-  
+
   # Zone multipliers
   support_zone_multiplier: 0.8
   resistance_zone_multiplier: 1.2
   sr_zone_threshold: 0.01
-  
+
   # Confidence thresholds
   min_sr_confidence: 0.4
   high_confidence_threshold: 0.8
   confidence_decay_rate: 0.95
-  
+
   # Model weights
   model_weights:
     fractal: 0.4
     volume: 0.3
     pivot: 0.2
     atr: 0.1
-  
+
   # Strength score weights
   strength_score_weights:
     touch_count: 0.3

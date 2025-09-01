@@ -204,13 +204,13 @@ class EnhancedModelMonitor:
             # Load reference distributions and performance metrics
             # This would typically load from saved model snapshots or training data
             self.logger.info("Loading reference data for drift detection...")
-            
+
             # Placeholder for actual reference data loading
             # In a real implementation, this would load:
             # - Reference feature distributions
             # - Historical model performance metrics
             # - Baseline drift thresholds
-            
+
         except Exception as e:
             self.logger.error(f"Error loading reference data: {e}")
 

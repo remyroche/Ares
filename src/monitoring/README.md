@@ -7,7 +7,7 @@ This monitoring system provides complete observability for the Ares trading bot,
 The enhanced monitoring system captures:
 
 1. **What we did**: Every trade decision with complete context
-2. **When**: Precise timing, market regime, and S/R level proximity  
+2. **When**: Precise timing, market regime, and S/R level proximity
 3. **Why**: Detailed ML model predictions and reasoning
 4. **In-depth analysis**: Multi-timeframe feature analysis (30m, 15m, 5m, 1m)
 5. **Performance tracking**: Comprehensive ML model validation and comparison
@@ -58,7 +58,7 @@ MonitoringIntegrationManager
 ### ML Model Performance Tracking
 
 - **Real-time Tracking**: Every model prediction logged with context
-- **Ensemble Analysis**: How model combinations perform vs individuals  
+- **Ensemble Analysis**: How model combinations perform vs individuals
 - **Performance Comparison**: Automated model ranking and recommendations
 - **Confidence Calibration**: How well model confidence matches actual accuracy
 - **Feature Importance**: Which features drive predictions across timeframes
@@ -88,7 +88,7 @@ TradeDecisionContext(
     current_price=3500.0,
     current_regime=RegimeType.BULL_TREND,
     regime_confidence=0.85,
-    
+
     # Multi-timeframe features
     timeframe_features={
         "30m": MultiTimeframeFeatures(...),
@@ -96,7 +96,7 @@ TradeDecisionContext(
         "5m": MultiTimeframeFeatures(...),
         "1m": MultiTimeframeFeatures(...)
     },
-    
+
     # Model predictions
     ensemble_predictions=[
         EnsemblePrediction(
@@ -105,10 +105,10 @@ TradeDecisionContext(
             consensus_level=0.78
         )
     ],
-    
+
     # S/R context
     nearby_sr_levels=[...],
-    
+
     # Risk assessment
     risk_score=0.3,
     recommended_action=TradeAction.ENTER_LONG

@@ -170,7 +170,7 @@ from src.training.steps.step3_hmm_regime_discovery import run_step
 
 success = await run_step(
     symbol="ETHUSDT",
-    exchange="BINANCE", 
+    exchange="BINANCE",
     timeframe="1m",
     data_dir="data_cache",
     force_rerun=True
@@ -236,13 +236,13 @@ success = await run_step(
 
 The enhanced Step 3 HMM Regime Discovery with 20-cluster composite approach provides:
 
-✅ **Advanced Architecture**: Two-phase HMM + clustering approach  
-✅ **Comprehensive Features**: 39+ features with composite enhancements  
-✅ **Quality Assurance**: Extensive quality metrics and validation  
-✅ **Detailed Reporting**: 7 comprehensive analysis reports  
-✅ **Manager Integration**: Full compatibility with HMM composite manager  
-✅ **Enhanced Granularity**: 20 fine-grained market regimes  
-✅ **Robust Implementation**: Comprehensive error handling and validation  
-✅ **Extensible Design**: Easy to extend and customize  
+✅ **Advanced Architecture**: Two-phase HMM + clustering approach
+✅ **Comprehensive Features**: 39+ features with composite enhancements
+✅ **Quality Assurance**: Extensive quality metrics and validation
+✅ **Detailed Reporting**: 7 comprehensive analysis reports
+✅ **Manager Integration**: Full compatibility with HMM composite manager
+✅ **Enhanced Granularity**: 20 fine-grained market regimes
+✅ **Robust Implementation**: Comprehensive error handling and validation
+✅ **Extensible Design**: Easy to extend and customize
 
 This enhancement significantly improves regime discovery accuracy and provides detailed insights for trading strategy development and model optimization.

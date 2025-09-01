@@ -49,28 +49,28 @@ async def _download_data_with_resilience(self, symbol: str, exchange: str, timef
 ```python
 class EnhancedDataQualityValidator:
     """Enhanced data quality validation with real-time monitoring."""
-    
+
     def __init__(self):
         self.quality_metrics = {}
         self.anomaly_detectors = {}
-        
+
     async def validate_realtime_quality(self, df: pd.DataFrame, context: str) -> QualityResult:
         """Real-time quality validation during processing."""
         result = QualityResult()
-        
+
         # Check for data drift
         if self._detect_data_drift(df):
             result.add_issue("data_drift", "Detected significant data drift")
-            
+
         # Validate market hours consistency
         if not self._validate_market_hours(df):
             result.add_issue("market_hours", "Inconsistent market hours detected")
-            
+
         # Check for price anomalies
         price_anomalies = self._detect_price_anomalies(df)
         if price_anomalies:
             result.add_issue("price_anomalies", f"Found {len(price_anomalies)} price anomalies")
-            
+
         return result
 ```
 
@@ -87,14 +87,14 @@ class EnhancedDataQualityValidator:
 ```python
 class OptimizedDataProcessor:
     """Optimized data processing with streaming and parallelization."""
-    
+
     async def process_large_dataset_streaming(self, file_path: str, chunk_size: int = 10000):
         """Process large datasets using streaming approach."""
         async for chunk in self._stream_parquet_chunks(file_path, chunk_size):
             # Process chunk in parallel
             processed_chunk = await self._process_chunk_parallel(chunk)
             yield processed_chunk
-            
+
     async def _process_chunk_parallel(self, chunk: pd.DataFrame) -> pd.DataFrame:
         """Process data chunk using parallel operations."""
         with ThreadPoolExecutor(max_workers=4) as executor:
@@ -120,23 +120,23 @@ class OptimizedDataProcessor:
 ```python
 class MemoryOptimizedProcessor:
     """Memory-optimized data processing."""
-    
+
     def __init__(self, max_memory_mb: int = 1024):
         self.max_memory_mb = max_memory_mb
         self.memory_monitor = MemoryMonitor()
-        
+
     @memory_efficient(max_memory_mb=1024)
     async def process_with_memory_control(self, df: pd.DataFrame) -> pd.DataFrame:
         """Process data with memory constraints."""
         # Use efficient data types
         df = self._optimize_dtypes(df)
-        
+
         # Process in chunks if memory usage is high
         if self.memory_monitor.get_usage_mb() > self.max_memory_mb * 0.8:
             return await self._process_in_chunks(df)
-        
+
         return await self._process_full(df)
-        
+
     def _optimize_dtypes(self, df: pd.DataFrame) -> pd.DataFrame:
         """Optimize DataFrame data types for memory efficiency."""
         for col in df.columns:
@@ -171,7 +171,7 @@ class Step1Config:
     chunk_size: int = 10000
     memory_limit_mb: int = 1024
     quality_thresholds: Dict[str, float] = field(default_factory=dict)
-    
+
     def validate(self) -> List[str]:
         """Validate configuration and return any issues."""
         issues = []
@@ -195,11 +195,11 @@ class Step1Config:
 ```python
 class EnhancedLogger:
     """Enhanced logging with structured output and metrics."""
-    
+
     def __init__(self, name: str):
         self.logger = logging.getLogger(name)
         self.metrics = MetricsCollector()
-        
+
     def log_operation(self, operation: str, duration: float, success: bool, **kwargs):
         """Log operation with structured data and metrics."""
         log_data = {
@@ -209,10 +209,10 @@ class EnhancedLogger:
             "timestamp": datetime.utcnow().isoformat(),
             **kwargs
         }
-        
+
         self.logger.info(json.dumps(log_data))
         self.metrics.record_operation(operation, duration, success)
-        
+
     def log_data_quality(self, df: pd.DataFrame, context: str):
         """Log data quality metrics."""
         quality_metrics = {
@@ -238,18 +238,18 @@ class EnhancedLogger:
 ```python
 class DataPipelineTester:
     """Comprehensive testing for data pipeline."""
-    
+
     async def test_full_pipeline(self):
         """Test the complete data pipeline end-to-end."""
         # Generate test data
         test_data = self._generate_test_data()
-        
+
         # Run pipeline
         result = await self._run_pipeline(test_data)
-        
+
         # Validate results
         self._validate_pipeline_output(result)
-        
+
     def _generate_test_data(self) -> Dict[str, pd.DataFrame]:
         """Generate comprehensive test data with known issues."""
         return {
@@ -257,7 +257,7 @@ class DataPipelineTester:
             "aggtrades": self._generate_aggtrades_with_issues(),
             "futures": self._generate_futures_with_issues()
         }
-        
+
     def _validate_pipeline_output(self, result: Dict[str, Any]):
         """Validate pipeline output against expected results."""
         assert result["success"], "Pipeline should complete successfully"
@@ -298,7 +298,7 @@ class QualityMonitor:
 # Main orchestrator
 class Step1Orchestrator:
     """Orchestrates the complete Step1 process."""
-    
+
     def __init__(self, config: Step1Config):
         self.config = config
         self.downloader = DataDownloader(config)
@@ -321,38 +321,38 @@ class Step1Orchestrator:
 class Step1DataCollection:
     """
     Step 1: Data Collection
-    
+
     This class handles the complete data collection process for the training pipeline.
     It downloads, validates, and processes market data from various exchanges.
-    
+
     Features:
     - Multi-exchange data downloading
     - Real-time quality validation
     - Memory-efficient processing
     - Comprehensive error handling
-    
+
     Example:
         >>> config = Step1Config(symbol="ETHUSDT", exchange="BINANCE")
         >>> collector = Step1DataCollection(config)
         >>> result = await collector.execute(training_input, pipeline_state)
         >>> print(f"Success: {result['success']}")
     """
-    
+
     async def execute(self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
         """
         Execute the complete data collection process.
-        
+
         Args:
             training_input: Training input parameters including symbol, exchange, timeframe
             pipeline_state: Current state of the training pipeline
-            
+
         Returns:
             Updated pipeline state with collection results
-            
+
         Raises:
             DataCollectionError: If data collection fails
             ValidationError: If data validation fails
-            
+
         Example:
             >>> training_input = {"symbol": "ETHUSDT", "exchange": "BINANCE"}
             >>> pipeline_state = {}

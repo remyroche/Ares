@@ -25,7 +25,7 @@ A comprehensive web-based dashboard for monitoring and controlling the Ares Trad
 ## Quick Start
 
 ### Prerequisites
-- Node.js 18+ 
+- Node.js 18+
 - Python 3.8+ (for the API server)
 - npm or yarn
 
@@ -121,7 +121,7 @@ GUI/
 - `npm run preview` - Preview production build
 
 ### Environment Variables
-The frontend automatically connects to the API server at `http://localhost:8000`. 
+The frontend automatically connects to the API server at `http://localhost:8000`.
 To change this, modify the `API_BASE_URL` constant in `src/App.jsx`.
 
 ## Features in Detail
@@ -190,4 +190,4 @@ export LOG_LEVEL=debug
 
 ## License
 
-This project is part of the Ares Trading Bot system. See the main project license for details. 
+This project is part of the Ares Trading Bot system. See the main project license for details.

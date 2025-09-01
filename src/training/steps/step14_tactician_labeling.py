@@ -30,7 +30,7 @@ class TacticianTripleBarrierLabeler:
     - Price direction predictions
     - Market regime detection
     - Volatility and momentum predictions
-    
+
     Enhanced for high precision completion of Analyst signals with:
     - 50% smaller upper barriers (0.1% vs 0.2%)
     - 25% smaller lower barriers (0.025% vs 0.1%)
@@ -41,7 +41,7 @@ class TacticianTripleBarrierLabeler:
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config.get("tactician_triple_barrier", {})
         self.logger = system_logger.getChild("TacticianTripleBarrierLabeler")
-        
+
         # Load enhanced configuration
         self._load_enhanced_config()
 
@@ -49,39 +49,39 @@ class TacticianTripleBarrierLabeler:
         """Load enhanced configuration for high precision execution."""
         # Import dynamic barrier calculator
         from src.tactician.dynamic_barrier_calculator import DynamicBarrierCalculator
-        
+
         # Initialize dynamic barrier calculator
         self.barrier_calculator = DynamicBarrierCalculator(self.config)
-        
+
         # Get all 4 barrier combinations for primary timeframe (1m)
         self.barrier_combinations = self.barrier_calculator.calculate_dynamic_barriers(
             timeframe="1m"
         )
-        
+
         # Get configuration for other settings
         self.max_lookahead = self.config.get("max_lookahead", 50)  # Reduced lookahead
-        
+
         # Precision Settings
         self.enable_high_precision_mode = self.config.get("enable_high_precision_mode", True)
         self.precision_threshold = self.config.get("precision_threshold", 0.85)
         self.min_signal_strength = self.config.get("min_signal_strength", 0.8)
-        
+
         # Quality Filters
         self.enable_quality_filters = self.config.get("enable_quality_filters", True)
         self.min_volume_threshold = self.config.get("min_volume_threshold", 1000)
         self.min_spread_threshold = self.config.get("min_spread_threshold", 0.0001)
         self.volatility_filter = self.config.get("volatility_filter", True)
-        
+
         # Integration Settings
         self.analyst_signal_requirement = self.config.get("analyst_signal_requirement", True)
         self.direction_agreement_required = self.config.get("direction_agreement_required", True)
         self.confidence_boost_threshold = self.config.get("confidence_boost_threshold", 0.9)
-        
+
         # Timeframe settings
         self.timeframes = self.config.get("timeframes", ["1m", "5m"])
         self.primary_timeframe = self.config.get("primary_timeframe", "1m")
         self.secondary_timeframe = self.config.get("secondary_timeframe", "5m")
-        
+
         # Log configuration
         self.logger.info(f"🔧 Enhanced Tactician Triple Barrier Configuration (4 Barrier Combinations):")
         self.logger.info(f"   Timeframes: {self.timeframes}")
@@ -96,14 +96,14 @@ class TacticianTripleBarrierLabeler:
         """Apply quality filters for high precision execution."""
         if not self.enable_quality_filters:
             return True
-            
+
         try:
             # Volume filter
             if "volume" in data.columns:
                 volume = data.iloc[entry_idx]["volume"]
                 if volume < self.min_volume_threshold:
                     return False
-            
+
             # Spread filter (if bid/ask data available)
             if "bid" in data.columns and "ask" in data.columns:
                 bid = data.iloc[entry_idx]["bid"]
@@ -111,7 +111,7 @@ class TacticianTripleBarrierLabeler:
                 spread = (ask - bid) / bid
                 if spread > self.min_spread_threshold:
                     return False
-            
+
             # Volatility filter
             if self.volatility_filter and len(data) >= 20:
                 recent_data = data.iloc[max(0, entry_idx-20):entry_idx+1]
@@ -121,9 +121,9 @@ class TacticianTripleBarrierLabeler:
                     # Filter out extremely high volatility periods
                     if volatility > 0.01:  # 1% volatility threshold
                         return False
-            
+
             return True
-            
+
         except Exception as e:
             self.logger.warning(f"⚠️ Quality filter error: {e}")
             return True  # Default to allow if filter fails
@@ -149,7 +149,7 @@ class TacticianTripleBarrierLabeler:
             price_deviations = {}
             price_directions = {}
             price_target_confidences = {}
-            
+
             for barrier_name, (upper_barrier, lower_barrier) in barrier_combinations.items():
                 if signal == 1:  # Long position
                     # Calculate deviation to upper barrier
@@ -159,21 +159,21 @@ class TacticianTripleBarrierLabeler:
                     # Calculate deviation to lower barrier
                     price_deviation = (entry_price - lower_barrier) / entry_price
                     price_direction = -1
-                
+
                 # Store predictions for this barrier combination
                 price_deviations[barrier_name] = price_deviation
                 price_directions[barrier_name] = price_direction
-                
+
                 # Calculate confidence to reach upper barrier before lower barrier
                 # ML model calculates this based on market conditions, volatility, and barrier distances
                 base_confidence = precision_score
                 # ML model will enhance confidence based on:
                 # - Market volatility
-                # - Barrier distances  
+                # - Barrier distances
                 # - Recent price action
                 # - Support/resistance levels
                 price_target_confidences[barrier_name] = base_confidence
-            
+
             return {
                 "price_deviations": price_deviations,
                 "price_directions": price_directions,
@@ -182,14 +182,14 @@ class TacticianTripleBarrierLabeler:
                 "precision_score": precision_score,
                 "execution_quality": quality_score
             }
-            
+
         except Exception as e:
             self.logger.error(f"❌ Error generating multi-outcome predictions: {e}")
             # Return fallback values for 2 barrier combinations
             fallback_deviations = {name: 0.0 for name in barrier_combinations.keys()}
             fallback_directions = {name: 0 for name in barrier_combinations.keys()}
             fallback_confidences = {name: 0.0 for name in barrier_combinations.keys()}
-            
+
             return {
                 "price_deviations": fallback_deviations,
                 "price_directions": fallback_directions,
@@ -244,7 +244,7 @@ class TacticianTripleBarrierLabeler:
         price_deviation_predictions = pd.Series(0.0, index=data.index)
         price_direction_predictions = pd.Series(0, index=data.index)
         price_target_confidence = pd.Series(0.0, index=data.index)
-        
+
         # Initialize traditional labels for backward compatibility
         labels = pd.Series(-1, index=data.index)  # Default to sell signal
         precision_scores = pd.Series(0.0, index=data.index)
@@ -256,20 +256,20 @@ class TacticianTripleBarrierLabeler:
                 continue
 
             signal = entry_points.iloc[i]
-            
+
             # Apply quality filters
             if not self._apply_quality_filters(data, entry_idx):
                 continue
-            
+
             # Calculate barriers for 2 combinations
             barrier_prices = {}
             for barrier_name, (upper_pct, lower_pct) in self.barrier_combinations.items():
                 base_upper = entry_prices.iloc[i] * (1 + upper_pct * signal)
                 base_lower = entry_prices.iloc[i] * (1 - lower_pct * signal)
-                
+
                 # No adaptive barriers - ML model handles market conditions
                 upper, lower = base_upper, base_lower
-                
+
                 barrier_prices[barrier_name] = (upper, lower)
 
             # Get the path data for barrier hit detection
@@ -280,7 +280,7 @@ class TacticianTripleBarrierLabeler:
             best_precision_score = 0.0
             best_quality_score = 0.0
             best_barrier_name = None
-            
+
             for barrier_name, (upper, lower) in barrier_prices.items():
                 # Check for hits with enhanced precision (no time barrier)
                 upper_hit_mask = (path["high"] >= upper) if signal == 1 else (path["low"] <= upper)
@@ -300,20 +300,20 @@ class TacticianTripleBarrierLabeler:
                     barrier_upper_pct, barrier_lower_pct = self.barrier_combinations[barrier_name]
                     quality_score = barrier_upper_pct / (barrier_upper_pct + barrier_lower_pct)  # Risk-reward ratio
                     barrier_result = 1  # Upper barrier hit
-                    
+
                 elif pd.notna(lower_hit_time):
                     # Lower barrier hit first
                     time_to_hit = (lower_hit_time - data.index[entry_idx]).total_seconds() / 60  # minutes
                     precision_score = max(0.0, 1.0 - (time_to_hit / 30)) * 0.5  # Penalty for lower barrier hit
                     quality_score = 0.0  # No quality score for lower barrier hit
                     barrier_result = -1  # Lower barrier hit
-                    
+
                 else:
                     # No barrier hit within lookahead
                     precision_score = 0.0
                     quality_score = 0.0
                     barrier_result = 0
-                
+
                 barrier_results[barrier_name] = {
                     "result": barrier_result,
                     "precision_score": precision_score,
@@ -321,7 +321,7 @@ class TacticianTripleBarrierLabeler:
                     "upper_hit_time": upper_hit_time,
                     "lower_hit_time": lower_hit_time
                 }
-                
+
                 # Track the best performing barrier combination
                 if precision_score > best_precision_score:
                     best_precision_score = precision_score
@@ -343,7 +343,7 @@ class TacticianTripleBarrierLabeler:
             predictions = self._generate_multi_outcome_predictions(
                 data, entry_idx, signal, barrier_prices, entry_prices.iloc[i], precision_score, quality_score
             )
-            
+
             # Store multi-outcome predictions for 2 barrier combinations
             # Store the best performing barrier combination as the main prediction
             if best_barrier_name:
@@ -354,7 +354,7 @@ class TacticianTripleBarrierLabeler:
                 price_deviation_predictions.iloc[entry_idx] = 0.0
                 price_direction_predictions.iloc[entry_idx] = 0
                 price_target_confidence.iloc[entry_idx] = 0.0
-            
+
             # Apply high precision mode filtering
             if self.enable_high_precision_mode:
                 if precision_score < self.precision_threshold:
@@ -372,32 +372,32 @@ class TacticianTripleBarrierLabeler:
         data["tactician_price_deviation"] = price_deviation_predictions
         data["tactician_price_direction"] = price_direction_predictions
         data["tactician_price_target_confidence"] = price_target_confidence
-        
+
         # Add traditional labels for backward compatibility
         data["tactician_label"] = labels
         data["tactician_precision_score"] = precision_scores
         data["tactician_execution_quality"] = execution_quality
-        
+
         # Log results
         label_distribution = labels.value_counts()
         avg_precision = precision_scores[precision_scores > 0].mean()
         avg_quality = execution_quality[execution_quality > 0].mean()
         avg_confidence = price_target_confidence[price_target_confidence > 0].mean()
-        
+
         self.logger.info(f"Tactician multi-outcome predictions complete:")
         self.logger.info(f"   Label distribution: {label_distribution}")
         self.logger.info(f"   Average precision score: {avg_precision:.3f}")
         self.logger.info(f"   Average execution quality: {avg_quality:.3f}")
         self.logger.info(f"   Average price target confidence: {avg_confidence:.3f}")
         self.logger.info(f"   High precision signals: {(precision_scores >= self.precision_threshold).sum()}")
-        
+
         return data
 
 
 class TacticianLabelingStep:
     """Step 8: Tactician Model Labeling using Analyst's model."""
 
-    
+
 
     def _validate_environment(self) -> None:
         """Validate environment dependencies and configuration."""

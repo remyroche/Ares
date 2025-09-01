@@ -150,7 +150,7 @@ class Step3ParameterOptimizationValidator(BaseValidator):
                 if not isinstance(value, (int, float)):
                     self.logger.warning(f"⚠️ Invalid parameter value type for {param}: {type(value)}")
                     return False
-                
+
                 # Check reasonable ranges
                 if param == "n_components" and (value < 2 or value > 20):
                     self.logger.warning(f"⚠️ Unusual n_components value: {value}")
@@ -220,11 +220,11 @@ class Step3ParameterOptimizationValidator(BaseValidator):
                 if not isinstance(range_data, dict):
                     self.logger.warning(f"⚠️ Invalid parameter range format for {param}")
                     return False
-                
+
                 if "min" not in range_data or "max" not in range_data:
                     self.logger.warning(f"⚠️ Missing min/max for parameter {param}")
                     return False
-                
+
                 if range_data["min"] >= range_data["max"]:
                     self.logger.warning(f"⚠️ Invalid range for parameter {param}: min >= max")
                     return False
@@ -283,7 +283,7 @@ class Step3ParameterOptimizationValidator(BaseValidator):
                 if not isinstance(log_entry, dict):
                     self.logger.warning(f"⚠️ Invalid log entry format at index {i}")
                     return False
-                
+
                 # Check for basic log fields
                 if "timestamp" not in log_entry or "message" not in log_entry:
                     self.logger.warning(f"⚠️ Missing timestamp or message in log entry {i}")
@@ -368,7 +368,7 @@ class Step3ParameterOptimizationValidator(BaseValidator):
             # Check if step02_data_reading output exists using BaseValidator
             step02_output_dir = Path("data/unified")
             step02_files = list(step02_output_dir.glob(f"{exchange}/{symbol}/{timeframe}/*.parquet"))
-            
+
             if not step02_files:
                 validation_result["validation_passed"] = False
                 validation_result["errors"].append(
@@ -380,7 +380,7 @@ class Step3ParameterOptimizationValidator(BaseValidator):
                     file_valid, file_metrics = self.validate_file_exists(str(file_path), "step2 output file")
                     if not file_valid:
                         validation_result["warnings"].append(f"File validation failed: {file_path}")
-                
+
                 validation_result["details"]["step02_files_found"] = len(step02_files)
                 validation_result["details"]["step02_files"] = [str(f) for f in step02_files]
 
@@ -422,11 +422,11 @@ class Step3ParameterOptimizationValidator(BaseValidator):
             # Check if all expected files exist using BaseValidator
             missing_files = []
             existing_files = []
-            
+
             for filename in expected_files:
                 file_path = output_dir / filename
                 file_valid, file_metrics = self.validate_file_exists(str(file_path), f"expected file: {filename}")
-                
+
                 if file_valid:
                     existing_files.append(str(file_path))
                 else:
@@ -474,36 +474,36 @@ async def run_validator(
         Dictionary containing validation results
     """
     logger.info("🔍 Validating Step 3: Parameter Optimization")
-    
+
     try:
         # Extract parameters
         symbol = training_input.get("symbol", "ETHUSDT")
         exchange = training_input.get("exchange", "BINANCE")
         timeframe = training_input.get("timeframe", "1m")
         data_dir = training_input.get("data_dir", "data_cache")
-        
+
         # Initialize validator with BaseValidator inheritance
         config = training_input.get("config", {})
         validator = Step3ParameterOptimizationValidator(config)
-        
+
         # Validate prerequisites using BaseValidator methods
         prereq_result = validator.validate_step_prerequisites(symbol, exchange, timeframe)
-        
+
         # Validate step execution
         step_result = await validator.validate_step3_parameter_optimization(
             symbol, exchange, data_dir, training_input
         )
-        
+
         # Validate outputs using BaseValidator methods
         output_result = validator.validate_step_output(symbol, exchange, timeframe)
-        
+
         # Combine results
         validation_passed = (
-            prereq_result["validation_passed"] and 
-            step_result and 
+            prereq_result["validation_passed"] and
+            step_result and
             output_result["validation_passed"]
         )
-        
+
         return {
             "step_name": "step03_parameter_optimization",
             "validation_passed": validation_passed,
@@ -513,7 +513,7 @@ async def run_validator(
             "warnings": prereq_result["warnings"] + output_result["warnings"],
             "errors": prereq_result["errors"] + output_result["errors"]
         }
-        
+
     except Exception as e:
         error_context = {
             "step": "step03_parameter_optimization",
@@ -535,16 +535,16 @@ async def run_validator(
 if __name__ == "__main__":
     # Test the validator
     import asyncio
-    
+
     test_input = {
         "symbol": "ETHUSDT",
-        "exchange": "BINANCE", 
+        "exchange": "BINANCE",
         "timeframe": "1m",
         "data_dir": "data_cache",
         "config": {}
     }
-    
+
     test_state = {}
-    
+
     result = asyncio.run(run_validator(test_input, test_state))
     print(json.dumps(result, indent=2))

@@ -274,4 +274,4 @@ The GUI launcher integrates with:
 
 ---
 
-For more information, see the main GUI documentation in `GUI/README.md`. 
+For more information, see the main GUI documentation in `GUI/README.md`.

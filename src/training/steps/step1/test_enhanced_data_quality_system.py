@@ -50,7 +50,7 @@ class TestEnhancedDataQualityManager:
             "close": [100.5 + i * 0.01 for i in range(1000)],
             "volume": [1000 + i for i in range(1000)]
         })
-        
+
         # Create sample aggtrades data
         aggtrades_data = pd.DataFrame({
             "agg_trade_id": range(1000),
@@ -61,7 +61,7 @@ class TestEnhancedDataQualityManager:
             "timestamp": pd.date_range("2023-01-01", periods=1000, freq="1min"),
             "is_buyer_maker": [True if i % 2 == 0 else False for i in range(1000)]
         })
-        
+
         return {
             "klines": klines_data,
             "aggtrades": aggtrades_data
@@ -72,14 +72,14 @@ class TestEnhancedDataQualityManager:
         """Test Enhanced Data Quality Manager initialization."""
         try:
             from .enhanced_data_quality_manager import EnhancedDataQualityManager
-            
+
             manager = EnhancedDataQualityManager(str(temp_data_dir))
-            
+
             assert manager.data_cache_path == temp_data_dir
             assert temp_data_dir.exists()
-            
+
             logger.info("✅ Enhanced Data Quality Manager initialization test passed")
-            
+
         except ImportError as e:
             logger.warning(f"⚠️ Skipping test - EnhancedDataQualityManager not available: {e}")
             pytest.skip("EnhancedDataQualityManager not available")
@@ -89,16 +89,16 @@ class TestEnhancedDataQualityManager:
         """Test comprehensive quality check functionality."""
         try:
             from .enhanced_data_quality_manager import EnhancedDataQualityManager
-            
+
             manager = EnhancedDataQualityManager(str(temp_data_dir))
-            
+
             # Save sample data
             klines_file = temp_data_dir / "klines_BINANCE_ETHUSDT_1m_consolidated.parquet"
             aggtrades_file = temp_data_dir / "aggtrades_BINANCE_ETHUSDT_consolidated.parquet"
-            
+
             sample_data["klines"].to_parquet(klines_file)
             sample_data["aggtrades"].to_parquet(aggtrades_file)
-            
+
             # Run comprehensive quality check
             results = await manager.comprehensive_quality_check(
                 symbol="ETHUSDT",
@@ -108,15 +108,15 @@ class TestEnhancedDataQualityManager:
                 fill_gaps=False,
                 validate_format=True
             )
-            
+
             assert isinstance(results, dict)
             assert "success" in results
             assert "symbol" in results
             assert "exchange" in results
             assert "timeframe" in results
-            
+
             logger.info("✅ Comprehensive quality check test passed")
-            
+
         except ImportError as e:
             logger.warning(f"⚠️ Skipping test - EnhancedDataQualityManager not available: {e}")
             pytest.skip("EnhancedDataQualityManager not available")
@@ -126,31 +126,31 @@ class TestEnhancedDataQualityManager:
         """Test getting data ready for step3/step4."""
         try:
             from .enhanced_data_quality_manager import EnhancedDataQualityManager
-            
+
             manager = EnhancedDataQualityManager(str(temp_data_dir))
-            
+
             # Save sample data
             klines_file = temp_data_dir / "klines_BINANCE_ETHUSDT_1m_consolidated.parquet"
             aggtrades_file = temp_data_dir / "aggtrades_BINANCE_ETHUSDT_consolidated.parquet"
-            
+
             sample_data["klines"].to_parquet(klines_file)
             sample_data["aggtrades"].to_parquet(aggtrades_file)
-            
+
             # Test getting data for step3/step4
             results = await manager.get_data_for_step3_step4(
                 symbol="ETHUSDT",
                 exchange="BINANCE",
                 timeframe="1m"
             )
-            
+
             assert isinstance(results, dict)
             assert "success" in results
             assert "symbol" in results
             assert "exchange" in results
             assert "timeframe" in results
-            
+
             logger.info("✅ Get data for step3/step4 test passed")
-            
+
         except ImportError as e:
             logger.warning(f"⚠️ Skipping test - EnhancedDataQualityManager not available: {e}")
             pytest.skip("EnhancedDataQualityManager not available")
@@ -170,16 +170,16 @@ class TestDataQualityMonitor:
         """Test Data Quality Monitor initialization."""
         try:
             from .data_quality_monitor import DataQualityMonitor
-            
+
             monitor = DataQualityMonitor(str(temp_data_dir))
-            
+
             assert monitor.data_cache_path == temp_data_dir
             assert temp_data_dir.exists()
             assert monitor.monitoring_active == False
             assert len(monitor.alerts) == 0
-            
+
             logger.info("✅ Data Quality Monitor initialization test passed")
-            
+
         except ImportError as e:
             logger.warning(f"⚠️ Skipping test - DataQualityMonitor not available: {e}")
             pytest.skip("DataQualityMonitor not available")
@@ -189,9 +189,9 @@ class TestDataQualityMonitor:
         """Test alert creation and management."""
         try:
             from .data_quality_monitor import DataQualityMonitor, DataQualityAlert
-            
+
             monitor = DataQualityMonitor(str(temp_data_dir))
-            
+
             # Create test alert
             alert = DataQualityAlert(
                 alert_type="test_alert",
@@ -202,7 +202,7 @@ class TestDataQualityMonitor:
                 timeframe="1m",
                 timestamp=datetime.now()
             )
-            
+
             # Test alert properties
             assert alert.alert_type == "test_alert"
             assert alert.severity == "medium"
@@ -210,20 +210,20 @@ class TestDataQualityMonitor:
             assert alert.symbol == "ETHUSDT"
             assert alert.acknowledged == False
             assert alert.resolved == False
-            
+
             # Test alert to_dict
             alert_dict = alert.to_dict()
             assert isinstance(alert_dict, dict)
             assert alert_dict["alert_type"] == "test_alert"
             assert alert_dict["severity"] == "medium"
-            
+
             # Test alert string representation
             alert_str = str(alert)
             assert "MEDIUM" in alert_str
             assert "test_alert" in alert_str
-            
+
             logger.info("✅ Alert creation and management test passed")
-            
+
         except ImportError as e:
             logger.warning(f"⚠️ Skipping test - DataQualityMonitor not available: {e}")
             pytest.skip("DataQualityMonitor not available")
@@ -233,9 +233,9 @@ class TestDataQualityMonitor:
         """Test monitoring start and stop functionality."""
         try:
             from .data_quality_monitor import DataQualityMonitor
-            
+
             monitor = DataQualityMonitor(str(temp_data_dir))
-            
+
             # Test starting monitoring
             success = await monitor.start_monitoring(
                 symbols=["ETHUSDT"],
@@ -243,19 +243,19 @@ class TestDataQualityMonitor:
                 timeframes=["1m"],
                 interval_seconds=1  # Short interval for testing
             )
-            
+
             assert success == True
             assert monitor.monitoring_active == True
-            
+
             # Wait a moment for monitoring to start
             await asyncio.sleep(0.1)
-            
+
             # Test stopping monitoring
             await monitor.stop_monitoring()
             assert monitor.monitoring_active == False
-            
+
             logger.info("✅ Monitoring start/stop test passed")
-            
+
         except ImportError as e:
             logger.warning(f"⚠️ Skipping test - DataQualityMonitor not available: {e}")
             pytest.skip("DataQualityMonitor not available")
@@ -265,9 +265,9 @@ class TestDataQualityMonitor:
         """Test alert filtering functionality."""
         try:
             from .data_quality_monitor import DataQualityMonitor, DataQualityAlert
-            
+
             monitor = DataQualityMonitor(str(temp_data_dir))
-            
+
             # Create test alerts
             alert1 = DataQualityAlert(
                 alert_type="gap_alert",
@@ -278,7 +278,7 @@ class TestDataQualityMonitor:
                 timeframe="1m",
                 timestamp=datetime.now()
             )
-            
+
             alert2 = DataQualityAlert(
                 alert_type="format_alert",
                 severity="medium",
@@ -288,27 +288,27 @@ class TestDataQualityMonitor:
                 timeframe="1m",
                 timestamp=datetime.now()
             )
-            
+
             # Add alerts to monitor
             monitor.alerts = [alert1, alert2]
-            
+
             # Test filtering by symbol
             eth_alerts = monitor.get_alerts(symbol="ETHUSDT")
             assert len(eth_alerts) == 1
             assert eth_alerts[0].symbol == "ETHUSDT"
-            
+
             # Test filtering by severity
             high_alerts = monitor.get_alerts(severity="high")
             assert len(high_alerts) == 1
             assert high_alerts[0].severity == "high"
-            
+
             # Test filtering by alert type
             gap_alerts = monitor.get_alerts(alert_type="gap_alert")
             assert len(gap_alerts) == 1
             assert gap_alerts[0].alert_type == "gap_alert"
-            
+
             logger.info("✅ Alert filtering test passed")
-            
+
         except ImportError as e:
             logger.warning(f"⚠️ Skipping test - DataQualityMonitor not available: {e}")
             pytest.skip("DataQualityMonitor not available")
@@ -328,16 +328,16 @@ class TestDataQualityDashboard:
         """Test Data Quality Dashboard initialization."""
         try:
             from .data_quality_dashboard import DataQualityDashboard, DashboardConfig
-            
+
             config = DashboardConfig(host="127.0.0.1", port=8081)
             dashboard = DataQualityDashboard(str(temp_data_dir), config)
-            
+
             assert dashboard.data_cache_path == temp_data_dir
             assert dashboard.config.host == "127.0.0.1"
             assert dashboard.config.port == 8081
-            
+
             logger.info("✅ Data Quality Dashboard initialization test passed")
-            
+
         except ImportError as e:
             logger.warning(f"⚠️ Skipping test - DataQualityDashboard not available: {e}")
             pytest.skip("DataQualityDashboard not available")
@@ -347,20 +347,20 @@ class TestDataQualityDashboard:
         """Test dashboard HTML generation."""
         try:
             from .data_quality_dashboard import DataQualityDashboard
-            
+
             dashboard = DataQualityDashboard(str(temp_data_dir))
-            
+
             # Test HTML generation
             html = dashboard._generate_dashboard_html()
-            
+
             assert isinstance(html, str)
             assert "Data Quality Dashboard" in html
             assert "System Status" in html
             assert "Quality Metrics" in html
             assert "Recent Alerts" in html
-            
+
             logger.info("✅ Dashboard HTML generation test passed")
-            
+
         except ImportError as e:
             logger.warning(f"⚠️ Skipping test - DataQualityDashboard not available: {e}")
             pytest.skip("DataQualityDashboard not available")
@@ -387,7 +387,7 @@ class TestIntegration:
             "close": [100.5 + i * 0.01 for i in range(1000)],
             "volume": [1000 + i for i in range(1000)]
         })
-        
+
         # Create sample aggtrades data
         aggtrades_data = pd.DataFrame({
             "agg_trade_id": range(1000),
@@ -398,7 +398,7 @@ class TestIntegration:
             "timestamp": pd.date_range("2023-01-01", periods=1000, freq="1min"),
             "is_buyer_maker": [True if i % 2 == 0 else False for i in range(1000)]
         })
-        
+
         return {
             "klines": klines_data,
             "aggtrades": aggtrades_data
@@ -410,27 +410,27 @@ class TestIntegration:
         try:
             from .enhanced_data_quality_manager import EnhancedDataQualityManager
             from .data_quality_monitor import DataQualityMonitor
-            
+
             # Initialize components
             manager = EnhancedDataQualityManager(str(temp_data_dir))
             monitor = DataQualityMonitor(str(temp_data_dir))
-            
+
             # Save sample data
             klines_file = temp_data_dir / "klines_BINANCE_ETHUSDT_1m_consolidated.parquet"
             aggtrades_file = temp_data_dir / "aggtrades_BINANCE_ETHUSDT_consolidated.parquet"
-            
+
             sample_data["klines"].to_parquet(klines_file)
             sample_data["aggtrades"].to_parquet(aggtrades_file)
-            
+
             # Run quality check
             quality_results = await manager.comprehensive_quality_check(
                 symbol="ETHUSDT",
                 exchange="BINANCE",
                 timeframe="1m"
             )
-            
+
             assert quality_results["success"] == True
-            
+
             # Start monitoring
             monitor_success = await monitor.start_monitoring(
                 symbols=["ETHUSDT"],
@@ -438,22 +438,22 @@ class TestIntegration:
                 timeframes=["1m"],
                 interval_seconds=1
             )
-            
+
             assert monitor_success == True
-            
+
             # Wait for monitoring cycle
             await asyncio.sleep(0.1)
-            
+
             # Check monitoring results
             metrics = monitor.get_performance_metrics()
             assert metrics["total_checks"] > 0
-            
+
             # Stop monitoring
             await monitor.stop_monitoring()
             assert monitor.monitoring_active == False
-            
+
             logger.info("✅ End-to-end quality pipeline test passed")
-            
+
         except ImportError as e:
             logger.warning(f"⚠️ Skipping test - Components not available: {e}")
             pytest.skip("Components not available")
@@ -463,46 +463,46 @@ class TestIntegration:
         """Test integration with step1/step01_5/step3/step4."""
         try:
             from .enhanced_data_quality_manager import EnhancedDataQualityManager
-            
+
             manager = EnhancedDataQualityManager(str(temp_data_dir))
-            
+
             # Save sample data
             klines_file = temp_data_dir / "klines_BINANCE_ETHUSDT_1m_consolidated.parquet"
             aggtrades_file = temp_data_dir / "aggtrades_BINANCE_ETHUSDT_consolidated.parquet"
-            
+
             sample_data["klines"].to_parquet(klines_file)
             sample_data["aggtrades"].to_parquet(aggtrades_file)
-            
+
             # Test step3/step4 data preparation
             data_results = await manager.get_data_for_step3_step4(
                 symbol="ETHUSDT",
                 exchange="BINANCE",
                 timeframe="1m"
             )
-            
+
             assert isinstance(data_results, dict)
             assert "success" in data_results
             assert "symbol" in data_results
             assert "exchange" in data_results
             assert "timeframe" in data_results
-            
+
             # Test automatic data recovery (mock)
             with patch.object(manager, '_fix_missing_data_for_steps') as mock_fix:
                 mock_fix.return_value = {"success": True, "step1_success": True, "step01_5_success": True}
-                
+
                 # This would normally be called when data is missing
                 fix_results = await manager._fix_missing_data_for_steps(
                     symbol="ETHUSDT",
                     exchange="BINANCE",
                     timeframe="1m"
                 )
-                
+
                 assert fix_results["success"] == True
                 assert fix_results["step1_success"] == True
                 assert fix_results["step01_5_success"] == True
-            
+
             logger.info("✅ Step integration test passed")
-            
+
         except ImportError as e:
             logger.warning(f"⚠️ Skipping test - Components not available: {e}")
             pytest.skip("Components not available")
@@ -522,9 +522,9 @@ class TestPerformance:
         """Test performance with large datasets."""
         try:
             from .enhanced_data_quality_manager import EnhancedDataQualityManager
-            
+
             manager = EnhancedDataQualityManager(str(temp_data_dir))
-            
+
             # Create large dataset
             large_klines = pd.DataFrame({
                 "timestamp": pd.date_range("2023-01-01", periods=100000, freq="1min"),
@@ -534,14 +534,14 @@ class TestPerformance:
                 "close": [100.5 + i * 0.01 for i in range(100000)],
                 "volume": [1000 + i for i in range(100000)]
             })
-            
+
             # Save large dataset
             klines_file = temp_data_dir / "klines_BINANCE_ETHUSDT_1m_consolidated.parquet"
             large_klines.to_parquet(klines_file)
-            
+
             # Measure performance
             start_time = datetime.now()
-            
+
             results = await manager.comprehensive_quality_check(
                 symbol="ETHUSDT",
                 exchange="BINANCE",
@@ -550,15 +550,15 @@ class TestPerformance:
                 fill_gaps=False,
                 validate_format=True
             )
-            
+
             end_time = datetime.now()
             duration = (end_time - start_time).total_seconds()
-            
+
             assert results["success"] == True
             assert duration < 30  # Should complete within 30 seconds
-            
+
             logger.info(f"✅ Large dataset performance test passed in {duration:.2f}s")
-            
+
         except ImportError as e:
             logger.warning(f"⚠️ Skipping test - Components not available: {e}")
             pytest.skip("Components not available")
@@ -568,12 +568,12 @@ class TestPerformance:
         """Test concurrent operations performance."""
         try:
             from .enhanced_data_quality_manager import EnhancedDataQualityManager
-            
+
             manager = EnhancedDataQualityManager(str(temp_data_dir))
-            
+
             # Create sample data for multiple symbols
             symbols = ["ETHUSDT", "BTCUSDT", "ADAUSDT"]
-            
+
             for symbol in symbols:
                 klines_data = pd.DataFrame({
                     "timestamp": pd.date_range("2023-01-01", periods=1000, freq="1min"),
@@ -583,13 +583,13 @@ class TestPerformance:
                     "close": [100.5 + i * 0.01 for i in range(1000)],
                     "volume": [1000 + i for i in range(1000)]
                 })
-                
+
                 klines_file = temp_data_dir / f"klines_BINANCE_{symbol}_1m_consolidated.parquet"
                 klines_data.to_parquet(klines_file)
-            
+
             # Run concurrent quality checks
             start_time = datetime.now()
-            
+
             tasks = []
             for symbol in symbols:
                 task = manager.comprehensive_quality_check(
@@ -598,19 +598,19 @@ class TestPerformance:
                     timeframe="1m"
                 )
                 tasks.append(task)
-            
+
             results = await asyncio.gather(*tasks)
             end_time = datetime.now()
             duration = (end_time - start_time).total_seconds()
-            
+
             # Verify all checks completed successfully
             for result in results:
                 assert result["success"] == True
-            
+
             assert duration < 10  # Should complete within 10 seconds
-            
+
             logger.info(f"✅ Concurrent operations test passed in {duration:.2f}s")
-            
+
         except ImportError as e:
             logger.warning(f"⚠️ Skipping test - Components not available: {e}")
             pytest.skip("Components not available")
@@ -619,7 +619,7 @@ class TestPerformance:
 def run_comprehensive_tests():
     """Run all comprehensive tests."""
     logger.info("🚀 Starting comprehensive data quality system tests")
-    
+
     # Test configuration
     test_config = {
         "temp_data_dir": tempfile.mkdtemp(),
@@ -627,7 +627,7 @@ def run_comprehensive_tests():
         "exchanges": ["BINANCE"],
         "timeframes": ["1m"]
     }
-    
+
     try:
         # Run tests
         test_results = {
@@ -636,7 +636,7 @@ def run_comprehensive_tests():
             "failed_tests": 0,
             "skipped_tests": 0
         }
-        
+
         # Test Enhanced Data Quality Manager
         logger.info("📊 Testing Enhanced Data Quality Manager...")
         try:
@@ -647,7 +647,7 @@ def run_comprehensive_tests():
         except Exception as e:
             test_results["failed_tests"] += 1
             logger.error(f"❌ Enhanced Data Quality Manager test failed: {e}")
-        
+
         # Test Data Quality Monitor
         logger.info("📊 Testing Data Quality Monitor...")
         try:
@@ -658,7 +658,7 @@ def run_comprehensive_tests():
         except Exception as e:
             test_results["failed_tests"] += 1
             logger.error(f"❌ Data Quality Monitor test failed: {e}")
-        
+
         # Test Data Quality Dashboard
         logger.info("📊 Testing Data Quality Dashboard...")
         try:
@@ -669,7 +669,7 @@ def run_comprehensive_tests():
         except Exception as e:
             test_results["failed_tests"] += 1
             logger.error(f"❌ Data Quality Dashboard test failed: {e}")
-        
+
         # Print test summary
         logger.info("=" * 80)
         logger.info("📊 COMPREHENSIVE TEST SUMMARY")
@@ -678,14 +678,14 @@ def run_comprehensive_tests():
         logger.info(f"❌ Failed: {test_results['failed_tests']}")
         logger.info(f"⏭️ Skipped: {test_results['skipped_tests']}")
         logger.info(f"📊 Total: {test_results['total_tests']}")
-        
+
         if test_results["failed_tests"] == 0:
             logger.info("🎉 All tests passed!")
         else:
             logger.warning(f"⚠️ {test_results['failed_tests']} tests failed")
-        
+
         logger.info("=" * 80)
-        
+
     finally:
         # Cleanup
         import shutil

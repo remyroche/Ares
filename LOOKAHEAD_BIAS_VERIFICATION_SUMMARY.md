@@ -9,7 +9,7 @@ After thoroughly examining all the features flagged by the LookaheadBiasDetector
 - **`volume_price_impact`**: ✅ Correctly implemented using `close - close.shift(1)` for price changes
 - **`price_volume_correlation_10/20/50`**: ✅ Correctly implemented using rolling windows with `pct_change()`
 
-### 2. Depth Features  
+### 2. Depth Features
 - **`bid_ask_spread_level`**: ✅ Standard technical indicator using current bar data
 - **`roll_spread_proxy`**: ✅ Uses `(high - low) / close` from current bar
 
@@ -43,7 +43,7 @@ After thoroughly examining all the features flagged by the LookaheadBiasDetector
 price_change = close - close.shift(1)  # Uses previous bar
 volume_price_impact = price_change * volume_normalized
 
-# ✅ CORRECT: price_volume_correlation  
+# ✅ CORRECT: price_volume_correlation
 returns = close.pct_change().fillna(0)  # Inherently lagged
 corr = returns.rolling(window).corr(volume_returns)
 

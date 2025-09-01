@@ -293,7 +293,7 @@ async def main():
         else:
             print("🚀 Advanced monitoring system is running...")
             print("Press Ctrl+C to stop")
-            
+
             # Keep running until interrupted
             while launcher.is_running:
                 await asyncio.sleep(1)

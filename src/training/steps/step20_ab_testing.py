@@ -17,7 +17,7 @@ from src.utils.warning_symbols import (
 class ABTestingStep:
     """Step 15: A/B Testing using existing step08_ab_testing_setup."""
 
-    
+
 
     def _validate_environment(self) -> None:
         """Validate environment dependencies and configuration."""

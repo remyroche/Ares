@@ -16,7 +16,7 @@ from src.utils.warning_symbols import (
 class WalkForwardValidationStep:
     """Step 13: Walk-Forward Validation using existing step06_walk_forward_validation."""
 
-    
+
 
     def _validate_environment(self) -> None:
         """Validate environment dependencies and configuration."""

@@ -135,17 +135,17 @@ async def run_step(
         Dict containing step results
     """
     logger = system_logger.getChild("Step9_5MultiTimeframeHMMEnsemble")
-    
+
     try:
         logger.info(f"🚀 Starting Step 9.5: Multi-Timeframe HMM Ensemble Training")
         logger.info(f"📊 Symbol: {symbol}, Exchange: {exchange}, Timeframe: {timeframe}")
-        
+
         start_time = time.time()
-        
+
         # Load configuration
         ensemble_config_dict = get_multi_timeframe_hmm_ensemble_config()
         ensemble_config = ensemble_config_dict.get("MULTI_TIMEFRAME_HMM_ENSEMBLE", {})
-        
+
         if not ensemble_config.get("enabled", False):
             logger.warning("⚠️ Multi-timeframe HMM ensemble is disabled in config")
             return {
@@ -153,11 +153,11 @@ async def run_step(
                 "reason": "disabled_in_config",
                 "success": True,
             }
-        
+
         # Create timeframe configurations
         timeframes_config = ensemble_config.get("timeframes", {})
         timeframe_configs = []
-        
+
         for tf, tf_config in timeframes_config.items():
             timeframe_configs.append(TimeframeConfig(
                 timeframe=tf,
@@ -166,7 +166,7 @@ async def run_step(
                 enable_hazard_model=tf_config.get("enable_hazard_model", True),
                 enable_price_prediction=tf_config.get("enable_price_prediction", False),
             ))
-        
+
         # Create ensemble configuration
         config = EnsembleConfig(
             timeframes=timeframe_configs,
@@ -176,11 +176,11 @@ async def run_step(
             min_confidence_threshold=ensemble_config.get("prediction", {}).get("min_confidence_threshold", 0.6),
             ensemble_method=ensemble_config.get("ensemble_method", "meta_learner"),
         )
-        
+
         # Load regime forecasting data
         regime_forecasting_data = {}
         rf_dir = os.path.join(data_dir, "regime_forecasting")
-        
+
         if not os.path.exists(rf_dir):
             logger.warning(f"⚠️ Regime forecasting directory not found: {rf_dir}")
             return {
@@ -188,17 +188,17 @@ async def run_step(
                 "error": "regime_forecasting_data_not_found",
                 "success": False,
             }
-        
+
         # Load data for each timeframe
         for tf_config in timeframe_configs:
             tf = tf_config.timeframe
             rf_path = os.path.join(rf_dir, f"{exchange}_{symbol}_{tf}_regime_forecasting.json")
-            
+
             if os.path.exists(rf_path):
                 try:
                     with open(rf_path, 'r') as f:
                         rf_data = json.load(f)
-                    
+
                     # Convert to DataFrame format expected by ensemble
                     # Create a simple DataFrame with regime data
                     regime_df = pd.DataFrame({
@@ -206,15 +206,15 @@ async def run_step(
                         'composite_cluster_id': [rf_data.get('current_regime', 0)] * 100,
                         'regime_probabilities': [rf_data.get('next_regime_probabilities', {})] * 100,
                     })
-                    
+
                     regime_forecasting_data[tf] = regime_df
                     logger.info(f"✅ Loaded regime forecasting data for {tf}: {len(regime_df)} rows")
-                    
+
                 except Exception as e:
                     logger.warning(f"⚠️ Failed to load regime forecasting data for {tf}: {e}")
             else:
                 logger.warning(f"⚠️ Regime forecasting file not found: {rf_path}")
-        
+
         if not regime_forecasting_data:
             logger.error("❌ No regime forecasting data available for any timeframe")
             return {
@@ -222,14 +222,14 @@ async def run_step(
                 "error": "no_regime_forecasting_data",
                 "success": False,
             }
-        
+
         # Initialize and train ensemble
         logger.info("🎯 Initializing multi-timeframe HMM ensemble...")
         ensemble = MultiTimeframeHMMEnsemble(config, symbol, exchange)
-        
+
         logger.info("🎓 Training multi-timeframe HMM ensemble...")
         training_success = ensemble.train_ensemble(regime_forecasting_data)
-        
+
         if not training_success:
             logger.error("❌ Multi-timeframe HMM ensemble training failed")
             return {
@@ -237,16 +237,16 @@ async def run_step(
                 "error": "ensemble_training_failed",
                 "success": False,
             }
-        
+
         # Get ensemble status
         ensemble_status = ensemble.get_ensemble_status()
-        
+
         training_time = time.time() - start_time
-        
+
         logger.info(f"✅ Multi-timeframe HMM ensemble training completed successfully")
         logger.info(f"⏱️ Training time: {training_time:.2f} seconds")
         logger.info(f"📊 Ensemble status: {ensemble_status}")
-        
+
         return {
             "status": "SUCCESS",
             "success": True,
@@ -256,7 +256,7 @@ async def run_step(
             "ensemble_method": config.ensemble_method,
             "meta_learner_type": config.meta_learner_type,
         }
-        
+
     except Exception as e:
         logger.exception(f"❌ Multi-timeframe HMM ensemble training failed: {e}")
         return {
@@ -290,26 +290,26 @@ async def validate_step(
         Dict containing validation results
     """
     logger = system_logger.getChild("Step9_5MultiTimeframeHMMEnsembleValidator")
-    
+
     try:
         logger.info(f"🔍 Validating Step 9.5: Multi-Timeframe HMM Ensemble Training")
-        
+
         # Check if ensemble models exist
         models_dir = os.path.join(
             "models", "multi_timeframe_hmm_ensemble", f"{exchange}_{symbol}"
         )
-        
+
         required_files = [
             "ensemble_metadata.json",
             "meta_learner.joblib",
         ]
-        
+
         missing_files = []
         for file in required_files:
             file_path = os.path.join(models_dir, file)
             if not os.path.exists(file_path):
                 missing_files.append(file)
-        
+
         if missing_files:
             logger.warning(f"⚠️ Missing ensemble files: {missing_files}")
             return {
@@ -317,17 +317,17 @@ async def validate_step(
                 "missing_files": missing_files,
                 "status": "FAILED",
             }
-        
+
         # Load and validate ensemble metadata
         metadata_path = os.path.join(models_dir, "ensemble_metadata.json")
         try:
             with open(metadata_path, 'r') as f:
                 metadata = json.load(f)
-            
+
             # Validate metadata structure
             required_keys = ["trained", "ensemble_weights", "symbol", "exchange"]
             missing_keys = [key for key in required_keys if key not in metadata]
-            
+
             if missing_keys:
                 logger.warning(f"⚠️ Missing metadata keys: {missing_keys}")
                 return {
@@ -335,7 +335,7 @@ async def validate_step(
                     "missing_keys": missing_keys,
                     "status": "FAILED",
                 }
-            
+
             if not metadata.get("trained", False):
                 logger.warning("⚠️ Ensemble not marked as trained")
                 return {
@@ -343,7 +343,7 @@ async def validate_step(
                     "error": "ensemble_not_trained",
                     "status": "FAILED",
                 }
-            
+
             logger.info("✅ Multi-timeframe HMM ensemble validation passed")
             return {
                 "validation_passed": True,
@@ -351,7 +351,7 @@ async def validate_step(
                 "ensemble_weights": metadata.get("ensemble_weights", {}),
                 "trained_at": metadata.get("trained_at"),
             }
-            
+
         except Exception as e:
             logger.error(f"❌ Failed to validate ensemble metadata: {e}")
             return {
@@ -359,7 +359,7 @@ async def validate_step(
                 "error": str(e),
                 "status": "FAILED",
             }
-        
+
     except Exception as e:
         logger.exception(f"❌ Multi-timeframe HMM ensemble validation failed: {e}")
         return {

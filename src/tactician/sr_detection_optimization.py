@@ -50,7 +50,12 @@ from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
 
 @dataclass
 class OptimizationResult:
-    pass  # TODO: Add implementation
+    # Implementation placeholder - add actual implementation
+
+    # Implementation needed - add actual functionality
+
+
+    pass
 class OptimizationResult:
 class OptimizationResult:
     """Result of S/R detection optimization."""
@@ -131,7 +136,12 @@ return {
 
 
 class SRDetectionOptimizer:
-    pass  # TODO: Add implementation
+    # Implementation placeholder - add actual implementation
+
+    # Implementation needed - add actual functionality
+
+
+    pass
 class SRDetectionOptimizer:
 class SRDetectionOptimizer:
     """

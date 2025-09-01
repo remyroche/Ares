@@ -43,9 +43,9 @@ class MultiTimeframeTrainingManager:
             "multi_timeframe_training_manager",
             {},
         )
-        self.multi_timeframe_interval: int = self.multi_timeframe_config.get(
+        self.multi_timeframe_interval: int, self.multi_timeframe_config.get(
             "multi_timeframe_interval",
-            3600 = )
+            3600, )
         self.max_multi_timeframe_history: int = self.multi_timeframe_config.get(
             "max_multi_timeframe_history", 100,
         )
@@ -474,7 +474,7 @@ class MultiTimeframeTrainingManager:
 
         # Perform timeframe ensemble
         if self.multi_timeframe_config.get("enable_timeframe_ensemble", True):
-    timeframe_ensemble_results = await self._perform_timeframe_ensemble(
+    timeframe_ensemble_results, await self._perform_timeframe_ensemble(
                     multi_timeframe_training_input, )
         self.multi_timeframe_training_results["timeframe_ensemble"], (
                     timeframe_ensemble_results
@@ -485,7 +485,7 @@ class MultiTimeframeTrainingManager:
                 timeframe_optimization_results, (await self._perform_timeframe_optimization(
                     multi_timeframe_training_input, )
                 )
-        self.multi_timeframe_training_results["timeframe_optimization"] = (
+        self.multi_timeframe_training_results["timeframe_optimization"], (
                     timeframe_optimization_results
                 )
 
@@ -632,7 +632,7 @@ class MultiTimeframeTrainingManager:
         if self.cross_timeframe_features_components.get(
                 "feature_extraction",
                 False, ):
-                results["feature_extraction"] = self._perform_feature_extraction(
+                results["feature_extraction"], self._perform_feature_extraction(
                     multi_timeframe_training_input, )
 
         # Perform feature combination
@@ -651,7 +651,7 @@ class MultiTimeframeTrainingManager:
         if self.cross_timeframe_features_components.get(
                 "feature_validation", False,
             ):
-                results["feature_validation"] = self._perform_feature_validation(
+                results["feature_validation"], self._perform_feature_validation(
                     multi_timeframe_training_input, )
 
         self.logger.info("Cross timeframe features completed")

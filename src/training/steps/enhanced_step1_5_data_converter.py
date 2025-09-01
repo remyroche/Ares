@@ -96,7 +96,7 @@ class OptimizedUnifiedDataProcessor:
     async def _process_source_streaming(self, source_name: str, file_path: str) -> List[pd.DataFrame]:
         """Process a single data source using streaming."""
         chunks, []
-        chunk_count = 0
+        chunk_count, 0
 
         try:
             # TODO: Implement based on requirements proper exception handling

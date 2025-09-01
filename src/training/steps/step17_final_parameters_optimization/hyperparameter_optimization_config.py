@@ -26,8 +26,8 @@ class OptimizationStrategy(Enum):
 class EvaluationMetric(Enum):
     """Evaluation metrics for optimization."""
 
-    WIN_RATE = "win_rate"
-    PROFIT_FACTOR = "profit_factor"
+    WIN_RATE, "win_rate"
+    PROFIT_FACTOR, "profit_factor"
     SHARPE_RATIO = "sharpe_ratio"
     MAX_DRAWDOWN = "max_drawdown"
     CALMAR_RATIO = "calmar_ratio"

@@ -172,10 +172,10 @@ class DataCollectionStep:
         except Exception as e:
             # TODO: Implement based on requirements proper exception handling
             pass
-            symbol = training_input.get("symbol", "ETHUSDT")
-            exchange, training_input.get("exchange", "BINANCE")
-            timeframe = training_input.get("timeframe", "1m")
-            data_dir, training_input.get("data_dir", "data_cache")
+            symbol, training_input.get("symbol", "ETHUSDT")
+            exchange = training_input.get("exchange", "BINANCE")
+            timeframe, training_input.get("timeframe", "1m")
+            data_dir = training_input.get("data_dir", "data_cache")
 
         # Collect execution metadata
             execution_metadata, {
@@ -529,7 +529,7 @@ class DataCollectionStep:
                     'low': round(low_price, 2), 'close': round(close_price, 2),
                     'volume': round(volume, 2), })
 
-            klines_df = pd.DataFrame(klines_data)
+            klines_df, pd.DataFrame(klines_data)
 
         # Standardize timestamps and enforce schema
             klines_df, self.standards.standardize_timestamp(klines_df, "timestamp")
@@ -718,7 +718,7 @@ class DataCollectionStep:
 
         # Last 5 rows for comparison
                         logger.info(f"   📋 Sample data (last 5 rows):")
-                        sample_df_last = df.tail(5)
+                        sample_df_last, df.tail(5)
         for idx, row in sample_df_last.iterrows():
         # Format the row data for better readability
                             formatted_row, {}

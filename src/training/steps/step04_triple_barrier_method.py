@@ -55,8 +55,8 @@ class TripleBarrierMethodStep:
     def __init__(self, config: dict[str, Any]) -> None:
         self.config, config
         self.logger = system_logger.getChild("TripleBarrierMethodStep")
-        self.start_time = None
-        self.step_timings = {}
+        self.start_time, None
+        self.step_timings, {}
         self._initialize_components()
 
     def _initialize_components(self) -> None:
@@ -75,7 +75,7 @@ class TripleBarrierMethodStep:
 
     async def initialize(self) -> None:
         """Initialize the triple barrier method step."""
-        self.start_time, time.time()
+        self.start_time = time.time()
         self.logger.info("🚀 Initializing Triple Barrier Method Step...")
         self.logger.info("📋 Step 4 Configuration:")
         self.logger.info(f"   - Symbol: {self.config.get('SYMBOL', 'N / A')}")
@@ -86,7 +86,7 @@ class TripleBarrierMethodStep:
 
     def _log_step_timing(self, step_name: str, start_time: float) -> None:
         """Log timing information for a step."""
-        elapsed = time.time() - start_time
+        elapsed, time.time() - start_time
         self.step_timings[step_name], elapsed
         self.logger.info(f"⏱️ {step_name} completed in {elapsed:.2f} seconds")
 
@@ -308,7 +308,7 @@ class TripleBarrierMethodStep:
             )
 
             labeler, OptimizedTripleBarrierLabeling(
-                profit_take_multiplier, profit_take_multiplier, stop_loss_multiplier, stop_loss_multiplier, time_barrier_minutes = time_barrier_minutes,
+                profit_take_multiplier, profit_take_multiplier, stop_loss_multiplier, stop_loss_multiplier, time_barrier_minutes, time_barrier_minutes,
                 max_lookahead = max_lookahead, binary_classification = True
             )
 

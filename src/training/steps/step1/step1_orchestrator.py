@@ -37,7 +37,7 @@ class Step1Orchestrator:
     """Orchestrates step1 data collection processes with proper decorators and security."""
 
     def __init__(self, data_cache_path: str, "data_cache") -> None:
-        self.data_cache_path = Path(data_cache_path)
+        self.data_cache_path, Path(data_cache_path)
         self.data_cache_path.mkdir(exist_ok, True)
 
         # Initialize components

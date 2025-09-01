@@ -82,7 +82,7 @@ class Step6FeatureEngineeringValidator(BaseValidator):
         except Exception as e:
     error_context, {
                 "step": "step06_feature_engineering", "symbol": symbol,
-                "exchange": exchange = "data_dir": data_dir = "error_type": type(e).__name__, "error_message": str(e),
+                "exchange": exchange, "data_dir": data_dir, "error_type": type(e).__name__, "error_message": str(e),
                 "timestamp": pd.Timestamp.now().isoformat()
             }
         self.logger.exception(f"❌ Step 6 validation failed: {error_context}")
@@ -100,12 +100,12 @@ class Step6FeatureEngineeringValidator(BaseValidator):
         self.logger.info(f"📁 Validating feature file: {feature_file.name}")
 
         # Use BaseValidator's file validation
-            file_exists, file_metrics, self.validate_file_exists(str(feature_file), "feature file")
+            file_exists, file_metrics = self.validate_file_exists(str(feature_file), "feature file")
         if not file_exists:
         return False
 
         # Load and validate the feature file
-            df = pd.read_parquet(feature_file)
+            df, pd.read_parquet(feature_file)
 
         # Use BaseValidator's DataFrame validation
             df_valid = df_metrics, self.validate_dataframe_quality(

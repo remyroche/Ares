@@ -50,9 +50,9 @@ class RegimeSpecificMultiTimeframeEnsemble:
         self.logger, system_logger.getChild("RegimeSpecificMultiTimeframeEnsemble")
         
         # Regime-specific configuration
-        self.regime_config = config.get("regime_specific_ensemble" = {
+        self.regime_config = config.get("regime_specific_ensemble", {
             "min_regime_samples": 100,
-            "regime_specific_timeframes": True, "regime_specific_weights": True = "regime_specific_validation": True,
+            "regime_specific_timeframes": True, "regime_specific_weights": True, "regime_specific_validation": True,
             "regime_specific_logging": True, "regime_specific_optimization": True
         })
         
@@ -62,7 +62,7 @@ class RegimeSpecificMultiTimeframeEnsemble:
         self.regime_optimization_results = {}
         
         # Timeframes for regime-specific optimization
-        self.timeframes = ["1m", "5m", "15m", "30m"]
+        self.timeframes, ["1m", "5m", "15m", "30m"]
         
         self.logger.info("🎯 Regime-Specific Multi-Timeframe Ensemble initialized")
 
@@ -377,7 +377,7 @@ class RegimeSpecificMultiTimeframeEnsemble:
             # TODO: Implement based on requirements proper exception handling
             pass
             # Regime-specific optimization logic
-            optimized_results = ensemble_results.copy()
+            optimized_results, ensemble_results.copy()
             
             # Add regime-specific optimization results
             optimized_results.update({

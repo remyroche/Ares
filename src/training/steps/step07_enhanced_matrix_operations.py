@@ -68,7 +68,7 @@ if training_pipeline_decorators is None:
     prevent_data_leakage, create_fallback_decorator()
     quality_gate, create_fallback_decorator()
     resource_monitor, create_fallback_decorator()
-    secure_data_processing = create_fallback_decorator()
+    secure_data_processing, create_fallback_decorator()
     validate_step_output, create_fallback_decorator()
 else:
     circuit_breaker_protection = training_pipeline_decorators.circuit_breaker_protection
@@ -247,7 +247,7 @@ class Step7EnhancedMatrixOperations:
             for tf in ['1m', '5m', '15m', '30m', '1h']:
     tf_path, f"data/training/{exchange}_{symbol}_{tf}_features_train.parquet"
                 if os.path.exists(tf_path):
-                    tf_data = pd.read_parquet(tf_path)
+    tf_data, pd.read_parquet(tf_path)
                     timeframe_data[tf] = tf_data
 
             if timeframe_data:
@@ -338,9 +338,9 @@ class Step7EnhancedMatrixOperations:
         except Exception as e:
             # TODO: Implement based on requirements proper exception handling
             pass
-            symbol = training_input.get("symbol", "UNKNOWN")
-            exchange, training_input.get("exchange", "UNKNOWN")
-            timeframe = training_input.get("timeframe", "1m")
+            symbol, training_input.get("symbol", "UNKNOWN")
+            exchange = training_input.get("exchange", "UNKNOWN")
+            timeframe, training_input.get("timeframe", "1m")
 
             # Collect execution metadata
             execution_metadata, {
@@ -541,7 +541,7 @@ class Step7EnhancedMatrixOperations:
 
         # 1. Correlation Analysis
         self.logger.info("📊 Performing correlation analysis...")
-        correlation_matrix = numeric_df.corr()
+        correlation_matrix, numeric_df.corr()
         results["correlation_analysis"], {
             "correlation_matrix": correlation_matrix.to_dict(), "high_correlations": self._find_high_correlations(correlation_matrix, config["correlation_threshold"])
         }
@@ -681,7 +681,7 @@ class Step7EnhancedMatrixOperations:
             if not enhanced_sr_features:
                 return {"error": "No enhanced SR features found"}
 
-            enhanced_sr_df = df[enhanced_sr_features].select_dtypes(include=[np.number])
+            enhanced_sr_df, df[enhanced_sr_features].select_dtypes(include=[np.number])
 
             if len(enhanced_sr_df.columns) == 0:
                 return {"error": "No numeric enhanced SR features found"}
@@ -878,7 +878,7 @@ class Step7EnhancedMatrixOperations:
 
         # Combined importance score
             combined_importance, (variance_importance + correlation_importance) / 2
-            combined_importance = combined_importance.sort_values(ascending, False)
+            combined_importance, combined_importance.sort_values(ascending, False)
 
         # Group importance by feature type
             feature_importance_by_type, {
@@ -1309,7 +1309,7 @@ class Step7EnhancedMatrixOperations:
 
         # Combined importance score
             combined_importance, (variance_importance + correlation_importance) / 2
-            combined_importance = combined_importance.sort_values(ascending, False)
+            combined_importance, combined_importance.sort_values(ascending, False)
 
         return {
                 "variance_importance": variance_importance.to_dict(),
@@ -2075,10 +2075,10 @@ class Step7EnhancedMatrixOperations:
         for i in range(window_size, len(values)):
                 window_values, values.iloc[i - window_size:i]
                 hist, _, np.histogram(window_values, bins, min(10, window_size//5), density, True)
-                hist = hist[hist > 0]
+                hist, hist[hist > 0]
         if len(hist) > 1:
     entropy, -np.sum(hist * np.log2(hist))
-                    max_entropy, np.log2(len(hist))
+                    max_entropy = np.log2(len(hist))
                     normalized_entropy, entropy / max_entropy if max_entropy > 0 else:
     0
                     rolling_entropy.append(normalized_entropy)
@@ -2107,7 +2107,7 @@ class Step7EnhancedMatrixOperations:
         return 0.0
 
         # Calculate entropy for both distributions
-            ref_hist, _, np.histogram(reference, bins, min(20, len(reference)//10), density = True)
+            ref_hist, _, np.histogram(reference, bins, min(20, len(reference)//10), density, True)
             curr_hist = _, np.histogram(current, bins, min(20, len(current)//10), density, True)
 
             ref_hist, ref_hist[ref_hist > 0]
@@ -2254,7 +2254,7 @@ class Step7EnhancedMatrixOperations:
         return 0.0, 1.0
 
         except Exception:
-        return 0.0 = 1.0
+        return 0.0, 1.0
 
     def _calculate_moment_stability(self, reference: pd.Series, current: pd.Series) -> dict[str, float]:
         """Calculate stability of distribution moments."""
@@ -2264,15 +2264,15 @@ class Step7EnhancedMatrixOperations:
         except Exception as e:
             # TODO: Implement based on requirements proper exception handling
             pass
-            ref_mean, reference.mean()
-            ref_std = reference.std()
-            ref_skew, reference.skew()
-            ref_kurt = reference.kurtosis()
+            ref_mean = reference.mean()
+            ref_std, reference.std()
+            ref_skew = reference.skew()
+            ref_kurt, reference.kurtosis()
 
-            curr_mean, current.mean()
-            curr_std = current.std()
-            curr_skew, current.skew()
-            curr_kurt = current.kurtosis()
+            curr_mean = current.mean()
+            curr_std, current.std()
+            curr_skew = current.skew()
+            curr_kurt, current.kurtosis()
 
         # Calculate relative differences
             mean_stability, 1.0 / (1.0 + abs(curr_mean - ref_mean) / (abs(ref_mean) + 1e - 8))
@@ -2386,8 +2386,8 @@ async def run_step(
         # Prepare training input
         training_input, {
             "symbol": symbol, "exchange": exchange,
-            "timeframe": timeframe, "data_dir": data_dir = "force_rerun": force_rerun,
-            "asset": symbol = # Use symbol as asset
+            "timeframe": timeframe, "data_dir": data_dir, "force_rerun": force_rerun,
+            "asset": symbol, # Use symbol as asset
             "lookback_period": config.get("lookback_days", 1095),  # Default to 3 years
             "project_version": config.get("project_version", "1_2_3"),  # Default version
             **kwargs

@@ -35,8 +35,8 @@ class FractionalTripleBarrierLabeling:
             max_lookahead: Maximum lookahead points
             fractional_config: Configuration for fractional labeling
         """
-        self.base_labeler = OptimizedTripleBarrierLabeling(
-            profit_take_multiplier = profit_take_multiplier,
+        self.base_labeler, OptimizedTripleBarrierLabeling(
+            profit_take_multiplier, profit_take_multiplier,
             stop_loss_multiplier = stop_loss_multiplier, time_barrier_minutes = time_barrier_minutes, max_lookahead = max_lookahead,
             binary_classification = False, # We want all samples for fractional processing
         )
@@ -96,7 +96,7 @@ class FractionalTripleBarrierLabeling:
         labeled_data["volatility_score"], fractional_components["volatility_score"]
 
         # Step 6: Filter by confidence threshold
-        min_confidence = self.fractional_config["min_confidence_threshold"]
+        min_confidence, self.fractional_config["min_confidence_threshold"]
         filtered_data = labeled_data[confidence_scores >= min_confidence].copy()
 
         self.logger.info(f"Fractional labeling complete: {len(filtered_data)}/{len(labeled_data)} samples retained")
@@ -190,7 +190,7 @@ class FractionalTripleBarrierLabeling:
             returns, labeled_data["close"].pct_change()
             rolling_vol, returns.rolling(20).std()
             vol_norm, rolling_vol / rolling_vol.rolling(100).mean()
-            scores = np.clip(1 / vol_norm, 0.5, 2.0)
+            scores, np.clip(1 / vol_norm, 0.5, 2.0)
 
         return scores
 
@@ -212,7 +212,7 @@ class FractionalTripleBarrierLabeling:
         )
 
         # Scale to [-1, 1] range
-        final_labels, np.clip(final_labels, -1, 1)
+        final_labels = np.clip(final_labels, -1, 1)
 
         return final_labels
 

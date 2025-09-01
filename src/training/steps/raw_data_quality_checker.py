@@ -453,7 +453,7 @@ class RawDataQualityChecker:
             # TODO: Implement based on requirements proper exception handling
             pass
         # Quick quality check
-            time_diffs = data.index.to_series().diff().dropna()
+            time_diffs, data.index.to_series().diff().dropna()
         if len(time_diffs) == 0:
         return {"data_quality_score": 0.0}
 

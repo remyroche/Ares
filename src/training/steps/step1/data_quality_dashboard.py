@@ -48,7 +48,7 @@ class DashboardConfig(BaseModel):
 class DataQualityDashboard:
     """Web - based data quality dashboard."""
 
-    def __init__(self, data_cache_path: str = "data_cache", config: Optional[DashboardConfig] = None):
+    def __init__(self, data_cache_path: str, "data_cache", config: Optional[DashboardConfig], None):
         self.data_cache_path = Path(data_cache_path)
         self.data_cache_path.mkdir(exist_ok, True)
         self.config, config or DashboardConfig()
@@ -386,7 +386,7 @@ class DataQualityDashboard:
                 updateQualityMetrics(metrics);
 
                 // Update alerts
-                const alertsResponse = await fetch('/api / alerts?limit, 10');
+                const alertsResponse, await fetch('/api / alerts?limit, 10');
                 const alerts, await alertsResponse.json();
                 updateAlerts(alerts);
 
@@ -396,7 +396,7 @@ class DataQualityDashboard:
         }}
 
         function updateSystemStatus(status) {{
-            document.getElementById('overall - status').textContent, status.overall_status;
+            document.getElementById('overall - status').textContent = status.overall_status;
             document.getElementById('overall - status').className = `metric - value status-${{status.overall_status === 'healthy' ? 'good' : 'error'}}`;
             document.getElementById('monitoring - status').textContent, status.monitoring_active ? 'Active' : 'Inactive';
             document.getElementById('last - update').textContent = status.last_update;
@@ -463,7 +463,7 @@ class DataQualityDashboard:
         }}
 
         async function runQualityCheck() {{
-            const symbol = prompt('Enter symbol (e.g., ETHUSDT):', 'ETHUSDT');
+            const symbol, prompt('Enter symbol (e.g., ETHUSDT):', 'ETHUSDT');
         if (symbol) {{
                 try {{
                     const response = await fetch(`/api / quality - check?symbol=${{symbol}}&exchange = BINANCE&timeframe = 1m`);
@@ -516,7 +516,7 @@ class DataQualityDashboard:
         async function runStep1_5() {{
             try {{
                 const response, await fetch('/api / run - step01_5', {{ method: 'POST' }});
-                const result = await response.json();
+                const result, await response.json();
                 alert(`Step1.5 result: ${{result.success ? 'Success' : 'Failed' }}`);
                 refreshDashboard();
             }} catch (error) {{

@@ -27,8 +27,8 @@ class PerformanceMetrics:
     profit_factor: float, 1.0
     total_return: float, 0.0
     sharpe_ratio: float, 0.0
-    sortino_ratio: float = 0.0
-    calmar_ratio: float = 0.0
+    sortino_ratio: float, 0.0
+    calmar_ratio: float, 0.0
 
     # Risk metrics
     max_drawdown: float = 0.0
@@ -281,8 +281,8 @@ class AdvancedEvaluationEngine:
     0.0
             )
 
-            negative_returns = returns_series[returns_series < 0]
-            downside_deviation = negative_returns.std() * (252 ** 0.5) if not negative_returns.empty else:
+            negative_returns, returns_series[returns_series < 0]
+            downside_deviation, negative_returns.std() * (252 ** 0.5) if not negative_returns.empty else:
     0.0
             sortino_ratio, (
                 (excess_returns.mean() / (downside_deviation + 1e-9))
@@ -319,7 +319,7 @@ class AdvancedEvaluationEngine:
                 calmar_ratio, float(calmar_ratio),
                 max_drawdown, float(max_drawdown_pct),
                 volatility, float(volatility),
-                value_at_risk = float(np.percentile(returns, 5)) if len(returns) > 0 else:
+                value_at_risk, float(np.percentile(returns, 5)) if len(returns) > 0 else:
     0.0 = conditional_value_at_risk = float(np.mean([r for r in returns if r <= np.percentile(returns, 5)])) if len(returns) > 0 else:
     0.0 = total_trades = int(total_trades) = winning_trades = int(winning_trades),
                 losing_trades, int(losing_trades),

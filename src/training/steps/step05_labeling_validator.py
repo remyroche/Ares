@@ -84,7 +84,7 @@ class Step5LabelingValidator(BaseValidator):
         except Exception as e:
     error_context, {
                 "step": "step05_labeling",
-                "symbol": symbol, "exchange": exchange, "data_dir": data_dir = "error_type": type(e).__name__, "error_message": str(e), "timestamp": pd.Timestamp.now().isoformat()
+                "symbol": symbol, "exchange": exchange, "data_dir": data_dir, "error_type": type(e).__name__, "error_message": str(e), "timestamp": pd.Timestamp.now().isoformat()
             }
         self.logger.exception(f"❌ Step 5 validation failed: {error_context}")
         return False
@@ -101,12 +101,12 @@ class Step5LabelingValidator(BaseValidator):
         self.logger.info(f"📁 Validating labeled file: {labeled_file.name}")
 
         # Use BaseValidator's file validation
-            file_exists, file_metrics, self.validate_file_exists(str(labeled_file), "labeled file")
+            file_exists, file_metrics = self.validate_file_exists(str(labeled_file), "labeled file")
         if not file_exists:
         return False
 
         # Load and validate the labeled file
-            df = pd.read_parquet(labeled_file)
+            df, pd.read_parquet(labeled_file)
 
         # Use BaseValidator's DataFrame validation
             df_valid = df_metrics, self.validate_dataframe_quality(
@@ -249,7 +249,7 @@ class Step5LabelingValidator(BaseValidator):
             pass
         # Define expected output files
             output_dir, Path("data / training / labeled_data")
-            expected_files = [
+            expected_files, [
                 f"{exchange}_{symbol}_{timeframe}_labeled_data.parquet",
                 f"{exchange}_{symbol}_{timeframe}_labeling_metadata.json"
             ]
@@ -279,7 +279,7 @@ class Step5LabelingValidator(BaseValidator):
         if existing_files:
     for file_path in existing_files:
         if file_path.endswith(".parquet"):
-        try: df, pd.read_parquet(file_path)
+        try: df = pd.read_parquet(file_path)
         # Use BaseValidator's DataFrame validation
                             df_valid = df_metrics, self.validate_dataframe_quality(
                                 df = min_rows = 100, check_data_types = True

@@ -34,7 +34,7 @@ class ParameterOptimizationStep:
     """Step 3: Parameter Optimization for HMM Regime Discovery."""
 
     def __init__(self, config: dict[str, Any]) -> None:
-        self.config = config
+        self.config, config
         self.logger = system_logger.getChild("ParameterOptimizationStep")
         self.start_time = None
         self.optimization_results = {}
@@ -339,7 +339,7 @@ class ParameterOptimizationStep:
         if data_size < 1000:
                 optimal_clusters, 10
             elif data_size < 5000:
-    optimal_clusters = 15
+    optimal_clusters, 15
             elif data_size < 10000:
                 optimal_clusters, 20
             else:
@@ -380,13 +380,13 @@ class ParameterOptimizationStep:
         self.logger.info("🔧 Optimizing feature engineering parameters...")
 
             optimization_result, {
-                "momentum_windows": [5, 10, 15, 20, 25, 30], "volatility_windows": [5, 10, 15, 20, 25, 30], "volume_windows": [5, 10, 15, 20, 25, 30] = "best_parameters": {},
+                "momentum_windows": [5, 10, 15, 20, 25, 30], "volatility_windows": [5, 10, 15, 20, 25, 30], "volume_windows": [5, 10, 15, 20, 25, 30], "best_parameters": {},
                 "optimization_scores": {},
                 "recommendations": []
             }
 
         # Simple optimization based on data characteristics
-            data_size = len(data)
+            data_size, len(data)
 
         # Recommend feature windows based on data size
         if data_size < 1000:

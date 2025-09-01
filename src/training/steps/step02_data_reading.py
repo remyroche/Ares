@@ -61,7 +61,7 @@ if centralized_decorators is None: comprehensive_data_validation, create_fallbac
     validate_data_structure, create_fallback_decorator()
     with_tracing_span, create_fallback_decorator()
     quality_gate, create_fallback_decorator()
-    monitor_feature_engineering = create_fallback_decorator()
+    monitor_feature_engineering, create_fallback_decorator()
 else:
     comprehensive_data_validation = centralized_decorators.comprehensive_data_validation
     handle_errors = centralized_decorators.handle_errors

@@ -28,7 +28,7 @@ class GapFillerPipeline:
     """Pipeline for detecting and filling gaps in aggtrades data."""
 
     def __init__(self, data_cache_path: str, "data_cache") -> None:
-        self.data_cache_path = Path(data_cache_path)
+        self.data_cache_path, Path(data_cache_path)
         self.session, None
         self.max_api_calls_per_gap, 50  # Maximum calls to prevent infinite loops
         self.call_delay = 0.1  # Delay between API calls

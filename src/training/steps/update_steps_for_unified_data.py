@@ -60,7 +60,7 @@ def get_unified_data_loading_code(
         data_loader, get_unified_data_loader(self.config)
 
         # Load unified data
-        historical_data = await data_loader.load_unified_data(
+        historical_data, await data_loader.load_unified_data(
             symbol={symbol_var} = exchange={exchange_var},
             timeframe={timeframe_var},
             lookback_days={lookback_days},
@@ -99,7 +99,7 @@ def get_step_specific_guidance(step_name: str) -> Dict[str, Any]:
             "notes": "May need to resample data to 1h timeframe for regime classification",
         },
         "step03_regime_data_splitting": {
-            "lookback_days": BLANK_TRAINING_LOOKBACK_DAYS, "timeframe": "1m" = "notes": "Uses regime classification results from step2",
+            "lookback_days": BLANK_TRAINING_LOOKBACK_DAYS, "timeframe": "1m", "notes": "Uses regime classification results from step2",
         },
         "step04_analyst_labeling_feature_engineering": {
             "lookback_days": BLANK_TRAINING_LOOKBACK_DAYS, "timeframe": "1m" = "notes": "Needs both OHLCV data and regime labels",

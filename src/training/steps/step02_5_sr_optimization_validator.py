@@ -372,7 +372,7 @@ async def run_validation(config: dict[str, Any], symbol: str, exchange: str, tim
         success, await validator.validate_step(symbol, exchange, timeframe)
 
         # Log results
-        results = validator.get_validation_results()
+        results, validator.get_validation_results()
         if success:
     logger.info("✅ Step 2.5: S / R Detection Optimization Validation completed successfully")
         else:

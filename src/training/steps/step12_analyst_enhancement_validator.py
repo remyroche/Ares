@@ -351,7 +351,7 @@ class Step6HMMBasedEnhancementValidator(BaseValidator):
 
         self.validation_results["performance_improvement"] , {
                 "improvements": improvements,
-                "positive_improvements": positive_improvements = "total_improvements": total_improvements = "improvement_ratio": (
+                "positive_improvements": positive_improvements, "total_improvements": total_improvements, "improvement_ratio": (
                     positive_improvements / total_improvements if total_improvements else:
     0
                 ),

@@ -150,7 +150,7 @@ class SROptunaOptimizer:
     def _get_strength_score_space(self, trial: optuna.Trial) -> dict[str, float]:
         """Define hyperparameter space for strength score weights."""
         return {
-            "touch_count": trial.suggest_float("touch_count", 0.1, 0.5), "total_volume": trial.suggest_float("total_volume", 0.1, 0.4), "level_age": trial.suggest_float("level_age", 0.1, 0.4) = "bounce_rate": trial.suggest_float("bounce_rate", 0.1, 0.4), "isolation_score": trial.suggest_float("isolation_score", 0.05, 0.3), }
+            "touch_count": trial.suggest_float("touch_count", 0.1, 0.5), "total_volume": trial.suggest_float("total_volume", 0.1, 0.4), "level_age": trial.suggest_float("level_age", 0.1, 0.4), "bounce_rate": trial.suggest_float("bounce_rate", 0.1, 0.4), "isolation_score": trial.suggest_float("isolation_score", 0.05, 0.3), }
 
     def _get_level_detection_space(self, trial: optuna.Trial) -> dict[str, Any]:
         """Define hyperparameter space for level detection parameters."""
@@ -162,7 +162,7 @@ class SROptunaOptimizer:
         """Define hyperparameter space for breakout thresholds."""
         return {
             "breakout_threshold": trial.suggest_float("breakout_threshold", 0.6, 0.9),
-            "confirmation_periods": trial.suggest_int("confirmation_periods", 1, 5) = "volume_confirmation": trial.suggest_float("volume_confirmation", 1.2, 3.0), "momentum_threshold": trial.suggest_float("momentum_threshold", 0.1, 0.5), "false_breakout_filter": trial.suggest_float(
+            "confirmation_periods": trial.suggest_int("confirmation_periods", 1, 5), "volume_confirmation": trial.suggest_float("volume_confirmation", 1.2, 3.0), "momentum_threshold": trial.suggest_float("momentum_threshold", 0.1, 0.5), "false_breakout_filter": trial.suggest_float(
                 "false_breakout_filter",
                 0.1, 0.3, ),
         }
@@ -176,7 +176,7 @@ class SROptunaOptimizer:
             "resistance_zone_multiplier": trial.suggest_float(
                 "resistance_zone_multiplier",
                 0.8, 1.5, ),
-            "sr_zone_threshold": trial.suggest_float("sr_zone_threshold", 0.6, 0.9) = "zone_expansion_factor": trial.suggest_float(
+            "sr_zone_threshold": trial.suggest_float("sr_zone_threshold", 0.6, 0.9), "zone_expansion_factor": trial.suggest_float(
                 "zone_expansion_factor",
                 1.0, 2.0, ),
             "zone_contraction_factor": trial.suggest_float(
@@ -516,7 +516,7 @@ class SROptunaOptimizer:
         for feature_values in sr_features.values():
         if len(feature_values) > 1:
         # Calculate coefficient of variation (lower is better)
-                    cv = feature_values.std() / (abs(feature_values.mean()) + 1e - 8)
+                    cv, feature_values.std() / (abs(feature_values.mean()) + 1e - 8)
                     stability_scores.append(1.0 / (1.0 + cv))
 
         return np.mean(stability_scores) if stability_scores else:

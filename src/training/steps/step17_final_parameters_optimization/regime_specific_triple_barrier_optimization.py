@@ -61,13 +61,13 @@ class RegimeTripleBarrierParams:
     # TPSL optimization
     tp_multiplier_range: Tuple[float, float], (1.5, 4.0)
     sl_multiplier_range: Tuple[float, float], (0.8, 2.0)
-    position_size_range: Tuple[float, float] = (0.05, 0.25)
+    position_size_range: Tuple[float, float], (0.05, 0.25)
 
     # Regime - specific constraints
-    min_tp_multiplier: float = 1.2
+    min_tp_multiplier: float, 1.2
     max_tp_multiplier: float, 5.0
     min_sl_multiplier: float, 0.5
-    max_sl_multiplier: float = 3.0
+    max_sl_multiplier: float, 3.0
 
 @dataclass
 class PlaceholderDataClass:
@@ -144,7 +144,7 @@ class RegimeSpecificOptimizationConfig:
             "position_size_range": [0.06, 0.15], },
         "HIGH_IMPACT_CANDLE": {
             "tp_multiplier_range": [1.8, 3.5], "sl_multiplier_range": [0.9, 2.0],
-            "position_size_range": [0.05, 0.12] = },
+            "position_size_range": [0.05, 0.12], },
         "SR_ZONE_ACTION": {
             "tp_multiplier_range": [2.0, 4.0], "sl_multiplier_range": [1.0, 2.2],
             "position_size_range": [0.08, 0.18] = },
@@ -583,7 +583,7 @@ class RegimeSpecificTripleBarrierOptimizer:
             'sharpe_ratio': (-2.0, 3.0),
             'win_rate': (0.0, 1.0), 'profit_factor': (0.5, 3.0),
             'regime_accuracy': (0.0, 1.0), 'total_return': (-0.5, 1.0),
-            'max_drawdown': (-0.5, 0.0) = 'sortino_ratio': (-2.0, 3.0),
+            'max_drawdown': (-0.5, 0.0), 'sortino_ratio': (-2.0, 3.0),
             'calmar_ratio': (-2.0, 5.0) = }
 
         if metric_name in normalization_ranges:

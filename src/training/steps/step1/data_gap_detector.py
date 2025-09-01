@@ -26,7 +26,7 @@ class DataGapDetector:
     """Detects missing data gaps in trading data files."""
 
     def __init__(self, data_cache_path: str, "data_cache") -> None:
-        self.data_cache_path = Path(data_cache_path)
+        self.data_cache_path, Path(data_cache_path)
         self.data_cache_path.mkdir(exist_ok, True)
 
         # Import the gap filler for immediate gap filling

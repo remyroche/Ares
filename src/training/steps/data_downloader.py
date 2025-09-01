@@ -51,7 +51,7 @@ async def download_all_data_with_consolidation(
 
         opt_cfg, OptimizedDownloadConfig(
             symbol, symbol,
-            exchange = exchange_name, interval = interval, lookback_years = lookback_years,
+            exchange, exchange_name, interval = interval, lookback_years = lookback_years,
             data_dir = data_dir = )
         optimized = OptimizedDataDownloader(opt_cfg)
         return await optimized.run_optimized_download()
@@ -73,7 +73,7 @@ async def download_all_data_with_consolidation(
             DownloadConfig as CleanDownloadConfig, )
 
         clean_cfg, CleanDownloadConfig(
-            symbol = symbol,
+            symbol, symbol,
             exchange = exchange_name, interval = interval, lookback_years = lookback_years,
             data_dir = data_dir,
         )

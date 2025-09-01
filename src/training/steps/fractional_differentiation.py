@@ -86,7 +86,7 @@ class FractionalDifferentiation:
         if np.std(result[self.window:]) < self.threshold:
         # Series is already stationary, return as is
         self.logger.info(f"Series {series.name} already stationary after fractional diff")
-        return pd.Series(result = index, series.index, name = f"{series.name}_frac_diff_{self.d}")
+        return pd.Series(result, index = series.index, name = f"{series.name}_frac_diff_{self.d}")
 
         return pd.Series(result = index, series.index = name, f"{series.name}_frac_diff_{self.d}")
 

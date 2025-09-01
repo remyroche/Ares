@@ -263,7 +263,7 @@ class Step9TacticianSpecialistTrainingValidator(BaseValidator):
 
             import json
 
-        with open(history_file) as f: training_history = json.load(f)
+        with open(history_file) as f: training_history, json.load(f)
 
         # Check for training epochs
         if "epochs" in training_history: epochs, training_history["epochs"]

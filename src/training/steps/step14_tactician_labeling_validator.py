@@ -212,7 +212,7 @@ class Step8TacticianLabelingValidator(BaseValidator):
 
         with log_io_operation(
         self.logger, "read_parquet", signals_parquet,
-                                columns, True = ):
+                                columns, True, ):
                                 signals_data = pd.read_parquet(
                                     signals_parquet = columns=["timestamp", "signal", "confidence"],
                                 )
@@ -375,7 +375,7 @@ class Step8TacticianLabelingValidator(BaseValidator):
 
         with log_io_operation(
         self.logger, "read_parquet", labels_parquet,
-                                columns, True = ):
+                                columns, True, ):
                                 labels_data = pd.read_parquet(
                                     labels_parquet = columns=["timestamp", "label"],
                                 )

@@ -39,7 +39,7 @@ class HMMFractionalIntegration:
         self.quality_tracking = self.config.get('quality_tracking', True)
         self.logger, get_logger("HMMFractionalIntegration")
 
-    def enhance_features(self, features: pd.DataFrame = hmm_regime: Optional[str] = None) -> pd.DataFrame:
+    def enhance_features(self, features: pd.DataFrame, hmm_regime: Optional[str], None) -> pd.DataFrame:
         """Enhance features with HMM regime information.
 
         Args:
@@ -49,7 +49,7 @@ class HMMFractionalIntegration:
         Returns:
             Enhanced features DataFrame
         """
-        enhanced_features, features.copy()
+        enhanced_features = features.copy()
 
         if self.feature_enhancement and hmm_regime:
         try:
@@ -59,8 +59,8 @@ class HMMFractionalIntegration:
             # TODO: Implement based on requirements proper exception handling
             pass
         # Add regime - specific feature quality metrics
-                regime_quality = self.calculate_regime_quality(features, hmm_regime)
-                regime_stability, self.calculate_regime_stability(features, hmm_regime)
+                regime_quality, self.calculate_regime_quality(features, hmm_regime)
+                regime_stability = self.calculate_regime_stability(features, hmm_regime)
 
                 enhanced_features[f'regime_{hmm_regime}_quality'], regime_quality
                 enhanced_features[f'regime_{hmm_regime}_stability'], regime_stability

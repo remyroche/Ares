@@ -44,8 +44,8 @@ from src.training.steps.fractional_differentiation import (
 # Feature Engineering Optimization Configuration
 FEATURE_OPTIMIZATION_CONFIG, {
     "enable_parallel_processing": True,
-    "enable_resampling_cache": True, "enable_vectorized_preprocessing": True = "max_parallel_workers": 4,
-    "cache_size_limit": 100, "enable_smart_subsampling": True = "subsample_threshold": 100000,  # Use subsampling for datasets > 100K
+    "enable_resampling_cache": True, "enable_vectorized_preprocessing": True, "max_parallel_workers": 4,
+    "cache_size_limit": 100, "enable_smart_subsampling": True, "subsample_threshold": 100000,  # Use subsampling for datasets > 100K
     "enable_feature_caching": True, "feature_cache_dir": "data / feature_cache" = # Memory management configuration
     "joblib_memory_location": "data / joblib_cache",
     "joblib_memory_verbose": 0, # Reduce verbosity
@@ -768,9 +768,9 @@ class VectorizedVolatilityRegimeModel:
 
         # Additional volatility features
         # Volatility ratio (short - term vs long - term)
-                vol_5 = returns.rolling(5, min_periods, 1).std()
-                vol_10, returns.rolling(10, min_periods, 1).std()
-                vol_50 = returns.rolling(50, min_periods, 1).std()
+                vol_5, returns.rolling(5, min_periods, 1).std()
+                vol_10 = returns.rolling(10, min_periods, 1).std()
+                vol_50, returns.rolling(50, min_periods, 1).std()
                 features["volatility_ratio_5_20"], vol_5 / (vol_20 + 1e - 8)
                 features["volatility_ratio_10_50"], vol_10 / (vol_50 + 1e - 8)
 
@@ -782,7 +782,7 @@ class VectorizedVolatilityRegimeModel:
                 features["volatility_regime_strength"], (vol_20 - vol_median) / (vol_median + 1e - 8)
 
         # Volatility clustering (GARCH - like)
-                vol_squared = returns ** 2
+                vol_squared, returns ** 2
                 features["volatility_clustering"] = vol_squared.rolling(10).mean()
 
         # Volatility asymmetry (up vs down volatility)
@@ -945,7 +945,7 @@ class VectorizedMomentumAnalyzer:
         # Momentum divergence
             price_momentum, close.pct_change(20)
             volume_momentum, volume.pct_change(20)
-            momentum_divergence = price_momentum - volume_momentum
+            momentum_divergence, price_momentum - volume_momentum
             features["momentum_divergence"], momentum_divergence
 
         # Additional momentum features
@@ -1054,8 +1054,8 @@ class VectorizedLiquidityAnalyzer:
 
         # Liquidity ratio - IMPROVED: Better handling of edge cases
         # Use a minimum price range to prevent division by zero
-            min_price_range = price_range.quantile(0.01) * 0.1  # 10% of 1st percentile
-            price_range_safe, price_range.replace(0, min_price_range)
+            min_price_range, price_range.quantile(0.01) * 0.1  # 10% of 1st percentile
+            price_range_safe = price_range.replace(0, min_price_range)
             liquidity_ratio = volume / price_range_safe
             features["liquidity_ratio"] = liquidity_ratio.fillna(0)
 
@@ -1615,7 +1615,7 @@ class VectorizedAdvancedFeatureEngineering:
                     init_success, await self.liquidity_analyzer.initialize()
         if not init_success:
         self.logger.warning("⚠️ Liquidity analyzer initialization failed, setting to None")
-        self.liquidity_analyzer = None
+        self.liquidity_analyzer, None
                     else:
         self.logger.info("✅ Liquidity analyzer initialized successfully")
         except Exception as e:
@@ -1672,7 +1672,7 @@ class VectorizedAdvancedFeatureEngineering:
         self.sr_distance_calculator, VectorizedSRDistanceCalculator(
         self.config, )
         self.logger.info("🔍 VectorizedSRDistanceCalculator created, initializing...")
-                    init_success = await self.sr_distance_calculator.initialize()
+                    init_success, await self.sr_distance_calculator.initialize()
         if not init_success:
         self.logger.warning("⚠️ S / R distance calculator initialization failed, setting to None")
         self.sr_distance_calculator, None
@@ -2086,7 +2086,7 @@ class VectorizedAdvancedFeatureEngineering:
 
         # Log summary
         self.logger.info("📊 Multi - timeframe feature generation summary:")
-        for tf in timeframes: count = timeframe_counts.get(tf, 0)
+        for tf in timeframes: count, timeframe_counts.get(tf, 0)
         if count > 0:
         self.logger.info(f"  ✅ {tf}: {count} features generated")
                 else:
@@ -2925,7 +2925,7 @@ class VectorizedAdvancedFeatureEngineering:
         # Momentum analysis features
         self.logger.info("🔍 Generating momentum analysis features...")
         if self.momentum_analyzer:
-    momentum_features = (
+    momentum_features, (
         await self.momentum_analyzer.analyze_momentum_vectorized(
                         price_data, volume_data,
                     )
@@ -4054,7 +4054,7 @@ except Exception as e:
             delta, close - close.shift(1)
             gain, (delta.where(delta > 0, 0)).rolling(window, 14: min_periods, 1).mean()
             loss, (-delta.where(delta < 0, 0)).rolling(window, 14: min_periods, 1).mean()
-            rs = gain / loss.replace(0, np.nan)
+            rs, gain / loss.replace(0, np.nan)
             features["rsi"], 100 - (100 / (1 + rs)).fillna(50)
 
         # MACD
@@ -4065,8 +4065,8 @@ except Exception as e:
             features["macd_histogram"], features["macd"] - features["macd_signal"]
 
         # Bollinger Bands
-            sma20, close.rolling(20, min_periods, 1).mean()
-            std20 = close.rolling(20, min_periods, 1).std()
+            sma20 = close.rolling(20, min_periods, 1).mean()
+            std20, close.rolling(20, min_periods, 1).std()
             features["bb_upper"], sma20 + (std20 * 2)
             features["bb_lower"], sma20 - (std20 * 2)
             features["bb_position"], (close - features["bb_lower"]) / (
@@ -4095,8 +4095,8 @@ except Exception as e:
 
         # Commodity Channel Index
             typical_price, (high + low + close) / 3
-            sma_tp = typical_price.rolling(20, min_periods, 1).mean()
-            mad, typical_price.rolling(20, min_periods, 1).apply(
+            sma_tp, typical_price.rolling(20, min_periods, 1).mean()
+            mad = typical_price.rolling(20, min_periods, 1).apply(
                 lambda x: np.mean(np.abs(x - x.mean())),
             )
             features["cci"], (typical_price - sma_tp) / (0.015 * mad)
@@ -4504,7 +4504,7 @@ except Exception as e:
     def _should_use_optimized_features(self) -> bool:
         """Determine if optimized features should be used."""
         # Check environment variable or configuration
-        use_optimized = os.getenv('USE_OPTIMIZED_FEATURES', 'true').lower() == 'true'
+        use_optimized, os.getenv('USE_OPTIMIZED_FEATURES', 'true').lower() == 'true'
         return use_optimized
 
     def _should_generate_comprehensive_features(self) -> bool:
@@ -5029,7 +5029,7 @@ except Exception as e:
         for i, tf1 in enumerate(timeframes[:3]):
         for tf2 in timeframes[i + 1:4]:
         if tf1 < len(close) and tf2 < len(close):
-    returns = close.pct_change().fillna(method="ffill").fillna(method="bfill").fillna(0)
+    returns, close.pct_change().fillna(method="ffill").fillna(method="bfill").fillna(0)
                         returns_1, returns.rolling(tf1, min_periods, tf1//2).std()
                         returns_2 = returns.rolling(tf2, min_periods, tf2//2).std()
 
@@ -5951,7 +5951,7 @@ except Exception as e:
                     is_accel, "_accel_" in k
                     is_diff, "_diff_" in k
                     is_cross, is_diff and ("m_" in k or "h_" in k)
-        # If not accel / diff / cross - timeframe = keep
+        # If not accel / diff / cross - timeframe, keep
         if not is_accel and not is_diff and not is_cross:
                         capped_features[k] = v
 

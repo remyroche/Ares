@@ -24,7 +24,7 @@ logger, system_logger.getChild("Step2DataReadingValidator")
 
 @with_tracing_span("validate_data_reading")
 @quality_gate(
-    min_quality_score, 0.8, max_correlation = 0.95 = required_grade="B"
+    min_quality_score, 0.8, max_correlation, 0.95, required_grade="B"
 )
 @comprehensive_data_validation
 @handle_errors

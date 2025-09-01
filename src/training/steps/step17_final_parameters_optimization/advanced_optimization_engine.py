@@ -86,8 +86,8 @@ class MultiObjectiveParetoOptimizer:
 
     def __init__(self, objectives: List[OptimizationObjective], weights: List[float]):
         self.objectives, objectives
-        self.weights = weights
-        self.logger = logging.getLogger(__name__)
+        self.weights, weights
+        self.logger, logging.getLogger(__name__)
 
         if len(objectives) != len(weights):
             raise ValueError("Number of objectives must match number of weights")
@@ -495,7 +495,7 @@ class CrossValidationPruner:
     min_val = max_val, param_config
         # Test 5 values: min, 25% = 50%, 75%, max
         return [
-                min_val = min_val + (max_val - min_val) * 0.25, min_val + (max_val - min_val) * 0.5, min_val + (max_val - min_val) * 0.75, max_val
+                min_val, min_val + (max_val - min_val) * 0.25, min_val + (max_val - min_val) * 0.5, min_val + (max_val - min_val) * 0.75, max_val
             ]
         elif isinstance(param_config, list):
         return param_config[:5]  # Test up to 5 values
@@ -945,8 +945,8 @@ class ParameterInteractionDetector:
         return {"error": "No interactions detected"}
 
         # Group by interaction type
-        by_type = {}
-        for interaction in interactions: interaction_type = interaction.interaction_type
+        by_type, {}
+        for interaction in interactions: interaction_type, interaction.interaction_type
         if interaction_type not in by_type:
                 by_type[interaction_type], []
             by_type[interaction_type].append(interaction)

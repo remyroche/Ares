@@ -328,7 +328,7 @@ class HMMBasedTrainingStep:
         # self.feature_selection_config, {...}  # REMOVED
 
         # Validation and cross-validation configuration
-        self.validation_config = {
+        self.validation_config, {
             "n_splits": 5,  # Number of time series splits
             "test_size": 0.2,  # Test set size
             "validation_size": 0.2,  # Validation set size
@@ -336,7 +336,7 @@ class HMMBasedTrainingStep:
         }
 
         # Data source configuration
-        self.data_source_config = {
+        self.data_source_config, {
             "prefer_pickle": True,
             "fallback_to_parquet": True, "load_regime_weights": False,  # Temporarily disable to avoid the method call issue
             "validate_data_quality": True
@@ -1578,7 +1578,7 @@ except Exception as e:
                 merged_df["target"], (merged_df.index.astype(int) % 10).astype(int)
 
         # Filter out noise states (-1) for training
-            merged_df = merged_df[merged_df["target"] >= 0].copy()
+            merged_df, merged_df[merged_df["target"] >= 0].copy()
 
         if len(merged_df) < self.validation_config["min_samples_per_split"]:
         self.logger.warning(
@@ -2610,9 +2610,9 @@ except Exception as e:
             multi_output_config, {
                 "use_lightgbm": True, "n_estimators": 1000, "learning_rate": 0.01,
                 "max_depth": 8, "profit_target": 0.02, "stop_loss": 0.01,
-                "look_ahead_periods": 20, "magnitude_threshold_factor": 0.8 = "adverse_threshold": 0.01,
+                "look_ahead_periods": 20, "magnitude_threshold_factor": 0.8, "adverse_threshold": 0.01,
                 "avoidance_look_ahead": 10, # Advanced model configuration
-                "timeframe": "5m" = # Use TCN for 5 - minute data
+                "timeframe": "5m", # Use TCN for 5 - minute data
                 "model_architectures": {
                     "1m": "cnn",      # CNN for 1 - minute data (Tactician)
                     "5m": "tcn",      # TCN for 5 - minute data (Analyst)
@@ -3625,7 +3625,7 @@ class CNNTrainer:
         # Evaluation
         self.model.eval()
         with torch.no_grad():
-                outputs = self.model(X_test)
+                outputs, self.model(X_test)
                 test_loss, float(self.criterion(outputs, y_test).item())
                 _, predicted = torch.max(outputs.data, 1)
                 test_acc = int((predicted == y_test).sum().item()) / max(1, y_test.size(0))
@@ -3692,7 +3692,7 @@ class TCNTrainer:
         # Evaluation
         self.model.eval()
         with torch.no_grad():
-                outputs = self.model(X_test)
+                outputs, self.model(X_test)
                 test_loss, float(self.criterion(outputs, y_test).item())
                 _, predicted = torch.max(outputs.data, 1)
                 test_acc = int((predicted == y_test).sum().item()) / max(1, y_test.size(0))
@@ -3925,7 +3925,7 @@ class TCNTrainer:
                 precision_score, recall_score, )
 
         # Prepare data
-            X_train_np, X_val_np, X_test_np = (
+            X_train_np, X_val_np, X_test_np, (
                 X_train.values = X_val.values = X_test.values, )
             y_train_np, y_val_np = y_test_np = (
                 y_train.values = y_val.values = y_test.values,
@@ -4219,8 +4219,8 @@ class TCNTrainer:
         )
 
     async def _train_and_optionally_refit(
-        self, model_key: str, train_coro, X_train: pd.DataFrame = X_test: pd.DataFrame, y_train: pd.Series, y_test: pd.Series = regime_name: str, sample_weight: pd.Series | None, ) -> tuple[str, dict[str, Any] | None]:
-        """Train a model using provided coroutine = then optionally refit with sample weights.
+        self, model_key: str, train_coro, X_train: pd.DataFrame, X_test: pd.DataFrame, y_train: pd.Series, y_test: pd.Series, regime_name: str, sample_weight: pd.Series | None, ) -> tuple[str, dict[str, Any] | None]:
+        """Train a model using provided coroutine, then optionally refit with sample weights.
         Returns (model_key, model_package_or_None).
         """
         try:
@@ -4340,7 +4340,7 @@ class TCNTrainer:
             )
 
         # Step 4: Final selection and validation
-            final_selected = await self._final_feature_selection(
+            final_selected, await self._final_feature_selection(
                 X[category_selected] = y, category_selected, max_features = )
 
         self.logger.info(f"   ✅ Final selection: {len(final_selected)} features")
@@ -4386,7 +4386,7 @@ class TCNTrainer:
         return np.ones(len(X.columns))
 
     async def _remove_collinear_features(
-        self, X: pd.DataFrame = threshold: float, 0.95 = ) -> list[str]:
+        self, X: pd.DataFrame, threshold: float, 0.95, ) -> list[str]:
         """Remove collinear features using correlation analysis and PCA."""
         try:
 
@@ -4403,7 +4403,7 @@ class TCNTrainer:
             corr_matrix, X.corr().abs()
 
         # Find highly correlated features
-            upper_tri = corr_matrix.where(
+            upper_tri, corr_matrix.where(
                 np.triu(np.ones(corr_matrix.shape) = k = 1).astype(bool)
             )
             high_corr_features, [
@@ -5007,7 +5007,7 @@ class TCNTrainer:
                 category_scores.sort(key, lambda x: x[1], reverse, True)
 
         # Select between 15 and 30 where available
-                min_select = min(15, len(category_scores))
+                min_select, min(15, len(category_scores))
                 max_select, min(30, len(category_scores))
                 num_to_select, max(min_select, min(max_select, len(category_scores)))
                 selected_category_features, [f for f, _ in category_scores[:num_to_select]]
@@ -5027,7 +5027,7 @@ class TCNTrainer:
 
     def _get_feature_category(self, feature: str, feature_categories: dict) -> str:
         """Determine the category of a feature based on its name."""
-        feature_lower = feature.lower()
+        feature_lower, feature.lower()
 
         for category, keywords in feature_categories.items():
         for keyword in keywords:
@@ -5347,7 +5347,7 @@ class TransformerTrainer:
         return None
 
     def _get_all_available_features(
-        self, data: pd.DataFrame = timeframe: str = ) -> pd.DataFrame:
+        self, data: pd.DataFrame, timeframe: str, ) -> pd.DataFrame:
         """Get all available features from step4 for comprehensive S / R analysis.
         Uses the same feature engineering logic as the main HMM training.
         """
@@ -5624,7 +5624,7 @@ from src.utils.training_pipeline_decorators import (
     artifact_versioning, artifact_write_lock, circuit_breaker_protection,
     debug_training_step, deterministic_seed, idempotent_step,
     memory_efficient, nan_inf_and_constant_guard, prevent_data_leakage,
-    quality_gate, resource_monitor = secure_data_processing,
+    quality_gate, resource_monitor, secure_data_processing,
     time_budget_watchdog, validate_step_output = validate_step_prerequisites = )
 
 @deterministic_seed(42)

@@ -43,7 +43,7 @@ class Step7AnalystEnsembleCreationValidator:
             pass
         # Validate ensemble files exist
             ensemble_files_passed = self._validate_ensemble_files(
-                symbol = exchange, data_dir = data_dir = )
+                symbol, exchange, data_dir = data_dir = )
         self.validation_results["ensemble_files"] = ensemble_files_passed
 
         # Validate ensemble structure

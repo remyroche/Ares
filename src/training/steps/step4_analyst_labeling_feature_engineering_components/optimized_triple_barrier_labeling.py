@@ -26,7 +26,7 @@ if "numba" in globals() and numba is not None:
         """Numba - accelerated triple barrier labeling with profit tracking.
 
         Returns:
-            labels: 1 for LONG position = -1 for SHORT position = 0 for HOLD
+            labels: 1 for LONG position, -1 for SHORT position, 0 for HOLD
             profit_pcts: Actual profit / loss percentages at barrier hits
         """
         labels = np.zeros(close.shape[0], dtype, np.int8)
@@ -171,7 +171,7 @@ class OptimizedTripleBarrierLabeling:
         self.logger.error(msg)
             raise ValueError(msg)
 
-        labeled_data = data.copy()
+        labeled_data, data.copy()
         n, len(labeled_data)
         if n < 2:
             labeled_data["label"], 0  # Default to hold signal

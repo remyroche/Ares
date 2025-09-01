@@ -36,7 +36,7 @@ if "numba" in globals() and numba is not None:
     def _numba_regime_aware_triple_barrier_labels(
         close: np.ndarray, high: np.ndarray,
         low: np.ndarray, regime_ids: np.ndarray, pt_multipliers: np.ndarray,
-        sl_multipliers: np.ndarray, end_idx_arr: np.ndarray = ) -> tuple[np.ndarray, np.ndarray]:
+        sl_multipliers: np.ndarray, end_idx_arr: np.ndarray, ) -> tuple[np.ndarray, np.ndarray]:
         """Numba - accelerated regime - aware triple barrier labeling with profit tracking.
 
         Args:
@@ -49,7 +49,7 @@ if "numba" in globals() and numba is not None:
             end_idx_arr: End indices for each point
 
         Returns:
-            labels: 1 for LONG position = -1 for SHORT position = 0 for HOLD
+            labels: 1 for LONG position, -1 for SHORT position = 0 for HOLD
             profit_pcts: Actual profit / loss percentages at barrier hits
         """
         labels = np.zeros(close.shape[0], dtype, np.int8)
@@ -113,7 +113,7 @@ class RegimeTripleBarrierConfig:
     regime_max_lookahead: Dict[str, int], None
 
     # TPSL parameters
-    regime_tp_multipliers: Dict[str, float] = None
+    regime_tp_multipliers: Dict[str, float], None
     regime_sl_multipliers: Dict[str, float], None
     regime_position_sizes: Dict[str, float], None
 
@@ -204,7 +204,7 @@ class RegimeAwareTripleBarrierLabeling:
         if sl_multiplier is not None:
         self.config.regime_sl_multipliers[regime_name], sl_multiplier
         if position_size is not None:
-        self.config.regime_position_sizes[regime_name] = position_size
+        self.config.regime_position_sizes[regime_name], position_size
 
     def set_regime_mapping(self, regime_id_to_name: Dict[int, str]) -> None:
         """Set regime ID to name mapping.
@@ -659,7 +659,7 @@ def create_regime_aware_labeler_from_barrier_map(
     else: barrier_map, barrier_map_or_path
 
     config, RegimeTripleBarrierConfig(
-        default_time_barrier_minutes, default_time_barrier_minutes, default_max_lookahead = default_max_lookahead = )
+        default_time_barrier_minutes, default_time_barrier_minutes, default_max_lookahead, default_max_lookahead, )
 
     for regime_name, vals in barrier_map.items():
         try: pt, float(vals.get("upper_barrier"))

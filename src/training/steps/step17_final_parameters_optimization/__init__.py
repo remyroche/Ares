@@ -32,7 +32,7 @@ from .advanced_optimization_engine import (
     create_cv_pruner, create_ensemble_optimizer, create_interaction_detector,
 )
 
-__all__ = [
+__all__, [
     "EfficiencyOptimizer",
     "EvaluationEngine",
     "HyperparameterOptimizationConfig",

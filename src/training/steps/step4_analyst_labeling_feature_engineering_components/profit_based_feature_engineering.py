@@ -49,7 +49,7 @@ if NUMBA_AVAILABLE:
 
         return volatility
 
-    @jit(nopython = True, cache = True)
+    @jit(nopython, True, cache, True)
     def _numba_profit_rolling_stats(
         profit_pcts: np.ndarray,
         window: int

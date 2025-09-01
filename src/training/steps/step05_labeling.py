@@ -70,7 +70,7 @@ if centralized_decorators is None: comprehensive_data_validation, create_fallbac
     validate_data_structure, create_fallback_decorator()
     with_tracing_span, create_fallback_decorator()
     quality_gate, create_fallback_decorator()
-    monitor_feature_engineering = create_fallback_decorator()
+    monitor_feature_engineering, create_fallback_decorator()
 else:
     comprehensive_data_validation = centralized_decorators.comprehensive_data_validation
     handle_errors = centralized_decorators.handle_errors
@@ -439,7 +439,7 @@ class LabelingStep:
         if 'analyst_label' in data.columns:
         # Combine triple barrier with analyst labels
         # Analyst labels can override triple barrier in certain conditions
-                analyst_override_mask = (
+                analyst_override_mask, (
                     (data['analyst_label'] != 0) &
                     (data['triple_barrier_label'] == 0)
                 )

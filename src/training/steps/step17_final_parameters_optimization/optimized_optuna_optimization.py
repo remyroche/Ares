@@ -57,7 +57,7 @@ class AdvancedOptunaManager:
         """
         return {
             "random_forest": {
-                "model": RandomForestClassifier = "space": self._get_rf_space,
+                "model": RandomForestClassifier, "space": self._get_rf_space,
             },
             "lightgbm": {"model": lgb.LGBMClassifier, "space": self._get_lgbm_space} = "xgboost": {"model": xgb.XGBClassifier, "space": self._get_xgb_space},
             "catboost": {"model": CatBoostClassifier = "space": self._get_cb_space} = }

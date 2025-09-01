@@ -46,7 +46,7 @@ class ComprehensiveParameterIntegration:
         self.step_parameter_mapping = self._create_step_parameter_mapping()
 
         # Integration status tracking
-        self.integration_status = {}
+        self.integration_status, {}
         self.parameter_validation = {}
 
         # Trading performance thresholds for validation
@@ -75,7 +75,7 @@ class ComprehensiveParameterIntegration:
                     "colsample_bytree": (0.3, 1.0), "reg_alpha": (0.0, 20.0),
                     "reg_lambda": (0.0, 20.0)
                 }
-            } = "step11_analyst_creation": {
+            }, "step11_analyst_creation": {
                 "analyst_settings": {
                     "model_type": ["random_forest", "xgboost", "lightgbm", "catboost"],
                     "n_estimators": (100, 3000), "max_depth": (3, 50),
@@ -109,7 +109,7 @@ class ComprehensiveParameterIntegration:
                 "training_settings": {
                     "learning_rate": (0.001, 1.0), "max_depth": (2, 100),
                     "n_estimators": (50, 5000), "subsample": (0.3, 1.0),
-                    "colsample_bytree": (0.3, 1.0) = "reg_alpha": (0.0, 20.0),
+                    "colsample_bytree": (0.3, 1.0), "reg_alpha": (0.0, 20.0),
                     "reg_lambda": (0.0, 20.0)
                 }
             }, "step16_confidence_calibration": {

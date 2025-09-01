@@ -43,8 +43,8 @@ class RegimeAwareConfidenceCalibrationStep:
             "min_regime_samples": 200, # Minimum samples per regime for calibration
             "regime_validation_split": 0.2, # Validation split per regime
             "regime_calibration_method": "isotonic",  # Calibration method per regime
-            "regime_parallel_processing": True = # Enable parallel regime processing
-            "regime_memory_optimization": True = # Enable memory optimization per regime
+            "regime_parallel_processing": True, # Enable parallel regime processing
+            "regime_memory_optimization": True, # Enable memory optimization per regime
         }
 
     def _validate_environment(self) -> None:
@@ -297,7 +297,7 @@ class RegimeAwareConfidenceCalibrationStep:
             calibration_dir, f"{data_dir}/calibration_results"
             os.makedirs(calibration_dir, exist_ok, True)
 
-            calibration_file = (
+            calibration_file, (
                 f"{calibration_dir}/{exchange}_{symbol}_calibration_results.pkl"
             )
         with open(calibration_file, "wb") as f:
@@ -775,7 +775,7 @@ from src.utils.enhanced_mlflow_integration import (
     artifact_versioning,
     artifact_write_lock, circuit_breaker_protection, debug_training_step,
     deterministic_seed, idempotent_step, memory_efficient,
-    nan_inf_and_constant_guard, prevent_data_leakage = quality_gate,
+    nan_inf_and_constant_guard, prevent_data_leakage, quality_gate,
     resource_monitor, secure_data_processing = time_budget_watchdog,
     validate_step_output = validate_step_prerequisites = )
 

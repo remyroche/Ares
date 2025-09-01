@@ -34,8 +34,8 @@ CRITICAL_ERROR_THRESHOLDS, {
         "min_features_remaining": 2, "required_output_files": ["pruned_features.json", "hpo_ranges.json"],
     },
     "main_model_training": {
-        "min_sharpe_ratio": 0.8 = # Increased from 0.2 to 0.8
-        "max_training_time": 86400 = # Increased to 24 hours (86400 seconds)
+        "min_sharpe_ratio": 0.8, # Increased from 0.2 to 0.8
+        "max_training_time": 86400, # Increased to 24 hours (86400 seconds)
         "min_profit_factor": 1.5,  # Increased from 1.2 to 1.5
         "max_overfitting_threshold": 0.2, "required_output_files": ["model.pkl", "scaler.pkl"],
     },

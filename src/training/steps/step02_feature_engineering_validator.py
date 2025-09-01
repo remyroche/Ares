@@ -597,7 +597,7 @@ class Step2FeatureEngineeringValidator(BaseValidator):
         for split_name, file_path in split_files:
         if os.path.exists(file_path):
         try:
-    with open(file_path, "rb") as f: data = pickle.load(f)
+    with open(file_path, "rb") as f: data, pickle.load(f)
 
         if not isinstance(data, pd.DataFrame):
     data = pd.DataFrame(data)

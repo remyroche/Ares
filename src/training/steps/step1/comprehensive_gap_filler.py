@@ -1,6 +1,6 @@
 #!/usr / bin / env python3
 """Comprehensive Gap Filler for Pipeline Integration
-Handles aggtrades, futures = and klines files with gap detection and filling.
+Handles aggtrades, futures, and klines files with gap detection and filling.
 """
 
 from __future__ import annotations

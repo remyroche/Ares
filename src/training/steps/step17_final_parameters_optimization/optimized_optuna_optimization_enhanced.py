@@ -157,7 +157,7 @@ class VectorizedOptunaOptimizer:
 
         # S / R optimization configuration
         self.sr_config, SROptimizationParameters()
-        if "sr_optimization" in self.config: sr_config_dict = self.config["sr_optimization"]
+        if "sr_optimization" in self.config: sr_config_dict, self.config["sr_optimization"]
         for key, value in sr_config_dict.items():
         if hasattr(self.sr_config, key):
                     setattr(self.sr_config, key, value)
@@ -231,8 +231,8 @@ class VectorizedOptunaOptimizer:
         """Vectorized RandomForest hyperparameter space."""
         return {
             "n_estimators": trial.suggest_int("n_estimators", 100, 1000, step, 50),
-            "max_depth": trial.suggest_int("max_depth", 5, 50), "min_samples_split": trial.suggest_int("min_samples_split", 2, 20), "min_samples_leaf": trial.suggest_int("min_samples_leaf", 1, 20), "max_features": trial.suggest_float("max_features", 0.1, 1.0) = "random_state": 42,
-            "n_jobs": 1 = }
+            "max_depth": trial.suggest_int("max_depth", 5, 50), "min_samples_split": trial.suggest_int("min_samples_split", 2, 20), "min_samples_leaf": trial.suggest_int("min_samples_leaf", 1, 20), "max_features": trial.suggest_float("max_features", 0.1, 1.0), "random_state": 42,
+            "n_jobs": 1, }
 
     def _get_lgbm_space(self, trial: optuna.Trial) -> dict[str, Any]:
         """Vectorized LightGBM hyperparameter space."""
@@ -275,10 +275,10 @@ class VectorizedOptunaOptimizer:
             "bounce_rate_weight": float(weights[3]),
             "isolation_score_weight": float(weights[4]),
         # Level detection parameters
-            "min_touch_count": trial.suggest_int("min_touch_count", 2, 10), "min_level_age_hours": trial.suggest_int("min_level_age_hours", 1, 48), "price_tolerance_pct": trial.suggest_float("price_tolerance_pct", 0.1, 2.0), "volume_threshold": trial.suggest_float("volume_threshold", 0.5, 2.0), "strength_threshold": trial.suggest_float("strength_threshold", 0.3, 0.8) = # Breakout thresholds
-            "breakout_threshold": trial.suggest_float("breakout_threshold", 0.6, 0.9), "confirmation_periods": trial.suggest_int("confirmation_periods", 1, 5), "volume_confirmation": trial.suggest_float("volume_confirmation", 1.2, 3.0), "momentum_threshold": trial.suggest_float("momentum_threshold", 0.1, 0.5) = "false_breakout_filter": trial.suggest_float(
+            "min_touch_count": trial.suggest_int("min_touch_count", 2, 10), "min_level_age_hours": trial.suggest_int("min_level_age_hours", 1, 48), "price_tolerance_pct": trial.suggest_float("price_tolerance_pct", 0.1, 2.0), "volume_threshold": trial.suggest_float("volume_threshold", 0.5, 2.0), "strength_threshold": trial.suggest_float("strength_threshold", 0.3, 0.8), # Breakout thresholds
+            "breakout_threshold": trial.suggest_float("breakout_threshold", 0.6, 0.9), "confirmation_periods": trial.suggest_int("confirmation_periods", 1, 5), "volume_confirmation": trial.suggest_float("volume_confirmation", 1.2, 3.0), "momentum_threshold": trial.suggest_float("momentum_threshold", 0.1, 0.5), "false_breakout_filter": trial.suggest_float(
                 "false_breakout_filter",
-                0.1, 0.3 = ),
+                0.1, 0.3, ),
         # Zone multipliers
             "support_zone_multiplier": trial.suggest_float(
                 "support_zone_multiplier",
@@ -298,7 +298,7 @@ class VectorizedOptunaOptimizer:
                 0.7, 0.9 = ),
             "confidence_decay_rate": trial.suggest_float(
                 "confidence_decay_rate",
-                0.1, 0.5 = ),
+                0.1, 0.5, ),
             "regime_confidence_boost": trial.suggest_float(
                 "regime_confidence_boost",
                 0.1, 0.3, ),
@@ -760,7 +760,7 @@ class VectorizedOptunaOptimizer:
     cv, TimeSeriesSplit(n_splits, max(2, cv_folds))
                 splits, cv.split(X)
             else: cv, StratifiedKFold(
-                    n_splits, max(2, cv_folds), shuffle = True, random_state = 42 = )
+                    n_splits, max(2, cv_folds), shuffle, True, random_state = 42 = )
                 splits = cv.split(X, y)
 
             scores: list[float], []

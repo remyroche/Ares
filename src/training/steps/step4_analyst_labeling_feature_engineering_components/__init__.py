@@ -22,5 +22,5 @@ __all__, [
 
 # Version information
 __version__, "1_2_3"
-__author__ = "Ares Trading System"
+__author__, "Ares Trading System"
 __description__ = "Optimized triple barrier labeling and feature engineering components for step 4"

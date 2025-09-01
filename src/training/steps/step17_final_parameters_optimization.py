@@ -1,4 +1,4 @@
-# src/training/steps/ step17_*.py
+# src/training/steps/step17_*.py
 
 import asyncio
 import contextlib
@@ -12,12 +12,12 @@ import numpy as np
 import pandas as pd
 
 from src.config_optuna import (
-    get_optimizable_parameters, get_optuna_config, )
+    get_optimizable_parameters, get_optuna_config,)
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     error,
-    failed, missing, )
+    failed, missing,)
 
 class FinalParametersOptimizationStep:
     """Step 12: Final Parameters Optimization using Optuna with advanced features."""
@@ -25,19 +25,19 @@ class FinalParametersOptimizationStep:
     def _validate_environment(self) -> None:
         """Validate environment dependencies and configuration."""
         if not dependency_status["all_available"]:
-    missing_modules, dependency_status["missing_modules"]
+            missing_modules, dependency_status["missing_modules"]
         self.logger.warning(f"Missing modules: {missing_modules}")
         # Continue with available modules, using fallbacks where needed
 
-def __init__(self, config: dict[str, Any]) -> None:
+    def __init__(self, config: dict[str, Any]) -> None:
         self.config, config
-        self.logger, system_logger
-        self.optuna_config, get_optuna_config()
+        self.logger = system_logger
+        self.optuna_config = get_optuna_config()
         self.optimizable_params, get_optimizable_parameters()
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return = False, context="final parameters optimization step initialization": )
+        default_return=False, context="final parameters optimization step initialization")
     async def initialize(self) -> None:
         """Initialize the final parameters optimization step."""
         self.logger.info("🚀 Initializing Final Parameters Optimization Step...")
@@ -45,7 +45,7 @@ def __init__(self, config: dict[str, Any]) -> None:
         # Validate Optuna configuration
         validation_errors, self._validate_optuna_config()
         if validation_errors:
-    self.logger.warning(
+            self.logger.warning(
                 f"⚠️ Optuna config validation warnings: {validation_errors}",
             )
 
@@ -57,7 +57,7 @@ def __init__(self, config: dict[str, Any]) -> None:
         )
 
     @handle_errors(
-        exceptions=(Exception, ) = default_return={"status": "FAILED", "error": "Execution failed"},
+        exceptions=(Exception,), default_return={"status": "FAILED", "error": "Execution failed"},
         context="final parameters optimization step execution",
     )
     async def execute(
@@ -79,122 +79,122 @@ def __init__(self, config: dict[str, Any]) -> None:
             # TODO: Implement based on requirements proper exception handling
             pass
         self.logger.info("🔄 Executing Final Parameters Optimization...")
-            start_time, datetime.now()
+        start_time, datetime.now()
 
         # Extract parameters
-            symbol = training_input.get("symbol", "ETHUSDT")
-            exchange, training_input.get("exchange", "BINANCE")
-            data_dir = training_input.get("data_dir", "data / training")
+        symbol = training_input.get("symbol", "ETHUSDT")
+        exchange, training_input.get("exchange", "BINANCE")
+        data_dir = training_input.get("data_dir", "data/training")
 
         # Load calibration results
             from src.utils.logger import heartbeat
 
         with heartbeat(
-        self.logger, name="Step12 load_calibration_results": interval_seconds , 60.0,
-            ):
-                calibration_results = await self._load_calibration_results(
-                    symbol, exchange,
-                    data_dir, )
+            self.logger, name="Step12 load_calibration_results", interval_seconds=60.0,
+        ):
+            calibration_results = await self._load_calibration_results(
+                symbol, exchange,
+                data_dir,)
         if not calibration_results:
     msg, "Calibration results not found"
-                raise FileNotFoundError(msg)
+            raise FileNotFoundError(msg)
         with contextlib.suppress(Exception):
-        self.logger.info(
-                    f"Loaded calibration results for {exchange}/{symbol}: sections={list(calibration_results.keys())[:10]}"
-                )
+            self.logger.info(
+                f"Loaded calibration results for {exchange}/{symbol}: sections={list(calibration_results.keys())[:10]}"
+            )
 
         # Load previous optimization results for warm start
         with heartbeat(
-        self.logger = name="Step12 load_previous_optimization",
-                interval_seconds = 60.0 = ):
-                previous_results = await self._load_previous_optimization_results(
-                    symbol,
-                    exchange, data_dir, )
+            self.logger, name="Step12 load_previous_optimization",
+            interval_seconds=60.0,):
+            previous_results = await self._load_previous_optimization_results(
+                symbol,
+                exchange, data_dir,)
         try:
-    def _summ(obj):
-        try:
-    return len(obj)  # type: ignore[arg - type]
-        except Exception:
-        return "n / a"
+            def _summ(obj):
+                try:
+                    return len(obj)  # type: ignore[arg-type]
+                except Exception:
+                    return "n/a"
 
-        self.logger.info(
-                    f"Inputs summary — calibration_results: type={type(calibration_results).__name__}, size={_summ(calibration_results)}; previous_results: type={type(previous_results).__name__}, size={_summ(previous_results)}"
-                )
+            self.logger.info(
+                f"Inputs summary — calibration_results: type={type(calibration_results).__name__}, size={_summ(calibration_results)}; previous_results: type={type(previous_results).__name__}, size={_summ(previous_results)}"
+            )
         except Exception:
-                pass
+            pass
 
         # Perform comprehensive parameter optimization
         with heartbeat(
-        self.logger, name="Step12 optimize_all_parameters": interval_seconds , 60.0,
-            ):
-                optimization_results = await self._optimize_all_parameters(
-                    calibration_results, previous_results,
-                )
+            self.logger, name="Step12 optimize_all_parameters", interval_seconds=60.0,
+        ):
+            optimization_results = await self._optimize_all_parameters(
+                calibration_results, previous_results,
+            )
         try:
-    keys, (
-                    list(optimization_results.keys())
-        if isinstance(optimization_results, dict)
-                    else []
-                )
-        self.logger.info(
-                    f"Optimization finished. Result keys: {keys[:20]} (total={len(keys) if keys else 'n / a'})"
-                )
+            keys, (
+                list(optimization_results.keys())
+                if isinstance(optimization_results, dict)
+                else []
+            )
+            self.logger.info(
+                f"Optimization finished. Result keys: {keys[:20]} (total={len(keys) if keys else 'n/a'})"
+            )
         except Exception:
-                pass
+            pass
 
         # Validate optimization results
         with heartbeat(
-        self.logger = name="Step12 validate_optimization",
-                interval_seconds = 60.0, ):
-                validation_passed = await self._validate_optimization_results(
-                    optimization_results = )
+            self.logger, name="Step12 validate_optimization",
+            interval_seconds=60.0,):
+            validation_passed = await self._validate_optimization_results(
+                optimization_results)
         if not validation_passed:
-        self.logger.warning(
-                    "⚠️ Optimization results validation failed, using fallback parameters" = )
+            self.logger.warning(
+                "⚠️ Optimization results validation failed, using fallback parameters")
 
         # Save optimization results
         with heartbeat(
-        self.logger,
-                name="Step12 save_results",
-                interval_seconds = 60.0 = ):
-        await self._save_optimization_results(
-                    optimization_results = symbol,
-                    exchange, data_dir = )
+            self.logger,
+            name="Step12 save_results",
+            interval_seconds=60.0,):
+            await self._save_optimization_results(
+                optimization_results, symbol,
+                exchange, data_dir)
         with contextlib.suppress(Exception):
                 pass
 
         # Generate optimization report
         with heartbeat(
-        self.logger,
-                name="Step12 generate_report",
-                interval_seconds = 60.0 = ):
-                report = await self._generate_optimization_report(
-                    optimization_results,
-                    start_time, )
+            self.logger,
+            name="Step12 generate_report",
+            interval_seconds=60.0,):
+            report = await self._generate_optimization_report(
+                optimization_results,
+                start_time,)
         with contextlib.suppress(Exception):
                 pass
 
         # Update pipeline state
-            pipeline_state["final_parameters"], optimization_results
-            pipeline_state["optimization_report"] = report
+        pipeline_state["final_parameters"], optimization_results
+        pipeline_state["optimization_report"] = report
 
-            duration = (datetime.now() - start_time).total_seconds()
+        duration = (datetime.now() - start_time).total_seconds()
         self.logger.info(
-                f"✅ Final parameters optimization completed in {duration:.2f}s", )
+            f"✅ Final parameters optimization completed in {duration:.2f}s",)
         with contextlib.suppress(Exception):
-                pass
+            pass
 
         return {
-                "final_parameters": optimization_results,
-                "optimization_report": report, "duration": duration, "status": "SUCCESS",
-            }
+            "final_parameters": optimization_results,
+            "optimization_report": report, "duration": duration, "status": "SUCCESS",
+        }
 
-        except Exception as e:
-    self.print(error("❌ Error in Final Parameters Optimization: {e}"))
+    except Exception as e:
+        self.logger.error(f"❌ Error in Final Parameters Optimization: {e}")
         return {"status": "FAILED", "error": str(e), "duration": 0.0}
 
     async def _load_calibration_results(
-        self, symbol: str, exchange: str, data_dir: str, ) -> dict[str, Any] | None:
+        self, symbol: str, exchange: str, data_dir: str,) -> dict[str, Any] | None:
         """Load calibration results from previous step."""
         try:
             # TODO: Implement based on requirements proper exception handling
@@ -202,35 +202,36 @@ def __init__(self, config: dict[str, Any]) -> None:
         except Exception as e:
             # TODO: Implement based on requirements proper exception handling
             pass
-            calibration_dir, f"{data_dir}/calibration_results"
-            calibration_file, f"{calibration_dir}/{exchange}_{symbol}_calibration_results.pkl"
+            calibration_dir = f"{data_dir}/calibration_results"
+            calibration_file = f"{calibration_dir}/{exchange}_{symbol}_calibration_results.pkl"
 
-        if not os.path.exists(calibration_file):
-        self.print(missing(f"Calibration file not found: {calibration_file}"))
-        return None
+            if not os.path.exists(calibration_file):
+                self.logger.warning(f"Calibration file not found: {calibration_file}")
+                return None
 
-        with open(calibration_file, "rb") as f:
-        return pickle.load(f)
+            with open(calibration_file, "rb") as f:
+                return pickle.load(f)
         except Exception as e:
-    self.print(error(f"Error loading calibration results: {e}"))
-        return None
+            self.logger.error(f"Error loading calibration results: {e}")
+            return None
 
     async def _load_previous_optimization_results(
-        self, symbol: str, exchange: str, data_dir: str, ) -> dict[str, Any] | None:
+        self, symbol: str, exchange: str, data_dir: str,) -> dict[str, Any] | None:
         """Load previous optimization results for warm start."""
-        try: optimization_dir, f"{data_dir}/optimization_results"
-            previous_file, f"{optimization_dir}/{exchange}_{symbol}_final_parameters.pkl"
+        try:
+            optimization_dir = f"{data_dir}/optimization_results"
+            previous_file = f"{optimization_dir}/{exchange}_{symbol}_final_parameters.pkl"
 
-        if os.path.exists(previous_file):
-        with open(previous_file, "rb") as f:
-        return pickle.load(f)
-        return None
+            if os.path.exists(previous_file):
+                with open(previous_file, "rb") as f:
+                    return pickle.load(f)
+            return None
         except Exception as e:
-    self.print(error(f"Error loading previous optimization results: {e}"))
-        return None
+            self.logger.error(f"Error loading previous optimization results: {e}")
+            return None
 
     async def _optimize_all_parameters(
-        self, calibration_results: dict[str, Any], previous_results: dict[str, Any] | None, ) -> dict[str, Any]:
+        self, calibration_results: dict[str, Any], previous_results: dict[str, Any] | None,) -> dict[str, Any]:
         """Optimize all parameters using advanced Optuna features.
 
         Args:
@@ -249,52 +250,51 @@ def __init__(self, config: dict[str, Any]) -> None:
             pass
         self.logger.info("Optimizing all parameters...")
 
-            optimization_results = {}
+        optimization_results = {}
 
-        # 1. Multi - objective optimization for confidence thresholds
-            confidence_results = (await self._optimize_confidence_thresholds_multi_objective(
-                    calibration_results, previous_results, )
-            )
-            optimization_results["confidence_thresholds"] = confidence_results
+        # 1. Multi-objective optimization for confidence thresholds
+        confidence_results = await self._optimize_confidence_thresholds_multi_objective(
+            calibration_results, previous_results,)
+        optimization_results["confidence_thresholds"] = confidence_results
 
         # 2. Advanced volatility optimization
-            volatility_results = await self._optimize_volatility_parameters_advanced(
-                calibration_results, previous_results = )
-            optimization_results["volatility_parameters"] = volatility_results
+        volatility_results = await self._optimize_volatility_parameters_advanced(
+            calibration_results, previous_results)
+        optimization_results["volatility_parameters"] = volatility_results
 
         # 3. Position sizing optimization with Kelly criterion
-            position_results = await self._optimize_position_sizing_advanced(
-                calibration_results, previous_results = )
-            optimization_results["position_sizing_parameters"] = position_results
+        position_results = await self._optimize_position_sizing_advanced(
+            calibration_results, previous_results)
+        optimization_results["position_sizing_parameters"] = position_results
 
         # 4. Risk management optimization
-            risk_results = await self._optimize_risk_management_advanced(
-                calibration_results, previous_results = )
-            optimization_results["risk_management_parameters"] = risk_results
+        risk_results = await self._optimize_risk_management_advanced(
+            calibration_results, previous_results)
+        optimization_results["risk_management_parameters"] = risk_results
 
         # 5. Ensemble parameters optimization
-            ensemble_results = await self._optimize_ensemble_parameters(
-                calibration_results, previous_results = )
-            optimization_results["ensemble_parameters"] = ensemble_results
+        ensemble_results = await self._optimize_ensemble_parameters(
+            calibration_results, previous_results)
+        optimization_results["ensemble_parameters"] = ensemble_results
 
         # 6. Market regime specific optimization
-            regime_results = await self._optimize_regime_specific_parameters(
-                calibration_results, previous_results = )
-            optimization_results["regime_specific_parameters"] = regime_results
+        regime_results = await self._optimize_regime_specific_parameters(
+            calibration_results, previous_results)
+        optimization_results["regime_specific_parameters"] = regime_results
 
         # 7. Timing parameters optimization
-            timing_results = await self._optimize_timing_parameters(
-                calibration_results, previous_results, )
-            optimization_results["timing_parameters"], timing_results
+        timing_results = await self._optimize_timing_parameters(
+            calibration_results, previous_results,)
+        optimization_results["timing_parameters"], timing_results
 
         return optimization_results
 
-        except Exception:
-        self.print(error("Error optimizing all parameters: {e}"))
+        except Exception as e:
+            self.logger.error(f"Error optimizing all parameters: {e}")
             raise
 
     async def _optimize_confidence_thresholds_multi_objective(
-        self, calibration_results: dict[str, Any], previous_results: dict[str, Any] | None, ) -> dict[str, Any]:
+        self, calibration_results: dict[str, Any], previous_results: dict[str, Any] | None,) -> dict[str, Any]:
         """Optimize confidence thresholds using multi - objective optimization."""
         try:
             # TODO: Implement based on requirements proper exception handling
@@ -502,7 +502,7 @@ def __init__(self, config: dict[str, Any]) -> None:
                 params = {
                     "base_position_size": trial.suggest_float(
                         "base_position_size",
-                        0.01, 0.2 = ),
+                        0.01, 0.2, ),
                     "max_position_size": trial.suggest_float(
                         "max_position_size",
                         0.1, 0.5, ),
@@ -574,7 +574,7 @@ def __init__(self, config: dict[str, Any]) -> None:
             import optuna
 
             def objective(trial):
-                params = {
+                params, {
                     "stop_loss_atr_multiplier": trial.suggest_float(
                         "stop_loss_atr_multiplier",
                         1.0, 4.0, ),
@@ -595,7 +595,7 @@ def __init__(self, config: dict[str, Any]) -> None:
                         [True, False] = ),
                     "sl_tightening_threshold": trial.suggest_float(
                         "sl_tightening_threshold",
-                        0.3, 0.6 = ),
+                        0.3, 0.6, ),
                     "sl_loosening_threshold": trial.suggest_float(
                         "sl_loosening_threshold",
                         0.7, 0.9, ),
@@ -665,7 +665,7 @@ def __init__(self, config: dict[str, Any]) -> None:
                         0.1, 0.4 = ),
                     "min_ensemble_agreement": trial.suggest_float(
                         "min_ensemble_agreement",
-                        0.5, 0.8 = ),
+                        0.5, 0.8, ),
                     "max_ensemble_disagreement": trial.suggest_float(
                         "max_ensemble_disagreement",
                         0.2, 0.5, ),
@@ -727,7 +727,7 @@ def __init__(self, config: dict[str, Any]) -> None:
                         0.4, 1.0 = ),
                     "sr_zone_multiplier": trial.suggest_float(
                         "sr_zone_multiplier",
-                        0.8, 1.4 = ),
+                        0.8, 1.4, ),
                     "regime_transition_threshold": trial.suggest_float(
                         "regime_transition_threshold",
                         0.4, 0.8, ),
@@ -1258,9 +1258,9 @@ def __init__(self, config: dict[str, Any]) -> None:
         """Evaluate ensemble performance."""
         try:
         # Simulate ensemble performance evaluation
-            analyst_weight = params.get("analyst_weight", 0.4)
-            tactician_weight, params.get("tactician_weight", 0.3)
-            agreement = params.get("min_ensemble_agreement", 0.7)
+            analyst_weight, params.get("analyst_weight", 0.4)
+            tactician_weight = params.get("tactician_weight", 0.3)
+            agreement, params.get("min_ensemble_agreement", 0.7)
         return (analyst_weight + tactician_weight) * agreement * 2.0
         except Exception:
         self.print(error("Error evaluating ensemble performance: {e}"))
@@ -1271,9 +1271,9 @@ def __init__(self, config: dict[str, Any]) -> None:
         """Evaluate regime - specific performance."""
         try:
         # Simulate regime performance evaluation
-            bull_mult, params.get("bull_trend_multiplier", 1.2)
-            bear_mult = params.get("bear_trend_multiplier", 0.8)
-            sideways_mult, params.get("sideways_multiplier", 0.9)
+            bull_mult = params.get("bull_trend_multiplier", 1.2)
+            bear_mult, params.get("bear_trend_multiplier", 0.8)
+            sideways_mult = params.get("sideways_multiplier", 0.9)
         return (bull_mult + bear_mult + sideways_mult) / 3.0
         except Exception:
         self.print(error("Error evaluating regime performance: {e}"))
@@ -1284,8 +1284,8 @@ def __init__(self, config: dict[str, Any]) -> None:
         """Evaluate timing performance."""
         try:
         # Simulate timing performance evaluation
-            base_cooldown = params.get("base_cooldown_minutes", 30)
-            high_conf_cooldown, params.get("high_confidence_cooldown", 15)
+            base_cooldown, params.get("base_cooldown_minutes", 30)
+            high_conf_cooldown = params.get("high_confidence_cooldown", 15)
         return (
                 1.0 / (base_cooldown + high_conf_cooldown) * 100
             )  # Inverse relationship
@@ -1310,8 +1310,8 @@ def __init__(self, config: dict[str, Any]) -> None:
                 config,
                 "composite_score_weights",
                 {
-                    "win_rate": 0.25, "profit_factor": 0.25 = "sharpe_ratio": 0.25,
-                    "max_drawdown": 0.1, "enhanced_prediction_performance": 0.15 = },
+                    "win_rate": 0.25, "profit_factor": 0.25, "sharpe_ratio": 0.25,
+                    "max_drawdown": 0.1, "enhanced_prediction_performance": 0.15, },
             )
             best_solution = None
             best_score = -float("inf")
@@ -1509,7 +1509,7 @@ from src.utils.enhanced_mlflow_integration import (
 )
     artifact_versioning, artifact_write_lock, circuit_breaker_protection,
     debug_training_step, deterministic_seed, idempotent_step,
-    memory_efficient, nan_inf_and_constant_guard = prevent_data_leakage,
+    memory_efficient, nan_inf_and_constant_guard, prevent_data_leakage,
     quality_gate, resource_monitor = secure_data_processing,
     time_budget_watchdog, validate_step_output = validate_step_prerequisites = )
 

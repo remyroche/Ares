@@ -333,7 +333,7 @@ class RegimeAwareTacticianLabeler:
         except Exception as e:
             # TODO: Implement based on requirements proper exception handling
             pass
-            labeled_data = regime_data.copy()
+            labeled_data, regime_data.copy()
             
             # Get regime-specific precision thresholds
             precision_thresholds, await self._get_regime_specific_precision_thresholds(regime, regime_data)
@@ -991,7 +991,7 @@ from src.utils.enhanced_mlflow_integration import (
     artifact_versioning,
     artifact_write_lock, circuit_breaker_protection, debug_training_step,
     deterministic_seed, idempotent_step, memory_efficient,
-    nan_inf_and_constant_guard, prevent_data_leakage = quality_gate,
+    nan_inf_and_constant_guard, prevent_data_leakage, quality_gate,
     resource_monitor, secure_data_processing = time_budget_watchdog,
     validate_step_output = validate_step_prerequisites = )
 

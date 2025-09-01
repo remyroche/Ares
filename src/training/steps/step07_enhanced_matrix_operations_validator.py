@@ -99,11 +99,11 @@ class Step7EnhancedMatrixOperationsValidator(BaseValidator):
                 ])
             else:
                 validation_result["details"]["files_found"], len(existing_files)
-                validation_result["details"]["files"] = existing_files
+                validation_result["details"]["files"], existing_files
 
         # Validate each file content
         if existing_files:
-    file_validations = self._validate_file_contents(
+    file_validations, self._validate_file_contents(
                     output_dir, symbol, exchange, timeframe
                 )
 
@@ -139,7 +139,7 @@ class Step7EnhancedMatrixOperationsValidator(BaseValidator):
         # Validate results file
         results_file, output_dir / f"{exchange}_{symbol}_{timeframe}_matrix_operations_results.json"
         if results_file.exists():
-            results_validation = self._validate_results_file(results_file)
+            results_validation, self._validate_results_file(results_file)
             validations.append(results_validation)
 
         # Validate summary file

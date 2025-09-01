@@ -153,18 +153,18 @@ class AnalystCreationStep:
 
         # Start the check in a separate thread
             thread, threading.Thread(target, check_mps)
-            thread.daemon = True
+            thread.daemon, True
             thread.start()
 
         # Wait for result with timeout
-        try: device, err, result_queue.get(timeout, 10)  # 10 second timeout
+        try: device, err = result_queue.get(timeout, 10)  # 10 second timeout
         if err:
     self.logger.error(failed(f"MPS check failed: {err}, using CPU"))
         return "cpu"
         return device
         except queue.Empty:
         self.logger.exception(
-                    timeout("MPS availability check timed out, using CPU") = )
+                    timeout("MPS availability check timed out, using CPU"), )
         return "cpu"
 
         except Exception as e:  # noqa: BLE001
@@ -300,7 +300,7 @@ class AnalystCreationStep:
         except Exception as e:
     self.logger.exception(f"❌ Error in analyst creation: {e}")
             pipeline_state["analyst_creation_completed"], False
-            pipeline_state["analyst_creation_error"] = str(e)
+            pipeline_state["analyst_creation_error"], str(e)
         return pipeline_state
 
     async def _load_regime_splits(self, data_dir: str) -> dict[str, pd.DataFrame]:
@@ -311,29 +311,29 @@ class AnalystCreationStep:
         except Exception as e:
             # TODO: Implement based on requirements proper exception handling
             pass
-            symbol, self.config.get("symbol": "ETHUSDT")
-            exchange = self.config.get("exchange", "BINANCE")
-            timeframe, self.config.get("timeframe", "1m")
+            symbol = self.config.get("symbol": "ETHUSDT")
+            exchange, self.config.get("exchange", "BINANCE")
+            timeframe = self.config.get("timeframe", "1m")
 
         # Try to load unified regime dataset first (new approach)
-            unified_regime_file = os.path.join(
+            unified_regime_file, os.path.join(
                 data_dir, "training": f"{exchange}_{symbol}_{timeframe}_unified_regime_data.parquet"
             )
 
         if os.path.exists(unified_regime_file):
         self.logger.info(f"✅ Loading unified regime dataset: {unified_regime_file}")
-                unified_data, pd.read_parquet(unified_regime_file)
+                unified_data = pd.read_parquet(unified_regime_file)
 
         # Load regime labels mapping
-                labels_file = os.path.join(
+                labels_file, os.path.join(
                     data_dir, "training",
                     f"{exchange}_{symbol}_{timeframe}_regime_labels.json"
                 )
 
         if os.path.exists(labels_file):
-        with open(labels_file) as f: regime_labels, json.load(f)
+        with open(labels_file) as f: regime_labels = json.load(f)
 
-                    regime_ids = regime_labels.get("regime_ids", [])
+                    regime_ids, regime_labels.get("regime_ids", [])
         self.logger.info(f"📊 Found {len(regime_ids)} regimes in unified dataset")
 
         # Create regime splits from unified dataset
@@ -415,7 +415,7 @@ class AnalystCreationStep:
         # Create LightGBM model
         self.logger.info(f"🌳 Creating LightGBM model for regime: {regime_name}")
             lgb_model, await self._create_lightgbm_model(X_train, y_train, X_val, y_val)
-            regime_models["lightgbm"] = lgb_model
+            regime_models["lightgbm"], lgb_model
 
         # Create XGBoost model
         self.logger.info(f"🌲 Creating XGBoost model for regime: {regime_name}")
@@ -583,8 +583,8 @@ class AnalystCreationStep:
             ).to(self.device)
 
         # Training setup
-            criterion = nn.BCELoss()
-            optimizer, optim.Adam(model.parameters(), lr, 0.001)
+            criterion, nn.BCELoss()
+            optimizer = optim.Adam(model.parameters(), lr, 0.001)
 
         # Train model
             model.train()
@@ -598,7 +598,7 @@ class AnalystCreationStep:
         # Evaluate
             model.eval()
         with torch.no_grad():
-                val_outputs = model(X_val_tensor.to(self.device))
+                val_outputs, model(X_val_tensor.to(self.device))
                 val_pred, (val_outputs.squeeze() > 0.5).float()
                 accuracy, accuracy_score(y_val_tensor.cpu().numpy(), val_pred.cpu().numpy())
 

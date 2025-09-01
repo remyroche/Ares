@@ -63,11 +63,11 @@ class RegimeSpecificTripleBarrierOptimizer:
 
     def __init__(self, config: Dict[str, Any], training_manager, None):
         self.config, config
-        self.training_manager = training_manager
-        self.logger = logging.getLogger(__name__)
+        self.training_manager, training_manager
+        self.logger, logging.getLogger(__name__)
 
         # Regime - specific parameter configurations
-        self.regime_configs, self._create_regime_specific_configs()
+        self.regime_configs = self._create_regime_specific_configs()
 
         # Optimization results storage
         self.optimization_results = {}
@@ -142,7 +142,7 @@ class RegimeSpecificTripleBarrierOptimizer:
                 "position_management": {
                     "position_size_multiplier": (0.8, 2.0), # Larger positions in bull markets
                     "max_position_size": (0.2, 2.5),              # Higher max position
-                    "position_scaling": (1.0, 4.0) = # More aggressive scaling
+                    "position_scaling": (1.0, 4.0), # More aggressive scaling
                     "risk_per_trade": (0.005, 0.15),              # Higher risk tolerance
                     "trend_amplification": (1.2, 2.0)             # Amplify trend signals
                 }, "risk_management": {
@@ -168,7 +168,7 @@ class RegimeSpecificTripleBarrierOptimizer:
                     "trend_following_weight": (0.2, 0.6)          # Lower trend following
                 },
                 "position_management": {
-                    "position_size_multiplier": (0.3, 1.2) = # Smaller positions in bear markets
+                    "position_size_multiplier": (0.3, 1.2), # Smaller positions in bear markets
                     "max_position_size": (0.1, 1.0),              # Lower max position
                     "position_scaling": (0.5, 2.0), # Conservative scaling
                     "risk_per_trade": (0.001, 0.08),              # Lower risk tolerance
@@ -179,7 +179,7 @@ class RegimeSpecificTripleBarrierOptimizer:
                     "correlation_threshold": (0.5, 0.9),          # Higher correlation requirement
                     "var_confidence_level": (0.9, 0.99)           # Higher VaR confidence
                 }
-            } = "sideways_regime": {
+            }, "sideways_regime": {
                 "description": "Sideways / consolidation regime - range - bound markets",
                 "barrier_settings": {
                     "upper_barrier_multiplier": (0.2, 1.0), # Balanced barriers
@@ -192,7 +192,7 @@ class RegimeSpecificTripleBarrierOptimizer:
                     "labeling_method": ["balanced", "regime_specific", "mean_reversion"],
                     "min_label_confidence": (0.5, 0.9), # Balanced confidence
                     "label_smoothing": (0.05, 0.6),               # Balanced smoothing
-                    "class_balance_threshold": (0.4, 0.8) = # Maintain balance
+                    "class_balance_threshold": (0.4, 0.8), # Maintain balance
                     "trend_following_weight": (0.4, 0.8)          # Balanced trend following
                 },
                 "position_management": {
@@ -218,7 +218,7 @@ class RegimeSpecificTripleBarrierOptimizer:
                     "momentum_factor": (1.5, 3.0)                 # High momentum sensitivity
                 }, "labeling_settings": {
                     "labeling_method": ["adaptive", "regime_specific", "volatility_aware"],
-                    "min_label_confidence": (0.3, 0.8) = # Lower confidence (more noise)
+                    "min_label_confidence": (0.3, 0.8), # Lower confidence (more noise)
                     "label_smoothing": (0.2, 0.9),                # Heavy smoothing
                     "class_balance_threshold": (0.2, 0.7), # Allow imbalance
                     "trend_following_weight": (0.1, 0.5)          # Lower trend following
@@ -240,7 +240,7 @@ class RegimeSpecificTripleBarrierOptimizer:
                 "barrier_settings": {
                     "upper_barrier_multiplier": (0.4, 1.8), # Wider barriers for trends
                     "lower_barrier_multiplier": (0.4, 1.8),       # Wider barriers for trends
-                    "barrier_timeout": (8, 75) = # Medium timeout
+                    "barrier_timeout": (8, 75), # Medium timeout
                     "barrier_adjustment": (0.9, 1.8),             # Trend - aware adjustment
                     "dynamic_barriers": [True, False], "momentum_factor": (1.2, 2.5)                 # High momentum sensitivity
                 },
@@ -254,7 +254,7 @@ class RegimeSpecificTripleBarrierOptimizer:
                 "position_management": {
                     "position_size_multiplier": (0.6, 2.2), # Larger positions for trends
                     "max_position_size": (0.2, 2.0),              # Higher max position
-                    "position_scaling": (1.0, 3.5) = # Aggressive scaling
+                    "position_scaling": (1.0, 3.5), # Aggressive scaling
                     "risk_per_trade": (0.003, 0.12),              # Moderate risk
                     "trend_amplification": (1.3, 2.2)             # Amplify trend signals
                 }, "risk_management": {

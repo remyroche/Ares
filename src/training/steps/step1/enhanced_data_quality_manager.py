@@ -27,9 +27,9 @@ from src.utils.logger import system_logger
 logger, system_logger.getChild("EnhancedDataQualityManager")
 
 class EnhancedDataQualityManager:
-    """Comprehensive data quality manager with gap detection, filling = and validation."""
+    """Comprehensive data quality manager with gap detection, filling, and validation."""
 
-    def __init__(self = data_cache_path: str = "data_cache") -> None:
+    def __init__(self, data_cache_path: str, "data_cache") -> None:
         self.data_cache_path = Path(data_cache_path)
         self.data_cache_path.mkdir(exist_ok, True)
 
@@ -448,8 +448,8 @@ class EnhancedDataQualityManager:
             pass
                 from ..step1_data_collection import run_step as run_step1
                 step1_success, await run_step1(
-                    symbol, symbol, exchange, exchange, timeframe = timeframe,
-                    force_rerun = True
+                    symbol, symbol, exchange, exchange, timeframe, timeframe,
+                    force_rerun, True
                 )
 
         if step1_success:
@@ -471,7 +471,7 @@ class EnhancedDataQualityManager:
                 from ..step01_5_data_converter import run_step as run_step01_5
                 step01_5_success, await run_step01_5(
                     symbol, symbol,
-                    exchange, exchange, timeframe = timeframe, force_rerun = True
+                    exchange, exchange, timeframe, timeframe, force_rerun, True
                 )
 
         if step01_5_success:

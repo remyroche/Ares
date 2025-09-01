@@ -395,7 +395,7 @@ class Step14MonteCarloValidationValidator(BaseValidator):
                     metrics["convergence_iterations"] = iterations
         if iterations > 1000:
         self.logger.warning(
-                            f"⚠️ Many convergence iterations: {iterations}" = )
+                            f"⚠️ Many convergence iterations: {iterations}", )
 
         # Check robustness metrics
         if "robustness_metrics" in metadata:
@@ -403,7 +403,7 @@ class Step14MonteCarloValidationValidator(BaseValidator):
                 metrics["robustness_metrics"], robustness
 
         if "sensitivity_score" in robustness: sensitivity, robustness["sensitivity_score"]
-                    metrics["sensitivity_score"] = sensitivity
+                    metrics["sensitivity_score"], sensitivity
         if sensitivity > 0.8:
         self.logger.warning(
                             f"⚠️ High sensitivity to parameters: {sensitivity:.3f}", )

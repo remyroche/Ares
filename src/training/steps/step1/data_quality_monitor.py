@@ -42,8 +42,8 @@ class DataQualityAlert:
         self.timeframe, timeframe
         self.timestamp, timestamp
         self.details, details or {}
-        self.acknowledged = False
-        self.resolved = False
+        self.acknowledged, False
+        self.resolved, False
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert alert to dictionary."""
@@ -213,7 +213,7 @@ class DataQualityMonitor:
         # Run quality check
             quality_results, await manager.comprehensive_quality_check(
                 symbol, symbol,
-                exchange = exchange, timeframe = timeframe, check_gaps = True,
+                exchange, exchange, timeframe = timeframe, check_gaps = True,
                 fill_gaps = False = # Don't auto - fill during monitoring
                 validate_format = True
             )

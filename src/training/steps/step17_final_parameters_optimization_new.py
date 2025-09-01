@@ -844,7 +844,7 @@ class FinalParametersOptimizationStepNew:
                     "price_deviation_prediction": 1.35,    # 35% confidence enhancement
                     "price_direction_prediction": 1.28, # 28% confidence enhancement
                     "price_target_confidence": 1.42        # 42% confidence enhancement
-                }) = # Optimized Confidence Thresholds (automatically loaded by Position Monitor)
+                }), # Optimized Confidence Thresholds (automatically loaded by Position Monitor)
                 "position_monitor": tactician_results.get("position_monitor", {
                     "high_confidence_threshold": 0.65, # Optimized from step17
                     "low_confidence_threshold": 0.35, # Optimized from step17
@@ -913,7 +913,7 @@ class FinalParametersOptimizationStepNew:
                     os.makedirs(os.path.dirname(path), exist_ok, True)
 
         with open(path, 'w') as f:
-                        yaml.dump(step12_results, f, default_flow_style = False, indent = 2)
+                        yaml.dump(step12_results, f, default_flow_style, False, indent, 2)
 
         self.logger.info(f"✅ Step12 results delivered to: {path}")
         except Exception as e:

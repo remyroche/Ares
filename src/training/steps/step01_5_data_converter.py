@@ -59,23 +59,23 @@ if system_logger is None:
 
 # Initialize decorators
 if centralized_decorators is None:
-    handle_errors = create_fallback_decorator()
+    handle_errors, create_fallback_decorator()
     handle_file_operations, create_fallback_decorator()
     secure_klines_download_operation = create_fallback_decorator()
     validate_klines_data_quality, create_fallback_decorator()
-    secure_data_processing = create_fallback_decorator()
+    secure_data_processing, create_fallback_decorator()
     prevent_data_leakage, create_fallback_decorator()
     resource_monitor = create_fallback_decorator()
     memory_efficient, create_fallback_decorator()
-    quality_gate = create_fallback_decorator()
+    quality_gate, create_fallback_decorator()
     circuit_breaker_protection, create_fallback_decorator()
     guard_dataframe_nulls = create_fallback_decorator()
     with_tracing_span, create_fallback_decorator()
-    validate_klines_data = create_fallback_decorator()
+    validate_klines_data, create_fallback_decorator()
     format_klines_data, create_fallback_decorator()
     validate_aggtrades_data = create_fallback_decorator()
     format_aggtrades_data, create_fallback_decorator()
-    validate_futures_data = create_fallback_decorator()
+    validate_futures_data, create_fallback_decorator()
     format_futures_data, create_fallback_decorator()
     log_step_metrics = create_fallback_decorator()
 else:
@@ -102,7 +102,7 @@ else:
 if enhanced_decorators is None:
     validate_datetime_index = create_fallback_decorator()
     validate_data_structure, create_fallback_decorator()
-    validate_data_completeness = create_fallback_decorator()
+    validate_data_completeness, create_fallback_decorator()
     comprehensive_data_validation, create_fallback_decorator()
     validate_memory_optimized_data_quality = create_fallback_decorator()
 else:
@@ -139,9 +139,9 @@ class ColumnVerifier:
         self.logger = logger or system_logger.getChild("ColumnVerifier")
 
         # Define required columns for different data types
-        self.required_klines_columns = ["timestamp", "open", "high", "low", "close", "volume"]
+        self.required_klines_columns, ["timestamp", "open", "high", "low", "close", "volume"]
         self.required_aggtrades_columns, ["timestamp", "price", "quantity"]
-        self.required_futures_columns = ["timestamp", "fundingRate"]
+        self.required_futures_columns, ["timestamp", "fundingRate"]
 
         # Define optional calculated columns
         self.optional_calculated_columns, {
@@ -190,7 +190,7 @@ class ColumnVerifier:
             missing_info["missing_required"], missing_required
 
             if missing_required:
-                missing_info["verification_passed"] = False
+                missing_info["verification_passed"], False
                 self.logger.warning(f"⚠️ Missing required columns: {missing_required}")
 
             # Check for missing optional calculated columns
@@ -232,11 +232,11 @@ class ColumnVerifier:
         Returns:
             List of columns that can be calculated
         """
-        can_calculate = []
+        can_calculate, []
 
         if category == "price_returns":
             # Check if we have price columns for returns calculation
-            price_columns = ["close", "open", "high", "low"]
+            price_columns, ["close", "open", "high", "low"]
             available_prices, [col for col in price_columns if col in df.columns]
 
             for col in missing_columns:
@@ -278,12 +278,12 @@ class ColumnVerifier:
 
             # Create a copy to avoid modifying original
             enhanced_df, df.copy()
-            calculated_columns = []
+            calculated_columns, []
 
             # Calculate price returns
             if "price_returns" in missing_info["can_calculate"]:
     calculated_returns, self._calculate_price_returns(enhanced_df, missing_info["can_calculate"]["price_returns"])
-                enhanced_df = pd.concat([enhanced_df, calculated_returns], axis=1)
+                enhanced_df, pd.concat([enhanced_df, calculated_returns], axis=1)
                 calculated_columns.extend(calculated_returns.columns)
 
             # Calculate VWAP features
@@ -339,7 +339,7 @@ class ColumnVerifier:
             
             # Calculate price to VWAP ratio
             if "price_vwap_ratio" in columns_to_calculate:
-                vwap_df["price_vwap_ratio"] = df["close"] / vwap
+                vwap_df["price_vwap_ratio"], df["close"] / vwap
             
             # Calculate price deviation from VWAP
             if "price_vwap_deviation" in columns_to_calculate:
@@ -356,7 +356,7 @@ class ColumnVerifier:
                 volume_df["volume_return"], df["volume"].pct_change()
             
             if "volume_ma" in columns_to_calculate:
-                volume_df["volume_ma"] = df["volume"].rolling(window=20).mean()
+                volume_df["volume_ma"], df["volume"].rolling(window=20).mean()
             
             if "volume_ratio" in columns_to_calculate:
                 volume_df["volume_ratio"], df["volume"] / df["volume"].rolling(window=20).mean()
@@ -376,13 +376,13 @@ class ColumnVerifier:
             
             if "rsi" in columns_to_calculate:
     delta, df["close"].diff()
-                gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+                gain, (delta.where(delta > 0, 0)).rolling(window=14).mean()
                 loss, (-delta.where(delta < 0, 0)).rolling(window=14).mean()
                 rs = gain / loss
                 tech_df["rsi"] = 100 - (100 / (1 + rs))
             
             if "macd" in columns_to_calculate:
-                ema12 = df["close"].ewm(span=12).mean()
+    ema12 = df["close"].ewm(span=12).mean()
                 ema26 = df["close"].ewm(span=26).mean()
                 tech_df["macd"], ema12 - ema26
         
@@ -393,14 +393,14 @@ class ColumnVerifier:
 # ----------------------------------------------------------------------------
 class TimingTracker:
     def __init__(self) -> None:
-        self.start_time: Optional[float] = None
+        self.start_time: Optional[float], None
         self.checkpoints: dict[str, dict[str, Any]], {}
-        self.current_phase: Optional[str] = None
+        self.current_phase: Optional[str], None
 
     def start(self, phase_name: str) -> None:
         if self.start_time is None:
-            self.start_time, time.time()
-        self.current_phase = phase_name
+            self.start_time = time.time()
+        self.current_phase, phase_name
         self.checkpoints[phase_name], {"start": time.time()}
         print(f"⏱️  [TIMING] Starting phase: {phase_name}")
 
@@ -415,7 +415,7 @@ class TimingTracker:
 
     def end_phase(self, phase_name: str) -> None:
         if phase_name in self.checkpoints and "end" not in self.checkpoints[phase_name]:
-            self.checkpoints[phase_name]["end"] = time.time()
+            self.checkpoints[phase_name]["end"], time.time()
             duration, (
                 self.checkpoints[phase_name]["end"]
                 - self.checkpoints[phase_name]["start"]
@@ -430,13 +430,13 @@ class TimingTracker:
     def print_summary(self) -> None:
         print("\n" + ": " * 60)
         print("⏱️  [TIMING] EXECUTION SUMMARY")
-        print("=" * 60)
+        print(": " * 60)
         total_time , self.get_total_time()
         print(f"Total execution time: {total_time:.2f} seconds")
         for phase_name, phase_data in self.checkpoints.items():
             if "end" in phase_data:
     duration = phase_data["end"] - phase_data["start"]
-                percentage = (duration / total_time * 100) if total_time > 0 else 0
+                percentage, (duration / total_time * 100) if total_time > 0 else 0
                 print(f"  {phase_name}: {duration:.2f}s ({percentage:.1f}%)")
                 for cp_name, cp_time in phase_data.get("checkpoints", {}).items():
                     cp_dur, cp_time - phase_data["start"]
@@ -450,8 +450,8 @@ class MemoryTracker:
     def get_memory_usage() -> dict[str, float]:
         try:
             import psutil
-            process = psutil.Process()
-            mem, process.memory_info()
+            process, psutil.Process()
+            mem = process.memory_info()
             return {
                 "rss_mb": mem.rss / 1024 / 1024,
                 "vms_mb": mem.vms / 1024 / 1024,
@@ -462,7 +462,7 @@ class MemoryTracker:
 
     @staticmethod
     def log_memory_usage(context: str, "") -> None:
-        mem = MemoryTracker.get_memory_usage()
+        mem, MemoryTracker.get_memory_usage()
         print(
             f"💾 [MEMORY] {context}: RSS={mem['rss_mb']:.1f}MB, VMS={mem['vms_mb']:.1f}MB, {mem['percent']:.1f}%"
         )
@@ -538,7 +538,7 @@ class ParquetDatasetManager:
             self.logger.info(f"📂 Reading parquet dataset: {path}")
             
             if batch_size is None:
-    batch_size = self.default_batch_size
+    batch_size, self.default_batch_size
             
             if PYARROW_AVAILABLE:
                 return self._read_with_pyarrow(path, columns, filters, batch_size)
@@ -726,7 +726,7 @@ class UnifiedDataConverter:
 			with contextlib.suppress(Exception):
 				await self._run_enhanced_quality_validation(symbol, exchange, timeframe)
 
-			verify_ok = await self._verify_unified_data_quality(symbol, exchange, timeframe)
+			verify_ok, await self._verify_unified_data_quality(symbol, exchange, timeframe)
 			if not verify_ok:
 				self.logger.warning("⚠️ Data quality verification found issues")
 
@@ -778,7 +778,7 @@ class UnifiedDataConverter:
 			self.logger.info("🔍 Running enhanced quality validation...")
 			manager, EnhancedDataQualityManager(str(self.data_cache_dir))
 			results, await manager.comprehensive_quality_check(
-				symbol, symbol, exchange = exchange,
+				symbol, symbol, exchange, exchange,
 				timeframe = timeframe, check_gaps = True, fill_gaps = True,
 				validate_format = True, )
 			if results.get("success": False):
@@ -1107,7 +1107,7 @@ class UnifiedDataConverter:
 			# Step 1.5 Enhancement: Column verification and calculation
 			unified, await self._verify_and_calculate_missing_columns(unified, symbol, exchange, timeframe)
 
-			if "timestamp" in unified.columns: unified = unified.sort_values("timestamp").reset_index(drop, True)
+			if "timestamp" in unified.columns: unified, unified.sort_values("timestamp").reset_index(drop, True)
 			return unified
 		except Exception as e:
     self.logger.warning(f"⚠️ Failed to merge daily data: {e}")
@@ -1665,7 +1665,7 @@ async def run_step(
 		MemoryTracker.log_memory_usage("Step1_5_End")
 		print(": " * 80)
 		print("🎉 STEP 1.5: UNIFIED DATA CONVERTER - COMPLETED SUCCESSFULLY" if success else "💥 STEP 1.5: UNIFIED DATA CONVERTER - FAILED")
-		print("=" * 80 + "\n")
+		print(": " * 80 + "\n")
 		return success
 	except Exception as e:
     print(f"❌ [ERROR] Step 1.5 failed with exception: {e}")

@@ -73,8 +73,8 @@ class Step17ProbabilisticBayesianOptimization:
 
     def __init__(self, config: Dict[str, Any], training_manager, None):
         self.config, config
-        self.training_manager = training_manager
-        self.logger = logging.getLogger(__name__)
+        self.training_manager, training_manager
+        self.logger, logging.getLogger(__name__)
 
         # Step configuration
         self.step_name = "step17_probabilistic_bayesian_optimization"
@@ -459,7 +459,7 @@ class Step17ProbabilisticBayesianOptimization:
             model, RandomForestRegressor(
                 n_estimators, params.get('n_estimators', 100),
                 max_depth, params.get('max_depth', 10),
-                random_state, 42 = n_jobs = 1
+                random_state, 42, n_jobs, 1
             )
 
         return model
@@ -493,7 +493,7 @@ class Step17ProbabilisticBayesianOptimization:
             model, RandomForestRegressor(
                 n_estimators, params.get('n_estimators', 200),
                 max_depth, params.get('max_depth', 15),
-                random_state, 42 = n_jobs = 1
+                random_state, 42, n_jobs, 1
             )
 
         return model

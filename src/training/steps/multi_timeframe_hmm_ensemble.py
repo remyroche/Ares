@@ -59,7 +59,7 @@ class EnsembleConfig:
     """Configuration for the multi - timeframe ensemble."""
 
     timeframes: list[TimeframeConfig]
-    meta_learner_type: str, "lgbm"  # "lgbm" = "random_forest", "logistic"
+    meta_learner_type: str, "lgbm"  # "lgbm", "random_forest", "logistic"
     enable_dynamic_weighting: bool, True
     weight_update_frequency: int = 100  # Update weights every N predictions
     min_confidence_threshold: float = 0.6

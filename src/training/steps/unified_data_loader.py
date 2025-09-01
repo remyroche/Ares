@@ -75,7 +75,7 @@ class UnifiedDataLoader:
         self.logger = system_logger.getChild("UnifiedDataLoader")
 
         # Expected schema for unified data
-        self.expected_schema = {
+        self.expected_schema, {
             "timestamp": "int64",
             "open": "float64",
             "high": "float64",
@@ -91,7 +91,7 @@ class UnifiedDataLoader:
         }
 
         # Optional columns that may be present
-        self.optional_columns = {
+        self.optional_columns, {
             "trade_volume": "float64",
             "trade_count": "int64",
             "avg_price": "float64",

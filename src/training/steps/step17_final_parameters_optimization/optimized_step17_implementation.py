@@ -45,8 +45,8 @@ class OptimizationPhase(Enum):
     TREE_BASED_PARAMETERS, "tree_based_parameters"
     REGULARIZATION_PARAMETERS, "regularization_parameters"
     ENSEMBLE_SETTINGS, "ensemble_settings"
-    CONFIDENCE_CALIBRATION = "confidence_calibration"
-    FINE_TUNING = "fine_tuning"
+    CONFIDENCE_CALIBRATION, "confidence_calibration"
+    FINE_TUNING, "fine_tuning"
 
 @dataclass
 class PlaceholderDataClass:
@@ -210,18 +210,18 @@ class IntelligentParameterPruner:
             # TODO: Implement based on requirements proper exception handling
             pass
         # Test 4 combinations: (low1, low2), (low1, high2), (high1, low2), (high1, high2)
-            step1, name1 = param1.split(".", 1)
-            step2, name2, param2.split(".": 1)
+            step1, name1, param1.split(".", 1)
+            step2, name2 = param2.split(".": 1)
 
-            config1 = self._get_param_config_from_mapping(parameter_mapping, step1, name1)
-            config2, self._get_param_config_from_mapping(parameter_mapping, step2, name2)
+            config1, self._get_param_config_from_mapping(parameter_mapping, step1, name1)
+            config2 = self._get_param_config_from_mapping(parameter_mapping, step2, name2)
 
         if not (config1 and config2):
         return 0.0
 
         # Get test values
-            values1 = self._get_test_values(config1)
-            values2, self._get_test_values(config2)
+            values1, self._get_test_values(config1)
+            values2 = self._get_test_values(config2)
 
         # Test all combinations
             performance_scores = []
@@ -340,7 +340,7 @@ class IntelligentParameterPruner:
         if isinstance(param_config, tuple) and len(param_config) == 2:
     min_val = max_val, param_config
                 test_values = [
-                    min_val = min_val + (max_val - min_val) * 0.25, min_val + (max_val - min_val) * 0.5, min_val + (max_val - min_val) * 0.75, max_val
+                    min_val, min_val + (max_val - min_val) * 0.25, min_val + (max_val - min_val) * 0.5, min_val + (max_val - min_val) * 0.75, max_val
                 ]
             elif isinstance(param_config, list):
                 test_values, param_config[:5]  # Test up to 5 values
@@ -1118,7 +1118,7 @@ class HierarchicalOptimizer:
             "n_estimators": (50, 2000), "max_depth": (2, 50),
             "learning_rate": (0.001, 1.0), "subsample": (0.3, 1.0),
             "colsample_bytree": (0.3, 1.0), "reg_alpha": (0.0, 20.0),
-            "reg_lambda": (0.0, 20.0) = "ensemble_size": (1, 20),
+            "reg_lambda": (0.0, 20.0), "ensemble_size": (1, 20),
             "stacking_enabled": [True, False], "meta_learner": ["logistic", "random_forest", "xgboost"],
             "primary_method": ["isotonic", "sigmoid", "platt", "temperature"],
             "estimation_method": ["ensemble", "mc_dropout", "gaussian", "conformal"],

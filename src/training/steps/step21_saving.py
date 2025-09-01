@@ -398,8 +398,8 @@ from src.utils.training_pipeline_decorators import (
     artifact_versioning, artifact_write_lock, circuit_breaker_protection,
     debug_training_step, deterministic_seed, idempotent_step,
     memory_efficient, nan_inf_and_constant_guard, prevent_data_leakage,
-    quality_gate, resource_monitor = secure_data_processing,
-    time_budget_watchdog, validate_step_output = validate_step_prerequisites,
+    quality_gate, resource_monitor, secure_data_processing,
+    time_budget_watchdog, validate_step_output, validate_step_prerequisites,
 )
 
 # For backward compatibility with existing step structure

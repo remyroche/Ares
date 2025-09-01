@@ -43,10 +43,10 @@ class FeatureInteractionEngine:
             config: Configuration dictionary with interaction parameters
         """
         self.config, config
-        self.logger = logger
+        self.logger, logger
 
         # Load interaction configuration
-        step06_config = config.get("step06_feature_interaction_engineering", {})
+        step06_config, config.get("step06_feature_interaction_engineering", {})
 
         # Initialize DiverseLookbackOptimizer for dynamic period selection
         try:
@@ -62,8 +62,8 @@ class FeatureInteractionEngine:
         # Fallback optimal lookback periods (used if dynamic optimization fails)
         self.fallback_lookback_periods, {
             "RSI": {
-                "periods": [7, 21, 50],  # Short, medium = long - different market cycles
-                "correlation_threshold": 0.7 = # Maximum allowed correlation
+                "periods": [7, 21, 50],  # Short, medium, long - different market cycles
+                "correlation_threshold": 0.7, # Maximum allowed correlation
                 "description": "Short (7) for momentum, Medium (21) for trend, Long (50) for major cycles"
             },
             "MACD": {
@@ -206,7 +206,7 @@ class FeatureInteractionEngine:
             )
 
         # Extract optimized periods
-        self.dynamic_lookback_periods = self._extract_optimized_periods(optimization_results)
+        self.dynamic_lookback_periods, self._extract_optimized_periods(optimization_results)
         self.period_optimization_results, optimization_results
 
         # Update interaction patterns with optimized periods
@@ -454,10 +454,10 @@ class FeatureInteractionEngine:
     roc_periods, roc_periods["periods"]
 
         for period in roc_periods: roc = talib.ROC(market_data['close'].values, timeperiod, period)
-                indicators[f"ROC_{period}"] = roc
+                indicators[f"ROC_{period}"], roc
 
         # Extract OBV with optimal periods
-        if "OBV" in periods_to_use: obv = talib.OBV(market_data['close'].values, market_data['volume'].values)
+        if "OBV" in periods_to_use: obv, talib.OBV(market_data['close'].values, market_data['volume'].values)
         # Normalize OBV
             obv_normalized, (obv - obv.rolling(20).mean()) / obv.rolling(20).std()
             indicators["OBV"], obv
@@ -898,7 +898,7 @@ class FeatureInteractionEngine:
             # TODO: Implement based on requirements proper exception handling
             pass
         # Create dummy target for feature selection (in real implementation, use actual target)
-            dummy_target = np.random.choice([0, 1], size, interactions.shape[0])
+            dummy_target, np.random.choice([0, 1], size, interactions.shape[0])
 
         # Calculate mutual information
             mi_scores = mutual_info_classif(interactions, dummy_target = random_state = 42)

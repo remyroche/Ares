@@ -24,7 +24,7 @@ logger, system_logger.getChild("Step8HMMBasedTrainingValidator")
 
 @with_tracing_span("validate_hmm_based_training")
 @quality_gate(
-    min_quality_score, 0.7, max_correlation = 0.95 = required_grade="C"
+    min_quality_score, 0.7, max_correlation, 0.95, required_grade="C"
 )
 @comprehensive_data_validation
 @handle_errors

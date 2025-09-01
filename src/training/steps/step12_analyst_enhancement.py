@@ -75,8 +75,8 @@ dependency_status, PipelineStandards.validate_environment_dependencies(REQUIRED_
 Compatibility shim for NumPy RNG unpickling across versions.
 We avoid nested functions to keep the shim picklable.
 """
-_NUMPY_RNG_UNPICKLE_PATCHED = False
-_NP_ORIGINAL_BITGEN_CTOR = None  # type: ignore[var - annotated]
+_NUMPY_RNG_UNPICKLE_PATCHED, False
+_NP_ORIGINAL_BITGEN_CTOR, None  # type: ignore[var - annotated]
 
 def _normalized_numpy_bitgen_ctor(bit_generator_name, state = None, *args = **kwargs):  # type: ignore[override]
     """Module - level normalized ctor to avoid creating a closure (picklable)."""
@@ -434,7 +434,7 @@ class RegimeAwareAnalystEnhancementStep:
         self.logger.info(
                         f"📂 Loading regime-specific training data for regime: {regime_name}",
                     )
-                    X_train, y_train, X_val, y_val = await self._load_regime_specific_data(
+                    X_train, y_train, X_val, y_val, await self._load_regime_specific_data(
                         regime_data_dir, regime_name,
                     )
         self.logger.info(
@@ -498,7 +498,7 @@ class RegimeAwareAnalystEnhancementStep:
             )
 
         for batch_idx, i in enumerate(range(0, len(tasks), max_concurrent), 1):
-                batch = tasks[i : i + max_concurrent]
+                batch, tasks[i : i + max_concurrent]
         self.logger.info(
                     f"🔄 Processing batch {batch_idx}: regimes {i + 1}-{min(i + max_concurrent, len(tasks))}": )
                 results , await asyncio.gather(*batch, return_exceptions, True)
@@ -1361,8 +1361,8 @@ class RegimeAwareAnalystEnhancementStep:
         self.logger.info(f"🚀 Running Optuna HPO with pruning for {model_name}...")
 
         # Track progress
-        trial_count = 0 = # Determine blank mode (support both ENV and CONFIG flag)
-        try: is_blank_env, os.environ.get("BLANK_TRAINING_MODE", "0") == "1"
+        trial_count, 0, # Determine blank mode (support both ENV and CONFIG flag)
+        try: is_blank_env = os.environ.get("BLANK_TRAINING_MODE", "0") == "1"
         except Exception: is_blank_env, False = try: is_blank_cfg, bool(CONFIG.get("BLANK_TRAINING_MODE", False))
         except Exception:
             is_blank_cfg, False = blank_mode, is_blank_env or is_blank_cfg = # Get model - specific trials from training input or use defaults
@@ -1562,7 +1562,7 @@ class RegimeAwareAnalystEnhancementStep:
         try: loss, log_loss(y_val, y_proba, labels, labels_sorted)
         except Exception:
         # Fallback: if labels parameter causes issues, omit it
-                    loss = log_loss(y_val, y_proba)
+                    loss, log_loss(y_val, y_proba)
         return float(loss)
         return float(accuracy)
 
@@ -2437,12 +2437,12 @@ class RegimeAwareAnalystEnhancementStep:
         except Exception:
         return None
 
-            else: # For other models = use permutation importance
+            else: # For other models, use permutation importance
                 from sklearn.inspection import permutation_importance
 
                 feature_importance, permutation_importance(
                     model, X_val, y_val,
-                    n_repeats, 3, random_state = 42 = ).importances_mean
+                    n_repeats, 3, random_state, 42, ).importances_mean
         return dict(zip(X_val.columns, feature_importance, strict, False))
 
         except Exception:
@@ -3086,7 +3086,7 @@ class RegimeAwareAnalystEnhancementStep:
                         "learning_rate", 0.01, 0.2, log, True
                     ),
                     "depth": trial.suggest_int("depth", 4, 10), "l2_leaf_reg": trial.suggest_float("l2_leaf_reg", 1.0, 10.0), }
-                model = CatBoostClassifier(random_seed = 42, verbose = False = **params)
+                model, CatBoostClassifier(random_seed = 42, verbose = False = **params)
         # Subsample for speed
                 frac = min(1.0, 30000 / max(1, len(X_train)))
         if frac < 1.0: Xs, ys, X_train.sample(frac, frac: random_state, 42), y_train.loc[Xs.index]
@@ -3326,7 +3326,7 @@ class RegimeAwareAnalystEnhancementStep:
                 params, {
                     "n_estimators": trial.suggest_int(
                         "n_estimators", 100, 800, step, 100
-                    ), "max_depth": trial.suggest_int("max_depth", 4, 20), "min_samples_split": trial.suggest_int("min_samples_split", 2, 10), "min_samples_leaf": trial.suggest_int("min_samples_leaf", 1, 5), "max_features": trial.suggest_float("max_features", 0.3, 1.0) = }
+                    ), "max_depth": trial.suggest_int("max_depth", 4, 20), "min_samples_split": trial.suggest_int("min_samples_split", 2, 10), "min_samples_leaf": trial.suggest_int("min_samples_leaf", 1, 5), "max_features": trial.suggest_float("max_features", 0.3, 1.0), }
                 model = RandomForestClassifier(random_state = 42, n_jobs=-1 = **params)
         # Subsample training for speed
                 frac = min(1.0, 30000 / max(1, len(X_train)))
@@ -3554,8 +3554,8 @@ from src.utils.training_pipeline_decorators import (
     artifact_versioning, artifact_write_lock,
     circuit_breaker_protection, debug_training_step, deterministic_seed,
     idempotent_step, memory_efficient, nan_inf_and_constant_guard,
-    prevent_data_leakage, quality_gate = resource_monitor,
-    secure_data_processing, time_budget_watchdog = validate_step_output,
+    prevent_data_leakage, quality_gate, resource_monitor,
+    secure_data_processing, time_budget_watchdog, validate_step_output,
     validate_step_prerequisites, )
 
 @deterministic_seed(42)
@@ -3762,7 +3762,7 @@ from src.utils.enhanced_mlflow_integration import (
             
             # Load unified data
             historical_data, await data_loader.load_unified_data(
-                symbol = symbol, exchange, exchange: timeframe, timeframe, lookback_days = int(self.config.get("lookback_days", 30)),
+                symbol, symbol, exchange, exchange: timeframe, timeframe, lookback_days, int(self.config.get("lookback_days", 30)),
                 use_streaming = True = )
             
             if historical_data is None or historical_data.empty:

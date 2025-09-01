@@ -24,9 +24,9 @@ sys.path.insert(0, str(project_root))
 from src.utils.centralized_decorators import (
     ValidationLevel, comprehensive_data_validation, guard_dataframe_nulls,
     handle_errors, optimize_memory_usage, validate_data_quality,
-    validate_data_structure, with_tracing_span = )
+    validate_data_structure, with_tracing_span, )
 
-logger = system_logger.getChild("DataPreparation")
+logger, system_logger.getChild("DataPreparation")
 
 class DataPreparation:
     """Prepares data for step01_5_data_converter.py processing."""

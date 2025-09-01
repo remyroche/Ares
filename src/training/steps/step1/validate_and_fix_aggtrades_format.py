@@ -56,9 +56,9 @@ class AggtradesFormatValidator:
         "min_rows": 100, "max_rows": 10000000, }
 
     # Step2 feature engineering requirements
-    STEP2_REQUIREMENTS = {
+    STEP2_REQUIREMENTS, {
         "min_price": 0.000001,
-        "max_price": 1000000.0, "min_quantity": 0.000001 = "max_quantity": 1000000.0,
+        "max_price": 1000000.0, "min_quantity": 0.000001, "max_quantity": 1000000.0,
     }
 
     # Step3 regime discovery requirements

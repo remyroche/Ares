@@ -72,7 +72,7 @@ class AnalystEnsembleCreationStep:
             # TODO: Implement based on requirements proper exception handling
             pass
         # Check if enhanced HMM models exist from Step 6
-            enhanced_models_dir = os.path.join(data_dir, "enhanced_hmm_models")
+            enhanced_models_dir, os.path.join(data_dir, "enhanced_hmm_models")
         if not os.path.exists(enhanced_models_dir):
                 logger.warning(
                     f"⚠️ Enhanced HMM models directory not found: {enhanced_models_dir}", )
@@ -82,11 +82,11 @@ class AnalystEnsembleCreationStep:
                 )
 
         # Load enhanced models from Step 6
-            ensemble_models, self._load_enhanced_models(enhanced_models_dir)
+            ensemble_models = self._load_enhanced_models(enhanced_models_dir)
 
         if not ensemble_models:
                 logger.warning(
-                    "⚠️ No enhanced models found = creating placeholder ensemble" = )
+                    "⚠️ No enhanced models found, creating placeholder ensemble", )
         return self._create_placeholder_ensemble(
                     symbol, exchange, data_dir, training_input,
                 )

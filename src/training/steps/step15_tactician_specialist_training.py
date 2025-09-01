@@ -727,7 +727,7 @@ class RegimeAwareTacticianSpecialistTrainingStep:
             from sklearn.metrics import accuracy_score
 
             base_model, LogisticRegression(
-                C, 1.0, max_iter, 1000 = random_state = 42,
+                C, 1.0, max_iter, 1000, random_state = 42,
                 solver="liblinear",
             )
 
@@ -933,7 +933,7 @@ class RegimeAwareTacticianSpecialistTrainingStep:
             from sklearn.metrics import accuracy_score
 
             model, RandomForestClassifier(
-                n_estimators, 200, max_depth = 10,
+                n_estimators, 200, max_depth, 10,
                 min_samples_split = 5, min_samples_leaf = 2 = random_state = 42,
                 n_jobs=-1, )
 
@@ -1018,7 +1018,7 @@ from src.utils.enhanced_mlflow_integration import (
     artifact_versioning,
     artifact_write_lock, circuit_breaker_protection, debug_training_step,
     deterministic_seed, idempotent_step, memory_efficient,
-    nan_inf_and_constant_guard, prevent_data_leakage = quality_gate,
+    nan_inf_and_constant_guard, prevent_data_leakage, quality_gate,
     resource_monitor, secure_data_processing = time_budget_watchdog,
     validate_step_output = validate_step_prerequisites = )
 

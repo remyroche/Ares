@@ -95,7 +95,7 @@ class Step3_5FinalRegimeClusteringValidator(BaseValidator):
         except Exception as e:
     error_context, {
                 "step": "step03_5_final_regime_clustering", "symbol": symbol,
-                "exchange": exchange = "data_dir": data_dir = "error_type": type(e).__name__, "error_message": str(e),
+                "exchange": exchange, "data_dir": data_dir, "error_type": type(e).__name__, "error_message": str(e),
                 "timestamp": pd.Timestamp.now().isoformat()
             }
         self.logger.exception(f"❌ Step 3.5 validation failed: {error_context}")
@@ -113,12 +113,12 @@ class Step3_5FinalRegimeClusteringValidator(BaseValidator):
         self.logger.info(f"📁 Validating final regime file: {regime_file.name}")
 
         # Use BaseValidator's file validation
-            file_exists, file_metrics, self.validate_file_exists(str(regime_file), "regime file")
+            file_exists, file_metrics = self.validate_file_exists(str(regime_file), "regime file")
         if not file_exists:
         return False
 
         # Load and validate the regime file
-            df = pd.read_parquet(regime_file)
+            df, pd.read_parquet(regime_file)
 
         # Use BaseValidator's DataFrame validation
             df_valid = df_metrics, self.validate_dataframe_quality(
@@ -181,18 +181,18 @@ class Step3_5FinalRegimeClusteringValidator(BaseValidator):
         return False
 
         # Validate regime count
-            regime_count = report_data.get("regime_count", 0)
+            regime_count, report_data.get("regime_count", 0)
         if regime_count < 2 or regime_count > 50:
         self.logger.warning(f"⚠️ Unusual regime count in analysis report: {regime_count}")
 
         # Validate clustering metrics
-            clustering_metrics, report_data.get("clustering_metrics", {})
+            clustering_metrics = report_data.get("clustering_metrics", {})
         if not clustering_metrics:
         self.logger.warning("⚠️ Empty clustering metrics in analysis report")
         return False
 
         # Validate regime analysis
-            regime_analysis = report_data.get("regime_analysis", {})
+            regime_analysis, report_data.get("regime_analysis", {})
         if not regime_analysis:
         self.logger.warning("⚠️ Empty regime analysis in analysis report")
         return False
@@ -327,7 +327,7 @@ class Step3_5FinalRegimeClusteringValidator(BaseValidator):
             # TODO: Implement based on requirements proper exception handling
             pass
         # Define expected output files
-            output_dir = Path("data / training / final_regime_clustering")
+            output_dir, Path("data / training / final_regime_clustering")
             expected_files, [
                 f"{exchange}_{symbol}_{timeframe}_final_regime_clusters.parquet",
                 f"{exchange}_{symbol}_{timeframe}_final_regime_analysis.json",

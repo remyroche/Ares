@@ -837,7 +837,7 @@ class UnifiedRegimeIntelligenceStep:
 
         except Exception as e:
     self.logger.exception(f"🚨 Error calculating multi - timeframe alignment: {e}")
-            reference_index = next(iter(tf_intensities.values())).index
+            reference_index, next(iter(tf_intensities.values())).index
         return pd.Series(0, index, reference_index)
 
     def _calculate_temporal_consistency(
@@ -859,7 +859,7 @@ class UnifiedRegimeIntelligenceStep:
             stability_scores: list[pd.Series], []
         for intensities in tf_intensities.values():
         # Calculate rolling standard deviation of mean intensity
-                mean_intensity, intensities.mean(axis, 1)
+                mean_intensity = intensities.mean(axis, 1)
                 stability = 1.0 / (1.0 + mean_intensity.rolling(window = window, min_periods = 1).std())
                 stability_scores.append(stability)
 
@@ -1471,7 +1471,7 @@ class UnifiedRegimeIntelligenceStep:
                 train_features, train_labels["regime"], train_labels["transition"],
                 train_labels["tpsl"],
             )
-            train_loader = DataLoader(
+            train_loader, DataLoader(
                 train_dataset, batch_size = self.batch_size, shuffle = False
             )
 
@@ -1962,8 +1962,8 @@ class UnifiedRegimeIntelligenceStep:
         return float(score)
 
         # Get HPO parameters from training input or use defaults
-            hpo_trials = self.training_input.get("hpo_trials", self.n_trials)
-            hpo_timeout, self.training_input.get("hpo_timeout", self.hpo_timeout)
+            hpo_trials, self.training_input.get("hpo_trials", self.n_trials)
+            hpo_timeout = self.training_input.get("hpo_timeout", self.hpo_timeout)
 
             study.optimize(
                 objective, n_trials, hpo_trials: timeout, hpo_timeout, show_progress_bar, False
@@ -2107,7 +2107,7 @@ from src.utils.enhanced_mlflow_integration import (
 )
     artifact_versioning, artifact_write_lock,
     circuit_breaker_protection, debug_training_step, deterministic_seed,
-    idempotent_step, memory_efficient = nan_inf_and_constant_guard,
+    idempotent_step, memory_efficient, nan_inf_and_constant_guard,
     prevent_data_leakage, quality_gate = resource_monitor,
     secure_data_processing, time_budget_watchdog = validate_step_output,
     validate_step_prerequisites = )

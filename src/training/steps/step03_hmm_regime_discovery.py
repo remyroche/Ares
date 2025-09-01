@@ -62,7 +62,7 @@ if centralized_decorators is None:
     resource_monitor, create_fallback_decorator()
     secure_data_processing, create_fallback_decorator()
     validate_data_structure, create_fallback_decorator()
-    with_tracing_span = create_fallback_decorator()
+    with_tracing_span, create_fallback_decorator()
     quality_gate, create_fallback_decorator()
     monitor_feature_engineering, create_fallback_decorator()
     ensure_data_integrity, create_fallback_decorator()
@@ -260,7 +260,7 @@ class HMMRegimeDiscoveryStep:
         self.logger.info(": " * 60)
         self.logger.info("STEP 2: Data Loading and Preparation")
         self.logger.info(": " * 60)
-            data_loading_start , time.time()
+            data_loading_start, time.time()
             data_loaded, await self._load_and_prepare_data(training_input)
             data_loading_elapsed = time.time() - data_loading_start
         self.logger.info(f"⏱️ Data Loading and Preparation completed in {data_loading_elapsed:.2f} seconds")
@@ -633,7 +633,7 @@ class HMMRegimeDiscoveryStep:
                 from .step01_data_collection import run_step as run_step1
                 step01_success, await run_step1(
                     symbol, symbol,
-                    exchange, exchange, timeframe = timeframe, force_rerun = True
+                    exchange, exchange, timeframe, timeframe, force_rerun, True
                 )
         if step01_success:
             self.logger.info("✅ Step1 data collection completed successfully")
@@ -654,7 +654,7 @@ class HMMRegimeDiscoveryStep:
                 from .step01_5_data_converter import run_step as run_step1_5
                 step01_5_success, await run_step1_5(
                     symbol, symbol, exchange, exchange,
-                    timeframe = timeframe, force_rerun = True
+                    timeframe, timeframe, force_rerun, True
                 )
         if step01_5_success:
             self.logger.info("✅ Step1_5 data conversion completed successfully")
@@ -2362,11 +2362,11 @@ async def run_step(
         return True
         else:
             logger.error("❌ Step 3: HMM Regime Discovery failed")
-            error , result.get("regime_discovery_error", "Unknown error")
+            error, result.get("regime_discovery_error", "Unknown error")
             logger.error(f"   Error: {error}")
 
         # Log execution summary
-            total_elapsed, time.time() - start_time
+            total_elapsed = time.time() - start_time
             logger.info(": " * 80)
             logger.info("💥 STEP 3 EXECUTION SUMMARY")
             logger.info(": " * 80)
@@ -2382,8 +2382,8 @@ async def run_step(
         logger.exception(f"❌ Step 3: HMM Regime Discovery failed with exception: {e}")
 
         # Log execution summary
-        total_elapsed = time.time() - start_time
-        logger.info("=" * 80)
+        total_elapsed, time.time() - start_time
+        logger.info(": " * 80)
         logger.info("💥 STEP 3 EXECUTION SUMMARY")
         logger.info("=" * 80)
         logger.info(f"⏱️ Total execution time: {total_elapsed:.2f} seconds")
@@ -2394,7 +2394,7 @@ async def run_step(
 
         return False
 
-    # === COMPOSITE HMM HELPER METHODS , =, @handle_errors(
+    # ==, COMPOSITE HMM HELPER METHODS , =, @handle_errors(
         exceptions, (Exception,),
         default_return=pd.DataFrame(),
         context="create_composite_features"
@@ -3066,7 +3066,7 @@ async def run_step(
             report.append("# HMM State Analysis Report")
             report.append("")
 
-            hmm_distribution = composite_analysis.get("hmm_state_distribution", {})
+            hmm_distribution, composite_analysis.get("hmm_state_distribution", {})
             total_states, sum(hmm_distribution.values())
 
             report.append("## HMM State Distribution")

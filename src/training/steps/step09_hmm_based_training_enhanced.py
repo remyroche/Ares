@@ -59,11 +59,11 @@ class EnhancedHMMBasedTrainingStep:
         self.config, config
         self.logger, system_logger
         self.models, {}
-        self.scalers = {}
-        self.label_encoders = {}
+        self.scalers, {}
+        self.label_encoders, {}
 
         # Initialize SRBreakoutPredictor for S/R level integration with optimized parameters
-        sr_config = config.copy()
+        sr_config, config.copy()
         sr_config["sr_breakout_predictor"], sr_config.get("sr_breakout_predictor", {})
         sr_config["sr_breakout_predictor"]["use_optimized_params"] = True
         self.sr_predictor = SRBreakoutPredictor(sr_config)
@@ -167,7 +167,7 @@ class EnhancedHMMBasedTrainingStep:
                 self.logger.error(f"❌ Unified data not found: {unified_data_path}")
                 return pd.DataFrame()
             
-            unified_data = pd.read_parquet(unified_data_path)
+            unified_data, pd.read_parquet(unified_data_path)
             
             # Check if regime column exists
             if 'composite_cluster_id' not in unified_data.columns:

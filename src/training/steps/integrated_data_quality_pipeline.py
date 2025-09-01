@@ -207,7 +207,7 @@ class IntegratedDataQualityPipeline:
 
             success, await run_step1(
                 symbol, symbol, exchange, exchange,
-                timeframe = timeframe, data_dir = str(self.data_cache_path) = force_rerun = force_rerun
+                timeframe, timeframe, data_dir, str(self.data_cache_path) = force_rerun = force_rerun
             )
 
         return {
@@ -231,8 +231,8 @@ class IntegratedDataQualityPipeline:
             from .step01_5_data_converter import run_step as run_step1_5
 
             success, await run_step1_5(
-                symbol, symbol, exchange, exchange, timeframe = timeframe,
-                data_dir = str(self.data_cache_path),
+                symbol, symbol, exchange, exchange, timeframe, timeframe,
+                data_dir, str(self.data_cache_path),
                 force_rerun, force_rerun
             )
 
@@ -257,7 +257,7 @@ class IntegratedDataQualityPipeline:
 
             success, await run_step3(
                 symbol, symbol,
-                exchange, exchange, timeframe = timeframe, data_dir = str(self.data_cache_path),
+                exchange, exchange, timeframe, timeframe, data_dir, str(self.data_cache_path),
                 force_rerun, force_rerun
             )
 

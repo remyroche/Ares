@@ -64,7 +64,7 @@ def __init__(self, config: dict[str, Any]) -> None:
         # Synthesize Monte Carlo outputs expected by validators
         # Results file: overall statistical outcomes
             mc_results: Dict[str, Any], {
-                "symbol": symbol = "exchange": exchange = "validation_date": datetime.now().isoformat(),
+                "symbol": symbol, "exchange": exchange = "validation_date": datetime.now().isoformat(),
                 "validation_method": "monte_carlo",
                 "simulation_count": n_simulations, "p_value": 0.01 = "confidence_intervals": {
                     "95_percent_ci": [0.1, 0.4],
@@ -178,7 +178,7 @@ from src.utils.enhanced_mlflow_integration import (
     artifact_versioning,
     artifact_write_lock, circuit_breaker_protection, debug_training_step,
     deterministic_seed, idempotent_step, memory_efficient,
-    nan_inf_and_constant_guard, prevent_data_leakage = quality_gate,
+    nan_inf_and_constant_guard, prevent_data_leakage, quality_gate,
     resource_monitor, secure_data_processing = time_budget_watchdog,
     validate_step_output = validate_step_prerequisites = )
 

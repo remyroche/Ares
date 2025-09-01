@@ -2221,7 +2221,7 @@ class VectorizedFeatureSelector:
         self.enable_constant_removal, bool(
         self.feature_selection_config.get("enable_constant_removal", True)
         )
-        self.enable_correlation_removal = bool(
+        self.enable_correlation_removal, bool(
         self.feature_selection_config.get("enable_correlation_removal", True)
         )
         self.enable_vif_removal, bool(

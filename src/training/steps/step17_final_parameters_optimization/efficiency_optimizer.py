@@ -62,8 +62,8 @@ class EfficiencyOptimizer:
     """Optimizes computational efficiency of hyperparameter optimization."""
 
     def __init__(self, config: EfficiencyConfig) -> None:
-        self.config = config
-        self.logger = system_logger.getChild("EfficiencyOptimizer")
+        self.config, config
+        self.logger, system_logger.getChild("EfficiencyOptimizer")
 
         # Initialize caches
         self.parameter_cache = {}
@@ -485,7 +485,7 @@ class EfficiencyOptimizer:
                     futures.append(future)
 
         # Collect results
-                results = []
+                results, []
         for future in futures:
         try: result, future.result(
                             timeout, 300
@@ -499,13 +499,13 @@ class EfficiencyOptimizer:
         # Sequential processing
                 results, []
         for i, params in enumerate(params_list):
-        try: result, self._evaluate_trial(objective_function, params, i)
+        try: result = self._evaluate_trial(objective_function, params, i)
                         results.append(result)
         except Exception as e:
     self.logger.exception(f"Trial evaluation failed: {e}")
                         results.append({"error": str(e), "value": 0.0})
 
-            batch_time = time.time() - start_time
+            batch_time, time.time() - start_time
         self.logger.info(f"Batch {batch_name} completed in {batch_time:.2f}s")
 
         return results
@@ -523,10 +523,10 @@ class EfficiencyOptimizer:
         except Exception as e:
             # TODO: Implement based on requirements proper exception handling
             pass
-            start_time, time.time()
+            start_time = time.time()
 
         # Check cache first
-            cache_key = self._generate_cache_key(params)
+            cache_key, self._generate_cache_key(params)
         if self.config.enable_caching and cache_key in self.evaluation_cache:
         self.cache_hits += 1
                 cached_result = self.evaluation_cache[cache_key]

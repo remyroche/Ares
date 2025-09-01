@@ -74,7 +74,7 @@ if training_pipeline_decorators is None: circuit_breaker_protection, create_fall
     resource_monitor, create_fallback_decorator()
     secure_data_processing, create_fallback_decorator()
     validate_step_output, create_fallback_decorator()
-    validate_step_prerequisites = create_fallback_decorator()
+    validate_step_prerequisites, create_fallback_decorator()
     monitor_feature_engineering, create_fallback_decorator()
 else:
     circuit_breaker_protection = training_pipeline_decorators.circuit_breaker_protection
@@ -342,7 +342,7 @@ async def _load_unified_data(symbol: str, exchange: str, timeframe: str, data_di
 
         unified_data, await load_unified_data(
             symbol, symbol,
-            exchange, exchange, timeframe = timeframe, data_dir = data_dir,
+            exchange, exchange, timeframe, timeframe, data_dir = data_dir,
             columns=["timestamp", "open", "high", "low", "close", "volume", "exchange", "symbol", "timeframe"],
         )
 
@@ -517,7 +517,7 @@ async def _create_comprehensive_features(
             system_logger.info("⏭️ Skipping SR feature generation (disabled in config)")
 
         # Add SR - aware feature selection
-        features_df = await _add_sr_aware_feature_selection(features_df, merged_data, config)
+        features_df, await _add_sr_aware_feature_selection(features_df, merged_data, config)
 
         # Add SR detection optimization features
         features_df, await _add_sr_optimization_features(features_df, merged_data, config)
@@ -747,7 +747,7 @@ def _add_technical_indicators(features: pd.DataFrame) -> pd.DataFrame:
         vwap_delta, features["vwap"].diff()
         vwap_gain, (vwap_delta.where(vwap_delta > 0, 0)).rolling(window, 14).mean()
         vwap_loss, (-vwap_delta.where(vwap_delta < 0, 0)).rolling(window, 14).mean()
-        vwap_rs = vwap_gain / vwap_loss
+        vwap_rs, vwap_gain / vwap_loss
         features["vwap_rsi"], 100 - (100 / (1 + vwap_rs))
 
         # VWAP MACD
@@ -759,7 +759,7 @@ def _add_technical_indicators(features: pd.DataFrame) -> pd.DataFrame:
     delta, features["close"].diff()
     gain, (delta.where(delta > 0, 0)).rolling(window, 14).mean()
     loss, (-delta.where(delta < 0, 0)).rolling(window, 14).mean()
-    rs = gain / loss
+    rs, gain / loss
     features["rsi"], 100 - (100 / (1 + rs))
 
     # MACD
@@ -884,7 +884,7 @@ async def _add_sr_features(
                 "sr_pivot_level_pct": (pivot_levels.get("pivot", current_price) - current_price) / current_price, "sr_support_1_pct": (pivot_levels.get("s1": current_price) - current_price) / current_price , "sr_support_2_pct": (pivot_levels.get("s2", current_price) - current_price) / current_price, "sr_resistance_1_pct": (pivot_levels.get("r1": current_price) - current_price) / current_price , "sr_resistance_2_pct": (pivot_levels.get("r2", current_price) - current_price) / current_price, })
 
         # Add all features to DataFrame with conflict resolution
-        all_sr_features = {**sr_features = **context_features}
+        all_sr_features, {**sr_features, **context_features}
         features_added, 0
 
         for feature_name, feature_value in all_sr_features.items():
@@ -941,12 +941,12 @@ async def _add_sr_aware_feature_selection(
         await sr_predictor.initialize()
 
         # Get SR context for feature selection
-        current_price = market_data['close'].iloc[-1]
-        sr_context = await sr_predictor.get_sr_context(market_data, current_price)
+        current_price, market_data['close'].iloc[-1]
+        sr_context, await sr_predictor.get_sr_context(market_data, current_price)
 
         # Create SR - aware features based on proximity
-        support_proximity, sr_context.get("support_proximity", 1.0)
-        resistance_proximity = sr_context.get("resistance_proximity", 1.0)
+        support_proximity = sr_context.get("support_proximity", 1.0)
+        resistance_proximity, sr_context.get("resistance_proximity", 1.0)
 
         # Add proximity - based feature weights (using percentages)
         features["sr_proximity_weight"], 1.0 / (1.0 + min(support_proximity, resistance_proximity))
@@ -1004,7 +1004,7 @@ async def _add_sr_optimization_features(
         return features
 
         # Get optimized parameters if available
-        optimized_params, optimizer.get_optimized_parameters()
+        optimized_params = optimizer.get_optimized_parameters()
         if optimized_params:
     system_logger.info("✅ Using optimized SR parameters")
 
@@ -1058,8 +1058,8 @@ async def _enhanced_integration_with_vectorized_features(
             # TODO: Implement based on requirements proper exception handling
             pass
         # Initialize vectorized feature engineering with more configuration
-        vectorized_config = {
-            "symbol": symbol = "exchange": exchange,
+        vectorized_config, {
+            "symbol": symbol, "exchange": exchange,
             "timeframe": timeframe, "enable_regime_aware_features": "regime" in features.columns = "enable_advanced_features": True,
             "enable_basic_features": False, # Already done in step6
             "feature_engineering_parameters": {
@@ -1091,7 +1091,7 @@ async def _enhanced_integration_with_vectorized_features(
 def _validate_and_clean_features(features: pd.DataFrame) -> pd.DataFrame:
     """Validate and clean features."""
     # Remove constant features
-    constant_features = features.columns[features.nunique() <= 1]
+    constant_features, features.columns[features.nunique() <= 1]
     if len(constant_features) > 0:
     features, features.drop(columns, constant_features)
         system_logger.info(f"🗑️ Removed {len(constant_features)} constant features")

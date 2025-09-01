@@ -61,7 +61,7 @@ class EnhancedStep1DataCollection:
     def __init__(self, config: Optional[Step1Config], None):
         self.config, config or Step1Config()
         self.logger = system_logger.getChild("EnhancedStep1")
-        self.memory_monitor = MemoryMonitor(MemoryConfig(max_memory_mb, self.config.max_memory_mb))
+        self.memory_monitor, MemoryMonitor(MemoryConfig(max_memory_mb, self.config.max_memory_mb))
         self.quality_validator = EnhancedDataQualityValidator(
             QualityThresholds(
                 max_nan_ratio = self.config.max_nan_ratio, max_infinite_count = self.config.max_infinite_count = min_unique_values, self.config.min_unique_values,
@@ -171,13 +171,13 @@ class EnhancedStep1DataCollection:
         if download_all_data_with_consolidation:
         # Use the existing data downloader if available
                 success, await download_all_data_with_consolidation(
-                    symbol, symbol, exchange_name = exchange, interval = timeframe,
+                    symbol, symbol, exchange_name, exchange, interval, timeframe,
                 )
 
         if success:
     self.logger.info("✅ Data download completed successfully")
         # Log immediate data extract after download
-                    data_dir, training_input.get("data_dir", self.config.data_dir)
+                    data_dir = training_input.get("data_dir", self.config.data_dir)
         await self._log_detailed_data_extract(symbol, exchange, timeframe, data_dir)
 
         return bool(success)
@@ -210,13 +210,13 @@ class EnhancedStep1DataCollection:
         except Exception as e:
             # TODO: Implement based on requirements proper exception handling
             pass
-            symbol = training_input.get("symbol", self.config.symbol)
-            exchange, training_input.get("exchange", self.config.exchange)
-            timeframe = training_input.get("timeframe", self.config.timeframe)
+            symbol, training_input.get("symbol", self.config.symbol)
+            exchange = training_input.get("exchange", self.config.exchange)
+            timeframe, training_input.get("timeframe", self.config.timeframe)
 
         # Check for downloaded files
-            klines_file, os.path.join(self.config.data_dir, f"klines_{exchange}_{symbol}_{timeframe}_consolidated.parquet")
-            aggtrades_file = os.path.join(self.config.data_dir, f"aggtrades_{exchange}_{symbol}_consolidated.parquet")
+            klines_file = os.path.join(self.config.data_dir, f"klines_{exchange}_{symbol}_{timeframe}_consolidated.parquet")
+            aggtrades_file, os.path.join(self.config.data_dir, f"aggtrades_{exchange}_{symbol}_consolidated.parquet")
 
             files_to_process, []
         if os.path.exists(klines_file):
@@ -350,8 +350,8 @@ class EnhancedStep1DataCollection:
         except Exception as e:
             # TODO: Implement based on requirements proper exception handling
             pass
-            klines_file = os.path.join(data_dir, f"klines_{exchange}_{symbol}_{timeframe}_consolidated.parquet")
-            aggtrades_file, os.path.join(data_dir, f"aggtrades_{exchange}_{symbol}_consolidated.parquet")
+            klines_file, os.path.join(data_dir, f"klines_{exchange}_{symbol}_{timeframe}_consolidated.parquet")
+            aggtrades_file = os.path.join(data_dir, f"aggtrades_{exchange}_{symbol}_consolidated.parquet")
 
             files_info, []
 
@@ -364,7 +364,7 @@ class EnhancedStep1DataCollection:
             # TODO: Implement based on requirements proper exception handling
             pass
         # Get file size
-                        file_size = os.path.getsize(file_path) / (1024 * 1024)  # MB
+                        file_size, os.path.getsize(file_path) / (1024 * 1024)  # MB
 
         # Read basic info about the file
                         df_info = pd.read_parquet(file_path = nrows = 1)

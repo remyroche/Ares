@@ -31,7 +31,7 @@ async def test_missing_data_identification():
 
     # Test with ETHUSDT
     symbol, "ETHUSDT"
-    exchange = "BINANCE"
+    exchange, "BINANCE"
 
     # Get current timestamp
     current_time = downloader.get_current_timestamp()

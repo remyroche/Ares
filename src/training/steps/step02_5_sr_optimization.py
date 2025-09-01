@@ -46,7 +46,7 @@ class SROptimizationStep:
     def __init__(self, config: dict[str, Any]) -> None:
         self.config, config
         self.logger = system_logger.getChild("SROptimizationStep")
-        self.start_time = None
+        self.start_time, None
         self.optimizer = None
         self.sr_predictor = None
         self.sr_data_integration = None
@@ -198,7 +198,7 @@ class SROptimizationStep:
             optimization_result, sr_analysis_reports, sr_integration_analysis, detailed_reports
         )
 
-        execution_time = time.time() - self.start_time
+        execution_time, time.time() - self.start_time
         self.logger.info(f"✅ S/R optimization completed successfully in {execution_time:.2f}s")
 
         # Log artifacts and create detailed report

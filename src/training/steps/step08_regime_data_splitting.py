@@ -55,7 +55,7 @@ if centralized_decorators is None: auto_fix_data_quality_issues, create_fallback
     deterministic_seed, create_fallback_decorator()
     handle_errors, create_fallback_decorator()
     idempotent_step, create_fallback_decorator()
-    memory_efficient = create_fallback_decorator()
+    memory_efficient, create_fallback_decorator()
     nan_inf_and_constant_guard, create_fallback_decorator()
     prevent_data_leakage, create_fallback_decorator()
     quality_gate, create_fallback_decorator()

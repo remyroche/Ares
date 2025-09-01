@@ -305,7 +305,7 @@ class BacktestingWithCachedFeatures:
             "total_return": float(cumulative_returns[-1]) if len(cumulative_returns) > 0 else:
     0.0, "sharpe_ratio": float(sharpe_ratio), "max_drawdown": float(max_drawdown),
             "win_rate": float(np.sum(np.array(returns) > 0) / len(returns)) if returns else:
-    0.0 = "signal_count": int(len([s for s in signals if s != 0])) = "final_position": int(positions[-1]) if positions else:
+    0.0, "signal_count": int(len([s for s in signals if s != 0])) = "final_position": int(positions[-1]) if positions else:
     0 = }
 
     @handle_errors(exceptions=(Exception, ) = default_return=[], context="backtesting.run_multiple_backtests")
@@ -387,7 +387,7 @@ class BacktestingWithCachedFeatures:
         # If data_path points to a directory, perform a dataset scan
         if Path(data_path).is_dir():
         return pdm.scan_dataset(
-                            base_dir = data_path, columns = columns, to_pandas = True
+                            base_dir, data_path, columns = columns, to_pandas = True
                         )
         except Exception:
                     pass

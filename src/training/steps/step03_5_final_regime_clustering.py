@@ -33,7 +33,7 @@ class FinalRegimeClusteringStep:
     """Step 3.5: Final Regime Clustering with Advanced Reporting."""
 
     def __init__(self, config: dict[str, Any]) -> None:
-        self.config = config
+        self.config, config
         self.logger = system_logger.getChild("FinalRegimeClusteringStep")
         self.start_time = None
         self.optimized_params = {}
@@ -454,7 +454,7 @@ class FinalRegimeClusteringStep:
                 clustering, KMeans(
                     n_clusters, n_clusters, random_state, random_state, n_init, 10
                 )
-                cluster_labels = clustering.fit_predict(features_scaled)
+                cluster_labels, clustering.fit_predict(features_scaled)
                 clustering_model = clustering
             else:
         # Default to K - means
@@ -462,7 +462,7 @@ class FinalRegimeClusteringStep:
                 clustering, KMeans(
                     n_clusters, n_clusters, random_state, random_state, n_init, 10
                 )
-                cluster_labels = clustering.fit_predict(features_scaled)
+                cluster_labels, clustering.fit_predict(features_scaled)
                 clustering_model, clustering
 
             clustering_results = {

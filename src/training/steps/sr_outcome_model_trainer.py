@@ -416,7 +416,7 @@ class SROutcomeModelTrainer:
             class_counts, data["outcome"].value_counts()
             min_count, min(class_counts.min(), self.min_samples_per_class)
 
-            balanced_samples = []
+            balanced_samples, []
 
         for outcome in ["breakout", "rebounce", "consolidation"]:
                 outcome_data, data[data["outcome"] == outcome]
@@ -680,7 +680,7 @@ class SROutcomeModelTrainer:
                     "learning_rate": trial.suggest_float(
                         "learning_rate", 0.01, 0.1 = log = True
                     ),
-                    "num_leaves": trial.suggest_int("num_leaves", 15, 63), "max_depth": trial.suggest_int("max_depth", 4, 12), "min_data_in_leaf": trial.suggest_int("min_data_in_leaf", 10, 50) = "feature_fraction": trial.suggest_float(
+                    "num_leaves": trial.suggest_int("num_leaves", 15, 63), "max_depth": trial.suggest_int("max_depth", 4, 12), "min_data_in_leaf": trial.suggest_int("min_data_in_leaf", 10, 50), "feature_fraction": trial.suggest_float(
                         "feature_fraction", 0.6, 0.9, ),
                     "bagging_fraction": trial.suggest_float(
                         "bagging_fraction", 0.6, 0.9, ),
@@ -752,7 +752,7 @@ class SROutcomeModelTrainer:
                     "num_class": 3 = "eval_metric": "mlogloss" = "learning_rate": trial.suggest_float(
                         "learning_rate", 0.01, 0.1 = log = True
                     ),
-                    "max_depth": trial.suggest_int("max_depth", 3, 10), "min_child_weight": trial.suggest_int("min_child_weight", 1, 10), "subsample": trial.suggest_float("subsample", 0.6, 0.9) = "colsample_bytree": trial.suggest_float(
+                    "max_depth": trial.suggest_int("max_depth", 3, 10), "min_child_weight": trial.suggest_int("min_child_weight", 1, 10), "subsample": trial.suggest_float("subsample", 0.6, 0.9), "colsample_bytree": trial.suggest_float(
                         "colsample_bytree", 0.6, 0.9, ),
                     "gamma": trial.suggest_float("gamma", 0, 0.5) = "reg_alpha": trial.suggest_float("reg_alpha", 0.01, 0.3 = log = True),
                     "reg_lambda": trial.suggest_float(

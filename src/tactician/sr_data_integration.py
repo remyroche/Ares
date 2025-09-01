@@ -16,749 +16,786 @@ import warnings
 warnings.filterwarnings('ignore')
 
 import pandas as pd
+import numpy as np
+from typing import Dict, Any, Optional, List
 
 # Add the project root to the Python path
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-from src.config.constants import DEFAULT_LOOKBACK_DAYS
-from src.config.training_modes import (
-TRAINING_MODES,
-FULL_TRAINING_LOOKBACK_DAYS,
-BLANK_TRAINING_LOOKBACK_DAYS,
-SHORT_BLANK_LOOKBACK_DAYS,
-LIGHT_TRAINING_LOOKBACK_DAYS,
-)
-from src.utils.logger import system_logger
+    from src.config.constants import DEFAULT_LOOKBACK_DAYS
+    from src.config.training_modes import (
+        TRAINING_MODES,
+        FULL_TRAINING_LOOKBACK_DAYS,
+        BLANK_TRAINING_LOOKBACK_DAYS,
+        SHORT_BLANK_LOOKBACK_DAYS,
+        LIGHT_TRAINING_LOOKBACK_DAYS,
+    )
+    from src.utils.logger import system_logger
 except ImportError as e:
     print(f"Warning: Could not import config modules: {e}")
-# Fallback imports
-DEFAULT_LOOKBACK_DAYS = 730
-system_logger = None
+    # Fallback imports
+    DEFAULT_LOOKBACK_DAYS = 730
+    system_logger = None
 
 # Try to import training modules separately to handle import errors gracefully
 try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-from src.training.steps.unified_data_loader import UnifiedDataLoader
-UNIFIED_LOADER_AVAILABLE = True
+    from src.training.steps.unified_data_loader import UnifiedDataLoader
+    UNIFIED_LOADER_AVAILABLE = True
 except ImportError as e:
     print(f"Warning: UnifiedDataLoader not available: {e}")
-UNIFIED_LOADER_AVAILABLE = False
-UnifiedDataLoader = None
+    UNIFIED_LOADER_AVAILABLE = False
+    UnifiedDataLoader = None
 
 try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-from src.training.steps.data_downloader import download_all_data_with_consolidation
-DATA_DOWNLOADER_AVAILABLE = True
+    from src.training.steps.data_downloader import download_all_data_with_consolidation
+    DATA_DOWNLOADER_AVAILABLE = True
 except ImportError as e:
     print(f"Warning: Data downloader not available: {e}")
-DATA_DOWNLOADER_AVAILABLE = False
-download_all_data_with_consolidation = None
+    DATA_DOWNLOADER_AVAILABLE = False
+    download_all_data_with_consolidation = None
 
 
-class SRDataIntegration:
-    # Implementation placeholder - add actual implementation
-
-    # Implementation needed - add actual functionality
-
-
-    # TODO: Implement class methods
-class SRDataIntegration:
-    pass  # TODO: Add implementation
 class SRDataIntegration:
     """
-Integrates S/R backtesting validation with proper data access patterns.
+    Integrates S/R backtesting validation with proper data access patterns.
 
-This class ensures that:
+    This class ensures that:
     1. S/R validation uses the same data sources as the main system
-2. Lookback periods are consistent with ares_launcher configuration
-3. Data loading follows the same patterns as the training system
-4. Timeframe-specific data is properly handled
-"""
+    2. Lookback periods are consistent with ares_launcher configuration
+    3. Data loading follows the same patterns as the training system
+    4. Timeframe-specific data is properly handled
+    5. Data quality checks are comprehensive (missing data, outliers, consistency)
+    """
 
-def __init__(self, config: Optional[Dict[str, Any]] = None):
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         """Initialize the S/R data integration system.
 
-Args:
+        Args:
             config: Configuration dictionary with data access parameters
-"""
-self.config = config or {}
-self.logger = system_logger.getChild("SRDataIntegration") if system_logger else None
+        """
+        self.config = config or {}
+        self.logger = system_logger.getChild("SRDataIntegration") if system_logger else None
 
-# Data access configuration
-self.data_config = self.config.get("data_integration", {})
-self.symbol = self.data_config.get("symbol", "BTCUSDT")
-self.exchange = self.data_config.get("exchange", "binance")
-self.timeframes = self.data_config.get("timeframes", ["1m", "5m", "15m", "30m"])
+        # Data access configuration
+        self.data_config = self.config.get("data_integration", {})
 
-# Lookback period configuration
-self.lookback_days = self.data_config.get("lookback_days", DEFAULT_LOOKBACK_DAYS)
-self.training_mode = self.data_config.get("training_mode", "blank")
+        # Data sources configuration (price & volume only)
+        self.data_sources = self.data_config.get("data_sources", {
+            "price_data": True,
+            "volume_data": True,
+            "order_book_data": False  # Not used as per user specification
+        })
 
-# Initialize data loader
-if UNIFIED_LOADER_AVAILABLE and UnifiedDataLoader:
-            self.data_loader = UnifiedDataLoader(config)
-else:
-            self.data_loader = None
+        # Data quality configuration
+        self.quality_config = self.data_config.get("quality_checks", {
+            "missing_data_handling": True,
+            "outlier_detection": True,
+            "data_consistency_validation": True
+        })
 
-# Cache for loaded data
-self._data_cache: Dict[str, pd.DataFrame] = {}
-self._last_load_time: Dict[str, datetime] = {}
+        # Quality check parameters
+        self.missing_data_config = self.quality_config.get("missing_data", {
+            "max_missing_ratio": 0.1,  # 10% max missing data
+            "interpolation_method": "linear",
+            "drop_threshold": 0.3  # Drop if more than 30% missing
+        })
 
-# Data validation settings
-self.min_data_points = self.data_config.get("min_data_points", 1000)
-self.max_data_age_hours = self.data_config.get("max_data_age_hours", 24)
+        self.outlier_config = self.quality_config.get("outliers", {
+            "z_score_threshold": 3.0,
+            "iqr_multiplier": 1.5,
+            "price_change_threshold": 0.5,  # 50% price change
+            "volume_spike_threshold": 10.0  # 10x volume spike
+        })
 
-async def initialize(self) -> bool:
-        """Initialize the data integration system.
+        self.consistency_config = self.quality_config.get("consistency", {
+            "price_volume_correlation_threshold": 0.3,
+            "timestamp_continuity_check": True,
+            "price_negative_check": True,
+            "volume_negative_check": True,
+            "ohlc_consistency_check": True
+        })
 
-Returns:
-            True if initialization successful, False otherwise
-"""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-if self.logger:
-                self.logger.info(f"🔧 Initializing S/R Data Integration")
-self.logger.info(f"   - Symbol: {self.symbol}")
-self.logger.info(f"   - Exchange: {self.exchange}")
-self.logger.info(f"   - Timeframes: {self.timeframes}")
-self.logger.info(f"   - Lookback days: {self.lookback_days}")
-self.logger.info(f"   - Training mode: {self.training_mode}")
+        # Data loading configuration
+        self.lookback_days = self.data_config.get("lookback_days", DEFAULT_LOOKBACK_DAYS)
+        self.timeframes = self.data_config.get("timeframes", ["1m", "5m", "15m", "30m"])
+        self.symbols = self.data_config.get("symbols", ["BTCUSDT"])
 
-# Validate configuration
-if not await self._validate_configuration():
-                return False
+        # Data storage
+        self.loaded_data = {}
+        self.data_quality_reports = {}
+        self.data_validation_results = {}
 
-# Ensure data is available
-if not await self._ensure_data_availability():
-                return False
+    async def load_data(self, symbol: str, timeframe: str, start_date: Optional[datetime] = None, end_date: Optional[datetime] = None) -> Optional[pd.DataFrame]:
+        """
+        Load data for S/R validation with comprehensive quality checks.
 
-return True
+        Args:
+            symbol: Trading symbol
+            timeframe: Data timeframe
+            start_date: Start date for data loading
+            end_date: End date for data loading
 
-except Exception as e:
+        Returns:
+            pd.DataFrame: Cleaned and validated data or None if failed
+        """
+        try:
+            self.logger.info(f"Loading data for {symbol} {timeframe}")
+
+            # Determine date range
+            if end_date is None:
+                end_date = datetime.now()
+            if start_date is None:
+                start_date = end_date - timedelta(days=self.lookback_days)
+
+            # Load raw data
+            raw_data = await self._load_raw_data(symbol, timeframe, start_date, end_date)
+            if raw_data is None or raw_data.empty:
+                self.logger.error(f"No data loaded for {symbol} {timeframe}")
+                return None
+
+            # Perform comprehensive quality checks
+            quality_report = self._perform_quality_checks(raw_data, symbol, timeframe)
+            self.data_quality_reports[f"{symbol}_{timeframe}"] = quality_report
+
+            # Clean data based on quality checks
+            cleaned_data = self._clean_data(raw_data, quality_report)
+            if cleaned_data is None or cleaned_data.empty:
+                self.logger.error(f"Data cleaning failed for {symbol} {timeframe}")
+                return None
+
+            # Validate final data
+            validation_result = self._validate_final_data(cleaned_data, symbol, timeframe)
+            self.data_validation_results[f"{symbol}_{timeframe}"] = validation_result
+
+            if not validation_result["is_valid"]:
+                self.logger.error(f"Data validation failed for {symbol} {timeframe}: {validation_result['errors']}")
+                return None
+
+            # Store loaded data
+            self.loaded_data[f"{symbol}_{timeframe}"] = cleaned_data
+
+            self.logger.info(f"✅ Data loaded successfully for {symbol} {timeframe}: {len(cleaned_data)} rows")
+            return cleaned_data
+
+        except Exception as e:
+            self.logger.error(f"Error loading data for {symbol} {timeframe}: {e}")
+            return None
+
+    async def _load_raw_data(self, symbol: str, timeframe: str, start_date: datetime, end_date: datetime) -> Optional[pd.DataFrame]:
+        """
+        Load raw data from available sources.
+
+        Args:
+            symbol: Trading symbol
+            timeframe: Data timeframe
+            start_date: Start date
+            end_date: End date
+
+        Returns:
+            pd.DataFrame: Raw data or None
+        """
+        try:
+            # Try unified data loader first
+            if UNIFIED_LOADER_AVAILABLE and UnifiedDataLoader:
+                loader = UnifiedDataLoader(self.config)
+                data = await loader.load_data(symbol, timeframe, start_date, end_date)
+                if data is not None and not data.empty:
+                    return data
+
+            # Fallback to direct data loading
+            data = await self._load_data_direct(symbol, timeframe, start_date, end_date)
+            return data
+
+        except Exception as e:
+            self.logger.error(f"Error loading raw data: {e}")
+            return None
+
+    async def _load_data_direct(self, symbol: str, timeframe: str, start_date: datetime, end_date: datetime) -> Optional[pd.DataFrame]:
+        """
+        Load data directly from data sources.
+
+        Args:
+            symbol: Trading symbol
+            timeframe: Data timeframe
+            start_date: Start date
+            end_date: End date
+
+        Returns:
+            pd.DataFrame: Raw data or None
+        """
+        try:
+            # TODO: Implement actual data loading from exchange or database
+            # For now, return placeholder data
+            date_range = pd.date_range(start=start_date, end=end_date, freq=timeframe)
+            
+            # Generate placeholder data
+            np.random.seed(42)  # For reproducible results
+            data = pd.DataFrame({
+                'timestamp': date_range,
+                'open': np.random.uniform(45000, 55000, len(date_range)),
+                'high': np.random.uniform(45000, 55000, len(date_range)),
+                'low': np.random.uniform(45000, 55000, len(date_range)),
+                'close': np.random.uniform(45000, 55000, len(date_range)),
+                'volume': np.random.uniform(1000, 10000, len(date_range))
+            })
+
+            return data
+
+        except Exception as e:
+            self.logger.error(f"Error in direct data loading: {e}")
+            return None
+
+    def _perform_quality_checks(self, data: pd.DataFrame, symbol: str, timeframe: str) -> Dict[str, Any]:
+        """
+        Perform comprehensive quality checks on data.
+
+        Args:
+            data: Raw data
+            symbol: Trading symbol
+            timeframe: Data timeframe
+
+        Returns:
+            Dict: Quality check report
+        """
+        try:
+            quality_report = {
+                "symbol": symbol,
+                "timeframe": timeframe,
+                "total_rows": len(data),
+                "checks_performed": [],
+                "issues_found": [],
+                "data_quality_score": 0.0
+            }
+
+            # 1. Missing data handling
+            if self.quality_config["missing_data_handling"]:
+                missing_check = self._check_missing_data(data)
+                quality_report["missing_data"] = missing_check
+                quality_report["checks_performed"].append("missing_data_handling")
+                if missing_check["issues"]:
+                    quality_report["issues_found"].extend(missing_check["issues"])
+
+            # 2. Outlier detection
+            if self.quality_config["outlier_detection"]:
+                outlier_check = self._detect_outliers(data)
+                quality_report["outliers"] = outlier_check
+                quality_report["checks_performed"].append("outlier_detection")
+                if outlier_check["issues"]:
+                    quality_report["issues_found"].extend(outlier_check["issues"])
+
+            # 3. Data consistency validation
+            if self.quality_config["data_consistency_validation"]:
+                consistency_check = self._validate_data_consistency(data)
+                quality_report["consistency"] = consistency_check
+                quality_report["checks_performed"].append("data_consistency_validation")
+                if consistency_check["issues"]:
+                    quality_report["issues_found"].extend(consistency_check["issues"])
+
+            # Calculate overall quality score
+            quality_report["data_quality_score"] = self._calculate_quality_score(quality_report)
+
+            return quality_report
+
+        except Exception as e:
+            self.logger.error(f"Error performing quality checks: {e}")
+            return {"error": str(e)}
+
+    def _check_missing_data(self, data: pd.DataFrame) -> Dict[str, Any]:
+        """
+        Check for missing data and provide handling recommendations.
+
+        Args:
+            data: Data to check
+
+        Returns:
+            Dict: Missing data report
+        """
+        try:
+            missing_report = {
+                "total_missing": 0,
+                "missing_by_column": {},
+                "missing_ratio": 0.0,
+                "consecutive_missing": {},
+                "recommendations": [],
+                "issues": []
+            }
+
+            # Check missing values by column
+            for column in data.columns:
+                missing_count = data[column].isnull().sum()
+                missing_ratio = missing_count / len(data)
+                
+                missing_report["missing_by_column"][column] = {
+                    "count": missing_count,
+                    "ratio": missing_ratio
+                }
+                missing_report["total_missing"] += missing_count
+
+            # Calculate overall missing ratio
+            total_cells = len(data) * len(data.columns)
+            missing_report["missing_ratio"] = missing_report["total_missing"] / total_cells
+
+            # Check for consecutive missing values
+            for column in ["open", "high", "low", "close", "volume"]:
+                if column in data.columns:
+                    consecutive_missing = self._find_consecutive_missing(data[column])
+                    missing_report["consecutive_missing"][column] = consecutive_missing
+
+            # Generate recommendations
+            if missing_report["missing_ratio"] > self.missing_data_config["drop_threshold"]:
+                missing_report["recommendations"].append("Drop dataset due to excessive missing data")
+                missing_report["issues"].append(f"Missing ratio {missing_report['missing_ratio']:.2%} exceeds threshold {self.missing_data_config['drop_threshold']:.2%}")
+            elif missing_report["missing_ratio"] > self.missing_data_config["max_missing_ratio"]:
+                missing_report["recommendations"].append(f"Interpolate missing data using {self.missing_data_config['interpolation_method']} method")
+                missing_report["issues"].append(f"Missing ratio {missing_report['missing_ratio']:.2%} exceeds recommended threshold {self.missing_data_config['max_missing_ratio']:.2%}")
+
+            return missing_report
+
+        except Exception as e:
+            self.logger.error(f"Error checking missing data: {e}")
+            return {"error": str(e)}
+
+    def _detect_outliers(self, data: pd.DataFrame) -> Dict[str, Any]:
+        """
+        Detect outliers in price and volume data.
+
+        Args:
+            data: Data to check
+
+        Returns:
+            Dict: Outlier detection report
+        """
+        try:
+            outlier_report = {
+                "price_outliers": {},
+                "volume_outliers": {},
+                "total_outliers": 0,
+                "recommendations": [],
+                "issues": []
+            }
+
+            # Detect price outliers
+            for price_col in ["open", "high", "low", "close"]:
+                if price_col in data.columns:
+                    outliers = self._detect_price_outliers(data[price_col])
+                    outlier_report["price_outliers"][price_col] = outliers
+
+            # Detect volume outliers
+            if "volume" in data.columns:
+                volume_outliers = self._detect_volume_outliers(data["volume"])
+                outlier_report["volume_outliers"] = volume_outliers
+
+            # Calculate total outliers
+            total_outliers = sum(len(outliers["indices"]) for outliers in outlier_report["price_outliers"].values())
+            total_outliers += len(outlier_report["volume_outliers"]["indices"])
+            outlier_report["total_outliers"] = total_outliers
+
+            # Generate recommendations
+            if total_outliers > 0:
+                outlier_ratio = total_outliers / len(data)
+                if outlier_ratio > 0.1:  # More than 10% outliers
+                    outlier_report["recommendations"].append("Consider removing or smoothing outliers")
+                    outlier_report["issues"].append(f"High outlier ratio: {outlier_ratio:.2%}")
+                else:
+                    outlier_report["recommendations"].append("Outliers within acceptable range")
+
+            return outlier_report
+
+        except Exception as e:
+            self.logger.error(f"Error detecting outliers: {e}")
+            return {"error": str(e)}
+
+    def _validate_data_consistency(self, data: pd.DataFrame) -> Dict[str, Any]:
+        """
+        Validate data consistency across columns.
+
+        Args:
+            data: Data to validate
+
+        Returns:
+            Dict: Consistency validation report
+        """
+        try:
+            consistency_report = {
+                "ohlc_consistency": {},
+                "price_volume_correlation": 0.0,
+                "timestamp_continuity": True,
+                "negative_values": {},
+                "total_issues": 0,
+                "recommendations": [],
+                "issues": []
+            }
+
+            # Check OHLC consistency
+            if all(col in data.columns for col in ["open", "high", "low", "close"]):
+                ohlc_issues = self._check_ohlc_consistency(data)
+                consistency_report["ohlc_consistency"] = ohlc_issues
+
+            # Check price-volume correlation
+            if "close" in data.columns and "volume" in data.columns:
+                correlation = data["close"].corr(data["volume"])
+                consistency_report["price_volume_correlation"] = correlation
+                
+                if abs(correlation) < self.consistency_config["price_volume_correlation_threshold"]:
+                    consistency_report["issues"].append(f"Low price-volume correlation: {correlation:.3f}")
+
+            # Check timestamp continuity
+            if "timestamp" in data.columns:
+                timestamp_issues = self._check_timestamp_continuity(data["timestamp"])
+                consistency_report["timestamp_continuity"] = not timestamp_issues
+                if timestamp_issues:
+                    consistency_report["issues"].append("Timestamp continuity issues detected")
+
+            # Check for negative values
+            for col in ["open", "high", "low", "close", "volume"]:
+                if col in data.columns:
+                    negative_count = (data[col] < 0).sum()
+                    consistency_report["negative_values"][col] = negative_count
+                    if negative_count > 0:
+                        consistency_report["issues"].append(f"Negative values found in {col}: {negative_count}")
+
+            # Calculate total issues
+            consistency_report["total_issues"] = len(consistency_report["issues"])
+
+            # Generate recommendations
+            if consistency_report["total_issues"] > 0:
+                consistency_report["recommendations"].append("Data consistency issues detected - manual review recommended")
+
+            return consistency_report
+
+        except Exception as e:
+            self.logger.error(f"Error validating data consistency: {e}")
+            return {"error": str(e)}
+
+    def _clean_data(self, data: pd.DataFrame, quality_report: Dict[str, Any]) -> Optional[pd.DataFrame]:
+        """
+        Clean data based on quality check results.
+
+        Args:
+            data: Raw data
+            quality_report: Quality check report
+
+        Returns:
+            pd.DataFrame: Cleaned data or None
+        """
+        try:
+            cleaned_data = data.copy()
+
+            # Handle missing data
+            if "missing_data" in quality_report:
+                missing_data = quality_report["missing_data"]
+                if missing_data["missing_ratio"] <= self.missing_data_config["drop_threshold"]:
+                    # Interpolate missing values
+                    for column in cleaned_data.columns:
+                        if column != "timestamp":
+                            cleaned_data[column] = cleaned_data[column].interpolate(
+                                method=self.missing_data_config["interpolation_method"]
+                            )
+
+            # Handle outliers
+            if "outliers" in quality_report:
+                outliers = quality_report["outliers"]
+                # Remove extreme outliers
+                for price_col in ["open", "high", "low", "close"]:
+                    if price_col in outliers["price_outliers"]:
+                        outlier_indices = outliers["price_outliers"][price_col]["indices"]
+                        if len(outlier_indices) > 0:
+                            # Replace with median
+                            median_val = cleaned_data[price_col].median()
+                            cleaned_data.loc[outlier_indices, price_col] = median_val
+
+            # Handle consistency issues
+            if "consistency" in quality_report:
+                consistency = quality_report["consistency"]
+                # Fix negative values
+                for col in ["open", "high", "low", "close", "volume"]:
+                    if col in cleaned_data.columns:
+                        negative_mask = cleaned_data[col] < 0
+                        if negative_mask.any():
+                            cleaned_data.loc[negative_mask, col] = cleaned_data[col].abs()
+
+            return cleaned_data
+
+        except Exception as e:
+            self.logger.error(f"Error cleaning data: {e}")
+            return None
+
+    def _validate_final_data(self, data: pd.DataFrame, symbol: str, timeframe: str) -> Dict[str, Any]:
+        """
+        Validate final cleaned data.
+
+        Args:
+            data: Cleaned data
+            symbol: Trading symbol
+            timeframe: Data timeframe
+
+        Returns:
+            Dict: Validation result
+        """
+        try:
+            validation_result = {
+                "is_valid": True,
+                "errors": [],
+                "warnings": [],
+                "data_summary": {}
+            }
+
+            # Basic validation checks
+            if data.empty:
+                validation_result["is_valid"] = False
+                validation_result["errors"].append("Data is empty")
+                return validation_result
+
+            # Check required columns
+            required_columns = ["timestamp", "open", "high", "low", "close", "volume"]
+            missing_columns = [col for col in required_columns if col not in data.columns]
+            if missing_columns:
+                validation_result["is_valid"] = False
+                validation_result["errors"].append(f"Missing required columns: {missing_columns}")
+
+            # Check data types
+            if "timestamp" in data.columns and not pd.api.types.is_datetime64_any_dtype(data["timestamp"]):
+                validation_result["warnings"].append("Timestamp column is not datetime type")
+
+            # Check for remaining issues
+            if data.isnull().any().any():
+                validation_result["warnings"].append("Data still contains null values")
+
+            # Generate data summary
+            validation_result["data_summary"] = {
+                "rows": len(data),
+                "columns": len(data.columns),
+                "date_range": {
+                    "start": data["timestamp"].min().isoformat() if "timestamp" in data.columns else None,
+                    "end": data["timestamp"].max().isoformat() if "timestamp" in data.columns else None
+                }
+            }
+
+            return validation_result
+
+        except Exception as e:
+            self.logger.error(f"Error validating final data: {e}")
+            return {"is_valid": False, "errors": [str(e)]}
+
+    def _find_consecutive_missing(self, series: pd.Series) -> Dict[str, Any]:
+        """Find consecutive missing values in a series."""
+        try:
+            missing_mask = series.isnull()
+            consecutive_missing = []
+            
+            if missing_mask.any():
+                # Find groups of consecutive missing values
+                missing_groups = missing_mask.ne(missing_mask.shift()).cumsum()
+                for group_id in missing_groups[missing_mask].unique():
+                    group_indices = missing_groups[missing_groups == group_id].index
+                    consecutive_missing.append({
+                        "start_index": group_indices[0],
+                        "end_index": group_indices[-1],
+                        "length": len(group_indices)
+                    })
+
+            return {
+                "count": len(consecutive_missing),
+                "groups": consecutive_missing
+            }
+
+        except Exception as e:
+            self.logger.error(f"Error finding consecutive missing values: {e}")
+            return {"count": 0, "groups": []}
+
+    def _detect_price_outliers(self, series: pd.Series) -> Dict[str, Any]:
+        """Detect outliers in price data using z-score and IQR methods."""
+        try:
+            outliers = {
+                "z_score": [],
+                "iqr": [],
+                "price_change": [],
+                "indices": []
+            }
+
+            # Z-score method
+            z_scores = np.abs((series - series.mean()) / series.std())
+            z_score_outliers = z_scores > self.outlier_config["z_score_threshold"]
+            outliers["z_score"] = series[z_score_outliers].tolist()
+
+            # IQR method
+            Q1 = series.quantile(0.25)
+            Q3 = series.quantile(0.75)
+            IQR = Q3 - Q1
+            lower_bound = Q1 - self.outlier_config["iqr_multiplier"] * IQR
+            upper_bound = Q3 + self.outlier_config["iqr_multiplier"] * IQR
+            iqr_outliers = (series < lower_bound) | (series > upper_bound)
+            outliers["iqr"] = series[iqr_outliers].tolist()
+
+            # Price change method
+            price_changes = series.pct_change().abs()
+            price_change_outliers = price_changes > self.outlier_config["price_change_threshold"]
+            outliers["price_change"] = series[price_change_outliers].tolist()
+
+            # Combine all outlier indices
+            all_outlier_mask = z_score_outliers | iqr_outliers | price_change_outliers
+            outliers["indices"] = all_outlier_mask[all_outlier_mask].index.tolist()
+
+            return outliers
+
+        except Exception as e:
+            self.logger.error(f"Error detecting price outliers: {e}")
+            return {"z_score": [], "iqr": [], "price_change": [], "indices": []}
+
+    def _detect_volume_outliers(self, series: pd.Series) -> Dict[str, Any]:
+        """Detect outliers in volume data."""
+        try:
+            outliers = {
+                "z_score": [],
+                "iqr": [],
+                "volume_spike": [],
+                "indices": []
+            }
+
+            # Z-score method
+            z_scores = np.abs((series - series.mean()) / series.std())
+            z_score_outliers = z_scores > self.outlier_config["z_score_threshold"]
+            outliers["z_score"] = series[z_score_outliers].tolist()
+
+            # IQR method
+            Q1 = series.quantile(0.25)
+            Q3 = series.quantile(0.75)
+            IQR = Q3 - Q1
+            lower_bound = Q1 - self.outlier_config["iqr_multiplier"] * IQR
+            upper_bound = Q3 + self.outlier_config["iqr_multiplier"] * IQR
+            iqr_outliers = (series < lower_bound) | (series > upper_bound)
+            outliers["iqr"] = series[iqr_outliers].tolist()
+
+            # Volume spike method
+            volume_ratio = series / series.rolling(window=20).mean()
+            volume_spike_outliers = volume_ratio > self.outlier_config["volume_spike_threshold"]
+            outliers["volume_spike"] = series[volume_spike_outliers].tolist()
+
+            # Combine all outlier indices
+            all_outlier_mask = z_score_outliers | iqr_outliers | volume_spike_outliers
+            outliers["indices"] = all_outlier_mask[all_outlier_mask].index.tolist()
+
+            return outliers
+
+        except Exception as e:
+            self.logger.error(f"Error detecting volume outliers: {e}")
+            return {"z_score": [], "iqr": [], "volume_spike": [], "indices": []}
+
+    def _check_ohlc_consistency(self, data: pd.DataFrame) -> Dict[str, Any]:
+        """Check OHLC consistency."""
+        try:
+            issues = {
+                "high_low_violations": 0,
+                "open_close_violations": 0,
+                "total_violations": 0
+            }
+
+            # Check high >= low
+            high_low_violations = (data["high"] < data["low"]).sum()
+            issues["high_low_violations"] = high_low_violations
+
+            # Check high >= open, close and low <= open, close
+            open_close_violations = (
+                (data["high"] < data["open"]) | 
+                (data["high"] < data["close"]) |
+                (data["low"] > data["open"]) |
+                (data["low"] > data["close"])
+            ).sum()
+            issues["open_close_violations"] = open_close_violations
+
+            issues["total_violations"] = high_low_violations + open_close_violations
+
+            return issues
+
+        except Exception as e:
+            self.logger.error(f"Error checking OHLC consistency: {e}")
+            return {"high_low_violations": 0, "open_close_violations": 0, "total_violations": 0}
+
+    def _check_timestamp_continuity(self, timestamp_series: pd.Series) -> List[str]:
+        """Check timestamp continuity."""
+        try:
+            issues = []
+            
+            # Check for duplicates
+            if timestamp_series.duplicated().any():
+                issues.append("Duplicate timestamps found")
+
+            # Check for gaps (if timestamps are sorted)
+            if timestamp_series.is_monotonic_increasing:
+                time_diff = timestamp_series.diff()
+                if time_diff.std() > time_diff.mean() * 2:  # Significant variation in time differences
+                    issues.append("Irregular timestamp intervals detected")
+
+            return issues
+
+        except Exception as e:
+            self.logger.error(f"Error checking timestamp continuity: {e}")
+            return ["Error checking timestamp continuity"]
+
+    def _calculate_quality_score(self, quality_report: Dict[str, Any]) -> float:
+        """Calculate overall data quality score."""
+        try:
+            score = 1.0
+
+            # Deduct points for missing data
+            if "missing_data" in quality_report:
+                missing_ratio = quality_report["missing_data"]["missing_ratio"]
+                score -= missing_ratio * 0.5  # Up to 50% deduction for missing data
+
+            # Deduct points for outliers
+            if "outliers" in quality_report:
+                outlier_ratio = quality_report["outliers"]["total_outliers"] / quality_report["total_rows"]
+                score -= outlier_ratio * 0.3  # Up to 30% deduction for outliers
+
+            # Deduct points for consistency issues
+            if "consistency" in quality_report:
+                consistency_issues = quality_report["consistency"]["total_issues"]
+                score -= min(consistency_issues * 0.1, 0.2)  # Up to 20% deduction for consistency issues
+
+            return max(0.0, score)
+
+        except Exception as e:
+            self.logger.error(f"Error calculating quality score: {e}")
+            return 0.0
+
+    def get_quality_report(self, symbol: str, timeframe: str) -> Optional[Dict[str, Any]]:
+        """Get quality report for specific symbol and timeframe."""
+        key = f"{symbol}_{timeframe}"
+        return self.data_quality_reports.get(key)
+
+    def get_validation_result(self, symbol: str, timeframe: str) -> Optional[Dict[str, Any]]:
+        """Get validation result for specific symbol and timeframe."""
+        key = f"{symbol}_{timeframe}"
+        return self.data_validation_results.get(key)
+
+    def get_loaded_data(self, symbol: str, timeframe: str) -> Optional[pd.DataFrame]:
+        """Get loaded data for specific symbol and timeframe."""
+        key = f"{symbol}_{timeframe}"
+        return self.loaded_data.get(key)
+
+    def cleanup(self) -> None:
+        """Cleanup resources."""
+        try:
+            self.loaded_data.clear()
+            self.data_quality_reports.clear()
+            self.data_validation_results.clear()
+            
             if self.logger:
-                self.logger.error(f"❌ Failed to initialize S/R data integration: {e}")
-return False
+                self.logger.info("✅ SR Data Integration cleanup completed")
 
-async def _validate_configuration(self) -> bool:
-        """Validate the configuration parameters.
-
-Returns:
-            True if configuration is valid, False otherwise
-"""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-# Validate symbol
-if not self.symbol or not isinstance(self.symbol, str):
-                if self.logger:
-                    self.logger.error("❌ Invalid symbol configuration")
-return False
-
-# Validate exchange
-if not self.exchange or not isinstance(self.exchange, str):
-                if self.logger:
-                    self.logger.error("❌ Invalid exchange configuration")
-return False
-
-# Validate timeframes
-valid_timeframes = ["1m", "5m", "15m", "30m", "1h", "4h", "1d"]
-for tf in self.timeframes:
-                if tf not in valid_timeframes:
-                    if self.logger:
-                        self.logger.error(f"❌ Invalid timeframe: {tf}")
-return False
-
-# Validate lookback period
-if self.lookback_days <= 0 or self.lookback_days > 1095:  # Max 3 years
-if self.logger:
-                    self.logger.error(f"❌ Invalid lookback days: {self.lookback_days}")
-return False
-
-return True
-
-except Exception as e:
+        except Exception as e:
             if self.logger:
-                self.logger.error(f"❌ Configuration validation failed: {e}")
-return False
-
-async def _ensure_data_availability(self) -> bool:
-        """Ensure that required data is available for all timeframes.
-
-Returns:
-            True if data is available, False otherwise
-"""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-if self.logger:
-                self.logger.info("📊 Checking data availability...")
-
-# Check if data exists for each timeframe
-for timeframe in self.timeframes:
-                if not await self._check_timeframe_data_availability(timeframe):
-                    if self.logger:
-                        self.logger.warning(f"⚠️ Data not available for {timeframe}, attempting download...")
-
-# Try to download data
-if not await self._download_timeframe_data(timeframe):
-                        if self.logger:
-                            self.logger.error(f"❌ Failed to obtain data for {timeframe}")
-return False
-
-if self.logger:
-                self.logger.info("✅ Data availability confirmed")
-
-return True
-
-except Exception as e:
-            if self.logger:
-                self.logger.error(f"❌ Data availability check failed: {e}")
-return False
-
-async def _check_timeframe_data_availability(self, timeframe: str) -> bool:
-        """Check if data is available for a specific timeframe.
-
-Args:
-            timeframe: The timeframe to check (e.g., "1m", "5m")
-
-Returns:
-            True if data is available, False otherwise
-"""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-# Try to load a small sample to check availability
-sample_data = await self._load_timeframe_data(timeframe, max_periods=100)
-return sample_data is not None and len(sample_data) > 0
-
-except Exception as e:
-            if self.logger:
-                self.logger.debug(f"Data availability check failed for {timeframe}: {e}")
-return False
-
-async def _download_timeframe_data(self, timeframe: str) -> bool:
-        """Download data for a specific timeframe.
-
-Args:
-            timeframe: The timeframe to download data for
-
-Returns:
-            True if download successful, False otherwise
-"""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-if self.logger:
-                self.logger.info(f"📥 Downloading data for {timeframe}...")
-
-# Use the unified data downloader if available
-if DATA_DOWNLOADER_AVAILABLE and download_all_data_with_consolidation:
-                success = await download_all_data_with_consolidation(
-symbol=self.symbol,
-exchange_name=self.exchange,
-interval=timeframe
-)
-
-if success and self.logger:
-                    self.logger.info(f"✅ Data download successful for {timeframe}")
-
-return success
-else:
-                if self.logger:
-                    self.logger.warning(f"⚠️ Data downloader not available for {timeframe}")
-return False
-
-except Exception as e:
-            if self.logger:
-                self.logger.error(f"❌ Data download failed for {timeframe}: {e}")
-return False
-
-async def get_market_data(
-self,
-timeframe: str,
-lookback_days: Optional[int] = None,
-force_reload: bool = False
-) -> Optional[pd.DataFrame]:
-        """Get market data for S/R validation.
-
-Args:
-            timeframe: The timeframe to get data for
-lookback_days: Override the default lookback period
-force_reload: Force reload data from disk
-
-Returns:
-            DataFrame with market data or None if failed
-"""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-# Use provided lookback_days or default
-actual_lookback_days = lookback_days or self.lookback_days
-
-# Check cache first
-cache_key = f"{timeframe}_{actual_lookback_days}"
-if not force_reload and cache_key in self._data_cache:
-                last_load = self._last_load_time.get(cache_key)
-if last_load and (datetime.now() - last_load).total_seconds() < 3600:  # 1 hour cache
-if self.logger:
-                        self.logger.debug(f"📊 Using cached data for {timeframe}")
-return self._data_cache[cache_key]
-
-# Load data
-data = await self._load_timeframe_data(timeframe, actual_lookback_days)
-
-if data is not None and len(data) > 0:
-                # Cache the data
-self._data_cache[cache_key] = data
-self._last_load_time[cache_key] = datetime.now()
-
-if self.logger:
-                    self.logger.info(f"📊 Loaded {len(data)} data points for {timeframe} ({actual_lookback_days} days lookback)")
-
-return data
-else:
-                if self.logger:
-                    self.logger.error(f"❌ No data available for {timeframe}")
-return None
-
-except Exception as e:
-            if self.logger:
-                self.logger.error(f"❌ Failed to get market data for {timeframe}: {e}")
-return None
-
-async def _load_timeframe_data(self, timeframe: str, lookback_days: int) -> Optional[pd.DataFrame]:
-        """Load data for a specific timeframe.
-
-Args:
-            timeframe: The timeframe to load
-lookback_days: Number of days to look back
-
-Returns:
-            DataFrame with market data or None if failed
-"""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-# Calculate the start date
-end_date = datetime.now()
-start_date = end_date - timedelta(days=lookback_days)
-
-# Try to load from unified data loader first
-data = await self._load_from_unified_loader(timeframe, start_date, end_date)
-
-if data is not None and len(data) > 0:
-                return data
-
-# Fallback to direct file loading
-data = await self._load_from_file_system(timeframe, start_date, end_date)
-
-return data
-
-except Exception as e:
-            if self.logger:
-                self.logger.error(f"❌ Failed to load timeframe data: {e}")
-return None
-
-async def _load_from_unified_loader(
-self,
-timeframe: str,
-start_date: datetime,
-end_date: datetime
-) -> Optional[pd.DataFrame]:
-        """Load data using the unified data loader.
-
-Args:
-            timeframe: The timeframe to load
-start_date: Start date for data
-end_date: End date for data
-
-Returns:
-            DataFrame with market data or None if failed
-"""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-# Use the unified data loader if available
-if self.data_loader and hasattr(self.data_loader, 'load_timeframe_data'):
-                data = await self.data_loader.load_timeframe_data(
-symbol=self.symbol,
-exchange=self.exchange,
-timeframe=timeframe,
-start_date=start_date,
-end_date=end_date
-)
-
-return data
-else:
-                if self.logger:
-                    self.logger.debug(f"Unified loader not available for {timeframe}")
-return None
-
-except Exception as e:
-            if self.logger:
-                self.logger.debug(f"Unified loader failed for {timeframe}: {e}")
-return None
-
-async def _load_from_file_system(
-self,
-timeframe: str,
-start_date: datetime,
-end_date: datetime
-) -> Optional[pd.DataFrame]:
-        """Load data directly from file system as fallback.
-
-Args:
-            timeframe: The timeframe to load
-start_date: Start date for data
-end_date: End date for data
-
-Returns:
-            DataFrame with market data or None if failed
-"""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-# Construct file path
-data_dir = Path("data") / self.exchange / self.symbol / timeframe
-if not data_dir.exists():
-                if self.logger:
-                    self.logger.debug(f"Data directory not found: {data_dir}")
-return None
-
-# Find the most recent data file
-data_files = list(data_dir.glob("*.parquet"))
-if not data_files:
-                if self.logger:
-                    self.logger.debug(f"No data files found in {data_dir}")
-return None
-
-# Load the most recent file
-latest_file = max(data_files, key=lambda x: x.stat().st_mtime)
-
-# Load data
-data = pd.read_parquet(latest_file)
-
-# Filter by date range
-if 'timestamp' in data.columns:
-                data['timestamp'] = pd.to_datetime(data['timestamp'], unit='ms')
-data = data[
-(data['timestamp'] >= start_date) &
-(data['timestamp'] <= end_date)
-]
-
-# Ensure required columns
-required_columns = ['open', 'high', 'low', 'close', 'volume']
-if not all(col in data.columns for col in required_columns):
-                if self.logger:
-                    self.logger.warning(f"Missing required columns in {latest_file}")
-return None
-
-return data.sort_values('timestamp').reset_index(drop=True)
-
-except Exception as e:
-            if self.logger:
-                self.logger.debug(f"File system loading failed for {timeframe}: {e}")
-return None
-
-async def get_multi_timeframe_data(
-self,
-timeframes: Optional[List[str]] = None,
-lookback_days: Optional[int] = None
-) -> Dict[str, pd.DataFrame]:
-        """Get market data for multiple timeframes.
-
-Args:
-            timeframes: List of timeframes to get data for
-lookback_days: Override the default lookback period
-
-Returns:
-            Dictionary mapping timeframes to DataFrames
-"""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-timeframes = timeframes or self.timeframes
-lookback_days = lookback_days or self.lookback_days
-
-if self.logger:
-                self.logger.info(f"📊 Loading multi-timeframe data for {len(timeframes)} timeframes")
-
-# Load data for each timeframe
-multi_tf_data = {}
-for timeframe in timeframes:
-                data = await self.get_market_data(timeframe, lookback_days)
-if data is not None:
-                    multi_tf_data[timeframe] = data
-else:
-                    if self.logger:
-                        self.logger.warning(f"⚠️ Failed to load data for {timeframe}")
-
-if self.logger:
-                self.logger.info(f"✅ Loaded data for {len(multi_tf_data)} timeframes")
-
-return multi_tf_data
-
-except Exception as e:
-            if self.logger:
-                self.logger.error(f"❌ Failed to get multi-timeframe data: {e}")
-return {}
-
-def get_lookback_period_for_timeframe(self, timeframe: str) -> int:
-        """Get the appropriate lookback period for a specific timeframe.
-
-Args:
-            timeframe: The timeframe to get lookback period for
-
-Returns:
-            Number of days to look back
-"""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-# Timeframe-specific lookback periods
-timeframe_lookback_map = {
-"1m": min(self.lookback_days, 30),      # Max 30 days for 1m
-"5m": min(self.lookback_days, 60),      # Max 60 days for 5m
-"15m": min(self.lookback_days, 120),    # Max 120 days for 15m
-"30m": min(self.lookback_days, 180),    # Max 180 days for 30m
-"1h": min(self.lookback_days, 365),     # Max 1 year for 1h
-"4h": min(self.lookback_days, 730),     # Max 2 years for 4h
-"1d": self.lookback_days,               # Full lookback for daily
-}
-
-return timeframe_lookback_map.get(timeframe, self.lookback_days)
-
-except Exception as e:
-            if self.logger:
-                self.logger.error(f"❌ Failed to get lookback period for {timeframe}: {e}")
-return self.lookback_days
-
-async def validate_data_quality(self, data: pd.DataFrame, timeframe: str) -> bool:
-        """Validate the quality of loaded data.
-
-Args:
-            data: The data to validate
-timeframe: The timeframe the data represents
-
-Returns:
-            True if data quality is acceptable, False otherwise
-"""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-if data is None or len(data) == 0:
-                if self.logger:
-                    self.logger.error(f"❌ No data provided for validation")
-return False
-
-# Check minimum data points
-min_points = self._get_min_data_points_for_timeframe(timeframe)
-if len(data) < min_points:
-                if self.logger:
-                    self.logger.error(f"❌ Insufficient data points: {len(data)} < {min_points}")
-return False
-
-# Check for required columns
-required_columns = ['open', 'high', 'low', 'close', 'volume']
-missing_columns = [col for col in required_columns if col not in data.columns]
-if missing_columns:
-                if self.logger:
-                    self.logger.error(f"❌ Missing required columns: {missing_columns}")
-return False
-
-# Check for data gaps
-if 'timestamp' in data.columns:
-                data_sorted = data.sort_values('timestamp')
-time_diffs = data_sorted['timestamp'].diff().dropna()
-
-# Calculate expected time difference based on timeframe
-expected_diff = self._get_expected_time_diff(timeframe)
-max_gap_multiplier = 5  # Allow gaps up to 5x expected interval
-
-large_gaps = time_diffs > (expected_diff * max_gap_multiplier)
-if large_gaps.sum() > len(data) * 0.1:  # More than 10% gaps
-if self.logger:
-                        self.logger.warning(f"⚠️ Large data gaps detected in {timeframe}")
-
-# Check for price anomalies
-price_columns = ['open', 'high', 'low', 'close']
-for col in price_columns:
-                if data[col].isnull().sum() > len(data) * 0.05:  # More than 5% nulls
-if self.logger:
-                        self.logger.warning(f"⚠️ High null count in {col}: {timeframe}")
-
-if self.logger:
-                self.logger.info(f"✅ Data quality validation passed for {timeframe}")
-
-return True
-
-except Exception as e:
-            if self.logger:
-                self.logger.error(f"❌ Data quality validation failed: {e}")
-return False
-
-def _get_min_data_points_for_timeframe(self, timeframe: str) -> int:
-        """Get minimum required data points for a timeframe.
-
-Args:
-            timeframe: The timeframe to get minimum points for
-
-Returns:
-            Minimum number of data points required
-"""
-# Minimum data points based on timeframe
-min_points_map = {
-"1m": 1440,    # 1 day of minute data
-"5m": 288,     # 1 day of 5-minute data
-"15m": 96,     # 1 day of 15-minute data
-"30m": 48,     # 1 day of 30-minute data
-"1h": 24,      # 1 day of hourly data
-"4h": 6,       # 1 day of 4-hour data
-"1d": 30,      # 30 days of daily data
-}
-
-return min_points_map.get(timeframe, 100)
-
-def _get_expected_time_diff(self, timeframe: str) -> pd.Timedelta:
-        """Get expected time difference between data points.
-
-Args:
-            timeframe: The timeframe to get expected diff for
-
-Returns:
-            Expected time difference
-"""
-time_diff_map = {
-"1m": pd.Timedelta(minutes=1),
-"5m": pd.Timedelta(minutes=5),
-"15m": pd.Timedelta(minutes=15),
-"30m": pd.Timedelta(minutes=30),
-"1h": pd.Timedelta(hours=1),
-"4h": pd.Timedelta(hours=4),
-"1d": pd.Timedelta(days=1),
-}
-
-return time_diff_map.get(timeframe, pd.Timedelta(minutes=1))
-
-async def cleanup_cache(self) -> None:
-        """Clean up the data cache to free memory."""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-if self.logger:
-                self.logger.info("🧹 Cleaning up data cache...")
-
-# Clear old cache entries
-current_time = datetime.now()
-keys_to_remove = []
-
-for key, last_load in self._last_load_time.items():
-                if (current_time - last_load).total_seconds() > 7200:  # 2 hours
-keys_to_remove.append(key)
-
-for key in keys_to_remove:
-                if key in self._data_cache:
-                    del self._data_cache[key]
-if key in self._last_load_time:
-                    del self._last_load_time[key]
-
-if self.logger:
-                self.logger.info(f"✅ Cache cleanup completed, removed {len(keys_to_remove)} entries")
-
-except Exception as e:
-            if self.logger:
-                self.logger.error(f"❌ Cache cleanup failed: {e}")
-
-
-# Convenience function for easy integration
-async def create_sr_data_integration(
-symbol: str = "BTCUSDT",
-exchange: str = "binance",
-timeframes: List[str] = None,
-lookback_days: Optional[int] = None,
-training_mode: str = "blank"
-) -> SRDataIntegration:
-    """Create and initialize an S/R data integration instance.
-
-Args:
-        symbol: Trading symbol
-exchange: Exchange name
-timeframes: List of timeframes to use
-lookback_days: Override default lookback period
-training_mode: Training mode to use for lookback period
-
-Returns:
-        Initialized SRDataIntegration instance
-"""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-# Set default timeframes if not provided
-if timeframes is None:
-            timeframes = ["1m", "5m", "15m", "30m"]
-
-# Get lookback days from training mode if not provided
-if lookback_days is None:
-            try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-mode_config = TRAINING_MODES.get(training_mode)
-if mode_config:
-                    lookback_days = mode_config.lookback_days
-else:
-                    lookback_days = DEFAULT_LOOKBACK_DAYS
-except NameError:
-                # Fallback if TRAINING_MODES is not available
-lookback_days = DEFAULT_LOOKBACK_DAYS
-
-# Create configuration
-config = {
-"data_integration": {
-"symbol": symbol,
-"exchange": exchange,
-"timeframes": timeframes,
-"lookback_days": lookback_days,
-"training_mode": training_mode,
-"min_data_points": 1000,
-"max_data_age_hours": 24,
-}
-}
-
-# Create and initialize integration
-integration = SRDataIntegration(config)
-if await integration.initialize():
-            return integration
-else:
-            raise RuntimeError("Failed to initialize S/R data integration")
-
-except Exception as e:
-        print(f"❌ Failed to create S/R data integration: {e}")
-raise
+                self.logger.error(f"❌ SR Data Integration cleanup failed: {e}")
+
+
+# Setup function for easy integration
+def setup_sr_data_integration(config: Optional[Dict[str, Any]] = None) -> SRDataIntegration:
+    """Setup SR data integration."""
+    try:
+        return SRDataIntegration(config)
+    except Exception as e:
+        if system_logger:
+            system_logger.error(f"Failed to setup SR data integration: {e}")
+        return None

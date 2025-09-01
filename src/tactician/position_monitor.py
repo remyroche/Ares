@@ -11,7 +11,6 @@ import asyncio
 import yaml
 from datetime import datetime
 from dataclasses import dataclass, field
-from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -21,797 +20,605 @@ from src.utils.confidence import normalize_dual_confidence
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
-failed,
-invalid,
-missing,
-warning,
+    failed,
+    invalid,
+    warning,
 )
 
-class PositionAction(Enum):
-    """Enum for position actions."""
-
-STAY = "stay"
-EXIT = "exit"
-SCALE_UP = "scale_up"
-SCALE_DOWN = "scale_down"
-HEDGE = "hedge"
-TAKE_PROFIT = "take_profit"
-STOP_LOSS = "stop_loss"
-FULL_CLOSE = "full_close"
 
 @dataclass
-    pass  # TODO: Add implementation
 class PositionAssessment:
-    # Implementation placeholder - add actual implementation
-
-    # Implementation needed - add actual functionality
-
-
-    # TODO: Implement class methods
-    pass  # TODO: Add implementation
-    """Position assessment data structure."""
-
-position_id: str
-symbol: str
-side: str  # "LONG" or "SHORT"
-current_quantity: float
-entry_price: float
-current_price: float
-unrealized_pnl: float
-analyst_confidence: float
-tactician_confidence: float
-combined_confidence: float
-position_action: PositionAction
-action_reason: str
-timestamp: datetime = field(default_factory=datetime.now)
-metadata: Dict[str, Any] = field(default_factory=dict)
-
-@dataclass
-    pass  # TODO: Add implementation
-class PositionAlert:
-    # Implementation placeholder - add actual implementation
-
-    # Implementation needed - add actual functionality
-
-
-    # TODO: Implement class methods
-    pass  # TODO: Add implementation
-    """Position alert data structure."""
-
-alert_id: str
-position_id: str
-alert_type: str
-severity: str  # "low", "medium", "high", "critical"
-message: str
-timestamp: datetime = field(default_factory=datetime.now)
-resolved: bool = False
-metadata: Dict[str, Any] = field(default_factory=dict)
-
-class PositionMonitor:
-    # Implementation placeholder - add actual implementation
-
-    # Implementation needed - add actual functionality
+    """Position assessment with simplified action logic."""
+    
+    position_id: str
+    symbol: str
+    side: str  # "long" or "short"
+    entry_price: float
+    current_price: float
+    current_quantity: float
+    entry_time: datetime
+    current_time: datetime
+    
+    # ML-based confidence scores
+    tactician_confidence: float = 0.0
+    analyst_confidence: float = 0.0
+    combined_confidence: float = 0.0
+    
+    # Position metrics
+    unrealized_pnl: float = 0.0
+    pnl_percentage: float = 0.0
+    position_age_hours: float = 0.0
+    
+    # Decision
+    should_exit: bool = False
+    should_scale_down: bool = False
+    should_take_profit: bool = False
+    should_stop_loss: bool = False
+    action_reason: str = ""
+    
+    # Alert information
+    alert_severity: str = "info"  # "info", "warning", "critical"
+    alert_message: str = ""
 
 
-    # TODO: Implement class methods
-class PositionMonitor:
-    pass  # TODO: Add implementation
 class PositionMonitor:
     """
-Real-time position monitor with confidence assessment and decision logic.
+    Position Monitor with fixed 10-second monitoring interval and ML-based confidence.
+    
+    Features:
+    - Fixed 10-second monitoring interval for all positions
+    - ML-based confidence assessment (tactician/analyst output)
+    - Simplified action logic (mutually exclusive actions)
+    - Immediate alert system
+    - Fixed -5% PnL threshold
+    """
 
-Features:
-    - Continuous position monitoring
-- Confidence score re-assessment
-- Position action recommendations
-- Alert generation for critical conditions
-- Integration with PositionDivisionStrategy
-"""
-
-def __init__(self, config: Dict[str, Any]) -> None:
+    def __init__(self, config: Dict[str, Any]) -> None:
         """
-Initialize the position monitor.
+        Initialize Position Monitor.
 
-Args:
+        Args:
             config: Configuration dictionary
-"""
-self.config = config
-self.logger = system_logger.getChild("PositionMonitor")
-
-# Configuration
-self.monitor_config = config.get("position_monitor", {})
-self.monitoring_interval = self.monitor_config.get("monitoring_interval", 10)  # seconds
-
-# Load step12 confidence optimization config
-step12_config = config.get("step12_confidence_optimization", {})
-position_monitor_config = step12_config.get("position_monitor", {})
-
-# Confidence thresholds for step12 optimization
-self.confidence_threshold = position_monitor_config.get("confidence_threshold", 0.6)
-self.high_confidence_threshold = position_monitor_config.get("high_confidence_threshold", 0.6)
-self.low_confidence_threshold = position_monitor_config.get("low_confidence_threshold", 0.3)
-self.very_low_confidence_threshold = position_monitor_config.get("very_low_confidence_threshold", 0.3)
-
-self.pnl_threshold = position_monitor_config.get("pnl_threshold", -0.05)  # -5%
-self.max_position_age = position_monitor_config.get("max_position_age", 3600)  # 1 hour
-
-# Component managers
-self.order_manager: Optional[EnhancedOrderManager] = None
-self.position_strategy: Optional[PositionDivisionStrategy] = None
-
-# Monitoring state
-self.active_positions: Dict[str, Dict[str, Any]] = {}
-self.position_assessments: List[PositionAssessment] = []
-self.position_alerts: List[PositionAlert] = []
-self.monitoring_task: Optional[asyncio.Task] = None
-self.is_monitoring = False
-
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=False,
-context="position monitor initialization"
-)
-async def initialize(self) -> bool:
         """
-Initialize the position monitor.
+        self.config = config
+        self.logger = system_logger.getChild("PositionMonitor")
 
-Returns:
+        # Configuration
+        self.monitor_config = config.get("position_monitor", {})
+        self.monitoring_interval = 10  # Fixed 10 seconds for all positions
+        self.pnl_threshold = -0.05  # Fixed -5% PnL threshold
+        self.confidence_threshold = self.monitor_config.get("confidence_threshold", 0.6)
+        self.high_confidence_threshold = self.monitor_config.get("high_confidence_threshold", 0.8)
+        self.low_confidence_threshold = self.monitor_config.get("low_confidence_threshold", 0.4)
+        self.very_low_confidence_threshold = self.monitor_config.get("very_low_confidence_threshold", 0.2)
+
+        # Component managers
+        self.order_manager: Optional[EnhancedOrderManager] = None
+        self.position_strategy: Optional[PositionDivisionStrategy] = None
+
+        # Monitoring state
+        self.active_positions: Dict[str, Dict[str, Any]] = {}
+        self.monitoring_task: Optional[asyncio.Task] = None
+        self.is_monitoring = False
+        self.assessment_history: List[PositionAssessment] = []
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=False,
+        context="position monitor initialization"
+    )
+    async def initialize(self) -> bool:
+        """
+        Initialize the position monitor.
+
+        Returns:
             bool: True if initialization successful
-"""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-self.logger.info("Initializing Position Monitor...")
+        """
+        try:
+            self.logger.info("Initializing Position Monitor...")
 
-# Initialize order manager
-self.order_manager = EnhancedOrderManager(self.config)
-await self.order_manager.initialize()
+            # Initialize order manager
+            self.order_manager = EnhancedOrderManager(self.config)
+            await self.order_manager.initialize()
 
-# Initialize position strategy
-self.position_strategy = PositionDivisionStrategy(self.config)
-await self.position_strategy.initialize()
+            # Initialize position strategy
+            self.position_strategy = PositionDivisionStrategy(self.config)
+            await self.position_strategy.initialize()
 
-# Validate configuration
-if not self._validate_configuration():
-                self.logger.error(invalid("Invalid position monitor configuration"))
-return False
+            # Validate configuration
+            if not self._validate_configuration():
+                return False
 
-self.logger.info("✅ Position Monitor initialized successfully")
-return True
+            self.logger.info("✅ Position Monitor initialized successfully")
+            return True
 
-except Exception as e:
+        except Exception as e:
             self.logger.error(failed(f"❌ Position Monitor initialization failed: {e}"))
-return False
+            return False
 
-def _validate_configuration(self) -> bool:
+    def _validate_configuration(self) -> bool:
         """
-Validate position monitor configuration.
+        Validate position monitor configuration.
 
-Returns:
+        Returns:
             bool: True if configuration is valid
-"""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-if self.monitoring_interval <= 0:
-                self.logger.error(invalid("Monitoring interval must be positive"))
-return False
-
-if not 0 <= self.confidence_threshold <= 1:
+        """
+        try:
+            # Validate confidence thresholds
+            if not 0 <= self.confidence_threshold <= 1:
                 self.logger.error(invalid("Confidence threshold must be between 0 and 1"))
-return False
+                return False
 
-if self.max_position_age <= 0:
-                self.logger.error(invalid("Max position age must be positive"))
-return False
+            if not 0 <= self.high_confidence_threshold <= 1:
+                self.logger.error(invalid("High confidence threshold must be between 0 and 1"))
+                return False
 
-return True
+            if not 0 <= self.low_confidence_threshold <= 1:
+                self.logger.error(invalid("Low confidence threshold must be between 0 and 1"))
+                return False
 
-except Exception as e:
+            if not 0 <= self.very_low_confidence_threshold <= 1:
+                self.logger.error(invalid("Very low confidence threshold must be between 0 and 1"))
+                return False
+
+            # Validate PnL threshold
+            if self.pnl_threshold >= 0:
+                self.logger.error(invalid("PnL threshold should be negative"))
+                return False
+
+            return True
+
+        except Exception as e:
             self.logger.error(failed(f"❌ Configuration validation failed: {e}"))
-return False
+            return False
 
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=None,
-context="position monitoring start"
-)
-async def start_monitoring(self) -> bool:
+    async def start_monitoring(self) -> bool:
         """
-Start continuous position monitoring.
+        Start position monitoring with fixed 10-second interval.
 
-Returns:
+        Returns:
             bool: True if monitoring started successfully
-"""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-if self.is_monitoring:
+        """
+        try:
+            if self.is_monitoring:
                 self.logger.warning(warning("Position monitoring already active"))
-return True
+                return True
 
-self.is_monitoring = True
-self.monitoring_task = asyncio.create_task(self._monitoring_loop())
+            self.is_monitoring = True
+            self.monitoring_task = asyncio.create_task(self._monitoring_loop())
 
-self.logger.info("✅ Position monitoring started")
-return True
+            self.logger.info(f"✅ Position monitoring started (interval: {self.monitoring_interval}s)")
+            return True
 
-except Exception as e:
+        except Exception as e:
             self.logger.error(failed(f"❌ Failed to start position monitoring: {e}"))
-return False
+            return False
 
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=None,
-context="position monitoring stop"
-)
-async def stop_monitoring(self) -> bool:
+    async def stop_monitoring(self) -> bool:
         """
-Stop continuous position monitoring.
+        Stop position monitoring.
 
-Returns:
+        Returns:
             bool: True if monitoring stopped successfully
-"""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-if not self.is_monitoring:
-                self.logger.warning(warning("Position monitoring not active"))
-return True
-
-self.is_monitoring = False
-
-if self.monitoring_task:
-                self.monitoring_task.cancel()
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-await self.monitoring_task
-except asyncio.CancelledError:
-                    # Implementation needed - add actual functionality
-
-        # TODO: Implement functionality
-self.logger.info("✅ Position monitoring stopped")
-return True
-
-except Exception as e:
-            self.logger.error(failed(f"❌ Failed to stop position monitoring: {e}"))
-return False
-
-async def _monitoring_loop(self) -> None:
         """
-Main monitoring loop that runs continuously.
-"""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-while self.is_monitoring:
+        try:
+            if not self.is_monitoring:
+                self.logger.warning(warning("Position monitoring not active"))
+                return True
+
+            self.is_monitoring = False
+
+            if self.monitoring_task:
+                self.monitoring_task.cancel()
+                try:
+                    await self.monitoring_task
+                except asyncio.CancelledError:
+                    pass
+
+            self.logger.info("✅ Position monitoring stopped")
+            return True
+
+        except Exception as e:
+            self.logger.error(failed(f"❌ Failed to stop position monitoring: {e}"))
+            return False
+
+    async def _monitoring_loop(self) -> None:
+        """Main monitoring loop with fixed 10-second interval."""
+        try:
+            while self.is_monitoring:
                 # Monitor all active positions
-await self._monitor_positions()
+                await self._monitor_positions()
 
-# Auto-refresh step12 configuration if enabled
-await self._auto_refresh_step12_config()
+                # Wait for next monitoring cycle
+                await asyncio.sleep(self.monitoring_interval)
 
-# Wait for next monitoring cycle
-await asyncio.sleep(self.monitoring_interval)
-
-except asyncio.CancelledError:
+        except asyncio.CancelledError:
             self.logger.info("Position monitoring loop cancelled")
-except Exception as e:
+        except Exception as e:
             self.logger.error(failed(f"❌ Error in monitoring loop: {e}"))
 
-async def _monitor_positions(self) -> None:
-        """
-Monitor all active positions and generate assessments.
-"""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-for position_id, position_data in self.active_positions.items():
-                # Get current market data
-current_price = await self._get_current_price(position_data["symbol"])
-if current_price is None:
-                    continue
-
-# Update position data
-position_data["current_price"] = current_price
-position_data["unrealized_pnl"] = self._calculate_unrealized_pnl(position_data)
-
-# Assess position
-assessment = await self._assess_position(position_id, position_data)
-if assessment:
-                    self.position_assessments.append(assessment)
-
-# Check for alerts
-await self._check_position_alerts(assessment)
-
-# Log assessment
-self.logger.info(
-f"Position {position_id} assessment: {assessment.position_action.value} "
-f"(confidence: {assessment.combined_confidence:.3f}, PnL: {assessment.unrealized_pnl:.4f})"
-)
-
-# Clean up old positions
-await self._cleanup_old_positions()
-
-except Exception as e:
-            self.logger.error(failed(f"❌ Error monitoring positions: {e}"))
-
-async def _assess_position(self, position_id: str, position_data: Dict[str, Any]) -> Optional[PositionAssessment]:
-        """
-Assess a single position and determine recommended action.
-
-Args:
-            position_id: Position ID
-position_data: Position data
-
-Returns:
-            PositionAssessment: Assessment result or None if failed
-"""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-# Get confidence scores from position strategy
-analyst_confidence = position_data.get("analyst_confidence", 0.5)
-tactician_confidence = position_data.get("tactician_confidence", 0.5)
-
-# Normalize combined confidence
-combined_confidence = normalize_dual_confidence(analyst_confidence, tactician_confidence)
-
-# Determine position action
-position_action, action_reason = self._determine_position_action(
-position_data, combined_confidence
-)
-
-return PositionAssessment(
-position_id=position_id,
-symbol=position_data["symbol"],
-side=position_data["side"],
-current_quantity=position_data["quantity"],
-entry_price=position_data["entry_price"],
-current_price=position_data["current_price"],
-unrealized_pnl=position_data["unrealized_pnl"],
-analyst_confidence=analyst_confidence,
-tactician_confidence=tactician_confidence,
-combined_confidence=combined_confidence,
-position_action=position_action,
-action_reason=action_reason
-)
-
-except Exception as e:
-            self.logger.error(failed(f"❌ Error assessing position {position_id}: {e}"))
-return None
-
-def _determine_position_action(
-self,
-position_data: Dict[str, Any],
-combined_confidence: float
-) -> tuple[PositionAction, str]:
-        """
-Determine recommended position action based on current conditions.
-
-Args:
-            position_data: Position data
-combined_confidence: Combined confidence score
-
-Returns:
-            tuple: (PositionAction, reason)
-"""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-unrealized_pnl = position_data["unrealized_pnl"]
-entry_time = position_data.get("entry_time")
-current_time = datetime.now()
-
-# Check for critical conditions first
-if unrealized_pnl <= self.pnl_threshold:
-                return PositionAction.STOP_LOSS, f"PnL below threshold: {unrealized_pnl:.4f}"
-
-# Check position age
-if entry_time:
-                if isinstance(entry_time, str):
-                    entry_time = datetime.fromisoformat(entry_time.replace('Z', '+00:00'))
-position_age = (current_time - entry_time).total_seconds()
-if position_age > self.max_position_age:
-                    return PositionAction.FULL_CLOSE, f"Position age exceeded: {position_age:.0f}s"
-
-# Check confidence-based actions using step12 optimized thresholds
-if combined_confidence < self.very_low_confidence_threshold:
-                return PositionAction.FULL_CLOSE, f"Very low confidence: {combined_confidence:.3f} < {self.very_low_confidence_threshold}"
-elif combined_confidence < self.low_confidence_threshold:
-                return PositionAction.SCALE_DOWN, f"Low confidence: {combined_confidence:.3f} < {self.low_confidence_threshold}"
-elif combined_confidence >= self.high_confidence_threshold:
-                # Check for take profit (high confidence and positive PnL)
-if unrealized_pnl > 0.02:  # 2% profit
-return PositionAction.TAKE_PROFIT, f"High confidence and profit: {combined_confidence:.3f}, {unrealized_pnl:.4f}"
-else:
-                    return PositionAction.STAY, f"High confidence: {combined_confidence:.3f} >= {self.high_confidence_threshold}"
-
-# Default action for medium confidence
-return PositionAction.STAY, f"Medium confidence: {combined_confidence:.3f} (within thresholds)"
-
-except Exception as e:
-            self.logger.error(failed(f"❌ Error determining position action: {e}"))
-return PositionAction.STAY, f"Error: {e}"
-
-def _calculate_unrealized_pnl(self, position_data: Dict[str, Any]) -> float:
-        """
-Calculate unrealized PnL for a position.
-
-Args:
-            position_data: Position data
-
-Returns:
-            float: Unrealized PnL
-"""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-entry_price = position_data["entry_price"]
-current_price = position_data["current_price"]
-quantity = position_data["quantity"]
-side = position_data["side"]
-
-if side.upper() == "LONG":
-                return (current_price - entry_price) * quantity
-elif side.upper() == "SHORT":
-                return (entry_price - current_price) * quantity
-else:
-                return 0.0
-
-except Exception as e:
-            self.logger.error(failed(f"❌ Error calculating unrealized PnL: {e}"))
-return 0.0
-
-async def _get_current_price(self, symbol: str) -> Optional[float]:
-        """
-Get current price for a symbol.
-
-Args:
-            symbol: Trading symbol
-
-Returns:
-            float: Current price or None if failed
-"""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-# In a real implementation, this would fetch from exchange
-# For now, return a placeholder
-return 100.0  # Placeholder
-
-except Exception as e:
-            self.logger.error(failed(f"❌ Error getting current price for {symbol}: {e}"))
-return None
-
-async def _check_position_alerts(self, assessment: PositionAssessment) -> None:
-        """
-Check for conditions that require alerts.
-
-Args:
-            assessment: Position assessment
-"""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-# Check for critical PnL
-if assessment.unrealized_pnl <= -0.1:  # -10%
-await self._create_alert(
-assessment.position_id,
-"critical_pnl",
-"critical",
-f"Critical PnL: {assessment.unrealized_pnl:.4f}"
-)
-
-# Check for very low confidence
-if assessment.combined_confidence < 0.2:
-                await self._create_alert(
-assessment.position_id,
-"low_confidence",
-"high",
-f"Very low confidence: {assessment.combined_confidence:.3f}"
-)
-
-# Check for position action changes
-if assessment.position_action in [PositionAction.STOP_LOSS, PositionAction.FULL_CLOSE]:
-                await self._create_alert(
-assessment.position_id,
-"position_action",
-"medium",
-f"Position action: {assessment.position_action.value} - {assessment.action_reason}"
-)
-
-except Exception as e:
-            self.logger.error(failed(f"❌ Error checking position alerts: {e}"))
-
-async def _create_alert(
-self,
-position_id: str,
-alert_type: str,
-severity: str,
-message: str
-) -> None:
-        """
-Create a position alert.
-
-Args:
-            position_id: Position ID
-alert_type: Type of alert
-severity: Alert severity
-message: Alert message
-"""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-alert = PositionAlert(
-alert_id=f"alert_{len(self.position_alerts) + 1}",
-position_id=position_id,
-alert_type=alert_type,
-severity=severity,
-message=message
-)
-
-self.position_alerts.append(alert)
-self.logger.warning(f"Position Alert [{severity.upper()}]: {message}")
-
-except Exception as e:
-            self.logger.error(failed(f"❌ Error creating alert: {e}"))
-
-async def _cleanup_old_positions(self) -> None:
-        """
-Clean up old positions that are no longer active.
-"""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-current_time = datetime.now()
-positions_to_remove = []
-
-for position_id, position_data in self.active_positions.items():
-                entry_time = position_data.get("entry_time")
-if entry_time:
-                    if isinstance(entry_time, str):
-                        entry_time = datetime.fromisoformat(entry_time.replace('Z', '+00:00'))
-position_age = (current_time - entry_time).total_seconds()
-
-if position_age > self.max_position_age * 2:  # 2x max age
-positions_to_remove.append(position_id)
-
-for position_id in positions_to_remove:
-                del self.active_positions[position_id]
-self.logger.info(f"Removed old position: {position_id}")
-
-except Exception as e:
-            self.logger.error(failed(f"❌ Error cleaning up old positions: {e}"))
-
-async def _auto_refresh_step12_config(self) -> None:
-        """
-Automatically refresh step12 configuration and confidence thresholds.
-This method is called periodically to check for new step12 results.
-"""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-# Check if auto-refresh is enabled
-step12_config = self.config.get("step12_confidence_optimization", {})
-auto_refresh = step12_config.get("auto_refresh", True)
-
-if not auto_refresh:
+    async def _monitor_positions(self) -> None:
+        """Monitor all active positions."""
+        try:
+            if not self.active_positions:
                 return
 
-# Check if we need to refresh (based on interval)
-current_time = datetime.now()
-if hasattr(self, '_last_step12_refresh'):
-                time_since_refresh = (current_time - self._last_step12_refresh).total_seconds()
-refresh_interval = step12_config.get("refresh_interval", 300)  # 5 minutes default
+            for position_id, position_data in self.active_positions.items():
+                assessment = await self._assess_position(position_id, position_data)
+                
+                if assessment:
+                    # Store assessment
+                    self.assessment_history.append(assessment)
+                    
+                    # Take action based on assessment
+                    await self._handle_position_action(assessment)
+                    
+                    # Send immediate alert if needed
+                    if assessment.alert_severity != "info":
+                        await self._send_alert(assessment)
 
-if time_since_refresh < refresh_interval:
-                    return
+        except Exception as e:
+            self.logger.error(failed(f"❌ Error monitoring positions: {e}"))
 
-# Try to load updated step12 configuration
-updated_config = self._load_updated_step12_config()
-if updated_config:
-                # Update confidence thresholds
-position_monitor_config = updated_config.get("position_monitor", {})
-
-self.high_confidence_threshold = position_monitor_config.get("high_confidence_threshold", self.high_confidence_threshold)
-self.low_confidence_threshold = position_monitor_config.get("low_confidence_threshold", self.low_confidence_threshold)
-self.very_low_confidence_threshold = position_monitor_config.get("very_low_confidence_threshold", self.very_low_confidence_threshold)
-
-self._last_step12_refresh = current_time
-self.logger.info("✅ Refreshed step12 confidence thresholds automatically")
-
-except Exception as e:
-            self.logger.error(failed(f"❌ Error in step12 auto-refresh: {e}"))
-
-def _load_updated_step12_config(self) -> Optional[Dict[str, Any]]:
+    async def _assess_position(self, position_id: str, position_data: Dict[str, Any]) -> Optional[PositionAssessment]:
         """
-Load updated step12 configuration from results files.
+        Assess a single position.
 
-Returns:
-            Dict: Updated configuration or None if no updates found
-"""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-step12_config = self.config.get("step12_confidence_optimization", {})
-result_paths = step12_config.get("step12_results_paths", [])
-
-for path in result_paths:
-                if Path(path).exists():
-                    try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-with open(path, 'r') as f:
-                            import yaml
-updated_config = yaml.safe_load(f)
-
-# Check if this is newer than our current config
-if "timestamp" in updated_config:
-                            config_time = datetime.fromisoformat(updated_config["timestamp"])
-if hasattr(self, '_last_step12_refresh'):
-                                if config_time > self._last_step12_refresh:
-                                    return updated_config
-else:
-                                return updated_config
-else:
-                            return updated_config
-
-except Exception as e:
-                        self.logger.warning(f"Could not load step12 config from {path}: {e}")
-continue
-
-return None
-
-except Exception as e:
-            self.logger.error(failed(f"❌ Error loading updated step12 config: {e}"))
-return None
-
-def add_position(self, position_data: Dict[str, Any]) -> None:
-        """
-Add a position to monitoring.
-
-Args:
+        Args:
+            position_id: Position ID
             position_data: Position data
-"""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-position_id = position_data.get("position_id")
-if not position_id:
-                self.logger.error(missing("Position ID is required"))
-return
 
-self.active_positions[position_id] = position_data
-self.logger.info(f"Added position to monitoring: {position_id}")
+        Returns:
+            PositionAssessment: Position assessment or None
+        """
+        try:
+            # Get current market data
+            current_price = await self._get_current_price(position_data["symbol"])
+            if current_price is None:
+                return None
 
-except Exception as e:
+            # Calculate position metrics
+            entry_price = position_data["entry_price"]
+            current_quantity = position_data["current_quantity"]
+            side = position_data["side"]
+            entry_time = position_data["entry_time"]
+
+            # Calculate PnL
+            if side == "long":
+                unrealized_pnl = (current_price - entry_price) * current_quantity
+            else:
+                unrealized_pnl = (entry_price - current_price) * current_quantity
+
+            pnl_percentage = (unrealized_pnl / (entry_price * current_quantity)) * 100
+
+            # Calculate position age
+            current_time = datetime.now()
+            position_age_hours = (current_time - entry_time).total_seconds() / 3600
+
+            # Get ML confidence scores (from tactician/analyst output)
+            tactician_confidence = position_data.get("tactician_confidence", 0.5)
+            analyst_confidence = position_data.get("analyst_confidence", 0.5)
+            combined_confidence = normalize_dual_confidence(tactician_confidence, analyst_confidence)
+
+            # Determine actions based on ML confidence and PnL
+            should_exit = False
+            should_scale_down = False
+            should_take_profit = False
+            should_stop_loss = False
+            action_reason = ""
+            alert_severity = "info"
+            alert_message = ""
+
+            # Check PnL threshold (fixed -5%)
+            if pnl_percentage <= self.pnl_threshold * 100:
+                should_stop_loss = True
+                action_reason = f"PnL threshold reached: {pnl_percentage:.2f}%"
+                alert_severity = "critical"
+                alert_message = f"Stop loss triggered: {pnl_percentage:.2f}% loss"
+
+            # Check confidence thresholds
+            elif combined_confidence <= self.very_low_confidence_threshold:
+                should_exit = True
+                action_reason = f"Very low confidence: {combined_confidence:.3f}"
+                alert_severity = "critical"
+                alert_message = f"Exit position due to very low confidence: {combined_confidence:.3f}"
+
+            elif combined_confidence <= self.low_confidence_threshold:
+                should_scale_down = True
+                action_reason = f"Low confidence: {combined_confidence:.3f}"
+                alert_severity = "warning"
+                alert_message = f"Scale down position due to low confidence: {combined_confidence:.3f}"
+
+            elif combined_confidence >= self.high_confidence_threshold and pnl_percentage > 0:
+                should_take_profit = True
+                action_reason = f"High confidence and positive PnL: {combined_confidence:.3f}, {pnl_percentage:.2f}%"
+                alert_severity = "info"
+                alert_message = f"Take profit opportunity: {pnl_percentage:.2f}% gain"
+
+            # Create assessment
+            assessment = PositionAssessment(
+                position_id=position_id,
+                symbol=position_data["symbol"],
+                side=side,
+                entry_price=entry_price,
+                current_price=current_price,
+                current_quantity=current_quantity,
+                entry_time=entry_time,
+                current_time=current_time,
+                tactician_confidence=tactician_confidence,
+                analyst_confidence=analyst_confidence,
+                combined_confidence=combined_confidence,
+                unrealized_pnl=unrealized_pnl,
+                pnl_percentage=pnl_percentage,
+                position_age_hours=position_age_hours,
+                should_exit=should_exit,
+                should_scale_down=should_scale_down,
+                should_take_profit=should_take_profit,
+                should_stop_loss=should_stop_loss,
+                action_reason=action_reason,
+                alert_severity=alert_severity,
+                alert_message=alert_message
+            )
+
+            return assessment
+
+        except Exception as e:
+            self.logger.error(failed(f"❌ Error assessing position {position_id}: {e}"))
+            return None
+
+    async def _handle_position_action(self, assessment: PositionAssessment) -> None:
+        """
+        Handle position action based on assessment.
+
+        Args:
+            assessment: Position assessment
+        """
+        try:
+            if not self.order_manager:
+                return
+
+            # Mutually exclusive actions (priority order)
+            if assessment.should_stop_loss:
+                await self._execute_stop_loss(assessment)
+            elif assessment.should_exit:
+                await self._execute_exit(assessment)
+            elif assessment.should_scale_down:
+                await self._execute_scale_down(assessment)
+            elif assessment.should_take_profit:
+                await self._execute_take_profit(assessment)
+
+        except Exception as e:
+            self.logger.error(failed(f"❌ Error handling position action: {e}"))
+
+    async def _execute_stop_loss(self, assessment: PositionAssessment) -> None:
+        """Execute stop loss action."""
+        try:
+            self.logger.warning(f"🛑 Executing stop loss for position {assessment.position_id}")
+            
+            # Close entire position
+            success = await self.order_manager.close_position(
+                position_id=assessment.position_id,
+                quantity=assessment.current_quantity,
+                reason="stop_loss"
+            )
+
+            if success:
+                self.logger.info(f"✅ Stop loss executed for position {assessment.position_id}")
+                # Remove from active positions
+                self.active_positions.pop(assessment.position_id, None)
+            else:
+                self.logger.error(f"❌ Failed to execute stop loss for position {assessment.position_id}")
+
+        except Exception as e:
+            self.logger.error(failed(f"❌ Error executing stop loss: {e}"))
+
+    async def _execute_exit(self, assessment: PositionAssessment) -> None:
+        """Execute exit action."""
+        try:
+            self.logger.warning(f"🚪 Executing exit for position {assessment.position_id}")
+            
+            # Close entire position
+            success = await self.order_manager.close_position(
+                position_id=assessment.position_id,
+                quantity=assessment.current_quantity,
+                reason="low_confidence_exit"
+            )
+
+            if success:
+                self.logger.info(f"✅ Exit executed for position {assessment.position_id}")
+                # Remove from active positions
+                self.active_positions.pop(assessment.position_id, None)
+            else:
+                self.logger.error(f"❌ Failed to execute exit for position {assessment.position_id}")
+
+        except Exception as e:
+            self.logger.error(failed(f"❌ Error executing exit: {e}"))
+
+    async def _execute_scale_down(self, assessment: PositionAssessment) -> None:
+        """Execute scale down action."""
+        try:
+            self.logger.warning(f"📉 Executing scale down for position {assessment.position_id}")
+            
+            # Scale down by 50%
+            scale_quantity = assessment.current_quantity * 0.5
+            
+            success = await self.order_manager.close_position(
+                position_id=assessment.position_id,
+                quantity=scale_quantity,
+                reason="low_confidence_scale_down"
+            )
+
+            if success:
+                self.logger.info(f"✅ Scale down executed for position {assessment.position_id}")
+                # Update position quantity
+                self.active_positions[assessment.position_id]["current_quantity"] -= scale_quantity
+            else:
+                self.logger.error(f"❌ Failed to execute scale down for position {assessment.position_id}")
+
+        except Exception as e:
+            self.logger.error(failed(f"❌ Error executing scale down: {e}"))
+
+    async def _execute_take_profit(self, assessment: PositionAssessment) -> None:
+        """Execute take profit action."""
+        try:
+            self.logger.info(f"💰 Executing take profit for position {assessment.position_id}")
+            
+            # Take profit on 50% of position
+            profit_quantity = assessment.current_quantity * 0.5
+            
+            success = await self.order_manager.close_position(
+                position_id=assessment.position_id,
+                quantity=profit_quantity,
+                reason="take_profit"
+            )
+
+            if success:
+                self.logger.info(f"✅ Take profit executed for position {assessment.position_id}")
+                # Update position quantity
+                self.active_positions[assessment.position_id]["current_quantity"] -= profit_quantity
+            else:
+                self.logger.error(f"❌ Failed to execute take profit for position {assessment.position_id}")
+
+        except Exception as e:
+            self.logger.error(failed(f"❌ Error executing take profit: {e}"))
+
+    async def _send_alert(self, assessment: PositionAssessment) -> None:
+        """
+        Send immediate alert based on assessment.
+
+        Args:
+            assessment: Position assessment
+        """
+        try:
+            # Immediate alert system
+            alert_data = {
+                "position_id": assessment.position_id,
+                "symbol": assessment.symbol,
+                "severity": assessment.alert_severity,
+                "message": assessment.alert_message,
+                "confidence": assessment.combined_confidence,
+                "pnl_percentage": assessment.pnl_percentage,
+                "timestamp": assessment.current_time.isoformat()
+            }
+
+            # Log alert
+            if assessment.alert_severity == "critical":
+                self.logger.critical(f"🚨 CRITICAL ALERT: {assessment.alert_message}")
+            elif assessment.alert_severity == "warning":
+                self.logger.warning(f"⚠️ WARNING: {assessment.alert_message}")
+            else:
+                self.logger.info(f"ℹ️ INFO: {assessment.alert_message}")
+
+            # TODO: Send to external alert system (email, Slack, etc.)
+            # await self._send_external_alert(alert_data)
+
+        except Exception as e:
+            self.logger.error(failed(f"❌ Error sending alert: {e}"))
+
+    async def _get_current_price(self, symbol: str) -> Optional[float]:
+        """
+        Get current price for symbol.
+
+        Args:
+            symbol: Trading symbol
+
+        Returns:
+            float: Current price or None
+        """
+        try:
+            # TODO: Implement actual price fetching
+            # For now, return a placeholder
+            return 50000.0  # Placeholder price
+
+        except Exception as e:
+            self.logger.error(failed(f"❌ Error getting current price: {e}"))
+            return None
+
+    def add_position(self, position_data: Dict[str, Any]) -> None:
+        """
+        Add position to monitoring.
+
+        Args:
+            position_data: Position data
+        """
+        try:
+            position_id = position_data["position_id"]
+            self.active_positions[position_id] = position_data
+            self.logger.info(f"✅ Added position {position_id} to monitoring")
+
+        except Exception as e:
             self.logger.error(failed(f"❌ Error adding position: {e}"))
 
-def remove_position(self, position_id: str) -> None:
+    def remove_position(self, position_id: str) -> None:
         """
-Remove a position from monitoring.
+        Remove position from monitoring.
 
-Args:
-            position_id: Position ID to remove
-"""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-if position_id in self.active_positions:
-                del self.active_positions[position_id]
-self.logger.info(f"Removed position from monitoring: {position_id}")
-else:
-                self.logger.warning(warning(f"Position not found: {position_id}"))
+        Args:
+            position_id: Position ID
+        """
+        try:
+            if position_id in self.active_positions:
+                self.active_positions.pop(position_id)
+                self.logger.info(f"✅ Removed position {position_id} from monitoring")
 
-except Exception as e:
+        except Exception as e:
             self.logger.error(failed(f"❌ Error removing position: {e}"))
 
-def get_active_positions(self) -> Dict[str, Dict[str, Any]]:
+    def get_position_assessments(self, limit: Optional[int] = None) -> List[PositionAssessment]:
         """
-Get all active positions.
+        Get recent position assessments.
 
-Returns:
-            Dict[str, Dict[str, Any]]: Active positions
-"""
-return self.active_positions.copy()
-
-def get_position_assessments(self, limit: Optional[int] = None) -> List[PositionAssessment]:
-        """
-Get position assessments.
-
-Args:
+        Args:
             limit: Maximum number of assessments to return
 
-Returns:
-            List[PositionAssessment]: Position assessments
-"""
-if limit:
-            return self.position_assessments[-limit:]
-return self.position_assessments.copy()
-
-def get_position_alerts(self, unresolved_only: bool = True) -> List[PositionAlert]:
+        Returns:
+            List[PositionAssessment]: Recent assessments
         """
-Get position alerts.
+        try:
+            if limit:
+                return self.assessment_history[-limit:]
+            return self.assessment_history.copy()
 
-Args:
-            unresolved_only: Return only unresolved alerts
+        except Exception as e:
+            self.logger.error(failed(f"❌ Error getting position assessments: {e}"))
+            return []
 
-Returns:
-            List[PositionAlert]: Position alerts
-"""
-if unresolved_only:
-            return [alert for alert in self.position_alerts if not alert.resolved]
-return self.position_alerts.copy()
-
-def resolve_alert(self, alert_id: str) -> bool:
+    def get_active_positions(self) -> Dict[str, Dict[str, Any]]:
         """
-Mark an alert as resolved.
+        Get all active positions.
 
-Args:
-            alert_id: Alert ID to resolve
-
-Returns:
-            bool: True if alert was resolved
-"""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-for alert in self.position_alerts:
-                if alert.alert_id == alert_id:
-                    alert.resolved = True
-self.logger.info(f"Resolved alert: {alert_id}")
-return True
-
-self.logger.warning(warning(f"Alert not found: {alert_id}"))
-return False
-
-except Exception as e:
-            self.logger.error(failed(f"❌ Error resolving alert: {e}"))
-return False
-
-async def cleanup(self) -> None:
+        Returns:
+            Dict: Active positions
         """
-Cleanup resources.
-"""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-self.logger.info("Cleaning up Position Monitor...")
+        return self.active_positions.copy()
 
-# Stop monitoring
-await self.stop_monitoring()
+    async def cleanup(self) -> None:
+        """Cleanup resources."""
+        try:
+            # Stop monitoring
+            await self.stop_monitoring()
 
-# Cleanup component managers
-if self.order_manager:
+            # Cleanup component managers
+            if self.order_manager:
                 await self.order_manager.cleanup()
 
-if self.position_strategy:
+            if self.position_strategy:
                 await self.position_strategy.cleanup()
 
-self.logger.info("✅ Position Monitor cleanup completed")
+            self.logger.info("✅ Position Monitor cleanup completed")
 
-except Exception as e:
+        except Exception as e:
             self.logger.error(failed(f"❌ Position Monitor cleanup failed: {e}"))
+
+
+# Setup function for easy integration
+async def setup_position_monitor(config: Dict[str, Any]) -> Optional[PositionMonitor]:
+    """Setup position monitor."""
+    try:
+        monitor = PositionMonitor(config)
+        if await monitor.initialize():
+            return monitor
+        return None
+    except Exception as e:
+        system_logger.error(f"Failed to setup position monitor: {e}")
+        return None

@@ -11,9 +11,6 @@ from enum import Enum
 
 
 class EnsembleMethod(Enum):
-    pass  # TODO: Add implementation
-class EnsembleMethod(Enum):
-class EnsembleMethod(Enum):
     """Enum for ensemble gathering methods."""
 ALL_THRESHOLD , "all_threshold"
 MAJORITY_VOTE = "majority_vote"
@@ -26,6 +23,7 @@ CONFIDENCE_WEIGHTED = "confidence_weighted"
 class EnsembleConfig:
     pass  # TODO: Add implementation
 class EnsembleConfig:
+    pass  # TODO: Add implementation
 class EnsembleConfig:
     """Optimizable ensemble parameters."""
 

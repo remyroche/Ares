@@ -118,6 +118,9 @@ class Step17ProbabilisticBayesianOptimization:
         self.logger.info("=" * 80)
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Initialize optimization components
         await self._initialize_optimization_components(context)
 
@@ -412,6 +415,9 @@ class Step17ProbabilisticBayesianOptimization:
         # Run integrator optimization if available
         if self.integrator:
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         self.logger.info("🔍 Running integrator optimization...")
 
                 integrator_results = await self.integrator.run_comprehensive_optimization(
@@ -673,6 +679,9 @@ class Step17ProbabilisticBayesianOptimization:
         }
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Apply Tactician parameters
         if "tactician" in analysis_results.get("uncertainty_estimates", {}):
                 tactician_params = analysis_results["uncertainty_estimates"]["tactician"]
@@ -789,6 +798,9 @@ class Step17ProbabilisticBayesianOptimization:
         """Store optimization results for future reference."""
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Create results directory
             results_dir = Path("data / optimization / step17")
             results_dir.mkdir(parents = True, exist_ok = True)

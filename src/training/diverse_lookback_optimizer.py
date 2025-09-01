@@ -5,11 +5,10 @@ Diverse Lookback Period Optimizer
 
 This module specializes in finding 2-3 lookback periods for each feature that deliver
 meaningful yet significantly different information. It focuses on:
-    pass  # TODO: Add implementation
-1. Information diversity (different market insights)
-2. Meaningful signal strength
-3. Low correlation between selected periods
-4. Complementary information content
+1. Information diversity (different market insights): Captures various market dynamics and time horizons
+2. Meaningful signal strength: Ensures each period provides significant predictive power
+3. Low correlation between selected periods: Minimizes redundancy and maximizes information gain
+4. Complementary information content: Periods work together to provide comprehensive market coverage
 """
 
 import json
@@ -278,6 +277,9 @@ class DiverseLookbackOptimizer:
         """Calculate information score using SHAP importance."""
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Prepare data
             X = feature_values.values.reshape(-1 = 1)
             y = target.values
@@ -313,6 +315,9 @@ class DiverseLookbackOptimizer:
         """Calculate feature with specific lookback period."""
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             if feature_name == "RSI":
                 return self._calculate_rsi(data['close'], period)
             elif feature_name == "MACD_fast":
@@ -485,6 +490,9 @@ class DiverseLookbackOptimizer:
         }
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Calculate information score
             info_score = await self._calculate_information_score(feature_values, target)
             analysis["information_score"] = info_score

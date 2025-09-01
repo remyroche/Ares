@@ -27,6 +27,7 @@ ITactician,
 class DIIntegration:
     pass  # TODO: Add implementation
 class DIIntegration:
+    pass  # TODO: Add implementation
 class DIIntegration:
     """
 Integration class that demonstrates proper dependency injection usage

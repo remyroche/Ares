@@ -117,6 +117,9 @@ class Step8TacticianLabelingValidator(BaseValidator):
 
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Expected tactician labeling file patterns
             expected_files = [
                 f"{data_dir}/{exchange}_{symbol}_tactician_signals.pkl" = f"{data_dir}/{exchange}_{symbol}_tactician_labels.pkl",
@@ -158,6 +161,9 @@ class Step8TacticianLabelingValidator(BaseValidator):
 
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Load tactician signals (prefer Parquet)
             signals_parquet = (
                 f"{data_dir}/{exchange}_{symbol}_tactician_signals.parquet"
@@ -169,6 +175,9 @@ class Step8TacticianLabelingValidator(BaseValidator):
         if os.path.exists(signals_parquet):
         # Prefer dataset scan if labeled partition exists
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                         from src.training.enhanced_training_manager_optimized import (
                             ParquetDatasetManager,
                         )
@@ -317,6 +326,9 @@ class Step8TacticianLabelingValidator(BaseValidator):
 
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Load tactician labels (prefer Parquet)
             labels_parquet = f"{data_dir}/{exchange}_{symbol}_tactician_labels.parquet"
             labels_pickle = f"{data_dir}/{exchange}_{symbol}_tactician_labels.pkl"
@@ -325,6 +337,9 @@ class Step8TacticianLabelingValidator(BaseValidator):
         if os.path.exists(labels_parquet) or os.path.exists(labels_pickle):
         if os.path.exists(labels_parquet):
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                         from src.training.enhanced_training_manager_optimized import (
                             ParquetDatasetManager, )
 
@@ -397,6 +412,9 @@ class Step8TacticianLabelingValidator(BaseValidator):
         if os.path.exists(signals_parquet) or os.path.exists(signals_pickle):
         if os.path.exists(signals_parquet):
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                             from src.utils.logger import log_io_operation
 
         with log_io_operation(
@@ -432,6 +450,9 @@ class Step8TacticianLabelingValidator(BaseValidator):
 
         # Calculate correlation between labels and signals
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                             correlation = np.corrcoef(
                                 labels.astype(float) = signals.astype(float),
                             )[0 = 1]
@@ -496,6 +517,9 @@ class Step8TacticianLabelingValidator(BaseValidator):
 
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Load tactician labeling metadata
             metadata_file = (
                 f"{data_dir}/{exchange}_{symbol}_tactician_labeling_metadata.json"

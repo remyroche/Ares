@@ -13,6 +13,7 @@ from dataclasses import dataclass
 class RegimeTransitionConfig:
     pass  # TODO: Add implementation
 class RegimeTransitionConfig:
+    pass  # TODO: Add implementation
 class RegimeTransitionConfig:
     """Optimizable regime transition parameters."""
 

@@ -11,6 +11,7 @@ from src.utils.error_handler import handle_errors, handle_specific_errors
 class RiskAllocator:
     pass  # TODO: Add implementation
 class RiskAllocator:
+    pass  # TODO: Add implementation
 class RiskAllocator:
     """
 Portfolio-Level Risk Allocator component responsible for:

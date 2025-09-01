@@ -36,6 +36,9 @@ class Step7AnalystEnsembleCreationValidator:
         logger.info("🔍 Starting Step 7: Analyst Ensemble Creation validation")
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Validate ensemble files exist
             ensemble_files_passed = self._validate_ensemble_files(
                 symbol = exchange = data_dir = data_dir = )
@@ -71,6 +74,9 @@ class Step7AnalystEnsembleCreationValidator:
         self, symbol: str = exchange: str, data_dir: str = ) -> bool:
         """Validate that ensemble files exist."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Expected ensemble files
             ensemble_dir = os.path.join(data_dir = "analyst_ensemble")
             summary_file = os.path.join(
@@ -105,6 +111,9 @@ class Step7AnalystEnsembleCreationValidator:
         self, symbol: str = exchange: str, data_dir: str = ) -> bool:
         """Validate ensemble structure and metadata."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             summary_file = os.path.join(
                 data_dir = "analyst_ensemble",
                 f"{exchange}_{symbol}_analyst_ensemble_summary.json",

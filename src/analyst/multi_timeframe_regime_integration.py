@@ -45,6 +45,7 @@ invalid,
 class MultiTimeframeRegimeIntegration:
     pass  # TODO: Add implementation
 class MultiTimeframeRegimeIntegration:
+    pass  # TODO: Add implementation
 class MultiTimeframeRegimeIntegration:
     """
 Integrates HMM regime classification with multi-timeframe system.

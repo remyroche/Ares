@@ -142,6 +142,9 @@ class AdvancedOptunaManager:
 
         def objective(trial: optuna.Trial) -> float:
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # --- Data Subsampling for Efficiency ---
                 X_sample = y_sample = (X = y)
         if subsample_fraction and subsample_fraction < 1.0:

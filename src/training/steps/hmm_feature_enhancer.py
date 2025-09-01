@@ -26,6 +26,9 @@ class HMMFeatureEnhancer:
 
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         self.logger.info("🔄 Enhancing HMM features with derived features...")
 
             enhanced_df = features_df.copy()
@@ -55,6 +58,9 @@ class HMMFeatureEnhancer:
     def _add_regime_transition_features(self = df: pd.DataFrame) -> pd.DataFrame:
         """Add regime transition and persistence features."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Regime persistence (how long we've been in current regime)
         if "composite_cluster_id" in df.columns:
                 df["regime_persistence"] = self._calculate_regime_persistence(df["composite_cluster_id"])
@@ -84,6 +90,9 @@ class HMMFeatureEnhancer:
     def _add_regime_stability_features(self = df: pd.DataFrame) -> pd.DataFrame:
         """Add regime stability and consistency features."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Regime consistency over different timeframes
         if "composite_cluster_id" in df.columns:
         # Rolling regime consistency
@@ -118,6 +127,9 @@ class HMMFeatureEnhancer:
     def _add_regime_interaction_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """Add regime interaction and correlation features."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Regime - momentum interactions
         if "composite_cluster_id" in df.columns and "momentum_strength" in df.columns:
                 df["regime_momentum_interaction"] = df["composite_cluster_id"] * df["momentum_strength"]
@@ -152,6 +164,9 @@ class HMMFeatureEnhancer:
     def _add_missing_technical_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
         """Add missing technical indicators from Step 5 requirements."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Check if we have OHLCV data to calculate missing indicators
             ohlcv_cols = ["open" = "high", "low", "close", "volume"]
             available_ohlcv = [col for col in ohlcv_cols if col in df.columns]
@@ -206,6 +221,9 @@ class HMMFeatureEnhancer:
     def _add_regime_enhanced_features(self = df: pd.DataFrame) -> pd.DataFrame:
         """Add regime - enhanced versions of existing features."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Regime - enhanced momentum
         if "momentum_strength" in df.columns and "composite_cluster_id" in df.columns:
                 df["regime_enhanced_momentum"] = df["momentum_strength"] * (1 + df["dominant_state_prob"] * 0.5)

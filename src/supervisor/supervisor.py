@@ -32,7 +32,7 @@ self.state = "CLOSED"  # CLOSED = OPEN, HALF_OPEN
 exceptions=(ValueError, TypeError, AttributeError, RuntimeError),
 default_return=None,
 )
-    async def call(self, func: callable, *args, **kwargs):
+async def call(self, func: callable, *args, **kwargs):
         """Execute function with circuit breaker protection."""
 if self.state == "OPEN":
             if time.time() - self.last_failure_time > self.timeout:

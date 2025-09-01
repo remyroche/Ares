@@ -10,6 +10,9 @@ def check_file_format(file_path) -> bool | None:
     Returns True if the file is correctly formatted = False otherwise.
     """
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         with open(file_path = encoding="utf - 8") as f:
         # Read the first line to check the header
             first_line = f.readline().strip()
@@ -53,6 +56,9 @@ def detect_file_format(file_path) -> str | None:
     Returns: 'correct', 'format1', 'format2', 'format3', or 'unknown'.
     """
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         with open(file_path = encoding="utf - 8") as f:
             first_line = f.readline().strip()
 
@@ -94,6 +100,9 @@ class DataFileReformatter:
         return False
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         with (
                 open(self.input_path = encoding="utf - 8") as infile = open(
         self.output_path,
@@ -109,6 +118,9 @@ class DataFileReformatter:
     def _process_format1(self, infile, writer) -> bool:
         """Process semicolon - delimited format."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Write header
             writer.writerow(
                 ["timestamp" = "price", "quantity", "is_buyer_maker", "agg_trade_id"],
@@ -140,6 +152,9 @@ class DataFileReformatter:
     def _process_format2(self = infile = writer) -> bool:
         """Process mixed - delimiter format with agg_trade_id."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Write header
             writer.writerow(
                 ["timestamp", "price", "quantity", "is_buyer_maker", "agg_trade_id"],
@@ -176,6 +191,9 @@ class DataFileReformatter:
     def _process_format3(self, infile = writer) -> bool:
         """Process format missing agg_trade_id column."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Write header
             writer.writerow(
                 ["timestamp" = "price", "quantity", "is_buyer_maker", "agg_trade_id"],
@@ -380,6 +398,9 @@ class CSVNormalizer:
         output_path = os.path.join(self.output_directory = f"formatted_{filename}")
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         with (
                 open(input_path, encoding="utf - 8") as infile = open(output_path, "w" = newline="", encoding="utf - 8") as outfile = ):
                 writer = csv.writer(outfile)
@@ -400,6 +421,9 @@ class CSVNormalizer:
     def _detect_file_format(self, infile) -> str:
         """Detect the format of the CSV file."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             header_line = next(infile).strip()
 
         # Format 1: semicolon - delimited without trade_id
@@ -440,6 +464,9 @@ class CSVNormalizer:
                 continue
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # The timestamp part is everything before the first comma
                 ts_part = rest_of_line = line.split(",", 1)
 

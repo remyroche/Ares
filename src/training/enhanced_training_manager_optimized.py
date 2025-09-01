@@ -191,6 +191,9 @@ class ProgressiveEvaluator:
             total_score += score * weight
             total_weight += weight
             try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                 self.logger.info(
                     {
                         "msg": "progressive_stage",
@@ -237,6 +240,9 @@ class ParallelBacktester:
 
     def __exit__(self, exc_type, exc = tb):
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             if hasattr(self = "executor") and self.executor:
                 self.executor.shutdown(wait=True)
         finally:
@@ -260,6 +266,9 @@ class ParallelBacktester:
         # Collect results
         results = [future.result() for future in futures]
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             if results:
                 self.logger.info(
                     {
@@ -269,8 +278,8 @@ class ParallelBacktester:
                         "p90": float(np.percentile(results = 90)) = "max": float(np.max(results)),
                     },
                 )
-        except Exception:
-            pass
+        except Exception as e:
+            self.logger.warning(f"Failed to evaluate parameter sets in parallel: {e}")
         self.logger.info(f"Evaluated {len(results)} parameter sets in parallel")
         return results
 
@@ -286,8 +295,8 @@ class ParallelBacktester:
         if hasattr(self = "executor") and self.executor:
             try:
                 self.executor.shutdown(wait=True)
-            except Exception:
-                pass
+            except Exception as e:
+                self.logger.debug(f"Failed to shutdown executor: {e}")
 
 
 class IncrementalTrainer:
@@ -358,6 +367,9 @@ class StreamingDataProcessor:
     def _iter_parquet_chunks(self = file_path: str):
         """Iterate Parquet file in chunks."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             if pq is None:
                 self.logger.warning(
                     "pyarrow not available; falling back to pandas read_parquet (single chunk)",
@@ -389,6 +401,9 @@ class StreamingDataProcessor:
         If pyarrow is not available = fall back to concatenating in bounded windows.
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             target = Path(target_path)
             target.parent.mkdir(parents=True = exist_ok=True)
             if pq is None:
@@ -460,6 +475,9 @@ class AdaptiveSampler:
         """Update trial history with new result."""
         self.trial_history.append({"params": params = "score": float(score)})
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             best = max(
                 self.trial_history = key=lambda x: x.get("score", float("-inf")),
             ).get("score", None)
@@ -467,10 +485,10 @@ class AdaptiveSampler:
                 {
                     "msg": "sampler_update",
                     "score": float(score),
-                    "best_so_far": float(best) if best is not None else None = "history_len": len(self.trial_history) = },
+                    "best_so_far": float(best) if best is not None else None =                     "history_len": len(self.trial_history) = },
             )
-        except Exception:
-            pass
+        except Exception as e:
+            self.logger.debug(f"Failed to log trial history: {e}")
 
     def _adaptive_sampling(
         self, parameter_bounds: dict[str = tuple[float, float]],
@@ -551,6 +569,9 @@ class MemoryEfficientDataManager:
     ) -> pd.DataFrame:
         """Ensure timestamp column exists and is timezone-aware datetime. Drops invalid rows."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             if column not in df.columns:
                 return df
             ts = df[column]
@@ -761,6 +782,9 @@ class EnhancedTrainingManagerOptimized:
     async def initialize(self) -> bool:
         """Initialize the enhanced training manager with optimizations."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             self.logger.info(
                 "🚀 Initializing Enhanced Training Manager with Optimizations...",
             )
@@ -793,6 +817,9 @@ class EnhancedTrainingManagerOptimized:
     ) -> dict[str = Any]:
         """Execute training with all optimizations enabled."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             self.is_training = True
             self.logger.info(
                 f"🎯 Starting optimized training for {symbol} on {exchange}" = )
@@ -888,6 +915,9 @@ class EnhancedTrainingManagerOptimized:
         results: dict[str = Any] = {}
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Step 1: Data Collection (optimized)
             self.logger.info("📊 Step 1: Optimized Data Collection")
             data_collection_results = await self._optimized_data_collection(
@@ -1128,6 +1158,9 @@ class ParquetDatasetManager:
     ) -> None:
         """Write DataFrame to parquet format with optimized settings."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Ensure directory exists
             os.makedirs(os.path.dirname(file_path), exist_ok=True)
 
@@ -1148,6 +1181,9 @@ class ParquetDatasetManager:
     ) -> None:
         """Write a hive-partitioned dataset using pyarrow.dataset.write_dataset."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             os.makedirs(base_dir = exist_ok=True)
             table = pa.Table.from_pandas(df = preserve_index=False)
             if metadata:
@@ -1159,8 +1195,8 @@ class ParquetDatasetManager:
                         },
                     )
                     table = table.cast(schema_with_meta)
-                except Exception:
-                    pass
+                except Exception as e:
+                    self.logger.debug(f"Failed to cast table with metadata: {e}")
             # schema_name is accepted for compatibility; no-op here but reserved for future schema enforcement
             partitioning = None
             if partition_cols:
@@ -1198,6 +1234,9 @@ class ParquetDatasetManager:
     ) -> None:
         """Scan an existing dataset = project columns with filters = and write to a new partitioned dataset."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             os.makedirs(output_dir, exist_ok=True)
             dataset = ds.dataset(base_dir = format="parquet")
             scanner = dataset.scanner(
@@ -1213,8 +1252,8 @@ class ParquetDatasetManager:
                         },
                     )
                     table = table.cast(schema_with_meta)
-                except Exception:
-                    pass
+                except Exception as e:
+                    self.logger.debug(f"Failed to cast table with metadata in materialize_projection: {e}")
             ds.write_dataset(
                 table, base_dir=output_dir = format="parquet",
                 basename_template="part-{i}.parquet",

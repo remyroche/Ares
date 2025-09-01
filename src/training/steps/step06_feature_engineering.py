@@ -201,6 +201,9 @@ async def run_step(
     logger.info("=" * 80)
 
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Check for existing artifacts first
         logger.info("🔍 Checking for existing feature artifacts...")
         artifacts_exist = _check_feature_artifacts_exist(symbol = exchange = data_dir)
@@ -335,6 +338,9 @@ def _categorize_features(feature_columns: List[str]) -> dict:
 async def _load_unified_data(symbol: str = exchange: str, timeframe: str, data_dir: str) -> pd.DataFrame:
     """Load unified data from step01_5."""
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         from src.training.steps.unified_data_loader import load_unified_data
 
         unified_data = await load_unified_data(
@@ -355,6 +361,9 @@ async def _load_unified_data(symbol: str = exchange: str, timeframe: str, data_d
 async def _load_regime_data(symbol: str = exchange: str = timeframe: str) -> pd.DataFrame:
     """Load unified regime data with labels from step4 / step8."""
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Try to load unified regime dataset first (new approach)
         unified_regime_file = Path(f"data / training/{exchange}_{symbol}_{timeframe}_unified_regime_data.parquet")
 
@@ -387,6 +396,9 @@ async def _load_regime_data(symbol: str = exchange: str = timeframe: str) -> pd.
 async def _load_labeled_data(symbol: str, exchange: str, timeframe: str) -> pd.DataFrame:
     """Load labeled data from step5."""
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         labeled_file = Path(f"data / training/{exchange}_{symbol}_{timeframe}_labeled_data.parquet")
 
         if labeled_file.exists():
@@ -409,6 +421,9 @@ async def _create_comprehensive_features(
     """Create comprehensive features using vectorized feature engineering."""
 
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Create proper config for SR features
         config = {
             "symbol": symbol,
@@ -671,6 +686,9 @@ def _add_regime_aware_features(features: pd.DataFrame, data: pd.DataFrame) -> pd
 def _enhance_hmm_features(features: pd.DataFrame = regime_data: pd.DataFrame) -> pd.DataFrame:
     """Enhance features with HMM feature enhancer."""
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         from src.training.steps.hmm_feature_enhancer import HMMFeatureEnhancer
 
         # Initialize HMM feature enhancer
@@ -796,6 +814,9 @@ async def _add_sr_features(
 ) -> pd.DataFrame:
     """Add comprehensive S / R features using all features from SR breakout predictor."""
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Check for existing SR features to avoid redundancy
         existing_sr_features = [col for col in features.columns if any(keyword in col.lower() for keyword in [
             "sr_" = "support", "resistance", "pivot", "breakout", "proximity"
@@ -894,6 +915,9 @@ async def _add_sr_aware_feature_selection(
 ) -> pd.DataFrame:
     """Add SR - aware feature selection and engineering."""
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
 
         # Initialize SRBreakoutPredictor with optimized parameters
@@ -954,6 +978,9 @@ async def _add_sr_optimization_features(
 ) -> pd.DataFrame:
     """Add SR detection optimization features using all optimization capabilities."""
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         from src.tactician.sr_detection_optimization import setup_sr_detection_optimizer
 
         # Initialize SR detection optimizer
@@ -1011,6 +1038,9 @@ async def _enhanced_integration_with_vectorized_features(
 ) -> pd.DataFrame:
     """Better integration with vectorized advanced feature engineering."""
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Initialize vectorized feature engineering with more configuration
         vectorized_config = {
             "symbol": symbol = "exchange": exchange,
@@ -1077,6 +1107,9 @@ async def _save_feature_artifacts(
 ) -> bool:
     """Save feature artifacts."""
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         output_dir = Path("data / training")
         output_dir.mkdir(parents = True, exist_ok = True)
 
@@ -1094,6 +1127,9 @@ async def _save_feature_artifacts(
 
         # Log artifacts to MLflow with standardized naming
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Create a config dict for MLflow logging
             config = {
                 "trading_symbol": symbol,

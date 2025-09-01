@@ -18,6 +18,7 @@ from .regime_ensembles.volatile_regime_ensemble import VolatileRegimeEnsemble
 class RegimePredictiveEnsembles:
     pass  # TODO: Add implementation
 class RegimePredictiveEnsembles:
+    pass  # TODO: Add implementation
 class RegimePredictiveEnsembles:
     """
 Orchestrates the training and prediction workflows for all specialized ensembles.

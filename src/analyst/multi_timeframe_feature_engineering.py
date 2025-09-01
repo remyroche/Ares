@@ -34,6 +34,7 @@ sys.path.insert(0, str(project_root))
 class MultiTimeframeFeatureEngineering:
     pass  # TODO: Add implementation
 class MultiTimeframeFeatureEngineering:
+    pass  # TODO: Add implementation
 class MultiTimeframeFeatureEngineering:
     """Multi-timeframe feature engineering system that adapts indicators to specific timeframes.
 

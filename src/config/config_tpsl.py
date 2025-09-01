@@ -10,9 +10,12 @@ from dataclasses import dataclass
 
 
 @dataclass
+class PlaceholderDataClass:
+    pass  # TODO: Add implementation
 class TPSLConfig:
     pass  # TODO: Add implementation
 class TPSLConfig:
+    pass  # TODO: Add implementation
 class TPSLConfig:
     """Optimizable take profit and stop loss parameters."""
 

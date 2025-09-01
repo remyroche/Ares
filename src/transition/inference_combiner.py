@@ -8,9 +8,12 @@ from dataclasses import dataclass
 
 
 @dataclass
+class PlaceholderDataClass:
+    pass  # TODO: Add implementation
 class EnsembleConfig:
     pass  # TODO: Add implementation
 class EnsembleConfig:
+    pass  # TODO: Add implementation
 class EnsembleConfig:
     weights: dict[str, float]
 macro_thresholds: dict[
@@ -23,6 +26,7 @@ reliability_path: str | None
 class TransitionInferenceCombiner:
     pass  # TODO: Add implementation
 class TransitionInferenceCombiner:
+    pass  # TODO: Add implementation
 class TransitionInferenceCombiner:
     """
 Combine per-timeframe path_class probabilities into a single, reliability-adjusted score,

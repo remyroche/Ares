@@ -16,9 +16,6 @@ from .logger import system_logger
 from .error_handler import handle_errors
 
 class DataFormat(Enum):
-    pass  # TODO: Add implementation
-class DataFormat(Enum):
-class DataFormat(Enum):
     """Standard data formats."""
 KLINES = "klines"
 FEATURES = "features"
@@ -27,9 +24,6 @@ PREDICTIONS = "predictions"
 METADATA = "metadata"
 CONFIG = "config"
 
-class ColumnNamingConvention(Enum):
-    pass  # TODO: Add implementation
-class ColumnNamingConvention(Enum):
 class ColumnNamingConvention(Enum):
     """Column naming conventions."""
 SNAKE_CASE = "snake_case"
@@ -40,6 +34,7 @@ LOWER_CASE = "lower_case"
 class DataFormattingFramework:
     pass  # TODO: Add implementation
 class DataFormattingFramework:
+    pass  # TODO: Add implementation
 class DataFormattingFramework:
     """Comprehensive data formatting and standardization framework."""
 

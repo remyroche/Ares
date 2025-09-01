@@ -18,12 +18,17 @@ pipeline_checkpoint,
 
 
 @dataclass
+class PlaceholderDataClass:
+    pass  # TODO: Add implementation
 
 
 @dataclass
+class PlaceholderDataClass:
+    pass  # TODO: Add implementation
 class PipelineMetrics:
     pass  # TODO: Add implementation
 class PipelineMetrics:
+    pass  # TODO: Add implementation
 class PipelineMetrics:
     start_time: Optional[datetime] = None
 end_time: Optional[datetime] = None

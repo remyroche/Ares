@@ -188,6 +188,9 @@ class DemoComprehensivePipelineExecutor:
         print(f"🔍 Monitoring quality for {step_name}")
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Get step data for monitoring
             step_data = step_result.get("data")
             if step_data is None:

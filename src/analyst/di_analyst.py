@@ -35,6 +35,7 @@ initialization_error,
 class DIAnalyst(AnalystBase, IAnalyst):
     pass  # TODO: Add implementation
 class DIAnalyst(AnalystBase, IAnalyst):
+    pass  # TODO: Add implementation
 class DIAnalyst(AnalystBase, IAnalyst):
     """
 Dependency injection-aware Analyst implementation.

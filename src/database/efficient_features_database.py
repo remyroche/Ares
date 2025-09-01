@@ -28,6 +28,7 @@ execution_error,
 class EfficientFeaturesDatabase:
     pass  # TODO: Add implementation
 class EfficientFeaturesDatabase:
+    pass  # TODO: Add implementation
 class EfficientFeaturesDatabase:
     """
 Efficient database for storing and retrieving precomputed features with incremental updates.

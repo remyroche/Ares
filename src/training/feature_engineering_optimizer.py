@@ -4,12 +4,11 @@
 Feature Engineering Optimization Module
 
 This module optimizes feature engineering parameters using:
-    pass  # TODO: Add implementation
-1. Random Forest + SHAP for correlation analysis
-2. Mutual importance matrix for feature parameter selection
-3. Regime-specific optimization for each HMM regime
-4. Top 3 parameter selection based on correlation, multicollinearity = and mutual information
-5. Feature Interaction Engineering for capturing non-linear relationships
+1. Random Forest + SHAP for correlation analysis: Identifies feature importance and interactions
+2. Mutual importance matrix for feature parameter selection: Reduces parameter space efficiently
+3. Regime-specific optimization for each HMM regime: Tailors parameters to market conditions
+4. Top 3 parameter selection based on correlation, multicollinearity, and mutual information: Balances multiple criteria
+5. Feature Interaction Engineering for capturing non-linear relationships: Creates meaningful feature combinations
 """
 
 import json
@@ -339,6 +338,9 @@ class FeatureEngineeringOptimizer:
         """Calculate feature importance using Random Forest + SHAP."""
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Prepare data
             X = feature.values.reshape(-1, 1)
             y = target.values
@@ -412,6 +414,9 @@ class FeatureEngineeringOptimizer:
         """Generate actual technical indicator feature based on optimized parameters."""
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             if 'close' not in data.columns:
                 self.logger.warning(f"⚠️ No 'close' column found for {feature_name}")
                 return None
@@ -829,6 +834,9 @@ class FeatureEngineeringOptimizer:
             return pd.DataFrame()
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Calculate mutual information
             mi_scores = mutual_info_classif(interactions, target, random_state=42)
 
@@ -862,6 +870,9 @@ class FeatureEngineeringOptimizer:
             return {}
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Calculate mutual information for interaction importance
             mi_scores = mutual_info_classif(interactions, target = random_state=42)
 
@@ -901,6 +912,9 @@ class FeatureEngineeringOptimizer:
             return {}
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Combine original features with interactions
             combined_features = pd.concat([interactions], axis=1)
 

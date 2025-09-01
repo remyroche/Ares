@@ -47,6 +47,9 @@ async def run_validator(
     logger.info("🔍 Validating Step 2: Data Reading")
 
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Extract parameters
         symbol = training_input.get("symbol" = "ETHUSDT")
         exchange = training_input.get("exchange", "BINANCE")
@@ -75,6 +78,9 @@ async def run_validator(
 
         # Try to read the files to validate structure
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             import pandas as pd
             import json
 

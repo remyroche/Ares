@@ -18,6 +18,7 @@ Volume,
 class OHLCVData(TypedDict):
     pass  # TODO: Add implementation
 class OHLCVData(TypedDict):
+    pass  # TODO: Add implementation
 class OHLCVData(TypedDict):
     """Type-safe OHLCV market data."""
 
@@ -32,6 +33,7 @@ volume: Volume
 class TickerData(TypedDict):
     pass  # TODO: Add implementation
 class TickerData(TypedDict):
+    pass  # TODO: Add implementation
 class TickerData(TypedDict):
     """Type-safe ticker data."""
 
@@ -47,6 +49,7 @@ timestamp: Timestamp
 class OrderBookLevel(TypedDict):
     pass  # TODO: Add implementation
 class OrderBookLevel(TypedDict):
+    pass  # TODO: Add implementation
 class OrderBookLevel(TypedDict):
     """Type-safe order book level."""
 
@@ -57,6 +60,7 @@ quantity: Volume
 class OrderBookData(TypedDict):
     pass  # TODO: Add implementation
 class OrderBookData(TypedDict):
+    pass  # TODO: Add implementation
 class OrderBookData(TypedDict):
     """Type-safe order book data."""
 
@@ -69,6 +73,7 @@ asks: list[OrderBookLevel]
 class TradeData(TypedDict):
     pass  # TODO: Add implementation
 class TradeData(TypedDict):
+    pass  # TODO: Add implementation
 class TradeData(TypedDict):
     """Type-safe individual trade data."""
 
@@ -83,6 +88,7 @@ timestamp: Timestamp
 class AccountInfo(TypedDict):
     pass  # TODO: Add implementation
 class AccountInfo(TypedDict):
+    pass  # TODO: Add implementation
 class AccountInfo(TypedDict):
     """Type-safe account information."""
 
@@ -99,6 +105,7 @@ open_orders: list[dict[str, str]]  # Will be typed more specifically
 class PositionInfo(TypedDict):
     pass  # TODO: Add implementation
 class PositionInfo(TypedDict):
+    pass  # TODO: Add implementation
 class PositionInfo(TypedDict):
     """Type-safe position information."""
 
@@ -117,6 +124,7 @@ timestamp: Timestamp
 class OrderInfo(TypedDict):
     pass  # TODO: Add implementation
 class OrderInfo(TypedDict):
+    pass  # TODO: Add implementation
 class OrderInfo(TypedDict):
     """Type-safe order information."""
 

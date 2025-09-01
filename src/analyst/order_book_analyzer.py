@@ -11,6 +11,7 @@ with_tracing_span,
 class OrderBookAnalyzer:
     pass  # TODO: Add implementation
 class OrderBookAnalyzer:
+    pass  # TODO: Add implementation
 class OrderBookAnalyzer:
     """Analyze order book snapshots for walls and compute features.
 

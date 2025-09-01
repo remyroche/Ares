@@ -159,6 +159,7 @@ return decorator
 class ValidationLevel:
     pass  # TODO: Add implementation
 class ValidationLevel:
+    pass  # TODO: Add implementation
 class ValidationLevel:
     STRICT = "strict"
 WARNING = "warning"

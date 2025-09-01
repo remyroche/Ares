@@ -160,7 +160,7 @@ class StepDependencyValidator:
         step_name: str,
         pipeline_state: Dict[str, Any],
         checkpoint_dir: str = "checkpoints",
-        force_rerun: bool, False
+        force_rerun: bool = False
     ) -> Dict[str, Any]:
         """
         Validate that all prerequisites for a step are met.
@@ -175,56 +175,56 @@ class StepDependencyValidator:
             Dictionary with validation results
         """
         try:
-        self.logger.info(f"🔍 Validating prerequisites for {step_name}")
+            self.logger.info(f"🔍 Validating prerequisites for {step_name}")
 
-        # Check if step has dependencies
-        if step_name not in self.step_dependencies:
-        self.logger.info(f"✅ {step_name} has no dependencies")
-        return {"valid": True, "reason": "No dependencies"}
+            # Check if step has dependencies
+            if step_name not in self.step_dependencies:
+                self.logger.info(f"✅ {step_name} has no dependencies")
+                return {"valid": True, "reason": "No dependencies"}
 
-            required_steps, self.step_dependencies[step_name]
-        self.logger.info(f"📋 {step_name} requires: {required_steps}")
+            required_steps = self.step_dependencies[step_name]
+            self.logger.info(f"📋 {step_name} requires: {required_steps}")
 
-        # If force_rerun is True, we're starting from this step, so skip dependency validation
-        if force_rerun:
-        self.logger.info(f"✅ Force rerun enabled for {step_name}, skipping dependency validation")
-        return {"valid": True, "reason": "Force rerun enabled"}
+            # If force_rerun is True, we're starting from this step, so skip dependency validation
+            if force_rerun:
+                self.logger.info(f"✅ Force rerun enabled for {step_name}, skipping dependency validation")
+                return {"valid": True, "reason": "Force rerun enabled"}
 
-        # If no dependencies, validation passes
-        if not required_steps:
-        self.logger.info(f"✅ {step_name} has no dependencies")
-        return {"valid": True, "reason": "No dependencies"}
+            # If no dependencies, validation passes
+            if not required_steps:
+                self.logger.info(f"✅ {step_name} has no dependencies")
+                return {"valid": True, "reason": "No dependencies"}
 
-        # Check each required step
+            # Check each required step
             failed_prerequisites = []
-        for required_step in required_steps:
-        if not await self._check_step_completion(required_step, checkpoint_dir):
+            for required_step in required_steps:
+                if not await self._check_step_completion(required_step, checkpoint_dir):
                     failed_prerequisites.append(required_step)
 
-        if failed_prerequisites:
-                error_msg, f"❌ Prerequisites failed for {step_name}: {failed_prerequisites}"
-        self.logger.error(error_msg)
-        return {
+            if failed_prerequisites:
+                error_msg = f"❌ Prerequisites failed for {step_name}: {failed_prerequisites}"
+                self.logger.error(error_msg)
+                return {
                     "valid": False,
                     "reason": f"Failed prerequisites: {failed_prerequisites}",
                     "failed_steps": failed_prerequisites
                 }
 
-        # Check critical data requirements
-        if step_name in self.critical_data_requirements:
-                data_validation, await self._validate_critical_data(
+            # Check critical data requirements
+            if step_name in self.critical_data_requirements:
+                data_validation = await self._validate_critical_data(
                     step_name,
-        self.critical_data_requirements[step_name]
+                    self.critical_data_requirements[step_name]
                 )
-        if not data_validation["valid"]:
-        return data_validation
+                if not data_validation["valid"]:
+                    return data_validation
 
-        self.logger.info(f"✅ All prerequisites met for {step_name}")
-        return {"valid": True, "reason": "All prerequisites met"}
+            self.logger.info(f"✅ All prerequisites met for {step_name}")
+            return {"valid": True, "reason": "All prerequisites met"}
 
         except Exception as e:
-        self.logger.error(f"🚨 Error validating prerequisites for {step_name}: {e}")
-        return {
+            self.logger.error(f"🚨 Error validating prerequisites for {step_name}: {e}")
+            return {
                 "valid": False,
                 "reason": f"Validation error: {str(e)}"
             }
@@ -241,51 +241,51 @@ class StepDependencyValidator:
             True if step completed successfully, False otherwise
         """
         try:
-        # First, try the individual step checkpoint file
-            checkpoint_file, Path(checkpoint_dir) / f"{step_name}.json"
+            # First, try the individual step checkpoint file
+            checkpoint_file = Path(checkpoint_dir) / f"{step_name}.json"
 
-        if checkpoint_file.exists():
-        # Read checkpoint
-        with open(checkpoint_file, 'r') as f:
-                    checkpoint_data, json.load(f)
+            if checkpoint_file.exists():
+                # Read checkpoint
+                with open(checkpoint_file, 'r') as f:
+                    checkpoint_data = json.load(f)
 
-        # Check if step completed successfully
-                status, checkpoint_data.get("status", "unknown")
-        if status != "completed":
-        self.logger.warning(f"⚠️ {step_name} status: {status} (not completed)")
-        return False
+                # Check if step completed successfully
+                status = checkpoint_data.get("status", "unknown")
+                if status != "completed":
+                    self.logger.warning(f"⚠️ {step_name} status: {status} (not completed)")
+                    return False
 
-        # Check for any errors in the checkpoint
-                errors, checkpoint_data.get("errors", [])
-        if errors:
-        self.logger.warning(f"⚠️ {step_name} has errors: {errors}")
-        return False
+                # Check for any errors in the checkpoint
+                errors = checkpoint_data.get("errors", [])
+                if errors:
+                    self.logger.warning(f"⚠️ {step_name} has errors: {errors}")
+                    return False
 
-        self.logger.debug(f"✅ {step_name} completed successfully")
-        return True
+                self.logger.debug(f"✅ {step_name} completed successfully")
+                return True
 
         # If individual checkpoint not found, try the centralized training progress file
         # Extract exchange, symbol, and timeframe from checkpoint_dir path
-            path_parts, Path(checkpoint_dir).parts
+        path_parts = Path(checkpoint_dir).parts
         if len(path_parts) >= 4 and path_parts[0] == "checkpoints":
-        # Path structure: checkpoints / exchange / symbol / timeframe
-                exchange, path_parts[1]  # e.g., "BINANCE"
-                symbol, path_parts[2]    # e.g., "ETHUSDT"
-                timeframe, path_parts[3] # e.g., "1m"
+            # Path structure: checkpoints / exchange / symbol / timeframe
+            exchange = path_parts[1]  # e.g., "BINANCE"
+            symbol = path_parts[2]    # e.g., "ETHUSDT"
+            timeframe = path_parts[3] # e.g., "1m"
 
-        # Try the centralized training progress file - match the path structure used by enhanced training manager
-                centralized_checkpoint, Path("checkpoints") / exchange / symbol / timeframe / "training_progress.json"
+            # Try the centralized training progress file - match the path structure used by enhanced training manager
+            centralized_checkpoint = Path("checkpoints") / exchange / symbol / timeframe / "training_progress.json"
 
-        if centralized_checkpoint.exists():
-        try:
-        with open(centralized_checkpoint, 'r') as f:
-                            progress_data, json.load(f)
+            if centralized_checkpoint.exists():
+                try:
+                    with open(centralized_checkpoint, 'r') as f:
+                        progress_data = json.load(f)
 
-        # Check if the step is marked as completed in the centralized file
-                        pipeline_state, progress_data.get("pipeline_state", {})
+                    # Check if the step is marked as completed in the centralized file
+                    pipeline_state = progress_data.get("pipeline_state", {})
 
-        # Map step names to their status keys in the centralized file
-                            step_status_mapping = {
+                    # Map step names to their status keys in the centralized file
+                    step_status_mapping = {
                                 "step01_data_collection": "data_collection",
                                 "step02_feature_engineering": "feature_engineering",
                                 "step02_5_sr_optimization": "sr_optimization",

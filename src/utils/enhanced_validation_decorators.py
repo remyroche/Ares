@@ -36,19 +36,19 @@ class ValidationContext:
     def end_validation(self, validation_type: str):
         """End timing and record performance."""
         if self.start_time:
-            duration, time.time() - self.start_time
-        if validation_type not in self.performance_metrics:
-        self.performance_metrics[validation_type] = []
-        self.performance_metrics[validation_type].append(duration)
-        self.start_time, None
+            duration = time.time() - self.start_time
+            if validation_type not in self.performance_metrics:
+                self.performance_metrics[validation_type] = []
+            self.performance_metrics[validation_type].append(duration)
+            self.start_time = None
 
 def comprehensive_step_validation(
     step_name: str,
-    validate_prerequisites: bool, True,
-    validate_inputs: bool, True,
-    validate_outputs: bool, True,
-    validate_data_quality: bool, True,
-    cache_validation: bool, True,
+    validate_prerequisites: bool = True,
+    validate_inputs: bool = True,
+    validate_outputs: bool = True,
+    validate_data_quality: bool = True,
+    cache_validation: bool = True,
     log_level: str = "INFO"
 ):
     """
@@ -63,66 +63,66 @@ def comprehensive_step_validation(
         cache_validation: Whether to cache validation results for performance
         log_level: Logging level for validation messages
     """
-    def decorator(func: Callable) -> Callable:
-        @functools.wraps(func)
-        async def async_wrapper(*args, **kwargs):
-            context, ValidationContext(step_name)
-            logger, system_logger.getChild(f"EnhancedValidation.{step_name}")
+            def decorator(func: Callable) -> Callable:
+            @functools.wraps(func)
+            async def async_wrapper(*args, **kwargs):
+                context = ValidationContext(step_name)
+                logger = system_logger.getChild(f"EnhancedValidation.{step_name}")
 
-        try:
-        # Extract validator instance if available
-                validator, _extract_validator_instance(args, kwargs)
+                try:
+                    # Extract validator instance if available
+                    validator = _extract_validator_instance(args, kwargs)
 
-        # Validate prerequisites
-        if validate_prerequisites and validator:
-                    context.start_validation()
-                    prereq_result, await _validate_prerequisites_async(validator, args, kwargs, context)
-                    context.end_validation("prerequisites")
+                    # Validate prerequisites
+                    if validate_prerequisites and validator:
+                        context.start_validation()
+                        prereq_result = await _validate_prerequisites_async(validator, args, kwargs, context)
+                        context.end_validation("prerequisites")
 
-        if not prereq_result["validation_passed"]:
-                        logger.error(f"❌ Prerequisites validation failed: {prereq_result['errors']}")
-        return await _handle_validation_failure(func, args, kwargs, prereq_result)
+                        if not prereq_result["validation_passed"]:
+                            logger.error(f"❌ Prerequisites validation failed: {prereq_result['errors']}")
+                            return await _handle_validation_failure(func, args, kwargs, prereq_result)
 
-        # Validate inputs
-        if validate_inputs and validator:
-                    context.start_validation()
-                    input_result, await _validate_inputs_async(validator, args, kwargs, context)
-                    context.end_validation("inputs")
+                    # Validate inputs
+                    if validate_inputs and validator:
+                        context.start_validation()
+                        input_result = await _validate_inputs_async(validator, args, kwargs, context)
+                        context.end_validation("inputs")
 
-        if not input_result["validation_passed"]:
-                        logger.warning(f"⚠️ Input validation issues: {input_result['warnings']}")
+                        if not input_result["validation_passed"]:
+                            logger.warning(f"⚠️ Input validation issues: {input_result['warnings']}")
 
-        # Execute the function
-                result, await func(*args, **kwargs)
+                    # Execute the function
+                    result = await func(*args, **kwargs)
 
-        # Validate outputs
-        if validate_outputs and validator:
-                    context.start_validation()
-                    output_result, await _validate_outputs_async(validator, result, context)
-                    context.end_validation("outputs")
+                    # Validate outputs
+                    if validate_outputs and validator:
+                        context.start_validation()
+                        output_result = await _validate_outputs_async(validator, result, context)
+                        context.end_validation("outputs")
 
-        if not output_result["validation_passed"]:
-                        logger.error(f"❌ Output validation failed: {output_result['errors']}")
-        return await _handle_validation_failure(func, args, kwargs, output_result)
+                        if not output_result["validation_passed"]:
+                            logger.error(f"❌ Output validation failed: {output_result['errors']}")
+                            return await _handle_validation_failure(func, args, kwargs, output_result)
 
-        # Validate data quality
-        if validate_data_quality and validator:
-                    context.start_validation()
-                    quality_result, await _validate_data_quality_async(validator, result, context)
-                    context.end_validation("data_quality")
+                    # Validate data quality
+                    if validate_data_quality and validator:
+                        context.start_validation()
+                        quality_result = await _validate_data_quality_async(validator, result, context)
+                        context.end_validation("data_quality")
 
-        if not quality_result["validation_passed"]:
-                        logger.warning(f"⚠️ Data quality issues: {quality_result['warnings']}")
+                        if not quality_result["validation_passed"]:
+                            logger.warning(f"⚠️ Data quality issues: {quality_result['warnings']}")
 
-        # Log performance metrics
-                _log_validation_performance(context, logger, log_level)
+                    # Log performance metrics
+                    _log_validation_performance(context, logger, log_level)
 
-        return result
+                    return result
 
-        except Exception as e:
-                logger.exception(f"❌ Validation error in {step_name}: {e}")
-        # Fall back to original function execution
-        return await func(*args, **kwargs)
+                except Exception as e:
+                    logger.exception(f"❌ Validation error in {step_name}: {e}")
+                    # Fall back to original function execution
+                    return await func(*args, **kwargs)
 
         @functools.wraps(func)
         def sync_wrapper(*args, **kwargs):

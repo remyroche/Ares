@@ -31,6 +31,9 @@ import optuna
 import pandas as pd
 
 try:  # Optional ML libraries
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
 pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -75,6 +78,9 @@ except Exception:  # pragma: no cover
 psutil, None  # type: ignore
 
 try:  # Optional GPU arrays
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
 pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling

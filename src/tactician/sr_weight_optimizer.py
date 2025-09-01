@@ -29,7 +29,7 @@ class WeightOptimizationResult:
     # Implementation needed - add actual functionality
 
 
-    pass
+    # TODO: Implement class methods
 class WeightOptimizationResult:
     pass  # TODO: Add implementation
 class WeightOptimizationResult:
@@ -52,7 +52,7 @@ class SRWeightOptimizer:
     # Implementation needed - add actual functionality
 
 
-    pass
+    # TODO: Implement class methods
 class SRWeightOptimizer:
     pass  # TODO: Add implementation
 class SRWeightOptimizer:

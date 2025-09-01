@@ -203,14 +203,14 @@ class SRBacktestingValidator:
                 self.logger.error(f"❌ Data integration initialization failed: {e}")
             return False
 
-@handle_specific_errors(
-error_handlers={
-ValueError: (None, "Invalid data for S/R backtesting"),
-AttributeError: (None, "Backtesting validator not properly initialized"),
-},
-default_return=None,
-context="S/R backtesting validation"
-)
+    @handle_specific_errors(
+        error_handlers={
+            ValueError: (None, "Invalid data for S/R backtesting"),
+            AttributeError: (None, "Backtesting validator not properly initialized"),
+        },
+        default_return=None,
+        context="S/R backtesting validation"
+    )
     async def validate_sr_levels(
         self,
         market_data: pd.DataFrame,
@@ -364,424 +364,400 @@ context="S/R backtesting validation"
                     elif touch_result == "false_breakout":
                         false_breakouts += 1
 
-i += 1
+                i += 1
 
-return touches, bounces, breakouts, false_breakouts, touch_volumes, touch_indices
+            return touches, bounces, breakouts, false_breakouts, touch_volumes, touch_indices
 
-except Exception as e:
+        except Exception as e:
             self.logger.error(f"Failed to analyze level interactions: {e}")
-return 0, 0, 0, 0, [], []
+            return 0, 0, 0, 0, [], []
 
-async def _analyze_touch_outcome(
-self,
-market_data: pd.DataFrame,
-touch_index: int,
-level_price: float,
-level_type: str
-) -> str:
+    async def _analyze_touch_outcome(
+        self,
+        market_data: pd.DataFrame,
+        touch_index: int,
+        level_price: float,
+        level_type: str
+    ) -> str:
         """
-Analyze what happens after price touches an S/R level.
+        Analyze what happens after price touches an S/R level.
 
-Returns:
+        Returns:
             "bounce", "breakout", "false_breakout", or "inconclusive"
-"""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-# Look ahead for confirmation
-end_index = min(touch_index + self.confirmation_periods, len(market_data))
-future_data = market_data.iloc[touch_index:end_index]
-
-if level_type == "support":
-                # For support levels, check if price bounces up or breaks down
-min_price = future_data['low'].min()
-max_price = future_data['high'].max()
-
-# Check for bounce (price moves up significantly)
-if max_price > level_price * (1 + self.bounce_threshold):
-                    return "bounce"
-
-# Check for breakout (price moves down significantly)
-elif min_price < level_price * (1 - self.breakout_threshold):
-                    # Check if it's a false breakout (price comes back)
-if max_price > level_price * (1 + self.false_breakout_threshold):
-                        return "false_breakout"
-else:
-                        return "breakout"
-
-elif level_type == "resistance":
-                # For resistance levels, check if price bounces down or breaks up
-min_price = future_data['low'].min()
-max_price = future_data['high'].max()
-
-# Check for bounce (price moves down significantly)
-if min_price < level_price * (1 - self.bounce_threshold):
-                    return "bounce"
-
-# Check for breakout (price moves up significantly)
-elif max_price > level_price * (1 + self.breakout_threshold):
-                    # Check if it's a false breakout (price comes back)
-if min_price < level_price * (1 - self.false_breakout_threshold):
-                        return "false_breakout"
-else:
-                        return "breakout"
-
-return "inconclusive"
-
-except Exception as e:
-            self.logger.error(f"Failed to analyze touch outcome: {e}")
-return "inconclusive"
-
-async def _analyze_volume_patterns(
-self,
-test: SRLevelTest,
-market_data: pd.DataFrame,
-touch_volumes: List[float],
-touch_indices: List[int],
-level_price: float
-) -> None:
         """
-Analyze volume patterns around S/R levels.
+        try:
+            # Look ahead for confirmation
+            end_index = min(touch_index + self.confirmation_periods, len(market_data))
+            future_data = market_data.iloc[touch_index:end_index]
 
-This method analyzes:
-        1. Volume spikes at S/R touches
-2. Volume confirmation of bounces/breakouts
-3. Institutional volume presence
-4. Volume clustering around the level
-"""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-if not touch_volumes or len(touch_volumes) == 0:
+            if level_type == "support":
+                # For support levels, check if price bounces up or breaks down
+                min_price = future_data['low'].min()
+                max_price = future_data['high'].max()
+
+                # Check for bounce (price moves up significantly)
+                if max_price > level_price * (1 + self.bounce_threshold):
+                    return "bounce"
+
+                # Check for breakout (price moves down significantly)
+                elif min_price < level_price * (1 - self.breakout_threshold):
+                    # Check if it's a false breakout (price comes back)
+                    if max_price > level_price * (1 + self.false_breakout_threshold):
+                        return "false_breakout"
+                    else:
+                        return "breakout"
+
+            elif level_type == "resistance":
+                # For resistance levels, check if price bounces down or breaks up
+                min_price = future_data['low'].min()
+                max_price = future_data['high'].max()
+
+                # Check for bounce (price moves down significantly)
+                if min_price < level_price * (1 - self.bounce_threshold):
+                    return "bounce"
+
+                # Check for breakout (price moves up significantly)
+                elif max_price > level_price * (1 + self.breakout_threshold):
+                    # Check if it's a false breakout (price comes back)
+                    if min_price < level_price * (1 - self.false_breakout_threshold):
+                        return "false_breakout"
+                    else:
+                        return "breakout"
+
+            return "inconclusive"
+
+        except Exception as e:
+            self.logger.error(f"Failed to analyze touch outcome: {e}")
+            return "inconclusive"
+
+    async def _analyze_volume_patterns(
+        self,
+        test: SRLevelTest,
+        market_data: pd.DataFrame,
+        touch_volumes: List[float],
+        touch_indices: List[int],
+        level_price: float
+    ) -> None:
+        """
+        Analyze volume patterns around S/R levels.
+
+        This method analyzes:
+            1. Volume spikes at S/R touches
+            2. Volume confirmation of bounces/breakouts
+            3. Institutional volume presence
+            4. Volume clustering around the level
+        """
+        try:
+            if not touch_volumes or len(touch_volumes) == 0:
                 return
 
-# Calculate volume baseline
-avg_volume = market_data['volume'].rolling(window=self.volume_lookback_periods).mean()
+            # Calculate volume baseline
+            avg_volume = market_data['volume'].rolling(window=self.volume_lookback_periods).mean()
 
-# 1. Average volume at touches
-test.avg_volume_at_touches = np.mean(touch_volumes)
+            # 1. Average volume at touches
+            test.avg_volume_at_touches = np.mean(touch_volumes)
 
-# 2. Volume spike ratio (volume at touches vs average volume)
-volume_spikes = []
-volume_confirmations = 0
-institutional_volumes = 0
+            # 2. Volume spike ratio (volume at touches vs average volume)
+            volume_spikes = []
+            volume_confirmations = 0
+            institutional_volumes = 0
 
-for i, touch_idx in enumerate(touch_indices):
+            for i, touch_idx in enumerate(touch_indices):
                 if touch_idx < len(avg_volume):
                     baseline_volume = avg_volume.iloc[touch_idx]
-if baseline_volume > 0:
+                    if baseline_volume > 0:
                         volume_ratio = touch_volumes[i] / baseline_volume
-volume_spikes.append(volume_ratio)
+                        volume_spikes.append(volume_ratio)
 
-# Check for volume confirmation
-if volume_ratio >= self.volume_confirmation_threshold:
+                        # Check for volume confirmation
+                        if volume_ratio >= self.volume_confirmation_threshold:
                             volume_confirmations += 1
 
-# Check for institutional volume
-if volume_ratio >= self.institutional_volume_threshold:
+                        # Check for institutional volume
+                        if volume_ratio >= self.institutional_volume_threshold:
                             institutional_volumes += 1
 
-if volume_spikes:
+            if volume_spikes:
                 test.volume_spike_ratio = np.mean(volume_spikes)
-test.volume_confirmation_rate = volume_confirmations / len(touch_indices)
-test.institutional_volume_ratio = institutional_volumes / len(touch_indices)
+                test.volume_confirmation_rate = volume_confirmations / len(touch_indices)
+                test.institutional_volume_ratio = institutional_volumes / len(touch_indices)
 
-# 3. Volume-weighted bounce rate
-bounce_volumes = []
-total_volume = 0
+            # 3. Volume-weighted bounce rate
+            bounce_volumes = []
+            total_volume = 0
 
-for i, touch_idx in enumerate(touch_indices):
+            for i, touch_idx in enumerate(touch_indices):
                 if touch_idx < len(market_data) - self.confirmation_periods:
                     # Check if this touch resulted in a bounce
-touch_result = await self._analyze_touch_outcome(
-market_data, touch_idx, level_price, test.level_type
-)
+                    touch_result = await self._analyze_touch_outcome(
+                        market_data, touch_idx, level_price, test.level_type
+                    )
 
-if touch_result == "bounce":
+                    if touch_result == "bounce":
                         bounce_volumes.append(touch_volumes[i])
 
-total_volume += touch_volumes[i]
+                    total_volume += touch_volumes[i]
 
-if total_volume > 0 and bounce_volumes:
+            if total_volume > 0 and bounce_volumes:
                 test.volume_weighted_bounce_rate = sum(bounce_volumes) / total_volume
 
-# 4. Volume clustering analysis
-test.volume_cluster_score = await self._calculate_volume_cluster_score(
-market_data, level_price, touch_indices
-)
+            # 4. Volume clustering analysis
+            test.volume_cluster_score = await self._calculate_volume_cluster_score(
+                market_data, level_price, touch_indices
+            )
 
-except Exception as e:
+        except Exception as e:
             self.logger.error(f"Failed to analyze volume patterns: {e}")
 
-async def _calculate_volume_cluster_score(
-self,
-market_data: pd.DataFrame,
-level_price: float,
-touch_indices: List[int]
-) -> float:
+    async def _calculate_volume_cluster_score(
+        self,
+        market_data: pd.DataFrame,
+        level_price: float,
+        touch_indices: List[int]
+    ) -> float:
         """
-Calculate volume clustering score around S/R level.
+        Calculate volume clustering score around S/R level.
 
-This measures how much volume is concentrated around the S/R level
-compared to other price levels.
-"""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-if not touch_indices:
+        This measures how much volume is concentrated around the S/R level
+        compared to other price levels.
+        """
+        try:
+            if not touch_indices:
                 return 0.0
 
-# Define the level zone
-level_zone_upper = level_price * (1 + self.volume_cluster_radius)
-level_zone_lower = level_price * (1 - self.volume_cluster_radius)
+            # Define the level zone
+            level_zone_upper = level_price * (1 + self.volume_cluster_radius)
+            level_zone_lower = level_price * (1 - self.volume_cluster_radius)
 
-# Calculate total volume in the level zone
-level_zone_volume = 0
-total_volume = market_data['volume'].sum()
+            # Calculate total volume in the level zone
+            level_zone_volume = 0
+            total_volume = market_data['volume'].sum()
 
-for i in range(len(market_data)):
+            for i in range(len(market_data)):
                 price = market_data['close'].iloc[i]
-if level_zone_lower <= price <= level_zone_upper:
+                if level_zone_lower <= price <= level_zone_upper:
                     level_zone_volume += market_data['volume'].iloc[i]
 
-# Calculate volume concentration ratio
-if total_volume > 0:
+            # Calculate volume concentration ratio
+            if total_volume > 0:
                 volume_concentration = level_zone_volume / total_volume
 
-# Normalize by the size of the zone relative to the price range
-price_range = market_data['high'].max() - market_data['low'].min()
-zone_size = level_zone_upper - level_zone_lower
-expected_concentration = zone_size / price_range if price_range > 0 else 0
+                # Normalize by the size of the zone relative to the price range
+                price_range = market_data['high'].max() - market_data['low'].min()
+                zone_size = level_zone_upper - level_zone_lower
+                expected_concentration = zone_size / price_range if price_range > 0 else 0
 
-if expected_concentration > 0:
+                if expected_concentration > 0:
                     cluster_score = volume_concentration / expected_concentration
-return min(cluster_score, 5.0)  # Cap at 5x concentration
+                    return min(cluster_score, 5.0)  # Cap at 5x concentration
 
-return 0.0
+            return 0.0
 
-except Exception as e:
+        except Exception as e:
             self.logger.error(f"Failed to calculate volume cluster score: {e}")
-return 0.0
+            return 0.0
 
-def _calculate_level_confidence(self, test: SRLevelTest) -> float:
+    def _calculate_level_confidence(self, test: SRLevelTest) -> float:
         """Calculate confidence score for a level based on its performance and volume analysis."""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-confidence = 0.0
+        try:
+            confidence = 0.0
 
-# Base confidence from bounce rate (40% weight)
-if test.bounce_rate > 0.8:
+            # Base confidence from bounce rate (40% weight)
+            if test.bounce_rate > 0.8:
                 confidence += 0.4
-elif test.bounce_rate > 0.6:
+            elif test.bounce_rate > 0.6:
                 confidence += 0.3
-elif test.bounce_rate > 0.4:
+            elif test.bounce_rate > 0.4:
                 confidence += 0.2
-elif test.bounce_rate > 0.2:
+            elif test.bounce_rate > 0.2:
                 confidence += 0.1
 
-# Volume analysis (30% weight)
-volume_confidence = 0.0
+            # Volume analysis (30% weight)
+            volume_confidence = 0.0
 
-# Volume spike ratio
-if test.volume_spike_ratio > 2.0:
+            # Volume spike ratio
+            if test.volume_spike_ratio > 2.0:
                 volume_confidence += 0.15
-elif test.volume_spike_ratio > 1.5:
+            elif test.volume_spike_ratio > 1.5:
                 volume_confidence += 0.1
-elif test.volume_spike_ratio > 1.2:
+            elif test.volume_spike_ratio > 1.2:
                 volume_confidence += 0.05
 
-# Volume confirmation rate
-if test.volume_confirmation_rate > 0.8:
+            # Volume confirmation rate
+            if test.volume_confirmation_rate > 0.8:
                 volume_confidence += 0.1
-elif test.volume_confirmation_rate > 0.6:
+            elif test.volume_confirmation_rate > 0.6:
                 volume_confidence += 0.05
 
-# Institutional volume presence
-if test.institutional_volume_ratio > 0.3:
+            # Institutional volume presence
+            if test.institutional_volume_ratio > 0.3:
                 volume_confidence += 0.05
 
-confidence += volume_confidence
+            confidence += volume_confidence
 
-# Penalty for false breakouts (15% weight)
-if test.false_breakout_rate > 0.3:
+            # Penalty for false breakouts (15% weight)
+            if test.false_breakout_rate > 0.3:
                 confidence -= 0.15
-elif test.false_breakout_rate > 0.2:
+            elif test.false_breakout_rate > 0.2:
                 confidence -= 0.1
-elif test.false_breakout_rate > 0.1:
+            elif test.false_breakout_rate > 0.1:
                 confidence -= 0.05
 
-# Bonus for number of touches (10% weight)
-if test.touches >= 5:
+            # Bonus for number of touches (10% weight)
+            if test.touches >= 5:
                 confidence += 0.1
-elif test.touches >= 3:
+            elif test.touches >= 3:
                 confidence += 0.05
 
-# Bonus for level strength (5% weight)
-confidence += test.level_strength * 0.05
+            # Bonus for level strength (5% weight)
+            confidence += test.level_strength * 0.05
 
-return max(0.0, min(1.0, confidence))
+            return max(0.0, min(1.0, confidence))
 
-except Exception as e:
+        except Exception as e:
             self.logger.error(f"Failed to calculate level confidence: {e}")
-return 0.5
+            return 0.5
 
-async def _calculate_overall_metrics(self, result: BacktestResult) -> None:
+    async def _calculate_overall_metrics(self, result: BacktestResult) -> None:
         """Calculate overall metrics from individual level tests."""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-if not result.level_tests:
+        try:
+            if not result.level_tests:
                 return
 
-# Calculate overall rates
-total_touches = sum(test.touches for test in result.level_tests)
-total_bounces = sum(test.bounces for test in result.level_tests)
-total_breakouts = sum(test.breakouts for test in result.level_tests)
-total_false_breakouts = sum(test.false_breakouts for test in result.level_tests)
+            # Calculate overall rates
+            total_touches = sum(test.touches for test in result.level_tests)
+            total_bounces = sum(test.bounces for test in result.level_tests)
+            total_breakouts = sum(test.breakouts for test in result.level_tests)
+            total_false_breakouts = sum(test.false_breakouts for test in result.level_tests)
 
-if total_touches > 0:
+            if total_touches > 0:
                 result.overall_bounce_rate = total_bounces / total_touches
-result.overall_breakout_rate = total_breakouts / total_touches
-result.overall_false_breakout_rate = total_false_breakouts / total_touches
+                result.overall_breakout_rate = total_breakouts / total_touches
+                result.overall_false_breakout_rate = total_false_breakouts / total_touches
 
-# Calculate support vs resistance rates
-support_tests = [test for test in result.level_tests if test.level_type == "support"]
-resistance_tests = [test for test in result.level_tests if test.level_type == "resistance"]
+            # Calculate support vs resistance rates
+            support_tests = [test for test in result.level_tests if test.level_type == "support"]
+            resistance_tests = [test for test in result.level_tests if test.level_type == "resistance"]
 
-if support_tests:
+            if support_tests:
                 support_touches = sum(test.touches for test in support_tests)
-support_bounces = sum(test.bounces for test in support_tests)
-support_breakouts = sum(test.breakouts for test in support_tests)
+                support_bounces = sum(test.bounces for test in support_tests)
+                support_breakouts = sum(test.breakouts for test in support_tests)
 
-if support_touches > 0:
+                if support_touches > 0:
                     result.support_bounce_rate = support_bounces / support_touches
-result.support_breakout_rate = support_breakouts / support_touches
+                    result.support_breakout_rate = support_breakouts / support_touches
 
-if resistance_tests:
+            if resistance_tests:
                 resistance_touches = sum(test.touches for test in resistance_tests)
-resistance_bounces = sum(test.bounces for test in resistance_tests)
-resistance_breakouts = sum(test.breakouts for test in resistance_tests)
+                resistance_bounces = sum(test.bounces for test in resistance_tests)
+                resistance_breakouts = sum(test.breakouts for test in resistance_tests)
 
-if resistance_touches > 0:
+                if resistance_touches > 0:
                     result.resistance_bounce_rate = resistance_bounces / resistance_touches
-result.resistance_breakout_rate = resistance_breakouts / resistance_touches
+                    result.resistance_breakout_rate = resistance_breakouts / resistance_touches
 
-# Calculate average metrics
-result.avg_level_strength = np.mean([test.level_strength for test in result.level_tests])
-result.avg_confidence_score = np.mean([test.confidence_score for test in result.level_tests])
+            # Calculate average metrics
+            result.avg_level_strength = np.mean([test.level_strength for test in result.level_tests])
+            result.avg_confidence_score = np.mean([test.confidence_score for test in result.level_tests])
 
-# Calculate volume-related metrics
-if result.level_tests:
+            # Calculate volume-related metrics
+            if result.level_tests:
                 result.avg_volume_spike_ratio = np.mean([test.volume_spike_ratio for test in result.level_tests])
-result.avg_volume_confirmation_rate = np.mean([test.volume_confirmation_rate for test in result.level_tests])
-result.avg_institutional_volume_ratio = np.mean([test.institutional_volume_ratio for test in result.level_tests])
-result.avg_volume_cluster_score = np.mean([test.volume_cluster_score for test in result.level_tests])
+                result.avg_volume_confirmation_rate = np.mean([test.volume_confirmation_rate for test in result.level_tests])
+                result.avg_institutional_volume_ratio = np.mean([test.institutional_volume_ratio for test in result.level_tests])
+                result.avg_volume_cluster_score = np.mean([test.volume_cluster_score for test in result.level_tests])
 
-# Calculate time-based metrics
-if result.level_tests:
+            # Calculate time-based metrics
+            if result.level_tests:
                 result.avg_level_age_days = np.mean([test.level_age_days for test in result.level_tests])
-result.avg_age_decay_factor = np.mean([test.age_decay_factor for test in result.level_tests])
-result.level_persistence_score = np.mean([1 - test.age_decay_factor for test in result.level_tests])
+                result.avg_age_decay_factor = np.mean([test.age_decay_factor for test in result.level_tests])
+                result.level_persistence_score = np.mean([1 - test.age_decay_factor for test in result.level_tests])
 
-# Calculate multi-timeframe metrics
-if result.level_tests:
+            # Calculate multi-timeframe metrics
+            if result.level_tests:
                 result.avg_multi_timeframe_score = np.mean([test.multi_timeframe_score for test in result.level_tests])
-result.avg_higher_timeframe_alignment = np.mean([test.higher_timeframe_alignment for test in result.level_tests])
+                result.avg_higher_timeframe_alignment = np.mean([test.higher_timeframe_alignment for test in result.level_tests])
 
-# Calculate level detection accuracy
-if result.total_levels_tested > 0:
+            # Calculate level detection accuracy
+            if result.total_levels_tested > 0:
                 result.level_detection_accuracy = result.successful_levels / result.total_levels_tested
 
-except Exception as e:
+        except Exception as e:
             self.logger.error(f"Failed to calculate overall metrics: {e}")
 
-async def _calculate_sr_validation_score(self, result: BacktestResult) -> None:
+    async def _calculate_sr_validation_score(self, result: BacktestResult) -> None:
         """Calculate S/R validation score based on level effectiveness."""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-# S/R validation score components (0-1)
-bounce_score = min(result.overall_bounce_rate / self.min_bounce_rate, 1.0)
+        try:
+            # S/R validation score components (0-1)
+            bounce_score = min(result.overall_bounce_rate / self.min_bounce_rate, 1.0)
 
-false_breakout_score = max(0, 1 - (result.overall_false_breakout_rate / self.max_false_breakout_rate))
+            false_breakout_score = max(0, 1 - (result.overall_false_breakout_rate / self.max_false_breakout_rate))
 
-volume_score = min(result.avg_volume_confirmation_rate / self.min_volume_confirmation, 1.0)
+            volume_score = min(result.avg_volume_confirmation_rate / self.min_volume_confirmation, 1.0)
 
-confidence_score = result.avg_confidence_score
+            confidence_score = result.avg_confidence_score
 
-level_accuracy_score = result.level_detection_accuracy
+            level_accuracy_score = result.level_detection_accuracy
 
-# S/R validation score with core factors
-result.sr_validation_score = (
-bounce_score * 0.35 +                    # 35% - Bounce rate
-false_breakout_score * 0.25 +            # 25% - Low false breakouts
-volume_score * 0.20 +                    # 20% - Volume confirmation
-confidence_score * 0.15 +                # 15% - Overall confidence
-level_accuracy_score * 0.05              # 5% - Level detection accuracy
-)
+            # S/R validation score with core factors
+            result.sr_validation_score = (
+                bounce_score * 0.35 +                    # 35% - Bounce rate
+                false_breakout_score * 0.25 +            # 25% - Low false breakouts
+                volume_score * 0.20 +                    # 20% - Volume confirmation
+                confidence_score * 0.15 +                # 15% - Overall confidence
+                level_accuracy_score * 0.05              # 5% - Level detection accuracy
+            )
 
-self.logger.info(f"📊 S/R Validation Score Components:")
-self.logger.info(f"  Bounce Score: {bounce_score:.3f}")
-self.logger.info(f"  False Breakout Score: {false_breakout_score:.3f}")
-self.logger.info(f"  Volume Score: {volume_score:.3f}")
-self.logger.info(f"  Confidence Score: {confidence_score:.3f}")
-self.logger.info(f"  Level Accuracy Score: {level_accuracy_score:.3f}")
-self.logger.info(f"  Overall S/R Validation Score: {result.sr_validation_score:.3f}")
+            self.logger.info(f"📊 S/R Validation Score Components:")
+            self.logger.info(f"  Bounce Score: {bounce_score:.3f}")
+            self.logger.info(f"  False Breakout Score: {false_breakout_score:.3f}")
+            self.logger.info(f"  Volume Score: {volume_score:.3f}")
+            self.logger.info(f"  Confidence Score: {confidence_score:.3f}")
+            self.logger.info(f"  Level Accuracy Score: {level_accuracy_score:.3f}")
+            self.logger.info(f"  Overall S/R Validation Score: {result.sr_validation_score:.3f}")
 
-except Exception as e:
+        except Exception as e:
             self.logger.error(f"Failed to calculate S/R validation score: {e}")
 
-async def _analyze_time_based_factors(
-self,
-test: SRLevelTest,
-market_data: pd.DataFrame,
-touch_indices: List[int]
-) -> None:
+    async def _analyze_time_based_factors(
+        self,
+        test: SRLevelTest,
+        market_data: pd.DataFrame,
+        touch_indices: List[int]
+    ) -> None:
         """Analyze time-based factors affecting S/R level validity."""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-if not touch_indices:
+        try:
+            if not touch_indices:
                 return
 
-# Calculate level age
-first_touch_idx = min(touch_indices)
-last_touch_idx = max(touch_indices)
+            # Calculate level age
+            first_touch_idx = min(touch_indices)
+            last_touch_idx = max(touch_indices)
 
-test.first_touch_date = market_data.index[first_touch_idx]
-test.last_touch_date = market_data.index[last_touch_idx]
+            test.first_touch_date = market_data.index[first_touch_idx]
+            test.last_touch_date = market_data.index[last_touch_idx]
 
-# Calculate age in days
-if test.first_touch_date and test.last_touch_date:
+            # Calculate age in days
+            if test.first_touch_date and test.last_touch_date:
                 age_delta = test.last_touch_date - test.first_touch_date
-test.level_age_days = age_delta.days
+                test.level_age_days = age_delta.days
 
-# Calculate age decay factor
-if test.level_age_days > 0:
+            # Calculate age decay factor
+            if test.level_age_days > 0:
                 # Exponential decay based on age
-test.age_decay_factor = self.age_decay_factor ** (test.level_age_days / 30)  # Decay per month
+                test.age_decay_factor = self.age_decay_factor ** (test.level_age_days / 30)  # Decay per month
 
-except Exception as e:
+        except Exception as e:
             self.logger.error(f"Failed to analyze time-based factors: {e}")
 
 
 # Setup function for easy integration
 async def setup_sr_backtesting_validator(config: Dict[str, Any]) -> Optional[SRBacktestingValidator]:
     """Setup S/R backtesting validator."""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-validator = SRBacktestingValidator(config)
-return validator
-except Exception as e:
+    try:
+        validator = SRBacktestingValidator(config)
+        return validator
+    except Exception as e:
         system_logger.error(f"Failed to setup S/R backtesting validator: {e}")
-return None
+        return None

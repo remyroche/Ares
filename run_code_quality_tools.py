@@ -40,6 +40,9 @@ def run_syntax_fixer(directory):
     """Run the syntax fixer on the directory."""
     print("\n=== Running Syntax Fixer ===")
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         result = subprocess.run([
             sys.executable, "code_quality/tools/syntax_fixer.py", 
             directory, "--no-dry-run"
@@ -69,6 +72,9 @@ def run_unused_import_cleaner(files):
     
     for filepath in files:
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # First run in dry-run mode to see what would be cleaned
             result = subprocess.run([
                 sys.executable, "code_quality/tools/batch_import_cleaner.py", 
@@ -115,6 +121,9 @@ def run_dead_code_remover(files):
     
     for filepath in files:
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # First run in dry-run mode (default) to see what would be removed
             result = subprocess.run([
                 sys.executable, "code_quality/tools/dead_code_remover.py", 

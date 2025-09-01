@@ -16,87 +16,82 @@ class AdvancedReportingEngine:
 
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
-self.logger = system_logger.getChild("AdvancedReportingEngine")
-self.report_templates: dict[str, Any] = {}
-self.real_time_metrics: dict[str, Any] = {}
-self.performance_trends: dict[str, list[float]] = {}
+        self.logger = system_logger.getChild("AdvancedReportingEngine")
+        self.report_templates: dict[str, Any] = {}
+        self.real_time_metrics: dict[str, Any] = {}
+        self.performance_trends: dict[str, list[float]] = {}
 
-@handle_errors(
-exceptions=(ValueError, TypeError, KeyError, ZeroDivisionError),
-default_return=None
-)
-async def generate_real_time_report(
-self,
-performance_data: dict[str, Any],
-) -> dict[str, Any]:
+    @handle_errors(
+        exceptions=(ValueError, TypeError, KeyError, ZeroDivisionError),
+        default_return=None
+    )
+    async def generate_real_time_report(
+        self,
+        performance_data: dict[str, Any],
+    ) -> dict[str, Any]:
         """Generate real-time performance report with advanced analytics."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             report = {
-"timestamp": datetime.now().isoformat(),
-"real_time_metrics": await self._calculate_real_time_metrics(
-performance_data,
-),
-"performance_trends": await self._analyze_performance_trends(
-performance_data,
-),
-"risk_analysis": await self._perform_risk_analysis(performance_data),
-"attribution_analysis": await self._perform_attribution_analysis(
-performance_data,
-),
-"forecasting": await self._generate_performance_forecast(
-performance_data,
-),
-}
+                "timestamp": datetime.now().isoformat(),
+                "real_time_metrics": await self._calculate_real_time_metrics(
+                    performance_data,
+                ),
+                "performance_trends": await self._analyze_performance_trends(
+                    performance_data,
+                ),
+                "risk_analysis": await self._perform_risk_analysis(performance_data),
+                "attribution_analysis": await self._perform_attribution_analysis(
+                    performance_data,
+                ),
+                "forecasting": await self._generate_performance_forecast(
+                    performance_data,
+                ),
+            }
 
-# Cache the report
-self._cache_report("real_time", report)
+            # Cache the report
+            self._cache_report("real_time", report)
 
-return report
+            return report
 
-except Exception as e:
+        except Exception as e:
             self.logger.error(f"Error generating real-time report: {e}")
-return {}
+            return {}
 
-@handle_errors(
-exceptions=(ValueError, TypeError, KeyError, ZeroDivisionError),
-default_return=None
-)
-async def _calculate_real_time_metrics(
-self,
-performance_data: dict[str, Any],
-) -> dict[str, Any]:
-                """Calculate real-time performance metrics."""
+    @handle_errors(
+        exceptions=(ValueError, TypeError, KeyError, ZeroDivisionError),
+        default_return=None
+    )
+    async def _calculate_real_time_metrics(
+        self,
+        performance_data: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Calculate real-time performance metrics."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+
             returns = performance_data.get("returns", [])
-if not returns:
+            if not returns:
                 return {}
 
-return {
-"current_return": returns[-1] if returns else 0,
-"rolling_1h_return": np.mean(returns[-60:])
-if len(returns) >= 60
-else np.mean(returns),
-"rolling_24h_return": np.mean(returns[-1440:])
-if len(returns) >= 1440
-else np.mean(returns),
-"volatility": np.std(returns[-100:])
-if len(returns) >= 100
-else np.std(returns),
-"sharpe_ratio": self._calculate_sharpe_ratio(returns),
-"max_drawdown": self._calculate_max_drawdown(returns),
-"win_rate": self._calculate_win_rate(returns),
-"profit_factor": self._calculate_profit_factor(returns),
-}
+            return {
+                "current_return": returns[-1] if returns else 0,
+                "rolling_1h_return": np.mean(returns[-60:])
+                if len(returns) >= 60
+                else np.mean(returns),
+                "rolling_24h_return": np.mean(returns[-1440:])
+                if len(returns) >= 1440
+                else np.mean(returns),
+                "volatility": np.std(returns[-100:])
+                if len(returns) >= 100
+                else np.std(returns),
+                "sharpe_ratio": self._calculate_sharpe_ratio(returns),
+                "max_drawdown": self._calculate_max_drawdown(returns),
+                "win_rate": self._calculate_win_rate(returns),
+                "profit_factor": self._calculate_profit_factor(returns),
+            }
 
-except Exception as e:
+        except Exception as e:
             self.logger.error(f"Error calculating real-time metrics: {e}")
-return {}
+            return {}
 
 @handle_errors(
 exceptions=(ValueError, TypeError, KeyError, ZeroDivisionError),
@@ -108,11 +103,8 @@ performance_data: dict[str, Any],
 ) -> dict[str, Any]:
                 """Analyze performance trends."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             returns = performance_data.get("returns", [])
-if not returns:
+            if not returns:
                 return {}
 
 short_trend = (
@@ -146,11 +138,8 @@ self, performance_data: dict[str, Any]
 ) -> dict[str, Any]:
                 """Perform comprehensive risk analysis."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             returns = performance_data.get("returns", [])
-if not returns:
+            if not returns:
                 return {}
 
 return {
@@ -176,11 +165,8 @@ self, performance_data: dict[str, Any]
 ) -> dict[str, Any]:
                 """Perform performance attribution analysis."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             returns = performance_data.get("returns", [])
-if not returns:
+            if not returns:
                 return {}
 
 # Simulate attribution analysis
@@ -232,10 +218,7 @@ return {}
 def _calculate_sharpe_ratio(self, returns: list[float]) -> float:
         """Calculate Sharpe ratio."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-if not returns:
+            if not returns:
                 return 0.0
 
 mean_return = np.mean(returns)

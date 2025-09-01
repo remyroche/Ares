@@ -3,6 +3,7 @@
 """Performance Comparison Module.
 
 This module provides comprehensive performance comparison capabilities for:
+    pass  # TODO: Add implementation
 # TODO: Add implementation
 1. Model performance across different optimization strategies
 2. Trading performance improvements
@@ -28,6 +29,7 @@ from src.utils.warning_symbols import (
 
 @dataclass
 class PlaceholderDataClass:
+    pass  # TODO: Add implementation
 # TODO: Add implementation
 class PerformanceMetrics:
     """Structured performance metrics for comparison."""

@@ -1198,7 +1198,7 @@ class SRBreakoutPredictor:
 
             return context
 
-    def extract_ml_features(self, market_data: pd.DataFrame, current_price: float) -> dict[str, float]:
+    async def extract_ml_features(self, market_data: pd.DataFrame, current_price: float) -> dict[str, float]:
         """
         Extract comprehensive SR features for ML model training.
 

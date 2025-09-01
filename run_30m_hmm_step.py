@@ -33,6 +33,9 @@ async def run_30m_hmm_step():
     )
 
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Run the enhanced step1_7 with artifact validation
         success = await run_step(
             symbol, symbol = exchange=exchange,

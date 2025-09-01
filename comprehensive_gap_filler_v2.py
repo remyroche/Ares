@@ -43,6 +43,9 @@ class ComprehensiveGapFillerV2:
     ) -> list[dict]:
         """Detect gaps in a single aggtrades file."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Read the parquet file
             df = pd.read_parquet(file_path)
 
@@ -101,6 +104,9 @@ class ComprehensiveGapFillerV2:
         url = f"{base_url}/{path}"
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             ssl_context = ssl.create_default_context(cafile=certifi.where())
 
             async with self.session.get(url, ssl=ssl_context) as resp:
@@ -196,6 +202,9 @@ class ComprehensiveGapFillerV2:
     ) -> dict:
         """Fill a single gap using multiple API calls until gap is fully filled."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             gap_start = gap_info["gap_start"]
             gap_end = gap_info["gap_end"]
             file_name = gap_info["file"]
@@ -371,6 +380,9 @@ async def main() -> None:
     gap_filler = ComprehensiveGapFillerV2()
 
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         await gap_filler.process_all_gaps()
     finally:
         await gap_filler.close_session()

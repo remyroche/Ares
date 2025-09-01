@@ -142,6 +142,9 @@ class FractionalDifferentiationOptimizer:
             Dictionary with evaluation results
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             from src.training.steps.fractional_differentiation import FractionalFeatureGenerator
 
             # Create configuration with current parameters

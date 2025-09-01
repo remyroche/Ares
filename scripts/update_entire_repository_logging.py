@@ -197,6 +197,9 @@ def update_file_logging_messages(file_path: str) -> Tuple[int, int]:
     changes_made = 0
 
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         with open(file_path, encoding="utf-8") as f:
             content = f.read()
         original_content = content
@@ -282,6 +285,9 @@ def add_warning_symbols_import(file_path: str) -> bool:
         True if import was added, False otherwise
     """
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         with open(file_path, encoding="utf-8") as f:
             content = f.read()
 

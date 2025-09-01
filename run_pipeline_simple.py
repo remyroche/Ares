@@ -49,6 +49,9 @@ async def main():
     }
 
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Execute from step03 onwards
         success = await orchestrator.execute_from_step(
             start_step=start_step,

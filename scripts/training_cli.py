@@ -3,6 +3,7 @@
 Training Command Line Interface for Ares Trading Bot
 
 This script provides a command-line interface for training operations:
+    pass  # TODO: Add implementation
 1. Full training for a specific token
 2. Model retraining
 3. Model import from database
@@ -81,6 +82,9 @@ class TrainingCLI:
         self.logger.info(f"Start time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             await self.initialize()  # Ensure DB is initialized
             self.logger.info("✅ Database initialization completed")
 
@@ -237,6 +241,9 @@ class TrainingCLI:
         backtest_start_time = time.time()
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Re-initialize DB connection as it was closed after training_manager.run_full_training
             self.logger.info(
                 "🔧 Re-initializing database connection for backtesting...",
@@ -584,6 +591,9 @@ async def main() -> None:
     cli = TrainingCLI()
 
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         if command in ["train", "retrain", "full-test-run"]:
             symbols_to_process = get_symbols_to_process(sys.argv)
             if not symbols_to_process:

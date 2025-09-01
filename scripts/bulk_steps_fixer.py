@@ -3,6 +3,7 @@
 Bulk fixer for corrupted syntax patterns in src/training/steps.
 
 Fixes:
+    pass  # TODO: Add implementation
 - logger initialization using comma to equals
 - typed variable annotations using comma to equals (var: Type, default -> var: Type = default)
 - Optional annotations with None (Type | None, None -> Type | None = None)

@@ -30,6 +30,9 @@ async def main():
     logger.info("🚀 Starting Enhanced Step 1_7 Example")
 
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Run the enhanced step1_7
         success = await run_step_enhanced(
             symbol, symbol = exchange=exchange,
@@ -60,6 +63,9 @@ async def main():
 
                     # Show a preview of the report
                     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                         with open(report_path) as f:
                             lines = f.readlines()
                             logger.info("   📄 Report preview (first 10 lines):")

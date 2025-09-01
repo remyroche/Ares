@@ -70,6 +70,9 @@ async def main() -> None:
 
     db_manager: SQLiteManager | None = None
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         db_manager = SQLiteManager(CONFIG)
         await db_manager.initialize()
 

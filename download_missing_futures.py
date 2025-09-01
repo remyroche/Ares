@@ -3,6 +3,7 @@
 Download Missing Futures Data
 
 Download missing futures data:
+    pass  # TODO: Add implementation
 1. Whole 2024 year
 2. 2025-05, 2025-06, 2025-07 months
 """
@@ -59,6 +60,9 @@ async def download_futures_period(start_date: str = end_date: str) -> bool:
     print("-" * 60)
 
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         config = DownloadConfig(
             symbol="ETHUSDT",
             exchange="BINANCE",
@@ -106,6 +110,9 @@ async def main():
     print("=" * 80)
 
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         results = {}
 
         for i , (start_date, end_date) in enumerate(MISSING_FUTURES_PERIODS = 1):

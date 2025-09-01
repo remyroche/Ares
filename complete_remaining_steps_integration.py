@@ -35,6 +35,9 @@ ARTIFACT_LOGGING_METHOD_TEMPLATE = '''
     ) -> None:
         """Log step {step_num} artifacts and create detailed report."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             symbol = training_input.get("symbol", "ETHUSDT")
             exchange = training_input.get("exchange", "BINANCE")
             timeframe = training_input.get("timeframe", "1m")
@@ -139,6 +142,9 @@ def extract_step_number(filename: str) -> str:
 def find_execute_method(file_path: Path) -> tuple[bool, str, int]:
     """Find the execute method in a step file."""
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         with open(file_path, 'r', encoding='utf-8') as f:
             content = f.read()
 
@@ -168,6 +174,9 @@ def find_execute_method(file_path: Path) -> tuple[bool, str, int]:
 def add_mlflow_decorator_to_step(file_path: Path) -> bool:
     """Add MLflow decorator to a step's execute method."""
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         with open(file_path, 'r', encoding='utf-8') as f:
             content = f.read()
 
@@ -213,6 +222,9 @@ def add_mlflow_decorator_to_step(file_path: Path) -> bool:
 def add_artifact_logging_call(file_path: Path) -> bool:
     """Add call to artifact logging method before return statement."""
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         with open(file_path, 'r', encoding='utf-8') as f:
             content = f.read()
 
@@ -256,6 +268,9 @@ def add_artifact_logging_call(file_path: Path) -> bool:
 def add_artifact_logging_method(file_path: Path) -> bool:
     """Add artifact logging method to step file."""
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         with open(file_path, 'r', encoding='utf-8') as f:
             content = f.read()
 

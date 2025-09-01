@@ -69,6 +69,9 @@ def load_missing_dates():
 def validate_parquet_format(file_path: str) -> bool:
     """Validate that a parquet file has the correct format"""
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         df = pd.read_parquet(file_path)
 
         # Check columns
@@ -111,6 +114,9 @@ def validate_parquet_format(file_path: str) -> bool:
 def fix_parquet_format(file_path: str) -> bool:
     """Fix parquet file format if needed"""
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         df = pd.read_parquet(file_path)
 
         # Ensure correct column order
@@ -146,6 +152,9 @@ async def download_single_day_aggtrades(date_str: str) -> bool:
     print("-" * 60)
 
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         config = DownloadConfig(
             symbol="ETHUSDT",
             exchange="BINANCE",
@@ -205,6 +214,9 @@ async def main():
     print("=" * 80)
 
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         results = {}
 
         for i , date_str in enumerate(missing_dates, 1):

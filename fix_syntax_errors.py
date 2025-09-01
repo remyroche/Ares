@@ -10,6 +10,9 @@ import ast
 def fix_common_syntax_errors(filepath):
     """Fix common syntax errors in a Python file."""
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         with open(filepath, 'r', encoding='utf-8') as f:
             content = f.read()
         
@@ -64,7 +67,7 @@ def fix_common_syntax_errors(filepath):
             
             # Fix 5: Fix invalid decimal literals
             if re.search(r'\b\d+\.\d+\.\d+\b', line):
-                # Fix invalid decimal literals like 1.2.3
+                # Fix invalid decimal literals like 1_2_3
                 line = re.sub(r'\b(\d+\.\d+)\.(\d+)\b', r'\1_2', line)
             
             # Fix 6: Fix unmatched parentheses

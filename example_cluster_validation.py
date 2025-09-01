@@ -222,6 +222,9 @@ def main():
     print("This script demonstrates how to test HMM cluster relevance before ML training.")
 
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Run basic example
         basic_results = run_basic_validation_example()
 

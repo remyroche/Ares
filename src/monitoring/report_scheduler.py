@@ -9,9 +9,7 @@ Automated report scheduling scaffolding.
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
-from pathlib import Path
 
-from src.utils.logger import system_logger
 
 
 class ReportType(Enum):
@@ -34,22 +32,8 @@ class ReportFormat(Enum):
 
 
 @dataclass
-class ReportConfig:
-    report_type: ReportType
-    schedule: ReportSchedule
-    format: ReportFormat
-    recipients: List[str]
-    enabled: bool = True
 
 
 @dataclass
-class ReportHistory:
-    report_id: str
-    report_type: ReportType
-    generated_at: datetime
-    schedule_type: ReportSchedule
-    recipients: List[str]
-    file_path: str
-    status: str
 
 

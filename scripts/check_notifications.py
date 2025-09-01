@@ -85,6 +85,9 @@ def check_logs_for_errors() -> None:
 
     for log_file in log_dir.glob("*.log"):
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             with open(log_file, "r", encoding="utf-8") as f:
                 lines = f.readlines()
             # Check last 20 lines for errors

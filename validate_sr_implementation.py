@@ -25,6 +25,9 @@ def check_file_syntax(file_path):
 def check_method_exists(file_path, method_name):
     """Check if a method exists in a Python file."""
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         with open(file_path, 'r', encoding='utf-8') as f:
             content = f.read()
 
@@ -43,6 +46,9 @@ def check_method_exists(file_path, method_name):
 def check_imports(file_path):
     """Check if required imports are present."""
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         with open(file_path, 'r', encoding='utf-8') as f:
             content = f.read()
 

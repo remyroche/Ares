@@ -527,6 +527,9 @@ def main() -> None:
     diagnostic = FeatureQualityDiagnostic()
 
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Load sample data (you'll need to provide actual data path)
         data_path = "data_cache/features_15m.parquet"  # Adjust path as needed
 

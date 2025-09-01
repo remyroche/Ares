@@ -7,9 +7,7 @@ Scaffolding for regime detection and S/R tracking.
 
 
 from enum import Enum
-from typing import Any, Dict
 
-from src.utils.logger import system_logger
 
 
 class RegimeType(Enum):

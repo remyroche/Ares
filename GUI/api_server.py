@@ -34,6 +34,9 @@ sys.path.insert(0, os.path.join(project_root, "src"))
 
 # --- Import from your Ares Codebase ---
 try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
     from src.config import CONFIG, AresConfig
     from src.database.sqlite_manager import SQLiteManager
     from src.supervisor.performance_reporter import PerformanceReporter
@@ -88,7 +91,7 @@ except ImportError as e:
 app = FastAPI(
     title="Ares Trading Bot API",
     description="Comprehensive API for the Ares trading bot with kill switch, backtesting, and analysis capabilities.",
-    version="2.0.0",
+    version="2_2_3",
 )
 
 # Observability and structured logging
@@ -471,7 +474,7 @@ def create_mock_data():
 def read_root():
     return {
         "message": "Welcome to the Ares API v2.0. Navigate to /docs for API documentation.",
-        "version": "2.0.0",
+        "version": "2_2_3",
         "features": [
             "kill_switch",
             "backtesting",
@@ -500,8 +503,14 @@ async def websocket_endpoint(websocket: WebSocket):
 async def get_dashboard_data(days: int = 7):
     """Fetches comprehensive dashboard data including real-time metrics."""
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Get real data from database if available
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             await db_manager.initialize()
             open_positions_raw = await db_manager.get_collection(
                 "positions",
@@ -587,6 +596,9 @@ async def get_kill_switch_status():
 async def activate_kill_switch(request: KillSwitchRequest):
     """Activate the kill switch."""
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         await state_manager.activate_kill_switch(request.reason)
 
         # Broadcast to WebSocket connections
@@ -612,6 +624,9 @@ async def activate_kill_switch(request: KillSwitchRequest):
 async def deactivate_kill_switch():
     """Deactivate the kill switch."""
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         await state_manager.deactivate_kill_switch()
 
         # Broadcast to WebSocket connections
@@ -632,6 +647,9 @@ async def deactivate_kill_switch():
 async def start_backtest(params: BacktestParams, background_tasks: BackgroundTasks):
     """Run a comprehensive backtest with detailed results."""
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Simulate backtest execution
         await asyncio.sleep(2)
 
@@ -688,6 +706,9 @@ async def start_backtest(params: BacktestParams, background_tasks: BackgroundTas
 async def get_backtest_comparison():
     """Get comparison data for multiple backtest runs."""
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Mock comparison data
         comparisons = [
             {
@@ -729,11 +750,14 @@ async def get_backtest_comparison():
 async def get_models():
     """Get all available models with their performance metrics."""
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         models = [
             ModelInfo(
                 id="model_1",
                 name="Performer v1.2",
-                version="1.2.0",
+                version="1_2_3",
                 type="ensemble",
                 performance={
                     "accuracy": 72.5,
@@ -747,7 +771,7 @@ async def get_models():
             ModelInfo(
                 id="model_2",
                 name="Current v3.1",
-                version="3.1.0",
+                version="3_2_3",
                 type="deep_learning",
                 performance={
                     "accuracy": 69.8,
@@ -761,7 +785,7 @@ async def get_models():
             ModelInfo(
                 id="model_3",
                 name="Experimental v2.0",
-                version="2.0.0",
+                version="2_2_3",
                 type="ensemble",
                 performance={
                     "accuracy": 74.2,
@@ -799,6 +823,9 @@ async def deploy_model(model_id: str):
 async def get_trade_analysis(days: int = 30, limit: int = 100):
     """Get comprehensive trade analysis data."""
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Mock detailed trade analysis
         trades = []
         for i in range(limit):
@@ -860,6 +887,9 @@ async def get_trade_analysis(days: int = 30, limit: int = 100):
 async def get_trade_details(trade_id: str):
     """Get detailed analysis for a specific trade."""
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Mock detailed trade data
         trade_details = {
             "trade_id": trade_id,
@@ -952,6 +982,9 @@ async def toggle_bot(bot_id: int):
 async def get_system_status():
     """Get comprehensive system status."""
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Get process info
         process = psutil.Process()
         memory_info = process.memory_info()
@@ -986,6 +1019,9 @@ async def restart_system():
 async def get_monitoring_dashboard():
     """Get comprehensive monitoring dashboard data from real monitoring/reporting modules."""
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         dashboard_data = {}
         # Metrics Dashboard
         if metrics_dashboard and hasattr(metrics_dashboard, 'get_dashboard_data'):
@@ -1007,6 +1043,9 @@ async def get_monitoring_dashboard():
 async def export_monitoring_data(request: Request):
     """Export monitoring data as CSV."""
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         data = await request.json()
         data_type = data.get('dataType', 'performance')
         time_range = data.get('timeRange', '7d')
@@ -1127,6 +1166,9 @@ async def export_monitoring_data(request: Request):
 async def get_tokens():
     """Get all configured tokens with their settings."""
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Try to get real data from config
         supported_tokens = CONFIG.get("SUPPORTED_TOKENS", {})
         tokens = []
@@ -1181,6 +1223,9 @@ async def get_tokens():
 async def update_token_config(request: TokenManagementRequest):
     """Add or update token configuration."""
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         token_key = f"{request.symbol}_{request.exchange}"
         token_configs[token_key] = TokenConfig(
             symbol=request.symbol,
@@ -1208,6 +1253,9 @@ async def update_token_config(request: TokenManagementRequest):
 async def remove_token(symbol: str, exchange: str):
     """Remove a token from trading."""
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         token_key = f"{symbol}_{exchange}"
         if token_key in token_configs:
             token_configs[token_key].enabled = False
@@ -1235,6 +1283,9 @@ async def remove_token(symbol: str, exchange: str):
 async def get_available_models():
     """Get all available models for selection."""
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Try to get real model data from MLflow or model directory
         model_configs = CONFIG.get("MODEL_TRAINING", {}).get("model_types", {})
         models = []
@@ -1291,6 +1342,9 @@ async def get_available_models():
 async def get_model_performance(symbol: str, exchange: str):
     """Get performance metrics for all models on a specific token/exchange."""
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Try to get real performance data from performance_reporter
         performances = []
 
@@ -1329,6 +1383,9 @@ async def get_model_performance(symbol: str, exchange: str):
 async def select_model_for_token(request: ModelSelectionRequest):
     """Select a model for a specific token/exchange."""
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         token_key = f"{request.symbol}_{request.exchange}"
 
         if token_key in token_configs:
@@ -1361,6 +1418,9 @@ async def select_model_for_token(request: ModelSelectionRequest):
 async def compare_models(symbol: str, exchange: str, model_a: str, model_b: str):
     """Compare two models for a specific token/exchange."""
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Get performance data for both models
         performances = await get_model_performance(symbol, exchange)
         model_a_perf = next((p for p in performances if p.model_id == model_a), None)
@@ -1419,6 +1479,9 @@ async def compare_models(symbol: str, exchange: str, model_a: str, model_b: str)
 async def get_detailed_model_analysis(symbol: str, exchange: str, model_id: str):
     """Get detailed analysis for a specific model on a token/exchange."""
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Get performance data
         performances = await get_model_performance(symbol, exchange)
         performance = next((p for p in performances if p.model_id == model_id), None)
@@ -1564,4 +1627,4 @@ if __name__ == "__main__":
     print("Starting Ares API server v2.0...")
     print("API documentation will be available at http://localhost:8000/docs")
     port = int(os.getenv("API_PORT", os.getenv("PORT", "8000")))
-    uvicorn.run("api_server:app", host="0.0.0.0", port=port, reload=True)
+    uvicorn.run("api_server:app", host="0_2_3.0", port=port, reload=True)

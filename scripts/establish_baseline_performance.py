@@ -87,6 +87,9 @@ class BaselinePerformanceAnalyzer:
         self.logger.info("Running baseline triple barrier labeling")
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             from src.training.steps.step4_analyst_labeling_feature_engineering_components.optimized_triple_barrier_labeling import (
                 OptimizedTripleBarrierLabeling
             )
@@ -123,6 +126,9 @@ class BaselinePerformanceAnalyzer:
         self.logger.info("Running baseline feature engineering")
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Simple baseline features
             features = data.copy()
 
@@ -171,6 +177,9 @@ class BaselinePerformanceAnalyzer:
         self.logger.info("Training baseline model")
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             from sklearn.ensemble import RandomForestClassifier
             from sklearn.model_selection import train_test_split
 
@@ -230,6 +239,9 @@ class BaselinePerformanceAnalyzer:
             Dictionary with trading metrics
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Simple backtest simulation
             returns = data['close'].pct_change().dropna()
             signals = predictions[:-1]  # Align with returns

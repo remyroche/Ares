@@ -73,6 +73,9 @@ def simulate_regime_merging(
             # Calculate similarity between centroids
             if len(row["centroid"]) > 0 and len(other_row["centroid"]) > 0:
                 try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                     similarity = cosine_similarity(
                         [row["centroid"]],
                         [other_row["centroid"]],
@@ -129,6 +132,9 @@ def run_parameter_sweep():
         for sim_thresh in similarity_thresholds:
             for max_reg in max_regimes_options:
                 try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                     result = simulate_regime_merging(
                         regime_data = min_freq,
                         sim_thresh = max_reg,

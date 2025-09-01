@@ -192,6 +192,9 @@ def verify_parquet_file(parquet_file, original_df):
         original_df (pd.DataFrame): Original DataFrame for comparison
     """
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Read the Parquet file back
         loaded_df = pd.read_parquet(parquet_file)
 
@@ -265,6 +268,9 @@ def main():
     output_file = output_dir / f"crypto_15m_data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.parquet"
 
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Save with optimal Parquet settings
         df.to_parquet(
             output_file,

@@ -66,6 +66,9 @@ class HMMRegimeOptimizer:
             merging_params = self._suggest_regime_merging_parameters(trial)
 
             try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                 # Generate initial clusters with suggested parameters
                 initial_cluster_data = self._generate_initial_clusters_with_params(
                     data, feature_columns, market_condition_columns,
@@ -671,6 +674,9 @@ class HMMRegimeOptimizer:
         cluster_labels = cluster_data['composite_cluster_id'].values
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Silhouette score
             silhouette = silhouette_score(features, cluster_labels)
 
@@ -951,6 +957,9 @@ class HMMRegimeOptimizer:
 
         # Parameter Importance Analysis
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             importance = optuna.importance.get_param_importances(self.study)
             report.append("## Parameter Importance Analysis")
             report.append("")
@@ -1163,6 +1172,9 @@ class HMMRegimeOptimizer:
 
         # 2. Parameter importance
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             importance = optuna.importance.get_param_importances(self.study)
             params = list(importance.keys())
             values = list(importance.values())
@@ -1196,6 +1208,9 @@ class HMMRegimeOptimizer:
 
         # 4. Key parameter relationships
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Extract key parameters
             n_components_values = []
             clustering_methods = []

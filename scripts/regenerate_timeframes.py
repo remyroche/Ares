@@ -140,6 +140,9 @@ class TimeframeRegenerator:
         # Regenerate each timeframe
         for timeframe in timeframes:
             try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                 logger.info(f"🔄 Regenerating {timeframe} timeframe...")
 
                 # Resample to the target timeframe

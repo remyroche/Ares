@@ -8,7 +8,6 @@ Provides compilation-safe scaffolding for enhanced ML tracking.
 
 from enum import Enum
 
-from src.utils.logger import system_logger
 
 
 class ModelType(Enum):

@@ -32,6 +32,9 @@ def main():
         print("-" * 30)
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Get mode configuration
             config = get_training_mode_config(mode)
             print(f"Lookback Days: {config.lookback_days}")

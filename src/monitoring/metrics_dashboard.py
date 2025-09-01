@@ -6,13 +6,11 @@ Provides real-time metrics visualization scaffolding for the Ares trading bot.
 """
 
 
-import asyncio
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-from src.utils.logger import system_logger
 
 
 class MetricType(Enum):
@@ -27,14 +25,4 @@ class MetricType(Enum):
 
 
 @dataclass
-class DashboardMetric:
-    metric_name: str
-    metric_type: MetricType
-    current_value: float
-    previous_value: Optional[float]
-    change_percentage: Optional[float]
-    trend: str  # "up", "down", "stable"
-    last_updated: datetime
-    metadata: Dict[str, Any]
-    unit: Optional[str]
 

@@ -37,6 +37,9 @@ def fix_feature_engineering_code() -> bool:
         return False
 
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Read the current file
         content = feature_eng_file.read_text(encoding="utf-8")
 

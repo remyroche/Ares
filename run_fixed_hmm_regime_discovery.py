@@ -32,6 +32,9 @@ async def main():
     logger.info("=" * 80)
 
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Run the HMM regime discovery step with fixed parameters
         success = await run_step(
             symbol="ETHUSDT",

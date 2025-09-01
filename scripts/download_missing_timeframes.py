@@ -54,6 +54,9 @@ class MissingTimeframesDownloader:
         logger.info(f"📥 Downloading {timeframe} data for {self.symbol}...")
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             success = await download_all_data_with_consolidation(
                 symbol=self.symbol,
                 exchange_name=self.exchange,

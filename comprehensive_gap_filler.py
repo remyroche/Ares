@@ -41,6 +41,9 @@ class ComprehensiveGapFiller:
     def detect_gaps_in_file(self, file_path: Path, min_gap_seconds: int = 10) -> List[Dict]:
         """Detect gaps in a single aggtrades file"""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Read the parquet file
             df = pd.read_parquet(file_path)
 
@@ -95,6 +98,9 @@ class ComprehensiveGapFiller:
         url = f"{base_url}/{path}"
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             ssl_context = ssl.create_default_context(cafile=certifi.where())
 
             async with self.session.get(url, ssl = ssl_context) as resp:
@@ -181,6 +187,9 @@ class ComprehensiveGapFiller:
     async def fill_gap(self, gap_info: Dict, symbol: str = "ETHUSDT") -> Dict:
         """Fill a single gap using Binance Vision"""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             gap_start = gap_info['gap_start']
             gap_end = gap_info['gap_end']
             file_name = gap_info['file']
@@ -304,6 +313,9 @@ async def main():
     gap_filler = ComprehensiveGapFiller()
 
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         await gap_filler.process_all_gaps()
     finally:
         await gap_filler.close_session()

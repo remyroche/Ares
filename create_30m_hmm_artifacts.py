@@ -34,6 +34,9 @@ async def create_30m_hmm_artifacts():
     )
 
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Run the HMM regime discovery for 30m timeframe
         success = await run_step(
             symbol=symbol,

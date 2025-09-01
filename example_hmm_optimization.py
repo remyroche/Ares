@@ -371,6 +371,9 @@ def main():
     print("This script demonstrates how to optimize HMM parameters for capturing distinct market conditions.")
 
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Run basic example
         basic_results = run_basic_optimization_example()
 

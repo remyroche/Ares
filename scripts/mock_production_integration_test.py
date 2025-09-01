@@ -150,6 +150,9 @@ class MockProductionIntegrationTester:
         print(f"🚀 Testing end-to-end integration (regime: {hmm_regime})...")
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Step 1: Combined fractional system
             combined_results, feature_count, label_count = self.mock_combined_system_integration(hmm_regime)
 
@@ -229,6 +232,9 @@ class MockProductionIntegrationTester:
     def _compile_overall_summary(self, all_results: Dict[str, Any]) -> Dict[str, Any]:
         """Compile overall summary from all regime results."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             successful_results = [r for r in all_results.values() if r.get('success', False)]
 
             if not successful_results:

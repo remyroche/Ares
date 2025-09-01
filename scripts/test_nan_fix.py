@@ -31,6 +31,9 @@ def _safe_numeric(value: Any) -> float:
 		float: Safe numeric value
 	"""
 	try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
 		arr = float(value)
 		if np.isnan(arr) or np.isinf(arr):
 			return 0.0
@@ -150,6 +153,9 @@ def test_nan_handling() -> bool:
 	logger = system_logger.getChild("TestNaNHandling")
 
 	try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
 		# Create sample data with NaN and Inf values
 		np.random.seed(42)
 		n_samples = 1000

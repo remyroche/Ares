@@ -53,6 +53,9 @@ async def fix_specific_files_gaps(
     }
 
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Step 1: Detect all gaps
         logger.info("📊 STEP 1: DETECTING CURRENT GAPS")
         logger.info("-" * 60)
@@ -92,6 +95,9 @@ async def fix_specific_files_gaps(
             results["files_processed"] += 1
 
             try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                 # Attempt to fill gaps for this file
                 fill_results = await gap_filler.fill_aggtrades_gaps(
                     symbol, exchange, file_gaps

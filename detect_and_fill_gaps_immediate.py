@@ -81,6 +81,9 @@ async def main():
     args = parser.parse_args()
 
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         results = await detect_and_fill_gaps_immediate(
             symbol=args.symbol, exchange = args.exchange,
             min_gap_seconds=args.min_gap_seconds, auto_fill = not args.detect_only

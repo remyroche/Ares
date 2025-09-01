@@ -47,6 +47,9 @@ class SimpleSRCompatibilityValidator:
             path = Path(script_path)
             if path.exists():
                 try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                     # Check syntax first
                     if not self.check_file_syntax(script_path):
                         results[script_path] = {
@@ -136,6 +139,9 @@ class SimpleSRCompatibilityValidator:
             }
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Check syntax
             if not self.check_file_syntax(sr_file):
                 return {

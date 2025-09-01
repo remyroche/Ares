@@ -52,6 +52,9 @@ class BotMonitor:
 
         for proc in psutil.process_iter(["pid", "name", "cmdline"]):
             try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                 cmdline = " ".join(proc.info.get("cmdline") or [])
                 if (
                     "ares_launcher.py" in cmdline
@@ -82,6 +85,9 @@ class BotMonitor:
 
         for log_file in log_dir.glob("*.log"):
             try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                 # Check if log file was modified in the last 5 minutes
                 if current_time - log_file.stat().st_mtime < 300:
                     with open(log_file, "r", encoding="utf-8") as f:
@@ -126,6 +132,9 @@ class BotMonitor:
         # Save notification to a file that the AI assistant can read
         notification_file = project_root / "state/ai_notification.json"
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             notification_file.parent.mkdir(parents=True, exist_ok=True)
             with open(notification_file, "w", encoding="utf-8") as f:
                 json.dump(notification, f, indent=2, default=str)
@@ -151,6 +160,9 @@ class BotMonitor:
 
         while True:
             try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                 current_time = datetime.now()
 
                 # Check for running processes

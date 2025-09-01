@@ -434,6 +434,9 @@ def main() -> None:
     investigator = RegimeCalculationInvestigator()
 
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Try to find feature data
         possible_paths = [
             "data_cache/features_15m.parquet",

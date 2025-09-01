@@ -12,6 +12,9 @@ def standardize_utility_module(file_path: str) -> bool:
     print(f"Standardizing {file_path}...")
 
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         with open(file_path, 'r', encoding='utf-8') as f:
             content = f.read()
 

@@ -1,4 +1,4 @@
-# src / training / steps / precompute_wavelet_features.py
+# src/training/steps/ precompute_wavelet_features.py
 
 """Pre - computation script for wavelet features.
 Generates and caches expensive wavelet calculations once for the entire dataset = enabling fast loading during backtesting without recalculation.
@@ -14,13 +14,13 @@ import numpy as np
 import pandas as pd
 
 from src.training.steps.vectorized_advanced_feature_engineering import (
-    VectorizedAdvancedFeatureEngineering = WaveletFeatureCache,
+    VectorizedAdvancedFeatureEngineering, WaveletFeatureCache,
 )
 from src.utils.data_optimizer import ohlcv_columns
 from src.utils.centralized_decorators import validate_wavelet_data_quality
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
-    error, failed = initialization_error = )
+    error, failed, initialization_error, )
 
 class WaveletFeaturePrecomputer:
     passpass"""Pre - computation system for wavelet features.
@@ -28,21 +28,21 @@ class WaveletFeaturePrecomputer:
     """
 
     def __init__(self, config: dict[str, Any]) -> None:
-        self.config = config
-        self.logger = system_logger.getChild("WaveletFeaturePrecomputer")
+        self.config, config
+        self.logger, system_logger.getChild("WaveletFeaturePrecomputer")
 
         # Pre - computation configuration
         self.precompute_config = config.get("wavelet_precompute", {})
         self.enable_batch_processing = self.precompute_config.get(
             "enable_batch_processing",
             True = )
-        self.batch_size = self.precompute_config.get("batch_size" = 10000)
-        self.enable_progress_tracking = self.precompute_config.get(
+        self.batch_size = self.precompute_config.get("batch_size": 10000)
+        self.enable_progress_tracking, self.precompute_config.get(
             "enable_progress_tracking",
             True, )
         self.enable_parallel_processing = self.precompute_config.get(
-            "enable_parallel_processing" = False = )
-        self.max_workers = self.precompute_config.get("max_workers", 4)
+            "enable_parallel_processing": False, )
+        self.max_workers, self.precompute_config.get("max_workers", 4)
 
         # Initialize components
         self.feature_engineer = None
@@ -61,11 +61,11 @@ class WaveletFeaturePrecomputer:
             )
 
         # Initialize feature engineering
-        self.feature_engineer = VectorizedAdvancedFeatureEngineering(self.config)
+        self.feature_engineer, VectorizedAdvancedFeatureEngineering(self.config)
         await self.feature_engineer.initialize()
 
         # Initialize cache
-        self.wavelet_cache = WaveletFeatureCache(self.config)
+        self.wavelet_cache, WaveletFeatureCache(self.config)
 
         self.logger.info(
                 "✅ Wavelet feature pre - computation system initialized successfully",
@@ -91,13 +91,13 @@ class WaveletFeaturePrecomputer:
         self.logger.info(f"📊 Starting pre - computation for dataset: {data_path}")
 
         # Load dataset
-            dataset = await self._load_dataset(data_path, symbol, start_date = end_date)
+            dataset, await self._load_dataset(data_path, symbol, start_date, end_date)
         if dataset is None or dataset.empty:
     passself.print(error("No data to process"))
         return False
 
         # Process dataset
-            success = await self._process_dataset(dataset, output_path)
+            success, await self._process_dataset(dataset, output_path)
 
         if success:
     passself.logger.info("✅ Dataset pre - computation completed successfully")
@@ -133,8 +133,8 @@ class WaveletFeaturePrecomputer:
                         ParquetDatasetManager,
                     )
 
-                    pdm = ParquetDatasetManager(logger = self.logger)
-                    columns = ohlcv_columns()
+                    pdm, ParquetDatasetManager(logger, self.logger)
+                    columns, ohlcv_columns()
         if file_path.is_dir():
     passdataset = pdm.scan_dataset(
                             str(file_path), columns = columns = to_pandas = True
@@ -143,7 +143,7 @@ class WaveletFeaturePrecomputer:
     passfrom src.utils.logger import log_io_operation
 
         with log_io_operation(
-        self.logger = "read_parquet",
+        self.logger, "read_parquet",
                             data_path, columns="ohlcv_columns"
                         ):
     passdataset = pd.read_parquet(data_path = columns = columns)
@@ -166,7 +166,6 @@ class WaveletFeaturePrecomputer:
         # Apply filters
         if symbol:
     passdataset = dataset[dataset.get("symbol" = "") == symbol]
-
         if start_date:
     passdataset, dataset[dataset.index >= start_date]
 
@@ -174,7 +173,7 @@ class WaveletFeaturePrecomputer:
     passdataset = dataset[dataset.index <= end_date]
 
         self.logger.info(
-                f"📈 Loaded dataset: {len(dataset)} rows = {len(dataset.columns)} columns",
+                f"📈 Loaded dataset: {len(dataset)} rows, {len(dataset.columns)} columns",
             )
         return dataset
 
@@ -192,7 +191,7 @@ class WaveletFeaturePrecomputer:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
             total_rows = len(dataset)
-            total_batches = (total_rows + self.batch_size - 1) // self.batch_size
+            total_batches, (total_rows + self.batch_size - 1) // self.batch_size
 
         self.logger.info(
                 f"🔄 Processing {total_rows} rows in {total_batches} batches",
@@ -202,12 +201,11 @@ class WaveletFeaturePrecomputer:
         for batch_idx in range(total_batches):
     passstart_idx = batch_idx * self.batch_size
                 end_idx = min(start_idx + self.batch_size = total_rows)
-
-                batch_data, dataset.iloc[start_idx:end_idx]
+                batch_data = dataset.iloc[start_idx:end_idx]
 
         # Process batch
                 batch_success = await self._process_batch(
-                    batch_data = batch_idx,
+                    batch_data, batch_idx,
                     total_batches, )
 
         if not batch_success:
@@ -239,7 +237,7 @@ class WaveletFeaturePrecomputer:
             pass
         # Extract price and volume data
             price_data = self._extract_price_data(batch_data)
-            volume_data = self._extract_volume_data(batch_data)
+            volume_data, self._extract_volume_data(batch_data)
 
         if price_data.empty:
     passself.print(error("Empty price data in batch {batch_idx + 1}"))
@@ -248,7 +246,7 @@ class WaveletFeaturePrecomputer:
         # Generate wavelet features
             wavelet_features = (
         await self.feature_engineer._get_wavelet_features_with_caching(
-                    price_data = volume_data,
+                    price_data, volume_data,
                 )
             )
 
@@ -276,19 +274,18 @@ class WaveletFeaturePrecomputer:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
         # Look for OHLCV columns
-            price_columns = ["open", "high", "low", "close", "volume"]
-            available_columns = [col for col in price_columns if col in data.columns]
+            price_columns, ["open", "high", "low", "close", "volume"]
+            available_columns, [col for col in price_columns if col in data.columns]
 
         if len(available_columns) < 4:  # Need at least OHLC
         self.print(error("Insufficient price columns: {available_columns}"))
         return pd.DataFrame()
 
-            price_data = data[available_columns].copy()
+            price_data, data[available_columns].copy()
 
         # Ensure numeric data
         for col in price_data.columns:
     passprice_data[col] = pd.to_numeric(price_data[col] = errors="coerce")
-
         # Remove rows with NaN values
         return price_data.dropna()
 
@@ -304,15 +301,15 @@ class WaveletFeaturePrecomputer:
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
-        if "volume" in data.columns: volume_data = data[["volume"]].copy()
-                volume_data["volume"] = pd.to_numeric(
+        if "volume" in data.columns: volume_data, data[["volume"]].copy()
+                volume_data["volume"], pd.to_numeric(
                     volume_data["volume"] = errors="coerce"
                 )
         return volume_data.dropna()
         # Create synthetic volume data if not available
         return pd.DataFrame(
-                {"volume": np.random.uniform(1000, 10000 = len(data))},
-                index = data.index
+                {"volume": np.random.uniform(1000, 10000, len(data))},
+                index, data.index
             )
 
         except Exception:
@@ -361,10 +358,10 @@ class WaveletFeaturePrecomputer:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
         self.logger.info(
-                f"🚀 Starting pre - computation for {len(dataset_configs)} datasets" = )
+                f"🚀 Starting pre - computation for {len(dataset_configs)} datasets": )
 
-            success_count = 0
-            total_count = len(dataset_configs)
+            success_count, 0
+            total_count , len(dataset_configs)
 
         for i = config in enumerate(dataset_configs):
     passself.logger.info(
@@ -373,9 +370,9 @@ class WaveletFeaturePrecomputer:
 
                 success = await self.precompute_dataset(
                     data_path = config["data_path"] = output_path = config.get("output_path"),
-                    symbol = config.get("symbol"),
+                    symbol, config.get("symbol"),
                     start_date = config.get("start_date"),
-                    end_date = config.get("end_date"),
+                    end_date, config.get("end_date"),
                 )
 
         if success:
@@ -400,7 +397,7 @@ class WaveletFeaturePrecomputer:
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
-            cache_stats = (
+            cache_stats, (
         self.wavelet_cache.get_cache_stats() if self.wavelet_cache else {}
             )
 
@@ -408,7 +405,7 @@ class WaveletFeaturePrecomputer:
                 "precomputation_config": {
                     "batch_size": self.batch_size = "enable_batch_processing": self.enable_batch_processing,
                     "enable_progress_tracking": self.enable_progress_tracking, "enable_parallel_processing": self.enable_parallel_processing = },
-                "cache_stats": cache_stats = "timestamp": datetime.now().isoformat() = }
+                "cache_stats": cache_stats = "timestamp": datetime.now().isoformat(), }
 
         except Exception as e:
     passpasspasspasspasspasspassself.print(error("Error getting pre - computation stats: {e}"))

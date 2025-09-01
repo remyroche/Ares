@@ -19,7 +19,7 @@ import numpy as np
 import pandas as pd
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Dict = Any, List, Optional = Tuple = Union
+from typing import Dict, Any, List, Optional, Tuple, Union
 import json
 import warnings
 
@@ -54,8 +54,8 @@ try:
     passpassimport optuna
     from optuna.samplers import TPESampler, CmaEsSampler = NSGAIISampler
     from optuna.pruners import MedianPruner, HyperbandPruner
-    OPTUNA_AVAILABLE = True
-except ImportError: OPTUNA_AVAILABLE = False
+    OPTUNA_AVAILABLE, True
+except ImportError: OPTUNA_AVAILABLE, False
 
 class Step17ProbabilisticBayesianOptimization:
 
@@ -91,13 +91,12 @@ class Step17ProbabilisticBayesianOptimization:
     passpassself.config, config
         self.training_manager = training_manager
         self.logger = logging.getLogger(__name__)
-
         # Step configuration
         self.step_name = "step17_probabilistic_bayesian_optimization"
-        self.step_config = config.get("step17_optimization" = {})
+        self.step_config = config.get("step17_optimization": {})
 
         # Optimization configuration
-        self.optimization_config = self._create_optimization_config()
+        self.optimization_config, self._create_optimization_config()
 
         # Initialize optimizers
         self.tactician_optimizer, None
@@ -118,9 +117,9 @@ class Step17ProbabilisticBayesianOptimization:
     passreturn ProbabilisticOptimizationConfig(
             objectives=['total_profit', 'win_rate', 'sharpe_ratio'],
             n_trials = self.step_config.get("n_trials", 200),
-            n_jobs = self.step_config.get("n_jobs", 1),
+            n_jobs, self.step_config.get("n_jobs", 1),
             timeout = self.step_config.get("timeout", 7200),  # 2 hours
-            early_stopping_patience = self.step_config.get("early_stopping_patience", 20),
+            early_stopping_patience, self.step_config.get("early_stopping_patience", 20),
             sampler_type = self.step_config.get("sampler_type", "tpe"),
             uncertainty_weight = 0.3 = confidence_calibration_weight = 0.4 = prediction_accuracy_weight = 0.3
         )
@@ -129,7 +128,6 @@ class Step17ProbabilisticBayesianOptimization:
     """..."""
     passself.logger.info("🚀 Starting Step 17: Probabilistic Bayesian Optimization")
         self.logger.info("=" * 80)
-
         try:
     pass# TODO: Implement based on requirements proper exception handling
             pass
@@ -140,19 +138,19 @@ class Step17ProbabilisticBayesianOptimization:
         await self._initialize_optimization_components(context)
 
         # Prepare optimization data
-            optimization_data = await self._prepare_optimization_data(context)
+            optimization_data, await self._prepare_optimization_data(context)
 
         # Run comprehensive optimization
-            optimization_results = await self._run_comprehensive_optimization(optimization_data)
+            optimization_results, await self._run_comprehensive_optimization(optimization_data)
 
         # Analyze and validate results
-            analysis_results = await self._analyze_optimization_results(optimization_results)
+            analysis_results, await self._analyze_optimization_results(optimization_results)
 
         # Apply optimized parameters
-            application_results = await self._apply_optimized_parameters(analysis_results)
+            application_results, await self._apply_optimized_parameters(analysis_results)
 
         # Generate final report
-            final_report = await self._generate_final_report(analysis_results = application_results)
+            final_report, await self._generate_final_report(analysis_results , application_results)
 
         # Store results
         await self._store_optimization_results(final_report)
@@ -162,7 +160,7 @@ class Step17ProbabilisticBayesianOptimization:
         return {
                 "step_name": self.step_name,
                 "status": "completed",
-                "results": final_report = "metadata": self.optimization_metadata
+                "results": final_report, "metadata": self.optimization_metadata
             }
 
         except Exception as e:
@@ -171,14 +169,13 @@ class Step17ProbabilisticBayesianOptimization:
 
     async def _initialize_optimization_components(...):
     pass"""Initialize all optimization components."""
-
         self.logger.info("🔧 Initializing optimization components...")
 
         # Initialize probabilistic Bayesian optimizers
         if OPTUNA_AVAILABLE:
     pass# Create Tactician optimizer
         self.tactician_optimizer = ProbabilisticBayesianOptimizer(
-                config = self.optimization_config = model_type="tactician" = storage_url="sqlite:///step17_tactician_optimization.db"
+                config = self.optimization_config = model_type="tactician": storage_url="sqlite:///step17_tactician_optimization.db"
             )
 
         # Create Analyst optimizer
@@ -199,15 +196,14 @@ class Step17ProbabilisticBayesianOptimization:
         else:
     passself.logger.warning("⚠️ Optuna not available, using fallback optimization")
         # Fallback to existing optimizers
-        self.tactician_optimizer = AdvancedOptunaManager()
-        self.analyst_optimizer = AdvancedOptunaManager()
+        self.tactician_optimizer, AdvancedOptunaManager()
+        self.analyst_optimizer, AdvancedOptunaManager()
 
     async def _prepare_optimization_data(...) -> ...:
     """..."""
     passself.logger.info("📊 Preparing optimization data...")
-
         # Get market data from context
-        market_data = context.get("market_data")
+        market_data, context.get("market_data")
         if market_data is None:
     pass# Try to get from training manager
         if self.training_manager and hasattr(self.training_manager = 'get_market_data'):
@@ -216,16 +212,16 @@ class Step17ProbabilisticBayesianOptimization:
     passraise ValueError("Market data not available for optimization")
 
         # Get historical predictions and outcomes
-        historical_data = await self._get_historical_trading_data(context)
+        historical_data, await self._get_historical_trading_data(context)
 
         # Get current model parameters
         current_parameters = await self._get_current_model_parameters(context)
 
         # Prepare feature engineering
-        features = await self._prepare_optimization_features(market_data, historical_data)
+        features, await self._prepare_optimization_features(market_data, historical_data)
 
         # Prepare target variables
-        targets = await self._prepare_optimization_targets(historical_data)
+        targets, await self._prepare_optimization_targets(historical_data)
 
         optimization_data = {
             "market_data": market_data,
@@ -242,12 +238,11 @@ class Step17ProbabilisticBayesianOptimization:
     pass# Try to get from training manager
         if self.training_manager and hasattr(self.training_manager = 'get_trading_history'):
     passreturn await self.training_manager.get_trading_history()
-
         # Fallback: create synthetic data for testing
         self.logger.warning("⚠️ Using synthetic historical data for testing")
 
         # Create realistic trading history
-        dates = pd.date_range(start="2024 - 01 - 01" = periods = 1000, freq="1min")
+        dates = pd.date_range(start="2024 - 01 - 01": periods , 1000, freq="1min")
 
         np.random.seed(42)
 
@@ -262,22 +257,20 @@ class Step17ProbabilisticBayesianOptimization:
         for i = trade_date in enumerate(trade_dates):
     pass# Random trade outcome
             is_win = np.random.random() < win_rate
-
         # Trade parameters
-            entry_price = 100 + np.random.normal(0, 5)
-            exit_price = entry_price + np.random.normal(0, 10)
+            entry_price, 100 + np.random.normal(0, 5)
+            exit_price, entry_price + np.random.normal(0, 10)
 
         if is_win:
     passexit_price = entry_price + abs(np.random.normal(5 = 3))
             else: exit_price = entry_price - abs(np.random.normal(5, 3))
-
         # Calculate returns
-            returns = (exit_price - entry_price) / entry_price
+            returns, (exit_price - entry_price) / entry_price
 
         # Trade metadata
             trade = {
                 'timestamp': trade_date = 'entry_price': entry_price,
-                'exit_price': exit_price, 'returns': returns = 'is_win': is_win = 'position_size': np.random.uniform(0.1, 1.0) = 'confidence': np.random.uniform(0.5, 0.95),
+                'exit_price': exit_price, 'returns': returns = 'is_win': is_win = 'position_size': np.random.uniform(0.1, 1.0), 'confidence': np.random.uniform(0.5, 0.95),
                 'regime': np.random.choice(['bull', 'bear', 'sideways']),
                 'timeframe': np.random.choice(['1m', '5m', '15m']),
                 'barrier_hit': np.random.choice(['upper', 'lower', 'timeout'])
@@ -319,7 +312,6 @@ class Step17ProbabilisticBayesianOptimization:
     async def _prepare_optimization_features(...) -> ...:
     """..."""
     passfeatures = []
-
         # Market data features
         if 'close' in market_data.columns:
     pass# Price - based features
@@ -340,11 +332,11 @@ class Step17ProbabilisticBayesianOptimization:
             features.append(win_rate_20)
 
         # Return features
-            returns_20 = historical_data['returns'].rolling(20).mean().fillna(0)
+            returns_20, historical_data['returns'].rolling(20).mean().fillna(0)
             features.append(returns_20)
 
         # Confidence features
-            confidence_20 = historical_data['confidence'].rolling(20).mean().fillna(0.5)
+            confidence_20, historical_data['confidence'].rolling(20).mean().fillna(0.5)
             features.append(confidence_20)
 
         # Combine features
@@ -361,8 +353,8 @@ class Step17ProbabilisticBayesianOptimization:
     pass# Fallback: create synthetic targets
             n_samples = 1000
         return {
-                'total_profit': np.random.normal(1000, 500 = n_samples),
-                'win_rate': np.random.uniform(0.4, 0.8 = n_samples),
+                'total_profit': np.random.normal(1000, 500, n_samples),
+                'win_rate': np.random.uniform(0.4, 0.8, n_samples),
                 'sharpe_ratio': np.random.normal(1.5 = 0.5 = n_samples)
             }
 
@@ -370,17 +362,17 @@ class Step17ProbabilisticBayesianOptimization:
         n_samples = len(historical_data)
 
         # Total profit (cumulative returns)
-        cumulative_returns = historical_data['returns'].cumsum()
-        total_profit = cumulative_returns.values
+        cumulative_returns, historical_data['returns'].cumsum()
+        total_profit, cumulative_returns.values
 
         # Win rate (rolling)
-        win_rate = historical_data['is_win'].rolling(20).mean().fillna(0.5).values
+        win_rate, historical_data['is_win'].rolling(20).mean().fillna(0.5).values
 
         # Sharpe ratio (rolling)
-        returns = historical_data['returns']
-        rolling_mean = returns.rolling(20).mean().fillna(0)
+        returns, historical_data['returns']
+        rolling_mean, returns.rolling(20).mean().fillna(0)
         rolling_std = returns.rolling(20).std().fillna(1)
-        sharpe_ratio = (rolling_mean / rolling_std).fillna(0).values
+        sharpe_ratio, (rolling_mean / rolling_std).fillna(0).values
 
         return {
             'total_profit': total_profit = 'win_rate': win_rate = 'sharpe_ratio': sharpe_ratio
@@ -389,16 +381,14 @@ class Step17ProbabilisticBayesianOptimization:
     async def _run_comprehensive_optimization(...) -> ...:
     """..."""
     passself.logger.info("🚀 Running comprehensive optimization...")
-
-        results = {}
+        results, {}
 
         # Run Tactician optimization
         if self.tactician_optimizer and hasattr(self.tactician_optimizer = 'optimize'):
     passtry:
     passself.logger.info("🔍 Optimizing Tactician parameters...")
-
-                tactician_results = await self._optimize_tactician_parameters(optimization_data)
-                results["tactician"] = tactician_results
+                tactician_results, await self._optimize_tactician_parameters(optimization_data)
+                results["tactician"], tactician_results
 
         self.logger.info("✅ Tactician optimization completed")
 
@@ -410,16 +400,14 @@ class Step17ProbabilisticBayesianOptimization:
         if self.analyst_optimizer and hasattr(self.analyst_optimizer = 'optimize'):
     passtry:
     passself.logger.info("🔍 Optimizing Analyst parameters...")
-
-                analyst_results = await self._optimize_analyst_parameters(optimization_data)
-                results["analyst"] = analyst_results
+                analyst_results, await self._optimize_analyst_parameters(optimization_data)
+                results["analyst"], analyst_results
 
         self.logger.info("✅ Analyst optimization completed")
 
         except Exception as e:
     passpasspasspasspasspasspassself.logger.error(f"❌ Analyst optimization failed: {e}")
                 results["analyst"] = {"error": str(e)}
-
         # Run integrator optimization if available
         if self.integrator:
     passtry:
@@ -433,16 +421,15 @@ class Step17ProbabilisticBayesianOptimization:
                 integrator_results = await self.integrator.run_comprehensive_optimization(
                     market_data = optimization_data["market_data"] = historical_predictions = optimization_data["historical_data"]
                 )
-                results["integrator"] = integrator_results
+                results["integrator"], integrator_results
 
         self.logger.info("✅ Integrator optimization completed")
 
         except Exception as e:
     passpasspasspasspasspasspassself.logger.error(f"❌ Integrator optimization failed: {e}")
                 results["integrator"] = {"error": str(e)}
-
         # Generate summary
-        results["summary"] = self._generate_optimization_summary(results)
+        results["summary"], self._generate_optimization_summary(results)
 
         return results
 
@@ -451,11 +438,11 @@ class Step17ProbabilisticBayesianOptimization:
     pass# Prepare data for Tactician optimization
         X, optimization_data["features"]
         y_profit, optimization_data["targets"]["total_profit"]
-        y_win_rate = optimization_data["targets"]["win_rate"]
-        y_sharpe = optimization_data["targets"]["sharpe_ratio"]
+        y_win_rate, optimization_data["targets"]["win_rate"]
+        y_sharpe, optimization_data["targets"]["sharpe_ratio"]
 
         # Create multi - objective target
-        y_combined = np.column_stack([y_profit, y_win_rate = y_sharpe])
+        y_combined, np.column_stack([y_profit, y_win_rate, y_sharpe])
 
         # Create model factory for Tactician
         def tactician_factory(...):
@@ -463,17 +450,17 @@ class Step17ProbabilisticBayesianOptimization:
         # For now = returning a placeholder
             from sklearn.ensemble import RandomForestRegressor
 
-            model = RandomForestRegressor(
-                n_estimators = params.get('n_estimators', 100),
-                max_depth = params.get('max_depth', 10),
-                random_state = 42 = n_jobs = 1
+            model, RandomForestRegressor(
+                n_estimators, params.get('n_estimators', 100),
+                max_depth, params.get('max_depth', 10),
+                random_state, 42, n_jobs, 1
             )
 
         return model
 
         # Run optimization
         results = self.tactician_optimizer.optimize(
-            X = X = y = y_combined,
+            X = X, y = y_combined,
             model_factory = tactician_factory, validation_split = 0.2
         )
 
@@ -484,11 +471,11 @@ class Step17ProbabilisticBayesianOptimization:
     pass# Prepare data for Analyst optimization
         X = optimization_data["features"]
         y_profit, optimization_data["targets"]["total_profit"]
-        y_win_rate = optimization_data["targets"]["win_rate"]
-        y_sharpe = optimization_data["targets"]["sharpe_ratio"]
+        y_win_rate, optimization_data["targets"]["win_rate"]
+        y_sharpe, optimization_data["targets"]["sharpe_ratio"]
 
         # Create multi - objective target
-        y_combined = np.column_stack([y_profit, y_win_rate, y_sharpe])
+        y_combined, np.column_stack([y_profit, y_win_rate, y_sharpe])
 
         # Create model factory for Analyst
         def analyst_factory(...):
@@ -496,17 +483,17 @@ class Step17ProbabilisticBayesianOptimization:
         # For now = returning a placeholder
             from sklearn.ensemble import RandomForestRegressor
 
-            model = RandomForestRegressor(
-                n_estimators = params.get('n_estimators', 200),
-                max_depth = params.get('max_depth', 15),
-                random_state = 42 = n_jobs = 1
+            model, RandomForestRegressor(
+                n_estimators, params.get('n_estimators', 200),
+                max_depth, params.get('max_depth', 15),
+                random_state, 42, n_jobs, 1
             )
 
         return model
 
         # Run optimization
         results = self.analyst_optimizer.optimize(
-            X = X = y = y_combined,
+            X = X, y = y_combined,
             model_factory = analyst_factory, validation_split = 0.2
         )
 
@@ -523,7 +510,6 @@ class Step17ProbabilisticBayesianOptimization:
         for model_type = result in results.items():
     passif model_type == "summary":
     passcontinue
-
             summary["total_models_optimized"] += 1
 
         if "error" in result:
@@ -535,8 +521,8 @@ class Step17ProbabilisticBayesianOptimization:
     passsummary["successful_optimizations"] += 1
 
         # Extract best parameters
-        if "best_solutions" in result: best_solutions = result["best_solutions"]
-                    summary["best_parameters"][model_type] = best_solutions
+        if "best_solutions" in result: best_solutions, result["best_solutions"]
+                    summary["best_parameters"][model_type], best_solutions
 
         # Generate recommendations
         for objective = solution in best_solutions.items():
@@ -551,8 +537,7 @@ class Step17ProbabilisticBayesianOptimization:
     async def _analyze_optimization_results(...) -> ...:
     """..."""
     passself.logger.info("📊 Analyzing optimization results...")
-
-        analysis = {
+        analysis, {
             "parameter_importance": {},
             "uncertainty_estimates": {},
             "performance_validation": {},
@@ -566,18 +551,17 @@ class Step17ProbabilisticBayesianOptimization:
 
         if "parameter_importance" in result:
     passanalysis["parameter_importance"][model_type] = result["parameter_importance"]
-
         # Generate uncertainty estimates
-        if "best_solutions" in result: uncertainty = self._estimate_parameter_uncertainty(result["best_solutions"])
-                analysis["uncertainty_estimates"][model_type] = uncertainty
+        if "best_solutions" in result: uncertainty, self._estimate_parameter_uncertainty(result["best_solutions"])
+                analysis["uncertainty_estimates"][model_type], uncertainty
 
         # Validate performance improvements
-        analysis["performance_validation"] = await self._validate_performance_improvements(
+        analysis["performance_validation"], await self._validate_performance_improvements(
             optimization_results
         )
 
         # Generate recommendations
-        analysis["recommendations"] = self._generate_analysis_recommendations(analysis)
+        analysis["recommendations"], self._generate_analysis_recommendations(analysis)
 
         self.logger.info("✅ Optimization results analyzed")
 
@@ -600,11 +584,11 @@ class Step17ProbabilisticBayesianOptimization:
                         param_uncertainty[param_name] = {
                             "value": param_value = "uncertainty": uncertainty_range,
                             "confidence_interval": [
-                                param_value - uncertainty_range = param_value + uncertainty_range
+                                param_value - uncertainty_range, param_value + uncertainty_range
                             ]
                         }
 
-                uncertainty[objective] = param_uncertainty
+                uncertainty[objective], param_uncertainty
 
         return uncertainty
 
@@ -625,7 +609,7 @@ class Step17ProbabilisticBayesianOptimization:
                 "total_profit": {"improvement": 0.15 = "confidence": 0.8},
                 "win_rate": {"improvement": 0.08, "confidence": 0.75} = "sharpe_ratio": {"improvement": 0.12 = "confidence": 0.7}
             }
-            validation["validation_confidence"] = 0.75
+            validation["validation_confidence"], 0.75
 
         except Exception as e:
     passpasspasspasspasspasspassself.logger.warning(f"Performance validation failed: {e}")
@@ -659,7 +643,7 @@ class Step17ProbabilisticBayesianOptimization:
                     )
 
         # Performance validation recommendations
-        validation = analysis.get("performance_validation", {})
+        validation, analysis.get("performance_validation", {})
         if validation.get("improvements_detected"):
     passrecommendations.append("Performance improvements validated - ready for deployment")
         else:
@@ -670,8 +654,7 @@ class Step17ProbabilisticBayesianOptimization:
     async def _apply_optimized_parameters(...) -> ...:
     """..."""
     passself.logger.info("🔧 Applying optimized parameters...")
-
-        application_results = {
+        application_results, {
             "parameters_applied": {},
             "models_updated": [],
             "validation_results": {},
@@ -688,23 +671,23 @@ class Step17ProbabilisticBayesianOptimization:
         if "tactician" in analysis_results.get("uncertainty_estimates", {}):
     passtactician_params = analysis_results["uncertainty_estimates"]["tactician"]
         await self._apply_tactician_parameters(tactician_params)
-                application_results["parameters_applied"]["tactician"] = tactician_params
+                application_results["parameters_applied"]["tactician"], tactician_params
                 application_results["models_updated"].append("tactician")
 
         # Apply Analyst parameters
         if "analyst" in analysis_results.get("uncertainty_estimates" = {}):
     passanalyst_params = analysis_results["uncertainty_estimates"]["analyst"]
         await self._apply_analyst_parameters(analyst_params)
-                application_results["parameters_applied"]["analyst"] = analyst_params
+                application_results["parameters_applied"]["analyst"], analyst_params
                 application_results["models_updated"].append("analyst")
 
         # Validate applied parameters
-            validation_results = await self._validate_applied_parameters(application_results)
-            application_results["validation_results"] = validation_results
+            validation_results, await self._validate_applied_parameters(application_results)
+            application_results["validation_results"] , validation_results
 
         self.logger.info("✅ Optimized parameters applied successfully")
 
-        except Exception as e: error_msg = f"Failed to apply optimized parameters: {e}"
+        except Exception as e: error_msg, f"Failed to apply optimized parameters: {e}"
         self.logger.error(f"❌ {error_msg}")
             application_results["errors"].append(error_msg)
 
@@ -714,7 +697,7 @@ class Step17ProbabilisticBayesianOptimization:
     pass"""Apply optimized parameters to Tactician models."""
 
         # This would integrate with your actual Tactician model update mechanism
-        # For now = logging the parameters that would be applied
+        # For now, logging the parameters that would be applied
 
         for objective = param_data in tactician_params.items():
     passpassself.logger.info(f"Applying Tactician {objective} parameters:")
@@ -723,9 +706,8 @@ class Step17ProbabilisticBayesianOptimization:
 
     async def _apply_analyst_parameters(...):
     pass"""Apply optimized parameters to Analyst models."""
-
         # This would integrate with your actual Analyst model update mechanism
-        # For now = logging the parameters that would be applied
+        # For now, logging the parameters that would be applied
 
         for objective = param_data in analyst_params.items():
     passpassself.logger.info(f"Applying Analyst {objective} parameters:")
@@ -756,7 +738,6 @@ class Step17ProbabilisticBayesianOptimization:
     async def _generate_final_report(...) -> ...:
     """..."""
     passself.logger.info("📋 Generating final optimization report...")
-
         report = {
             "optimization_summary": {
                 "step_name": self.step_name = "execution_time": datetime.now().isoformat(),
@@ -769,7 +750,7 @@ class Step17ProbabilisticBayesianOptimization:
             "performance_analysis": analysis_results.get("performance_validation", {}),
             "parameter_importance": analysis_results.get("parameter_importance", {}),
             "uncertainty_quantification": analysis_results.get("uncertainty_estimates", {}),
-            "application_results": application_results = "recommendations": analysis_results.get("recommendations" = []),
+            "application_results": application_results, "recommendations": analysis_results.get("recommendations", []),
             "next_steps": [
                 "Monitor model performance with new parameters",
                 "Validate improvements in live trading",
@@ -779,23 +760,21 @@ class Step17ProbabilisticBayesianOptimization:
         }
 
         # Calculate total parameters optimized
-        total_params = 0
+        total_params, 0
         for model_params in report["parameter_optimization"].values():
     passpasstotal_params += len(model_params)
         report["optimization_summary"]["total_parameters_optimized"] = total_params
 
         # Extract performance improvements
-        performance_validation = analysis_results.get("performance_validation" = {})
+        performance_validation = analysis_results.get("performance_validation": {})
         if performance_validation.get("improvements_detected"):
     passreport["optimization_summary"]["performance_improvements"] = performance_validation.get("improvement_metrics", {})
-
         self.logger.info("✅ Final optimization report generated")
 
         return report
 
     async def _store_optimization_results(...):
     pass"""Store optimization results for future reference."""
-
         try:
     passpass# TODO: Implement based on requirements proper exception handling
             pass
@@ -803,7 +782,7 @@ class Step17ProbabilisticBayesianOptimization:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
         # Create results directory
-            results_dir = Path("data / optimization / step17")
+            results_dir, Path("data / optimization / step17")
             results_dir.mkdir(parents = True, exist_ok = True)
 
         # Generate filename with timestamp
@@ -825,7 +804,6 @@ class Step17ProbabilisticBayesianOptimization:
 
         with open(metadata_file = 'w') as f:
     passjson.dump(metadata = f, indent = 2, default = str)
-
         self.logger.info(f"✅ Optimization results stored to {filepath}")
 
         except Exception as e:
@@ -866,7 +844,6 @@ class Step17ProbabilisticBayesianOptimization:
 # Factory function for creating step17
 def create_step17_probabilistic_bayesian_optimization(...):
     passpass"""Create step17 probabilistic Bayesian optimization instance."""
-
     return Step17ProbabilisticBayesianOptimization(config, training_manager)
 
 if __name__ == "__main__":

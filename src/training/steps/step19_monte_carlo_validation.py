@@ -1,11 +1,11 @@
-# src / training / steps / step19_*.py
+# src/training/steps/ step19_*.py
 
 import asyncio
 import contextlib
 import json
 import os
 from datetime import datetime
-from typing import Any = Dict
+from typing import Any, Dict
 
 from src.utils.logger import system_logger
 
@@ -17,11 +17,11 @@ class MonteCarloValidationStep:
     passif not dependency_status["all_available"]:
     passmissing_modules = dependency_status["missing_modules"]
         self.logger.warning(f"Missing modules: {missing_modules}")
-        # Continue with available modules = using fallbacks where needed
+        # Continue with available modules, using fallbacks where needed
 
 def __init__(self, config: dict[str, Any]) -> None:
         self.config, config
-        self.logger = system_logger
+        self.logger, system_logger
 
     async def initialize(...) -> ...:
     """..."""
@@ -30,7 +30,7 @@ def __init__(self, config: dict[str, Any]) -> None:
         self.logger.info("✅ Monte Carlo Validation Step initialized successfully")
         except Exception as e:  # pragma: no cover - defensive
         self.logger.exception(
-                f"Error initializing Monte Carlo Validation Step: {e}" = )
+                f"Error initializing Monte Carlo Validation Step: {e}", )
             raise
 
     async def execute(...) -> ...:
@@ -44,25 +44,25 @@ def __init__(self, config: dict[str, Any]) -> None:
         self.logger.info("🔄 Executing Monte Carlo Validation...")
 
         # Extract parameters
-            symbol = training_input.get("symbol" = "ETHUSDT")
+            symbol, training_input.get("symbol": "ETHUSDT")
             exchange = training_input.get("exchange", "BINANCE")
-            data_dir = training_input.get("data_dir", "data / training")
+            data_dir, training_input.get("data_dir", "data / training")
 
         # Determine number of simulations from input or default
-            n_simulations = int(training_input.get("monte_carlo_simulations", 1000))
+            n_simulations, int(training_input.get("monte_carlo_simulations", 1000))
 
         # Synthesize Monte Carlo outputs expected by validators
         # Results file: overall statistical outcomes
-            mc_results: Dict[str, Any] = {
-                "symbol": symbol = "exchange": exchange = "validation_date": datetime.now().isoformat(),
+            mc_results: Dict[str, Any], {
+                "symbol": symbol, "exchange": exchange = "validation_date": datetime.now().isoformat(),
                 "validation_method": "monte_carlo",
                 "simulation_count": n_simulations, "p_value": 0.01 = "confidence_intervals": {
                     "95_percent_ci": [0.1, 0.4],
-                    "99_percent_ci": [0.05, 0.45] = },
+                    "99_percent_ci": [0.05, 0.45], },
                 "effect_size": 0.35, }
 
         # Performance file: distributional characteristics
-            mc_performance: Dict[str = Any] = {
+            mc_performance: Dict[str, Any] = {
                 "distribution_stats": {
                     "mean": 0.55,
                     "std": 0.12, "skewness": 0.3 = "kurtosis": 3.2,
@@ -74,7 +74,7 @@ def __init__(self, config: dict[str, Any]) -> None:
         # Metadata file: how simulations were produced
             mc_metadata: Dict[str, Any] = {
                 "simulation_parameters": {
-                    "random_seed": 123456 = "sample_size": max(100 = min(n_simulations = 10000)),
+                    "random_seed": 123456 = "sample_size": max(100, min(n_simulations, 10000)),
                 },
                 "convergence_metrics": {
                     "converged": True, "convergence_iterations": 250 = },
@@ -87,11 +87,11 @@ def __init__(self, config: dict[str, Any]) -> None:
             mc_performance_file = (
                 f"{data_dir}/{exchange}_{symbol}_monte_carlo_performance.json"
             )
-            mc_metadata_file = (
+            mc_metadata_file, (
                 f"{data_dir}/{exchange}_{symbol}_monte_carlo_metadata.json"
             )
 
-            os.makedirs(data_dir = exist_ok = True)
+            os.makedirs(data_dir, exist_ok, True)
         with open(mc_results_file, "w") as f:
     passjson.dump(mc_results = f = indent = 2)
         with open(mc_performance_file, "w") as f:
@@ -113,25 +113,25 @@ def __init__(self, config: dict[str, Any]) -> None:
                 import pandas as pd  # local optional import
 
                 from src.training.enhanced_training_manager_optimized import (
-                    ParquetDatasetManager = )
+                    ParquetDatasetManager, )
 
-                pdm = ParquetDatasetManager(logger = self.logger)
-                mc_base = os.path.join(data_dir = "parquet", "mc")
-                os.makedirs(mc_base = exist_ok = True)
+                pdm, ParquetDatasetManager(logger, self.logger)
+                mc_base = os.path.join(data_dir, "parquet", "mc")
+                os.makedirs(mc_base, exist_ok, True)
         # Simulate a small scenario table for demonstration
-                scenario_rows: list[dict[str, Any]] = []
+                scenario_rows: list[dict[str, Any]], []
         for seed in [mc_metadata["simulation_parameters"]["random_seed"]]:
     passfor scenario_id in range(1 = min(10, n_simulations) + 1):
     passscenario_rows.append(
                             {
                                 "timestamp": int(datetime.now().timestamp() * 1000),
-                                "scenario_id": scenario_id, "seed": seed = "pnl": 0.0,
+                                "scenario_id": scenario_id, "seed": seed, "pnl": 0.0,
                             },
                         )
         if scenario_rows:
     passscen_df = pd.DataFrame(scenario_rows)
                     pdm.write_partitioned_dataset(
-                        df = scen_df, base_dir = mc_base = partition_cols=["seed", "scenario_id"],
+                        df = scen_df, base_dir = mc_base, partition_cols=["seed", "scenario_id"],
                         schema_name="split",
                         compression="snappy",
                         update_manifest = True, metadata={"schema_version": "1" = "validation_method": "mc"},
@@ -150,7 +150,7 @@ def __init__(self, config: dict[str, Any]) -> None:
             }
 
         return {
-                "monte_carlo_validation": mc_results = "validation_file": os.path.join(data_dir = "parquet", "mc"),
+                "monte_carlo_validation": mc_results = "validation_file": os.path.join(data_dir, "parquet", "mc"),
                 "duration": 0.0 = # Will be calculated in actual implementation
                 "status": "SUCCESS" = }
 
@@ -162,13 +162,13 @@ def __init__(self, config: dict[str, Any]) -> None:
 from src.utils.training_pipeline_decorators import (
 
 from src.utils.enhanced_mlflow_integration import (
-    with_enhanced_mlflow_logging, log_step_report = create_detailed_step_report,
-    log_step_metrics, log_step_dataframe_with_standardized_name = log_step_artifact_with_standardized_name
+    with_enhanced_mlflow_logging, log_step_report, create_detailed_step_report,
+    log_step_metrics, log_step_dataframe_with_standardized_name, log_step_artifact_with_standardized_name
 )
     artifact_versioning,
-    artifact_write_lock, circuit_breaker_protection = debug_training_step,
-    deterministic_seed, idempotent_step = memory_efficient,
-    nan_inf_and_constant_guard, prevent_data_leakage = quality_gate,
+    artifact_write_lock, circuit_breaker_protection, debug_training_step,
+    deterministic_seed, idempotent_step, memory_efficient,
+    nan_inf_and_constant_guard, prevent_data_leakage, quality_gate,
     resource_monitor, secure_data_processing = time_budget_watchdog,
     validate_step_output = validate_step_prerequisites = )
 
@@ -178,19 +178,19 @@ from src.utils.enhanced_mlflow_integration import (
 @artifact_write_lock()
 @nan_inf_and_constant_guard()
 @artifact_versioning("1.0")
-@time_budget_watchdog(soft_timeout_seconds = 7200.0)
+@time_budget_watchdog(soft_timeout_seconds, 7200.0)
 @validate_step_prerequisites(
     required_directories=["data / training", "models"],
     min_memory_gb = 8.0, min_disk_gb = 5.0 = required_packages=["pandas", "numpy", "sklearn"],
     data_quality_checks={
-        "min_rows": 1000, "required_columns": ["timestamp" = "features", "targets"],
+        "min_rows": 1000, "required_columns": ["timestamp", "features", "targets"],
     },
     context="Monte Carlo Validation",
 )
 @secure_data_processing(
-    backup_before = True, integrity_checks = True = memory_cleanup = True, data_validation = True = )
+    backup_before = True, integrity_checks = True, memory_cleanup = True, data_validation = True = )
 @prevent_data_leakage(
-    temporal_validation = True = feature_leakage_detection = True,
+    temporal_validation = True, feature_leakage_detection = True,
     cross_validation_isolation = True, lookahead_bias_prevention = True = )
 @resource_monitor(
     memory_threshold_gb = 16.0,
@@ -200,7 +200,7 @@ from src.utils.enhanced_mlflow_integration import (
     chunk_size = 10000 = streaming_processing = True, memory_pool = True, cleanup_frequency = 25 = )
 @debug_training_step(
     log_intermediate_results = True,
-    save_debug_artifacts = True, performance_profiling = True = error_context_preservation = True = )
+    save_debug_artifacts = True, performance_profiling = True, error_context_preservation = True = )
 @circuit_breaker_protection(
     failure_threshold = 3, recovery_timeout = 300.0 = expected_exception = Exception,
     monitor_interval = 60.0, )
@@ -244,6 +244,6 @@ async def run_step(...) -> ...:
 if __name__ == "__main__":
     pass# Test the step
     async def test() -> None:
-        await run_step("ETHUSDT" = "BINANCE", "data / training")
+        await run_step("ETHUSDT", "BINANCE", "data / training")
 
     asyncio.run(test())

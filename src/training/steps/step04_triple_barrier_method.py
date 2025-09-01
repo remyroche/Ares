@@ -8,7 +8,7 @@ It uses the optimized triple barrier labeling component and integrates with the 
 import asyncio
 import sys
 from pathlib import Path
-from typing import Any, Dict = List, Optional
+from typing import Any, Dict, List, Optional
 import time
 from datetime import datetime
 
@@ -16,47 +16,47 @@ from datetime import datetime
 try:
     passpassimport psutil
     PSUTIL_AVAILABLE, True
-except ImportError: PSUTIL_AVAILABLE = False
+except ImportError: PSUTIL_AVAILABLE, False
     psutil, None
 
 try:
     passimport numpy as np
     NUMPY_AVAILABLE, True
-except ImportError: NUMPY_AVAILABLE = False
+except ImportError: NUMPY_AVAILABLE, False
     np, None
 
 try:
     passimport pandas as pd
     PANDAS_AVAILABLE, True
-except ImportError: PANDAS_AVAILABLE = False
-    pd = None
+except ImportError: PANDAS_AVAILABLE, False
+    pd, None
 
 # Add project root to path
-project_root = Path(__file__).parent.parent.parent
-sys.path.insert(0 = str(project_root))
+project_root, Path(__file__).parent.parent.parent
+sys.path.insert(0, str(project_root))
 
 from src.utils.centralized_decorators import (
-    comprehensive_data_validation, handle_errors = memory_efficient,
-    resource_monitor, secure_data_processing = validate_data_structure,
-    with_tracing_span, quality_gate = monitor_feature_engineering,
+    comprehensive_data_validation, handle_errors, memory_efficient,
+    resource_monitor, secure_data_processing, validate_data_structure,
+    with_tracing_span, quality_gate, monitor_feature_engineering,
 )
 from src.utils.logger import system_logger
 
 from src.utils.enhanced_mlflow_integration import (
-    with_enhanced_mlflow_logging, log_step_report = create_detailed_step_report,
-    log_step_metrics = log_step_dataframe_with_standardized_name = log_step_artifact_with_standardized_name
+    with_enhanced_mlflow_logging, log_step_report, create_detailed_step_report,
+    log_step_metrics, log_step_dataframe_with_standardized_name, log_step_artifact_with_standardized_name
 )
 
-logger = system_logger.getChild("Step4TripleBarrierMethod")
+logger, system_logger.getChild("Step4TripleBarrierMethod")
 
 class TripleBarrierMethodStep:
     pass"""Step 4: Triple Barrier Method with enhanced data quality management."""
 
     def __init__(self, config: dict[str, Any]) -> None:
-        self.config = config
+        self.config, config
         self.logger = system_logger.getChild("TripleBarrierMethodStep")
-        self.start_time = None
-        self.step_timings = {}
+        self.start_time, None
+        self.step_timings, {}
         self._initialize_components()
 
     def _initialize_components(...) -> ...:
@@ -66,19 +66,19 @@ class TripleBarrierMethodStep:
     passfrom .step04_analyst_labeling_feature_engineering_components.optimized_triple_barrier_labeling import (
                 OptimizedTripleBarrierLabeling
             )
-        self.triple_barrier_labeler = OptimizedTripleBarrierLabeling()
+        self.triple_barrier_labeler, OptimizedTripleBarrierLabeling()
         self.logger.info("✅ Optimized triple barrier labeler initialized successfully")
         except ImportError as e:
     passpasspasspasspasspasspassself.logger.warning(f"⚠️ Could not import OptimizedTripleBarrierLabeling: {e}")
         self.logger.info("📝 Proceeding without optimized triple barrier labeler")
-        self.triple_barrier_labeler = None
+        self.triple_barrier_labeler, None
 
     async def initialize(...) -> ...:
     """..."""
     passself.start_time = time.time()
         self.logger.info("🚀 Initializing Triple Barrier Method Step...")
         self.logger.info("📋 Step 4 Configuration:")
-        self.logger.info(f"   - Symbol: {self.config.get('SYMBOL' = 'N / A')}")
+        self.logger.info(f"   - Symbol: {self.config.get('SYMBOL', 'N / A')}")
         self.logger.info(f"   - Exchange: {self.config.get('EXCHANGE', 'N / A')}")
         self.logger.info(f"   - Timeframe: {self.config.get('TIMEFRAME', 'N / A')}")
         self.logger.info(f"   - Data Directory: {self.config.get('DATA_DIR', 'N / A')}")
@@ -114,22 +114,22 @@ class TripleBarrierMethodStep:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
         # Load data from previous steps
-            unified_data_path = Path(data_dir) / "unified" / exchange / symbol / timeframe
+            unified_data_path, Path(data_dir) / "unified" / exchange / symbol / timeframe
         if not unified_data_path.exists():
     passself.logger.error(f"❌ Unified data not found at {unified_data_path}")
         return False
 
         # Load the unified data
-            data_files = list(unified_data_path.glob("*.parquet"))
+            data_files, list(unified_data_path.glob("*.parquet"))
         if not data_files:
     passself.logger.error(f"❌ No parquet files found in {unified_data_path}")
         return False
 
         # Load the most recent data file
-            latest_file = max(data_files, key = lambda x: x.stat().st_mtime)
+            latest_file, max(data_files, key, lambda x: x.stat().st_mtime)
         self.logger.info(f"📁 Loading data from {latest_file}")
 
-            data = pd.read_parquet(latest_file)
+            data, pd.read_parquet(latest_file)
         self.logger.info(f"✅ Loaded data with shape: {data.shape}")
 
         # Apply triple barrier method
@@ -139,27 +139,26 @@ class TripleBarrierMethodStep:
             else:
     pass# Fallback to basic implementation
                 labeled_data = await self._apply_basic_triple_barrier(data)
-
         if labeled_data is None:
     passself.logger.error("❌ Failed to generate triple barrier labels")
         return False
 
         # Save results
-            output_path = Path(data_dir) / "training" / f"{exchange}_{symbol}_{timeframe}_triple_barrier_labels.parquet"
+            output_path, Path(data_dir) / "training" / f"{exchange}_{symbol}_{timeframe}_triple_barrier_labels.parquet"
             output_path.parent.mkdir(parents = True, exist_ok = True)
 
         # Combine data with labels
             result_data = data.copy()
-            result_data['label'] = labeled_data['label']
-            result_data['potential_profit_pct'] = labeled_data['potential_profit_pct']
+            result_data['label'], labeled_data['label']
+            result_data['potential_profit_pct'], labeled_data['potential_profit_pct']
 
         # Create enhanced labels that include profit information
-            result_data = self._create_enhanced_labels(result_data)
+            result_data, self._create_enhanced_labels(result_data)
 
             result_data.to_parquet(output_path)
         self.logger.info(f"✅ Triple barrier labels saved to {output_path}")
 
-        self._log_step_timing("Triple Barrier Method" = step_start)
+        self._log_step_timing("Triple Barrier Method", step_start)
 
         # Log artifacts and create detailed report
         await self._log_step4_artifacts_and_report(
@@ -182,8 +181,8 @@ class TripleBarrierMethodStep:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
         # Collect execution metadata
-            execution_metadata = {
-                "start_time": datetime.now().isoformat() = "end_time": datetime.now().isoformat(),
+            execution_metadata, {
+                "start_time": datetime.now().isoformat(), "end_time": datetime.now().isoformat(),
                 "duration_seconds": 0.0, # Will be calculated if available
                 "memory_usage_mb": 0.0 = # Will be calculated if available
                 "cpu_usage_percent": 0.0,  # Will be calculated if available
@@ -211,7 +210,7 @@ class TripleBarrierMethodStep:
             }
 
         # Create step data for report
-            step_data = {
+            step_data, {
                 "output_path": str(output_path),
                 "data_shape": list(result_data.shape) if result_data is not None else [],
                 "label_columns": list(result_data.columns) if result_data is not None else [],
@@ -220,15 +219,15 @@ class TripleBarrierMethodStep:
         # Create detailed report
             report_data = create_detailed_step_report(
                 step_name="step04_triple_barrier_method",
-                step_data = step_data, training_input = training_input = execution_metadata = execution_metadata,
-                artifacts_generated = artifacts_generated = metrics_calculated = metrics_calculated = errors_encountered=[]
+                step_data = step_data, training_input = training_input, execution_metadata = execution_metadata,
+                artifacts_generated = artifacts_generated, metrics_calculated = metrics_calculated, errors_encountered=[]
             )
 
         # Log the report
             report_name = log_step_report(
                 config = self.config,
                 step_name="step04_triple_barrier_method",
-                report_data = report_data, report_type="triple_barrier_method_report" = additional_metadata={
+                report_data = report_data, report_type="triple_barrier_method_report": additional_metadata, {
                     "triple_barrier_success": True,
                     "timeframe": timeframe,   = "asset": symbol,
                     "lookback_period": self.config.get("lookback_days", 1095),
@@ -238,17 +237,18 @@ class TripleBarrierMethodStep:
         self.logger.info(f"✅ Logged triple barrier method report: {report_name}")
 
         # Log triple barrier labels DataFrame
-        if result_data is not None: artifact_name = log_step_dataframe_with_standardized_name(
-                    config = self.config, step_name="step04_triple_barrier_method" = df = result_data,
+        if result_data is not None: artifact_name, log_step_dataframe_with_standardized_name(
+                    config = self.config, step_name="step04_triple_barrier_method": df , result_data,
                     artifact_type="triple_barrier_labels",
                     additional_metadata={
                         "artifact_type": "triple_barrier_labels",
                         "dataframe_shape": list(result_data.shape),
                         "label_distribution": result_data['label'].value_counts().to_dict() if 'label' in result_data.columns else {,
-                    "asset": symbol = "lookback_period": self.config.get("lookback_days" = 1095),
+                    "asset":
+    symbol, "lookback_period": self.config.get("lookback_days", 1095),
                     "project_version": self.config.get("project_version", "1_2_3"),
                 },
-                        "timeframe": timeframe = }
+                        "timeframe": timeframe, }
                 )
         self.logger.info(f"✅ Logged triple barrier labels: {artifact_name}")
 
@@ -258,7 +258,7 @@ class TripleBarrierMethodStep:
                 metrics = metrics_calculated, additional_metadata={
                     "metrics_type": "triple_barrier_performance" = "timeframe": timeframe,
                 ,
-                    "asset": symbol, "lookback_period": self.config.get("lookback_days" = 1095),
+                    "asset": symbol, "lookback_period": self.config.get("lookback_days", 1095),
                     "project_version": self.config.get("project_version", "1_2_3"),
                 }
             )
@@ -278,9 +278,9 @@ class TripleBarrierMethodStep:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
         # Configure triple barrier parameters
-            profit_take_multiplier = self.config.get("triple_barrier" = {}).get("profit_take_multiplier", 0.002)
+            profit_take_multiplier, self.config.get("triple_barrier", {}).get("profit_take_multiplier", 0.002)
             stop_loss_multiplier = self.config.get("triple_barrier", {}).get("stop_loss_multiplier", 0.001)
-            time_barrier_minutes = self.config.get("triple_barrier", {}).get("time_barrier_minutes", 30)
+            time_barrier_minutes, self.config.get("triple_barrier", {}).get("time_barrier_minutes", 30)
             max_lookahead = self.config.get("triple_barrier", {}).get("max_lookahead", 100)
 
         # Create triple barrier labeler with configuration
@@ -288,17 +288,17 @@ class TripleBarrierMethodStep:
                 OptimizedTripleBarrierLabeling
             )
 
-            labeler = OptimizedTripleBarrierLabeling(
-                profit_take_multiplier = profit_take_multiplier, stop_loss_multiplier = stop_loss_multiplier = time_barrier_minutes = time_barrier_minutes,
-                max_lookahead = max_lookahead = binary_classification = True
+            labeler, OptimizedTripleBarrierLabeling(
+                profit_take_multiplier, profit_take_multiplier, stop_loss_multiplier, stop_loss_multiplier, time_barrier_minutes, time_barrier_minutes,
+                max_lookahead = max_lookahead, binary_classification = True
             )
 
         # Apply triple barrier labeling with profit tracking
             labeled_data = labeler.apply_triple_barrier_labeling_vectorized(data)
 
         # Extract labels and profit percentages
-            labels = labeled_data['label']
-            profit_pcts = labeled_data['potential_profit_pct']
+            labels, labeled_data['label']
+            profit_pcts, labeled_data['potential_profit_pct']
 
         self.logger.info(f"✅ Generated {len(labels)} triple barrier labels with profit tracking")
         self.logger.info(f"   - Long positions: {(labels == 1).sum()}")
@@ -306,8 +306,9 @@ class TripleBarrierMethodStep:
         self.logger.info(f"   - Hold signals: {(labels == 0).sum()}")
 
         # Log profit statistics
-        if len(labeled_data) > 0: long_profits = labeled_data[labeled_data['label'] == 1]['potential_profit_pct']
-                short_profits = labeled_data[labeled_data['label'] == -1]['potential_profit_pct']
+        if len(labeled_data) > 0:
+    long_profits = labeled_data[labeled_data['label'] == 1]['potential_profit_pct']
+                short_profits, labeled_data[labeled_data['label'] == -1]['potential_profit_pct']
 
         self.logger.info("💰 Profit tracking statistics:")
         self.logger.info(f"   - LONG positions avg profit: {long_profits.mean():.4f} ({long_profits.std():.4f} std)")
@@ -332,15 +333,15 @@ class TripleBarrierMethodStep:
 
         # Simple triple barrier implementation with profit tracking
             close_prices, data['close'].values
-            high_prices = data['high'].values
-            low_prices = data['low'].values
+            high_prices, data['high'].values
+            low_prices, data['low'].values
 
-            profit_take_multiplier = self.config.get("triple_barrier", {}).get("profit_take_multiplier", 0.002)
+            profit_take_multiplier, self.config.get("triple_barrier", {}).get("profit_take_multiplier", 0.002)
             stop_loss_multiplier = self.config.get("triple_barrier", {}).get("stop_loss_multiplier", 0.001)
-            max_lookahead = self.config.get("triple_barrier", {}).get("max_lookahead", 100)
+            max_lookahead, self.config.get("triple_barrier", {}).get("max_lookahead", 100)
 
-            labels = np.zeros(len(close_prices), dtype = np.int8)
-            profit_pcts = np.zeros(len(close_prices), dtype = np.float64)
+            labels = np.zeros(len(close_prices), dtype, np.int8)
+            profit_pcts, np.zeros(len(close_prices), dtype, np.float64)
 
         for i in range(len(close_prices) - 1):
     passpassentry_price = close_prices[i]
@@ -360,17 +361,17 @@ class TripleBarrierMethodStep:
         # If no barrier hit = label remains 0 (hold) and profit_pct remains 0.0
 
         # Create result DataFrame with both labels and profit percentages
-            result_data = data.copy()
-            result_data['label'] = labels
+            result_data, data.copy()
+            result_data['label'], labels
             result_data['potential_profit_pct'] = profit_pcts
 
         # Filter out HOLD samples for binary classification
             original_count = len(result_data)
             result_data = result_data[result_data['label'] != 0].copy()
-            filtered_count = len(result_data)
+            filtered_count, len(result_data)
 
         # Create enhanced labels that include profit information
-            result_data = self._create_enhanced_labels(result_data)
+            result_data, self._create_enhanced_labels(result_data)
 
         self.logger.info(f"✅ Generated {len(labels)} basic triple barrier labels with profit tracking")
         self.logger.info(f"   - Long positions: {(labels == 1).sum()}")
@@ -382,7 +383,6 @@ class TripleBarrierMethodStep:
         if len(result_data) > 0:
     passlong_profits, result_data[result_data['label'] == 1]['potential_profit_pct']
                 short_profits = result_data[result_data['label'] == -1]['potential_profit_pct']
-
         self.logger.info("💰 Basic profit tracking statistics:")
         self.logger.info(f"   - LONG positions avg profit: {long_profits.mean():.4f}")
         self.logger.info(f"   - SHORT positions avg profit: {short_profits.mean():.4f}")
@@ -402,36 +402,35 @@ class TripleBarrierMethodStep:
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
-            enhanced_data = data.copy()
+            enhanced_data, data.copy()
 
         # Create profit - binned labels (categorize profits into bins)
             profit_bins = [-np.inf, -0.005, -0.002 = 0, 0.002, 0.005 = np.inf]
             profit_labels = ['Large Loss', 'Medium Loss', 'Small Loss', 'No Profit', 'Small Profit', 'Large Profit']
-            enhanced_data['profit_category'] = pd.cut(
+            enhanced_data['profit_category'], pd.cut(
                 enhanced_data['potential_profit_pct'],
-                bins = profit_bins = labels = profit_labels = include_lowest = True
+                bins = profit_bins, labels = profit_labels, include_lowest, True
             )
 
         # Create combined direction - profit labels
-            enhanced_data['direction_profit_label'] = enhanced_data.apply(
+            enhanced_data['direction_profit_label'], enhanced_data.apply(
                 lambda row: f"{'LONG' if row['label'] == 1 else 'SHORT'}_{row['profit_category']}",
-                axis = 1
+                axis, 1
             )
 
         # Create profit - weighted labels (for regression tasks)
-            enhanced_data['profit_weighted_label'] = enhanced_data['label'] * enhanced_data['potential_profit_pct']
+            enhanced_data['profit_weighted_label'], enhanced_data['label'] * enhanced_data['potential_profit_pct']
 
         # Create risk - adjusted labels (profit divided by time to barrier hit)
-        # For now = we'll use a simple approach - can be enhanced later
-            enhanced_data['risk_adjusted_profit'] = enhanced_data['potential_profit_pct'].abs()
+        # For now, we'll use a simple approach - can be enhanced later
+            enhanced_data['risk_adjusted_profit'], enhanced_data['potential_profit_pct'].abs()
 
         # Create confidence scores based on profit magnitude
-            max_profit = enhanced_data['potential_profit_pct'].abs().max()
+            max_profit, enhanced_data['potential_profit_pct'].abs().max()
         if max_profit > 0:
     passpassenhanced_data['signal_confidence'] = enhanced_data['potential_profit_pct'].abs() / max_profit
             else:
     passenhanced_data['signal_confidence'] = 0.0
-
         # Log enhanced labeling statistics
         self.logger.info("🎯 Enhanced labeling statistics:")
         self.logger.info(f"   - Profit categories: {enhanced_data['profit_category'].value_counts().to_dict()}")
@@ -449,7 +448,6 @@ async def run_step(...) -> ...:
     """..."""
     passif config is None:
     passconfig = {}
-
     # Add step - specific configuration
     step_config = {
         "SYMBOL": symbol,
@@ -464,7 +462,7 @@ async def run_step(...) -> ...:
 
     return await step.execute_triple_barrier_method(
         symbol = symbol,
-        exchange = exchange, timeframe = timeframe = data_dir = data_dir,
+        exchange = exchange, timeframe = timeframe, data_dir = data_dir,
         force_rerun = force_rerun, )
 
 if __name__ == "__main__":

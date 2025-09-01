@@ -16,7 +16,7 @@ from .data_resampler import DataPreparation
 from .missing_data_downloader_and_gap_filler import MissingDataDownloaderAndGapFiller
 from .step1_orchestrator import Step1Orchestrator
 
-__all__ = [
+__all__, [
 "AggtradesValidator",
 "DataGapDetector",
 "DataPreparation",

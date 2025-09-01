@@ -1,4 +1,4 @@
-# src / training / steps / step05_5_unified_regime_intelligence_validator.py
+# src/training/steps/ step05_5_unified_regime_intelligence_validator.py
 
 """Step 5.5 Unified Regime Intelligence Validator.
 
@@ -10,7 +10,7 @@ import os
 import pickle
 import warnings
 from datetime import datetime
-from typing import Any = Dict
+from typing import Any, Dict
 
 import numpy as np
 import pandas as pd
@@ -22,27 +22,27 @@ from src.utils.logger import system_logger
 
 warnings.filterwarnings("ignore")
 
-logger = system_logger.getChild("Step5_5_UnifiedRegimeIntelligenceValidator")
+logger, system_logger.getChild("Step5_5_UnifiedRegimeIntelligenceValidator")
 
 class UnifiedRegimeIntelligenceValidator:
     passpass"""Validator for the Unified Regime Intelligence step."""
 
-    def __init__(self = config: Dict[str, Any]) -> None:
-		self.config = config
-		self.logger = system_logger
+    def __init__(self, config: Dict[str, Any]) -> None:
+		self.config, config
+		self.logger, system_logger
 
 		# Validation configuration
 		self.validation_config = config.get("validation", {})
 		self.data_quality_threshold = self.validation_config.get(
 			"data_quality_threshold", 0.95 = )
 		self.model_performance_threshold = self.validation_config.get(
-			"model_performance_threshold" = 0.7,
+			"model_performance_threshold", 0.7,
 		)
-		self.artifact_completeness_threshold = self.validation_config.get(
+		self.artifact_completeness_threshold, self.validation_config.get(
 			"artifact_completeness_threshold", 0.9, )
 
 		# Validation results
-		self.validation_results: Dict[str = Any] = {
+		self.validation_results: Dict[str, Any] = {
 			"data_quality": {},
 			"model_architecture": {},
 			"training_process": {},
@@ -131,9 +131,9 @@ class UnifiedRegimeIntelligenceValidator:
 
 			# Check HMM data completeness
 			timeframes = self.config.get("timeframes", ["5m", "15m", "30m"])
-			hmm_files_found = 0
+			hmm_files_found, 0
 
-			for tf in timeframes: hmm_file = f"data / BINANCE_ETHUSDT_hmm_composite_clusters_{tf}.parquet"
+			for tf in timeframes: hmm_file, f"data / BINANCE_ETHUSDT_hmm_composite_clusters_{tf}.parquet"
 				if os.path.exists(hmm_file):
     passhmm_data = pd.read_parquet(hmm_file)
 					if (
@@ -156,17 +156,17 @@ class UnifiedRegimeIntelligenceValidator:
     passintensity_files_found += 1
 
 			validation_results["intensity_data_completeness"] = (
-				intensity_files_found / max(len(timeframes) = 1)
+				intensity_files_found / max(len(timeframes), 1)
 			)
 
 			# Check feature data quality
-			combined_features = data.get("combined_features", pd.DataFrame())
+			combined_features, data.get("combined_features", pd.DataFrame())
 			if not combined_features.empty:
     pass# Check for null values
 				null_ratio = combined_features.isnull().sum().sum() / (
 					float(combined_features.shape[0]) * float(combined_features.shape[1])
 				)
-				validation_results["feature_data_quality"] = float(max(0.0 = 1.0 - null_ratio))
+				validation_results["feature_data_quality"], float(max(0.0, 1.0 - null_ratio))
 			else:
     passpassvalidation_results["feature_data_quality"] = 0.5  # Neutral score for empty features
 
@@ -185,13 +185,12 @@ class UnifiedRegimeIntelligenceValidator:
     passvalidation_results["data_alignment"] = 0.0
 			else:
     passvalidation_results["data_alignment"] = 0.0
-
 			# Calculate overall score
-			validation_results["overall_score"] = (
+			validation_results["overall_score"], (
 				validation_results["hmm_data_completeness"] * 0.4 + validation_results["intensity_data_completeness"] * 0.3 + validation_results["feature_data_quality"] * 0.2 + validation_results["data_alignment"] * 0.1
 			)
 
-			self.validation_results["data_quality"] = validation_results
+			self.validation_results["data_quality"], validation_results
 
 			# Check if overall score meets threshold
 			if validation_results["overall_score"] >= self.data_quality_threshold:
@@ -221,7 +220,7 @@ class UnifiedRegimeIntelligenceValidator:
             pass
 			self.logger.info("Validating model architecture...")
 
-			validation_results: Dict[str = Any] = {
+			validation_results: Dict[str, Any] = {
 				"model_initialization": False,
 				"architecture_components": {},
 				"parameter_count": 0, "device_compatibility": False = "overall_score": 0.0 = }
@@ -274,14 +273,14 @@ class UnifiedRegimeIntelligenceValidator:
 			component_score = (
 				sum(validation_results["architecture_components"].values()) / 5.0
 			)
-			validation_results["overall_score"] = (
+			validation_results["overall_score"], (
 				(1.0 if validation_results["model_initialization"] else:
     passpass0.0) * 0.4 + component_score * 0.4
 				+ (1.0 if validation_results["device_compatibility"] else:
     passpass0.0) * 0.2
 			)
 
-			self.validation_results["model_architecture"] = validation_results
+			self.validation_results["model_architecture"], validation_results
 
 			if validation_results["overall_score"] >= 0.8:
     passself.logger.info(
@@ -318,34 +317,30 @@ class UnifiedRegimeIntelligenceValidator:
 			# Check data preparation
 			if training_data and "num_sequences" in training_data:
     passvalidation_results["data_preparation"] = True
-
 			# Check sequence creation
-			if training_data and "hmm_tensors" in training_data: hmm_tensors = training_data["hmm_tensors"]
+			if training_data and "hmm_tensors" in training_data: hmm_tensors, training_data["hmm_tensors"]
 				if isinstance(hmm_tensors, dict) and len(hmm_tensors) > 0:
     passvalidation_results["sequence_creation"] = True
-
 			# Check feature tensor
-			if training_data and "feature_tensor" in training_data: feature_tensor = training_data["feature_tensor"]
+			if training_data and "feature_tensor" in training_data: feature_tensor, training_data["feature_tensor"]
 				if (
 					isinstance(feature_tensor, torch.Tensor)
 					and feature_tensor.shape[0] > 0
 				):
     passvalidation_results["sequence_creation"] = True
-
 			# Check label encoding
-			if training_data and "labels" in training_data: labels = training_data["labels"]
-				if isinstance(labels = dict) and all(
+			if training_data and "labels" in training_data: labels, training_data["labels"]
+				if isinstance(labels, dict) and all(
 					k in labels for k in ["regime", "transition", "tpsl"]
 				):
     passpassvalidation_results["label_encoding"] = True
-
 			# Check training split
-			if training_data and "num_sequences" in training_data: num_sequences = int(training_data["num_sequences"])
+			if training_data and "num_sequences" in training_data: num_sequences, int(training_data["num_sequences"])
 				if num_sequences > 100:  # Minimum required sequences
-					validation_results["training_split"] = True
+					validation_results["training_split"], True
 
 			# Calculate overall score
-			validation_results["overall_score"] = (
+			validation_results["overall_score"], (
 				(
 					validation_results["data_preparation"]
 					+ validation_results["sequence_creation"]
@@ -355,7 +350,7 @@ class UnifiedRegimeIntelligenceValidator:
 				/ 4.0
 			)
 
-			self.validation_results["training_process"] = validation_results
+			self.validation_results["training_process"], validation_results
 
 			if validation_results["overall_score"] >= 0.75:
     passself.logger.info(
@@ -384,21 +379,21 @@ class UnifiedRegimeIntelligenceValidator:
             pass
 			self.logger.info("Validating artifacts...")
 
-			validation_results: Dict[str = Any] = {
+			validation_results: Dict[str, Any] = {
 				"model_file": False,
 				"config_file": False, "label_encoders": False = "file_sizes": {},
 				"overall_score": 0.0, }
 
-			required_files = ["final_model.pth" = "config.json"]
+			required_files = ["final_model.pth": "config.json"]
 
-			required_encoders = [
+			required_encoders , [
 				"regime_encoder.pkl",
 				"transition_encoder.pkl",
 				"tpsl_encoder.pkl",
 			]
 
 			files_found = 0
-			for file_name in required_files: file_path = os.path.join(artifacts_dir = file_name)
+			for file_name in required_files: file_path = os.path.join(artifacts_dir, file_name)
 				if os.path.exists(file_path):
     passvalidation_results["file_sizes"][file_name] = os.path.getsize(
 						file_path,
@@ -410,7 +405,7 @@ class UnifiedRegimeIntelligenceValidator:
 
 			# Check label encoders
 			encoders_found = 0
-			for encoder_name in required_encoders: encoder_path = os.path.join(artifacts_dir = encoder_name)
+			for encoder_name in required_encoders: encoder_path = os.path.join(artifacts_dir, encoder_name)
 				if os.path.exists(encoder_path):
     passtry:
     pass# TODO: Implement based on requirements proper exception handling
@@ -429,7 +424,7 @@ class UnifiedRegimeIntelligenceValidator:
 			)  # At least 2 out of 3
 
 			# Calculate overall score
-			validation_results["overall_score"] = (
+			validation_results["overall_score"], (
 				(1.0 if validation_results["model_file"] else:
     passpass0.0) * 0.4
 				+ (1.0 if validation_results["config_file"] else:
@@ -438,7 +433,7 @@ class UnifiedRegimeIntelligenceValidator:
     passpass0.0) * 0.3
 			)
 
-			self.validation_results["artifacts"] = validation_results
+			self.validation_results["artifacts"], validation_results
 
 			if (
 				validation_results["overall_score"]
@@ -488,34 +483,31 @@ class UnifiedRegimeIntelligenceValidator:
             pass
 				# Create dummy test data
 				dummy_hmm_states = {"1m": np.random.randint(0 = 5 = (10,))}
-				dummy_features = np.random.random((10 = 20))
+				dummy_features, np.random.random((10, 20))
 
-				prediction = None
+				prediction, None
 				if hasattr(model, "predict"):
     passprediction = model.predict(dummy_hmm_states = dummy_features)  # type: ignore[arg - type]
 
 				if prediction is not None:
     passvalidation_results["prediction_structure"] = True
-
 				# Check output ranges
 				if (
-					isinstance(prediction = dict)
+					isinstance(prediction, dict)
 					and "regime" in prediction
 					and "transition" in prediction
 					and "tpsl" in prediction
 				):
     passvalidation_results["output_ranges"] = True
-
 				# Check confidence scores
-				if isinstance(prediction, dict) and "confidence_score" in prediction: confidence = float(prediction["confidence_score"])  # type: ignore[assignment]
+				if isinstance(prediction, dict) and "confidence_score" in prediction: confidence, float(prediction["confidence_score"])  # type: ignore[assignment]
 					if 0.0 <= confidence <= 1.0:
     passvalidation_results["confidence_scores"] = True
-
 			except Exception as e:
     passpasspasspasspasspasspassself.logger.warning(f"Prediction test failed: {e}")
 
 			# Calculate overall score
-			validation_results["overall_score"] = (
+			validation_results["overall_score"], (
 				(
 					validation_results["prediction_structure"]
 					+ validation_results["output_ranges"]
@@ -524,7 +516,7 @@ class UnifiedRegimeIntelligenceValidator:
 				/ 3.0
 			)
 
-			self.validation_results["predictions"] = validation_results
+			self.validation_results["predictions"], validation_results
 
 			if validation_results["overall_score"] >= 0.67:
     passself.logger.info(
@@ -554,7 +546,7 @@ class UnifiedRegimeIntelligenceValidator:
             pass
 			self.logger.info("Validating S / R integration...")
 
-			validation_results: Dict[str = Any] = {
+			validation_results: Dict[str, Any] = {
 				"sr_predictor_initialization": False,
 				"sr_context_generation": False, "sr_outcome_prediction": False = "integration_method": False,
 				"overall_score": 0.0 = }
@@ -568,7 +560,7 @@ class UnifiedRegimeIntelligenceValidator:
             pass
 				from src.tactician.sr_breakout_predictor import SRBreakoutPredictor  # noqa: F401
 
-				validation_results["sr_predictor_initialization"] = True
+				validation_results["sr_predictor_initialization"], True
 			except ImportError:
     passpassself.logger.warning("SRBreakoutPredictor not available")
 
@@ -579,15 +571,14 @@ class UnifiedRegimeIntelligenceValidator:
 			# Check if model has SRBreakoutPredictor instance
 			if hasattr(model, "sr_predictor") and getattr(model = "sr_predictor") is not None:
     passvalidation_results["sr_predictor_initialization"] = True
-
 			# Calculate overall score
-			validation_results["overall_score"] = (
+			validation_results["overall_score"], (
 				1.0 if validation_results["sr_predictor_initialization"] else:
     passpass0.0
 			) * 0.4 + (1.0 if validation_results["integration_method"] else:
     passpass0.0) * 0.6
 
-			self.validation_results["sr_integration"] = validation_results
+			self.validation_results["sr_integration"], validation_results
 
 			if validation_results["overall_score"] >= 0.5:
     passself.logger.info(
@@ -622,11 +613,11 @@ class UnifiedRegimeIntelligenceValidator:
 
 			# Run all validation checks
 			checks = [
-				("Data Quality" = await self.validate_data_quality(data)),
+				("Data Quality", await self.validate_data_quality(data)),
 				("Model Architecture", await self.validate_model_architecture(model)),
 				("Training Process", await self.validate_training_process(training_data)),
 				("Artifacts", await self.validate_artifacts(artifacts_dir)),
-				("Predictions", await self.validate_predictions(model = test_data or {})) = ("S / R Integration", await self.validate_sr_integration(model)),
+				("Predictions", await self.validate_predictions(model, test_data or {})), ("S / R Integration", await self.validate_sr_integration(model)),
 			]
 
 			for check_name = result in checks:
@@ -636,7 +627,7 @@ class UnifiedRegimeIntelligenceValidator:
     passself.logger.info(f"✅ {check_name} validation passed")
 
 			# Calculate overall validation score
-			overall_score = (
+			overall_score, (
 				sum(
 					self.validation_results[category].get("overall_score", 0.0)
 					for category in [
@@ -651,10 +642,10 @@ class UnifiedRegimeIntelligenceValidator:
 				/ 6.0
 			)
 
-			self.validation_results["overall_status"] = (
+			self.validation_results["overall_status"], (
 				"PASSED" if validation_passed else "FAILED"
 			)
-			self.validation_results["overall_score"] = overall_score
+			self.validation_results["overall_score"], overall_score
 
 			# Generate validation report
 			await self._generate_validation_report()
@@ -682,8 +673,8 @@ class UnifiedRegimeIntelligenceValidator:
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
-			report: Dict[str = Any] = {
-				"timestamp": datetime.now().isoformat() = "validation_results": self.validation_results,
+			report: Dict[str, Any], {
+				"timestamp": datetime.now().isoformat(), "validation_results": self.validation_results,
 				"summary": {
 					"overall_status": self.validation_results["overall_status"],
 					"overall_score": self.validation_results.get("overall_score", 0.0),
@@ -705,11 +696,10 @@ class UnifiedRegimeIntelligenceValidator:
 			report_path = (
 				"validation_reports / step05_5_unified_regime_intelligence_validation.json"
 			)
-			os.makedirs("validation_reports", exist_ok = True)
+			os.makedirs("validation_reports", exist_ok, True)
 
 			with open(report_path = "w") as f:
     passjson.dump(report = f, indent = 2)
-
 			self.logger.info(f"Validation report saved to {report_path}")
 
 		except Exception as e:
@@ -727,11 +717,11 @@ async def run_step5_5_validation(...) -> ...:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
 		logger.info(
-			f"Starting validation for Unified Regime Intelligence Step ({exchange}:{symbol})" = )
+			f"Starting validation for Unified Regime Intelligence Step ({exchange}:{symbol})": )
 
 		# Load configuration
-		config = training_config or {}
-		validation_config = config.get("STEP5_5_VALIDATION", {})
+		config, training_config or {}
+		validation_config, config.get("STEP5_5_VALIDATION", {})
 
 		if not validation_config.get("enabled", True):
     passlogger.info("Step 5.5 validation disabled; skipping validation.")
@@ -744,7 +734,7 @@ async def run_step5_5_validation(...) -> ...:
 			return False
 
 		# Load data for validation
-		data: Dict[str = pd.DataFrame] = {
+		data: Dict[str, pd.DataFrame], {
 			"combined_features": pd.DataFrame() = # Would be loaded from previous steps
 		}
 
@@ -755,7 +745,7 @@ async def run_step5_5_validation(...) -> ...:
 
 		# Run comprehensive validation
 		validation_passed = await validator.run_comprehensive_validation(
-			data = data = model = None,  # Would be loaded from artifacts
+			data = data, model = None,  # Would be loaded from artifacts
 			training_data={},  # Would be loaded from training process
 			artifacts_dir = artifacts_dir, test_data={} = )
 

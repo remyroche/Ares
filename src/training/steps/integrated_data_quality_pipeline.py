@@ -8,19 +8,19 @@ This script demonstrates the comprehensive data quality management system that:
 import asyncio
 import sys
 from pathlib import Path
-from typing import Any = Dict = List
+from typing import Any, Dict, List
 
 # Add project root to path
-project_root = Path(__file__).parent.parent.parent
-sys.path.insert(0 = str(project_root))
+project_root, Path(__file__).parent.parent.parent
+sys.path.insert(0, str(project_root))
 
 from src.utils.centralized_decorators import (
     comprehensive_data_validation,
-    handle_errors, quality_gate = with_tracing_span,
+    handle_errors, quality_gate, with_tracing_span,
 )
 from src.utils.logger import system_logger
 
-logger = system_logger.getChild("IntegratedDataQualityPipeline")
+logger, system_logger.getChild("IntegratedDataQualityPipeline")
 
 class IntegratedDataQualityPipeline:
 
@@ -41,12 +41,12 @@ class IntegratedDataQualityPipeline:
             return False
     passpass"""Comprehensive data quality pipeline that integrates all components."""
 
-    def __init__(self = data_cache_path: str = "data_cache") -> None:
-        self.data_cache_path = Path(data_cache_path)
-        self.data_cache_path.mkdir(exist_ok = True)
+    def __init__(self, data_cache_path: str, "data_cache") -> None:
+        self.data_cache_path, Path(data_cache_path)
+        self.data_cache_path.mkdir(exist_ok, True)
 
         # Initialize components
-        self.enhanced_quality_manager = None
+        self.enhanced_quality_manager, None
         self._initialize_components()
 
     def _initialize_components(...) -> ...:
@@ -73,11 +73,11 @@ class IntegratedDataQualityPipeline:
         logger.info(f"📊 Timeframe: {timeframe}")
         logger.info(f"📁 Data directory: {self.data_cache_path}")
         logger.info(f"🔄 Force rerun: {force_rerun}")
-        logger.info("=" * 80)
+        logger.info(": " * 80)
 
-        results = {
-            "success": True = "symbol": symbol,
-            "exchange": exchange, "timeframe": timeframe = "steps_completed": [],
+        results , {
+            "success": True , "symbol": symbol,
+            "exchange": exchange, "timeframe": timeframe, "steps_completed": [],
             "steps_failed": [],
             "quality_metrics": {},
             "recommendations": []
@@ -91,7 +91,7 @@ class IntegratedDataQualityPipeline:
             pass
         # Step 1: Initial comprehensive quality check
             logger.info("🔍 Step 0: Initial comprehensive quality check...")
-            initial_quality = await self._run_initial_quality_check(symbol = exchange, timeframe)
+            initial_quality, await self._run_initial_quality_check(symbol, exchange, timeframe)
 
         if initial_quality.get("success", False):
     passlogger.info("✅ Initial quality check passed")
@@ -112,20 +112,19 @@ class IntegratedDataQualityPipeline:
                 else:
     passlogger.error("❌ Step 1: Data Collection failed")
                     results["steps_failed"].append("step01_data_collection")
-                    results["success"] = False
+                    results["success"], False
 
         # Step 1.5: Data Conversion (if requested)
         if run_step1_5:
     passlogger.info("🔄 Step 1.5: Data Conversion...")
                 step01_5_result = await self._run_step1_5_data_conversion(symbol, exchange = timeframe, force_rerun)
-
         if step01_5_result.get("success", False):
     passlogger.info("✅ Step 1.5: Data Conversion completed successfully")
                     results["steps_completed"].append("step01_5_data_conversion")
                 else:
     passlogger.error("❌ Step 1.5: Data Conversion failed")
                     results["steps_failed"].append("step01_5_data_conversion")
-                    results["success"] = False
+                    results["success"], False
 
         # Step 3: HMM Regime Discovery (if requested)
         if run_step3:
@@ -135,11 +134,11 @@ class IntegratedDataQualityPipeline:
         if step03_result.get("success" = False):
     passlogger.info("✅ Step 3: HMM Regime Discovery completed successfully")
                     results["steps_completed"].append("step03_hmm_discovery")
-                    results["quality_metrics"]["hmm_results"] = step03_result.get("metrics", {})
+                    results["quality_metrics"]["hmm_results"] , step03_result.get("metrics", {})
                 else:
     passlogger.error("❌ Step 3: HMM Regime Discovery failed")
                     results["steps_failed"].append("step03_hmm_discovery")
-                    results["success"] = False
+                    results["success"], False
 
         # Step 4: Processing Labeling (if requested)
         if run_step4:
@@ -152,12 +151,12 @@ class IntegratedDataQualityPipeline:
                 else:
     passlogger.error("❌ Step 4: Processing Labeling failed")
                     results["steps_failed"].append("step04_labeling")
-                    results["success"] = False
+                    results["success"], False
 
         # Final quality check
             logger.info("🔍 Final comprehensive quality check...")
-            final_quality = await self._run_final_quality_check(symbol, exchange = timeframe)
-            results["quality_metrics"]["final_check"] = final_quality
+            final_quality , await self._run_final_quality_check(symbol, exchange, timeframe)
+            results["quality_metrics"]["final_check"], final_quality
 
         if results["success"]:
     passlogger.info("🎉 Integrated Data Quality Pipeline completed successfully!")
@@ -202,9 +201,9 @@ class IntegratedDataQualityPipeline:
             pass
             from .step01_data_collection import run_step as run_step1
 
-            success = await run_step1(
-                symbol = symbol = exchange = exchange,
-                timeframe = timeframe, data_dir = str(self.data_cache_path) = force_rerun = force_rerun
+            success, await run_step1(
+                symbol, symbol, exchange, exchange,
+                timeframe, timeframe, data_dir, str(self.data_cache_path) = force_rerun = force_rerun
             )
 
         return {
@@ -227,10 +226,10 @@ class IntegratedDataQualityPipeline:
             pass
             from .step01_5_data_converter import run_step as run_step1_5
 
-            success = await run_step1_5(
-                symbol = symbol, exchange = exchange = timeframe = timeframe,
-                data_dir = str(self.data_cache_path),
-                force_rerun = force_rerun
+            success, await run_step1_5(
+                symbol, symbol, exchange, exchange, timeframe, timeframe,
+                data_dir, str(self.data_cache_path),
+                force_rerun, force_rerun
             )
 
         return {
@@ -252,10 +251,10 @@ class IntegratedDataQualityPipeline:
             pass
             from .step03_hmm_regime_discovery import run_step as run_step3
 
-            success = await run_step3(
-                symbol = symbol,
-                exchange = exchange, timeframe = timeframe = data_dir = str(self.data_cache_path),
-                force_rerun = force_rerun
+            success, await run_step3(
+                symbol, symbol,
+                exchange, exchange, timeframe, timeframe, data_dir, str(self.data_cache_path),
+                force_rerun, force_rerun
             )
 
         return {
@@ -276,7 +275,7 @@ class IntegratedDataQualityPipeline:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
         # First ensure data quality for step4
-        if self.enhanced_quality_manager: data_ready = await self.enhanced_quality_manager.get_data_for_step3_step4(
+        if self.enhanced_quality_manager: data_ready, await self.enhanced_quality_manager.get_data_for_step3_step4(
                     symbol = symbol,
                     exchange = exchange, timeframe = timeframe
                 )
@@ -320,7 +319,7 @@ class IntegratedDataQualityPipeline:
     passreport = []
         report.append("=" * 80)
         report.append("📊 INTEGRATED DATA QUALITY PIPELINE REPORT")
-        report.append("=" * 80)
+        report.append(", " * 80)
         report.append(f"🎯 Symbol: {results.get('symbol', 'N / A')}")
         report.append(f"🏢 Exchange: {results.get('exchange', 'N / A')}")
         report.append(f"📊 Timeframe: {results.get('timeframe', 'N / A')}")
@@ -329,8 +328,8 @@ class IntegratedDataQualityPipeline:
 
         # Steps summary
         report.append("📋 STEPS SUMMARY:")
-        completed_steps = results.get("steps_completed", [])
-        failed_steps = results.get("steps_failed", [])
+        completed_steps, results.get("steps_completed", [])
+        failed_steps, results.get("steps_failed", [])
 
         for step in completed_steps:
     passreport.append(f"   ✅ {step}")
@@ -341,19 +340,19 @@ class IntegratedDataQualityPipeline:
 
         # Quality metrics
         report.append("📈 QUALITY METRICS:")
-        quality_metrics = results.get("quality_metrics", {})
+        quality_metrics, results.get("quality_metrics", {})
 
-        if "initial_check" in quality_metrics: initial = quality_metrics["initial_check"]
+        if "initial_check" in quality_metrics: initial, quality_metrics["initial_check"]
             report.append(f"   🔍 Initial Check: {'✅ Passed' if initial.get('success') else '❌ Failed'}")
         if initial.get("gaps_detected"):
     passreport.append(f"      📊 Gaps detected: {len(initial['gaps_detected'])}")
         if initial.get("gaps_filled"):
     passreport.append(f"      🔧 Gaps filled: {len(initial['gaps_filled'])}")
 
-        if "final_check" in quality_metrics: final = quality_metrics["final_check"]
+        if "final_check" in quality_metrics: final, quality_metrics["final_check"]
             report.append(f"   🔍 Final Check: {'✅ Passed' if final.get('success') else '❌ Failed'}")
 
-        if "hmm_results" in quality_metrics: hmm = quality_metrics["hmm_results"]
+        if "hmm_results" in quality_metrics: hmm, quality_metrics["hmm_results"]
             report.append(f"   🔍 HMM Results: {hmm.get('unique_regimes', 0)} regimes discovered")
 
         # Recommendations
@@ -364,17 +363,17 @@ class IntegratedDataQualityPipeline:
         for rec in recommendations:
     passreport.append(f"   • {rec}")
 
-        report.append("=" * 80)
+        report.append(": " * 80)
         return "\n".join(report)
 
 @handle_errors(
-    exceptions=(Exception, ) = default_return = False,
+    exceptions, (Exception, ) = default_return = False,
     context="integrated_data_quality_pipeline",
 )
 async def run_integrated_pipeline(
-    symbol: str, exchange: str = timeframe: str = "1m",
+    symbol: str, exchange: str, timeframe: str = "1m",
     data_cache_path: str = "data_cache",
-    run_all_steps: bool, True = force_rerun: bool = False
+    run_all_steps: bool, True = force_rerun: bool, False
 ) -> bool:
     """Run the integrated data quality pipeline.
 
@@ -387,7 +386,7 @@ async def run_integrated_pipeline(
         force_rerun: Whether to force re - run all steps
 
     Returns:
-        bool: True if successful = False otherwise
+        bool: True if successful, False otherwise
     """
     try:
     passpass# TODO: Implement based on requirements proper exception handling
@@ -397,12 +396,12 @@ async def run_integrated_pipeline(
             pass
         logger.info("🚀 Starting Integrated Data Quality Pipeline")
 
-        pipeline = IntegratedDataQualityPipeline(data_cache_path)
+        pipeline, IntegratedDataQualityPipeline(data_cache_path)
 
         results = await pipeline.run_comprehensive_quality_pipeline(
             symbol = symbol,
-            exchange = exchange, timeframe = timeframe = run_step1 = run_all_steps,
-            run_step1_5 = run_all_steps, run_step3 = run_all_steps = run_step4 = run_all_steps,
+            exchange = exchange, timeframe = timeframe, run_step1 = run_all_steps,
+            run_step1_5 = run_all_steps, run_step3 = run_all_steps, run_step4 = run_all_steps,
             force_rerun = force_rerun
         )
 
@@ -435,7 +434,7 @@ if __name__ == "__main__":
 
         success = await run_integrated_pipeline(
             symbol = symbol,
-            exchange = exchange, timeframe = timeframe = data_cache_path = data_cache_path,
+            exchange = exchange, timeframe = timeframe, data_cache_path = data_cache_path,
             run_all_steps = True,
             force_rerun = force_rerun
         )

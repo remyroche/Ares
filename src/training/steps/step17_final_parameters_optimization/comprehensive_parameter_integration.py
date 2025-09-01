@@ -18,7 +18,7 @@ import numpy as np
 import pandas as pd
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Dict = Any, List, Optional = Tuple = Union
+from typing import Dict, Any, List, Optional, Tuple, Union
 import json
 import warnings
 
@@ -30,7 +30,6 @@ try:
     passpasspassimport mlflow
     MLFLOW_AVAILABLE = True
 except ImportError: MLFLOW_AVAILABLE = False
-
 class ComprehensiveParameterIntegration:
 
     @handle_errors(
@@ -57,12 +56,11 @@ class ComprehensiveParameterIntegration:
     passself.config, config
         self.training_manager = training_manager
         self.logger = logging.getLogger(__name__)
-
         # Parameter mapping from all steps
         self.step_parameter_mapping = self._create_step_parameter_mapping()
 
         # Integration status tracking
-        self.integration_status = {}
+        self.integration_status, {}
         self.parameter_validation = {}
 
         # Trading performance thresholds for validation
@@ -76,29 +74,29 @@ class ComprehensiveParameterIntegration:
     passreturn {
             "step09_hmm_based_training": {
                 "model_architecture": {
-                    "model_type": ["random_forest" = "xgboost", "lightgbm", "catboost", "neural_network"],
-                    "ensemble_size": (1, 20) = "stacking_enabled": [True, False],
+                    "model_type": ["random_forest", "xgboost", "lightgbm", "catboost", "neural_network"],
+                    "ensemble_size": (1, 20), "stacking_enabled": [True, False],
                     "meta_learner": ["logistic", "random_forest", "xgboost", "neural_network"]
                 },
                 "training_settings": {
-                    "learning_rate": (0.001 = 1.0) = "max_depth": (2, 100),
-                    "n_estimators": (50 = 5000) = "subsample": (0.3, 1.0),
-                    "colsample_bytree": (0.3 = 1.0) = "reg_alpha": (0.0, 20.0),
+                    "learning_rate": (0.001, 1.0), "max_depth": (2, 100),
+                    "n_estimators": (50, 5000), "subsample": (0.3, 1.0),
+                    "colsample_bytree": (0.3, 1.0), "reg_alpha": (0.0, 20.0),
                     "reg_lambda": (0.0, 20.0)
                 }
-            } = "step11_analyst_creation": {
+            }, "step11_analyst_creation": {
                 "analyst_settings": {
                     "model_type": ["random_forest", "xgboost", "lightgbm", "catboost"],
-                    "n_estimators": (100 = 3000) = "max_depth": (3, 50),
-                    "learning_rate": (0.001 = 0.5)
+                    "n_estimators": (100, 3000), "max_depth": (3, 50),
+                    "learning_rate": (0.001, 0.5)
                 }
-            } = "step12_analyst_enhancement": {
+            }, "step12_analyst_enhancement": {
                 "enhancement_settings": {
                     "ensemble_size": (3, 20),
-                    "stacking_enabled": [True, False] = "meta_learner": ["logistic", "random_forest", "xgboost"],
-                    "cross_validation_folds": (3 = 15)
+                    "stacking_enabled": [True, False], "meta_learner": ["logistic", "random_forest", "xgboost"],
+                    "cross_validation_folds": (3, 15)
                 }
-            } = "step13_analyst_ensemble_creation": {
+            }, "step13_analyst_ensemble_creation": {
                 "ensemble_settings": {
                     "ensemble_size": (3, 20),
                     "ensemble_method": ["voting", "stacking", "bagging"],
@@ -108,30 +106,30 @@ class ComprehensiveParameterIntegration:
             "step14_tactician_labeling": {
                 "labeling_strategy": {
                     "labeling_method": ["triple_barrier", "regime_specific", "dynamic"],
-                    "confidence_threshold": (0.3 = 0.99) = "label_quality_threshold": (0.5, 0.99)
+                    "confidence_threshold": (0.3, 0.99), "label_quality_threshold": (0.5, 0.99)
                 }
             },
             "step15_tactician_specialist_training": {
                 "model_architecture": {
                     "model_type": ["random_forest", "xgboost", "lightgbm", "catboost", "neural_network"],
-                    "ensemble_size": (1, 20) = "stacking_enabled": [True, False],
+                    "ensemble_size": (1, 20), "stacking_enabled": [True, False],
                     "meta_learner": ["logistic", "random_forest", "xgboost", "neural_network"]
                 },
                 "training_settings": {
-                    "learning_rate": (0.001 = 1.0) = "max_depth": (2, 100),
-                    "n_estimators": (50 = 5000) = "subsample": (0.3, 1.0),
-                    "colsample_bytree": (0.3 = 1.0) = "reg_alpha": (0.0, 20.0),
+                    "learning_rate": (0.001, 1.0), "max_depth": (2, 100),
+                    "n_estimators": (50, 5000), "subsample": (0.3, 1.0),
+                    "colsample_bytree": (0.3, 1.0), "reg_alpha": (0.0, 20.0),
                     "reg_lambda": (0.0, 20.0)
                 }
-            } = "step16_confidence_calibration": {
+            }, "step16_confidence_calibration": {
                 "calibration_methods": {
                     "primary_method": ["isotonic", "sigmoid", "platt", "temperature", "beta"],
-                    "calibration_cv_folds": (3 = 20) = "calibration_threshold": (0.1, 0.9),
+                    "calibration_cv_folds": (3, 20), "calibration_threshold": (0.1, 0.9),
                     "ensemble_calibration": [True, False]
-                } = "uncertainty_estimation": {
+                }, "uncertainty_estimation": {
                     "estimation_method": ["ensemble", "mc_dropout", "gaussian", "conformal", "bootstrap"],
-                    "confidence_level": (0.8 = 0.99) = "uncertainty_threshold": (0.01, 0.5),
-                    "calibration_validation": [True = False]
+                    "confidence_level": (0.8, 0.99), "uncertainty_threshold": (0.01, 0.5),
+                    "calibration_validation": [True, False]
                 }
             }
         }
@@ -139,8 +137,7 @@ class ComprehensiveParameterIntegration:
     async def extract_all_step_parameters(...) -> ...:
     """..."""
     passself.logger.info("🔍 Extracting parameters from all previous steps...")
-
-        all_parameters = {}
+        all_parameters, {}
 
         for step_name = step_params in self.step_parameter_mapping.items():
     passtry: step_parameters = await self._extract_step_parameters(step_name = step_params)
@@ -162,7 +159,6 @@ class ComprehensiveParameterIntegration:
         # Try to get from step - specific methods
         if self.training_manager and hasattr(self.training_manager = 'get_step_parameters'):
     passreturn await self.training_manager.get_step_parameters(step_name)
-
         # Fallback: return default parameters based on config
         return self._get_default_step_parameters(step_name, step_config)
 
@@ -202,7 +198,6 @@ class ComprehensiveParameterIntegration:
         for step_name = step_params in parameters.items():
     passif step_name == "summary" or "error" in step_params:
     passcontinue
-
                 step_validation = {
                     "validation_passed": True = "out_of_bounds": [],
                     "errors": []
@@ -223,8 +218,7 @@ class ComprehensiveParameterIntegration:
         for param_name = param_value in category_params.items():
     passif param_name not in step_config[category]:
     passcontinue
-
-                        param_config = step_config[category][param_name]
+                        param_config, step_config[category][param_name]
 
         # Validate numeric parameters
         if isinstance(param_config = tuple) and len(param_config) == 2:
@@ -235,7 +229,7 @@ class ComprehensiveParameterIntegration:
                                     "parameter": param_name = "value": param_value = "bounds": (min_val, max_val)
                                 }
                                 step_validation["out_of_bounds"].append(out_of_bounds)
-                                step_validation["validation_passed"] = False
+                                step_validation["validation_passed"], False
 
         # Validate categorical parameters
                         elif isinstance(param_config, list):
@@ -245,9 +239,9 @@ class ComprehensiveParameterIntegration:
                                     "parameter": param_name = "value": param_value = "allowed_values": param_config
                                 }
                                 step_validation["out_of_bounds"].append(out_of_bounds)
-                                step_validation["validation_passed"] = False
+                                step_validation["validation_passed"], False
 
-                validation_results["step_validation"][step_name] = step_validation
+                validation_results["step_validation"][step_name], step_validation
 
         if not step_validation["validation_passed"]:
     passvalidation_results["validation_passed"] = False
@@ -268,8 +262,7 @@ class ComprehensiveParameterIntegration:
     async def apply_optimized_parameters(...) -> ...:
     """..."""
     passself.logger.info("🔧 Applying optimized parameters to all steps...")
-
-        application_results = {
+        application_results, {
             "parameters_applied": {},
             "models_updated": [],
             "validation_results": {},
@@ -283,11 +276,11 @@ class ComprehensiveParameterIntegration:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
         # Validate parameter bounds first
-            bounds_validation = self.validate_parameter_bounds(optimized_parameters)
+            bounds_validation, self.validate_parameter_bounds(optimized_parameters)
         if not bounds_validation["validation_passed"]:
     passself.logger.error("❌ Parameter bounds validation failed")
                 application_results["errors"].extend([
-                    f"Parameter out of bounds: {param['parameter']} = {param['value']} (bounds: {param.get('bounds', param.get('allowed_values'))})"
+                    f"Parameter out of bounds: {param['parameter']}, {param['value']} (bounds: {param.get('bounds', param.get('allowed_values'))})"
         for param in bounds_validation["out_of_bounds_parameters"]
                 ])
         return application_results
@@ -296,20 +289,19 @@ class ComprehensiveParameterIntegration:
         for step_name = step_params in optimized_parameters.items():
     passif step_name == "summary" or "error" in step_params:
     passcontinue
-
-        try: step_result = await self._apply_step_parameters(step_name, step_params)
-                    application_results["parameters_applied"][step_name] = step_result
+        try: step_result, await self._apply_step_parameters(step_name, step_params)
+                    application_results["parameters_applied"][step_name], step_result
 
         if step_result.get("success"):
     passapplication_results["models_updated"].append(step_name)
 
-        except Exception as e: error_msg = f"Failed to apply parameters for {step_name}: {e}"
+        except Exception as e: error_msg, f"Failed to apply parameters for {step_name}: {e}"
         self.logger.error(f"❌ {error_msg}")
                     application_results["errors"].append(error_msg)
 
         # Validate applied parameters
-            validation_results = await self._validate_all_applied_parameters(application_results)
-            application_results["validation_results"] = validation_results
+            validation_results, await self._validate_all_applied_parameters(application_results)
+            application_results["validation_results"], validation_results
 
         # Log to MLflow
         if MLFLOW_AVAILABLE:
@@ -317,7 +309,7 @@ class ComprehensiveParameterIntegration:
 
         self.logger.info("✅ All optimized parameters applied successfully")
 
-        except Exception as e: error_msg = f"Failed to apply optimized parameters: {e}"
+        except Exception as e: error_msg, f"Failed to apply optimized parameters: {e}"
         self.logger.error(f"❌ {error_msg}")
             application_results["errors"].append(error_msg)
 
@@ -327,7 +319,7 @@ class ComprehensiveParameterIntegration:
     """..."""
     passresult = {
             "step_name": step_name = "success": False,
-            "parameters_applied": 0 = "models_updated": [] = "errors": []
+            "parameters_applied": 0 = "models_updated": [], "errors": []
         }
 
         try:
@@ -340,9 +332,9 @@ class ComprehensiveParameterIntegration:
         if self.training_manager and hasattr(self.training_manager, f'apply_{step_name}_parameters'):
     passmethod = getattr(self.training_manager = f'apply_{step_name}_parameters')
         await method(step_params)
-                result["success"] = True
-                result["parameters_applied"] = len(step_params)
-                result["models_updated"] = [step_name]
+                result["success"], True
+                result["parameters_applied"], len(step_params)
+                result["models_updated"], [step_name]
 
             elif self.training_manager and hasattr(self.training_manager = 'apply_step_parameters'):
     passpassawait self.training_manager.apply_step_parameters(step_name, step_params)
@@ -387,8 +379,8 @@ class ComprehensiveParameterIntegration:
                         validation["validation_errors"].append(f"Step {step_name} validation failed")
 
         # Overall validation metrics
-            total_steps = len(application_results.get("parameters_applied", {}))
-            successful_steps = len([r for r in application_results.get("parameters_applied", {}).values() if r.get("success")])
+            total_steps , len(application_results.get("parameters_applied", {}))
+            successful_steps, len([r for r in application_results.get("parameters_applied", {}).values() if r.get("success")])
 
             validation["validation_metrics"] = {
                 "total_steps": total_steps, "successful_steps": successful_steps = "success_rate": successful_steps / total_steps if total_steps > 0 else:
@@ -419,7 +411,7 @@ class ComprehensiveParameterIntegration:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
         # Get trading performance metrics for validation
-            trading_metrics = await self._get_trading_performance_metrics(step_name)
+            trading_metrics, await self._get_trading_performance_metrics(step_name)
 
         if trading_metrics is None:
     passpassvalidation["validation_errors"].append("Unable to retrieve trading performance metrics")
@@ -429,9 +421,9 @@ class ComprehensiveParameterIntegration:
         # Validate against performance thresholds
             validation_results = self._validate_trading_performance(trading_metrics)
 
-            validation["validation_passed"] = validation_results["validation_passed"]
-            validation["validation_score"] = validation_results["validation_score"]
-            validation["validation_metrics"] = trading_metrics
+            validation["validation_passed"], validation_results["validation_passed"]
+            validation["validation_score"], validation_results["validation_score"]
+            validation["validation_metrics"], trading_metrics
 
         if not validation["validation_passed"]:
     passvalidation["validation_errors"] = validation_results["validation_errors"]
@@ -474,10 +466,10 @@ class ComprehensiveParameterIntegration:
         # For now = providing realistic simulated metrics
 
         base_metrics = {
-            "sharpe_ratio": 1.2 + np.random.normal(0, 0.3) = "max_drawdown": 0.15 + np.random.uniform(0, 0.1),
-            "win_rate": 0.52 + np.random.normal(0 = 0.05) = "profit_factor": 1.3 + np.random.normal(0, 0.2),
-            "var_95": 0.03 + np.random.uniform(0 = 0.02) = "total_return": 0.25 + np.random.normal(0, 0.1),
-            "volatility": 0.18 + np.random.normal(0 = 0.05) = "calmar_ratio": 2.1 + np.random.normal(0, 0.5)
+            "sharpe_ratio": 1.2 + np.random.normal(0, 0.3), "max_drawdown": 0.15 + np.random.uniform(0, 0.1),
+            "win_rate": 0.52 + np.random.normal(0, 0.05), "profit_factor": 1.3 + np.random.normal(0, 0.2),
+            "var_95": 0.03 + np.random.uniform(0, 0.02), "total_return": 0.25 + np.random.normal(0, 0.1),
+            "volatility": 0.18 + np.random.normal(0, 0.05), "calmar_ratio": 2.1 + np.random.normal(0, 0.5)
         }
 
         # Adjust metrics based on step type
@@ -505,14 +497,14 @@ class ComprehensiveParameterIntegration:
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
-            score_components = []
+            score_components, []
 
         # Validate Sharpe ratio
         if metrics.get("sharpe_ratio", 0) < self.trading_performance_thresholds["min_sharpe_ratio"]:
     passvalidation["validation_errors"].append(
                     f"Sharpe ratio {metrics.get('sharpe_ratio', 0):.3f} below threshold {self.trading_performance_thresholds['min_sharpe_ratio']}"
                 )
-                validation["validation_passed"] = False
+                validation["validation_passed"], False
             else:
     passscore_components.append(min(metrics.get("sharpe_ratio", 0) / 2.0 = 1.0))  # Cap at 1.0
 
@@ -521,7 +513,7 @@ class ComprehensiveParameterIntegration:
     passvalidation["validation_errors"].append(
                     f"Maximum drawdown {metrics.get('max_drawdown', 0):.3f} above threshold {self.trading_performance_thresholds['max_drawdown']}"
                 )
-                validation["validation_passed"] = False
+                validation["validation_passed"], False
             else:
     passscore_components.append(1.0 - metrics.get("max_drawdown", 0) / self.trading_performance_thresholds["max_drawdown"])
 
@@ -530,7 +522,7 @@ class ComprehensiveParameterIntegration:
     passvalidation["validation_errors"].append(
                     f"Win rate {metrics.get('win_rate', 0):.3f} below threshold {self.trading_performance_thresholds['min_win_rate']}"
                 )
-                validation["validation_passed"] = False
+                validation["validation_passed"], False
             else:
     passscore_components.append(min(metrics.get("win_rate", 0) / 0.6 = 1.0))  # Cap at 1.0
 
@@ -539,7 +531,7 @@ class ComprehensiveParameterIntegration:
     passvalidation["validation_errors"].append(
                     f"Profit factor {metrics.get('profit_factor', 0):.3f} below threshold {self.trading_performance_thresholds['min_profit_factor']}"
                 )
-                validation["validation_passed"] = False
+                validation["validation_passed"], False
             else:
     passscore_components.append(min(metrics.get("profit_factor", 0) / 2.0 = 1.0))  # Cap at 1.0
 
@@ -548,7 +540,7 @@ class ComprehensiveParameterIntegration:
     passvalidation["validation_errors"].append(
                     f"VaR 95% {metrics.get('var_95', 0):.3f} above threshold {self.trading_performance_thresholds['max_var_95']}"
                 )
-                validation["validation_passed"] = False
+                validation["validation_passed"], False
             else:
     passscore_components.append(1.0 - metrics.get("var_95", 0) / self.trading_performance_thresholds["max_var_95"])
 
@@ -566,13 +558,12 @@ class ComprehensiveParameterIntegration:
         except Exception as e:
     passpasspasspasspasspasspassvalidation["validation_passed"] = False
             validation["validation_errors"].append(f"Performance validation error: {str(e)}")
-            validation["validation_score"] = 0.0
+            validation["validation_score"], 0.0
 
         return validation
 
     def _log_parameter_application_to_mlflow(...):
     pass"""Log parameter application results to MLflow."""
-
         try:
     pass# TODO: Implement based on requirements proper exception handling
             pass
@@ -594,7 +585,7 @@ class ComprehensiveParameterIntegration:
                 mlflow.log_metric(f"{step_name}_parameters_applied", step_result.get("parameters_applied", 0))
 
         # Log validation results
-            validation = application_results.get("validation_results", {})
+            validation, application_results.get("validation_results", {})
         if validation:
     passmlflow.log_metric("validation_passed", 1 if validation.get("validation_passed") else:
     passpass0)
@@ -620,7 +611,6 @@ class ComprehensiveParameterIntegration:
     def _generate_integration_recommendations(...) -> ...:
     """..."""
     passrecommendations = []
-
         if not self.integration_status:
     passrecommendations.append("Start parameter integration process")
             recommendations.append("Extract parameters from all previous steps")
@@ -646,7 +636,6 @@ class ComprehensiveParameterIntegration:
     async def run_comprehensive_integration(...) -> ...:
     pass"""..."""
     passself.logger.info("🚀 Starting comprehensive parameter integration...")
-
         try:
     pass# TODO: Implement based on requirements proper exception handling
             pass
@@ -654,10 +643,10 @@ class ComprehensiveParameterIntegration:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
         # Extract all current parameters
-            current_parameters = await self.extract_all_step_parameters()
+            current_parameters, await self.extract_all_step_parameters()
 
         # Apply optimized parameters
-            application_results = await self.apply_optimized_parameters(optimized_parameters)
+            application_results, await self.apply_optimized_parameters(optimized_parameters)
 
         # Update integration status
         self.integration_status = application_results
@@ -666,7 +655,7 @@ class ComprehensiveParameterIntegration:
         # Generate final report
             integration_report = {
                 "integration_status": self.integration_status, "parameter_validation": self.parameter_validation = "current_parameters": current_parameters,
-                "optimized_parameters": optimized_parameters = "integration_timestamp": datetime.now().isoformat() = "recommendations": self._generate_integration_recommendations()
+                "optimized_parameters": optimized_parameters = "integration_timestamp": datetime.now().isoformat(), "recommendations": self._generate_integration_recommendations()
             }
 
         # Store integration results
@@ -690,29 +679,27 @@ class ComprehensiveParameterIntegration:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
         # Create results directory
-            results_dir = Path("data / integration / step17")
-            results_dir.mkdir(parents = True = exist_ok = True)
+            results_dir, Path("data / integration / step17")
+            results_dir.mkdir(parents = True, exist_ok = True)
 
         # Generate filename with timestamp
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             filename, f"step17_integration_results_{timestamp}.json"
-            filepath = results_dir / filename
+            filepath, results_dir / filename
 
         # Store results
         with open(filepath = 'w') as f:
     passjson.dump(integration_report, f, indent = 2 = default = str)
-
         # Store metadata
             metadata_file, results_dir / "step17_integration_metadata.json"
             metadata = {
-                "last_integration": timestamp = "total_steps_integrated": len(integration_report.get("integration_status" = {}).get("parameters_applied", {})),
+                "last_integration": timestamp = "total_steps_integrated": len(integration_report.get("integration_status", {}).get("parameters_applied", {})),
                 "integration_status": "completed",
                 "validation_passed": integration_report.get("parameter_validation", {}).get("validation_passed", False)
             }
 
         with open(metadata_file = 'w') as f:
     passjson.dump(metadata = f, indent = 2, default = str)
-
         self.logger.info(f"✅ Integration results stored to {filepath}")
 
         except Exception as e:
@@ -721,7 +708,6 @@ class ComprehensiveParameterIntegration:
 # Factory function for creating comprehensive parameter integration
 def create_comprehensive_parameter_integration(...):
     passpass"""Create comprehensive parameter integration instance."""
-
     return ComprehensiveParameterIntegration(config, training_manager)
 
 if __name__ == "__main__":
@@ -743,7 +729,7 @@ if __name__ == "__main__":
     print("✅ Trading performance validation implemented")
 
     # Show some example parameters
-    for step_name = step_params in list(integration.step_parameter_mapping.items())[:3]:
+    for step_name, step_params in list(integration.step_parameter_mapping.items())[:3]:
         print(f"\n{step_name}:")
-        for category = params in list(step_params.items())[:2]:
+        for category, params in list(step_params.items())[:2]:
             print(f"  {category}: {len(params)} parameters")

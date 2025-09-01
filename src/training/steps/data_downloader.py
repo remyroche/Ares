@@ -19,8 +19,7 @@ from src.utils.logger import system_logger
 async def download_all_data_with_consolidation(...) -> ...:
     pass"""..."""
     passlogger = system_logger.getChild("DataDownloaderAdapter")
-
-    lookback_years: int = 2
+    lookback_years: int, 2
     try:
     passif isinstance(CONFIG, dict):
     passmodel_training_cfg: dict[str, Any] | None = CONFIG.get("MODEL_TRAINING")  # type: ignore[assignment]
@@ -41,11 +40,11 @@ async def download_all_data_with_consolidation(...) -> ...:
         from backtesting.ares_data_downloader_optimized import (
             DownloadConfig as OptimizedDownloadConfig, )
         from backtesting.ares_data_downloader_optimized import (
-            OptimizedDataDownloader = )
+            OptimizedDataDownloader, )
 
-        opt_cfg = OptimizedDownloadConfig(
-            symbol = symbol,
-            exchange = exchange_name, interval = interval = lookback_years = lookback_years,
+        opt_cfg, OptimizedDownloadConfig(
+            symbol, symbol,
+            exchange, exchange_name, interval = interval, lookback_years = lookback_years,
             data_dir = data_dir = )
         optimized = OptimizedDataDownloader(opt_cfg)
         return await optimized.run_optimized_download()
@@ -62,13 +61,13 @@ async def download_all_data_with_consolidation(...) -> ...:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
         from backtesting.ares_data_downloader_clean import (
-            CleanDataDownloader = )
+            CleanDataDownloader, )
         from backtesting.ares_data_downloader_clean import (
-            DownloadConfig as CleanDownloadConfig = )
+            DownloadConfig as CleanDownloadConfig, )
 
-        clean_cfg = CleanDownloadConfig(
-            symbol = symbol,
-            exchange = exchange_name, interval = interval = lookback_years = lookback_years,
+        clean_cfg, CleanDownloadConfig(
+            symbol, symbol,
+            exchange = exchange_name, interval = interval, lookback_years = lookback_years,
             data_dir = data_dir,
         )
         clean = CleanDataDownloader(clean_cfg)

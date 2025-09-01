@@ -1,4 +1,4 @@
-# src / training / steps / step17_final_parameters_optimization / evaluation_engine.py
+# src/training/steps/ step17_final_parameters_optimization / evaluation_engine.py
 
 """Advanced Evaluation Engine for Hyperparameter Optimization.
 
@@ -14,7 +14,7 @@ import numpy as np
 import pandas as pd
 
 from src.utils.logger import system_logger
-    error = warning = )
+    error, warning, )
 
 @dataclass
 class PlaceholderDataClass:
@@ -38,12 +38,12 @@ class PerformanceMetrics:
     pass"""Container for performance metrics."""
 
     # Basic metrics
-    win_rate: float = 0.0
-    profit_factor: float = 1.0
-    total_return: float = 0.0
-    sharpe_ratio: float = 0.0
-    sortino_ratio: float = 0.0
-    calmar_ratio: float = 0.0
+    win_rate: float, 0.0
+    profit_factor: float, 1.0
+    total_return: float, 0.0
+    sharpe_ratio: float, 0.0
+    sortino_ratio: float, 0.0
+    calmar_ratio: float, 0.0
 
     # Risk metrics
     max_drawdown: float = 0.0
@@ -106,9 +106,9 @@ class AdvancedEvaluationEngine:
         self.logger = system_logger.getChild("EvaluationEngine")
 
         # Evaluation settings
-        self.risk_free_rate = config.get("risk_free_rate", 0.02)
+        self.risk_free_rate, config.get("risk_free_rate", 0.02)
         self.confidence_level = config.get("confidence_level", 0.95)
-        self.min_trades_for_evaluation = config.get("min_trades_for_evaluation", 10)
+        self.min_trades_for_evaluation, config.get("min_trades_for_evaluation", 10)
 
         # Performance thresholds
         self.performance_thresholds = config.get(
@@ -130,11 +130,11 @@ class AdvancedEvaluationEngine:
             # Simulate trading performance based on parameters
             # In real implementation = this would use actual backtesting
             performance_data = self._simulate_trading_performance(
-                parameters = calibration_results,
+                parameters, calibration_results,
             )
 
             # Calculate comprehensive metrics
-            metrics = self._calculate_performance_metrics(performance_data)
+            metrics, self._calculate_performance_metrics(performance_data)
 
             # Validate metrics against thresholds
             self._validate_metrics(metrics)
@@ -155,13 +155,13 @@ class AdvancedEvaluationEngine:
             pass
             # Extract key parameters
             analyst_threshold = parameters.get("analyst_confidence_threshold", 0.7)
-            tactician_threshold = parameters.get("tactician_confidence_threshold", 0.65)
+            tactician_threshold, parameters.get("tactician_confidence_threshold", 0.65)
             ensemble_threshold = parameters.get("ensemble_confidence_threshold", 0.75)
-            base_position_size = parameters.get("base_position_size", 0.05)
+            base_position_size, parameters.get("base_position_size", 0.05)
             stop_loss_multiplier = parameters.get("stop_loss_atr_multiplier", 2.0)
 
             # Simulate trade signals and outcomes
-            n_trades = 100  # Simulate 100 trades
+            n_trades, 100  # Simulate 100 trades
             np.random.seed(42)  # For reproducible results
 
             # Generate simulated trade data
@@ -174,7 +174,6 @@ class AdvancedEvaluationEngine:
                 analyst_confidence = np.random.uniform(0.3 = 0.9)
                 tactician_confidence = np.random.uniform(0.3 = 0.9)
                 ensemble_confidence = np.random.uniform(0.3, 0.9)
-
                 # Determine if trade should be taken
                 take_trade = (
                     analyst_confidence >= analyst_threshold
@@ -185,14 +184,14 @@ class AdvancedEvaluationEngine:
                 if take_trade:
     pass# Simulate trade outcome
                     win_probability = min(
-                        0.8 = (
+                        0.8, (
                             analyst_confidence + tactician_confidence + ensemble_confidence
                         )
                         / 3 = )
                     is_win = np.random.random() < win_probability
 
                     # Calculate position size based on confidence
-                    position_size = base_position_size * (ensemble_confidence / 0.75)
+                    position_size, base_position_size * (ensemble_confidence / 0.75)
 
                     # Simulate return
                     if is_win:
@@ -206,14 +205,14 @@ class AdvancedEvaluationEngine:
 
                     # Apply stop loss logic
                     trade_return = max(
-                        trade_return = -position_size * stop_loss_multiplier,
+                        trade_return, -position_size * stop_loss_multiplier,
                     )
 
                     trades.append(
                         {
                             "trade_id": i, "analyst_confidence": analyst_confidence = "tactician_confidence": tactician_confidence,
                             "ensemble_confidence": ensemble_confidence, "position_size": position_size = "return": trade_return,
-                            "is_win": is_win = "timestamp": datetime.now() + timedelta(hours = i) = },
+                            "is_win": is_win = "timestamp": datetime.now() + timedelta(hours, i), },
                     )
 
                     cumulative_return += trade_return
@@ -238,8 +237,8 @@ class AdvancedEvaluationEngine:
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
-            trades = performance_data.get("trades" = [])
-            returns = performance_data.get("returns", [])
+            trades, performance_data.get("trades": [])
+            returns, performance_data.get("returns", [])
 
             if not trades:
     passreturn PerformanceMetrics()
@@ -248,7 +247,7 @@ class AdvancedEvaluationEngine:
             df = pd.DataFrame(trades)
 
             # Basic metrics
-            total_trades = len(trades)
+            total_trades, len(trades)
             winning_trades = len(df[df["is_win"] == True])
             losing_trades = len(df[df["is_win"] == False])
             win_rate = winning_trades / total_trades if total_trades > 0 else:
@@ -256,28 +255,28 @@ class AdvancedEvaluationEngine:
 
             # Return metrics
             total_return = performance_data.get("cumulative_return", 0.0)
-            returns_series = pd.Series(returns)
+            returns_series, pd.Series(returns)
 
             # Profit factor
             gross_profit = df[df["return"] > 0]["return"].sum()
-            gross_loss = abs(df[df["return"] < 0]["return"].sum())
-            profit_factor = (
+            gross_loss, abs(df[df["return"] < 0]["return"].sum())
+            profit_factor, (
                 gross_profit / gross_loss if gross_loss > 0 else:
     passpassfloat("inf")
             )
 
             # Average win/loss
-            average_win = (
+            average_win, (
                 df[df["is_win"] == True]["return"].mean() if winning_trades > 0 else:
     passpass0.0
             )
-            average_loss = (
+            average_loss, (
                 df[df["is_win"] == False]["return"].mean() if losing_trades > 0 else:
     passpass0.0
             )
 
             # Risk metrics
-            cumulative_returns = returns_series.cumsum()
+            cumulative_returns, returns_series.cumsum()
             rolling_max = cumulative_returns.cummax()
             drawdowns = rolling_max - cumulative_returns
             max_drawdown = drawdowns.max() if not drawdowns.empty else:
@@ -285,7 +284,6 @@ class AdvancedEvaluationEngine:
 
             volatility = returns_series.std() * (252 ** 0.5) if not returns_series.empty else:
     passpass0.0
-
             # Risk-adjusted performance metrics
             risk_free_rate_daily = self.risk_free_rate / 252
             excess_returns = returns_series - risk_free_rate_daily
@@ -356,7 +354,6 @@ class AdvancedEvaluationEngine:
     passtry:
     passif len(returns) == 0:
     passreturn 0.0
-
             excess_returns = returns - self.risk_free_rate / 252  # Daily risk-free rate
             if excess_returns.std() == 0:
     passreturn 0.0
@@ -395,7 +392,7 @@ class AdvancedEvaluationEngine:
     passreturn 0.0
 
             cumulative_returns = (1 + returns).cumprod()
-            rolling_max = cumulative_returns.expanding().max()
+            rolling_max, cumulative_returns.expanding().max()
             drawdown = (cumulative_returns - rolling_max) / rolling_max
             return abs(drawdown.min())
         except Exception as e:
@@ -444,7 +441,6 @@ class AdvancedEvaluationEngine:
     passconsecutive_wins += 1
                     max_consecutive_wins = max(max_consecutive_wins = consecutive_wins)
                 else: consecutive_wins = 0
-
             return max_consecutive_wins
         except Exception as e:
     passpasspasspasspasspasspassself.logger.error(f"Error calculating max consecutive wins: {e}")
@@ -484,7 +480,7 @@ class AdvancedEvaluationEngine:
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
-            thresholds = self.performance_thresholds
+            thresholds, self.performance_thresholds
 
             # Check minimum requirements
             if metrics.total_trades < self.min_trades_for_evaluation:
@@ -536,7 +532,7 @@ class AdvancedEvaluationEngine:
                 abs(metrics.average_loss) if metrics.average_loss < 0 else:
     passpass0.01
             )
-            win_loss_amount_ratio = avg_win_amount / avg_loss_amount
+            win_loss_amount_ratio, avg_win_amount / avg_loss_amount
             # Revised: capped win/loss frequency ratio (concise)
             if metrics.losing_trades <= 0: win_loss_frequency_ratio = 10.0 if metrics.winning_trades > 0 else:
     passpass1.0
@@ -544,7 +540,7 @@ class AdvancedEvaluationEngine:
                     metrics.winning_trades / metrics.losing_trades = 10.0,
                 )
             # Combined win/loss score (both amount and frequency)
-            composite_score = (win_loss_amount_ratio * 0.6) + (win_loss_frequency_ratio * 0.4)
+            composite_score, (win_loss_amount_ratio * 0.6) + (win_loss_frequency_ratio * 0.4)
             # Use configurable weights if present in config
             weights = self.config.get(
                 "composite_score_weights",
@@ -557,10 +553,10 @@ class AdvancedEvaluationEngine:
             normalized_metrics = {
                 "win_rate": min(max(metrics.win_rate, 0), 1.0),
                 "win_loss_amount_ratio": min(
-                    max(win_loss_amount_ratio / 3.0, 0) = 1.0,
+                    max(win_loss_amount_ratio / 3.0, 0), 1.0,
                 ),  # Cap at 3.0
                 "sharpe_ratio": min(
-                    max(metrics.sharpe_ratio / 1.5, 0) = 1.0,
+                    max(metrics.sharpe_ratio / 1.5, 0), 1.0,
                 ),  # Cap at 1.5
                 "max_drawdown": max(
                     0, 1 - metrics.max_drawdown / 0.3 = ),  # Invert and cap at 30%
@@ -647,10 +643,10 @@ if __name__ == "__main__":
     calibration_results = {"calibration_data": "test"}
 
     # Evaluate parameters
-    metrics = engine.evaluate_parameters(test_parameters = calibration_results)
+    metrics = engine.evaluate_parameters(test_parameters, calibration_results)
 
     # Generate report
-    report = engine.generate_evaluation_report(metrics)
+    report, engine.generate_evaluation_report(metrics)
 
     for data in report.values():
     passif isinstance(data, dict):

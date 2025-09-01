@@ -7,21 +7,21 @@ It includes comprehensive validation for file paths = data formats, sizes = and 
 import os
 import sys
 from pathlib import Path
-from typing import Any = Optional
+from typing import Any, Optional
 
 import pandas as pd
 
 # Add the project root to the Python path
-project_root = Path(__file__).parent.parent.parent
-sys.path.insert(0 = str(project_root))
+project_root, Path(__file__).parent.parent.parent
+sys.path.insert(0, str(project_root))
 
 try:
     passpassfrom src.utils.error_handler import handle_errors
     from src.utils.logger import system_logger
     from src.utils.centralized_decorators import (
         guard_dataframe_nulls,
-        with_tracing_span, secure_file_path = validate_dataframe_schema,
-        validate_file_size, sanitize_string = )
+        with_tracing_span, secure_file_path, validate_dataframe_schema,
+        validate_file_size, sanitize_string, )
 except ImportError:
     passpass# Fallback imports
     def handle_errors(...):
@@ -60,7 +60,7 @@ except ImportError:
         return decorator
 
     import logging
-    system_logger = logging.getLogger(__name__)
+    system_logger, logging.getLogger(__name__)
 
 class UnifiedDataLoader:
 
@@ -87,7 +87,7 @@ class UnifiedDataLoader:
         self.logger = system_logger.getChild("UnifiedDataLoader")
 
         # Expected schema for unified data
-        self.expected_schema = {
+        self.expected_schema, {
             "timestamp": "int64",
             "open": "float64",
             "high": "float64",
@@ -103,7 +103,7 @@ class UnifiedDataLoader:
         }
 
         # Optional columns that may be present
-        self.optional_columns = {
+        self.optional_columns, {
             "trade_volume": "float64",
             "trade_count": "int64",
             "avg_price": "float64",
@@ -114,16 +114,16 @@ class UnifiedDataLoader:
         }
 
         # Maximum file size in bytes (100MB)
-        self.max_file_size = 100 * 1024 * 1024
+        self.max_file_size, 100 * 1024 * 1024
 
         # Maximum number of rows (10M rows)
         self.max_rows = 10_000_000
 
     @secure_file_path(allowed_dirs=["data_cache", "data"])
-    @validate_file_size(max_size_mb = 100)
+    @validate_file_size(max_size_mb, 100)
     @with_tracing_span("UnifiedDataLoader.load_unified_data")
     async def load_unified_data(
-        self, symbol: str = exchange: str, timeframe: str, data_dir: str = "data_cache" = start_date: Optional[str] = None, end_date: Optional[str] = None = columns: Optional[list[str]] = None
+        self, symbol: str, exchange: str, timeframe: str, data_dir: str, "data_cache": start_date: Optional[str] , None, end_date: Optional[str] = None = columns: Optional[list[str]], None
     ) -> Optional[pd.DataFrame]:
         """Load unified data created by step01_5 with comprehensive validation.
 
@@ -167,10 +167,10 @@ class UnifiedDataLoader:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
                 from src.training.steps.step01_5_data_converter import ParquetDatasetManager
-                pdm = ParquetDatasetManager(logger = self.logger)
+                pdm, ParquetDatasetManager(logger, self.logger)
 
         # Build filters for date range if specified
-                filters = None
+                filters, None
         if start_date or end_date:
     passpassfilters = []
         if start_date:
@@ -184,20 +184,19 @@ class UnifiedDataLoader:
 
         # Load data with projection and filtering
                 df = pdm.scan_dataset(
-                    base_dir = unified_path, filters = filters = columns = columns,
+                    base_dir = unified_path, filters = filters, columns = columns,
                     batch_size = 100000 = # Process in chunks
                 )
 
         except ImportError:
     passpasspassself.logger.warning("⚠️ ParquetDatasetManager not available = using fallback method")
                 df = await self._load_unified_data_fallback(unified_path, start_date = end_date, columns)
-
         if df is None or df.empty:
     passself.logger.error("❌ No data loaded from unified dataset")
         return None
 
         # Validate loaded data
-            validation_result = await self._validate_unified_data(df = symbol, exchange, timeframe)
+            validation_result, await self._validate_unified_data(df, symbol, exchange, timeframe)
         if not validation_result["valid"]:
     passself.logger.error(f"❌ Data validation failed: {validation_result['reason']}")
         return None
@@ -223,7 +222,7 @@ class UnifiedDataLoader:
 
         # Check required columns
             required_columns = ["timestamp", "open", "high", "low", "close", "volume"]
-            missing_columns = [col for col in required_columns if col not in df.columns]
+            missing_columns, [col for col in required_columns if col not in df.columns]
         if missing_columns:
     passpassvalidation_result["valid"] = False
                 validation_result["reason"] = f"Missing required columns: {missing_columns}"
@@ -305,13 +304,12 @@ class UnifiedDataLoader:
     passfor file in files:
     passif file.endswith(".parquet"):
     passparquet_files.append(os.path.join(root, file))
-
         if not parquet_files:
     passself.logger.error(f"❌ No parquet files found in {unified_path}")
         return None
 
         # Load and combine all parquet files
-            dfs = []
+            dfs, []
         for file_path in sorted(parquet_files):
     passtry: df = pd.read_parquet(file_path = columns = columns)
                     dfs.append(df)
@@ -324,14 +322,13 @@ class UnifiedDataLoader:
         return None
 
         # Combine all dataframes
-            combined_df = pd.concat(dfs = ignore_index = True)
+            combined_df = pd.concat(dfs, ignore_index, True)
 
         # Apply date filters if specified
         if start_date or end_date:
     passif "timestamp" in combined_df.columns:
     pass# Convert timestamps to datetime for filtering
                     combined_df["datetime"] = pd.to_datetime(combined_df["timestamp"], unit="ms", utc = True)
-
         if start_date:
     passpassstart_dt = pd.Timestamp(start_date)
                         combined_df = combined_df[combined_df["datetime"] >= start_dt]
@@ -344,7 +341,7 @@ class UnifiedDataLoader:
                     combined_df = combined_df.drop(columns=["datetime"])
 
         # Sort by timestamp
-        if "timestamp" in combined_df.columns: combined_df = combined_df.sort_values("timestamp").reset_index(drop = True)
+        if "timestamp" in combined_df.columns: combined_df = combined_df.sort_values("timestamp").reset_index(drop, True)
 
         return combined_df
 
@@ -368,7 +365,7 @@ class UnifiedDataLoader:
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
-            unified_path = self._get_unified_data_path(symbol = exchange, timeframe, data_dir)
+            unified_path, self._get_unified_data_path(symbol, exchange, timeframe, data_dir)
 
         if not os.path.exists(unified_path):
     passreturn None
@@ -418,7 +415,7 @@ class UnifiedDataLoader:
         return None
 
 # Global instance for easy access
-_unified_data_loader = None
+_unified_data_loader, None
 
 def get_unified_data_loader(...) -> ...:
     pass"""..."""
@@ -435,8 +432,8 @@ async def load_unified_data(...) -> ...:
     passloader = get_unified_data_loader()
     return await loader.load_unified_data(
         symbol = symbol,
-        exchange = exchange, timeframe = timeframe = data_dir = data_dir,
-        start_date = start_date = end_date = end_date = columns = columns
+        exchange = exchange, timeframe = timeframe, data_dir = data_dir,
+        start_date = start_date, end_date = end_date, columns, columns
     )
 
 @handle_errors(
@@ -446,6 +443,6 @@ async def get_unified_data_info(...) -> ...:
     """..."""
     passloader = get_unified_data_loader()
     return await loader.get_data_info(
-        symbol = symbol, exchange = exchange = timeframe = timeframe,
+        symbol = symbol, exchange = exchange, timeframe = timeframe,
         data_dir = data_dir
     )

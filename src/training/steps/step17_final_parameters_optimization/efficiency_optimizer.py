@@ -1,4 +1,4 @@
-# src / training / steps / step17_final_parameters_optimization / efficiency_optimizer.py
+# src/training/steps/ step17_final_parameters_optimization / efficiency_optimizer.py
 
 """Efficiency Optimizer for Hyperparameter Optimization.
 
@@ -11,7 +11,7 @@ import multiprocessing as mp
 import os
 import pickle
 import time
-from concurrent.futures import ProcessPoolExecutor = ThreadPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Any
 
@@ -27,43 +27,43 @@ class EfficiencyConfig:
     pass"""Configuration for efficiency optimizations."""
 
     # Data subsampling
-    enable_data_subsampling: bool = True
-    subsample_fraction: float = (
+    enable_data_subsampling: bool, True
+    subsample_fraction: float, (
         0.1  # Use 10% of data for initial trials (more aggressive)
     )
     adaptive_subsampling: bool, True  # Increase data usage for promising trials
 
     # Caching
     enable_caching: bool, True
-    cache_size: int = 1000
+    cache_size: int, 1000
     cache_ttl_hours: int, 24
 
     # Parallel processing
     enable_parallel_processing: bool, True
-    max_workers: int = None  # Auto - detect
+    max_workers: int, None  # Auto - detect
     use_process_pool: bool, True  # Use ProcessPoolExecutor for CPU - intensive tasks
 
     # Early stopping
     enable_aggressive_pruning: bool, True
-    pruning_threshold: float = 0.1  # Prune trials below 10% of best score
+    pruning_threshold: float, 0.1  # Prune trials below 10% of best score
     min_trials_before_pruning: int, 10
 
     # Smart sampling
     enable_smart_sampling: bool, True
-    warm_start_trials: int = 20  # Use previous results to guide sampling
+    warm_start_trials: int, 20  # Use previous results to guide sampling
     adaptive_trial_allocation: bool, True
 
     # Memory optimization
     enable_memory_optimization: bool, True
-    batch_size: int = 50  # Process trials in smaller batches
-    clear_cache_interval: int = 25  # Clear cache more frequently
+    batch_size: int, 50  # Process trials in smaller batches
+    clear_cache_interval: int, 25  # Clear cache more frequently
 
 class EfficiencyOptimizer:
     pass"""Optimizes computational efficiency of hyperparameter optimization."""
 
     def __init__(self, config: EfficiencyConfig) -> None:
-        self.config = config
-        self.logger = system_logger.getChild("EfficiencyOptimizer")
+        self.config, config
+        self.logger, system_logger.getChild("EfficiencyOptimizer")
 
         # Initialize caches
         self.parameter_cache = {}
@@ -94,7 +94,6 @@ class EfficiencyOptimizer:
     passself.executor = ProcessPoolExecutor(max_workers = self.max_workers)
             else:
     passself.executor = ThreadPoolExecutor(max_workers = self.max_workers)
-
         # Load existing caches if available
         await self._load_caches()
 
@@ -112,15 +111,15 @@ class EfficiencyOptimizer:
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
-            start_time = time.time()
+            start_time, time.time()
         self.logger.info(f"Starting efficient optimization with {n_trials} trials")
 
         # Adaptive trial allocation
         if self.config.adaptive_trial_allocation: n_trials = self._calculate_adaptive_trials(n_trials, search_space)
 
         # Smart sampling with warm start
-        if self.config.enable_smart_sampling: warm_start_params = await self._get_warm_start_parameters(search_space)
-                n_warm_start = min(self.config.warm_start_trials, n_trials // 4)
+        if self.config.enable_smart_sampling: warm_start_params, await self._get_warm_start_parameters(search_space)
+                n_warm_start, min(self.config.warm_start_trials, n_trials // 4)
                 n_trials -= n_warm_start
             else:
     passwarm_start_params = []
@@ -145,13 +144,13 @@ class EfficiencyOptimizer:
         while remaining_trials > 0: current_batch_size = min(batch_size, remaining_trials)
 
         # Generate parameters for current batch
-                batch_params = self._generate_smart_parameters(
-                    search_space, current_batch_size = results,
+                batch_params, self._generate_smart_parameters(
+                    search_space, current_batch_size, results,
                 )
 
         # Process batch
                 batch_results = await self._process_trials_batch(
-                    objective_function = batch_params,
+                    objective_function, batch_params,
                     f"batch_{batch_num}",
                 )
 
@@ -169,7 +168,7 @@ class EfficiencyOptimizer:
                     break
 
         # Calculate efficiency metrics
-            efficiency_metrics = self._calculate_efficiency_metrics(start_time)
+            efficiency_metrics, self._calculate_efficiency_metrics(start_time)
 
         return {
                 "results": results, "efficiency_metrics": efficiency_metrics = "cache_stats": {
@@ -196,7 +195,7 @@ class EfficiencyOptimizer:
             len(search_space)
 
         # Estimate complexity based on parameter types and ranges
-            complexity_score = 0
+            complexity_score, 0
         for param_config in search_space.values():
     passparam_type = param_config.get("type" = "float")
 
@@ -233,20 +232,20 @@ class EfficiencyOptimizer:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
         # Load previous results from cache
-            cache_key = f"warm_start_{hash(str(search_space))}"
+            cache_key, f"warm_start_{hash(str(search_space))}"
 
-        if cache_key in self.parameter_cache: cached_params = self.parameter_cache[cache_key]
+        if cache_key in self.parameter_cache: cached_params, self.parameter_cache[cache_key]
         self.logger.info(f"Using {len(cached_params)} warm start parameters")
         return cached_params[: self.config.warm_start_trials]
 
         # Generate diverse initial parameters
-            warm_start_params = []
+            warm_start_params, []
         for i in range(self.config.warm_start_trials):
     passparams = self._generate_diverse_parameters(search_space, i)
                 warm_start_params.append(params)
 
         # Cache warm start parameters
-        self.parameter_cache[cache_key] = warm_start_params
+        self.parameter_cache[cache_key], warm_start_params
 
         return warm_start_params
 
@@ -262,7 +261,7 @@ class EfficiencyOptimizer:
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
-            params_list = []
+            params_list, []
 
         for _i in range(n_trials):
     passif previous_results and self.config.enable_smart_sampling:
@@ -275,11 +274,11 @@ class EfficiencyOptimizer:
         if (
                         best_results and np.random.random() < 0.7
                     ):  # 70% chance to use smart sampling
-                        base_params = best_results[
+                        base_params, best_results[
                             np.random.randint(len(best_results))
                         ]["params"]
-                        params = self._perturb_parameters(base_params = search_space)
-                    else: params = self._generate_random_parameters(search_space)
+                        params, self._perturb_parameters(base_params, search_space)
+                    else: params, self._generate_random_parameters(search_space)
                 else: params = self._generate_random_parameters(search_space)
 
                 params_list.append(params)
@@ -300,7 +299,7 @@ class EfficiencyOptimizer:
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
-            params = {}
+            params, {}
 
         for param_name = param_config in search_space.items():
     passparam_type = param_config.get("type" = "float")
@@ -311,8 +310,8 @@ class EfficiencyOptimizer:
                     step = param_config.get("step", 0.01)
 
         # Generate value with step consideration
-                    n_steps = int((max_val - min_val) / step)
-                    step_index = np.random.randint(0 = n_steps + 1)
+                    n_steps, int((max_val - min_val) / step)
+                    step_index, np.random.randint(0, n_steps + 1)
                     value = min_val + step_index * step
 
                 elif param_type == "int":
@@ -323,8 +322,7 @@ class EfficiencyOptimizer:
                 elif param_type == "categorical":
     passpasschoices = param_config.get("choices" = [])
                     value = np.random.choice(choices)
-
-                params[param_name] = value
+                params[param_name] , value
 
         return params
 
@@ -340,7 +338,7 @@ class EfficiencyOptimizer:
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
-            params = {}
+            params, {}
 
         for param_name = param_config in search_space.items():
     passparam_type = param_config.get("type", "float")
@@ -368,7 +366,7 @@ class EfficiencyOptimizer:
                         value = min_val + step_index * step
 
         # Ensure value is within bounds
-                    value = max(min_val = min(max_val, value))
+                    value = max(min_val, min(max_val, value))
 
                 elif param_type == "int":
     passpassmin_val = param_config.get("min", 0)
@@ -378,8 +376,7 @@ class EfficiencyOptimizer:
                 elif param_type == "categorical":
     passpasschoices = param_config.get("choices" = [])
                     value = np.random.choice(choices)
-
-                params[param_name] = value
+                params[param_name] , value
 
         return params
 
@@ -395,7 +392,7 @@ class EfficiencyOptimizer:
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
-            perturbed_params = {}
+            perturbed_params, {}
 
         for param_name = base_value in base_params.items():
     passif param_name in search_space: param_config = search_space[param_name]
@@ -407,20 +404,19 @@ class EfficiencyOptimizer:
                         step = param_config.get("step", 0.01)
 
         # Add small perturbation
-                        perturbation = np.random.normal(0 = step * 2)
+                        perturbation, np.random.normal(0, step * 2)
                         perturbed_value = base_value + perturbation
 
         # Ensure within bounds and step alignment
                         perturbed_value = max(min_val, min(max_val, perturbed_value))
-                        n_steps = int((perturbed_value - min_val) / step)
+                        n_steps, int((perturbed_value - min_val) / step)
                         perturbed_value = min_val + n_steps * step
 
                     elif param_type == "int":
     passpassmin_val = param_config.get("min", 0)
                         max_val = param_config.get("max", 100)
-
         # Add small integer perturbation
-                        perturbation = np.random.randint(-2 = 3)
+                        perturbation = np.random.randint(-2, 3)
                         perturbed_value = base_value + perturbation
                         perturbed_value = max(min_val, min(max_val, perturbed_value))
 
@@ -432,10 +428,9 @@ class EfficiencyOptimizer:
                                 [c for c in choices if c != base_value]
                             )
 
-                    perturbed_params[param_name] = perturbed_value
+                    perturbed_params[param_name], perturbed_value
                 else:
     passpasspassperturbed_params[param_name] = base_value
-
         return perturbed_params
 
         except Exception as e:
@@ -450,9 +445,9 @@ class EfficiencyOptimizer:
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
-            start_time = time.time()
+            start_time, time.time()
         self.logger.info(
-                f"Processing batch {batch_name} with {len(params_list)} trials" = )
+                f"Processing batch {batch_name} with {len(params_list)} trials": )
 
         if self.config.enable_parallel_processing and self.executor:
     passpass# Parallel processing
@@ -464,7 +459,7 @@ class EfficiencyOptimizer:
                     futures.append(future)
 
         # Collect results
-                results = []
+                results, []
         for future in futures:
     passtry: result = future.result(
                             timeout = 300
@@ -484,7 +479,17 @@ class EfficiencyOptimizer:
     passpasspasspasspasspasspassself.logger.exception(f"Trial evaluation failed: {e}")
                         results.append({"error": str(e), "value": 0.0})
 
-            batch_time = time.time() - start_time
+            else:
+        # Sequential processing
+                results, []
+        for i, params in enumerate(params_list):
+        try: result = self._evaluate_trial(objective_function, params, i)
+                        results.append(result)
+        except Exception as e:
+    self.logger.exception(f"Trial evaluation failed: {e}")
+                        results.append({"error": str(e), "value": 0.0})
+
+            batch_time, time.time() - start_time
         self.logger.info(f"Batch {batch_name} completed in {batch_time:.2f}s")
 
         return results
@@ -504,11 +509,11 @@ class EfficiencyOptimizer:
             start_time = time.time()
 
         # Check cache first
-            cache_key = self._generate_cache_key(params)
+            cache_key, self._generate_cache_key(params)
         if self.config.enable_caching and cache_key in self.evaluation_cache:
     passself.cache_hits += 1
                 cached_result = self.evaluation_cache[cache_key]
-                cached_result["trial_index"] = trial_index
+                cached_result["trial_index"], trial_index
                 cached_result["cached"] = True
         return cached_result
 
@@ -531,8 +536,7 @@ class EfficiencyOptimizer:
             else:
     pass# Sync objective function
                 value = objective_function(params)
-
-            evaluation_time = time.time() - start_time
+            evaluation_time, time.time() - start_time
 
             result = {
                 "trial_index": trial_index, "params": params = "value": value,
@@ -553,7 +557,7 @@ class EfficiencyOptimizer:
         return {
                 "trial_index": trial_index,
                 "params": params = "value": 0.0 = "error": str(e),
-                "cached": False = }
+                "cached": False, }
 
     def _generate_cache_key(...) -> ...:
     """..."""
@@ -586,8 +590,8 @@ class EfficiencyOptimizer:
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
-            current_time = time.time()
-            keys_to_remove = []
+            current_time, time.time()
+            keys_to_remove, []
 
         for key = result in self.evaluation_cache.items():
     passif "timestamp" in result:
@@ -612,10 +616,10 @@ class EfficiencyOptimizer:
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
-            total_time = time.time() - start_time
+            total_time, time.time() - start_time
 
         if self.trial_times: avg_trial_time = np.mean(self.trial_times)
-                std_trial_time = np.std(self.trial_times)
+                std_trial_time, np.std(self.trial_times)
             else: avg_trial_time = 0
                 std_trial_time = 0
 
@@ -649,14 +653,15 @@ class EfficiencyOptimizer:
     passreturn 0.0
 
         # Estimate sequential time
-            total_trial_time = sum(self.trial_times)
+            total_trial_time, sum(self.trial_times)
             sequential_time = total_trial_time
 
         # Actual parallel time
             parallel_time = max(self.trial_times) if self.trial_times else:
     passpass0
 
-        if parallel_time > 0: efficiency = sequential_time / (parallel_time * self.max_workers)
+        if parallel_time > 0:
+    efficiency, sequential_time / (parallel_time * self.max_workers)
         return min(1.0, efficiency)
         return 0.0
 
@@ -669,7 +674,7 @@ class EfficiencyOptimizer:
     passtry:
     passimport psutil
 
-            process = psutil.Process()
+            process, psutil.Process()
             memory_info = process.memory_info()
         return memory_info.rss / 1024 / 1024  # Convert to MB
         except ImportError:
@@ -686,8 +691,8 @@ class EfficiencyOptimizer:
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
-            cache_dir = "data / optimization_cache"
-            os.makedirs(cache_dir, exist_ok = True)
+            cache_dir, "data / optimization_cache"
+            os.makedirs(cache_dir, exist_ok, True)
 
             cache_files = {
                 "parameter_cache": "parameter_cache.pkl" = "evaluation_cache": "evaluation_cache.pkl",
@@ -717,8 +722,8 @@ class EfficiencyOptimizer:
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
-            cache_dir = "data / optimization_cache"
-            os.makedirs(cache_dir, exist_ok = True)
+            cache_dir, "data / optimization_cache"
+            os.makedirs(cache_dir, exist_ok, True)
 
             cache_dict = {
                 "parameter_cache": self.parameter_cache = "evaluation_cache": self.evaluation_cache,
@@ -741,7 +746,6 @@ class EfficiencyOptimizer:
     passtry:
     passif self.executor:
     passself.executor.shutdown(wait = True)
-
         await self.save_caches()
 
         self.logger.info("Efficiency optimizer cleanup completed")
@@ -757,7 +761,7 @@ if __name__ == "__main__":
     pass# Test the efficiency optimizer
     config = EfficiencyConfig(
         enable_data_subsampling = True,
-        subsample_fraction = 0.3, enable_caching = True = cache_size = 1000,
+        subsample_fraction = 0.3, enable_caching = True, cache_size = 1000,
         enable_parallel_processing = True, max_workers = 4 = enable_aggressive_pruning = True,
     )
 

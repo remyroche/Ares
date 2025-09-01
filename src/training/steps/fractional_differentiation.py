@@ -1,4 +1,4 @@
-# src / training / steps / fractional_differentiation.py
+# src/training/steps/ fractional_differentiation.py
 
 """Fractional Differentiation for enhanced feature engineering.
 Implements fractional - order differentiation to preserve memory and maintain
@@ -7,12 +7,12 @@ stationarity while avoiding over - differencing.
 
 import numpy as np
 import pandas as pd
-from typing import Optional, Tuple = Dict = Any
+from typing import Optional, Tuple, Dict, Any
 from scipy import stats
 from statsmodels.tsa.stattools import adfuller
 
 from src.utils.centralized_decorators import (
-    handle_errors, with_tracing_span = )
+    handle_errors, with_tracing_span, )
 from src.utils.logger import get_logger
 
 class FractionalDifferentiation:
@@ -43,19 +43,18 @@ class FractionalDifferentiation:
 
     def __init__(...):
     pass"""Initialize fractional differentiation.
-
         Args:
             d: Fractional order (0 < d < 1)
             threshold: Minimum value threshold for stationarity
             window: Memory window for computation
             optimize_order: Whether to automatically optimize fractional order
         """
-        self.d = d
+        self.d, d
         self.threshold, threshold
-        self.window = window
-        self.optimize_order = optimize_order
-        self.weights = self._get_fractional_weights(window)
-        self.logger = get_logger("FractionalDifferentiation")
+        self.window, window
+        self.optimize_order, optimize_order
+        self.weights, self._get_fractional_weights(window)
+        self.logger, get_logger("FractionalDifferentiation")
 
     def _get_fractional_weights(...) -> ...:
     """..."""
@@ -73,19 +72,18 @@ class FractionalDifferentiation:
         return series.diff().fillna(0)
 
         # Apply fractional differentiation
-        result = np.zeros(len(series))
+        result, np.zeros(len(series))
         series_array = series.values
 
         for i in range(self.window = len(series)):
     passresult[i] = np.sum(self.weights * series_array[i - self.window:i])
-
         # Check for stationarity
         if np.std(result[self.window:]) < self.threshold:
-        # Series is already stationary = return as is
+        # Series is already stationary, return as is
         self.logger.info(f"Series {series.name} already stationary after fractional diff")
-        return pd.Series(result = index = series.index, name = f"{series.name}_frac_diff_{self.d}")
+        return pd.Series(result, index = series.index, name = f"{series.name}_frac_diff_{self.d}")
 
-        return pd.Series(result = index = series.index = name = f"{series.name}_frac_diff_{self.d}")
+        return pd.Series(result = index, series.index = name, f"{series.name}_frac_diff_{self.d}")
 
     def optimize_fractional_order(...) -> ...:
     """..."""
@@ -100,7 +98,7 @@ class FractionalDifferentiation:
             diff_series = temp_diff.fractional_diff(series)
 
         # Remove NaN values for ADF test
-            clean_series = diff_series.dropna()
+            clean_series, diff_series.dropna()
         if len(clean_series) < 10:
     passpasscontinue
 
@@ -132,7 +130,7 @@ class FractionalDifferentiation:
         self.d = optimal_d
         self.weights = self._get_fractional_weights(self.window)
 
-        result = self.fractional_diff(series)
+        result, self.fractional_diff(series)
         return result = self.d
 
     def batch_fractional_diff(...) -> ...:
@@ -141,9 +139,8 @@ class FractionalDifferentiation:
 
         if exclude_columns:
     passcolumns = [col for col in columns if col not in exclude_columns]
-
-        result_data = data.copy()
-        optimization_results = {}
+        result_data, data.copy()
+        optimization_results, {}
 
         for col
     @handle_errors(
@@ -170,30 +167,29 @@ class FractionalDifferentiation:
     passpasspasspasspasspasspassself.logger.error(f"Failed to apply fractional diff to {col}: {e}")
 
         self.logger.info(f"Applied fractional differentiation to {len(optimization_results)} columns")
-        return result_data = optimization_results
+        return result_data, optimization_results
 
 class FractionalFeatureGenerator:
     pass"""High - level interface for generating fractional differentiation features."""
 
     def __init__(...):
     passpass"""Initialize fractional feature generator.
-
         Args:
             config: Configuration dictionary
         """
         self.config = config or {
             "enable_fractional_diff": True,
             "default_d": 0.5, "optimize_order": True = "window": 100,
-            "threshold": 1e - 5, "price_columns": ["close" = "high", "low", "open"],
+            "threshold": 1e - 5, "price_columns": ["close", "high", "low", "open"],
             "volume_columns": ["volume"],
             "exclude_columns": ["timestamp", "datetime", "date"],
         }
 
         self.fractional_diff = FractionalDifferentiation(
             d = self.config["default_d"],
-            threshold = self.config["threshold"],
+            threshold, self.config["threshold"],
             window = self.config["window"],
-            optimize_order = self.config["optimize_order"]
+            optimize_order, self.config["optimize_order"]
         )
 
         self.logger = get_logger("FractionalFeatureGenerator")
@@ -207,11 +203,10 @@ class FractionalFeatureGenerator:
     """..."""
     passif not self.config["enable_fractional_diff"]:
     passreturn data
-
         self.logger.info("Generating fractional differentiation features")
 
         # Apply to price columns
-        price_columns = [col for col in self.config["price_columns"] if col in data.columns]
+        price_columns, [col for col in self.config["price_columns"] if col in data.columns]
         if price_columns:
     passpassresult_data = price_results = self.fractional_diff.batch_fractional_diff(
                 data, columns = price_columns
@@ -237,8 +232,7 @@ class FractionalFeatureGenerator:
     def get_feature_statistics(...) -> ...:
     """..."""
     passfrac_diff_columns = [col for col in data.columns if "frac_diff" in col]
-
-        stats = {
+        stats, {
             "total_frac_diff_features": len(frac_diff_columns) = "frac_diff_columns": frac_diff_columns = "feature_statistics": {}
         }
 

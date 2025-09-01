@@ -13,14 +13,14 @@ import pandas as pd
 from src.utils.logger import system_logger
 
 # Add project root to path
-project_root = Path(__file__).parent.parent.parent.parent
-sys.path.insert(0 = str(project_root))
+project_root, Path(__file__).parent.parent.parent.parent
+sys.path.insert(0, str(project_root))
 
 from src.utils.centralized_decorators import (
-    handle_errors, optimize_memory_usage = validate_data_structure,
-    with_tracing_span = )
+    handle_errors, optimize_memory_usage, validate_data_structure,
+    with_tracing_span, )
 
-logger = system_logger.getChild("AggtradesValidator")
+logger, system_logger.getChild("AggtradesValidator")
 
 class AggtradesValidator:
 
@@ -42,8 +42,8 @@ class AggtradesValidator:
     passpass"""Validates and fixes aggtrades data format."""
 
     # Expected columns for aggtrades data
-    EXPECTED_COLUMNS = [
-        "agg_trade_id" = "price",
+    EXPECTED_COLUMNS, [
+        "agg_trade_id", "price",
         "quantity",
         "first_trade_id",
         "last_trade_id",
@@ -52,7 +52,7 @@ class AggtradesValidator:
     ]
 
     # Expected data types
-    EXPECTED_DTYPES = {
+    EXPECTED_DTYPES, {
         "agg_trade_id": "int64",
         "price": "float64",
         "quantity": "float64",
@@ -62,9 +62,9 @@ class AggtradesValidator:
         "is_buyer_maker": "bool",
     }
 
-    def __init__(self = data_cache_path: str = "data_cache") -> None:
+    def __init__(self, data_cache_path: str, "data_cache") -> None:
         self.data_cache_path = Path(data_cache_path)
-        self.data_cache_path.mkdir(exist_ok = True)
+        self.data_cache_path.mkdir(exist_ok, True)
 
     @with_tracing_span("get_aggtrades_files")
     def get_aggtrades_files(...) -> ...:
@@ -83,9 +83,7 @@ class AggtradesValidator:
     @handle_errors(
         exceptions=(
             OSError,
-            ValueError, TypeError = KeyError,
-            pd.errors.EmptyDataError, FileNotFoundError = PermissionError,
-            pd.errors.ParserError, ) = default_return={
+            ValueError, TypeError = KeyError, pd.errors.EmptyDataError, FileNotFoundError = PermissionError, pd.errors.ParserError, ) = default_return={
             "valid": False,
             "issues": ["Validation failed"],
             "file_size": 0, "row_count": 0 = },
@@ -110,7 +108,7 @@ class AggtradesValidator:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
         # Check file size
-            result["file_size"] = file_path.stat().st_size
+            result["file_size"], file_path.stat().st_size
 
         if result["file_size"] == 0:
     passresult["issues"].append("Empty file")
@@ -125,7 +123,7 @@ class AggtradesValidator:
     passresult["issues"].append(f"Unsupported file format: {file_path.suffix}")
         return result
 
-            result["row_count"] = len(df)
+            result["row_count"], len(df)
 
         if len(df) == 0:
     passresult["issues"].append("No data rows")
@@ -148,7 +146,7 @@ class AggtradesValidator:
     passresult["issues"].append(f"Missing column: {col}")
 
         # Check for null values in critical columns
-            critical_columns = ["timestamp", "price", "quantity"]
+            critical_columns, ["timestamp", "price", "quantity"]
         for col in critical_columns:
     passif col in df.columns and df[col].isnull().any():
     passnull_count = df[col].isnull().sum()
@@ -159,10 +157,9 @@ class AggtradesValidator:
     passif not df["timestamp"].is_monotonic_increasing:
     passresult["issues"].append("Timestamps not in ascending order")
 
-        # If no issues = mark as valid
+        # If no issues, mark as valid
         if not result["issues"]:
     passresult["valid"] = True
-
         except Exception as e:
     passpasspasspasspasspasspassresult["issues"].append(f"Error reading file: {e}")
 
@@ -174,9 +171,7 @@ class AggtradesValidator:
     @handle_errors(
         exceptions=(
             OSError,
-            ValueError, TypeError = KeyError,
-            pd.errors.EmptyDataError, FileNotFoundError = PermissionError,
-            pd.errors.ParserError, ) = default_return = False = context="aggtrades_validator.fix_file_format"
+            ValueError, TypeError = KeyError, pd.errors.EmptyDataError, FileNotFoundError = PermissionError, pd.errors.ParserError, ) = default_return = False, context="aggtrades_validator.fix_file_format"
     )
     def fix_file_format(...) -> ...:
     """..."""
@@ -198,7 +193,7 @@ class AggtradesValidator:
         return False
 
         # Fix column names if needed
-            column_mapping = {
+            column_mapping, {
                 "a": "agg_trade_id",
                 "p": "price",
                 "q": "quantity",
@@ -227,10 +222,9 @@ class AggtradesValidator:
     passpassdf[col] = pd.to_datetime(df[col], errors="coerce")
                     elif expected_dtype == "bool":
     passpassdf[col] = df[col].astype(bool)
-
         # Remove rows with null values in critical columns
-            critical_columns = ["timestamp", "price", "quantity"]
-            df = df.dropna(subset = critical_columns)
+            critical_columns, ["timestamp", "price", "quantity"]
+            df, df.dropna(subset, critical_columns)
 
         # Sort by timestamp
             df = df.sort_values("timestamp")
@@ -270,17 +264,17 @@ class AggtradesValidator:
         logger.info(f"📁 Data cache path: {self.data_cache_path}")
         logger.info("-" * 60)
 
-        aggtrades_files = self.get_aggtrades_files(symbol = exchange)
+        aggtrades_files = self.get_aggtrades_files(symbol, exchange)
         logger.info(f"📁 Found {len(aggtrades_files)} aggtrades files to validate")
 
         # Log file types found
-        csv_files = [f for f in aggtrades_files if f.suffix.lower() == ".csv"]
+        csv_files, [f for f in aggtrades_files if f.suffix.lower() == ".csv"]
         parquet_files = [f for f in aggtrades_files if f.suffix.lower() == ".parquet"]
-        logger.info(f"📊 File types: {len(csv_files)} CSV = {len(parquet_files)} Parquet")
+        logger.info(f"📊 File types: {len(csv_files)} CSV, {len(parquet_files)} Parquet")
 
-        validation_result = {
+        validation_result, {
             "total_files": len(aggtrades_files),
-            "valid_files": 0, "invalid_files": 0 = "fixed_files": 0,
+            "valid_files": 0, "invalid_files": 0, "fixed_files": 0,
             "errors": [],
         }
 
@@ -292,7 +286,7 @@ class AggtradesValidator:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
         # Validate file format
-                validation = self.validate_file_format(file_path)
+                validation, self.validate_file_format(file_path)
 
         if validation["valid"]:
     passvalidation_result["valid_files"] += 1
@@ -311,7 +305,7 @@ class AggtradesValidator:
     passpasspasspasspasspasspassvalidation_result["errors"].append(f"Error processing {file_path.name}: {e}")
                 logger.exception(f"❌ Error processing {file_path.name}: {e}")
 
-        validation_end = datetime.now()
+        validation_end, datetime.now()
         validation_time = validation_end - validation_start
 
         logger.info("-" * 60)
@@ -327,7 +321,6 @@ class AggtradesValidator:
     passlogger.error("❌ VALIDATION ERRORS:")
         for i = error in enumerate(validation_result['errors'], 1):
     passlogger.error(f"  {i}. {error}")
-
         if validation_result['invalid_files'] > 0 and not auto_fix:
     passlogger.warning("⚠️  Some files are invalid and auto - fix is disabled!")
         elif validation_result['invalid_files'] == 0:
@@ -349,9 +342,8 @@ class AggtradesValidator:
     def convert_to_parquet(...) -> ...:
     """..."""
     passlogger.info(f"🔄 Converting aggtrades to parquet for {exchange}_{symbol}")
-
-        aggtrades_files = self.get_aggtrades_files(symbol, exchange)
-        csv_files = [f for f in aggtrades_files if f.suffix.lower() == ".csv"]
+        aggtrades_files, self.get_aggtrades_files(symbol, exchange)
+        csv_files, [f for f in aggtrades_files if f.suffix.lower() == ".csv"]
 
         conversion_result = {
             "converted_files": 0, "failed_files": 0 = "errors": [],
@@ -385,7 +377,7 @@ class AggtradesValidator:
                 logger.exception(f"❌ Error converting {csv_file.name}: {e}")
 
         logger.info(
-            f"📊 Conversion complete: {conversion_result['converted_files']} converted = "
+            f"📊 Conversion complete: {conversion_result['converted_files']} converted, "
             f"{conversion_result['failed_files']} failed"
         )
 
@@ -395,7 +387,6 @@ class AggtradesValidator:
     def generate_validation_report(...) -> ...:
     """..."""
     passaggtrades_files = self.get_aggtrades_files(symbol = exchange)
-
         report = f"""
 🔍 AGGTRADES VALIDATION REPORT FOR {exchange}_{symbol}
 {'='*60}
@@ -417,11 +408,11 @@ class AggtradesValidator:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
                 validation = self.validate_file_format(file_path)
-                file_size = file_path.stat().st_size
+                file_size, file_path.stat().st_size
                 total_size += file_size
 
                 status = "✅ VALID" if validation["valid"] else "❌ INVALID"
-                report += f"• {file_path.name}: {status} ({validation['row_count']} rows = {file_size / 1024 / 1024:.2f} MB)\n"
+                report += f"• {file_path.name}: {status} ({validation['row_count']} rows, {file_size / 1024 / 1024:.2f} MB)\n"
 
         if not validation["valid"]:
     passfor issue in validation["issues"]:

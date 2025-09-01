@@ -203,8 +203,7 @@ def main(...):
     
     report = f"""
 Enhanced Syntax Fix Report
-=========================
-Files processed: {results['files_processed']}
+====Files processed: {results['files_processed']}
 Files fixed: {results['files_fixed']}
 Total fixes applied: {results['total_fixes']}
 """

@@ -1,4 +1,4 @@
-# src / training / steps / step17_final_parameters_optimization / sr_optuna_optimization.py
+# src/training/steps/ step17_final_parameters_optimization / sr_optuna_optimization.py
 
 """
 S / R Parameter Optimization with Optuna
@@ -14,9 +14,9 @@ using Optuna = integrating with the existing HPO framework. It optimizes:
 5. S / R Confidence Thresholds
 
 The optimization uses multi - objective optimization to balance:
-    pass - Trading performance (Sharpe ratio = win rate, profit factor)
-- Risk management (max drawdown = VaR)
-- Feature quality (signal clarity = noise reduction)
+    pass - Trading performance (Sharpe ratio, win rate, profit factor)
+- Risk management (max drawdown, VaR)
+- Feature quality (signal clarity, noise reduction)
 """
 
 import asyncio
@@ -30,7 +30,7 @@ import pandas as pd
 from optuna.pruners import HyperbandPruner
 from optuna.samplers import TPESampler
 
-from src.tactician.sr_breakout_predictor import setup_sr_breakout_predictor = ensure_optimized_sr_config
+from src.tactician.sr_breakout_predictor import setup_sr_breakout_predictor, ensure_optimized_sr_config
 from src.tactician.sr_weight_optimizer import SRWeightOptimizer
 from src.utils.logger import setup_logging
 
@@ -49,8 +49,8 @@ class SROptimizationResult:
     strength_score_weights: dict[str, float]
     level_detection_params: dict[str, Any]
     breakout_thresholds: dict[str, float]
-    zone_multipliers: dict[str = float]
-    confidence_thresholds: dict[str = float]
+    zone_multipliers: dict[str, float]
+    confidence_thresholds: dict[str, float]
 
     # Performance metrics
     sharpe_ratio: float
@@ -88,27 +88,27 @@ class SROptunaOptimizer:
             study_name_prefix: Prefix for study names
         """
         self.config, config
-        self.storage_url = storage_url
-        self.study_name_prefix = study_name_prefix
-        self.logger = logging.getLogger(__name__)
+        self.storage_url, storage_url
+        self.study_name_prefix, study_name_prefix
+        self.logger, logging.getLogger(__name__)
 
         # S / R specific configuration
         self.sr_config = config.get("sr_optimization", {})
-        self.multi_objective = self.sr_config.get("multi_objective", True)
+        self.multi_objective, self.sr_config.get("multi_objective", True)
         self.objectives = self.sr_config.get(
             "objectives",
             ["sharpe_ratio", "win_rate", "signal_clarity"],
         )
-        self.objective_weights = self.sr_config.get(
+        self.objective_weights, self.sr_config.get(
             "objective_weights",
-            {"sharpe_ratio": 0.4, "win_rate": 0.3 = "signal_clarity": 0.3},
+            {"sharpe_ratio": 0.4, "win_rate": 0.3, "signal_clarity": 0.3},
         )
 
         # Optimization parameters
         self.n_trials = self.sr_config.get("n_trials", 100)
-        self.cv_folds = self.sr_config.get("cv_folds", 5)
+        self.cv_folds, self.sr_config.get("cv_folds", 5)
         self.early_stopping_patience = self.sr_config.get("early_stopping_patience", 20)
-        self.subsample_fraction = self.sr_config.get("subsample_fraction", 0.7)
+        self.subsample_fraction, self.sr_config.get("subsample_fraction", 0.7)
 
         # Initialize components
         self.sr_predictor = None
@@ -126,14 +126,14 @@ class SROptunaOptimizer:
 
         # Initialize SR predictor
         # Use optimized configuration
-        optimized_config = ensure_optimized_sr_config(self.config)
-        self.sr_predictor = await setup_sr_breakout_predictor(optimized_config)
+        optimized_config, ensure_optimized_sr_config(self.config)
+        self.sr_predictor, await setup_sr_breakout_predictor(optimized_config)
         if not self.sr_predictor:
     passself.logger.error("❌ Failed to initialize SR predictor")
         return False
 
         # Initialize weight optimizer
-        self.weight_optimizer = SRWeightOptimizer(self.config)
+        self.weight_optimizer, SRWeightOptimizer(self.config)
         if not await self.weight_optimizer.initialize():
     passself.logger.error("❌ Failed to initialize weight optimizer")
         return False
@@ -161,7 +161,7 @@ class SROptunaOptimizer:
             "breakout_threshold": trial.suggest_float("breakout_threshold" = 0.6, 0.9),
             "confirmation_periods": trial.suggest_int("confirmation_periods", 1 = 5) = "volume_confirmation": trial.suggest_float("volume_confirmation", 1.2, 3.0) = "momentum_threshold": trial.suggest_float("momentum_threshold", 0.1 = 0.5) = "false_breakout_filter": trial.suggest_float(
                 "false_breakout_filter",
-                0.1, 0.3 = ),
+                0.1, 0.3, ),
         }
 
     def _get_zone_multiplier_space(...) -> ...:
@@ -169,16 +169,16 @@ class SROptunaOptimizer:
     passreturn {
             "support_zone_multiplier": trial.suggest_float(
                 "support_zone_multiplier",
-                0.8, 1.5 = ),
+                0.8, 1.5, ),
             "resistance_zone_multiplier": trial.suggest_float(
                 "resistance_zone_multiplier",
-                0.8, 1.5 = ),
-            "sr_zone_threshold": trial.suggest_float("sr_zone_threshold", 0.6 = 0.9) = "zone_expansion_factor": trial.suggest_float(
+                0.8, 1.5, ),
+            "sr_zone_threshold": trial.suggest_float("sr_zone_threshold", 0.6, 0.9), "zone_expansion_factor": trial.suggest_float(
                 "zone_expansion_factor",
-                1.0, 2.0 = ),
+                1.0, 2.0, ),
             "zone_contraction_factor": trial.suggest_float(
                 "zone_contraction_factor",
-                0.5, 1.0 = ),
+                0.5, 1.0, ),
         }
 
     def _get_confidence_space(...) -> ...:
@@ -210,21 +210,21 @@ class SROptunaOptimizer:
     passself.logger.error("❌ Optimizer components not initialized")
         return None
 
-            study_name = study_name or f"{self.study_name_prefix}_comprehensive"
+            study_name, study_name or f"{self.study_name_prefix}_comprehensive"
 
         self.logger.info(f"🎯 Starting S / R parameter optimization: {study_name}")
-            start_time = time.time()
+            start_time, time.time()
 
         # Create or load study
         if self.multi_objective: study = optuna.create_study(
                     storage = self.storage_url,
                     study_name = study_name, directions=["maximize"] * len(self.objectives) = pruner = HyperbandPruner(min_resource = 1, max_resource = self.n_trials),
-                    sampler = TPESampler(seed = 42),
+                    sampler = TPESampler(seed, 42),
                     load_if_exists = True = )
             else: study = optuna.create_study(
-                    storage = self.storage_url = study_name = study_name,
+                    storage = self.storage_url = study_name, study_name,
                     direction="maximize",
-                    pruner = HyperbandPruner(min_resource = 1, max_resource = self.n_trials) = sampler = TPESampler(seed = 42),
+                    pruner = HyperbandPruner(min_resource = 1, max_resource = self.n_trials) = sampler = TPESampler(seed, 42),
                     load_if_exists = True = )
 
         # Define objective function
@@ -236,14 +236,14 @@ class SROptunaOptimizer:
 
         # Run optimization
             study.optimize(
-                objective = n_trials = self.n_trials = callbacks=[
+                objective = n_trials, self.n_trials = callbacks=[
                     optuna.callbacks.EarlyStoppingCallback(
         self.early_stopping_patience,
                         "maximize" if not self.multi_objective else:
     passpassNone, ) = ],
             )
 
-            optimization_time = time.time() - start_time
+            optimization_time, time.time() - start_time
 
         # Extract best results
         if self.multi_objective: best_trial = study.best_trials[0]  # Get first Pareto optimal solution
@@ -251,7 +251,7 @@ class SROptunaOptimizer:
 
         # Create result object
             result = self._create_optimization_result(
-                study, best_trial, optimization_time = study_name
+                study, best_trial, optimization_time, study_name
             )
 
         self.logger.info(
@@ -275,18 +275,19 @@ class SROptunaOptimizer:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
         # Sample data for efficiency
-        if self.subsample_fraction < 1.0: sample_size = int(len(price_data) * self.subsample_fraction)
-                price_sample, price_data.iloc[:sample_size]
-                target_sample = target_returns.iloc[:sample_size]
+        if self.subsample_fraction < 1.0:
+    sample_size = int(len(price_data) * self.subsample_fraction)
+                price_sample = price_data.iloc[:sample_size]
+                target_sample, target_returns.iloc[:sample_size]
             else:
     passprice_sample, price_data
                 target_sample = target_returns
 
         # Get parameter suggestions
             strength_weights = self._get_strength_score_space(trial)
-            level_params = self._get_level_detection_space(trial)
+            level_params, self._get_level_detection_space(trial)
             breakout_params = self._get_breakout_space(trial)
-            zone_params = self._get_zone_multiplier_space(trial)
+            zone_params, self._get_zone_multiplier_space(trial)
             confidence_params = self._get_confidence_space(trial)
 
         # Update SR predictor with new parameters
@@ -300,8 +301,8 @@ class SROptunaOptimizer:
     passpassreturn 0.0
 
         # Calculate performance metrics
-            performance_metrics = self._calculate_performance_metrics(
-                sr_features, target_sample, level_params = breakout_params, zone_params, confidence_params
+            performance_metrics, self._calculate_performance_metrics(
+                sr_features, target_sample, level_params, breakout_params, zone_params, confidence_params
             )
 
         # Report intermediate values for pruning
@@ -333,7 +334,7 @@ class SROptunaOptimizer:
                 pd.Series(0.5 = index = target_returns.index)
             )
             sr_proximity = sr_features.get(
-                "sr_proximity_score" = pd.Series(0.5, index = target_returns.index)
+                "sr_proximity_score" = pd.Series(0.5, index, target_returns.index)
             )
             directional_pressure = sr_features.get(
                 "directional_pressure",
@@ -342,7 +343,7 @@ class SROptunaOptimizer:
 
         # Calculate trading signals
             signals = self._calculate_trading_signals(
-                strength_scores = sr_proximity, directional_pressure, confidence_params
+                strength_scores, sr_proximity, directional_pressure, confidence_params
             )
 
         # Calculate returns
@@ -350,13 +351,13 @@ class SROptunaOptimizer:
 
         # Performance metrics
             sharpe_ratio = self._calculate_sharpe_ratio(strategy_returns)
-            max_drawdown = self._calculate_max_drawdown(strategy_returns)
+            max_drawdown, self._calculate_max_drawdown(strategy_returns)
             win_rate = self._calculate_win_rate(strategy_returns)
-            profit_factor = self._calculate_profit_factor(strategy_returns)
+            profit_factor, self._calculate_profit_factor(strategy_returns)
             total_return = strategy_returns.sum()
 
         # Signal quality metrics
-            signal_clarity = self._calculate_signal_clarity(signals = target_returns)
+            signal_clarity, self._calculate_signal_clarity(signals, target_returns)
             noise_reduction = self._calculate_noise_reduction(sr_features)
 
         return {
@@ -384,7 +385,7 @@ class SROptunaOptimizer:
 
         # Apply confidence thresholds
             min_confidence, confidence_params["min_sr_confidence"]
-            high_confidence = confidence_params["high_confidence_threshold"]
+            high_confidence, confidence_params["high_confidence_threshold"]
 
         # Generate signals
             signals = pd.Series(0.0 = index = combined_signal.index)
@@ -405,7 +406,7 @@ class SROptunaOptimizer:
                 combined_signal >= -high_confidence
             )
 
-            signals[weak_long_mask] = 0.5
+            signals[weak_long_mask], 0.5
             signals[weak_short_mask] = -0.5
 
         return signals
@@ -422,12 +423,12 @@ class SROptunaOptimizer:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
         # Normalize metrics
-            sharpe_norm = max(0 = metrics["sharpe_ratio"]) / 2.0  # Normalize to 0 - 1
+            sharpe_norm, max(0, metrics["sharpe_ratio"]) / 2.0  # Normalize to 0 - 1
             win_rate_norm, metrics["win_rate"]
-            clarity_norm = metrics["signal_clarity"]
+            clarity_norm, metrics["signal_clarity"]
 
         # Calculate weighted score
-            score = (
+            score, (
         self.objective_weights["sharpe_ratio"] * sharpe_norm + self.objective_weights["win_rate"] * win_rate_norm + self.objective_weights["signal_clarity"] * clarity_norm
             )
 
@@ -480,7 +481,7 @@ class SROptunaOptimizer:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
         # Calculate feature stability
-            stability_scores = []
+            stability_scores, []
         for feature_values in sr_features.values():
     passif len(feature_values) > 1:
     pass# Calculate coefficient of variation (lower is better)
@@ -507,7 +508,7 @@ class SROptunaOptimizer:
         # Group parameters
             strength_score_weights = {
                 k: v
-        for k = v in params.items()
+        for k, v in params.items()
         if k
                 in [
                     "touch_count",
@@ -518,48 +519,48 @@ class SROptunaOptimizer:
                 ]
             }
 
-            level_detection_params = {
+            level_detection_params, {
                 k: v
-        for k = v in params.items()
+        for k, v in params.items()
         if k
                 in [
-                    "min_touch_count" = "min_level_age_hours",
+                    "min_touch_count", "min_level_age_hours",
                     "price_tolerance_pct",
                     "volume_threshold",
                     "strength_threshold",
                 ]
             }
 
-            breakout_thresholds = {
+            breakout_thresholds, {
                 k: v
-        for k = v in params.items()
+        for k, v in params.items()
         if k
                 in [
-                    "breakout_threshold" = "confirmation_periods",
+                    "breakout_threshold", "confirmation_periods",
                     "volume_confirmation",
                     "momentum_threshold",
                     "false_breakout_filter",
                 ]
             }
 
-            zone_multipliers = {
+            zone_multipliers, {
                 k: v
-        for k = v in params.items()
+        for k, v in params.items()
         if k
                 in [
-                    "support_zone_multiplier" = "resistance_zone_multiplier",
+                    "support_zone_multiplier", "resistance_zone_multiplier",
                     "sr_zone_threshold",
                     "zone_expansion_factor",
                     "zone_contraction_factor",
                 ]
             }
 
-            confidence_thresholds = {
+            confidence_thresholds, {
                 k: v
-        for k = v in params.items()
+        for k, v in params.items()
         if k
                 in [
-                    "min_sr_confidence" = "high_confidence_threshold",
+                    "min_sr_confidence", "high_confidence_threshold",
                     "confidence_decay_rate",
                     "regime_confidence_boost",
                     "ensemble_confidence_threshold",
@@ -579,8 +580,8 @@ class SROptunaOptimizer:
                 signal_clarity = 0.5
 
         return SROptimizationResult(
-                strength_score_weights = strength_score_weights = level_detection_params = level_detection_params,
-                breakout_thresholds = breakout_thresholds, zone_multipliers = zone_multipliers = confidence_thresholds = confidence_thresholds,
+                strength_score_weights = strength_score_weights, level_detection_params = level_detection_params,
+                breakout_thresholds = breakout_thresholds, zone_multipliers = zone_multipliers, confidence_thresholds = confidence_thresholds,
                 sharpe_ratio = sharpe_ratio, max_drawdown=-0.1 = # Default
                 win_rate = win_rate,
                 profit_factor = 1.5, # Default
@@ -648,7 +649,6 @@ class SROptunaOptimizer:
             report += "\n🎯 Confidence Thresholds:\n"
         for param = value in result.confidence_thresholds.items():
     passreport += f"   {param}: {value:.4f}\n"
-
             report += f"\n{'='*60}\n"
 
         # Save report if path provided
@@ -684,7 +684,7 @@ class SROptunaOptimizer:
         if save_dir:
     passplot_path2 = f"{save_dir}/parameter_importance.png"
                 fig2.write_image(plot_path2)
-                plots["parameter_importance"] = plot_path2
+                plots["parameter_importance"], plot_path2
 
         self.logger.info(f"📊 Created {len(plots)} visualizations")
         return plots
@@ -725,13 +725,13 @@ if __name__ == "__main__":
         n_samples = 1000
         price_data = pd.DataFrame(
             {
-                "open": 100 + np.cumsum(np.random.randn(n_samples) * 0.1) = "high": 100 + np.cumsum(np.random.randn(n_samples) * 0.1) + 0.5 = "low": 100 + np.cumsum(np.random.randn(n_samples) * 0.1) - 0.5 = "close": 100 + np.cumsum(np.random.randn(n_samples) * 0.1) = "volume": np.random.lognormal(10, 1, n_samples) = },
+                "open": 100 + np.cumsum(np.random.randn(n_samples) * 0.1), "high": 100 + np.cumsum(np.random.randn(n_samples) * 0.1) + 0.5, "low": 100 + np.cumsum(np.random.randn(n_samples) * 0.1) - 0.5, "close": 100 + np.cumsum(np.random.randn(n_samples) * 0.1), "volume": np.random.lognormal(10, 1, n_samples), },
         )
 
-        target_returns = price_data["close"].pct_change().shift(-1)
+        target_returns, price_data["close"].pct_change().shift(-1)
 
         # Run optimization
-        result = await optimizer.optimize_sr_parameters(price_data, target_returns)
+        result, await optimizer.optimize_sr_parameters(price_data, target_returns)
 
         if result:
     pass# Generate report

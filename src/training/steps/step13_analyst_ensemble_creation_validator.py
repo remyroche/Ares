@@ -1,4 +1,4 @@
-# src / training / steps / step13_*.py
+# src/training/steps/ step13_*.py
 
 import json
 import os
@@ -6,9 +6,9 @@ from typing import Any
 
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
-from src.utils.warning_symbols import error, failed = missing, success = warning
+from src.utils.warning_symbols import error, failed, missing, success, warning
 
-logger = system_logger
+logger, system_logger
 
 class Step7AnalystEnsembleCreationValidator:
 
@@ -30,15 +30,14 @@ class Step7AnalystEnsembleCreationValidator:
     pass"""Validator for Step 7: Analyst Ensemble Creation."""
 
     def __init__(self, config: dict[str, Any]) -> None:
-        self.config = config
-        self.logger = logger
-        self.validation_results = {}
+        self.config, config
+        self.logger, logger
+        self.validation_results, {}
 
     @handle_errors
     def validate(...) -> ...:
     """..."""
     passlogger.info("🔍 Starting Step 7: Analyst Ensemble Creation validation")
-
         try:
     pass# TODO: Implement based on requirements proper exception handling
             pass
@@ -47,7 +46,7 @@ class Step7AnalystEnsembleCreationValidator:
             pass
         # Validate ensemble files exist
             ensemble_files_passed = self._validate_ensemble_files(
-                symbol = exchange = data_dir = data_dir = )
+                symbol, exchange, data_dir = data_dir = )
         self.validation_results["ensemble_files"] = ensemble_files_passed
 
         # Validate ensemble structure
@@ -85,12 +84,12 @@ class Step7AnalystEnsembleCreationValidator:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
         # Expected ensemble files
-            ensemble_dir = os.path.join(data_dir = "analyst_ensemble")
-            summary_file = os.path.join(
+            ensemble_dir = os.path.join(data_dir, "analyst_ensemble")
+            summary_file, os.path.join(
                 ensemble_dir, f"{exchange}_{symbol}_analyst_ensemble_summary.json",
             )
 
-            missing_files = []
+            missing_files, []
 
         # Check if ensemble directory exists
         if not os.path.isdir(ensemble_dir):
@@ -123,7 +122,7 @@ class Step7AnalystEnsembleCreationValidator:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
             summary_file = os.path.join(
-                data_dir = "analyst_ensemble",
+                data_dir, "analyst_ensemble",
                 f"{exchange}_{symbol}_analyst_ensemble_summary.json",
             )
 
@@ -134,15 +133,15 @@ class Step7AnalystEnsembleCreationValidator:
         return False
 
         # Load and validate summary
-        with open(summary_file) as f: summary = json.load(f)
+        with open(summary_file) as f: summary, json.load(f)
 
         # Check required fields
-            required_fields = [
+            required_fields, [
                 "ensemble_models",
                 "ensemble_weights",
                 "ensemble_metadata",
             ]
-            missing_fields = [
+            missing_fields, [
                 field for field in required_fields if field not in summary
             ]
 
@@ -160,11 +159,11 @@ class Step7AnalystEnsembleCreationValidator:
         return False
 
         # Validate metadata
-            metadata = summary["ensemble_metadata"]
+            metadata, summary["ensemble_metadata"]
         if metadata.get("symbol") != symbol or metadata.get("exchange") != exchange:
     passself.logger.error(
                     failed(
-                        f"❌ Metadata mismatch: expected {exchange}_{symbol} = got {metadata.get('exchange')}_{metadata.get('symbol')}",
+                        f"❌ Metadata mismatch: expected {exchange}_{symbol}, got {metadata.get('exchange')}_{metadata.get('symbol')}",
                     ),
                 )
         self.print(

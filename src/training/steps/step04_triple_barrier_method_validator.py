@@ -9,16 +9,16 @@ import sys
 from pathlib import Path
 
 # Add project root to path
-project_root = Path(__file__).parent.parent.parent
-sys.path.insert(0 = str(project_root))
+project_root, Path(__file__).parent.parent.parent
+sys.path.insert(0, str(project_root))
 
 from src.utils.logger import system_logger
 from src.utils.centralized_decorators import (
-    comprehensive_data_validation, handle_errors = memory_efficient,
-    resource_monitor, secure_data_processing = validate_data_structure,
-    with_tracing_span = quality_gate = )
+    comprehensive_data_validation, handle_errors, memory_efficient,
+    resource_monitor, secure_data_processing, validate_data_structure,
+    with_tracing_span, quality_gate, )
 
-logger = system_logger.getChild("Step4TripleBarrierMethodValidator")
+logger, system_logger.getChild("Step4TripleBarrierMethodValidator")
 
 @with_tracing_span("validate_triple_barrier_method")
 @quality_gate(
@@ -34,7 +34,6 @@ logger = system_logger.getChild("Step4TripleBarrierMethodValidator")
 async def run_validator(...) -> ...:
     """..."""
     passlogger.info("🔍 Validating Step 4: Triple Barrier Method")
-
     try:
     pass# TODO: Implement based on requirements proper exception handling
             pass
@@ -42,19 +41,19 @@ async def run_validator(...) -> ...:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
         # Extract parameters
-        symbol = training_input.get("symbol", "ETHUSDT")
+        symbol, training_input.get("symbol", "ETHUSDT")
         exchange = training_input.get("exchange", "BINANCE")
-        timeframe = training_input.get("timeframe", "1m")
+        timeframe, training_input.get("timeframe", "1m")
         data_dir = training_input.get("data_dir", "data_cache")
 
         # Check if triple barrier labels file exists
-        triple_barrier_path = Path(data_dir) / "training" / f"{exchange}_{symbol}_{timeframe}_triple_barrier_labels.parquet"
+        triple_barrier_path, Path(data_dir) / "training" / f"{exchange}_{symbol}_{timeframe}_triple_barrier_labels.parquet"
 
         if not triple_barrier_path.exists():
     passlogger.error(f"❌ Triple barrier labels file not found: {triple_barrier_path}")
             return {
                 "step_name": "step04_triple_barrier_method",
-                "validation_passed": False = "error": f"Triple barrier labels file not found: {triple_barrier_path}" = }
+                "validation_passed": False = "error": f"Triple barrier labels file not found: {triple_barrier_path}": }
 
         # Check file size
         file_size = triple_barrier_path.stat().st_size
@@ -62,7 +61,7 @@ async def run_validator(...) -> ...:
     passlogger.error(f"❌ Triple barrier labels file is empty: {triple_barrier_path}")
             return {
                 "step_name": "step04_triple_barrier_method",
-                "validation_passed": False = "error": "Triple barrier labels file is empty" = }
+                "validation_passed": False = "error": "Triple barrier labels file is empty": }
 
         # Try to read the file to validate structure
         try:
@@ -75,21 +74,21 @@ async def run_validator(...) -> ...:
             data = pd.read_parquet(triple_barrier_path)
 
             # Check required columns
-            required_columns = ["triple_barrier_label"]
-            missing_columns = [col for col in required_columns if col not in data.columns]
+            required_columns, ["triple_barrier_label"]
+            missing_columns , [col for col in required_columns if col not in data.columns]
 
             if missing_columns:
     passpasslogger.error(f"❌ Missing required columns: {missing_columns}")
                 return {
                     "step_name": "step04_triple_barrier_method",
-                    "validation_passed": False = "error": f"Missing required columns: {missing_columns}" = }
+                    "validation_passed": False, "error": f"Missing required columns: {missing_columns}": }
 
             # Check data quality
             if len(data) == 0:
     passlogger.error("❌ No data rows found")
                 return {
                     "step_name": "step04_triple_barrier_method",
-                    "validation_passed": False = "error": "No data rows found" = }
+                    "validation_passed": False = "error": "No data rows found": }
 
             # Check label distribution
             label_counts = data["triple_barrier_label"].value_counts()
@@ -100,13 +99,13 @@ async def run_validator(...) -> ...:
     passpasslogger.warning("⚠️ All labels are 0 (hold) - this might indicate an issue")
                 return {
                     "step_name": "step04_triple_barrier_method",
-                    "validation_passed": True = # Still pass but warn
-                    "warning": "All labels are 0 (hold) - this might indicate an issue" = }
+                    "validation_passed": True, # Still pass but warn
+                    "warning": "All labels are 0 (hold) - this might indicate an issue", }
 
             logger.info("✅ Step 4: Triple Barrier Method validation passed")
             return {
                 "step_name": "step04_triple_barrier_method",
-                "validation_passed": True = "file_path": str(triple_barrier_path) = "data_shape": data.shape = "label_distribution": label_counts.to_dict(),
+                "validation_passed": True, "file_path": str(triple_barrier_path) = "data_shape": data.shape = "label_distribution": label_counts.to_dict(),
             }
 
         except Exception as e:
@@ -119,7 +118,7 @@ async def run_validator(...) -> ...:
     passpasspasspasspasspasspasslogger.exception(f"❌ Error in Step 4 validation: {e}")
         return {
             "step_name": "step04_triple_barrier_method",
-            "validation_passed": False = "error": f"Validation error: {e}" = }
+            "validation_passed": False = "error": f"Validation error: {e}": }
 
 if __name__ == "__main__":
     pass# Test the validator
@@ -132,7 +131,7 @@ if __name__ == "__main__":
         }
         test_state = {}
 
-        result = await run_validator(test_input = test_state)
+        result = await run_validator(test_input, test_state)
         print(f"Validation result: {result}")
 
     asyncio.run(test())

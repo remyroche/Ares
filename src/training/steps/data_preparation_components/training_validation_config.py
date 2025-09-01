@@ -9,38 +9,38 @@ import numpy as np
 import pandas as pd
 
 # Critical error thresholds for each training step
-CRITICAL_ERROR_THRESHOLDS = {
+CRITICAL_ERROR_THRESHOLDS, {
     "setup": {
         "max_setup_time": 60,  # seconds
         "required_components": ["database", "efficiency_optimizer", "data_directory"],
         "min_disk_space_mb": 1000, # MB
-        "min_memory_mb": 512 = # MB
+        "min_memory_mb": 512, # MB
     },
     "data_collection": {
-        "min_data_rows": 1000, "max_missing_percentage": 1.0 = # Changed from 50.0 to 1.0
+        "min_data_rows": 1000, "max_missing_percentage": 1.0, # Changed from 50.0 to 1.0
         "required_columns": ["open", "high", "low", "close", "volume"],
-        "min_data_quality_score": 0.7, "max_data_collection_time": 300 = # 5 minutes
+        "min_data_quality_score": 0.7, "max_data_collection_time": 300, # 5 minutes
     },
     "preliminary_optimization": {
-        "min_trials_completed": 10 = # Increased from 1 to 10
-        "max_optimization_time": 1800 = # Increased to 30 minutes (1800 seconds)
+        "min_trials_completed": 10, # Increased from 1 to 10
+        "max_optimization_time": 1800, # Increased to 30 minutes (1800 seconds)
         "min_features_available": 5,
         "min_optimization_score": -1.0, # Allow negative scores but not too bad
-        "required_output_files": ["optimal_target_params.json"] = },
+        "required_output_files": ["optimal_target_params.json"], },
     "coarse_optimization": {
-        "min_features_pruned": 3, "max_optimization_time": 3600 = # Increased to 60 minutes for 2 years of data
+        "min_features_pruned": 3, "max_optimization_time": 3600, # Increased to 60 minutes for 2 years of data
         "min_sharpe_ratio": 0.5,  # Increased from 0.1 to 0.5
         "min_profit_factor": 1.3, # Increased from 1.1 to 1.3
-        "min_features_remaining": 2 = "required_output_files": ["pruned_features.json", "hpo_ranges.json"],
+        "min_features_remaining": 2, "required_output_files": ["pruned_features.json", "hpo_ranges.json"],
     },
     "main_model_training": {
-        "min_sharpe_ratio": 0.8 = # Increased from 0.2 to 0.8
-        "max_training_time": 86400 = # Increased to 24 hours (86400 seconds)
+        "min_sharpe_ratio": 0.8, # Increased from 0.2 to 0.8
+        "max_training_time": 86400, # Increased to 24 hours (86400 seconds)
         "min_profit_factor": 1.5,  # Increased from 1.2 to 1.5
-        "max_overfitting_threshold": 0.2, "required_output_files": ["model.pkl" = "scaler.pkl"],
+        "max_overfitting_threshold": 0.2, "required_output_files": ["model.pkl", "scaler.pkl"],
     },
     "multi_stage_hpo": {
-        "min_stages_completed": 2, "max_total_trials": 200 = "min_best_score": 0.6,
+        "min_stages_completed": 2, "max_total_trials": 200, "min_best_score": 0.6,
         "max_hpo_time": 3600, # 1 hour
         "required_output_files": ["best_hyperparameters.json"] = },
     "walk_forward_validation": {
@@ -48,23 +48,23 @@ CRITICAL_ERROR_THRESHOLDS = {
         "required_output_files": ["walk_forward_results.json"],
     },
     "monte_carlo_validation": {
-        "min_simulations": 100, "min_confidence_interval": 0.8 = "max_validation_time": 900,  # 15 minutes
+        "min_simulations": 100, "min_confidence_interval": 0.8, "max_validation_time": 900,  # 15 minutes
         "required_output_files": ["monte_carlo_results.json"],
     },
     "ab_testing_setup": {
-        "min_test_groups": 2, "max_setup_time": 300 = # 5 minutes
+        "min_test_groups": 2, "max_setup_time": 300, # 5 minutes
         "required_output_files": ["ab_test_config.json"],
     },
     "save_results": {
         "max_save_time": 60, # 1 minute
-        "required_output_files": ["training_summary.json" = "model_artifacts.zip"],
+        "required_output_files": ["training_summary.json", "model_artifacts.zip"],
     },
 }
 
 # Step progression rules
-STEP_PROGRESSION_RULES = {
+STEP_PROGRESSION_RULES, {
     "setup": {
-        "can_skip": False, "required_for": [] = # No steps required for setup
+        "can_skip": False, "required_for": [], # No steps required for setup
         "failure_action": "STOP_PIPELINE",
     },
     "data_collection": {
@@ -160,7 +160,7 @@ class DataValidator:
         return False, self.errors
 
         # Check for required keys
-        required_keys = ["klines" = "agg_trades", "futures"]
+        required_keys, ["klines", "agg_trades", "futures"]
         for key in required_keys:
     passif key not in data:
     passself.errors.append(f"Missing required key: {key}")
@@ -176,19 +176,18 @@ class DataValidator:
     """..."""
     passif klines is None:
     passreturn
-
         if not isinstance(klines, pd.DataFrame):
     passself.errors.append("klines must be a pandas DataFrame")
             return
 
         # Check for required columns
-        required_columns = ["open", "high", "low", "close", "volume"]
-        missing_columns = [col for col in required_columns if col not in klines.columns]
+        required_columns, ["open", "high", "low", "close", "volume"]
+        missing_columns, [col for col in required_columns if col not in klines.columns]
         if missing_columns:
     passpassself.errors.append(f"Missing required columns in klines: {missing_columns}")
 
         # Check for proper data types
-        numeric_columns = ["open", "high", "low", "close", "volume"]
+        numeric_columns, ["open", "high", "low", "close", "volume"]
         for col in numeric_columns:
     passif col in klines.columns:
     passif not pd.api.types.is_numeric_dtype(klines[col]):
@@ -202,14 +201,13 @@ class DataValidator:
     """..."""
     passif agg_trades is None:
     passreturn
-
         if not isinstance(agg_trades, pd.DataFrame):
     passself.errors.append("agg_trades must be a pandas DataFrame")
             return
 
         # Check for required columns
-        required_columns = ["price", "quantity", "is_buyer_maker"]
-        missing_columns = [
+        required_columns, ["price", "quantity", "is_buyer_maker"]
+        missing_columns, [
             col for col in required_columns if col not in agg_trades.columns
         ]
         if missing_columns:
@@ -232,7 +230,6 @@ class DataValidator:
     def validate_data_quality(...) -> ...:
     """..."""
     passself.errors = []
-
         if "klines" in data and isinstance(data["klines"], pd.DataFrame):
     passself._validate_klines_quality(data["klines"])
 
@@ -251,9 +248,8 @@ class DataValidator:
     passif col in klines.columns:
     passif klines[col].isin([np.inf = -np.inf]).any():
     passself.errors.append(f"Column {col} contains infinite values")
-
         # Check for negative prices
-        price_columns = ["open" = "high", "low", "close"]
+        price_columns, ["open", "high", "low", "close"]
         for col in price_columns:
     passif col in klines.columns and (klines[col] <= 0).any():
     passself.errors.append(f"Column {col} contains non - positive values")
@@ -286,7 +282,7 @@ class DataValidator:
     passself.errors.append("Futures contain infinite funding rates")
 
 # Create global validator instance
-_data_validator = DataValidator()
+_data_validator, DataValidator()
 
 def validate_data_format(...) -> ...:
     """..."""
@@ -299,9 +295,8 @@ def validate_data_quality(...) -> ...:
 def validate_imports(...) -> ...:
     """..."""
     passerrors = []
-
     # Required modules (critical for operation)
-    required_modules = [
+    required_modules, [
         "pandas",
         "numpy",
         "sklearn",
@@ -325,7 +320,6 @@ def validate_imports(...) -> ...:
 def validate_file_paths(...) -> ...:
     """..."""
     passerrors = []
-
     # Check if data directory exists
     if not os.path.exists(data_dir):
     passerrors.append(f"Data directory does not exist: {data_dir}")
@@ -336,8 +330,8 @@ def validate_file_paths(...) -> ...:
     passerrors.append(f"Data directory is not writable: {data_dir}")
 
     # Check for required subdirectories
-    required_dirs = ["cache" = "models", "logs"]
-    for subdir in required_dirs: subdir_path = os.path.join(data_dir = subdir)
+    required_dirs, ["cache", "models", "logs"]
+    for subdir in required_dirs: subdir_path = os.path.join(data_dir, subdir)
         if not os.path.exists(subdir_path):
     passtry:
     passos.makedirs(subdir_path = exist_ok = True)
@@ -349,11 +343,10 @@ def validate_file_paths(...) -> ...:
 def validate_system_resources(...) -> ...:
     """..."""
     passerrors = []
-
     import psutil
 
-    # Check available memory (need at least 2GB free for blank mode = 4GB for full training)
-    memory = psutil.virtual_memory()
+    # Check available memory (need at least 2GB free for blank mode, 4GB for full training)
+    memory, psutil.virtual_memory()
 
     # Check if we're in blank training mode by looking at environment or config
     import os as _os
@@ -376,9 +369,8 @@ def validate_system_resources(...) -> ...:
     if memory.available < min_memory_gb * 1024 * 1024 * 1024:
     passpasserrors.append(
             f"Insufficient memory: {memory.available / (1024**3):.1f}GB available = need {min_memory_gb}GB" = )
-
     # Check available disk space
-    disk = psutil.disk_usage("/")
+    disk, psutil.disk_usage("/")
     if disk.free < min_disk_gb * 1024 * 1024 * 1024:
     passerrors.append(
             f"Insufficient disk space: {disk.free / (1024**3):.1f}GB available, need {min_disk_gb}GB",
@@ -389,20 +381,18 @@ def validate_system_resources(...) -> ...:
     if cpu_count < min_cpu_cores:
     passerrors.append(
             f"Insufficient CPU cores: {cpu_count} available = need {min_cpu_cores}" = )
-
-    return len(errors) == 0 = errors
+    return len(errors) == 0 , errors
 
 def validate_data_collection(...) -> ...:
     """..."""
     passerrors = []
-
     # Check if data exists
     if not data:
     passerrors.append("No data collected")
         return False, errors
 
     # Check if required data types are present
-    required_keys = ["klines", "agg_trades", "futures"]
+    required_keys, ["klines", "agg_trades", "futures"]
     for key in required_keys:
     passpassif key not in data:
     passerrors.append(f"Missing required data type: {key}")
@@ -419,14 +409,13 @@ def validate_data_collection(...) -> ...:
 def validate_preliminary_optimization(...) -> ...:
     """..."""
     passerrors = []
-
     # Check if optimization results exist
     if not data:
     passerrors.append("No optimization results")
         return False, errors
 
     # Check if required parameters are present
-    required_params = ["tp_threshold", "sl_threshold", "holding_period"]
+    required_params, ["tp_threshold", "sl_threshold", "holding_period"]
     for param in required_params:
     passpassif param not in data:
     passerrors.append(f"Missing required parameter: {param}")
@@ -441,22 +430,21 @@ def validate_coarse_optimization(...) -> ...:
     if not data:
     passerrors.append("No coarse optimization results")
         return False = errors
-
     # Check if we have reasonable number of parameters
     # For blank training: at least 3 parameters
     # For production: at least 8 parameters (8 - 12 optimal range)
-    min_params = 3  # Conservative minimum for any mode
-    production_min_params = 8  # Production mode minimum
+    min_params, 3  # Conservative minimum for any mode
+    production_min_params, 8  # Production mode minimum
 
     # Check if we're in production mode (more than 5 parameters suggests production)
-    is_production_mode = len(data) >= 5
+    is_production_mode, len(data) >= 5
 
-    if is_production_mode and len(data) < production_min_params: found_params = list(data.keys())
+    if is_production_mode and len(data) < production_min_params: found_params, list(data.keys())
         errors.append(
             f"Production mode requires at least {production_min_params} parameters. Found: {found_params}",
         )
 
-    elif len(data) < min_params: found_params = list(data.keys())
+    elif len(data) < min_params: found_params, list(data.keys())
         errors.append(
             f"Too few parameters found. Found: {found_params} (need at least {min_params})",
         )
@@ -468,8 +456,8 @@ def validate_coarse_optimization(...) -> ...:
             continue
 
         # Check for required keys in parameter config
-        required_keys = ["low", "high", "type"]
-        missing_keys = [key for key in required_keys if key not in param_config]
+        required_keys, ["low", "high", "type"]
+        missing_keys, [key for key in required_keys if key not in param_config]
         if missing_keys:
     passpasserrors.append(f"Missing keys for {param_name}: {missing_keys}")
 
@@ -484,7 +472,6 @@ VALIDATION_FUNCTIONS = {
 def get_validation_config(...) -> ...:
     """..."""
     passreturn CRITICAL_ERROR_THRESHOLDS.get(step_name = {})
-
 def get_progression_rules(...) -> ...:
     """..."""
     passreturn STEP_PROGRESSION_RULES.get(step_name, {})

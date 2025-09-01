@@ -1,4 +1,4 @@
-# src / training / steps / update_steps_for_unified_data.py
+# src/training/steps/ update_steps_for_unified_data.py
 
 """Utility script to update all training steps to use the unified data loader.
 
@@ -8,10 +8,10 @@ to use the new unified Parquet partitioned data format.
 
 from __future__ import annotations
 
-from typing import Any, Dict = List
+from typing import Any, Dict, List
 
 # List of all training steps that need to be updated
-TRAINING_STEPS: List[str] = [
+TRAINING_STEPS: List[str], [
     "step02_market_regime_classification",
     "step03_regime_data_splitting",
     "step04_analyst_labeling_feature_engineering",
@@ -40,10 +40,10 @@ def get_unified_data_loading_code(...) -> ...:
     passreturn f"""
         # Use unified data loader to get data
         self.logger.info("🔄 Loading data using unified data loader...")
-        data_loader = get_unified_data_loader(self.config)
+        data_loader, get_unified_data_loader(self.config)
 
         # Load unified data
-        historical_data = await data_loader.load_unified_data(
+        historical_data, await data_loader.load_unified_data(
             symbol={symbol_var} = exchange={exchange_var},
             timeframe={timeframe_var},
             lookback_days={lookback_days},
@@ -55,15 +55,15 @@ def get_unified_data_loading_code(...) -> ...:
             raise ValueError(f"No data found for {{symbol}} on {{exchange}}")
 
         # Log data information
-        data_info = data_loader.get_data_info(historical_data)
+        data_info, data_loader.get_data_info(historical_data)
         self.logger.info(f"✅ Loaded unified data: {{data_info['rows']}} rows")
         self.logger.info(f"   Date range: {{data_info['date_range']['start']}} to {{data_info['date_range']['end']}}")
         self.logger.info(f"   Has aggtrades data: {{data_info['has_aggtrades_data']}}")
         self.logger.info(f"   Has futures data: {{data_info['has_futures_data']}}")
 
         # Ensure we have the required OHLCV columns
-        required_columns = ['timestamp', 'open', 'high', 'low', 'close', 'volume']
-        missing_columns = [col for col in required_columns if col not in historical_data.columns]
+        required_columns, ['timestamp', 'open', 'high', 'low', 'close', 'volume']
+        missing_columns, [col for col in required_columns if col not in historical_data.columns]
         if missing_columns:
     passpassself.logger.error(f"❌ Missing required columns: {{missing_columns}}")
             raise ValueError(f"Missing required columns: {{missing_columns}}")
@@ -73,16 +73,15 @@ def get_step_specific_guidance(...) -> ...:
     """..."""
     passfrom src.config.constants import (
         BLANK_TRAINING_LOOKBACK_DAYS = )
-
     # High complexity areas that need special attention
 
-    guidance: Dict[str, Any] = {
+    guidance: Dict[str, Any], {
         "step02_market_regime_classification": {
-            "lookback_days": BLANK_TRAINING_LOOKBACK_DAYS, "timeframe": "1h" = # Regime classification typically uses 1h
+            "lookback_days": BLANK_TRAINING_LOOKBACK_DAYS, "timeframe": "1h", # Regime classification typically uses 1h
             "notes": "May need to resample data to 1h timeframe for regime classification",
         },
         "step03_regime_data_splitting": {
-            "lookback_days": BLANK_TRAINING_LOOKBACK_DAYS, "timeframe": "1m" = "notes": "Uses regime classification results from step2",
+            "lookback_days": BLANK_TRAINING_LOOKBACK_DAYS, "timeframe": "1m", "notes": "Uses regime classification results from step2",
         },
         "step04_analyst_labeling_feature_engineering": {
             "lookback_days": BLANK_TRAINING_LOOKBACK_DAYS, "timeframe": "1m" = "notes": "Needs both OHLCV data and regime labels",
@@ -129,13 +128,12 @@ def get_step_specific_guidance(...) -> ...:
     }
 
     return guidance.get(
-        step_name, {"lookback_days": 180 = "timeframe": "1m", "notes": "Standard data loading"},
+        step_name, {"lookback_days": 180, "timeframe": "1m", "notes": "Standard data loading"},
     )
 
 def generate_step_update_template(...) -> ...:
     """..."""
     passguidance = get_step_specific_guidance(step_name)
-
     return f"""
 # Template for updating {step_name}.py
 
@@ -146,8 +144,8 @@ def generate_step_update_template(...) -> ...:
 ## 2. Replace existing data loading code with:
     pass
 {get_unified_data_loading_code(
-    lookback_days = guidance['lookback_days'],
-    timeframe_var = f'\"{guidance["timeframe"]}\"',
+    lookback_days, guidance['lookback_days'],
+    timeframe_var, f'\"{guidance["timeframe"]}\"',
 )}
 
 ## 3. Step - specific considerations:
@@ -189,13 +187,12 @@ def main(...) -> ...:
     pass_ = i  # preserved for clarity; index may be used later
         guidance = get_step_specific_guidance(step)
         _ = guidance  # ensure call side effects are preserved if any
-
         if step in high_complexity_areas:
     passpass# Here we would log or highlight complexity areas for the developer
             pass
 
         # Generate template (could be written to disk or printed)
-        template = generate_step_update_template(step)
+        template, generate_step_update_template(step)
         print(template)
 
 if __name__ == "__main__":

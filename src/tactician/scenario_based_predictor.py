@@ -242,260 +242,245 @@ def prepare_scenario_targets(
 return np.full(len(X), 5)  # Default to neutral
 
 def _determine_first_scenario(
-self,
-future_prices: np.ndarray,
-current_index: int,
-time_limit: int
-) -> int:
+        self,
+        future_prices: np.ndarray,
+        current_index: int,
+        time_limit: int
+    ) -> int:
         """
-Determine which scenario occurs first in the future price data.
+        Determine which scenario occurs first in the future price data.
 
-Args:
+        Args:
             future_prices: Future price data
-current_index: Current data point index
-time_limit: Maximum look-ahead periods
+            current_index: Current data point index
+            time_limit: Maximum look-ahead periods
 
-Returns:
+        Returns:
             int: Scenario label (0-5)
-"""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-if len(future_prices) < 2:
+        """
+        try:
+            if len(future_prices) < 2:
                 return 5  # Neutral if not enough data
 
-current_price = future_prices[0]
-look_ahead_prices = future_prices[1:min(len(future_prices), time_limit + 1)]
+            current_price = future_prices[0]
+            look_ahead_prices = future_prices[1:min(len(future_prices), time_limit + 1)]
 
-# Check each scenario in order of preference
-for scenario_id in [0, 1, 2, 3, 4]:  # Profit zones first, then risk zones
-scenario = self.scenarios[scenario_id]
+            # Check each scenario in order of preference
+            for scenario_id in [0, 1, 2, 3, 4]:  # Profit zones first, then risk zones
+                scenario = self.scenarios[scenario_id]
 
-if self._scenario_triggered(
-look_ahead_prices, current_price, scenario
-):
+                if self._scenario_triggered(
+                    look_ahead_prices, current_price, scenario
+                ):
                     return scenario_id
 
-return 5  # Neutral if no scenario triggered
+            return 5  # Neutral if no scenario triggered
 
-except Exception as e:
+        except Exception as e:
             self.logger.error(f"❌ Scenario determination failed: {e}")
-return 5
+            return 5
 
 def _scenario_triggered(
-self,
-prices: np.ndarray,
-current_price: float,
-scenario: Dict[str, Any]
-) -> bool:
+        self,
+        prices: np.ndarray,
+        current_price: float,
+        scenario: Dict[str, Any]
+    ) -> bool:
         """
-Check if a specific scenario is triggered in the price data.
+        Check if a specific scenario is triggered in the price data.
 
-Args:
+        Args:
             prices: Future price data
-current_price: Current price
-scenario: Scenario definition
+            current_price: Current price
+            scenario: Scenario definition
 
-Returns:
+        Returns:
             bool: True if scenario is triggered
-"""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-profit_target = scenario["profit_target"]
-stop_loss = scenario["stop_loss"]
+        """
+        try:
+            profit_target = scenario["profit_target"]
+            stop_loss = scenario["stop_loss"]
 
-# Calculate price changes relative to current price
-price_changes = (prices - current_price) / current_price
+            # Calculate price changes relative to current price
+            price_changes = (prices - current_price) / current_price
 
-# Check if profit target is hit before stop loss
-for price_change in price_changes:
+            # Check if profit target is hit before stop loss
+            for price_change in price_changes:
                 if profit_target > 0:  # Profit scenario
-if price_change >= profit_target:
+                    if price_change >= profit_target:
                         return True
-elif price_change <= stop_loss:
+                    elif price_change <= stop_loss:
                         return False
-else:  # Risk scenario (profit_target is actually stop loss)
-if price_change <= stop_loss:
+                else:  # Risk scenario (profit_target is actually stop loss)
+                    if price_change <= stop_loss:
                         return True
-elif price_change >= abs(profit_target):
+                    elif price_change >= abs(profit_target):
                         return False
 
-return False
+            return False
 
-except Exception as e:
+        except Exception as e:
             self.logger.error(f"❌ Scenario trigger check failed: {e}")
-return False
+            return False
 
 @handle_errors
 async def train_model(
-self,
-X_train: np.ndarray,
-y_train: np.ndarray,
-X_val: Optional[np.ndarray] = None,
-y_val: Optional[np.ndarray] = None,
-market_data: Optional[pd.DataFrame] = None
+    self,
+    X_train: np.ndarray,
+    y_train: np.ndarray,
+    X_val: Optional[np.ndarray] = None,
+    y_val: Optional[np.ndarray] = None,
+    market_data: Optional[pd.DataFrame] = None
 ) -> bool:
-        """
-Train the scenario prediction model.
+    """
+    Train the scenario prediction model.
 
-Args:
-            X_train: Training features
-y_train: Training scenario labels
-X_val: Validation features
-y_val: Validation scenario labels
-market_data: Market data for feature engineering
+    Args:
+        X_train: Training features
+        y_train: Training scenario labels
+        X_val: Validation features
+        y_val: Validation scenario labels
+        market_data: Market data for feature engineering
 
-Returns:
-            bool: True if training successful, False otherwise
-"""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-self.logger.info("Training scenario prediction model...")
+    Returns:
+        bool: True if training successful, False otherwise
+    """
+    try:
+        self.logger.info("Training scenario prediction model...")
 
-# Prepare scenario targets if not provided
-if market_data is not None and len(y_train) == len(X_train):
-                y_train = self.prepare_scenario_targets(X_train, market_data)
+        # Prepare scenario targets if not provided
+        if market_data is not None and len(y_train) == len(X_train):
+            y_train = self.prepare_scenario_targets(X_train, market_data)
 
-# Split validation data if not provided
-if X_val is None or y_val is None:
-                X_train_split, X_val, y_train_split, y_val = train_test_split(
-X_train, y_train, test_size=0.2, random_state=42, stratify=y_train
-)
-else:
-                X_train_split, y_train_split = X_train, y_train
+        # Split validation data if not provided
+        if X_val is None or y_val is None:
+            X_train_split, X_val, y_train_split, y_val = train_test_split(
+                X_train, y_train, test_size=0.2, random_state=42, stratify=y_train
+            )
+        else:
+            X_train_split, y_train_split = X_train, y_train
 
-# Train model
-self.model.fit(
-X_train_split, y_train_split,
-eval_set=[(X_val, y_val)],
-eval_metric='multi_logloss',
-callbacks=[lgb.early_stopping(50), lgb.log_evaluation(0)]
-)
+        # Train model
+        self.model.fit(
+            X_train_split, y_train_split,
+            eval_set=[(X_val, y_val)],
+            eval_metric='multi_logloss',
+            callbacks=[lgb.early_stopping(50), lgb.log_evaluation(0)]
+        )
 
-# Calculate feature importance
-self.feature_importance = dict(zip(
-[f"feature_{i}" for i in range(X_train.shape[1])],
-self.model.feature_importances_
-))
+        # Calculate feature importance
+        self.feature_importance = dict(zip(
+            [f"feature_{i}" for i in range(X_train.shape[1])],
+            self.model.feature_importances_
+        ))
 
-# Calculate performance metrics
-y_pred = self.model.predict(X_val)
-y_pred_proba = self.model.predict_proba(X_val)
+        # Calculate performance metrics
+        y_pred = self.model.predict(X_val)
+        y_pred_proba = self.model.predict_proba(X_val)
 
-self.model_performance = {
-"accuracy": accuracy_score(y_val, y_pred),
-"log_loss": log_loss(y_val, y_pred_proba),
-"n_samples": len(X_train),
-"n_features": X_train.shape[1]
-}
+        self.model_performance = {
+            "accuracy": accuracy_score(y_val, y_pred),
+            "log_loss": log_loss(y_val, y_pred_proba),
+            "n_samples": len(X_train),
+            "n_features": X_train.shape[1]
+        }
 
-self.is_trained = True
-self.last_training_time = datetime.now()
+        self.is_trained = True
+        self.last_training_time = datetime.now()
 
-self.logger.info(f"✅ Model trained successfully. Accuracy: {self.model_performance['accuracy']:.3f}")
-return True
+        self.logger.info(f"✅ Model trained successfully. Accuracy: {self.model_performance['accuracy']:.3f}")
+        return True
 
-except Exception as e:
-            self.logger.error(f"❌ Model training failed: {e}")
-return False
+    except Exception as e:
+        self.logger.error(f"❌ Model training failed: {e}")
+        return False
 
 @handle_errors
 async def predict_scenarios(
-self,
-X: np.ndarray,
-market_data: Optional[pd.DataFrame] = None
+    self,
+    X: np.ndarray,
+    market_data: Optional[pd.DataFrame] = None
 ) -> Dict[str, Any]:
-        """
-Generate scenario predictions.
+    """
+    Generate scenario predictions.
 
-Args:
-            X: Feature array
-market_data: Market data (optional, for additional context)
+    Args:
+        X: Feature array
+        market_data: Market data (optional, for additional context)
 
-Returns:
-            dict: Scenario predictions with probabilities and metadata
-"""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-if not self.is_trained:
-                self.logger.warning("Model not trained, using fallback predictions")
-return self._generate_fallback_predictions(X)
+    Returns:
+        dict: Scenario predictions with probabilities and metadata
+    """
+    try:
+        if not self.is_trained:
+            self.logger.warning("Model not trained, using fallback predictions")
+            return self._generate_fallback_predictions(X)
 
-# Generate probability predictions
-probabilities = self.model.predict_proba(X)
+        # Generate probability predictions
+        probabilities = self.model.predict_proba(X)
 
-# Get most likely scenario
-predicted_scenario = self.model.predict(X)[0]
+        # Get most likely scenario
+        predicted_scenario = self.model.predict(X)[0]
 
-# Calculate scenario-specific metrics
-scenario_analysis = self._analyze_scenario_probabilities(probabilities[0])
+        # Calculate scenario-specific metrics
+        scenario_analysis = self._analyze_scenario_probabilities(probabilities[0])
 
-# Calculate confidence score
-confidence = self._calculate_confidence(probabilities[0])
+        # Calculate confidence score
+        confidence = self._calculate_confidence(probabilities[0])
 
-result = {
-"probabilities": dict(zip(range(len(probabilities[0])), probabilities[0])),
-"predicted_scenario": predicted_scenario,
-"scenario_name": self.scenarios[predicted_scenario]["name"],
-"confidence": confidence,
-"scenario_analysis": scenario_analysis,
-"metadata": {
-"model_type": "scenario_based",
-"generation_timestamp": datetime.now().isoformat(),
-"is_trained": self.is_trained,
-"last_training_time": self.last_training_time.isoformat() if self.last_training_time else None
-}
-}
+        result = {
+            "probabilities": dict(zip(range(len(probabilities[0])), probabilities[0])),
+            "predicted_scenario": predicted_scenario,
+            "scenario_name": self.scenarios[predicted_scenario]["name"],
+            "confidence": confidence,
+            "scenario_analysis": scenario_analysis,
+            "metadata": {
+                "model_type": "scenario_based",
+                "generation_timestamp": datetime.now().isoformat(),
+                "is_trained": self.is_trained,
+                "last_training_time": self.last_training_time.isoformat() if self.last_training_time else None
+            }
+        }
 
-return result
+        return result
 
-except Exception as e:
-            self.logger.error(f"❌ Scenario prediction failed: {e}")
-return self._generate_fallback_predictions(X)
+    except Exception as e:
+        self.logger.error(f"❌ Scenario prediction failed: {e}")
+        return self._generate_fallback_predictions(X)
 
 def _analyze_scenario_probabilities(self, probabilities: np.ndarray) -> Dict[str, Any]:
-        """
-Analyze scenario probabilities for decision making.
+    """
+    Analyze scenario probabilities for decision making.
 
-Args:
-            probabilities: Probability array for each scenario
+    Args:
+        probabilities: Probability array for each scenario
 
-Returns:
-            dict: Analysis results
-"""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-# Calculate combined probabilities
-profit_zone_prob = sum(probabilities[i] for i in [0, 1, 2])
-risk_zone_prob = sum(probabilities[i] for i in [3, 4])
-neutral_prob = probabilities[5]
+    Returns:
+        dict: Analysis results
+    """
+    try:
+        # Calculate combined probabilities
+        profit_zone_prob = sum(probabilities[i] for i in [0, 1, 2])
+        risk_zone_prob = sum(probabilities[i] for i in [3, 4])
+        neutral_prob = probabilities[5]
 
-# Determine dominant zone
-if profit_zone_prob > risk_zone_prob and profit_zone_prob > neutral_prob:
-                dominant_zone = "profit"
-elif risk_zone_prob > profit_zone_prob and risk_zone_prob > neutral_prob:
-                dominant_zone = "risk"
-else:
-                dominant_zone = "neutral"
+        # Determine dominant zone
+        if profit_zone_prob > risk_zone_prob and profit_zone_prob > neutral_prob:
+            dominant_zone = "profit"
+        elif risk_zone_prob > profit_zone_prob and risk_zone_prob > neutral_prob:
+            dominant_zone = "risk"
+        else:
+            dominant_zone = "neutral"
 
-# Calculate risk-reward ratio
-risk_reward_ratio = profit_zone_prob / (risk_zone_prob + 1e-8)
+        # Calculate risk-reward ratio
+        risk_reward_ratio = profit_zone_prob / (risk_zone_prob + 1e-8)
 
-return {
-"profit_zone_probability": profit_zone_prob,
-"risk_zone_probability": risk_zone_prob,
-"neutral_probability": neutral_prob,
-"dominant_zone": dominant_zone,
-"risk_reward_ratio": risk_reward_ratio,
+        return {
+            "profit_zone_probability": profit_zone_prob,
+            "risk_zone_probability": risk_zone_prob,
+            "neutral_probability": neutral_prob,
+            "dominant_zone": dominant_zone,
+            "risk_reward_ratio": risk_reward_ratio,
 "profit_risk_difference": profit_zone_prob - risk_zone_prob
 }
 

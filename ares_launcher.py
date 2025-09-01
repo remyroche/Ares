@@ -1646,35 +1646,31 @@ class AresLauncher:
     def _get_required_steps(self, start_step: str, step_dependencies: dict) -> list:
         """Get all steps that need to be validated before starting from a specific step."""
         required_steps = []
-
-        # Use a simple approach: validate all steps that come before the start step
         step_order = [
-            "step1_data_collection",           # Download and prepare market data
-            "step1_5_data_converter",          # Convert data to unified format
-            "step2_data_reading",              # Read and validate data quality
-            "step2_5_sr_optimization",         # S/R detection optimization
-            "step3_hmm_regime_discovery",      # Define HMM regime clusters (with basic features)
-            "step3_5_final_regime_clustering", # Final regime clustering
-            "step4_triple_barrier_method",     # Apply triple barrier method
-            "step4_regime_data_splitting",     # Regime data splitting (legacy step)
-            "step5_labeling",                  # Create labels
-            "step6_feature_engineering",       # Complete feature engineering (simple + advanced)
-            "step7_enhanced_matrix_operations", # Enhanced matrix operations for analysis
-            "step8_regime_data_splitting",     # Split data by regimes
-            "step9_hmm_based_training",        # HMM-based model training
-            "step9_5_hmm_lm_generalist_training", # HMM LM generalist training
-            "step10_unified_regime_intelligence", # Unified regime intelligence
-            "step11_analyst_creation",         # Analyst creation (NEW STEP)
-            "step12_analyst_enhancement",      # Analyst enhancement
-            "step13_analyst_ensemble_creation", # Analyst ensemble creation
-            "step14_tactician_labeling",       # Tactician labeling
-            "step15_tactician_specialist_training", # Tactician specialist training
-            "step16_confidence_calibration",   # Confidence calibration
-            "step17_final_parameters_optimization", # Final parameters optimization
-            "step18_walk_forward_validation",  # Walk forward validation
-            "step19_monte_carlo_validation",   # Monte Carlo validation
-            "step20_ab_testing",               # A/B testing
-            "step21_saving",                   # Save final models
+            "step1_data_collection",           # Step 1: Data Collection
+            "step1_5_data_converter",          # Step 1.5: Data Converter
+            "step2_data_reading",              # Step 2: Data Reading
+            "step2_5_sr_optimization",         # Step 2.5: S/R Optimization
+            "step3_hmm_regime_discovery",      # Step 3: HMM Regime Discovery
+            "step4_processing_labeling",       # Step 4: Processing & Labeling (Triple Barrier)
+            "step5_regime_data_splitting",     # Step 5: Regime Data Splitting
+            "step6_feature_engineering",       # Step 6: Feature Engineering
+            "step7_enhanced_matrix_operations", # Step 7: Enhanced Matrix Operations
+            "step8_regime_data_splitting",     # Step 8: Regime Data Splitting (final)
+            "step9_hmm_based_training",        # Step 9: HMM-Based Training
+            "step9_5_hmm_lm_generalist_training", # Step 9.5: HMM LM Generalist Training
+            "step10_unified_regime_intelligence", # Step 10: Unified Regime Intelligence
+            "step11_analyst_creation",         # Step 11: Analyst Creation
+            "step12_analyst_enhancement",      # Step 12: Analyst Enhancement
+            "step13_analyst_ensemble_creation", # Step 13: Analyst Ensemble Creation
+            "step14_tactician_labeling",       # Step 14: Tactician Labeling
+            "step15_tactician_specialist_training", # Step 15: Tactician Specialist Training
+            "step16_confidence_calibration",   # Step 16: Confidence Calibration
+            "step17_final_parameters_optimization", # Step 17: Final Parameters Optimization
+            "step18_walk_forward_validation",  # Step 18: Walk Forward Validation
+            "step19_monte_carlo_validation",   # Step 19: Monte Carlo validation
+            "step20_ab_testing",               # Step 20: A/B Testing
+            "step21_saving",                   # Step 21: Saving Results
         ]
 
         try:
@@ -2237,7 +2233,7 @@ Examples:
             "modes",  # Show available training modes
             # New step-based commands
             "step1", "step1_5", "step2", "step2_5", "step3", "step3_5", "step4", "step5", "step6", "step7", "step8",
-            "step8_5", "step9", "step9_5", "step10", "step11", "step12", "step13", "step14", "step15", "step16", "step17",
+            "step9", "step9_5", "step10", "step11", "step12", "step13", "step14", "step15", "step16", "step17",
             "step18", "step19", "step20", "step21",
         ],
         help="The command to execute",
@@ -2380,7 +2376,7 @@ def validate_arguments(args: argparse.Namespace) -> None:
         "precompute",
         # Step-based commands
         "step1", "step1_5", "step2", "step2_5", "step3", "step3_5", "step4", "step5", "step6", "step7", "step8",
-        "step8_5", "step9", "step9_5", "step10", "step11", "step12", "step13", "step14", "step15", "step16", "step17",
+        "step9", "step9_5", "step10", "step11", "step12", "step13", "step14", "step15", "step16", "step17",
         "step18", "step19", "step20", "step21",
     ]
 
@@ -2476,7 +2472,7 @@ def execute_command(launcher: AresLauncher, args: argparse.Namespace) -> bool:
             launcher.run_step_based_training_with_validation(
                 args.symbol,
                 args.exchange,
-                start_step="step2_5_sr_optimization",
+                start_step="step2_5_enhanced_matrix_operations",
                 training_mode=args.training_mode,
                 force_rerun=force_flag,
                 with_gui=args.gui,
@@ -2496,7 +2492,7 @@ def execute_command(launcher: AresLauncher, args: argparse.Namespace) -> bool:
             launcher.run_step_based_training_with_validation(
                 args.symbol,
                 args.exchange,
-                start_step="step3_5_final_regime_clustering",
+                start_step="step3_hmm_regime_discovery",
                 training_mode=args.training_mode,
                 force_rerun=force_flag,
                 with_gui=args.gui,
@@ -2506,7 +2502,7 @@ def execute_command(launcher: AresLauncher, args: argparse.Namespace) -> bool:
             launcher.run_step_based_training_with_validation(
                 args.symbol,
                 args.exchange,
-                start_step="step4_regime_data_splitting",
+                start_step="step4_processing_labeling",
                 training_mode=args.training_mode,
                 force_rerun=force_flag,
                 with_gui=args.gui,
@@ -2516,7 +2512,7 @@ def execute_command(launcher: AresLauncher, args: argparse.Namespace) -> bool:
             launcher.run_step_based_training_with_validation(
                 args.symbol,
                 args.exchange,
-                start_step="step5_labeling",
+                start_step="step5_regime_data_splitting",
                 training_mode=args.training_mode,
                 force_rerun=force_flag,
                 with_gui=args.gui,
@@ -2532,11 +2528,12 @@ def execute_command(launcher: AresLauncher, args: argparse.Namespace) -> bool:
                 with_gui=args.gui,
             ),
         ),
+
         "step7": lambda: asyncio.run(
             launcher.run_step_based_training_with_validation(
                 args.symbol,
                 args.exchange,
-                start_step="step7_regime_data_splitting",
+                start_step="step7_enhanced_matrix_operations",
                 training_mode=args.training_mode,
                 force_rerun=force_flag,
                 with_gui=args.gui,
@@ -2546,22 +2543,13 @@ def execute_command(launcher: AresLauncher, args: argparse.Namespace) -> bool:
             launcher.run_step_based_training_with_validation(
                 args.symbol,
                 args.exchange,
-                start_step="step8_hmm_based_training",
+                start_step="step8_regime_data_splitting",
                 training_mode=args.training_mode,
                 force_rerun=force_flag,
                 with_gui=args.gui,
             ),
         ),
-        "step8_5": lambda: asyncio.run(
-            launcher.run_step_based_training_with_validation(
-                args.symbol,
-                args.exchange,
-                start_step="step8_5_unified_regime_intelligence",
-                training_mode=args.training_mode,
-                force_rerun=force_flag,
-                with_gui=args.gui,
-            ),
-        ),
+
         "step9": lambda: asyncio.run(
             launcher.run_step_based_training_with_validation(
                 args.symbol,
@@ -2592,21 +2580,11 @@ def execute_command(launcher: AresLauncher, args: argparse.Namespace) -> bool:
                 with_gui=args.gui,
             ),
         ),
-        "step10": lambda: asyncio.run(
-            launcher.run_step_based_training_with_validation(
-                args.symbol,
-                args.exchange,
-                start_step="step10_tactician_labeling",
-                training_mode=args.training_mode,
-                force_rerun=force_flag,
-                with_gui=args.gui,
-            ),
-        ),
         "step11": lambda: asyncio.run(
             launcher.run_step_based_training_with_validation(
                 args.symbol,
                 args.exchange,
-                start_step="step11_tactician_specialist_training",
+                start_step="step11_analyst_creation",
                 training_mode=args.training_mode,
                 force_rerun=force_flag,
                 with_gui=args.gui,
@@ -2616,7 +2594,7 @@ def execute_command(launcher: AresLauncher, args: argparse.Namespace) -> bool:
             launcher.run_step_based_training_with_validation(
                 args.symbol,
                 args.exchange,
-                start_step="step12_confidence_calibration",
+                start_step="step12_analyst_enhancement",
                 training_mode=args.training_mode,
                 force_rerun=force_flag,
                 with_gui=args.gui,
@@ -2626,7 +2604,7 @@ def execute_command(launcher: AresLauncher, args: argparse.Namespace) -> bool:
             launcher.run_step_based_training_with_validation(
                 args.symbol,
                 args.exchange,
-                start_step="step13_final_parameters_optimization",
+                start_step="step13_analyst_ensemble_creation",
                 training_mode=args.training_mode,
                 force_rerun=force_flag,
                 with_gui=args.gui,
@@ -2636,7 +2614,7 @@ def execute_command(launcher: AresLauncher, args: argparse.Namespace) -> bool:
             launcher.run_step_based_training_with_validation(
                 args.symbol,
                 args.exchange,
-                start_step="step14_walk_forward_validation",
+                start_step="step14_tactician_labeling",
                 training_mode=args.training_mode,
                 force_rerun=force_flag,
                 with_gui=args.gui,
@@ -2646,7 +2624,7 @@ def execute_command(launcher: AresLauncher, args: argparse.Namespace) -> bool:
             launcher.run_step_based_training_with_validation(
                 args.symbol,
                 args.exchange,
-                start_step="step15_monte_carlo_validation",
+                start_step="step15_tactician_specialist_training",
                 training_mode=args.training_mode,
                 force_rerun=force_flag,
                 with_gui=args.gui,
@@ -2656,7 +2634,7 @@ def execute_command(launcher: AresLauncher, args: argparse.Namespace) -> bool:
             launcher.run_step_based_training_with_validation(
                 args.symbol,
                 args.exchange,
-                start_step="step16_ab_testing",
+                start_step="step16_confidence_calibration",
                 training_mode=args.training_mode,
                 force_rerun=force_flag,
                 with_gui=args.gui,

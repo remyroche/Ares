@@ -9,10 +9,6 @@ import numpy as np
 from src.utils.error_handler import handle_errors, handle_specific_errors
 
 class AdvancedReportingEngine:
-    pass  # TODO: Add implementation
-class AdvancedReportingEngine:
-    pass  # TODO: Add implementation
-class AdvancedReportingEngine:
     """Advanced reporting engine with real-time analytics and comprehensive analysis."""
 
 def __init__(self, config: dict[str, Any]) -> None:
@@ -31,11 +27,8 @@ self,
 performance_data: dict[str, Any],
 ) -> dict[str, Any]:
         """Generate real-time performance report with advanced analytics."""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-report = {
+        try:
+            report = {
 "timestamp": datetime.now().isoformat(),
 "real_time_metrics": await self._calculate_real_time_metrics(
 performance_data,
@@ -69,12 +62,9 @@ async def _calculate_real_time_metrics(
 self,
 performance_data: dict[str, Any],
 ) -> dict[str, Any]:
-        """Calculate real-time performance metrics."""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-returns = performance_data.get("returns", [])
+                """Calculate real-time performance metrics."""
+        try:
+            returns = performance_data.get("returns", [])
 if not returns:
                 return {}
 
@@ -107,12 +97,9 @@ async def _analyze_performance_trends(
 self,
 performance_data: dict[str, Any],
 ) -> dict[str, Any]:
-        """Analyze performance trends."""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-returns = performance_data.get("returns", [])
+                """Analyze performance trends."""
+        try:
+            returns = performance_data.get("returns", [])
 if not returns:
                 return {}
 
@@ -145,12 +132,9 @@ default_return=None
 async def _perform_risk_analysis(
 self, performance_data: dict[str, Any]
 ) -> dict[str, Any]:
-        """Perform comprehensive risk analysis."""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-returns = performance_data.get("returns", [])
+                """Perform comprehensive risk analysis."""
+        try:
+            returns = performance_data.get("returns", [])
 if not returns:
                 return {}
 
@@ -175,12 +159,9 @@ default_return=None
 async def _perform_attribution_analysis(
 self, performance_data: dict[str, Any]
 ) -> dict[str, Any]:
-        """Perform performance attribution analysis."""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-returns = performance_data.get("returns", [])
+                """Perform performance attribution analysis."""
+        try:
+            returns = performance_data.get("returns", [])
 if not returns:
                 return {}
 
@@ -204,10 +185,8 @@ default_return=None
 async def _generate_performance_forecast(
 self, performance_data: dict[str, Any]
 ) -> dict[str, Any]:
-        """Generate performance forecast."""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
+                """Generate performance forecast."""
+        try:
     pass  # TODO: Add proper exception handling
 returns = performance_data.get("returns", [])
 if not returns:

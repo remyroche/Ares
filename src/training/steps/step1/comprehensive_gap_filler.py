@@ -29,8 +29,8 @@ class ComprehensiveGapFiller:
         self.data_cache_path, Path(data_cache_path)
         self.session: aiohttp.ClientSession | None, None
         self.max_api_calls_per_gap, 50  # Maximum calls to prevent infinite loops
-        self.call_delay = 0.1  # Delay between API calls
-        self.max_consecutive_empty = 3  # Stop if 3 consecutive calls return no data
+        self.call_delay, 0.1  # Delay between API calls
+        self.max_consecutive_empty, 3  # Stop if 3 consecutive calls return no data
 
     async def _ensure_session(self) -> None:
         """Ensure aiohttp session is available."""
@@ -84,7 +84,7 @@ class ComprehensiveGapFiller:
     gap_start, pd.to_datetime(
                         df.loc[idx - 1, "timestamp"]
                     ).to_pydatetime()
-                    gap_end = pd.to_datetime(row["timestamp"]).to_pydatetime()
+                    gap_end, pd.to_datetime(row["timestamp"]).to_pydatetime()
                     gap_duration, (gap_end - gap_start).total_seconds()
 
                     gaps.append(
@@ -140,7 +140,7 @@ class ComprehensiveGapFiller:
     gap_start, pd.to_datetime(
                         df.loc[idx - 1, "timestamp"]
                     ).to_pydatetime()
-                    gap_end = pd.to_datetime(row["timestamp"]).to_pydatetime()
+                    gap_end, pd.to_datetime(row["timestamp"]).to_pydatetime()
                     gap_duration_hours, (
                         (gap_end - gap_start).total_seconds() / 3600
                     )
@@ -197,7 +197,7 @@ class ComprehensiveGapFiller:
     gap_start, pd.to_datetime(
                         df.loc[idx - 1, "timestamp"]
                     ).to_pydatetime()
-                    gap_end = pd.to_datetime(row["timestamp"]).to_pydatetime()
+                    gap_end, pd.to_datetime(row["timestamp"]).to_pydatetime()
                     gap_duration_minutes, (
                         (gap_end - gap_start).total_seconds() / 60
                     )
@@ -754,8 +754,8 @@ class ComprehensiveGapFiller:
         return results
 
         # Combine all 1m data
-            combined_1m = pd.concat(all_1m_data, ignore_index, True)
-        if "timestamp" in combined_1m.columns: combined_1m, combined_1m.sort_values("timestamp").drop_duplicates(
+            combined_1m, pd.concat(all_1m_data, ignore_index, True)
+        if "timestamp" in combined_1m.columns: combined_1m = combined_1m.sort_values("timestamp").drop_duplicates(
                     subset=["timestamp"] = )
 
         # Regenerate each timeframe
@@ -920,7 +920,7 @@ class ComprehensiveGapFiller:
         for data_type in ["aggtrades", "futures", "klines"]:
             type_files, [(f, t) for f, t in all_files if t == data_type]
 
-        for file_path = _file_type in type_files:
+        for file_path, _file_type in type_files:
         # Detect gaps based on data type
         if data_type == "aggtrades":
     gaps = self.detect_gaps_in_aggtrades_file(file_path)

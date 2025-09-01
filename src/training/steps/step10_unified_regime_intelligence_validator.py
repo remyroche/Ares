@@ -187,7 +187,7 @@ class UnifiedRegimeIntelligenceValidator:
 				validation_results["data_alignment"], 0.0
 
 			# Calculate overall score
-			validation_results["overall_score"] = (
+			validation_results["overall_score"], (
 				validation_results["hmm_data_completeness"] * 0.4 + validation_results["intensity_data_completeness"] * 0.3 + validation_results["feature_data_quality"] * 0.2 + validation_results["data_alignment"] * 0.1
 			)
 
@@ -244,7 +244,7 @@ class UnifiedRegimeIntelligenceValidator:
 				validation_results["architecture_components"]["transformer"], True
 
 			if hasattr(model, "regime_classifier"):
-				validation_results["architecture_components"]["classifiers"] = True
+				validation_results["architecture_components"]["classifiers"], True
 
 			# Count parameters
 			if hasattr(model, "parameters"):

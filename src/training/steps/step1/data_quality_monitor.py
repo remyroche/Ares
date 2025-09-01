@@ -37,10 +37,10 @@ class DataQualityAlert:
         self.alert_type, alert_type
         self.severity, severity  # "low", "medium", "high", "critical"
         self.message, message
-        self.symbol = symbol
+        self.symbol, symbol
         self.exchange, exchange
         self.timeframe, timeframe
-        self.timestamp = timestamp
+        self.timestamp, timestamp
         self.details, details or {}
         self.acknowledged = False
         self.resolved = False
@@ -65,7 +65,7 @@ class DataQualityMonitor:
 
         # Alert storage
         self.alerts: List[DataQualityAlert], []
-        self.alert_callbacks: List[Callable[[DataQualityAlert], None]] = []
+        self.alert_callbacks: List[Callable[[DataQualityAlert], None]], []
 
         # Monitoring configuration
         self.monitoring_active, False
@@ -166,7 +166,7 @@ class DataQualityMonitor:
         except Exception as e:
             # TODO: Implement based on requirements proper exception handling
             pass
-                start_time = datetime.now()
+                start_time, datetime.now()
 
         # Run quality checks for all combinations
         for symbol in symbols:
@@ -175,7 +175,7 @@ class DataQualityMonitor:
         await self._check_data_quality(symbol, exchange, timeframe)
 
         # Update performance metrics
-                end_time, datetime.now()
+                end_time = datetime.now()
                 duration, (end_time - start_time).total_seconds()
         self.performance_metrics["total_checks"] += 1
         self.performance_metrics["last_check_time"] = end_time
@@ -212,7 +212,7 @@ class DataQualityMonitor:
 
         # Run quality check
             quality_results, await manager.comprehensive_quality_check(
-                symbol = symbol,
+                symbol, symbol,
                 exchange = exchange, timeframe = timeframe, check_gaps = True,
                 fill_gaps = False = # Don't auto - fill during monitoring
                 validate_format = True

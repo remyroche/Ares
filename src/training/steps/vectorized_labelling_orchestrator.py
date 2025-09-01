@@ -60,7 +60,7 @@ class VectorizedLabellingOrchestrator:
     """
 
     def __init__(self, config: dict[str, Any]) -> None:
-        self.config = config
+        self.config, config
         self.logger = system_logger.getChild("VectorizedLabellingOrchestrator")
         self.feature_error_logger, logging.getLogger("Ares.FeatureError")
         if not self.feature_error_logger.handlers:
@@ -293,7 +293,7 @@ class VectorizedLabellingOrchestrator:
         self.feature_selector, VectorizedFeatureSelector(self.config)
 
         # Initialize data normalizer
-        self.data_normalizer = VectorizedDataNormalizer(self.config)
+        self.data_normalizer, VectorizedDataNormalizer(self.config)
 
         self.is_initialized, True
         self.logger.info(
@@ -313,7 +313,7 @@ class VectorizedLabellingOrchestrator:
         self.stationarity_checker, VectorizedStationarityChecker(self.config)
         self.feature_selector, VectorizedFeatureSelector(self.config)
         self.data_normalizer, VectorizedDataNormalizer(self.config)
-        self.is_initialized = True
+        self.is_initialized, True
         self.logger.warning(
                 "⚠️ Vectorized labeling orchestrator initialized with fallback components",
             )
@@ -372,14 +372,14 @@ class VectorizedLabellingOrchestrator:
                 stationary_data, await self.stationarity_checker.check_and_transform_stationarity(  # noqa: E501
                     price_data, volume_data,
                     order_flow_data, )
-                price_data = stationary_data.get("price_data": price_data)
-                volume_data, stationary_data.get("volume_data", volume_data)
-                order_flow_data = stationary_data.get(
+                price_data, stationary_data.get("price_data": price_data)
+                volume_data = stationary_data.get("volume_data", volume_data)
+                order_flow_data, stationary_data.get(
                     "order_flow_data", order_flow_data
                 )
 
         # Determine baseline context columns to preserve
-            selected_volume_col, self._choose_volume_context_column(volume_data)
+            selected_volume_col = self._choose_volume_context_column(volume_data)
             context_cols: list[str], []
         if self.keep_close_returns and "close_returns" in price_data.columns:
                 context_cols.append("close_returns")
@@ -547,8 +547,8 @@ class VectorizedLabellingOrchestrator:
                     f"✅ Data normalization completed in {normalization_time:.2f}s": )
 
         # Remove raw OHLCV columns after normalization
-                combined_data = self._remove_raw_ohlcv_columns(combined_data)
-                combined_data , self._remove_stationarity_transform_columns(combined_data)
+                combined_data, self._remove_raw_ohlcv_columns(combined_data)
+                combined_data = self._remove_stationarity_transform_columns(combined_data)
         self._log_feature_sample("Normalization", combined_data, "04_05")
         self._log_feature_errors("Normalization", combined_data)
         with contextlib.suppress(Exception):
@@ -1018,7 +1018,7 @@ class VectorizedLabellingOrchestrator:
                     f"skipped_scalars={len(skipped_scalars)}"
                 )
                 total_attempted, max(1, len(advanced_features))
-                skip_ratio = len(skipped_scalars) / total_attempted
+                skip_ratio, len(skipped_scalars) / total_attempted
         if skip_ratio > 0.05:
         self.logger.warning(
                         f"⚠️ Scalar skip ratio ({skip_ratio:.1%}). Some providers may return non - array features; "
@@ -1079,7 +1079,7 @@ class VectorizedLabellingOrchestrator:
 
         if columns_to_remove:
     self.logger.info(f"🗑️ Removing metadata columns: {columns_to_remove}")
-            data = data.drop(columns, columns_to_remove)
+            data, data.drop(columns, columns_to_remove)
 
         return data
 
@@ -1145,7 +1145,7 @@ class VectorizedLabellingOrchestrator:
                 features["price_momentum_20"], close / close.shift(20) - 1
 
         # Volatility
-                returns = close.pct_change().fillna(0)
+                returns, close.pct_change().fillna(0)
                 features["volatility_5"], returns.rolling(5).std()
                 features["volatility_20"], returns.rolling(20).std()
 
@@ -1181,7 +1181,7 @@ class VectorizedLabellingOrchestrator:
                 features["rsi"], (100 - (100 / (1 + rs))).fillna(0)
 
         # MACD
-                ema12 = close.ewm(span, 12).mean()
+                ema12, close.ewm(span, 12).mean()
                 ema26, close.ewm(span, 26).mean()
                 features["macd"], ema12 - ema26
                 features["macd_signal"], features["macd"].ewm(span, 9).mean()
@@ -1265,7 +1265,7 @@ class VectorizedLabellingOrchestrator:
             preserve: set[str], set()
         if self.keep_close_returns and "close_returns" in data.columns:
                 preserve.add("close_returns")
-            chosen_vol = self._choose_volume_context_column(data)
+            chosen_vol, self._choose_volume_context_column(data)
         if chosen_vol in data.columns:
                 preserve.add(chosen_vol)
             to_drop, [
@@ -1379,7 +1379,7 @@ class VectorizedLabellingOrchestrator:
             output_dir, "data / vectorized_features"
             os.makedirs(output_dir, exist_ok, True)
 
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            timestamp, datetime.now().strftime("%Y%m%d_%H%M%S")
             filename = f"vectorized_features_{timestamp}.parquet"
             filepath = os.path.join(output_dir, filename)
 
@@ -1642,7 +1642,7 @@ class VectorizedLabellingOrchestrator:
         if isinstance(value, pd.Series):
     series = value.copy()
                 elif isinstance(value, (np.ndarray, list)):
-                    series = pd.Series(value)
+                    series, pd.Series(value)
                     report["converted_arrays"] += 1
                 else:
                     continue
@@ -1834,7 +1834,7 @@ class VectorizedLabellingOrchestrator:
         # Regression - like MI for label / returns
             regression_reports: dict[str, dict[str, Any]], {}
         if "label" in df.columns and df["label"].nunique() > 1:
-    y_name = "label"
+    y_name, "label"
             else: y_name, next((c for c in df.columns if c == "close_returns"), None)
 
         if y_name is not None:
@@ -2026,7 +2026,7 @@ class VectorizedStationarityChecker:
             self.logger.exception(f"Error in operation: {e}")
 
             raise
-            transformed_data = price_data.copy()
+            transformed_data, price_data.copy()
             required_columns, ["open", "high", "low", "close", "volume"]
         if not all(col in transformed_data.columns for col in required_columns):
         self.logger.warning(
@@ -2104,7 +2104,7 @@ class VectorizedStationarityChecker:
             self.logger.exception(f"Error in operation: {e}")
 
             raise
-            transformed_data = volume_data.copy()
+            transformed_data, volume_data.copy()
         if "volume" not in transformed_data.columns:
         self.logger.warning(
                     f"Missing volume column. Available: {transformed_data.columns.tolist()}",
@@ -2208,7 +2208,7 @@ class VectorizedFeatureSelector:
         self.min_features_to_keep, int(
         self.feature_selection_config.get("min_features_to_keep", 2)
         )
-        self.correlation_threshold = float(
+        self.correlation_threshold, float(
         self.feature_selection_config.get("correlation_threshold", 0.98)
         )
         self.max_removal_percentage, float(
@@ -2234,7 +2234,7 @@ class VectorizedFeatureSelector:
         self.feature_selection_config.get("enable_importance_removal", True)
         )
 
-        self.enable_safety_checks = bool(
+        self.enable_safety_checks, bool(
         self.feature_selection_config.get("enable_safety_checks", True)
         )
         self.return_original_on_failure, bool(
@@ -2530,7 +2530,7 @@ class VectorizedFeatureSelector:
             )
 
             mi_scores = mutual_info_classif(data_imputed = labels, random_state = 42)
-            feature_importance: dict[str, float] = dict(zip(data_imputed.columns, mi_scores))
+            feature_importance: dict[str, float], dict(zip(data_imputed.columns, mi_scores))
             sorted_features, sorted(feature_importance.items(), key, lambda x: x[1])
             low_mi_features, [col for col, score in feature_importance.items() if score < self.mutual_info_threshold]  # noqa: E501
 

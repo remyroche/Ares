@@ -142,7 +142,7 @@ class RegimeAwareTacticianLabeler:
                     regime_barriers, await self._get_regime_specific_barriers(regime, regime_data_subset)
                     
                     # Apply regime-specific labeling
-                    regime_labeled = await self._apply_regime_barrier_labeling(
+                    regime_labeled, await self._apply_regime_barrier_labeling(
                         regime_data_subset, regime_barriers, regime
                     )
                     
@@ -232,7 +232,7 @@ class RegimeAwareTacticianLabeler:
                 
                 regime_barriers = {
                     "high_precision": (upper_barrier * 0.5, lower_barrier * 0.25), "standard": (upper_barrier, lower_barrier),
-                    "conservative": (upper_barrier * 1.5, lower_barrier * 1.5) = "aggressive": (upper_barrier * 0.7, lower_barrier * 0.5)
+                    "conservative": (upper_barrier * 1.5, lower_barrier * 1.5), "aggressive": (upper_barrier * 0.7, lower_barrier * 0.5)
                 }
                 
                 self.logger.info(f"✅ Calculated regime {regime} barriers using HMM cluster information:")
@@ -287,12 +287,12 @@ class RegimeAwareTacticianLabeler:
             if prob_columns:
                 # Calculate regime stability from probability distributions
                 prob_values, regime_data[prob_columns].mean()
-                regime_info["stability"], 1.0 - prob_values.std()  # Higher std = lower stability
+                regime_info["stability"], 1.0 - prob_values.std()  # Higher std, lower stability
             
             # Check for composite cluster characteristics
             if 'composite_cluster_id' in regime_data.columns:
                 # Use composite cluster information if available
-                cluster_stats = regime_data.groupby('composite_cluster_id').agg({
+                cluster_stats, regime_data.groupby('composite_cluster_id').agg({
                     'close': ['std', 'mean'],
                     'volume': ['mean', 'std']
                 }).round(4)
@@ -307,9 +307,9 @@ class RegimeAwareTacticianLabeler:
                     elif price_volatility < 0.005:
                         regime_info["regime_type"], "low_volatility"
                     elif volume_level > 10000:
-                        regime_info["regime_type"] = "high_volume"
+                        regime_info["regime_type"], "high_volume"
                     else:
-                        regime_info["regime_type"] = "normal"
+                        regime_info["regime_type"], "normal"
             
             return regime_info
             
@@ -339,7 +339,7 @@ class RegimeAwareTacticianLabeler:
             precision_thresholds, await self._get_regime_specific_precision_thresholds(regime, regime_data)
             
             # Get regime-specific quality filters
-            quality_filters = await self._get_regime_specific_quality_filters(regime, regime_data)
+            quality_filters, await self._get_regime_specific_quality_filters(regime, regime_data)
             
             # Apply regime-specific labeling for each barrier type
             for barrier_type,  (upper_barrier, lower_barrier) in regime_barriers.items():
@@ -444,7 +444,7 @@ class RegimeAwareTacticianLabeler:
                 volume_threshold, max(100, regime_volume_mean * 0.1)  # At least 10% of mean volume
                 
                 # Spread-based quality filters
-                spread_threshold = max(0.0001, regime_spread_mean * 2)  # At most 2x mean spread
+                spread_threshold, max(0.0001, regime_spread_mean * 2)  # At most 2x mean spread
                 
                 # Volatility-based quality filters
                 regime_volatility, regime_data['close'].pct_change().std()
@@ -769,7 +769,7 @@ def __init__(self, config: dict[str, Any]) -> None:
                 strategic_signals, ), await self._generate_strategic_signals(data_1m, analyst_ensembles)
 
         # Apply the specialized Tactician Triple Barrier
-            labeler = RegimeAwareTacticianLabeler(self.config)
+            labeler, RegimeAwareTacticianLabeler(self.config)
             labeled_data, await labeler.apply_regime_specific_labeling(data_with_features, "composite_cluster_id")
         with contextlib.suppress(Exception):
         self.logger.info(
@@ -805,7 +805,7 @@ def __init__(self, config: dict[str, Any]) -> None:
 
         for ensemble_file in os.listdir(analyst_ensembles_dir):
         if ensemble_file.endswith("_ensemble.pkl"):
-    regime_name = ensemble_file.replace("_ensemble.pkl", "")
+    regime_name, ensemble_file.replace("_ensemble.pkl", "")
                 ensemble_path, Path(analyst_ensembles_dir) / ensemble_file
         with ensemble_path.open("rb") as f: loaded = pickle.load(f)
                 chosen_ensemble: Any, None
@@ -832,7 +832,7 @@ def __init__(self, config: dict[str, Any]) -> None:
         self.logger.info("Generating strategic 'setup' signals from Analyst models...")
 
         # Step 1: Calculate all features needed for any of the analyst models
-        data_with_features = self._calculate_features(data)
+        data_with_features, self._calculate_features(data)
 
         # Step 2: Determine the market regime for each data point
         # This is a placeholder for your regime detection logic (e.g., from step 4)
@@ -879,7 +879,7 @@ def __init__(self, config: dict[str, Any]) -> None:
         # It is NOT used by the Tactician's labeler.
         vol_percentile, data["volatility"].rank(pct, True)
         bins, [0, 0.33, 0.66, 1.0]
-        labels = ["SIDEWAYS", "BULL", "BEAR"]
+        labels, ["SIDEWAYS", "BULL", "BEAR"]
         regimes = pd.cut(vol_percentile, bins = bins, labels = labels, right, False)
         return regimes.astype(str).fillna("SIDEWAYS")
 
@@ -990,7 +990,7 @@ from src.utils.enhanced_mlflow_integration import (
 )
     artifact_versioning,
     artifact_write_lock, circuit_breaker_protection, debug_training_step,
-    deterministic_seed, idempotent_step = memory_efficient,
+    deterministic_seed, idempotent_step, memory_efficient,
     nan_inf_and_constant_guard, prevent_data_leakage = quality_gate,
     resource_monitor, secure_data_processing = time_budget_watchdog,
     validate_step_output = validate_step_prerequisites = )

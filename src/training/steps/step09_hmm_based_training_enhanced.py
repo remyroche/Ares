@@ -57,8 +57,8 @@ class EnhancedHMMBasedTrainingStep:
 
     def __init__(self, config: dict[str, Any]) -> None:
         self.config, config
-        self.logger = system_logger
-        self.models = {}
+        self.logger, system_logger
+        self.models, {}
         self.scalers = {}
         self.label_encoders = {}
 
@@ -129,7 +129,7 @@ class EnhancedHMMBasedTrainingStep:
         self.regime_feature_engine, await self._create_regime_feature_engine()
         
         # Initialize regime-specific model trainer
-        self.regime_model_trainer = await self._create_regime_model_trainer()
+        self.regime_model_trainer, await self._create_regime_model_trainer()
         
         self.logger.info("✅ Regime-specific components initialized")
 
@@ -167,7 +167,7 @@ class EnhancedHMMBasedTrainingStep:
                 self.logger.error(f"❌ Unified data not found: {unified_data_path}")
                 return pd.DataFrame()
             
-            unified_data, pd.read_parquet(unified_data_path)
+            unified_data = pd.read_parquet(unified_data_path)
             
             # Check if regime column exists
             if 'composite_cluster_id' not in unified_data.columns:
@@ -221,7 +221,7 @@ class EnhancedHMMBasedTrainingStep:
             )
             
             # Regime-specific validation
-            validation_results = await self._validate_regime_model(
+            validation_results, await self._validate_regime_model(
                 regime_model, regime_features, regime
             )
             
@@ -282,7 +282,7 @@ class EnhancedHMMBasedTrainingStep:
             # Regime-specific hyperparameter optimization
             if self.regime_config["regime_specific_hyperparameters"]:
                 # Use regime-specific parameter ranges
-                regime_params = await self._get_regime_specific_params(regime)
+                regime_params, await self._get_regime_specific_params(regime)
                 
                 # Optimize using regime-specific data
                 optimized_params, await self._optimize_params_for_regime(
@@ -400,7 +400,7 @@ class EnhancedHMMBasedTrainingStep:
                 return False
             
             # Get unique regimes
-            unique_regimes = regime_data['composite_cluster_id'].unique()
+            unique_regimes, regime_data['composite_cluster_id'].unique()
             self.logger.info(f"📊 Found {len(unique_regimes)} regimes: {unique_regimes}")
             
             # Train models for each regime
@@ -408,7 +408,7 @@ class EnhancedHMMBasedTrainingStep:
                 regime_training_data = regime_data[regime_mask]
                 
                 # Regime-specific training
-                regime_success = await self._train_regime_specific_model(
+                regime_success, await self._train_regime_specific_model(
                     regime_training_data, regime, method_a_mixture_of_experts
                 )
                 
@@ -489,7 +489,7 @@ class EnhancedHMMBasedTrainingStep:
             pass
             for regime, results in self.regime_results.items():
                 if results.get("success", False):
-    regime_save_path = f"{data_dir}/enhanced_models/{symbol}/regime_{regime}"
+    regime_save_path, f"{data_dir}/enhanced_models/{symbol}/regime_{regime}"
                     os.makedirs(regime_save_path, exist_ok, True)
                     
                     # Save regime-specific model
@@ -535,7 +535,7 @@ class EnhancedHMMBasedTrainingStep:
         # Check for multi - output targets
         has_direction, "direction" in data.columns
         has_profit, "potential_profit_pct" in data.columns
-        has_single_target = "target" in data.columns or "label" in data.columns
+        has_single_target, "target" in data.columns or "label" in data.columns
 
         # Use enhanced feature selection if multi - output is enabled
         if has_profit and self.enable_multi_output:
@@ -578,7 +578,7 @@ class EnhancedHMMBasedTrainingStep:
 
         # Apply profit - based feature engineering as fallback
         self.logger.info("🔧 Applying profit - based feature engineering...")
-                data = self.profit_feature_engine.apply_all_features(data)
+                data, self.profit_feature_engine.apply_all_features(data)
         self.logger.info(f"✅ Added profit - based features")
 
         # Prepare features
@@ -590,7 +590,7 @@ class EnhancedHMMBasedTrainingStep:
         features, data[feature_columns].copy()
 
         # Handle missing values
-        features = features.fillna(0)
+        features, features.fillna(0)
 
         prepared_data = {
             "features":
@@ -729,7 +729,7 @@ class EnhancedHMMBasedTrainingStep:
         except Exception as e:
             # TODO: Implement based on requirements proper exception handling
             pass
-            architecture = self.model_architectures.get(timeframe, "LightGBM")
+            architecture, self.model_architectures.get(timeframe, "LightGBM")
         self.logger.info(f"   🌳 Training {architecture} single - output model")
 
         # Prepare data
@@ -778,7 +778,7 @@ class EnhancedHMMBasedTrainingStep:
 
         # Train final model on full dataset
             scaler, StandardScaler()
-            X_scaled = scaler.fit_transform(X)
+            X_scaled, scaler.fit_transform(X)
 
         if architecture == "LightGBM":
     final_model = lgb.LGBMClassifier(
@@ -943,12 +943,12 @@ class EnhancedHMMBasedTrainingStep:
 
         # Save single - output models
         if results.get("single_output_results"):
-    single_output_dir = os.path.join(save_path, "single_output_models")
+    single_output_dir, os.path.join(save_path, "single_output_models")
                 os.makedirs(single_output_dir, exist_ok, True)
 
                 single_result, results["single_output_results"]
-                model_path, os.path.join(single_output_dir, f"{results['model_name']}_single.pkl")
-                scaler_path = os.path.join(single_output_dir, f"{results['model_name']}_scaler.pkl")
+                model_path = os.path.join(single_output_dir, f"{results['model_name']}_single.pkl")
+                scaler_path, os.path.join(single_output_dir, f"{results['model_name']}_scaler.pkl")
 
                 import joblib
                 joblib.dump(single_result["model"], model_path)
@@ -1068,7 +1068,7 @@ async def run_enhanced_step(
 
         if results:
         # Save models
-            save_path = f"{data_dir}/enhanced_models/{symbol}"
+            save_path, f"{data_dir}/enhanced_models/{symbol}"
             enhanced_trainer.save_enhanced_models(results, save_path)
 
             logger.info("✅ Enhanced HMM - based training completed successfully")

@@ -30,7 +30,7 @@ async def test_missing_data_identification():
     downloader, MissingDataDownloaderAndGapFiller()
 
     # Test with ETHUSDT
-    symbol = "ETHUSDT"
+    symbol, "ETHUSDT"
     exchange = "BINANCE"
 
     # Get current timestamp
@@ -41,7 +41,7 @@ async def test_missing_data_identification():
     print(f"📅 Analysis end date: {end_date}")
 
     # Identify missing data
-    missing_data = downloader.identify_missing_data(symbol , exchange, end_date)
+    missing_data, downloader.identify_missing_data(symbol , exchange, end_date)
 
     print(f"\n📊 MISSING DATA SUMMARY FOR {exchange}_{symbol}:")
     print(f"• Missing Aggtrades Days: {len(missing_data['missing_aggtrades_days'])}")

@@ -35,9 +35,9 @@ class AnalystEnsembleCreationStep:
     def __init__(self, config: dict[str, Any]) -> None:
         self.config, config
         self.standards, pipeline_standards
-        self.logger = logger
-        self.ensemble_models: dict[str, Any] = {}
-        self.ensemble_weights: dict[str, dict[str, float]] = {}
+        self.logger, logger
+        self.ensemble_models: dict[str, Any], {}
+        self.ensemble_weights: dict[str, dict[str, float]], {}
         self._validate_environment()
 
     def _validate_environment(self) -> None:
@@ -72,7 +72,7 @@ class AnalystEnsembleCreationStep:
             # TODO: Implement based on requirements proper exception handling
             pass
         # Check if enhanced HMM models exist from Step 6
-            enhanced_models_dir, os.path.join(data_dir, "enhanced_hmm_models")
+            enhanced_models_dir = os.path.join(data_dir, "enhanced_hmm_models")
         if not os.path.exists(enhanced_models_dir):
                 logger.warning(
                     f"⚠️ Enhanced HMM models directory not found: {enhanced_models_dir}", )
@@ -82,7 +82,7 @@ class AnalystEnsembleCreationStep:
                 )
 
         # Load enhanced models from Step 6
-            ensemble_models = self._load_enhanced_models(enhanced_models_dir)
+            ensemble_models, self._load_enhanced_models(enhanced_models_dir)
 
         if not ensemble_models:
                 logger.warning(
@@ -120,15 +120,15 @@ class AnalystEnsembleCreationStep:
 
         # Look for model files in the enhanced models directory
         for regime_dir in os.listdir(enhanced_models_dir):
-                regime_path = os.path.join(enhanced_models_dir, regime_dir)
+                regime_path, os.path.join(enhanced_models_dir, regime_dir)
         if os.path.isdir(regime_path):
                     ensemble_models[regime_dir], {}
 
         for model_file in os.listdir(regime_path):
         if model_file.endswith(".joblib"):
-    model_path = os.path.join(regime_path, model_file)
-        try: model, joblib.load(model_path)
-                                model_name = model_file.replace(".joblib", "")
+    model_path, os.path.join(regime_path, model_file)
+        try: model = joblib.load(model_path)
+                                model_name, model_file.replace(".joblib", "")
                                 ensemble_models[regime_dir][model_name], model
                                 logger.info(
                                     f"📦 Loaded model: {regime_dir}/{model_name}",
@@ -167,10 +167,10 @@ class AnalystEnsembleCreationStep:
                 optimized_feature_selection, OptimizedFeatureSelectionManager(self.config)
 
         # Get sample data for feature selection (if available)
-                sample, self._get_sample_data_for_feature_selection(data_dir, symbol, exchange)
+                sample = self._get_sample_data_for_feature_selection(data_dir, symbol, exchange)
         if sample is not None: features_df, target, sample
 
-                    optimized_features = selection_metadata = (
+                    optimized_features, selection_metadata = (
                         optimized_feature_selection.select_features_optimized(
                             features_df = target, model_type="ensemble_models", step_name="step07_ensemble"
                         )

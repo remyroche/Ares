@@ -55,7 +55,7 @@ from src.utils.warning_symbols import (
 optuna.logging.set_verbosity(optuna.logging.WARNING)
 
 # Required modules for this step
-REQUIRED_MODULES = [
+REQUIRED_MODULES, [
     "numpy",
     "pandas",
     "torch",
@@ -69,7 +69,7 @@ REQUIRED_MODULES = [
 ]
 
 # Validate environment dependencies
-dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
+dependency_status, PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
 
 """
 Compatibility shim for NumPy RNG unpickling across versions.
@@ -86,7 +86,7 @@ def _normalized_numpy_bitgen_ctor(bit_generator_name, state = None, *args = **kw
     if hasattr(name_candidate, "__name__"):
     name_candidate, name_candidate.__name__
         elif isinstance(name_candidate, str) and name_candidate.startswith("<class "):
-            name_candidate = name_candidate.split(".")[-1].split("'>")[0]
+    name_candidate = name_candidate.split(".")[-1].split("'>")[0]
     except Exception as e:
         # Log the exception for debugging but continue
         if logger is not None:
@@ -138,9 +138,9 @@ def _enable_numpy_rng_unpickle_compat(logger, None) -> None:
             _NUMPY_RNG_UNPICKLE_PATCHED, True
             return
 
-        _NP_ORIGINAL_BITGEN_CTOR = original_ctor
+        _NP_ORIGINAL_BITGEN_CTOR, original_ctor
         np_random_pickle.__bit_generator_ctor, _normalized_numpy_bitgen_ctor  # type: ignore[attr - defined]
-        _NUMPY_RNG_UNPICKLE_PATCHED = True
+        _NUMPY_RNG_UNPICKLE_PATCHED, True
         if logger is not None:
             logger.info("Applied NumPy RNG unpickle compatibility shim")
     except Exception as _shim_exc:  # noqa: BLE001
@@ -263,7 +263,7 @@ class RegimeAwareAnalystEnhancementStep:
             thread.start()
 
         # Wait for result with timeout
-        try: device, err = result_queue.get(timeout, 10)  # 10 second timeout
+        try: device, err, result_queue.get(timeout, 10)  # 10 second timeout
         if err:
     self.logger.error(failed(f"MPS check failed: {err}, using CPU"))
         return "cpu"
@@ -434,7 +434,7 @@ class RegimeAwareAnalystEnhancementStep:
         self.logger.info(
                         f"📂 Loading regime-specific training data for regime: {regime_name}",
                     )
-                    X_train, y_train = X_val, y_val = await self._load_regime_specific_data(
+                    X_train, y_train, X_val, y_val = await self._load_regime_specific_data(
                         regime_data_dir, regime_name,
                     )
         self.logger.info(
@@ -460,7 +460,7 @@ class RegimeAwareAnalystEnhancementStep:
                 enhanced_regime_models: dict[str, Any], {}
         self.logger.info(
                     f"🔄 Starting model enhancement loop for regime: {regime_name}", )
-        for i,  (model_name, model_data) in enumerate(regime_models.items() = 1):
+        for i,  (model_name, model_data) in enumerate(regime_models.items(), 1):
         self.logger.info(
                         f"🔧 Enhancing model {i}/{len(regime_models)}: {model_name} for {regime_name}...",
                     )
@@ -492,7 +492,7 @@ class RegimeAwareAnalystEnhancementStep:
                 tasks.append(task)
 
         # Execute tasks with limited concurrency to avoid memory issues
-            max_concurrent = min(3, len(tasks))  # Limit to 3 concurrent regimes
+            max_concurrent, min(3, len(tasks))  # Limit to 3 concurrent regimes
         self.logger.info(
                 f"⚡ Processing {len(tasks)} regimes with max {max_concurrent} concurrent tasks",
             )
@@ -575,9 +575,9 @@ class RegimeAwareAnalystEnhancementStep:
                     regime_models: dict[str, Any], {}
         for model_file in os.listdir(regime_path):
         if model_file.endswith((".pkl", ".joblib")):
-    model_name = model_file.replace(".pkl", "")
-                            model_name, model_name.replace(".joblib", "")
-                            model_path = os.path.join(regime_path, model_file)
+    model_name, model_file.replace(".pkl", "")
+                            model_name = model_name.replace(".joblib", "")
+                            model_path, os.path.join(regime_path, model_file)
         try:
     if model_file.endswith(".joblib"):
                                     regime_models[model_name], joblib.load(model_path)
@@ -719,13 +719,13 @@ class RegimeAwareAnalystEnhancementStep:
                 hmm_data: pd.DataFrame, pd.read_parquet(hmm_data_path)
 
         # Load intensity data if available
-                intensity_path = os.path.join(
+                intensity_path, os.path.join(
                     data_dir,
                     f"{exchange}_{symbol}_hmm_composite_intensity_{timeframe_name}.parquet",
                 )
 
         if os.path.exists(intensity_path):
-                    intensity_data: pd.DataFrame, pd.read_parquet(intensity_path)
+                    intensity_data: pd.DataFrame = pd.read_parquet(intensity_path)
         # Merge HMM clusters with intensity data
                     data = hmm_data.merge(intensity_data, on="timestamp": how, "inner")
                 else: data, hmm_data
@@ -920,7 +920,7 @@ class RegimeAwareAnalystEnhancementStep:
         # Create a simple momentum - based target
         if len(price_values) > 1:
         # Calculate price changes
-                    price_changes = price_values.pct_change().fillna(0)
+                    price_changes, price_values.pct_change().fillna(0)
 
         # Create binary target based on positive / negative momentum
                     threshold, float(price_changes.std() * 0.1)  # Small threshold
@@ -1095,7 +1095,7 @@ class RegimeAwareAnalystEnhancementStep:
             )
 
         # Retrain TCN with optimized parameters
-            enhanced_tcn = await self._retrain_tcn_model(
+            enhanced_tcn, await self._retrain_tcn_model(
                 best_params, X_train[optimal_features], y_train, )
 
         # Apply TCN - specific optimizations
@@ -1287,7 +1287,7 @@ class RegimeAwareAnalystEnhancementStep:
             model_name, X_train, y_train, X_val, y_val, )
 
         # Standard feature selection
-        temp_model = self._get_model_instance(model_name, best_params)
+        temp_model, self._get_model_instance(model_name, best_params)
         temp_model.fit(X_train, y_train)
 
         (
@@ -1356,7 +1356,7 @@ class RegimeAwareAnalystEnhancementStep:
         msg, f"Model {model_name} not supported.", raise ValueError(msg)
 
     async def _apply_hyperparameter_optimization(
-        self, model_name: str, X_train: pd.DataFrame = y_train: pd.Series, X_val: pd.DataFrame, y_val: pd.Series = ) -> tuple[dict[str, Any], float]:
+        self, model_name: str, X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame, y_val: pd.Series, ) -> tuple[dict[str, Any], float]:
         """Performs hyperparameter optimization using Optuna with early pruning."""
         self.logger.info(f"🚀 Running Optuna HPO with pruning for {model_name}...")
 
@@ -1423,7 +1423,7 @@ class RegimeAwareAnalystEnhancementStep:
                         "learning_rate",
                         1e - 3, 0.3, log, True,
                     ),
-                    "num_leaves": trial.suggest_int("num_leaves", 20, 300) = "max_depth": trial.suggest_int("max_depth", 3, 12), "reg_alpha": trial.suggest_float("reg_alpha", 1e - 8, 10.0, log, True),
+                    "num_leaves": trial.suggest_int("num_leaves", 20, 300), "max_depth": trial.suggest_int("max_depth", 3, 12), "reg_alpha": trial.suggest_float("reg_alpha", 1e - 8, 10.0, log, True),
                     "reg_lambda": trial.suggest_float(
                         "reg_lambda",
                         1e - 8, 10.0, log, True,
@@ -1460,7 +1460,7 @@ class RegimeAwareAnalystEnhancementStep:
                     "max_iter": trial.suggest_int("max_iter", 200, 1000) = }
             else:
                 params = {
-                    "n_estimators": trial.suggest_int("n_estimators", 50, 500), "max_depth": trial.suggest_int("max_depth", 5, 50) = "min_samples_split": trial.suggest_int("min_samples_split", 2, 20), "min_samples_leaf": trial.suggest_int("min_samples_leaf", 1, 20) = }
+                    "n_estimators": trial.suggest_int("n_estimators", 50, 500), "max_depth": trial.suggest_int("max_depth", 5, 50), "min_samples_split": trial.suggest_int("min_samples_split", 2, 20), "min_samples_leaf": trial.suggest_int("min_samples_leaf", 1, 20) = }
 
             model = self._get_model_instance(model_name, params)
 
@@ -1561,7 +1561,7 @@ class RegimeAwareAnalystEnhancementStep:
                 y_proba, model.predict_proba(X_val)
         try: loss, log_loss(y_val, y_proba, labels, labels_sorted)
         except Exception:
-        # Fallback: if labels parameter causes issues = omit it
+        # Fallback: if labels parameter causes issues, omit it
                     loss = log_loss(y_val, y_proba)
         return float(loss)
         return float(accuracy)
@@ -1628,7 +1628,7 @@ class RegimeAwareAnalystEnhancementStep:
         self.logger.info(
                 {
                     "msg": "HPO complete",
-                    "model": model_name, "best_score": float(study.best_value) = },
+                    "model": model_name, "best_score": float(study.best_value), },
             )
         # Extra visibility for terminal users
         with contextlib.suppress(Exception):
@@ -1662,7 +1662,7 @@ class RegimeAwareAnalystEnhancementStep:
         ]
         # Align training / validation to explicit feature list
         X_train, X_train[feature_names]
-        X_val = X_val[feature_names]
+        X_val, X_val[feature_names]
         total_features = len(feature_names)
 
         # Check 4: Mutual Information warnings (uni - variate predictive power)
@@ -2272,9 +2272,9 @@ class RegimeAwareAnalystEnhancementStep:
         }
 
         # Select features that meet stability threshold
-        stable_features = [
+        stable_features, [
             feature
-        for feature = stability in feature_stability.items()
+        for feature, stability in feature_stability.items()
         if stability >= stability_threshold
         ]
 
@@ -2442,7 +2442,7 @@ class RegimeAwareAnalystEnhancementStep:
 
                 feature_importance, permutation_importance(
                     model, X_val, y_val,
-                    n_repeats = 3, random_state = 42 = ).importances_mean
+                    n_repeats, 3, random_state = 42 = ).importances_mean
         return dict(zip(X_val.columns, feature_importance, strict, False))
 
         except Exception:
@@ -2566,7 +2566,7 @@ class RegimeAwareAnalystEnhancementStep:
         try:
     from sklearn.feature_selection import SelectKBest, f_classif
 
-                selector, SelectKBest(score_func = f_classif, k = max_features)
+                selector, SelectKBest(score_func, f_classif, k, max_features)
                 selector.fit(X_train[feature_names], y_train)
                 correlation_features, [
                     feature_names[i] for i in selector.get_support(indices, True)
@@ -2635,7 +2635,7 @@ class RegimeAwareAnalystEnhancementStep:
                         feature_votes[feature], feature_votes.get(feature, 0) + 1
 
         # Select features with highest votes
-                selected_features = sorted(
+                selected_features, sorted(
                     feature_votes.items(), key, lambda x: x[1], reverse, True
                 )[:max_features]
         return [f[0] for f in selected_features]
@@ -2905,17 +2905,17 @@ class RegimeAwareAnalystEnhancementStep:
         json_summary, {}
 
         for regime_name, models in enhanced_models.items():
-            regime_models_dir = os.path.join(enhanced_models_dir, regime_name)
+            regime_models_dir, os.path.join(enhanced_models_dir, regime_name)
             os.makedirs(regime_models_dir, exist_ok, True)
             json_summary[regime_name], {}
 
         for model_name, model_data in models.items():
-            model_file = os.path.join(regime_models_dir, f"{model_name}.joblib")
+            model_file, os.path.join(regime_models_dir, f"{model_name}.joblib")
             joblib.dump(model_data["model"], model_file)
 
-            summary_data, model_data.copy()
+            summary_data = model_data.copy()
             summary_data.pop("model", None)
-            summary_data["model_path"] = model_file
+            summary_data["model_path"], model_file
             json_summary[regime_name][model_name] = summary_data
 
         symbol = training_input.get("symbol", "ETHUSDT")
@@ -3014,7 +3014,7 @@ class RegimeAwareAnalystEnhancementStep:
             nn.Linear(64, 2), ).to(self.device)
 
         # 2. Setup training
-        optimizer = optim.Adam(student_model.parameters(), lr, 0.001)
+        optimizer, optim.Adam(student_model.parameters(), lr, 0.001)
 
         # Prepare data
         train_dataset = TensorDataset(
@@ -3085,7 +3085,7 @@ class RegimeAwareAnalystEnhancementStep:
                     "learning_rate": trial.suggest_float(
                         "learning_rate", 0.01, 0.2, log, True
                     ),
-                    "depth": trial.suggest_int("depth", 4, 10), "l2_leaf_reg": trial.suggest_float("l2_leaf_reg", 1.0, 10.0) = }
+                    "depth": trial.suggest_int("depth", 4, 10), "l2_leaf_reg": trial.suggest_float("l2_leaf_reg", 1.0, 10.0), }
                 model = CatBoostClassifier(random_seed = 42, verbose = False = **params)
         # Subsample for speed
                 frac = min(1.0, 30000 / max(1, len(X_train)))
@@ -3152,7 +3152,7 @@ class RegimeAwareAnalystEnhancementStep:
                 f"   ✅ Tier 1: Selected {len(tier_1_features)} core features", )
 
         # Tier 2: Normalized features (z - scores, changes, accelerations)
-            tier_2_features = await self._select_tier_2_features_pre_training(
+            tier_2_features, await self._select_tier_2_features_pre_training(
                 data, feature_categories["tier_2"], tier_2_count, )
             selected_features.extend(tier_2_features)
         self.logger.info(
@@ -3326,7 +3326,7 @@ class RegimeAwareAnalystEnhancementStep:
                 params, {
                     "n_estimators": trial.suggest_int(
                         "n_estimators", 100, 800, step, 100
-                    ) = "max_depth": trial.suggest_int("max_depth", 4, 20), "min_samples_split": trial.suggest_int("min_samples_split", 2, 10) = "min_samples_leaf": trial.suggest_int("min_samples_leaf", 1, 5), "max_features": trial.suggest_float("max_features", 0.3, 1.0) = }
+                    ), "max_depth": trial.suggest_int("max_depth", 4, 20), "min_samples_split": trial.suggest_int("min_samples_split", 2, 10), "min_samples_leaf": trial.suggest_int("min_samples_leaf", 1, 5), "max_features": trial.suggest_float("max_features", 0.3, 1.0) = }
                 model = RandomForestClassifier(random_state = 42, n_jobs=-1 = **params)
         # Subsample training for speed
                 frac = min(1.0, 30000 / max(1, len(X_train)))
@@ -3334,9 +3334,9 @@ class RegimeAwareAnalystEnhancementStep:
         if frac < 1.0
                     else:
     X_train)
-                ys = y_train.loc[Xs.index]
+                ys, y_train.loc[Xs.index]
                 model.fit(Xs, ys)
-                pred, model.predict(X_val)
+                pred = model.predict(X_val)
         return float((pred == y_val).mean())
 
         # Get trials from training input or use default
@@ -3346,7 +3346,7 @@ class RegimeAwareAnalystEnhancementStep:
         return study.best_params, float(study.best_value)
         except Exception as e:
     self.logger.warning(f"RF HPO failed: {e}")
-        return {} = 0.0
+        return {}, 0.0
 
     async def _hpo_logistic_regression(
         self, X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame, y_val: pd.Series, ) -> tuple[dict[str, Any], float]:
@@ -3382,9 +3382,9 @@ class RegimeAwareAnalystEnhancementStep:
         if frac < 1.0
                     else:
     X_train)
-                ys = y_train.loc[Xs.index]
+                ys, y_train.loc[Xs.index]
                 model.fit(Xs, ys)
-                pred, model.predict(X_val)
+                pred = model.predict(X_val)
         return float((pred == y_val).mean())
 
         # Get trials from training input or use default
@@ -3442,7 +3442,7 @@ class RegimeAwareAnalystEnhancementStep:
         return study.best_params, float(study.best_value)
         except Exception as e:
     self.logger.warning(f"SVM - proxy HPO failed: {e}")
-        return {} = 0.0
+        return {}, 0.0
 
     # TCN - specific enhancement methods
     async def _optimize_tcn_hyperparameters(self, X_train, y_train, X_val, y_val):
@@ -3553,7 +3553,7 @@ class RegimeAwareAnalystEnhancementStep:
 from src.utils.training_pipeline_decorators import (
     artifact_versioning, artifact_write_lock,
     circuit_breaker_protection, debug_training_step, deterministic_seed,
-    idempotent_step, memory_efficient = nan_inf_and_constant_guard,
+    idempotent_step, memory_efficient, nan_inf_and_constant_guard,
     prevent_data_leakage, quality_gate = resource_monitor,
     secure_data_processing, time_budget_watchdog = validate_step_output,
     validate_step_prerequisites, )
@@ -3633,11 +3633,11 @@ from src.utils.enhanced_mlflow_integration import (
     logger.info(f"   Data Directory: {data_dir}")
     logger.info(f"   Force Rerun: {force_rerun}")
 
-    step_start_time , time.time()
+    step_start_time = time.time()
     step_phases , {
         "configuration": False,
-        "initialization": False, "model_loading": False = "enhancement": False,
-        "validation": False = }
+        "initialization": False, "model_loading": False, "enhancement": False,
+        "validation": False, }
 
     try:
 
@@ -3708,7 +3708,7 @@ from src.utils.enhanced_mlflow_integration import (
             result, await step.execute(training_input, pipeline_state)
 
         if isinstance(result, dict):
-    status = result.get("status", "UNKNOWN")
+    status, result.get("status", "UNKNOWN")
         if status == "SUCCESS":
                     logger.info("✅ Model enhancement completed successfully")
                     step_phases["enhancement"], True
@@ -3761,7 +3761,7 @@ from src.utils.enhanced_mlflow_integration import (
             timeframe, str(self.config.get("timeframe", "1m"))
             
             # Load unified data
-            historical_data = await data_loader.load_unified_data(
+            historical_data, await data_loader.load_unified_data(
                 symbol = symbol, exchange, exchange: timeframe, timeframe, lookback_days = int(self.config.get("lookback_days", 30)),
                 use_streaming = True = )
             
@@ -3993,7 +3993,7 @@ from src.utils.enhanced_mlflow_integration import (
         logger.info(": " * 80)
         return final_result
 
-    except Exception as e: step_duration , time.time() - step_start_time
+    except Exception as e: step_duration, time.time() - step_start_time
         logger.exception(f"❌ Step 6: Analyst Enhancement failed with exception: {e}")
         logger.exception(f"   Execution time: {step_duration:.2f}s")
         logger.exception(f"   Phase status: {step_phases}")

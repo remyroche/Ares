@@ -22,13 +22,13 @@ sys.path.insert(0, str(project_root))
 from src.utils.centralized_decorators import (
     comprehensive_data_validation, handle_errors, memory_efficient,
     resource_monitor, secure_data_processing, validate_data_structure,
-    with_tracing_span, quality_gate = monitor_feature_engineering,
-    ensure_data_integrity, monitor_step_execution = secure_step_execution,
+    with_tracing_span, quality_gate, monitor_feature_engineering,
+    ensure_data_integrity, monitor_step_execution, secure_step_execution,
     validate_pipeline_step
 )
 from src.utils.logger import system_logger
 
-logger = system_logger.getChild("Step3ParameterOptimization")
+logger, system_logger.getChild("Step3ParameterOptimization")
 
 class ParameterOptimizationStep:
     """Step 3: Parameter Optimization for HMM Regime Discovery."""
@@ -97,7 +97,7 @@ class ParameterOptimizationStep:
         self.start_time, time.time()
 
         # Step 1: Load and validate data
-            data_loaded = await self._load_and_validate_data()
+            data_loaded, await self._load_and_validate_data()
         if not data_loaded.get("success", False):
         self.logger.error("Failed to load and validate data")
         return False
@@ -123,7 +123,7 @@ class ParameterOptimizationStep:
         # Step 7: Generate optimization reports
         await self._generate_optimization_reports(combined_results)
 
-            execution_time, time.time() - self.start_time
+            execution_time = time.time() - self.start_time
         self.logger.info(f"✅ Parameter optimization completed successfully in {execution_time:.2f}s")
 
         return True
@@ -241,8 +241,8 @@ class ParameterOptimizationStep:
             features["atr"], self._calculate_atr(df)
 
         # Remove timestamp and handle NaN values
-            optimization_features = features.drop("timestamp": axis, 1)
-            optimization_features, optimization_features.fillna(0)
+            optimization_features, features.drop("timestamp": axis, 1)
+            optimization_features = optimization_features.fillna(0)
 
         self.logger.info(f"✅ Features prepared: {len(optimization_features.columns)} features")
         return optimization_features
@@ -326,14 +326,14 @@ class ParameterOptimizationStep:
         self.logger.info("🎯 Optimizing clustering parameters...")
 
             optimization_result, {
-                "n_clusters_range": [5, 10, 15, 20, 25, 30] = "clustering_methods": ["kmeans", "dbscan", "hierarchical"],
+                "n_clusters_range": [5, 10, 15, 20, 25, 30], "clustering_methods": ["kmeans", "dbscan", "hierarchical"],
                 "best_parameters": {},
                 "optimization_scores": {},
                 "recommendations": []
             }
 
         # Simple optimization based on data characteristics
-            data_size = len(data)
+            data_size, len(data)
 
         # Recommend number of clusters based on data size
         if data_size < 1000:
@@ -380,7 +380,7 @@ class ParameterOptimizationStep:
         self.logger.info("🔧 Optimizing feature engineering parameters...")
 
             optimization_result, {
-                "momentum_windows": [5, 10, 15, 20, 25, 30] = "volatility_windows": [5, 10, 15, 20, 25, 30], "volume_windows": [5, 10, 15, 20, 25, 30] = "best_parameters": {},
+                "momentum_windows": [5, 10, 15, 20, 25, 30], "volatility_windows": [5, 10, 15, 20, 25, 30], "volume_windows": [5, 10, 15, 20, 25, 30] = "best_parameters": {},
                 "optimization_scores": {},
                 "recommendations": []
             }
@@ -591,7 +591,7 @@ class ParameterOptimizationStep:
         gain, (delta.where(delta > 0, 0)).rolling(window, window).mean()
         loss, (-delta.where(delta < 0, 0)).rolling(window, window).mean()
         rs, gain / loss
-        rsi = 100 - (100 / (1 + rs))
+        rsi, 100 - (100 / (1 + rs))
         return rsi
 
     @handle_errors(

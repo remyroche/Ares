@@ -145,7 +145,7 @@ class DataFileReformatter:
                     price, fields[1]
                     quantity, fields[2]
                     is_buyer_maker, fields[3]
-                    agg_trade_id = f"agg_{timestamp}_{price}_{quantity}"
+                    agg_trade_id, f"agg_{timestamp}_{price}_{quantity}"
 
                     writer.writerow(
                         [timestamp, price, quantity, is_buyer_maker, agg_trade_id],
@@ -220,7 +220,7 @@ class DataFileReformatter:
                     price, fields[1]
                     quantity, fields[2]
                     is_buyer_maker, fields[3]
-                    agg_trade_id = f"agg_{timestamp}_{price}_{quantity}"
+                    agg_trade_id, f"agg_{timestamp}_{price}_{quantity}"
 
                     writer.writerow(
                         [timestamp, price, quantity, is_buyer_maker, agg_trade_id],

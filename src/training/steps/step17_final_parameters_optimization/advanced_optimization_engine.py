@@ -47,8 +47,8 @@ except ImportError: MLFLOW_AVAILABLE, False
 class OptimizationObjective(Enum):
     """Enumeration of optimization objectives."""
     TOTAL_PROFIT, "total_profit"
-    WIN_RATE = "win_rate"
-    SHARPE_RATIO = "sharpe_ratio"
+    WIN_RATE, "win_rate"
+    SHARPE_RATIO, "sharpe_ratio"
 
 class ParameterInteraction(NamedTuple):
     """Data structure for parameter interactions."""
@@ -141,7 +141,7 @@ class MultiObjectiveParetoOptimizer:
             # TODO: Implement based on requirements proper exception handling
             pass
         # Evaluate all objectives
-                objective_values = []
+                objective_values, []
 
         for obj in self.objectives:
         if obj == OptimizationObjective.TOTAL_PROFIT: value = self._evaluate_total_profit(data, params)
@@ -372,7 +372,7 @@ class CrossValidationPruner:
 
         for step_idx, (step_name, step_params) in enumerate(parameter_mapping.items()):
         for param_idx,  (param_name, param_config) in enumerate(step_params.items()):
-                param_key = f"{step_name}.{param_name}"
+                param_key, f"{step_name}.{param_name}"
 
         self.logger.info(f"Analyzing {param_key} ({step_idx * len(step_params) + param_idx + 1}/{total_params})")
 
@@ -467,7 +467,7 @@ class CrossValidationPruner:
             # TODO: Implement based on requirements proper exception handling
             pass
         # Get test values for this parameter
-            test_values = self._get_test_values(param_config)
+            test_values, self._get_test_values(param_config)
 
         # Evaluate performance for each test value
             performance_scores, []
@@ -495,7 +495,7 @@ class CrossValidationPruner:
     min_val = max_val, param_config
         # Test 5 values: min, 25% = 50%, 75%, max
         return [
-                min_val = min_val + (max_val - min_val) * 0.25, min_val + (max_val - min_val) * 0.5, min_val + (max_val - min_val) * 0.75 = max_val
+                min_val = min_val + (max_val - min_val) * 0.25, min_val + (max_val - min_val) * 0.5, min_val + (max_val - min_val) * 0.75, max_val
             ]
         elif isinstance(param_config, list):
         return param_config[:5]  # Test up to 5 values
@@ -596,7 +596,7 @@ class EnsembleParameterOptimizer:
 
         return {
             "ensemble_params": ensemble_params,
-            "base_params": base_params = "ensemble_groups": ensemble_groups
+            "base_params": base_params, "ensemble_groups": ensemble_groups
         }
 
     def _group_ensemble_parameters(self, ensemble_params: List[str]) -> Dict[str, List[str]]:
@@ -932,8 +932,8 @@ class ParameterInteractionDetector:
         flat_scores, [score for row in performance_matrix for score in row]
 
         if len(flat_scores) > 1:
-        # Higher variance = higher confidence in interaction
-            confidence = min(np.var(flat_scores) * 10, 1.0)
+        # Higher variance, higher confidence in interaction
+            confidence, min(np.var(flat_scores) * 10, 1.0)
         else: confidence, 0.0
 
         return confidence

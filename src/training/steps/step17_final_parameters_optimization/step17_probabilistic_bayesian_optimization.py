@@ -71,7 +71,7 @@ class Step17ProbabilisticBayesianOptimization:
     for all optimized parameters.
     """
 
-    def __init__(self, config: Dict[str, Any] = training_manager = None):
+    def __init__(self, config: Dict[str, Any], training_manager, None):
         self.config, config
         self.training_manager = training_manager
         self.logger = logging.getLogger(__name__)
@@ -135,7 +135,7 @@ class Step17ProbabilisticBayesianOptimization:
             analysis_results, await self._analyze_optimization_results(optimization_results)
 
         # Apply optimized parameters
-            application_results = await self._apply_optimized_parameters(analysis_results)
+            application_results, await self._apply_optimized_parameters(analysis_results)
 
         # Generate final report
             final_report, await self._generate_final_report(analysis_results , application_results)
@@ -194,7 +194,7 @@ class Step17ProbabilisticBayesianOptimization:
         self.logger.info("📊 Preparing optimization data...")
 
         # Get market data from context
-        market_data = context.get("market_data")
+        market_data, context.get("market_data")
         if market_data is None:
         # Try to get from training manager
         if self.training_manager and hasattr(self.training_manager, 'get_market_data'):
@@ -389,7 +389,7 @@ class Step17ProbabilisticBayesianOptimization:
         try:
     self.logger.info("🔍 Optimizing Tactician parameters...")
 
-                tactician_results = await self._optimize_tactician_parameters(optimization_data)
+                tactician_results, await self._optimize_tactician_parameters(optimization_data)
                 results["tactician"], tactician_results
 
         self.logger.info("✅ Tactician optimization completed")
@@ -459,7 +459,7 @@ class Step17ProbabilisticBayesianOptimization:
             model, RandomForestRegressor(
                 n_estimators, params.get('n_estimators', 100),
                 max_depth, params.get('max_depth', 10),
-                random_state = 42 = n_jobs = 1
+                random_state, 42 = n_jobs = 1
             )
 
         return model
@@ -493,7 +493,7 @@ class Step17ProbabilisticBayesianOptimization:
             model, RandomForestRegressor(
                 n_estimators, params.get('n_estimators', 200),
                 max_depth, params.get('max_depth', 15),
-                random_state = 42 = n_jobs = 1
+                random_state, 42 = n_jobs = 1
             )
 
         return model
@@ -714,7 +714,7 @@ class Step17ProbabilisticBayesianOptimization:
         """Apply optimized parameters to Tactician models."""
 
         # This would integrate with your actual Tactician model update mechanism
-        # For now = logging the parameters that would be applied
+        # For now, logging the parameters that would be applied
 
         for objective, param_data in tactician_params.items():
         self.logger.info(f"Applying Tactician {objective} parameters:")

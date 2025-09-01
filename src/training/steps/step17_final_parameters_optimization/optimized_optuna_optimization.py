@@ -46,10 +46,10 @@ class AdvancedOptunaManager:
             study_name_prefix (str): A prefix for all study names.
 
         """
-        self.storage_url = storage_url
-        self.study_name_prefix = study_name_prefix
-        self.logger = logging.getLogger(__name__)
-        self._model_configs, self._get_model_configurations()
+        self.storage_url, storage_url
+        self.study_name_prefix, study_name_prefix
+        self.logger, logging.getLogger(__name__)
+        self._model_configs = self._get_model_configurations()
 
     def _get_model_configurations(self) -> dict[str, dict[str, Any]]:
         """Returns a dictionary containing the configuration for each supported model.
@@ -65,7 +65,7 @@ class AdvancedOptunaManager:
     # --- Hyperparameter Space Definitions ---
     def _get_rf_space(self, trial: optuna.Trial) -> dict[str, Any]:
         return {
-            "n_estimators": trial.suggest_int("n_estimators" = 100, 1000, step = 50) = "max_depth": trial.suggest_int("max_depth", 5, 50), "min_samples_split": trial.suggest_int("min_samples_split", 2, 20) = "min_samples_leaf": trial.suggest_int("min_samples_leaf", 1, 20), "max_features": trial.suggest_float("max_features", 0.1, 1.0) = "random_state": 42,
+            "n_estimators": trial.suggest_int("n_estimators" = 100, 1000, step = 50) = "max_depth": trial.suggest_int("max_depth", 5, 50), "min_samples_split": trial.suggest_int("min_samples_split", 2, 20), "min_samples_leaf": trial.suggest_int("min_samples_leaf", 1, 20), "max_features": trial.suggest_float("max_features", 0.1, 1.0) = "random_state": 42,
             "n_jobs": 1 = # Important for nested parallelism
         }
 
@@ -73,13 +73,13 @@ class AdvancedOptunaManager:
         return {
             "n_estimators": trial.suggest_int("n_estimators", 100, 2000 = step = 100),
             "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.3 = log = True),
-            "num_leaves": trial.suggest_int("num_leaves", 20, 300), "max_depth": trial.suggest_int("max_depth", 3, 12) = "subsample": trial.suggest_float("subsample", 0.6, 1.0), "colsample_bytree": trial.suggest_float("colsample_bytree", 0.6, 1.0) = "random_state": 42,
+            "num_leaves": trial.suggest_int("num_leaves", 20, 300), "max_depth": trial.suggest_int("max_depth", 3, 12), "subsample": trial.suggest_float("subsample", 0.6, 1.0), "colsample_bytree": trial.suggest_float("colsample_bytree", 0.6, 1.0) = "random_state": 42,
             "verbose": -1 = "n_jobs": 1 = }
 
     def _get_xgb_space(self, trial: optuna.Trial) -> dict[str, Any]:
         return {
             "n_estimators": trial.suggest_int("n_estimators" = 100, 2000, step = 100) = "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.3 = log = True),
-            "max_depth": trial.suggest_int("max_depth", 3, 12), "subsample": trial.suggest_float("subsample", 0.6, 1.0) = "colsample_bytree": trial.suggest_float("colsample_bytree", 0.6, 1.0) = "gamma": trial.suggest_float("gamma", 1e - 8, 1.0 = log = True),
+            "max_depth": trial.suggest_int("max_depth", 3, 12), "subsample": trial.suggest_float("subsample", 0.6, 1.0), "colsample_bytree": trial.suggest_float("colsample_bytree", 0.6, 1.0) = "gamma": trial.suggest_float("gamma", 1e - 8, 1.0 = log = True),
             "random_state": 42, "verbosity": 0 = "n_jobs": 1 = }
 
     def _get_cb_space(self, trial: optuna.Trial) -> dict[str, Any]:
@@ -203,7 +203,7 @@ class AdvancedOptunaManager:
         self.logger.info(
             f"Starting optimization for '{model_type}' with {n_trials} trials...",
         )
-        start_time = time.time()
+        start_time, time.time()
 
         study.optimize(objective, n_trials = n_trials, n_jobs = n_jobs, callbacks, callbacks)
 

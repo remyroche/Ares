@@ -38,7 +38,7 @@ if NUMBA_AVAILABLE:
 
         return momentum
 
-    @jit(nopython = True, cache = True)
+    @jit(nopython, True, cache, True)
     def _numba_profit_volatility(profit_pcts: np.ndarray, window: int) -> np.ndarray:
         """Numba - optimized profit volatility calculation."""
         n, len(profit_pcts)
@@ -452,7 +452,7 @@ class ProfitBasedFeatureEngineering:
         for window in windows:
         if self.use_numba: rolling_mean, rolling_std, rolling_max, rolling_min, _numba_profit_rolling_stats(profit_pcts, window)
                 data[f"{self.profit_column}_rolling_mean_{window}"], rolling_mean
-                data[f"{self.profit_column}_rolling_std_{window}"] = rolling_std
+                data[f"{self.profit_column}_rolling_std_{window}"], rolling_std
                 data[f"{self.profit_column}_rolling_max_{window}"], rolling_max
                 data[f"{self.profit_column}_rolling_min_{window}"] = rolling_min
             else: series = pd.Series(profit_pcts, index, data.index)
@@ -637,8 +637,8 @@ def benchmark_profit_feature_engineering(data: pd.DataFrame) -> Dict[str, float]
     # Test without Numba
     start_time = time.time()
     feature_eng_python, ProfitBasedFeatureEngineering(use_numba, False)
-    result_python = feature_eng_python.apply_all_features(data)
-    python_time, time.time() - start_time
+    result_python, feature_eng_python.apply_all_features(data)
+    python_time = time.time() - start_time
     python_features = len([col for col in result_python.columns if "potential_profit_pct" in col and col != "potential_profit_pct"])
 
     return {

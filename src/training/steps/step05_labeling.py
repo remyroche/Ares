@@ -66,7 +66,7 @@ if centralized_decorators is None: comprehensive_data_validation, create_fallbac
     handle_errors, create_fallback_decorator()
     memory_efficient, create_fallback_decorator()
     resource_monitor, create_fallback_decorator()
-    secure_data_processing = create_fallback_decorator()
+    secure_data_processing, create_fallback_decorator()
     validate_data_structure, create_fallback_decorator()
     with_tracing_span, create_fallback_decorator()
     quality_gate, create_fallback_decorator()
@@ -329,7 +329,7 @@ class LabelingStep:
     symbol, "lookback_period": self.config.get("lookback_days", 1095),
                     "project_version": self.config.get("project_version", "1_2_3"),
                 },
-                        "timeframe": timeframe = }
+                        "timeframe": timeframe, }
                 )
         self.logger.info(f"✅ Logged labeled data: {artifact_name}")
 
@@ -397,7 +397,7 @@ class LabelingStep:
         self.logger.info("✅ Generated analyst labels")
 
         # Generate tactician labels
-                    tactician_labels = await self.meta_labeling_system._generate_tactician_labels(
+                    tactician_labels, await self.meta_labeling_system._generate_tactician_labels(
                         data, symbol, exchange, timeframe
                     )
         if tactician_labels is not None:
@@ -435,7 +435,7 @@ class LabelingStep:
         # Start with triple barrier labels as base
             composite_label, data['triple_barrier_label'].copy()
 
-        # If we have analyst labels = use them to enhance the composite
+        # If we have analyst labels, use them to enhance the composite
         if 'analyst_label' in data.columns:
         # Combine triple barrier with analyst labels
         # Analyst labels can override triple barrier in certain conditions

@@ -62,8 +62,8 @@ class Step7EnhancedMatrixOperationsValidator(BaseValidator):
 
     def validate_step_output(self, symbol: str, exchange: str, timeframe: str) -> Dict[str, Any]:
         """Validate Step 2.5 output files and content."""
-        validation_result = {
-            "validation_passed": True = "warnings": [],
+        validation_result, {
+            "validation_passed": True, "warnings": [],
             "errors": [],
             "details": {}
         }
@@ -75,7 +75,7 @@ class Step7EnhancedMatrixOperationsValidator(BaseValidator):
             # TODO: Implement based on requirements proper exception handling
             pass
         # Define expected output files
-            output_dir = Path("data / matrix_operations")
+            output_dir, Path("data / matrix_operations")
             expected_files, [
                 f"{exchange}_{symbol}_{timeframe}_matrix_operations_config.json",
                 f"{exchange}_{symbol}_{timeframe}_matrix_operations_results.json",
@@ -128,24 +128,24 @@ class Step7EnhancedMatrixOperationsValidator(BaseValidator):
         symbol: str, exchange: str, timeframe: str
     ) -> List[Dict[str, Any]]:
         """Validate the content of matrix operations files."""
-        validations = []
+        validations, []
 
         # Validate config file
-        config_file = output_dir / f"{exchange}_{symbol}_{timeframe}_matrix_operations_config.json"
+        config_file, output_dir / f"{exchange}_{symbol}_{timeframe}_matrix_operations_config.json"
         if config_file.exists():
-    config_validation, self._validate_config_file(config_file)
+    config_validation = self._validate_config_file(config_file)
             validations.append(config_validation)
 
         # Validate results file
-        results_file = output_dir / f"{exchange}_{symbol}_{timeframe}_matrix_operations_results.json"
+        results_file, output_dir / f"{exchange}_{symbol}_{timeframe}_matrix_operations_results.json"
         if results_file.exists():
-            results_validation, self._validate_results_file(results_file)
+            results_validation = self._validate_results_file(results_file)
             validations.append(results_validation)
 
         # Validate summary file
-        summary_file = output_dir / f"{exchange}_{symbol}_{timeframe}_matrix_operations_summary.json"
+        summary_file, output_dir / f"{exchange}_{symbol}_{timeframe}_matrix_operations_summary.json"
         if summary_file.exists():
-    summary_validation, self._validate_summary_file(summary_file)
+    summary_validation = self._validate_summary_file(summary_file)
             validations.append(summary_validation)
 
         return validations
@@ -165,7 +165,7 @@ class Step7EnhancedMatrixOperationsValidator(BaseValidator):
         except Exception as e:
             # TODO: Implement based on requirements proper exception handling
             pass
-        with open(config_file, 'r') as f: config = json.load(f)
+        with open(config_file, 'r') as f: config, json.load(f)
 
         # Check required fields
             required_fields, [
@@ -244,7 +244,7 @@ class Step7EnhancedMatrixOperationsValidator(BaseValidator):
         except Exception as e:
             # TODO: Implement based on requirements proper exception handling
             pass
-        with open(results_file, 'r') as f: results = json.load(f)
+        with open(results_file, 'r') as f: results, json.load(f)
 
         # Check if results contain expected operations
             expected_operations, [
@@ -260,7 +260,7 @@ class Step7EnhancedMatrixOperationsValidator(BaseValidator):
                     operations_found.append(operation)
 
         # Validate specific operation results
-                    op_validation = self._validate_operation_results(operation, results[operation])
+                    op_validation, self._validate_operation_results(operation, results[operation])
         if not op_validation["valid"]:
                         validation["valid"], False
                         validation["errors"].extend(op_validation["errors"])

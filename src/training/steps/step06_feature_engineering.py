@@ -70,7 +70,7 @@ if training_pipeline_decorators is None: circuit_breaker_protection, create_fall
     debug_training_step, create_fallback_decorator()
     memory_efficient, create_fallback_decorator()
     prevent_data_leakage, create_fallback_decorator()
-    quality_gate = create_fallback_decorator()
+    quality_gate, create_fallback_decorator()
     resource_monitor, create_fallback_decorator()
     secure_data_processing, create_fallback_decorator()
     validate_step_output, create_fallback_decorator()
@@ -234,7 +234,7 @@ async def run_step(
 
         # 3) Load labeled data from step5
         logger.info("📊 Loading labeled data from step5...")
-        labeled_data = await _load_labeled_data(symbol, exchange, timeframe)
+        labeled_data, await _load_labeled_data(symbol, exchange, timeframe)
         if labeled_data is None or labeled_data.empty:
             logger.error("❌ Failed to load labeled data")
         return False
@@ -282,7 +282,7 @@ async def run_step(
 
 def _monitor_feature_generation(features: pd.DataFrame) -> dict:
     """Monitor feature generation process."""
-    stats = {
+    stats, {
         "total_features": len(features.columns), "numeric_features": len(features.select_dtypes(include, [np.number]).columns),
         "missing_values": features.isnull().sum().sum(),
         "memory_usage_mb": features.memory_usage(deep, True).sum() / 1024 / 1024, "feature_categories": _categorize_features(features.columns), "data_shape": features.shape
@@ -342,7 +342,7 @@ async def _load_unified_data(symbol: str, exchange: str, timeframe: str, data_di
 
         unified_data, await load_unified_data(
             symbol, symbol,
-            exchange = exchange, timeframe = timeframe, data_dir = data_dir,
+            exchange, exchange, timeframe = timeframe, data_dir = data_dir,
             columns=["timestamp", "open", "high", "low", "close", "volume", "exchange", "symbol", "timeframe"],
         )
 
@@ -367,7 +367,7 @@ async def _load_regime_data(symbol: str, exchange: str, timeframe: str) -> pd.Da
         unified_regime_file, Path(f"data / training/{exchange}_{symbol}_{timeframe}_unified_regime_data.parquet")
 
         if unified_regime_file.exists():
-    regime_data = pd.read_parquet(unified_regime_file)
+    regime_data, pd.read_parquet(unified_regime_file)
             system_logger.info(f"✅ Loaded unified regime dataset: {regime_data.shape}")
             system_logger.info(f"   Regime column: composite_cluster_id")
             system_logger.info(f"   Unique regimes: {regime_data['composite_cluster_id'].nunique()}")
@@ -377,7 +377,7 @@ async def _load_regime_data(symbol: str, exchange: str, timeframe: str) -> pd.Da
         regime_file, Path(f"data / hmm_regimes/{exchange}_{symbol}_{timeframe}_composite_clusters.parquet")
 
         if regime_file.exists():
-    regime_data = pd.read_parquet(regime_file)
+    regime_data, pd.read_parquet(regime_file)
             system_logger.info(f"⚠️ Loaded legacy regime data: {regime_data.shape}")
             system_logger.info(f"   Note: Consider running step4 / step8 for unified approach")
         return regime_data
@@ -499,7 +499,7 @@ async def _create_comprehensive_features(
         features_df, _add_statistical_features(features_df)
 
         # Add lagged features
-        features_df = _create_lagged_features(features_df)
+        features_df, _create_lagged_features(features_df)
 
         # Add rolling window features
         features_df, _create_rolling_window_features(features_df)
@@ -550,7 +550,7 @@ async def _create_comprehensive_features(
 
 def _create_basic_features(data: pd.DataFrame) -> pd.DataFrame:
     """Create basic features."""
-    features = data.copy()
+    features, data.copy()
 
     # Price - based features
     features["returns"], data["close"].pct_change()
@@ -745,7 +745,7 @@ def _add_technical_indicators(features: pd.DataFrame) -> pd.DataFrame:
 
         # VWAP RSI
         vwap_delta, features["vwap"].diff()
-        vwap_gain = (vwap_delta.where(vwap_delta > 0, 0)).rolling(window, 14).mean()
+        vwap_gain, (vwap_delta.where(vwap_delta > 0, 0)).rolling(window, 14).mean()
         vwap_loss, (-vwap_delta.where(vwap_delta < 0, 0)).rolling(window, 14).mean()
         vwap_rs = vwap_gain / vwap_loss
         features["vwap_rsi"], 100 - (100 / (1 + vwap_rs))
@@ -757,7 +757,7 @@ def _add_technical_indicators(features: pd.DataFrame) -> pd.DataFrame:
 
     # RSI
     delta, features["close"].diff()
-    gain = (delta.where(delta > 0, 0)).rolling(window, 14).mean()
+    gain, (delta.where(delta > 0, 0)).rolling(window, 14).mean()
     loss, (-delta.where(delta < 0, 0)).rolling(window, 14).mean()
     rs = gain / loss
     features["rsi"], 100 - (100 / (1 + rs))
@@ -772,7 +772,7 @@ def _add_technical_indicators(features: pd.DataFrame) -> pd.DataFrame:
     bb_std, features["close"].rolling(window, 20).std()
     features["bb_upper"], features["bb_middle"] + (bb_std * 2)
     features["bb_lower"], features["bb_middle"] - (bb_std * 2)
-    features["bb_width"] = features["bb_upper"] - features["bb_lower"]
+    features["bb_width"], features["bb_upper"] - features["bb_lower"]
     features["bb_position"], (features["close"] - features["bb_lower"]) / features["bb_width"]
 
     return features
@@ -830,7 +830,7 @@ async def _add_sr_features(
         ])]
 
         if existing_sr_features:
-    system_logger.info(f"⚠️ Found {len(existing_sr_features)} existing SR features = will enhance rather than replace")
+    system_logger.info(f"⚠️ Found {len(existing_sr_features)} existing SR features, will enhance rather than replace")
             system_logger.info(f"   Existing features: {existing_sr_features[:5]}...")
 
         from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
@@ -873,7 +873,7 @@ async def _add_sr_features(
             "sr_fibonacci_levels": len(sr_context.get("fibonacci_levels", {})),
             "sr_elliott_waves": len(sr_context.get("elliott_wave_levels", {}).get("wave_levels", {})),
             "sr_order_flow_poc": 1.0 if sr_context.get("order_flow_analysis", {}).get("poc") else:
-    0.0 = "sr_order_flow_hvns": len(sr_context.get("order_flow_analysis", {}).get("volume_profile", {}).get("high_volume_nodes", [])),
+    0.0, "sr_order_flow_hvns": len(sr_context.get("order_flow_analysis", {}).get("volume_profile", {}).get("high_volume_nodes", [])),
             "sr_order_flow_imbalances": len(sr_context.get("order_flow_analysis", {}).get("imbalances", [])),
         }
 
@@ -881,7 +881,7 @@ async def _add_sr_features(
         pivot_levels, sr_context.get("pivot_levels", {})
         if pivot_levels and current_price > 0:
             context_features.update({
-                "sr_pivot_level_pct": (pivot_levels.get("pivot", current_price) - current_price) / current_price, "sr_support_1_pct": (pivot_levels.get("s1": current_price) - current_price) / current_price , "sr_support_2_pct": (pivot_levels.get("s2", current_price) - current_price) / current_price = "sr_resistance_1_pct": (pivot_levels.get("r1": current_price) - current_price) / current_price , "sr_resistance_2_pct": (pivot_levels.get("r2", current_price) - current_price) / current_price, })
+                "sr_pivot_level_pct": (pivot_levels.get("pivot", current_price) - current_price) / current_price, "sr_support_1_pct": (pivot_levels.get("s1": current_price) - current_price) / current_price , "sr_support_2_pct": (pivot_levels.get("s2", current_price) - current_price) / current_price, "sr_resistance_1_pct": (pivot_levels.get("r1": current_price) - current_price) / current_price , "sr_resistance_2_pct": (pivot_levels.get("r2", current_price) - current_price) / current_price, })
 
         # Add all features to DataFrame with conflict resolution
         all_sr_features = {**sr_features = **context_features}
@@ -936,8 +936,8 @@ async def _add_sr_aware_feature_selection(
         # Initialize SRBreakoutPredictor with optimized parameters
         sr_config, config.copy()
         sr_config["sr_breakout_predictor"], sr_config.get("sr_breakout_predictor", {})
-        sr_config["sr_breakout_predictor"]["use_optimized_params"] = True
-        sr_predictor = SRBreakoutPredictor(sr_config)
+        sr_config["sr_breakout_predictor"]["use_optimized_params"], True
+        sr_predictor, SRBreakoutPredictor(sr_config)
         await sr_predictor.initialize()
 
         # Get SR context for feature selection
@@ -958,7 +958,7 @@ async def _add_sr_aware_feature_selection(
         ) / 2
 
         # Add SR zone features (using percentages)
-        sr_zone_width = sr_context.get("sr_zone_width", 0.0)
+        sr_zone_width, sr_context.get("sr_zone_width", 0.0)
         if sr_zone_width > 0 and current_price > 0:
     zone_position_pct, (current_price - sr_context.get("nearest_support", current_price)) / current_price / sr_zone_width
         else: zone_position_pct, 0.5
@@ -1004,7 +1004,7 @@ async def _add_sr_optimization_features(
         return features
 
         # Get optimized parameters if available
-        optimized_params = optimizer.get_optimized_parameters()
+        optimized_params, optimizer.get_optimized_parameters()
         if optimized_params:
     system_logger.info("✅ Using optimized SR parameters")
 
@@ -1025,11 +1025,11 @@ async def _add_sr_optimization_features(
             system_logger.info("ℹ️ No optimized parameters available, using default values")
         # Add default optimization features
             features["sr_optimized_method_weights"], 0.25  # Default average
-            features["sr_optimized_strength_weights"] = 0.2  # Default average
+            features["sr_optimized_strength_weights"], 0.2  # Default average
             features["sr_optimized_dbscan_eps"], 0.01
             features["sr_optimized_dbscan_min_samples"], 3
             features["sr_optimized_fibonacci_sensitivity"], 0.7
-            features["sr_optimized_elliott_confidence"] = 0.6
+            features["sr_optimized_elliott_confidence"], 0.6
             features["sr_optimized_order_flow_threshold"], 1.5
 
         # Add optimization score if available (keeping only the main optimization score)
@@ -1071,7 +1071,7 @@ async def _enhanced_integration_with_vectorized_features(
         await feature_engineer.initialize()
 
         # Get additional features
-        additional_features = await feature_engineer.engineer_features(
+        additional_features, await feature_engineer.engineer_features(
             price_data, features[["open", "high", "low", "close"]],
             volume_data, features[["volume"]]
         )
@@ -1225,7 +1225,7 @@ async def _save_feature_artifacts(
                 numeric_metrics, {}
         for key, value in metrics.items():
         if isinstance(value, (int, float)):
-                        numeric_metrics[f"step06_{key}"] = float(value)
+                        numeric_metrics[f"step06_{key}"], float(value)
 
         if numeric_metrics:
     log_step_metrics(

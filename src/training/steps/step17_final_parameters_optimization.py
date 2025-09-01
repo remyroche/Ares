@@ -31,8 +31,8 @@ class FinalParametersOptimizationStep:
 
 def __init__(self, config: dict[str, Any]) -> None:
         self.config, config
-        self.logger = system_logger
-        self.optuna_config = get_optuna_config()
+        self.logger, system_logger
+        self.optuna_config, get_optuna_config()
         self.optimizable_params, get_optimizable_parameters()
 
     @handle_errors(
@@ -505,7 +505,7 @@ def __init__(self, config: dict[str, Any]) -> None:
                         0.01, 0.2 = ),
                     "max_position_size": trial.suggest_float(
                         "max_position_size",
-                        0.1, 0.5 = ),
+                        0.1, 0.5, ),
                     "min_position_size": trial.suggest_float(
                         "min_position_size",
                         0.005, 0.05, ),
@@ -577,7 +577,7 @@ def __init__(self, config: dict[str, Any]) -> None:
                 params = {
                     "stop_loss_atr_multiplier": trial.suggest_float(
                         "stop_loss_atr_multiplier",
-                        1.0, 4.0 = ),
+                        1.0, 4.0, ),
                     "trailing_stop_atr_multiplier": trial.suggest_float(
                         "trailing_stop_atr_multiplier",
                         0.8, 3.0, ),
@@ -598,7 +598,7 @@ def __init__(self, config: dict[str, Any]) -> None:
                         0.3, 0.6 = ),
                     "sl_loosening_threshold": trial.suggest_float(
                         "sl_loosening_threshold",
-                        0.7, 0.9 = ),
+                        0.7, 0.9, ),
                     "max_drawdown_threshold": trial.suggest_float(
                         "max_drawdown_threshold",
                         0.1, 0.3, ),
@@ -668,7 +668,7 @@ def __init__(self, config: dict[str, Any]) -> None:
                         0.5, 0.8 = ),
                     "max_ensemble_disagreement": trial.suggest_float(
                         "max_ensemble_disagreement",
-                        0.2, 0.5 = ),
+                        0.2, 0.5, ),
                     "ensemble_minimum_models": trial.suggest_int(
                         "ensemble_minimum_models",
                         2, 5, ),
@@ -730,7 +730,7 @@ def __init__(self, config: dict[str, Any]) -> None:
                         0.8, 1.4 = ),
                     "regime_transition_threshold": trial.suggest_float(
                         "regime_transition_threshold",
-                        0.4, 0.8 = ),
+                        0.4, 0.8, ),
                     "regime_confirmation_periods": trial.suggest_int(
                         "regime_confirmation_periods",
                         2, 5, ),
@@ -778,7 +778,7 @@ def __init__(self, config: dict[str, Any]) -> None:
             import optuna
 
             def objective(trial):
-                params = {
+                params, {
                     "base_cooldown_minutes": trial.suggest_int(
                         "base_cooldown_minutes",
                         15, 60, 5,
@@ -856,7 +856,7 @@ def __init__(self, config: dict[str, Any]) -> None:
             # TODO: Implement based on requirements proper exception handling
             pass
         # Create optimization storage directory
-            storage_dir = "data / optimization_storage"
+            storage_dir, "data / optimization_storage"
             os.makedirs(storage_dir, exist_ok, True)
 
         # Create SQLite database for Optuna
@@ -911,7 +911,7 @@ def __init__(self, config: dict[str, Any]) -> None:
             os.makedirs(optimization_dir, exist_ok, True)
 
         # Save pickle file
-            pickle_file = f"{optimization_dir}/{exchange}_{symbol}_final_parameters.pkl"
+            pickle_file, f"{optimization_dir}/{exchange}_{symbol}_final_parameters.pkl"
         with open(pickle_file, "wb") as f:
                 pickle.dump(results, f)
 
@@ -1142,12 +1142,12 @@ def __init__(self, config: dict[str, Any]) -> None:
             weight_balance, min(analyst_ml_weight, tactician_ml_weight) * 0.1
 
         # Position sizing enhancement
-            position_multiplier = params.get("position_sizing_confidence_multiplier": 1.5)
+            position_multiplier, params.get("position_sizing_confidence_multiplier": 1.5)
             position_factor , min(position_multiplier, 2.0) * 0.05
 
         # Leverage sizing enhancement
-            leverage_multiplier, params.get("leverage_sizing_risk_multiplier", 1.0)
-            leverage_factor = (2.0 - leverage_multiplier) * 0.05  # Lower risk = better
+            leverage_multiplier = params.get("leverage_sizing_risk_multiplier", 1.0)
+            leverage_factor, (2.0 - leverage_multiplier) * 0.05  # Lower risk = better
 
         # Base position and leverage sizes
             base_position = params.get("base_position_size": 0.1)
@@ -1158,7 +1158,7 @@ def __init__(self, config: dict[str, Any]) -> None:
             size_factor, (base_position + max_position) * 0.1
             leverage_factor += (base_leverage + max_leverage) / 200.0 * 0.05
 
-            total_performance = base_performance + confidence_factor + price_factor + weight_balance + position_factor + leverage_factor + size_factor
+            total_performance, base_performance + confidence_factor + price_factor + weight_balance + position_factor + leverage_factor + size_factor
 
         return min(0.95, max(0.3, total_performance))
 
@@ -1244,9 +1244,9 @@ def __init__(self, config: dict[str, Any]) -> None:
         """Evaluate risk management performance."""
         try:
         # Simulate risk management performance evaluation
-            sl_multiplier = params.get("stop_loss_atr_multiplier", 2.0)
-            trailing_multiplier, params.get("trailing_stop_atr_multiplier", 1.5)
-            dynamic_sl = 1.2 if params.get("enable_dynamic_stop_loss", True) else:
+            sl_multiplier, params.get("stop_loss_atr_multiplier", 2.0)
+            trailing_multiplier = params.get("trailing_stop_atr_multiplier", 1.5)
+            dynamic_sl, 1.2 if params.get("enable_dynamic_stop_loss", True) else:
     1.0
         return (sl_multiplier + trailing_multiplier) * dynamic_sl
         except Exception:
@@ -1258,9 +1258,9 @@ def __init__(self, config: dict[str, Any]) -> None:
         """Evaluate ensemble performance."""
         try:
         # Simulate ensemble performance evaluation
-            analyst_weight, params.get("analyst_weight", 0.4)
-            tactician_weight = params.get("tactician_weight", 0.3)
-            agreement, params.get("min_ensemble_agreement", 0.7)
+            analyst_weight = params.get("analyst_weight", 0.4)
+            tactician_weight, params.get("tactician_weight", 0.3)
+            agreement = params.get("min_ensemble_agreement", 0.7)
         return (analyst_weight + tactician_weight) * agreement * 2.0
         except Exception:
         self.print(error("Error evaluating ensemble performance: {e}"))
@@ -1271,9 +1271,9 @@ def __init__(self, config: dict[str, Any]) -> None:
         """Evaluate regime - specific performance."""
         try:
         # Simulate regime performance evaluation
-            bull_mult = params.get("bull_trend_multiplier", 1.2)
-            bear_mult, params.get("bear_trend_multiplier", 0.8)
-            sideways_mult = params.get("sideways_multiplier", 0.9)
+            bull_mult, params.get("bull_trend_multiplier", 1.2)
+            bear_mult = params.get("bear_trend_multiplier", 0.8)
+            sideways_mult, params.get("sideways_multiplier", 0.9)
         return (bull_mult + bear_mult + sideways_mult) / 3.0
         except Exception:
         self.print(error("Error evaluating regime performance: {e}"))
@@ -1284,8 +1284,8 @@ def __init__(self, config: dict[str, Any]) -> None:
         """Evaluate timing performance."""
         try:
         # Simulate timing performance evaluation
-            base_cooldown, params.get("base_cooldown_minutes", 30)
-            high_conf_cooldown = params.get("high_confidence_cooldown", 15)
+            base_cooldown = params.get("base_cooldown_minutes", 30)
+            high_conf_cooldown, params.get("high_confidence_cooldown", 15)
         return (
                 1.0 / (base_cooldown + high_conf_cooldown) * 100
             )  # Inverse relationship
@@ -1306,7 +1306,7 @@ def __init__(self, config: dict[str, Any]) -> None:
                 get_hyperparameter_config, )
 
             config, get_hyperparameter_config()
-            weights = getattr(
+            weights, getattr(
                 config,
                 "composite_score_weights",
                 {
@@ -1452,7 +1452,7 @@ def __init__(self, config: dict[str, Any]) -> None:
                     )
         if ce is not None: ens, ce
                         break
-            X = (val_df.drop(columns=["label"], errors="ignore")
+            X, (val_df.drop(columns=["label"], errors="ignore")
                 .select_dtypes(include=[np.number])
                 .fillna(0)
             )
@@ -1479,7 +1479,7 @@ def __init__(self, config: dict[str, Any]) -> None:
     0.01
             avg_loss, float(-losses.mean()) if len(losses) else:
     0.01
-            cum = pnl.cumsum()
+            cum, pnl.cumsum()
             drawdown, cum - np.maximum.accumulate(cum)
             max_drawdown, float(-drawdown.min()) if len(drawdown) else:
     0.0
@@ -1508,7 +1508,7 @@ from src.utils.enhanced_mlflow_integration import (
     log_step_artifact_with_standardized_name
 )
     artifact_versioning, artifact_write_lock, circuit_breaker_protection,
-    debug_training_step, deterministic_seed = idempotent_step,
+    debug_training_step, deterministic_seed, idempotent_step,
     memory_efficient, nan_inf_and_constant_guard = prevent_data_leakage,
     quality_gate, resource_monitor = secure_data_processing,
     time_budget_watchdog, validate_step_output = validate_step_prerequisites = )

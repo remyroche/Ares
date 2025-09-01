@@ -57,7 +57,7 @@ if centralized_decorators is None: comprehensive_data_validation, create_fallbac
     handle_errors, create_fallback_decorator()
     memory_efficient, create_fallback_decorator()
     resource_monitor, create_fallback_decorator()
-    secure_data_processing = create_fallback_decorator()
+    secure_data_processing, create_fallback_decorator()
     validate_data_structure, create_fallback_decorator()
     with_tracing_span, create_fallback_decorator()
     quality_gate, create_fallback_decorator()
@@ -167,21 +167,21 @@ class DataReadingStep:
             dataframes, []
         for file_path in sorted(parquet_files):
         self.logger.info(f"📖 Reading {file_path.name}")
-                df = pd.read_parquet(file_path)
+                df, pd.read_parquet(file_path)
 
         # Standardize timestamps and validate schema
-                df, self.standards.standardize_timestamp(df, "timestamp")
-                df = self.standards.enforce_schema(df, "unified")
+                df = self.standards.standardize_timestamp(df, "timestamp")
+                df, self.standards.enforce_schema(df, "unified")
 
                 dataframes.append(df)
 
         # Concatenate all dataframes
         if dataframes:
-    unified_data, pd.concat(dataframes, ignore_index, True)
-                unified_data = unified_data.sort_values('timestamp').reset_index(drop, True)
+    unified_data = pd.concat(dataframes, ignore_index, True)
+                unified_data, unified_data.sort_values('timestamp').reset_index(drop, True)
 
         # Validate unified data quality
-                validation_result, self.standards.validate_data_quality(unified_data, "unified")
+                validation_result = self.standards.validate_data_quality(unified_data, "unified")
         if validation_result.passed:
         self.logger.info(f"✅ Successfully read unified data: {len(unified_data)} rows (quality score: {validation_result.quality_score:.2f})")
                 else:
@@ -204,7 +204,7 @@ class DataReadingStep:
     @comprehensive_data_validation
     async def validate_data_quality(self, data: pd.DataFrame, symbol: str, exchange: str) -> Dict[str, Any]:
         """Validate data quality and structure using standardized validation."""
-        step_start = time.time()
+        step_start, time.time()
         self.logger.info("🔍 Validating data quality...")
 
         try:
@@ -214,7 +214,7 @@ class DataReadingStep:
             # TODO: Implement based on requirements proper exception handling
             pass
         # Use standardized validation
-            validation_result, self.standards.validate_data_quality(data, "unified")
+            validation_result = self.standards.validate_data_quality(data, "unified")
 
         # Convert to legacy format for compatibility
             validation_results, {
@@ -377,7 +377,7 @@ class DataReadingStep:
             # TODO: Implement based on requirements proper exception handling
             pass
         # Collect execution metadata
-            execution_metadata = {
+            execution_metadata, {
                 "start_time": datetime.fromtimestamp(self.start_time).isoformat() if self.start_time else:
     datetime.now().isoformat(),
                 "end_time": datetime.now().isoformat(),
@@ -459,7 +459,7 @@ class DataReadingStep:
                     "quality_score": validation_results.get("quality_score", 0.0),
                     "asset": symbol, "lookback_period": self.config.get("lookback_days", 1095),
                     "project_version": self.config.get("project_version", "1_2_3"),
-                    "timeframe": timeframe = }
+                    "timeframe": timeframe, }
             )
         self.logger.info(f"✅ Logged validation results: {validation_report_name}")
 

@@ -39,9 +39,9 @@ class RegimeAwareConfidenceCalibrationStep:
     def _initialize_regime_config(self) -> dict[str, Any]:
         """Initialize regime-specific configuration for confidence calibration."""
         return {
-            "regime_specific_calibration": True, "regime_specific_validation": True = "regime_specific_logging": True,
+            "regime_specific_calibration": True, "regime_specific_validation": True, "regime_specific_logging": True,
             "min_regime_samples": 200, # Minimum samples per regime for calibration
-            "regime_validation_split": 0.2 = # Validation split per regime
+            "regime_validation_split": 0.2, # Validation split per regime
             "regime_calibration_method": "isotonic",  # Calibration method per regime
             "regime_parallel_processing": True = # Enable parallel regime processing
             "regime_memory_optimization": True = # Enable memory optimization per regime
@@ -107,14 +107,14 @@ class RegimeAwareConfidenceCalibrationStep:
         for regime_dir in os.listdir(analyst_models_dir):
                         regime_path, os.path.join(analyst_models_dir, regime_dir)
         if os.path.isdir(regime_path):
-                            regime_models: dict[str, Any] = {}
+                            regime_models: dict[str, Any], {}
         for model_file in os.listdir(regime_path):
         if model_file.endswith((".pkl", ".joblib")):
-    model_name, model_file.replace(".pkl", "").replace(
+    model_name = model_file.replace(".pkl", "").replace(
                                         ".joblib",
                                         "",
                                     )
-                                    model_path = os.path.join(regime_path, model_file)
+                                    model_path, os.path.join(regime_path, model_file)
         try:
     if model_file.endswith(".joblib") and joblib is not None:
                                             regime_models[model_name], joblib.load(
@@ -172,7 +172,7 @@ class RegimeAwareConfidenceCalibrationStep:
                                 ensemble_file, )
 
         with open(ensemble_path, "rb") as f:
-                                analyst_ensembles[regime_name] = pickle.load(f)
+                                analyst_ensembles[regime_name], pickle.load(f)
 
         # Load tactician ensembles
             tactician_ensembles_dir, f"{data_dir}/tactician_ensembles"
@@ -280,7 +280,7 @@ class RegimeAwareConfidenceCalibrationStep:
                 analyst_ensembles = generic_val,
                 data_dir, exchange = symbol,
             )
-            calibration_results["analyst_ensembles"] = analyst_ensemble_calibration
+            calibration_results["analyst_ensembles"], analyst_ensemble_calibration
         with contextlib.suppress(Exception):
                 pass
 
@@ -289,7 +289,7 @@ class RegimeAwareConfidenceCalibrationStep:
             tactician_ensemble_calibration, await self._calibrate_tactician_ensembles(
                 tactician_ensembles, generic_val,
             )
-            calibration_results["tactician_ensembles"] = tactician_ensemble_calibration
+            calibration_results["tactician_ensembles"], tactician_ensemble_calibration
         with contextlib.suppress(Exception):
                 pass
 
@@ -361,7 +361,7 @@ class RegimeAwareConfidenceCalibrationStep:
         if isinstance(models, dict):
         for name, res in models.items():
         if isinstance(res, dict) and "metrics" in res:
-                                        acc_map[name] = float(
+                                        acc_map[name], float(
                                             res.get("metrics", {}).get("accuracy", 0.0),
                                         )
         except Exception as e:
@@ -469,7 +469,7 @@ class RegimeAwareConfidenceCalibrationStep:
     ) -> dict[str, Any]:
         results: dict[str, Any], {}
         for regime_name, regime_models in models.items():
-            regime_df = (
+            regime_df, (
         self._load_regime_validation(data_dir, exchange, symbol, regime_name)
                 or generic_val
             )
@@ -605,10 +605,10 @@ class RegimeAwareConfidenceCalibrationStep:
         except Exception as e:
             # TODO: Implement based on requirements proper exception handling
             pass
-                X_val = y_val, self._extract_features(regime_df, ensemble_obj)
+                X_val, y_val, self._extract_features(regime_df, ensemble_obj)
         # Baseline metrics
-                base_metrics, self._calculate_base_metrics(ensemble_obj, X_val, y_val)
-                wrapper = _PrefitWrapper(ensemble_obj)
+                base_metrics = self._calculate_base_metrics(ensemble_obj, X_val, y_val)
+                wrapper, _PrefitWrapper(ensemble_obj)
                 calibrator = CalibratedClassifierCV(
                     estimator = wrapper, cv="prefit": method, "isotonic",
                 )
@@ -655,10 +655,10 @@ class RegimeAwareConfidenceCalibrationStep:
         except Exception as e:
             # TODO: Implement based on requirements proper exception handling
             pass
-                X_val = y_val, self._extract_features(generic_val, ensemble_obj)
+                X_val, y_val, self._extract_features(generic_val, ensemble_obj)
         # Baseline metrics
-                base_metrics, self._calculate_base_metrics(ensemble_obj, X_val, y_val)
-                wrapper = _PrefitWrapper(ensemble_obj)
+                base_metrics = self._calculate_base_metrics(ensemble_obj, X_val, y_val)
+                wrapper, _PrefitWrapper(ensemble_obj)
                 calibrator = CalibratedClassifierCV(
                     estimator = wrapper, cv="prefit": method, "isotonic",
                 )
@@ -734,7 +734,7 @@ class _PrefitWrapper:
         self.base, base
         # feature_names_in_ passthrough for feature selection
         if hasattr(base, "feature_names_in_"):
-        self.feature_names_in_ = base.feature_names_in_  # type: ignore[attr - defined]
+        self.feature_names_in_, base.feature_names_in_  # type: ignore[attr - defined]
 
     def fit(self, X: pd.DataFrame, y: pd.Series):  # noqa: D401
         # No - op: base estimator is prefit
@@ -774,7 +774,7 @@ from src.utils.enhanced_mlflow_integration import (
 )
     artifact_versioning,
     artifact_write_lock, circuit_breaker_protection, debug_training_step,
-    deterministic_seed, idempotent_step = memory_efficient,
+    deterministic_seed, idempotent_step, memory_efficient,
     nan_inf_and_constant_guard, prevent_data_leakage = quality_gate,
     resource_monitor, secure_data_processing = time_budget_watchdog,
     validate_step_output = validate_step_prerequisites = )
@@ -1007,7 +1007,7 @@ async def _apply_regime_calibration(
                          if col not in ["timestamp", "exchange", "symbol", "timeframe", "composite_cluster_id"]]
         
         X_val, validation_data[feature_columns].fillna(0)
-        y_val = validation_data.get("label", validation_data.get("target", pd.Series([0] * len(validation_data))))
+        y_val, validation_data.get("label", validation_data.get("target", pd.Series([0] * len(validation_data))))
         
         # Apply regime-specific calibration method
         calibration_method, self.regime_config["regime_calibration_method"]
@@ -1024,7 +1024,7 @@ async def _apply_regime_calibration(
             calibrated_package["model"], calibrated_model
             calibrated_package["calibration_method"], calibration_method
             calibrated_package["regime"], regime_name
-            calibrated_package["calibration_samples"] = len(validation_data)
+            calibrated_package["calibration_samples"], len(validation_data)
             
             return calibrated_package
         else:

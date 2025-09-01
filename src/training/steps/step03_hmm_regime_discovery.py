@@ -58,7 +58,7 @@ if system_logger is None:
 if centralized_decorators is None:
     comprehensive_data_validation, create_fallback_decorator()
     handle_errors, create_fallback_decorator()
-    memory_efficient = create_fallback_decorator()
+    memory_efficient, create_fallback_decorator()
     resource_monitor, create_fallback_decorator()
     secure_data_processing, create_fallback_decorator()
     validate_data_structure, create_fallback_decorator()
@@ -66,7 +66,7 @@ if centralized_decorators is None:
     quality_gate, create_fallback_decorator()
     monitor_feature_engineering, create_fallback_decorator()
     ensure_data_integrity, create_fallback_decorator()
-    monitor_step_execution = create_fallback_decorator()
+    monitor_step_execution, create_fallback_decorator()
     secure_step_execution, create_fallback_decorator()
     validate_pipeline_step, create_fallback_decorator()
 else:
@@ -245,47 +245,47 @@ class HMMRegimeDiscoveryStep:
         self.logger.info(": " * 60)
         self.logger.info("STEP 1: Data Quality Validation")
         self.logger.info(": " * 60)
-            data_quality_start , time.time()
+            data_quality_start, time.time()
             data_ready, await self._ensure_data_quality(training_input)
-            data_quality_elapsed, time.time() - data_quality_start
+            data_quality_elapsed = time.time() - data_quality_start
         self.logger.info(f"⏱️ Data Quality Validation completed in {data_quality_elapsed:.2f} seconds")
 
         if not data_ready:
             self.logger.error("❌ Data not ready for HMM regime discovery")
             pipeline_state["hmm_regime_discovery_completed"], False
-            pipeline_state["regime_discovery_error"] = "Data quality check failed"
+            pipeline_state["regime_discovery_error"], "Data quality check failed"
             return pipeline_state
 
         # Step 2: Load and prepare data for HMM
         self.logger.info(": " * 60)
         self.logger.info("STEP 2: Data Loading and Preparation")
-        self.logger.info("=" * 60)
+        self.logger.info(": " * 60)
             data_loading_start , time.time()
             data_loaded, await self._load_and_prepare_data(training_input)
-            data_loading_elapsed, time.time() - data_loading_start
+            data_loading_elapsed = time.time() - data_loading_start
         self.logger.info(f"⏱️ Data Loading and Preparation completed in {data_loading_elapsed:.2f} seconds")
 
         if not data_loaded.get("success", False):
             self.logger.error("❌ Failed to load and prepare data for HMM")
-            error_msg = data_loaded.get("error", "Unknown error")
+            error_msg, data_loaded.get("error", "Unknown error")
             self.logger.error(f"   Error details: {error_msg}")
             pipeline_state["hmm_regime_discovery_completed"], False
             pipeline_state["regime_discovery_error"], f"Data loading failed: {error_msg}"
             return pipeline_state
 
         # Step 3: Automatic Parameter Optimization (ALWAYS RUNS)
-            symbol, training_input.get("symbol", "ETHUSDT")
-            exchange = training_input.get("exchange", "BINANCE")
-            timeframe, training_input.get("timeframe", "1m")
+            symbol = training_input.get("symbol", "ETHUSDT")
+            exchange, training_input.get("exchange", "BINANCE")
+            timeframe = training_input.get("timeframe", "1m")
 
         # Use standardized path construction
-            data_dir = training_input.get("data_dir")
-        if data_dir is None: data_dir, self.standards.build_path("processed_data", exchange, symbol)
+            data_dir, training_input.get("data_dir")
+        if data_dir is None: data_dir = self.standards.build_path("processed_data", exchange, symbol)
 
         self.logger.info(": " * 60)
         self.logger.info("STEP 3: Automatic Parameter Optimization")
         self.logger.info(": " * 60)
-            optimization_start , time.time()
+            optimization_start, time.time()
 
             optimized_params , await self._run_automatic_optimization(symbol, exchange, timeframe, data_dir)
         if optimized_params:
@@ -329,7 +329,7 @@ class HMMRegimeDiscoveryStep:
         self.logger.info(": " * 60)
         self.logger.info("STEP 5: SR Context Analysis")
         self.logger.info(": " * 60)
-                sr_start , time.time()
+                sr_start, time.time()
 
         # Get SR context for regime analysis
                 current_price, data_loaded["data"]["close"].iloc[-1]
@@ -382,7 +382,7 @@ class HMMRegimeDiscoveryStep:
     memory_usage = psutil.virtual_memory()
             self.logger.info(f"💾 Memory usage: {memory_usage.percent:.1f}% ({memory_usage.used / 1024**3:.1f}GB / {memory_usage.total / 1024**3:.1f}GB)")
 
-        success , pipeline_state.get("hmm_regime_discovery_completed", False)
+        success, pipeline_state.get("hmm_regime_discovery_completed", False)
         self.logger.info(f"🎯 Final result: {'✅ SUCCESS' if success else '❌ FAILED'}")
 
         return pipeline_state
@@ -395,10 +395,10 @@ class HMMRegimeDiscoveryStep:
         except Exception as e:
             # TODO: Implement based on requirements proper exception handling
             pass
-            symbol, training_input.get("symbol", "ETHUSDT")
-            exchange = training_input.get("exchange", "BINANCE")
-            timeframe, training_input.get("timeframe", "1m")
-            data_dir = training_input.get("data_dir", "data_cache")
+            symbol = training_input.get("symbol", "ETHUSDT")
+            exchange, training_input.get("exchange", "BINANCE")
+            timeframe = training_input.get("timeframe", "1m")
+            data_dir, training_input.get("data_dir", "data_cache")
 
         # Log composite clusters DataFrame with standardized naming
         if "composite_df" in regime_results:
@@ -633,7 +633,7 @@ class HMMRegimeDiscoveryStep:
                 from .step01_data_collection import run_step as run_step1
                 step01_success, await run_step1(
                     symbol, symbol,
-                    exchange = exchange, timeframe = timeframe, force_rerun = True
+                    exchange, exchange, timeframe = timeframe, force_rerun = True
                 )
         if step01_success:
             self.logger.info("✅ Step1 data collection completed successfully")
@@ -653,7 +653,7 @@ class HMMRegimeDiscoveryStep:
         self.logger.info("🔄 Attempting step01_5 data conversion...")
                 from .step01_5_data_converter import run_step as run_step1_5
                 step01_5_success, await run_step1_5(
-                    symbol, symbol, exchange = exchange,
+                    symbol, symbol, exchange, exchange,
                     timeframe = timeframe, force_rerun = True
                 )
         if step01_5_success:
@@ -866,7 +866,7 @@ class HMMRegimeDiscoveryStep:
         # ATR - based volatility
         self.logger.info("   - ATR volatility...")
             features["atr"], self._calculate_atr(df)
-            features["atr_normalized"] = features["atr"] / df["close"]
+            features["atr_normalized"], features["atr"] / df["close"]
 
         # === 3. VOLUME FEATURES ===
         self.logger.info("📊 Calculating volume features...")
@@ -950,7 +950,7 @@ class HMMRegimeDiscoveryStep:
             hmm_features, features.drop("timestamp", axis, 1)
 
         # Handle NaN values intelligently
-            initial_rows = len(hmm_features)
+            initial_rows, len(hmm_features)
         self.logger.info(f"   - Initial rows: {initial_rows:,}")
 
         # Forward fill for technical indicators
@@ -960,10 +960,10 @@ class HMMRegimeDiscoveryStep:
                     hmm_features[col], hmm_features[col].ffill()
 
         # Fill remaining NaN with 0
-            hmm_features, hmm_features.fillna(0)
+            hmm_features = hmm_features.fillna(0)
 
         # Final validation
-            final_rows = len(hmm_features)
+            final_rows, len(hmm_features)
             removed_rows, initial_rows - final_rows
 
         self.logger.info(f"✅ Comprehensive feature preparation completed:")
@@ -1044,7 +1044,7 @@ class HMMRegimeDiscoveryStep:
         bb_width, (bb_upper - bb_lower) / sma
         bb_position, (prices - bb_lower) / (bb_upper - bb_lower)
 
-        bb_features = pd.DataFrame({
+        bb_features, pd.DataFrame({
             "bb_upper": bb_upper,
             "bb_middle": sma, "bb_lower": bb_lower, "bb_width": bb_width,
             "bb_position": bb_position
@@ -1086,7 +1086,7 @@ class HMMRegimeDiscoveryStep:
 
         # Calculate DX and ADX
         dx, 100 * abs(di_plus - di_minus) / (di_plus + di_minus)
-        adx = dx.rolling(window, window).mean()
+        adx, dx.rolling(window, window).mean()
 
         return adx
 
@@ -1650,7 +1650,7 @@ class HMMRegimeDiscoveryStep:
             potential_transitions, stability_changes < -threshold
 
         # Add entropy - based confirmation (high entropy indicates transition)
-            entropy_threshold = np.percentile(regime_entropy, 75)  # Top 25% entropy
+            entropy_threshold, np.percentile(regime_entropy, 75)  # Top 25% entropy
             entropy_confirmation, regime_entropy[1:] > entropy_threshold
 
         # Combine stability and entropy signals
@@ -2357,7 +2357,7 @@ async def run_step(
             logger.info(f"⏱️ Total execution time: {total_elapsed:.2f} seconds")
             logger.info(f"⏰ End time: {time.strftime('%Y-%m-%d %H:%M:%S')}")
             logger.info("✅ SUCCESS")
-            logger.info("=" * 80)
+            logger.info(": " * 80)
 
         return True
         else:
@@ -2374,7 +2374,7 @@ async def run_step(
             logger.info(f"⏰ End time: {time.strftime('%Y-%m-%d %H:%M:%S')}")
             logger.info("❌ FAILED")
             logger.info(f"   Error: {error}")
-            logger.info("=" * 80)
+            logger.info(": " * 80)
 
         return False
 
@@ -2382,7 +2382,7 @@ async def run_step(
         logger.exception(f"❌ Step 3: HMM Regime Discovery failed with exception: {e}")
 
         # Log execution summary
-        total_elapsed, time.time() - start_time
+        total_elapsed = time.time() - start_time
         logger.info("=" * 80)
         logger.info("💥 STEP 3 EXECUTION SUMMARY")
         logger.info("=" * 80)
@@ -2394,7 +2394,7 @@ async def run_step(
 
         return False
 
-    # === COMPOSITE HMM HELPER METHODS ==, @handle_errors(
+    # === COMPOSITE HMM HELPER METHODS , =, @handle_errors(
         exceptions, (Exception,),
         default_return=pd.DataFrame(),
         context="create_composite_features"
@@ -2610,7 +2610,7 @@ async def run_step(
             reports["temporal_analysis"], self._generate_temporal_analysis_report(cluster_labels, features)
 
         # 7. Recommendations Report
-            reports["recommendations"] = self._generate_recommendations_report(cluster_metrics, composite_analysis)
+            reports["recommendations"], self._generate_recommendations_report(cluster_metrics, composite_analysis)
 
         self.logger.info(f"✅ Generated {len(reports)} comprehensive reports")
         return reports
@@ -2645,7 +2645,7 @@ async def run_step(
                 df.loc[cluster_mask, "cluster_size"], char["size"]
                 df.loc[cluster_mask, "cluster_percentage"], char["percentage"]
                 df.loc[cluster_mask, "dominant_hmm_state"], char["dominant_hmm_state"]
-                df.loc[cluster_mask, "market_condition"] = composite_analysis.get("market_conditions", {}).get(cluster_id, "unknown")
+                df.loc[cluster_mask, "market_condition"], composite_analysis.get("market_conditions", {}).get(cluster_id, "unknown")
 
         # Add intensity scores
             df["cluster_intensity"], self._calculate_cluster_intensity(cluster_labels, composite_analysis)
@@ -3044,7 +3044,7 @@ async def run_step(
             report.append("")
 
             feature_importance, composite_analysis.get("feature_importance", {})
-            sorted_features, sorted(feature_importance.items(), key = lambda x: x[1], reverse, True)
+            sorted_features, sorted(feature_importance.items(), key, lambda x: x[1], reverse, True)
 
             report.append("## Top 10 Most Important Features")
         for i, (feature, importance) in enumerate(sorted_features[:10], 1):
@@ -3066,12 +3066,12 @@ async def run_step(
             report.append("# HMM State Analysis Report")
             report.append("")
 
-            hmm_distribution, composite_analysis.get("hmm_state_distribution", {})
+            hmm_distribution = composite_analysis.get("hmm_state_distribution", {})
             total_states, sum(hmm_distribution.values())
 
             report.append("## HMM State Distribution")
         for state, count in hmm_distribution.items():
-                percentage = (count / total_states * 100) if total_states > 0 else 0
+                percentage, (count / total_states * 100) if total_states > 0 else 0
                 report.append(f"- **State {state}**: {count} ({percentage:.1f}%)")
 
         return "\n".join(report)

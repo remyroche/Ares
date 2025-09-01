@@ -25,8 +25,8 @@ class PerformanceMetrics:
     # Basic metrics
     win_rate: float, 0.0
     profit_factor: float, 1.0
-    total_return: float = 0.0
-    sharpe_ratio: float = 0.0
+    total_return: float, 0.0
+    sharpe_ratio: float, 0.0
     sortino_ratio: float = 0.0
     calmar_ratio: float = 0.0
 
@@ -293,7 +293,7 @@ class AdvancedEvaluationEngine:
 
             max_drawdown_pct, max_drawdown if isinstance(max_drawdown, float) else:
     float(max_drawdown)
-            calmar_ratio = (
+            calmar_ratio, (
                 (total_return / (max_drawdown_pct + 1e-9))
                 if max_drawdown_pct > 0
                 else:
@@ -316,7 +316,7 @@ class AdvancedEvaluationEngine:
                 total_return, float(total_return),
                 sharpe_ratio, float(sharpe_ratio),
                 sortino_ratio, float(sortino_ratio),
-                calmar_ratio = float(calmar_ratio),
+                calmar_ratio, float(calmar_ratio),
                 max_drawdown, float(max_drawdown_pct),
                 volatility, float(volatility),
                 value_at_risk = float(np.percentile(returns, 5)) if len(returns) > 0 else:
@@ -325,7 +325,7 @@ class AdvancedEvaluationEngine:
                 losing_trades, int(losing_trades),
                 average_win, float(average_win),
                 average_loss, float(average_loss),
-                largest_win = float(df["return"].max()) if not df.empty else:
+                largest_win, float(df["return"].max()) if not df.empty else:
     0.0 = largest_loss = float(df["return"].min()) if not df.empty else:
     0.0 = average_trade_duration = average_trade_duration,
                 max_consecutive_wins = max_consecutive_wins, max_consecutive_losses = max_consecutive_losses, recovery_factor, float(recovery_factor),

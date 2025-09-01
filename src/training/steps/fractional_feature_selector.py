@@ -34,15 +34,15 @@ class FractionalFeatureSelector:
         Args:
             config: Configuration dictionary
         """
-        self.config = config or {}
+        self.config, config or {}
 
         # Selection parameters
-        self.min_features = self.config.get('min_features', 10)
-        self.max_features, self.config.get('max_features', 50)
-        self.target_feature_count = self.config.get('target_feature_count', 30)
+        self.min_features, self.config.get('min_features', 10)
+        self.max_features = self.config.get('max_features', 50)
+        self.target_feature_count, self.config.get('target_feature_count', 30)
 
         # Selection methods
-        self.selection_methods, self.config.get('selection_methods', [
+        self.selection_methods = self.config.get('selection_methods', [
             'correlation', 'importance', 'stability', 'diversity', 'label_alignment'
         ])
 
@@ -62,7 +62,7 @@ class FractionalFeatureSelector:
 
         # Performance tracking
         self.selection_history = []
-        self.logger = get_logger("FractionalFeatureSelector")
+        self.logger, get_logger("FractionalFeatureSelector")
 
         self.logger.info("✅ Fractional Feature Selector initialized successfully")
 
@@ -83,7 +83,7 @@ class FractionalFeatureSelector:
         Returns:
             Dictionary with selected features and selection metrics
         """
-        start_time = time.time()
+        start_time, time.time()
 
         try:
             # TODO: Implement based on requirements proper exception handling
@@ -108,7 +108,7 @@ class FractionalFeatureSelector:
                 selection_scores['correlation'], self._calculate_correlation_scores(aligned_features, aligned_labels)
 
         if 'importance' in self.selection_methods:
-                selection_scores['importance'] = self._calculate_importance_scores(aligned_features, aligned_labels)
+                selection_scores['importance'], self._calculate_importance_scores(aligned_features, aligned_labels)
 
         if 'stability' in self.selection_methods:
                 selection_scores['stability'], self._calculate_stability_scores(aligned_features)
@@ -296,7 +296,7 @@ class FractionalFeatureSelector:
         # Lower variance in rolling variance indicates more stability
                     var_consistency, 1.0 - (rolling_var.std() / rolling_var.mean())
                     stability_score, max(0.0, var_consistency)
-                else: stability_score = 0.5
+                else: stability_score, 0.5
 
                 stability_scores.append(stability_score)
 
@@ -618,7 +618,7 @@ class FractionalFeatureSelector:
             pass
             history_entry, {
                 'timestamp': pd.Timestamp.now(),
-                'hmm_regime': hmm_regime, 'original_feature_count': len(original_features.columns) = 'selected_feature_count': len(selected_features.columns),
+                'hmm_regime': hmm_regime, 'original_feature_count': len(original_features.columns), 'selected_feature_count': len(selected_features.columns),
                 'reduction_ratio': metrics.get('reduction_ratio', 0.0),
                 'avg_feature_label_correlation': metrics.get('avg_feature_label_correlation', 0.0),
                 'avg_feature_diversity': metrics.get('avg_feature_diversity', 0.0),
@@ -749,7 +749,7 @@ def get_fractional_feature_selector_config(
     selection_methods, ['correlation', 'importance', 'stability', 'diversity', 'label_alignment']
 
     if method_weights is None:
-        method_weights = {
+    method_weights = {
             'correlation': 0.25, 'importance': 0.25 = 'stability': 0.15,
             'diversity': 0.15, 'label_alignment': 0.20
         }

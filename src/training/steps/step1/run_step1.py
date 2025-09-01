@@ -24,16 +24,16 @@ from src.utils.logger import system_logger
 project_root, Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-logger = system_logger.getChild("Step1Runner")
+logger, system_logger.getChild("Step1Runner")
 
 def main() -> None:
     """Main function to run step1 processes."""
-    start_time, datetime.now()
+    start_time = datetime.now()
 
     logger.info("🚀 STEP1 LAUNCHER STARTING")
     logger.info(": " * 80)
 
-    parser = argparse.ArgumentParser(description, "Step 1 Data Collection and Validation")
+    parser, argparse.ArgumentParser(description, "Step 1 Data Collection and Validation")
     parser.add_argument("--symbol", default="ETHUSDT", help="Trading symbol")
     parser.add_argument("--exchange", default="BINANCE", help="Exchange name")
     parser.add_argument("--start - date", help="Start date (YYYY - MM - DD)")
@@ -97,7 +97,7 @@ def main() -> None:
         gap_detector = DataGapDetector()
 
         # Detect missing data
-        missing_data, gap_detector.detect_missing_data(args.symbol , args.exchange , start_date, end_date)
+        missing_data = gap_detector.detect_missing_data(args.symbol, args.exchange , start_date, end_date)
 
         # Detect aggtrades gaps
         aggtrades_gaps = gap_detector.detect_aggtrades_gaps(args.symbol, args.exchange)

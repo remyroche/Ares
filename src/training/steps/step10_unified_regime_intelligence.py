@@ -113,7 +113,7 @@ class MultiTimeframeHMMEncoder(nn.Module):
         self.dropout = config.get("dropout", 0.1)
 
         # Per - timeframe HMM state embeddings
-        per_tf_dim = max(1, self.d_model // max(1, len(self.timeframes)))
+        per_tf_dim, max(1, self.d_model // max(1, len(self.timeframes)))
         self.hmm_embeddings = nn.ModuleDict(
             {
                 tf: nn.Embedding(num_embeddings = self.hmm_states_per_tf, embedding_dim = per_tf_dim)
@@ -423,9 +423,9 @@ class UnifiedRegimeIntelligenceStep:
         if hpo_results and "best_params" in hpo_results:
         self.config.update(hpo_results["best_params"])
         # Update core params if present
-        self.learning_rate = self.config.get("learning_rate", self.learning_rate)
-        self.batch_size, self.config.get("batch_size", self.batch_size)
-        self.sequence_length = self.config.get("sequence_length", self.sequence_length)
+        self.learning_rate, self.config.get("learning_rate", self.learning_rate)
+        self.batch_size = self.config.get("batch_size", self.batch_size)
+        self.sequence_length, self.config.get("sequence_length", self.sequence_length)
         # Recreate model with new architecture settings if any
         self.model, MultiTimeframeHMMEncoder(self.config)
         # Attach HPO results to artifacts
@@ -766,7 +766,7 @@ class UnifiedRegimeIntelligenceStep:
                 )
 
         # 6. Regime synchronization score
-                correlation_df["regime_synchronization"] = self._calculate_regime_synchronization(
+                correlation_df["regime_synchronization"], self._calculate_regime_synchronization(
                     tf_intensities, window, 20
                 )
 
@@ -823,7 +823,7 @@ class UnifiedRegimeIntelligenceStep:
         # Get dominant regime for each timeframe
             dominant_regimes: dict[str, pd.Series], {}
         for tf, intensities in tf_intensities.items():
-                dominant_regimes[tf] = intensities.idxmax(axis, 1)
+                dominant_regimes[tf], intensities.idxmax(axis, 1)
 
         # Calculate alignment score (percentage of timeframes with same dominant regime)
             alignment_scores: list[float], []
@@ -909,7 +909,7 @@ class UnifiedRegimeIntelligenceStep:
 
         except Exception as e:
     self.logger.exception(f"🚨 Error calculating regime synchronization: {e}")
-            reference_index = next(iter(tf_intensities.values())).index
+            reference_index, next(iter(tf_intensities.values())).index
         return pd.Series(0, index, reference_index)
 
     async def _create_regime_transition_features(
@@ -928,14 +928,14 @@ class UnifiedRegimeIntelligenceStep:
 
             raise
         # Initialize transition dataframe
-            transition_df, pd.DataFrame(index, base_index)
+            transition_df = pd.DataFrame(index, base_index)
 
         # Get regime data from 1m (base timeframe)
         if "1m" in hmm_data: regime_data, hmm_data["1m"]
         if "composite_cluster_id" in regime_data.columns: regimes, regime_data["composite_cluster_id"]
 
         # Get unique regimes (excluding noise cluster - 1)
-                    unique_regimes = sorted([int(r) for r in regimes.unique() if r >= 0])
+                    unique_regimes, sorted([int(r) for r in regimes.unique() if r >= 0])
 
         # Calculate transition probabilities for each regime
         for regime_id in unique_regimes:
@@ -1090,7 +1090,7 @@ class UnifiedRegimeIntelligenceStep:
             )
 
         # Create regime transition features
-            transition_features = await self._create_regime_transition_features(
+            transition_features, await self._create_regime_transition_features(
                 hmm_data, base_index,
             )
 
@@ -1301,7 +1301,7 @@ class UnifiedRegimeIntelligenceStep:
         if current_idx < len(tf_data) and current_idx > 0:
         # Get current intensity scores
                         current_row, tf_data.iloc[current_idx]
-                        previous_row = tf_data.iloc[current_idx - 1]
+                        previous_row, tf_data.iloc[current_idx - 1]
 
         # Extract intensity columns
                         intensity_cols, [
@@ -1448,7 +1448,7 @@ class UnifiedRegimeIntelligenceStep:
 
         # Split data
             num_samples: int, int(train_data["num_sequences"])
-            split_idx = int(num_samples * (1 - self.validation_split))
+            split_idx, int(num_samples * (1 - self.validation_split))
 
         # Training data
             train_hmm, {
@@ -1501,10 +1501,10 @@ class UnifiedRegimeIntelligenceStep:
                     batch_features,
                     batch_regime, batch_transition, batch_tpsl,
                 ) in enumerate(train_loader):
-                    batch_features = batch_features.to(device)
-                    batch_regime, batch_regime.to(device)
-                    batch_transition = batch_transition.to(device)
-                    batch_tpsl, batch_tpsl.to(device)
+                    batch_features, batch_features.to(device)
+                    batch_regime = batch_regime.to(device)
+                    batch_transition, batch_transition.to(device)
+                    batch_tpsl = batch_tpsl.to(device)
 
         # Prepare HMM states for this batch
                     batch_hmm: dict[str, torch.Tensor] = {}
@@ -1666,7 +1666,7 @@ class UnifiedRegimeIntelligenceStep:
                         torch.tensor(states, dtype, torch.long).unsqueeze(0).to(device)
                     )
 
-            feature_tensor = torch.tensor(features, dtype, torch.float32).unsqueeze(0).to(device)
+            feature_tensor, torch.tensor(features, dtype, torch.float32).unsqueeze(0).to(device)
 
         # Make prediction
         self.model.eval()
@@ -1917,7 +1917,7 @@ class UnifiedRegimeIntelligenceStep:
         # Otherwise = return unified prediction with S / R context attached
         if unified_prediction is None:
     unified_prediction = {}
-            unified_prediction["sr_analysis"] = sr_context
+            unified_prediction["sr_analysis"], sr_context
         return unified_prediction
 
         except Exception as e:
@@ -1946,17 +1946,17 @@ class UnifiedRegimeIntelligenceStep:
                 f"⚠️ Optuna not available for HPO ({ex}); skipping optimization": )
         return None
 
-            pruner = optuna.pruners.MedianPruner() if self.hpo_pruning else:
+            pruner, optuna.pruners.MedianPruner() if self.hpo_pruning else:
     None
-            study, optuna.create_study(direction, "maximize", pruner, pruner)
+            study = optuna.create_study(direction, "maximize", pruner, pruner)
 
             def objective(trial: "optuna.Trial") -> float:
-                params = {
+                params, {
                     "learning_rate": trial.suggest_float("learning_rate", 1e - 5, 1e - 2, log, True),
                     "batch_size": trial.suggest_categorical("batch_size", [16, 32, 64]),
                     "d_model": trial.suggest_categorical("d_model", [128, 256, 512]),
                     "nhead": trial.suggest_categorical("nhead", [4, 8, 16]),
-                    "num_layers": trial.suggest_int("num_layers", 2, 6), "dropout": trial.suggest_float("dropout", 0.1, 0.5) = "sequence_length": trial.suggest_int("sequence_length", 10, 50), }
+                    "num_layers": trial.suggest_int("num_layers", 2, 6), "dropout": trial.suggest_float("dropout", 0.1, 0.5), "sequence_length": trial.suggest_int("sequence_length", 10, 50), }
         # Lightweight proxy objective (no full training inside step to keep runtime bounded)
             score, 0.5 + 0.3 * (1.0 - float(params["dropout"])) + 0.2 * (float(params["d_model"]) / 512.0),
         return float(score)
@@ -1985,7 +1985,7 @@ class UnifiedRegimeIntelligenceStep:
     pruning_results: dict[str, Any], {}
         # Attention pruning
         if hasattr(model, "cross_timeframe_attention"):
-    attn = model.cross_timeframe_attention
+    attn, model.cross_timeframe_attention
         if hasattr(attn, "in_proj_weight"):
         try:
     prune.l1_unstructured(attn, name="in_proj_weight": amount = 0.1)
@@ -2031,8 +2031,8 @@ class UnifiedRegimeIntelligenceStep:
             self.logger.exception(f"Error in operation: {e}")
 
             raise
-            unified_confidence = unified_prediction.get("confidence_score": 0.5)
-            sr_confidence, sr_outcome.get("confidence", 0.5)
+            unified_confidence, unified_prediction.get("confidence_score": 0.5)
+            sr_confidence = sr_outcome.get("confidence", 0.5)
 
         # When near S / R levels, weight S / R outcome more heavily
         # 60% S / R outcome = 40% unified prediction
@@ -2106,7 +2106,7 @@ from src.utils.enhanced_mlflow_integration import (
     log_step_dataframe_with_standardized_name, log_step_artifact_with_standardized_name
 )
     artifact_versioning, artifact_write_lock,
-    circuit_breaker_protection, debug_training_step = deterministic_seed,
+    circuit_breaker_protection, debug_training_step, deterministic_seed,
     idempotent_step, memory_efficient = nan_inf_and_constant_guard,
     prevent_data_leakage, quality_gate = resource_monitor,
     secure_data_processing, time_budget_watchdog = validate_step_output,
@@ -2170,7 +2170,7 @@ async def run_step(
     logger.info(f"   Timeframe: {timeframe}")
     logger.info(f"   Force Rerun: {force_rerun}")
 
-    step_start_time , time.time()
+    step_start_time, time.time()
     step_phases , {
         "configuration": False, "initialization": False = "data_loading": False,
         "training": False = "validation": False = }
@@ -2285,7 +2285,7 @@ async def run_step(
     logger.exception(f"❌ Validation phase failed: {e}")
         return False
 
-        total_time = time.time() - step_start_time
+        total_time, time.time() - step_start_time
         logger.info(f"🎉 Step 5_5 completed in {total_time:.2f}s")
         return True
 

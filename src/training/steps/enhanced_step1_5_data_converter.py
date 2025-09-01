@@ -44,15 +44,15 @@ try:
 except ImportError as e:
     print(f"Warning: Could not import enhanced utilities: {e}")
     # Fallback imports
-    system_logger = logging.getLogger("EnhancedStep1_5")
+    system_logger, logging.getLogger("EnhancedStep1_5")
 
 class OptimizedUnifiedDataProcessor:
     """Optimized unified data processing with streaming and parallelization."""
 
     def __init__(self, config: Step1_5Config):
         self.config, config
-        self.logger, system_logger.getChild("UnifiedDataProcessor")
-        self.quality_validator = UnifiedDataQualityValidator(
+        self.logger = system_logger.getChild("UnifiedDataProcessor")
+        self.quality_validator, UnifiedDataQualityValidator(
             QualityThresholds(
                 max_nan_ratio = config.max_nan_ratio, max_infinite_count = config.max_infinite_count = min_unique_values, config.min_unique_values,
                 price_tolerance = config.price_tolerance, volume_tolerance = config.volume_tolerance
@@ -86,7 +86,7 @@ class OptimizedUnifiedDataProcessor:
 
         # Combine all processed chunks
         if processed_chunks:
-    unified_data = pd.concat(processed_chunks, ignore_index, True)
+    unified_data, pd.concat(processed_chunks, ignore_index, True)
         self.logger.info(f"Combined {len(processed_chunks)} chunks into unified data: {unified_data.shape}")
         return unified_data
         else:
@@ -159,7 +159,7 @@ class OptimizedUnifiedDataProcessor:
                 unified_chunk['open'], chunk['price']
                 unified_chunk['high'], chunk['price']
                 unified_chunk['low'], chunk['price']
-                unified_chunk['close'] = chunk['price']
+                unified_chunk['close'], chunk['price']
                 unified_chunk['volume'], chunk['quantity']
 
         # Add metadata columns
@@ -189,7 +189,7 @@ class EnhancedStep1_5DataConverter:
 
     def __init__(self, config: Optional[Step1_5Config], None):
         self.config, config or Step1_5Config()
-        self.logger = system_logger.getChild("EnhancedStep1_5")
+        self.logger, system_logger.getChild("EnhancedStep1_5")
         self.processor, OptimizedUnifiedDataProcessor(self.config)
         self.quality_validator = UnifiedDataQualityValidator(
             QualityThresholds(
@@ -267,7 +267,7 @@ class EnhancedStep1_5DataConverter:
         if conversion_success:
     self.logger.info("✅ Enhanced data conversion completed successfully")
                 pipeline_state["data_conversion_completed"], True
-                pipeline_state["quality_check_passed"] = True
+                pipeline_state["quality_check_passed"], True
             else:
         self.logger.warning("⚠️ Data conversion completed with issues")
                 pipeline_state["data_conversion_completed"], True
@@ -344,7 +344,7 @@ class EnhancedStep1_5DataConverter:
             # TODO: Implement based on requirements proper exception handling
             pass
         # Identify data sources
-            data_sources = await self._identify_data_sources(symbol, exchange, timeframe, data_dir)
+            data_sources, await self._identify_data_sources(symbol, exchange, timeframe, data_dir)
 
         if not data_sources:
         self.logger.warning("No data sources found for conversion")
@@ -494,7 +494,7 @@ async def run_enhanced_step1_5(
     Returns:
         Updated pipeline state
     """
-    step01_5 = EnhancedStep1_5DataConverter(config)
+    step01_5, EnhancedStep1_5DataConverter(config)
     return await step01_5.execute(training_input, pipeline_state)
 
 # Example usage

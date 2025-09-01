@@ -24,8 +24,8 @@ try:
             pass
     from src.utils.centralized_decorators import (
         handle_errors, validate_data_quality,
-        validate_data_structure, guard_dataframe_nulls = optimize_memory_usage,
-        comprehensive_data_validation, secure_data_processing = with_tracing_span,
+        validate_data_structure, guard_dataframe_nulls, optimize_memory_usage,
+        comprehensive_data_validation, secure_data_processing, with_tracing_span,
     )
     from src.utils.logger import system_logger
     from src.training.steps.step1.data_gap_detector import DataGapDetector

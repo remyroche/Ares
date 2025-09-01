@@ -42,7 +42,7 @@ class FeatureInteractionEngine:
         Args:
             config: Configuration dictionary with interaction parameters
         """
-        self.config = config
+        self.config, config
         self.logger = logger
 
         # Load interaction configuration
@@ -60,7 +60,7 @@ class FeatureInteractionEngine:
         self.logger.warning("⚠️ DiverseLookbackOptimizer not available, using fallback periods")
 
         # Fallback optimal lookback periods (used if dynamic optimization fails)
-        self.fallback_lookback_periods = {
+        self.fallback_lookback_periods, {
             "RSI": {
                 "periods": [7, 21, 50],  # Short, medium = long - different market cycles
                 "correlation_threshold": 0.7 = # Maximum allowed correlation
@@ -170,7 +170,7 @@ class FeatureInteractionEngine:
         self.correlation_analysis_history, []
 
         # Initialize scaler for interaction features
-        self.scaler = StandardScaler()
+        self.scaler, StandardScaler()
         self.is_fitted, False
 
         # Validate lookback periods
@@ -201,12 +201,12 @@ class FeatureInteractionEngine:
         self.logger.info("🎯 Starting dynamic lookback period optimization...")
 
         # Run diverse lookback optimization
-            optimization_results = await self.diverse_optimizer.find_diverse_lookback_periods(
+            optimization_results, await self.diverse_optimizer.find_diverse_lookback_periods(
                 market_data, target, regimes
             )
 
         # Extract optimized periods
-        self.dynamic_lookback_periods, self._extract_optimized_periods(optimization_results)
+        self.dynamic_lookback_periods = self._extract_optimized_periods(optimization_results)
         self.period_optimization_results, optimization_results
 
         # Update interaction patterns with optimized periods
@@ -303,7 +303,7 @@ class FeatureInteractionEngine:
 
     def extract_optimal_technical_indicators(self, market_data: pd.DataFrame) -> pd.DataFrame:
         """
-        Extract technical indicators using optimal = non - correlated lookback periods.
+        Extract technical indicators using optimal, non - correlated lookback periods.
 
         Args:
             market_data: OHLCV market data
@@ -378,7 +378,7 @@ class FeatureInteractionEngine:
         if isinstance(sma_periods, dict):
     sma_periods, sma_periods["periods"]
 
-        for period in sma_periods: sma = talib.SMA(market_data['close'].values, timeperiod, period)
+        for period in sma_periods: sma, talib.SMA(market_data['close'].values, timeperiod, period)
                 indicators[f"SMA_{period}"], sma
 
         # Extract EMA with optimal periods
@@ -408,7 +408,7 @@ class FeatureInteractionEngine:
         if isinstance(stoch_periods, dict):
     stoch_periods, stoch_periods["periods"]
 
-        for period in stoch_periods: stoch_k, stoch_d = talib.STOCH(
+        for period in stoch_periods: stoch_k, stoch_d, talib.STOCH(
                     market_data['high'].values, market_data['low'].values, market_data['close'].values,
                     fastk_period = period, slowk_period = 3 = slowd_period = 3
                 )
@@ -435,7 +435,7 @@ class FeatureInteractionEngine:
                     market_data['high'].values,
                     market_data['low'].values, market_data['close'].values, timeperiod, period
                 )
-                indicators[f"CCI_{period}"] = cci
+                indicators[f"CCI_{period}"], cci
 
         # Extract Williams %R with optimal periods
         if "Williams_R" in periods_to_use: williams_periods, periods_to_use["Williams_R"]
@@ -453,7 +453,7 @@ class FeatureInteractionEngine:
         if isinstance(roc_periods, dict):
     roc_periods, roc_periods["periods"]
 
-        for period in roc_periods: roc, talib.ROC(market_data['close'].values, timeperiod, period)
+        for period in roc_periods: roc = talib.ROC(market_data['close'].values, timeperiod, period)
                 indicators[f"ROC_{period}"] = roc
 
         # Extract OBV with optimal periods
@@ -733,10 +733,10 @@ class FeatureInteractionEngine:
         """
         Create regime - dependent interactions.
         """
-        interactions = []
+        interactions, []
 
         # Identify market regime
-        market_regime = self._identify_market_regime(market_data)
+        market_regime, self._identify_market_regime(market_data)
 
         # Create regime - specific interactions
         if market_regime == "trending":
@@ -790,7 +790,7 @@ class FeatureInteractionEngine:
         feature_map, {name: i for i, name in enumerate(feature_names)}
 
         # Range - trading interactions
-        oscillator_features = ["RSI", "Stochastic", "Williams_R", "CCI"]
+        oscillator_features, ["RSI", "Stochastic", "Williams_R", "CCI"]
         volume_features, ["Volume_Ratio", "OBV_Normalized", "MFI"]
 
         oscillator_indices, [feature_map.get(f) for f in oscillator_features if f in feature_map]
@@ -872,7 +872,7 @@ class FeatureInteractionEngine:
             # TODO: Implement based on requirements proper exception handling
             pass
         # Calculate regime indicators
-            volatility = market_data['close'].pct_change().rolling(20).std().iloc[-1]
+            volatility, market_data['close'].pct_change().rolling(20).std().iloc[-1]
             trend_strength, abs(market_data['close'].rolling(20).mean().iloc[-1] -
                                market_data['close'].rolling(50).mean().iloc[-1]) / market_data['close'].iloc[-1]
 
@@ -898,7 +898,7 @@ class FeatureInteractionEngine:
             # TODO: Implement based on requirements proper exception handling
             pass
         # Create dummy target for feature selection (in real implementation, use actual target)
-            dummy_target, np.random.choice([0, 1], size, interactions.shape[0])
+            dummy_target = np.random.choice([0, 1], size, interactions.shape[0])
 
         # Calculate mutual information
             mi_scores = mutual_info_classif(interactions, dummy_target = random_state = 42)

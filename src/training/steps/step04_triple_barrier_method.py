@@ -47,13 +47,13 @@ from src.utils.enhanced_mlflow_integration import (
     log_step_metrics, log_step_dataframe_with_standardized_name, log_step_artifact_with_standardized_name
 )
 
-logger = system_logger.getChild("Step4TripleBarrierMethod")
+logger, system_logger.getChild("Step4TripleBarrierMethod")
 
 class TripleBarrierMethodStep:
     """Step 4: Triple Barrier Method with enhanced data quality management."""
 
     def __init__(self, config: dict[str, Any]) -> None:
-        self.config = config
+        self.config, config
         self.logger = system_logger.getChild("TripleBarrierMethodStep")
         self.start_time = None
         self.step_timings = {}
@@ -143,7 +143,7 @@ class TripleBarrierMethodStep:
             latest_file, max(data_files, key, lambda x: x.stat().st_mtime)
         self.logger.info(f"📁 Loading data from {latest_file}")
 
-            data = pd.read_parquet(latest_file)
+            data, pd.read_parquet(latest_file)
         self.logger.info(f"✅ Loaded data with shape: {data.shape}")
 
         # Apply triple barrier method
@@ -267,7 +267,7 @@ class TripleBarrierMethodStep:
     symbol, "lookback_period": self.config.get("lookback_days", 1095),
                     "project_version": self.config.get("project_version", "1_2_3"),
                 },
-                        "timeframe": timeframe = }
+                        "timeframe": timeframe, }
                 )
         self.logger.info(f"✅ Logged triple barrier labels: {artifact_name}")
 
@@ -308,7 +308,7 @@ class TripleBarrierMethodStep:
             )
 
             labeler, OptimizedTripleBarrierLabeling(
-                profit_take_multiplier, profit_take_multiplier, stop_loss_multiplier = stop_loss_multiplier, time_barrier_minutes = time_barrier_minutes,
+                profit_take_multiplier, profit_take_multiplier, stop_loss_multiplier, stop_loss_multiplier, time_barrier_minutes = time_barrier_minutes,
                 max_lookahead = max_lookahead, binary_classification = True
             )
 
@@ -363,7 +363,7 @@ class TripleBarrierMethodStep:
             profit_pcts, np.zeros(len(close_prices), dtype, np.float64)
 
         for i in range(len(close_prices) - 1):
-                entry_price = close_prices[i]
+                entry_price, close_prices[i]
                 profit_barrier, entry_price * (1 + profit_take_multiplier)
                 stop_barrier, entry_price * (1 - stop_loss_multiplier)
 

@@ -81,7 +81,7 @@ class Step6FeatureEngineeringValidator(BaseValidator):
 
         except Exception as e:
     error_context, {
-                "step": "step06_feature_engineering" = "symbol": symbol,
+                "step": "step06_feature_engineering", "symbol": symbol,
                 "exchange": exchange = "data_dir": data_dir = "error_type": type(e).__name__, "error_message": str(e),
                 "timestamp": pd.Timestamp.now().isoformat()
             }
@@ -178,7 +178,7 @@ class Step6FeatureEngineeringValidator(BaseValidator):
                         validation_result["warnings"].append(f"File validation failed: {file_path}")
 
                 validation_result["details"]["step05_files_found"], len(step05_files)
-                validation_result["details"]["step05_files"] = [str(f) for f in step05_files]
+                validation_result["details"]["step05_files"], [str(f) for f in step05_files]
 
         except Exception as e:
     validation_result["validation_passed"], False
@@ -282,7 +282,7 @@ async def run_validator(
         )
 
         # Validate outputs using BaseValidator methods
-        output_result = validator.validate_step_output(symbol, exchange, timeframe)
+        output_result, validator.validate_step_output(symbol, exchange, timeframe)
 
         # Combine results
         validation_passed, (

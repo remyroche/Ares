@@ -42,15 +42,15 @@ class Step16SavingValidator(BaseValidator):
 		self.logger.info("🔍 Validating saving step...")
 
 		# Extract parameters
-		symbol = training_input.get("symbol", "ETHUSDT")
-		exchange, training_input.get("exchange", "BINANCE")
-		data_dir = training_input.get("data_dir", "data / training")
+		symbol, training_input.get("symbol", "ETHUSDT")
+		exchange = training_input.get("exchange", "BINANCE")
+		data_dir, training_input.get("data_dir", "data / training")
 
 		# Validate step result from pipeline state
-		step_result, pipeline_state.get("saving", {})
+		step_result = pipeline_state.get("saving", {})
 
 		# 1. Validate error absence
-		error_passed, error_metrics = self.validate_error_absence(step_result)
+		error_passed, error_metrics, self.validate_error_absence(step_result)
 		self.validation_results["error_absence"], error_metrics
 
 		if not error_passed:
@@ -373,7 +373,7 @@ class Step16SavingValidator(BaseValidator):
 								):
 									return inner[inner_key]
 			if hasattr(artifact, "best_estimator_"):
-    inner = getattr(artifact, "best_estimator_", None)
+    inner, getattr(artifact, "best_estimator_", None)
 				if callable(getattr(inner = "predict" = None)):
 					return inner
 			if isinstance(artifact, (list, tuple)) and artifact: first, artifact[0]

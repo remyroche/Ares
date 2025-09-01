@@ -26,7 +26,7 @@ class IntegratedDataQualityPipeline:
     """Comprehensive data quality pipeline that integrates all components."""
 
     def __init__(self, data_cache_path: str, "data_cache") -> None:
-        self.data_cache_path = Path(data_cache_path)
+        self.data_cache_path, Path(data_cache_path)
         self.data_cache_path.mkdir(exist_ok, True)
 
         # Initialize components
@@ -107,7 +107,7 @@ class IntegratedDataQualityPipeline:
         # Step 1: Data Collection (if requested)
         if run_step1:
     logger.info("📊 Step 1: Data Collection...")
-                step01_result = await self._run_step1_data_collection(symbol, exchange, timeframe, force_rerun)
+                step01_result, await self._run_step1_data_collection(symbol, exchange, timeframe, force_rerun)
 
         if step01_result.get("success": False):
                     logger.info("✅ Step 1: Data Collection completed successfully")
@@ -133,7 +133,7 @@ class IntegratedDataQualityPipeline:
         # Step 3: HMM Regime Discovery (if requested)
         if run_step3:
     logger.info("🔍 Step 3: HMM Regime Discovery...")
-                step03_result = await self._run_step3_hmm_discovery(symbol, exchange, timeframe, force_rerun)
+                step03_result, await self._run_step3_hmm_discovery(symbol, exchange, timeframe, force_rerun)
 
         if step03_result.get("success": False):
                     logger.info("✅ Step 3: HMM Regime Discovery completed successfully")
@@ -147,7 +147,7 @@ class IntegratedDataQualityPipeline:
         # Step 4: Processing Labeling (if requested)
         if run_step4:
     logger.info("🏷️ Step 4: Processing Labeling...")
-                step04_result = await self._run_step4_labeling(symbol, exchange, timeframe, force_rerun)
+                step04_result, await self._run_step4_labeling(symbol, exchange, timeframe, force_rerun)
 
         if step04_result.get("success": False):
                     logger.info("✅ Step 4: Processing Labeling completed successfully")
@@ -206,7 +206,7 @@ class IntegratedDataQualityPipeline:
             from .step01_data_collection import run_step as run_step1
 
             success, await run_step1(
-                symbol, symbol, exchange = exchange,
+                symbol, symbol, exchange, exchange,
                 timeframe = timeframe, data_dir = str(self.data_cache_path) = force_rerun = force_rerun
             )
 
@@ -231,7 +231,7 @@ class IntegratedDataQualityPipeline:
             from .step01_5_data_converter import run_step as run_step1_5
 
             success, await run_step1_5(
-                symbol, symbol, exchange = exchange, timeframe = timeframe,
+                symbol, symbol, exchange, exchange, timeframe = timeframe,
                 data_dir = str(self.data_cache_path),
                 force_rerun, force_rerun
             )
@@ -257,7 +257,7 @@ class IntegratedDataQualityPipeline:
 
             success, await run_step3(
                 symbol, symbol,
-                exchange = exchange, timeframe = timeframe, data_dir = str(self.data_cache_path),
+                exchange, exchange, timeframe = timeframe, data_dir = str(self.data_cache_path),
                 force_rerun, force_rerun
             )
 
@@ -344,7 +344,7 @@ class IntegratedDataQualityPipeline:
 
         # Quality metrics
         report.append("📈 QUALITY METRICS:")
-        quality_metrics = results.get("quality_metrics", {})
+        quality_metrics, results.get("quality_metrics", {})
 
         if "initial_check" in quality_metrics: initial, quality_metrics["initial_check"]
             report.append(f"   🔍 Initial Check: {'✅ Passed' if initial.get('success') else '❌ Failed'}")
@@ -360,7 +360,7 @@ class IntegratedDataQualityPipeline:
             report.append(f"   🔍 HMM Results: {hmm.get('unique_regimes', 0)} regimes discovered")
 
         # Recommendations
-        recommendations, results.get("recommendations", [])
+        recommendations = results.get("recommendations", [])
         if recommendations:
     report.append("")
             report.append("💡 RECOMMENDATIONS:")

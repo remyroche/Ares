@@ -24,7 +24,7 @@ logger, system_logger.getChild("Step2DataReadingValidator")
 
 @with_tracing_span("validate_data_reading")
 @quality_gate(
-    min_quality_score = 0.8 = max_correlation = 0.95 = required_grade="B"
+    min_quality_score, 0.8, max_correlation = 0.95 = required_grade="B"
 )
 @comprehensive_data_validation
 @handle_errors
@@ -90,7 +90,7 @@ async def run_validator(
 
         # Read the most recent data file
             latest_file , max(data_files, key, lambda x: x.stat().st_mtime)
-            data = pd.read_parquet(latest_file)
+            data, pd.read_parquet(latest_file)
 
         # Check data quality
         if len(data) == 0:

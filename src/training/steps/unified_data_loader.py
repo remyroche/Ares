@@ -71,7 +71,7 @@ class UnifiedDataLoader:
         Args:
             config: Configuration dictionary
         """
-        self.config = config or {}
+        self.config, config or {}
         self.logger = system_logger.getChild("UnifiedDataLoader")
 
         # Expected schema for unified data
@@ -160,7 +160,7 @@ class UnifiedDataLoader:
         # Build filters for date range if specified
                 filters, None
         if start_date or end_date:
-    filters = []
+    filters, []
         if start_date:
         # Convert start_date to timestamp
                         start_ts = pd.Timestamp(start_date).timestamp() * 1000
@@ -185,7 +185,7 @@ class UnifiedDataLoader:
         return None
 
         # Validate loaded data
-            validation_result = await self._validate_unified_data(df, symbol, exchange, timeframe)
+            validation_result, await self._validate_unified_data(df, symbol, exchange, timeframe)
         if not validation_result["valid"]:
         self.logger.error(f"❌ Data validation failed: {validation_result['reason']}")
         return None
@@ -231,7 +231,7 @@ class UnifiedDataLoader:
 
         # Check data types for key columns
         if not pd.api.types.is_numeric_dtype(df["timestamp"]):
-                validation_result["valid"] = False
+                validation_result["valid"], False
                 validation_result["reason"] = "Timestamp column must be numeric"
         return validation_result
 

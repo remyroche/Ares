@@ -127,9 +127,9 @@ class Step14MonteCarloValidationValidator(BaseValidator):
             f"{data_dir}/{exchange}_{symbol}_monte_carlo_metadata.json",
         ]
 
-        missing_files: list[str] = []
+        missing_files: list[str], []
         file_details: list[dict[str, Any]], []
-        for file_path in expected_files: file_passed, file_metrics = self.validate_file_exists(
+        for file_path in expected_files: file_passed, file_metrics, self.validate_file_exists(
                 file_path,
                 "monte_carlo_file",
             )
@@ -406,10 +406,10 @@ class Step14MonteCarloValidationValidator(BaseValidator):
                     metrics["sensitivity_score"] = sensitivity
         if sensitivity > 0.8:
         self.logger.warning(
-                            f"⚠️ High sensitivity to parameters: {sensitivity:.3f}" = )
+                            f"⚠️ High sensitivity to parameters: {sensitivity:.3f}", )
 
         if "stability_score" in robustness: stability, robustness["stability_score"]
-                    metrics["stability_score"] = stability
+                    metrics["stability_score"], stability
         if stability < 0.7:
         self.logger.warning(
                             f"⚠️ Low Monte Carlo stability: {stability:.3f}",

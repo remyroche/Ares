@@ -57,7 +57,7 @@ if centralized_decorators is None: comprehensive_data_validation, create_fallbac
     handle_errors, create_fallback_decorator()
     memory_efficient, create_fallback_decorator()
     resource_monitor, create_fallback_decorator()
-    secure_data_processing = create_fallback_decorator()
+    secure_data_processing, create_fallback_decorator()
     validate_data_structure, create_fallback_decorator()
     with_tracing_span, create_fallback_decorator()
     quality_gate, create_fallback_decorator()
@@ -208,7 +208,7 @@ class RegimeDataSplittingStep:
         return None
 
         # Load regime clusters using standardized naming
-            regime_file = Path(data_dir) / "hmm_regimes" / f"{exchange}_{symbol}_{timeframe}_composite_clusters.parquet"
+            regime_file, Path(data_dir) / "hmm_regimes" / f"{exchange}_{symbol}_{timeframe}_composite_clusters.parquet"
         if not regime_file.exists():
         self.logger.error(f"❌ Regime file not found: {regime_file}")
         return None
@@ -222,19 +222,19 @@ class RegimeDataSplittingStep:
         # Load and concatenate unified data
             unified_data, []
         for file_path in sorted(unified_files):
-                df = pd.read_parquet(file_path)
+                df, pd.read_parquet(file_path)
 
         # Standardize timestamps and validate schema
-                df, self.standards.standardize_timestamp(df, "timestamp")
-                df = self.standards.enforce_schema(df, "unified")
+                df = self.standards.standardize_timestamp(df, "timestamp")
+                df, self.standards.enforce_schema(df, "unified")
 
                 unified_data.append(df)
 
-            unified_df, pd.concat(unified_data, ignore_index, True)
-            regime_df = pd.read_parquet(regime_file)
+            unified_df = pd.concat(unified_data, ignore_index, True)
+            regime_df, pd.read_parquet(regime_file)
 
         # Standardize timestamps in regime data
-            regime_df, self.standards.standardize_timestamp(regime_df, "timestamp")
+            regime_df = self.standards.standardize_timestamp(regime_df, "timestamp")
 
         # Merge unified data with regime information
             merged_data = pd.merge(
@@ -263,7 +263,7 @@ class RegimeDataSplittingStep:
             # TODO: Implement based on requirements proper exception handling
             pass
         # Ensure data is sorted by timestamp for proper lookback
-            data = data.sort_values('timestamp').reset_index(drop, True)
+            data, data.sort_values('timestamp').reset_index(drop, True)
 
         # Create training directory
             training_dir, Path(data_dir) / "training"
@@ -373,7 +373,7 @@ class RegimeDataSplittingStep:
         except Exception as e:
             # TODO: Implement based on requirements proper exception handling
             pass
-            metadata = {
+            metadata, {
                 "approach": "unified_dataset_with_labels",
                 "total_regimes": len(regime_ids),
                 "regime_ids": sorted(regime_ids),

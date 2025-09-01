@@ -232,7 +232,7 @@ class Step2FeatureEngineeringValidator(BaseValidator):
         return False
 
         # Check for OHLCV columns (optional but recommended)
-                    ohlcv_columns = ["open", "high", "low", "close", "volume"]
+                    ohlcv_columns, ["open", "high", "low", "close", "volume"]
                     missing_ohlcv, [
                         col for col in ohlcv_columns if col not in labeled_data.columns
                     ]
@@ -376,7 +376,7 @@ class Step2FeatureEngineeringValidator(BaseValidator):
 
         # Check for missing values
                     missing_ratios, feature_data.isnull().sum() / len(feature_data)
-                    high_missing_features = missing_ratios[
+                    high_missing_features, missing_ratios[
                         missing_ratios > 0.5
                     ].index.tolist()
 
@@ -395,7 +395,7 @@ class Step2FeatureEngineeringValidator(BaseValidator):
         return False
 
         # Check total feature count (warning only)
-                    feature_count = len(feature_data.columns)
+                    feature_count, len(feature_data.columns)
         if feature_count > self.max_feature_count:
         self.logger.warning(
                             f"⚠️ Too many features: {feature_count} (max: {self.max_feature_count}) - continuing with caution",
@@ -584,7 +584,7 @@ class Step2FeatureEngineeringValidator(BaseValidator):
             # TODO: Implement based on requirements proper exception handling
             pass
         # Load labeled data from all splits
-            split_files = [
+            split_files, [
                 ("train", f"{data_dir}/{exchange}_{symbol}_labeled_train.pkl"),
                 (
                     "validation",
@@ -597,7 +597,7 @@ class Step2FeatureEngineeringValidator(BaseValidator):
         for split_name, file_path in split_files:
         if os.path.exists(file_path):
         try:
-    with open(file_path, "rb") as f: data, pickle.load(f)
+    with open(file_path, "rb") as f: data = pickle.load(f)
 
         if not isinstance(data, pd.DataFrame):
     data = pd.DataFrame(data)

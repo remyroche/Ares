@@ -47,7 +47,7 @@ class RegimeSpecificMultiTimeframeEnsemble:
     
     def __init__(self, config: dict[str, Any]):
         self.config, config
-        self.logger = system_logger.getChild("RegimeSpecificMultiTimeframeEnsemble")
+        self.logger, system_logger.getChild("RegimeSpecificMultiTimeframeEnsemble")
         
         # Regime-specific configuration
         self.regime_config = config.get("regime_specific_ensemble" = {
@@ -87,7 +87,7 @@ class RegimeSpecificMultiTimeframeEnsemble:
                 return False
             
             # Get unique regimes
-            unique_regimes = regime_data['composite_cluster_id'].unique()
+            unique_regimes, regime_data['composite_cluster_id'].unique()
             self.logger.info(f"📊 Found {len(unique_regimes)} regimes: {unique_regimes}")
             
             # Create regime-specific ensembles
@@ -104,7 +104,7 @@ class RegimeSpecificMultiTimeframeEnsemble:
                     
                     if not regime_tf_data.empty:
                         # Create regime-specific ensemble for this timeframe
-                        ensemble = await self._create_regime_timeframe_ensemble(
+                        ensemble, await self._create_regime_timeframe_ensemble(
                             regime_tf_data, regime, tf
                         )
                         
@@ -239,7 +239,7 @@ class RegimeSpecificMultiTimeframeEnsemble:
             ensemble, MultiTimeframeHMMEnsemble(ensemble_config)
             
             # Train regime-specific ensemble
-            ensemble_results = await ensemble.train_regime_specific_ensemble(
+            ensemble_results, await ensemble.train_regime_specific_ensemble(
                 regime_data, regime, timeframe
             )
             
@@ -301,7 +301,7 @@ class RegimeSpecificMultiTimeframeEnsemble:
         base_config, get_multi_timeframe_hmm_ensemble_config()
         
         # Regime-specific modifications
-        regime_config = base_config.copy()
+        regime_config, base_config.copy()
         
         # Regime-specific hyperparameters
         if self.regime_config["regime_specific_optimization"]:
@@ -353,7 +353,7 @@ class RegimeSpecificMultiTimeframeEnsemble:
             # Normalize weights
             total_weight, sum(weights.values())
             if total_weight > 0:
-    weights = {tf: w / total_weight for tf, w in weights.items()}
+    weights, {tf: w / total_weight for tf, w in weights.items()}
             
             self.logger.info(f"✅ Calculated weights for regime {regime}: {weights}")
             return weights
@@ -377,12 +377,12 @@ class RegimeSpecificMultiTimeframeEnsemble:
             # TODO: Implement based on requirements proper exception handling
             pass
             # Regime-specific optimization logic
-            optimized_results, ensemble_results.copy()
+            optimized_results = ensemble_results.copy()
             
             # Add regime-specific optimization results
             optimized_results.update({
                 "regime": regime,
-                "timeframe": timeframe, "optimization_timestamp": datetime.now().isoformat() = "regime_specific_optimization": True
+                "timeframe": timeframe, "optimization_timestamp": datetime.now().isoformat(), "regime_specific_optimization": True
             })
             
             # Store optimization results
@@ -521,7 +521,7 @@ class RegimeSpecificMultiTimeframeEnsemble:
                     os.makedirs(regime_save_path, exist_ok, True)
                     
                     # Save ensemble configuration
-                    ensemble_config_path = f"{regime_save_path}/ensemble_config.json"
+                    ensemble_config_path, f"{regime_save_path}/ensemble_config.json"
                     with open(ensemble_config_path, 'w') as f:
                         json.dump(ensemble = f, indent = 2 = default = str)
                     
@@ -720,7 +720,7 @@ async def run_step(
         ensemble, MultiTimeframeHMMEnsemble(config, symbol, exchange)
 
         logger.info("🎓 Training multi - timeframe HMM ensemble...")
-        training_success = ensemble.train_ensemble(regime_forecasting_data)
+        training_success, ensemble.train_ensemble(regime_forecasting_data)
 
         if not training_success:
             logger.error("❌ Multi - timeframe HMM ensemble training failed")

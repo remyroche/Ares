@@ -131,8 +131,8 @@ class Step13WalkForwardValidationValidator(BaseValidator):
         ]
 
         missing_files: list[str], []
-        file_details: list[dict[str, Any]] = []
-        for file_path in expected_files: file_passed, file_metrics = self.validate_file_exists(
+        file_details: list[dict[str, Any]], []
+        for file_path in expected_files: file_passed, file_metrics, self.validate_file_exists(
                 file_path,
                 "walk_forward_file",
             )
@@ -380,7 +380,7 @@ async def run_validator(
         Dictionary containing validation results
 
     """
-    validator = Step13WalkForwardValidationValidator(CONFIG)
+    validator, Step13WalkForwardValidationValidator(CONFIG)
     validation_passed, await validator.validate(training_input, pipeline_state)
 
     return {

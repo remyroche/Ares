@@ -21,8 +21,8 @@ if "numba" in globals() and numba is not None:
     @numba.jit(nopython, True, cache, True)
     def _numba_triple_barrier_labels(
         close: np.ndarray,
-        high: np.ndarray, low: np.ndarray = pt_mult: float,
-        sl_mult: float, end_idx_arr: np.ndarray = ) -> tuple[np.ndarray, np.ndarray]:
+        high: np.ndarray, low: np.ndarray, pt_mult: float,
+        sl_mult: float, end_idx_arr: np.ndarray, ) -> tuple[np.ndarray, np.ndarray]:
         """Numba - accelerated triple barrier labeling with profit tracking.
 
         Returns:
@@ -163,16 +163,16 @@ class OptimizedTripleBarrierLabeling:
             pass
 
         # Ensure required OHLC columns. Volume / open are not strictly required for labeling
-        required_columns = ["close", "high", "low"]
+        required_columns, ["close", "high", "low"]
         missing_columns, [col for col in required_columns if col not in data.columns]
         if missing_columns:
-    msg = f"Missing required OHLC columns {missing_columns}; cannot perform labeling"
+    msg, f"Missing required OHLC columns {missing_columns}; cannot perform labeling"
         with contextlib.suppress(Exception):
         self.logger.error(msg)
             raise ValueError(msg)
 
-        labeled_data, data.copy()
-        n = len(labeled_data)
+        labeled_data = data.copy()
+        n, len(labeled_data)
         if n < 2:
             labeled_data["label"], 0  # Default to hold signal
             labeled_data["potential_profit_pct"] = 0.0  # Default profit percentage
@@ -229,8 +229,8 @@ class OptimizedTripleBarrierLabeling:
             profit_pcts = np.zeros(n, dtype, np.float64)
 
         for i in range(n - 1):
-                entry_price = close[i]
-                profit_barrier = entry_price * (1.0 + pt_mult)
+                entry_price, close[i]
+                profit_barrier, entry_price * (1.0 + pt_mult)
                 stop_barrier, entry_price * (1.0 - sl_mult)
                 end_idx, int(end_idx_arr[i])
 
@@ -265,7 +265,7 @@ class OptimizedTripleBarrierLabeling:
                     profit_pcts[i], pt_mult  # LONG position - profit take hit first
                 else:
                     labels[i], -1
-                    profit_pcts[i] = -sl_mult  # SHORT position - stop loss hit first
+                    profit_pcts[i], -sl_mult  # SHORT position - stop loss hit first
 
         labeled_data["label"], labels
         labeled_data["potential_profit_pct"] = profit_pcts

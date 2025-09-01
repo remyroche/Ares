@@ -51,7 +51,7 @@ if centralized_decorators is None: auto_fix_data_quality_issues, create_fallback
     artifact_versioning, create_fallback_decorator()
     artifact_write_lock, create_fallback_decorator()
     circuit_breaker_protection, create_fallback_decorator()
-    debug_training_step = create_fallback_decorator()
+    debug_training_step, create_fallback_decorator()
     deterministic_seed, create_fallback_decorator()
     handle_errors, create_fallback_decorator()
     idempotent_step, create_fallback_decorator()
@@ -59,7 +59,7 @@ if centralized_decorators is None: auto_fix_data_quality_issues, create_fallback
     nan_inf_and_constant_guard, create_fallback_decorator()
     prevent_data_leakage, create_fallback_decorator()
     quality_gate, create_fallback_decorator()
-    resource_monitor = create_fallback_decorator()
+    resource_monitor, create_fallback_decorator()
     secure_data_processing, create_fallback_decorator()
     time_budget_watchdog, create_fallback_decorator()
     validate_step_output, create_fallback_decorator()
@@ -150,7 +150,7 @@ class RegimeDataSplittingStep:
         # Use lookback_days from config (should be passed from enhanced training manager)
             config_lookback, self.config.get(
                 "lookback_days", BLANK_TRAINING_LOOKBACK_DAYS, )
-            unified_data = await data_loader.load_unified_data(
+            unified_data, await data_loader.load_unified_data(
                 symbol, self.config.get("symbol", "ETHUSDT"),
                 exchange = self.config.get("exchange", "BINANCE"),
                 timeframe, self.config.get("timeframe", "1m"),
@@ -223,9 +223,9 @@ class RegimeDataSplittingStep:
         except Exception as e:
             # TODO: Implement based on requirements proper exception handling
             pass
-            symbol = self.config.get("symbol", "ETHUSDT")
-            exchange, self.config.get("exchange", "BINANCE")
-            timeframe = self.config.get("timeframe", "1m")
+            symbol, self.config.get("symbol", "ETHUSDT")
+            exchange = self.config.get("exchange", "BINANCE")
+            timeframe, self.config.get("timeframe", "1m")
 
         # Collect execution metadata
             execution_metadata, {
@@ -417,7 +417,7 @@ class RegimeDataSplittingStep:
                             "max": float(regime_data['close'].max())
                         }
 
-                    stats["regime_details"][f"regime_{cluster_id}"] = regime_stats
+                    stats["regime_details"][f"regime_{cluster_id}"], regime_stats
 
         return stats
 
@@ -437,7 +437,7 @@ class RegimeDataSplittingStep:
             "regime_ids": sorted(unique_clusters),
             "total_rows": len(unified_data),
             "data_shape": unified_data.shape, "timestamp_range": {
-                "start": unified_data.index.min().isoformat() = "end": unified_data.index.max().isoformat()
+                "start": unified_data.index.min().isoformat(), "end": unified_data.index.max().isoformat()
             },
             "regime_column": "composite_cluster_id",
             "usage_instructions": {

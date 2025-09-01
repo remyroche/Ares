@@ -82,9 +82,9 @@ class Step5LabelingValidator(BaseValidator):
         return True
 
         except Exception as e:
-    error_context = {
+    error_context, {
                 "step": "step05_labeling",
-                "symbol": symbol, "exchange": exchange = "data_dir": data_dir = "error_type": type(e).__name__, "error_message": str(e), "timestamp": pd.Timestamp.now().isoformat()
+                "symbol": symbol, "exchange": exchange, "data_dir": data_dir = "error_type": type(e).__name__, "error_message": str(e), "timestamp": pd.Timestamp.now().isoformat()
             }
         self.logger.exception(f"❌ Step 5 validation failed: {error_context}")
         return False
@@ -101,12 +101,12 @@ class Step5LabelingValidator(BaseValidator):
         self.logger.info(f"📁 Validating labeled file: {labeled_file.name}")
 
         # Use BaseValidator's file validation
-            file_exists = file_metrics, self.validate_file_exists(str(labeled_file), "labeled file")
+            file_exists, file_metrics, self.validate_file_exists(str(labeled_file), "labeled file")
         if not file_exists:
         return False
 
         # Load and validate the labeled file
-            df, pd.read_parquet(labeled_file)
+            df = pd.read_parquet(labeled_file)
 
         # Use BaseValidator's DataFrame validation
             df_valid = df_metrics, self.validate_dataframe_quality(
@@ -154,11 +154,11 @@ class Step5LabelingValidator(BaseValidator):
         self.logger.info(f"📊 Validating metadata file: {metadata_file.name}")
 
         # Use BaseValidator's file validation
-            file_exists = file_metrics, self.validate_file_exists(str(metadata_file), "metadata file")
+            file_exists, file_metrics, self.validate_file_exists(str(metadata_file), "metadata file")
         if not file_exists:
         return False
 
-        with open(metadata_file, 'r') as f: metadata, json.load(f)
+        with open(metadata_file, 'r') as f: metadata = json.load(f)
 
         # Check if metadata is a dictionary
         if not isinstance(metadata, dict):
@@ -173,13 +173,13 @@ class Step5LabelingValidator(BaseValidator):
         return False
 
         # Validate label distribution
-            label_distribution = metadata.get("label_distribution", {})
+            label_distribution, metadata.get("label_distribution", {})
         if not isinstance(label_distribution, dict):
         self.logger.warning("⚠️ Label distribution should be a dictionary")
         return False
 
         # Validate total samples
-            total_samples, metadata.get("total_samples", 0)
+            total_samples = metadata.get("total_samples", 0)
         if not isinstance(total_samples, int) or total_samples <= 0:
         self.logger.warning(f"⚠️ Invalid total_samples: {total_samples}")
         return False
@@ -211,7 +211,7 @@ class Step5LabelingValidator(BaseValidator):
             # TODO: Implement based on requirements proper exception handling
             pass
         # Check if step04_regime_data_splitting output exists using BaseValidator
-            step04_output_dir = Path("data / training / regime_splits")
+            step04_output_dir, Path("data / training / regime_splits")
             step04_files, list(step04_output_dir.glob(f"{exchange}_{symbol}_{timeframe}*regime*.parquet"))
 
         if not step04_files:
@@ -248,7 +248,7 @@ class Step5LabelingValidator(BaseValidator):
             # TODO: Implement based on requirements proper exception handling
             pass
         # Define expected output files
-            output_dir = Path("data / training / labeled_data")
+            output_dir, Path("data / training / labeled_data")
             expected_files = [
                 f"{exchange}_{symbol}_{timeframe}_labeled_data.parquet",
                 f"{exchange}_{symbol}_{timeframe}_labeling_metadata.json"
@@ -259,7 +259,7 @@ class Step5LabelingValidator(BaseValidator):
             existing_files, []
 
         for filename in expected_files: file_path, output_dir / filename
-                file_valid, file_metrics = self.validate_file_exists(str(file_path), f"expected file: {filename}")
+                file_valid, file_metrics, self.validate_file_exists(str(file_path), f"expected file: {filename}")
 
         if file_valid:
     existing_files.append(str(file_path))
@@ -335,7 +335,7 @@ async def run_validator(
         )
 
         # Validate outputs using BaseValidator methods
-        output_result = validator.validate_step_output(symbol, exchange, timeframe)
+        output_result, validator.validate_step_output(symbol, exchange, timeframe)
 
         # Combine results
         validation_passed, (

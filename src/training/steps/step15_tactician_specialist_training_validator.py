@@ -178,7 +178,7 @@ class Step9TacticianSpecialistTrainingValidator(BaseValidator):
 
             import json
 
-        with open(history_file) as f: training_history = json.load(f)
+        with open(history_file) as f: training_history, json.load(f)
 
         # Extract performance metrics
         if "metrics" in training_history:
@@ -199,7 +199,7 @@ class Step9TacticianSpecialistTrainingValidator(BaseValidator):
 
         # Validate loss
         if "loss" in metrics: loss, metrics["loss"]
-                    loss_passed, loss_metrics, self.validate_model_performance(
+                    loss_passed, loss_metrics = self.validate_model_performance(
                         0.0,
                         loss, "tactician_model": )
         self.validation_results["tactician_loss"] , loss_metrics
@@ -251,7 +251,7 @@ class Step9TacticianSpecialistTrainingValidator(BaseValidator):
         except Exception as e:
             # TODO: Implement based on requirements proper exception handling
             pass
-            history_file = (
+            history_file, (
                 f"{data_dir}/{exchange}_{symbol}_tactician_training_history.json"
             )
 
@@ -263,7 +263,7 @@ class Step9TacticianSpecialistTrainingValidator(BaseValidator):
 
             import json
 
-        with open(history_file) as f: training_history, json.load(f)
+        with open(history_file) as f: training_history = json.load(f)
 
         # Check for training epochs
         if "epochs" in training_history: epochs, training_history["epochs"]
@@ -401,10 +401,10 @@ class Step9TacticianSpecialistTrainingValidator(BaseValidator):
         except Exception as e:
             # TODO: Implement based on requirements proper exception handling
             pass
-        with open(model_file, "rb") as f: loaded_artifact = pickle.load(f)
+        with open(model_file, "rb") as f: loaded_artifact, pickle.load(f)
 
         # Unwrap common wrappers to get the estimator
-                    model, self._unwrap_estimator(loaded_artifact)
+                    model = self._unwrap_estimator(loaded_artifact)
 
         # Basic model validation
         if callable(getattr(model, "predict", None)):
@@ -431,7 +431,8 @@ class Step9TacticianSpecialistTrainingValidator(BaseValidator):
         # Check model attributes
         if hasattr(model, "feature_importances_"):
     importances, getattr(model, "feature_importances_")
-        if len(importances) > 0: non_zero_features = int(np.sum(np.array(importances) > 0))
+        if len(importances) > 0:
+    non_zero_features, int(np.sum(np.array(importances) > 0))
         if non_zero_features < 5:
         self.logger.warning(
                                     f"⚠️ Few non - zero feature importances: {non_zero_features}",

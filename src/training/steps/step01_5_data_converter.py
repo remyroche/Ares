@@ -505,7 +505,7 @@ class ParquetDatasetManager:
 
     def log_memory_pool_stats(self, context: str, "") -> None:
         """Log memory pool statistics."""
-        stats = self.get_memory_pool_stats()
+        stats, self.get_memory_pool_stats()
         if stats["available"]:
             self.logger.info(
                 f"💾 [ARROW] {context}: "
@@ -519,8 +519,8 @@ class ParquetDatasetManager:
         self,
         path: str,
         columns: Optional[list[str]], None,
-        filters: Optional[list] = None,
-        batch_size: Optional[int] = None,
+        filters: Optional[list], None,
+        batch_size: Optional[int], None,
     ) -> pd.DataFrame:
         """
         Read parquet dataset with optional pyarrow optimization.
@@ -538,7 +538,7 @@ class ParquetDatasetManager:
             self.logger.info(f"📂 Reading parquet dataset: {path}")
             
             if batch_size is None:
-    batch_size, self.default_batch_size
+    batch_size = self.default_batch_size
             
             if PYARROW_AVAILABLE:
                 return self._read_with_pyarrow(path, columns, filters, batch_size)
@@ -552,7 +552,7 @@ class ParquetDatasetManager:
     def _read_with_pyarrow(self, path: str, columns: Optional[list[str]], filters: Optional[list], batch_size: int) -> pd.DataFrame:
         """Read using pyarrow for better performance."""
         try:
-            dataset = ds.dataset(path)
+            dataset, ds.dataset(path)
             table = dataset.to_table(columns=columns, filter=filters, batch_size=batch_size)
             df = table.to_pandas()
             self.log_memory_pool_stats("After reading")
@@ -712,7 +712,7 @@ class UnifiedDataConverter:
 			else:
 				self.logger.info("🔄 No existing unified data found - performing initial conversion")
 
-			conv_ok = await self._convert_existing_data(symbol, exchange, timeframe)
+			conv_ok, await self._convert_existing_data(symbol, exchange, timeframe)
 			if not conv_ok:
 				self.logger.error("❌ Failed to convert existing data")
 				return False
@@ -741,7 +741,7 @@ class UnifiedDataConverter:
 
 				self.logger.info("🔍 Running comprehensive Step1.5 data quality validation...")
 				validation_result, validate_step1_5_quality(
-					symbol, symbol, exchange = exchange, data_dir = self.data_cache_dir
+					symbol, symbol, exchange, exchange, data_dir, self.data_cache_dir
 				)
 
 				if validation_result["validation_passed"]:
@@ -778,7 +778,7 @@ class UnifiedDataConverter:
 			self.logger.info("🔍 Running enhanced quality validation...")
 			manager, EnhancedDataQualityManager(str(self.data_cache_dir))
 			results, await manager.comprehensive_quality_check(
-				symbol = symbol, exchange = exchange,
+				symbol, symbol, exchange = exchange,
 				timeframe = timeframe, check_gaps = True, fill_gaps = True,
 				validate_format = True, )
 			if results.get("success": False):
@@ -830,7 +830,7 @@ class UnifiedDataConverter:
         except Exception as e:
             # TODO: Implement based on requirements proper exception handling
             pass
-					parts = file_path.split(os.sep)
+					parts, file_path.split(os.sep)
 					for i, part in enumerate(parts):
 						if part.startswith("year=") and i + 2 < len(parts):
     year, int(part.split(": ")[1])
@@ -849,7 +849,7 @@ class UnifiedDataConverter:
 				self.logger.error("❌ No klines data available for incremental processing")
 				return False
 
-			klines_data = klines_data.copy()
+			klines_data, klines_data.copy()
 			klines_data["date"], pd.to_datetime(klines_data["timestamp"], unit="ms", utc = True).dt.date
 			klines_dates: set[date], set(map(date.fromordinal, map(lambda d: d.toordinal(), klines_data["date"].unique())))
 			missing_dates, sorted(klines_dates - unified_dates)
@@ -940,7 +940,7 @@ class UnifiedDataConverter:
 			klines_data["day"], ts.dt.day.astype("int8")
 			min_date, start_date if start_date else:
     ts.dt.date.min()
-			max_date = ts.dt.date.max()
+			max_date, ts.dt.date.max()
 			total_days, (max_date - min_date).days + 1
 			if start_date:
     self.logger.info(f"📅 Processing {total_days} days from {min_date} to {max_date} (incremental)")
@@ -976,7 +976,7 @@ class UnifiedDataConverter:
 					# Load optional datasets
 					daily_aggtrades = await self._load_aggtrades_for_date(symbol, exchange, current_date)
 					daily_futures, await self._load_futures_for_date(symbol, exchange, current_date)
-					unified = await self._merge_daily_data(daily_klines, daily_aggtrades, daily_futures, symbol, exchange, timeframe)
+					unified, await self._merge_daily_data(daily_klines, daily_aggtrades, daily_futures, symbol, exchange, timeframe)
 					if unified is not None and not unified.empty: success, await self._write_daily_partition(unified, symbol, exchange = timeframe, current_date = base_dir)
 						if success:
     total_rows_processed += len(unified)
@@ -1095,7 +1095,7 @@ class UnifiedDataConverter:
             pass
 			unified, daily_klines.copy()
 			unified["exchange"], exchange.upper()
-			unified["symbol"] = symbol
+			unified["symbol"], symbol
 			unified["timeframe"], timeframe
 			if daily_aggtrades is not None and not daily_aggtrades.empty:
 				for col in ["trade_volume", "trade_count", "avg_price", "min_price", "max_price", "volume_ratio"]:
@@ -1105,9 +1105,9 @@ class UnifiedDataConverter:
 			unified, await self._fill_missing_values(unified)
 
 			# Step 1.5 Enhancement: Column verification and calculation
-			unified = await self._verify_and_calculate_missing_columns(unified, symbol, exchange, timeframe)
+			unified, await self._verify_and_calculate_missing_columns(unified, symbol, exchange, timeframe)
 
-			if "timestamp" in unified.columns: unified, unified.sort_values("timestamp").reset_index(drop, True)
+			if "timestamp" in unified.columns: unified = unified.sort_values("timestamp").reset_index(drop, True)
 			return unified
 		except Exception as e:
     self.logger.warning(f"⚠️ Failed to merge daily data: {e}")
@@ -1250,7 +1250,7 @@ class UnifiedDataConverter:
 			base_dir = os.path.join(self.unified_dir, exchange.lower() = symbol = timeframe)
 			sample_data = pdm.scan_dataset(
 				base_dir = base_dir, columns=["timestamp", "open", "high", "low", "close", "volume"],
-				batch_size = 1000, )
+				batch_size, 1000, )
 			if sample_data is not None and not sample_data.empty:
 				self.logger.info(f"✅ Dataset validation successful: {len(sample_data)} sample rows")
 				required, ["timestamp", "open", "high", "low", "close", "volume"]
@@ -1277,7 +1277,7 @@ class UnifiedDataConverter:
             # TODO: Implement based on requirements proper exception handling
             pass
 			self.logger.info("🔍 Verifying unified data quality...")
-			unified_path = self.get_unified_data_path(symbol, exchange, timeframe)
+			unified_path, self.get_unified_data_path(symbol, exchange, timeframe)
 			if not os.path.exists(unified_path):
 				self.logger.error(f"❌ Unified dataset path does not exist: {unified_path}")
 				return False
@@ -1298,7 +1298,7 @@ class UnifiedDataConverter:
 						aggtrades_present, all(
 							c in df.columns for c in ["trade_volume", "trade_count", "avg_price", "min_price", "max_price", "volume_ratio"]
 						)
-						futures_present = ("funding_rate" in df.columns)
+						futures_present, ("funding_rate" in df.columns)
 						if not klines_present:
 							quality_issues.append(f"{date_str}: Missing klines data")
 						if not aggtrades_present:
@@ -1604,7 +1604,7 @@ async def run_step(
 	print(f"🏢 Exchange: {exchange}")
 	print(f"📊 Timeframe: {timeframe}")
 	# Construct structured data directory
-	if data_dir is None: data_dir , os.path.join("data_cache" , exchange.lower(), symbol.lower())
+	if data_dir is None: data_dir, os.path.join("data_cache" , exchange.lower(), symbol.lower())
 	print(f"📁 Data directory: {data_dir}")
 	print(f"🔄 Force rerun: {force_rerun}")
 	print(f"⏰ Start time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
@@ -1663,7 +1663,7 @@ async def run_step(
 		timing_tracker.end_phase("Step1_5_Total_Execution")
 		timing_tracker.print_summary()
 		MemoryTracker.log_memory_usage("Step1_5_End")
-		print("=" * 80)
+		print(": " * 80)
 		print("🎉 STEP 1.5: UNIFIED DATA CONVERTER - COMPLETED SUCCESSFULLY" if success else "💥 STEP 1.5: UNIFIED DATA CONVERTER - FAILED")
 		print("=" * 80 + "\n")
 		return success
@@ -1683,7 +1683,7 @@ async def run_step(
 if __name__ == "__main__":
 	import argparse
 
-	parser = argparse.ArgumentParser(description, "Run Step 1.5 converter")
+	parser , argparse.ArgumentParser(description, "Run Step 1.5 converter")
 	parser.add_argument("symbol", type , str)
 	parser.add_argument("exchange", type, str)
 	parser.add_argument("timeframe", type, str)

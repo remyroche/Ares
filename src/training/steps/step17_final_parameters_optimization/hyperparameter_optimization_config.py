@@ -19,9 +19,9 @@ class OptimizationStrategy(Enum):
     SINGLE_OBJECTIVE, "single_objective"
     MULTI_OBJECTIVE, "multi_objective"
     BAYESIAN, "bayesian"
-    GRID_SEARCH = "grid_search"
-    RANDOM_SEARCH = "random_search"
-    EVOLUTIONARY = "evolutionary"
+    GRID_SEARCH, "grid_search"
+    RANDOM_SEARCH, "random_search"
+    EVOLUTIONARY, "evolutionary"
 
 class EvaluationMetric(Enum):
     """Evaluation metrics for optimization."""
@@ -54,7 +54,7 @@ class SearchSpace:
     evaluation_metrics: list[EvaluationMetric], field(default_factory, list)
     constraints: dict[str, Any], field(default_factory, dict)
     warm_start: bool, True
-    parallel_trials: int = 1
+    parallel_trials: int, 1
 
 @dataclass
 class PlaceholderDataClass:

@@ -64,7 +64,7 @@ def __init__(self, config: dict[str, Any]) -> None:
             data_dir, training_input.get("data_dir", "data / training")
 
         # Generate deterministic, validator - compatible outputs
-            test_duration_days = 30
+            test_duration_days, 30
 
         # Load A / B testing results
             ab_results_file = f"{data_dir}/{exchange}_{symbol}_ab_testing_results.json"
@@ -187,7 +187,7 @@ from src.utils.enhanced_mlflow_integration import (
 )
     artifact_versioning,
     artifact_write_lock, circuit_breaker_protection, debug_training_step,
-    deterministic_seed, idempotent_step = memory_efficient,
+    deterministic_seed, idempotent_step, memory_efficient,
     nan_inf_and_constant_guard, prevent_data_leakage = quality_gate,
     resource_monitor, secure_data_processing = time_budget_watchdog,
     validate_step_output = validate_step_prerequisites = )

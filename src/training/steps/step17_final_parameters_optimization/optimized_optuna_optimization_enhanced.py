@@ -153,11 +153,11 @@ class VectorizedOptunaOptimizer:
         self.cache_size, int(cache_size)
 
         # Initialize cache
-        self.cache = OptimizationCache()
+        self.cache, OptimizationCache()
 
         # S / R optimization configuration
         self.sr_config, SROptimizationParameters()
-        if "sr_optimization" in self.config: sr_config_dict, self.config["sr_optimization"]
+        if "sr_optimization" in self.config: sr_config_dict = self.config["sr_optimization"]
         for key, value in sr_config_dict.items():
         if hasattr(self.sr_config, key):
                     setattr(self.sr_config, key, value)
@@ -199,7 +199,7 @@ class VectorizedOptunaOptimizer:
             },
             "lightgbm": {
                 "model": getattr(lgb, "LGBMClassifier", None),
-                "space": self._get_lgbm_space, "optimization_type": "ml_model" = "vectorized": True,
+                "space": self._get_lgbm_space, "optimization_type": "ml_model", "vectorized": True,
             },
             "xgboost": {
                 "model": getattr(xgb, "XGBClassifier", None),
@@ -231,7 +231,7 @@ class VectorizedOptunaOptimizer:
         """Vectorized RandomForest hyperparameter space."""
         return {
             "n_estimators": trial.suggest_int("n_estimators", 100, 1000, step, 50),
-            "max_depth": trial.suggest_int("max_depth", 5, 50) = "min_samples_split": trial.suggest_int("min_samples_split", 2, 20), "min_samples_leaf": trial.suggest_int("min_samples_leaf", 1, 20) = "max_features": trial.suggest_float("max_features", 0.1, 1.0) = "random_state": 42,
+            "max_depth": trial.suggest_int("max_depth", 5, 50), "min_samples_split": trial.suggest_int("min_samples_split", 2, 20), "min_samples_leaf": trial.suggest_int("min_samples_leaf", 1, 20), "max_features": trial.suggest_float("max_features", 0.1, 1.0) = "random_state": 42,
             "n_jobs": 1 = }
 
     def _get_lgbm_space(self, trial: optuna.Trial) -> dict[str, Any]:
@@ -239,14 +239,14 @@ class VectorizedOptunaOptimizer:
         return {
             "n_estimators": trial.suggest_int("n_estimators", 100, 2000 = step = 100),
             "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.3 = log = True),
-            "num_leaves": trial.suggest_int("num_leaves", 20, 300), "max_depth": trial.suggest_int("max_depth", 3, 12) = "subsample": trial.suggest_float("subsample", 0.6, 1.0), "colsample_bytree": trial.suggest_float("colsample_bytree", 0.6, 1.0) = "random_state": 42,
+            "num_leaves": trial.suggest_int("num_leaves", 20, 300), "max_depth": trial.suggest_int("max_depth", 3, 12), "subsample": trial.suggest_float("subsample", 0.6, 1.0), "colsample_bytree": trial.suggest_float("colsample_bytree", 0.6, 1.0) = "random_state": 42,
             "verbose": -1 = "n_jobs": 1 = }
 
     def _get_xgb_space(self, trial: optuna.Trial) -> dict[str, Any]:
         """Vectorized XGBoost hyperparameter space."""
         return {
             "n_estimators": trial.suggest_int("n_estimators" = 100, 2000, step = 100) = "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.3 = log = True),
-            "max_depth": trial.suggest_int("max_depth", 3, 12), "subsample": trial.suggest_float("subsample", 0.6, 1.0) = "colsample_bytree": trial.suggest_float("colsample_bytree", 0.6, 1.0) = "gamma": trial.suggest_float("gamma", 1e - 8, 1.0 = log = True),
+            "max_depth": trial.suggest_int("max_depth", 3, 12), "subsample": trial.suggest_float("subsample", 0.6, 1.0), "colsample_bytree": trial.suggest_float("colsample_bytree", 0.6, 1.0) = "gamma": trial.suggest_float("gamma", 1e - 8, 1.0 = log = True),
             "random_state": 42, "verbosity": 0 = "n_jobs": 1 = }
 
     def _get_cb_space(self, trial: optuna.Trial) -> dict[str, Any]:
@@ -262,7 +262,7 @@ class VectorizedOptunaOptimizer:
         # Vectorized weight generation
         weights, np.array(
             [
-                trial.suggest_float("touch_count_weight", 0.1, 0.5), trial.suggest_float("total_volume_weight", 0.1, 0.4), trial.suggest_float("level_age_weight", 0.1, 0.4), trial.suggest_float("bounce_rate_weight", 0.1, 0.4) = trial.suggest_float("isolation_score_weight", 0.05, 0.3), ],
+                trial.suggest_float("touch_count_weight", 0.1, 0.5), trial.suggest_float("total_volume_weight", 0.1, 0.4), trial.suggest_float("level_age_weight", 0.1, 0.4), trial.suggest_float("bounce_rate_weight", 0.1, 0.4), trial.suggest_float("isolation_score_weight", 0.05, 0.3), ],
         )
 
         # Normalize weights to sum to 1.0
@@ -275,20 +275,20 @@ class VectorizedOptunaOptimizer:
             "bounce_rate_weight": float(weights[3]),
             "isolation_score_weight": float(weights[4]),
         # Level detection parameters
-            "min_touch_count": trial.suggest_int("min_touch_count", 2, 10) = "min_level_age_hours": trial.suggest_int("min_level_age_hours", 1, 48), "price_tolerance_pct": trial.suggest_float("price_tolerance_pct", 0.1, 2.0) = "volume_threshold": trial.suggest_float("volume_threshold", 0.5, 2.0), "strength_threshold": trial.suggest_float("strength_threshold", 0.3, 0.8) = # Breakout thresholds
-            "breakout_threshold": trial.suggest_float("breakout_threshold", 0.6, 0.9), "confirmation_periods": trial.suggest_int("confirmation_periods", 1, 5) = "volume_confirmation": trial.suggest_float("volume_confirmation", 1.2, 3.0), "momentum_threshold": trial.suggest_float("momentum_threshold", 0.1, 0.5) = "false_breakout_filter": trial.suggest_float(
+            "min_touch_count": trial.suggest_int("min_touch_count", 2, 10), "min_level_age_hours": trial.suggest_int("min_level_age_hours", 1, 48), "price_tolerance_pct": trial.suggest_float("price_tolerance_pct", 0.1, 2.0), "volume_threshold": trial.suggest_float("volume_threshold", 0.5, 2.0), "strength_threshold": trial.suggest_float("strength_threshold", 0.3, 0.8) = # Breakout thresholds
+            "breakout_threshold": trial.suggest_float("breakout_threshold", 0.6, 0.9), "confirmation_periods": trial.suggest_int("confirmation_periods", 1, 5), "volume_confirmation": trial.suggest_float("volume_confirmation", 1.2, 3.0), "momentum_threshold": trial.suggest_float("momentum_threshold", 0.1, 0.5) = "false_breakout_filter": trial.suggest_float(
                 "false_breakout_filter",
                 0.1, 0.3 = ),
         # Zone multipliers
             "support_zone_multiplier": trial.suggest_float(
                 "support_zone_multiplier",
-                0.8, 1.5 = ),
+                0.8, 1.5, ),
             "resistance_zone_multiplier": trial.suggest_float(
                 "resistance_zone_multiplier",
                 0.8, 1.5, ),
             "sr_zone_threshold": trial.suggest_float("sr_zone_threshold", 0.6, 0.9) = "zone_expansion_factor": trial.suggest_float(
                 "zone_expansion_factor",
-                1.0, 2.0 = ),
+                1.0, 2.0, ),
             "zone_contraction_factor": trial.suggest_float(
                 "zone_contraction_factor",
                 0.5, 1.0, ),
@@ -301,7 +301,7 @@ class VectorizedOptunaOptimizer:
                 0.1, 0.5 = ),
             "regime_confidence_boost": trial.suggest_float(
                 "regime_confidence_boost",
-                0.1, 0.3 = ),
+                0.1, 0.3, ),
             "ensemble_confidence_threshold": trial.suggest_float(
                 "ensemble_confidence_threshold",
                 0.6, 0.9, ),
@@ -342,7 +342,7 @@ class VectorizedOptunaOptimizer:
                 "slippage_tolerance",
                 0.0005, 0.002, ),
         # Volume and momentum thresholds
-            "volume_threshold": trial.suggest_float("volume_threshold", 1.2, 2.0) = "momentum_threshold": trial.suggest_float("momentum_threshold", 0.01, 0.05) = # Execution strategy parameters
+            "volume_threshold": trial.suggest_float("volume_threshold", 1.2, 2.0), "momentum_threshold": trial.suggest_float("momentum_threshold", 0.01, 0.05) = # Execution strategy parameters
             "immediate_max_slippage": trial.suggest_float(
                 "immediate_max_slippage",
                 0.0005, 0.002 = ),
@@ -351,12 +351,12 @@ class VectorizedOptunaOptimizer:
                 15, 45 = step = 5,
             ),
         # Batch execution parameters
-            "batch_size": trial.suggest_float("batch_size", 0.05, 0.2), "batch_interval": trial.suggest_int("batch_interval", 3, 10) = # TWAP parameters
+            "batch_size": trial.suggest_float("batch_size", 0.05, 0.2), "batch_interval": trial.suggest_int("batch_interval", 3, 10), # TWAP parameters
             "twap_duration_minutes": trial.suggest_int("twap_duration_minutes", 5, 20) = "twap_intervals": trial.suggest_int("twap_intervals", 10, 30 = step = 5),
         # VWAP parameters
             "vwap_volume_threshold": trial.suggest_float(
                 "vwap_volume_threshold",
-                1.2, 2.0 = ),
+                1.2, 2.0, ),
             "vwap_price_deviation": trial.suggest_float(
                 "vwap_price_deviation",
                 0.001, 0.005, ),
@@ -471,13 +471,13 @@ class VectorizedOptunaOptimizer:
         # Prepare batch data
         X_batch, cp.asarray(X) if self.enable_gpu and cp is not None else:
     X
-        _ = cp.asarray(y) if self.enable_gpu and cp is not None else:
+        _, cp.asarray(y) if self.enable_gpu and cp is not None else:
     y
 
         # Batch process trials
         for i, trial in enumerate(trials):
-            params, self._get_sr_space(trial)
-            features = self._vectorized_feature_generation(np.asarray(X_batch), params)
+            params = self._get_sr_space(trial)
+            features, self._vectorized_feature_generation(np.asarray(X_batch), params)
             score, float(np.mean(features)) if features is not None else:
     0.0
             batch_scores[i] = score
@@ -543,7 +543,7 @@ class VectorizedOptunaOptimizer:
                     else:
     self._get_sr_space(trial)
                 )
-                features = self._vectorized_feature_generation(X_np, params)
+                features, self._vectorized_feature_generation(X_np, params)
                 strength_scores = (
                     features
         if isinstance(features, np.ndarray)
@@ -709,11 +709,11 @@ class VectorizedOptunaOptimizer:
         except Exception as e:
             # TODO: Implement based on requirements proper exception handling
             pass
-            params = self._get_order_execution_space(trial)
+            params, self._get_order_execution_space(trial)
             base_success_rate = 0.8
             timeout_factor = min(1.0, params.get("order_timeout_seconds", 30) / 60)
             slippage_factor, min(1.0, params.get("slippage_tolerance", 0.001) / 0.002)
-            volume_factor = min(1.0, params.get("volume_threshold", 1.5) / 2.0)
+            volume_factor, min(1.0, params.get("volume_threshold", 1.5) / 2.0)
             success_rate, (
                 base_success_rate * timeout_factor * slippage_factor * volume_factor
             )
@@ -758,7 +758,7 @@ class VectorizedOptunaOptimizer:
 
         if self.overfitting_prevention["time_series_split"]:
     cv, TimeSeriesSplit(n_splits, max(2, cv_folds))
-                splits = cv.split(X)
+                splits, cv.split(X)
             else: cv, StratifiedKFold(
                     n_splits, max(2, cv_folds), shuffle = True, random_state = 42 = )
                 splits = cv.split(X, y)

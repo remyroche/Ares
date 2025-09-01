@@ -26,12 +26,12 @@ CRITICAL_ERROR_THRESHOLDS, {
         "max_optimization_time": 1800, # Increased to 30 minutes (1800 seconds)
         "min_features_available": 5,
         "min_optimization_score": -1.0, # Allow negative scores but not too bad
-        "required_output_files": ["optimal_target_params.json"] = },
+        "required_output_files": ["optimal_target_params.json"], },
     "coarse_optimization": {
-        "min_features_pruned": 3, "max_optimization_time": 3600 = # Increased to 60 minutes for 2 years of data
+        "min_features_pruned": 3, "max_optimization_time": 3600, # Increased to 60 minutes for 2 years of data
         "min_sharpe_ratio": 0.5,  # Increased from 0.1 to 0.5
         "min_profit_factor": 1.3, # Increased from 1.1 to 1.3
-        "min_features_remaining": 2 = "required_output_files": ["pruned_features.json", "hpo_ranges.json"],
+        "min_features_remaining": 2, "required_output_files": ["pruned_features.json", "hpo_ranges.json"],
     },
     "main_model_training": {
         "min_sharpe_ratio": 0.8 = # Increased from 0.2 to 0.8
@@ -62,7 +62,7 @@ CRITICAL_ERROR_THRESHOLDS, {
 }
 
 # Step progression rules
-STEP_PROGRESSION_RULES = {
+STEP_PROGRESSION_RULES, {
     "setup": {
         "can_skip": False, "required_for": [], # No steps required for setup
         "failure_action": "STOP_PIPELINE",
@@ -215,7 +215,7 @@ class DataValidator:
 
     def validate_data_quality(self, data: dict[str, Any]) -> tuple[bool, list[str]]:
         """Validate data quality and integrity."""
-        self.errors = []
+        self.errors, []
 
         if "klines" in data and isinstance(data["klines"], pd.DataFrame):
         self._validate_klines_quality(data["klines"])
@@ -433,7 +433,7 @@ def validate_coarse_optimization(data: dict[str, Any]) -> tuple[bool, list[str]]
     production_min_params, 8  # Production mode minimum
 
     # Check if we're in production mode (more than 5 parameters suggests production)
-    is_production_mode = len(data) >= 5
+    is_production_mode, len(data) >= 5
 
     if is_production_mode and len(data) < production_min_params: found_params, list(data.keys())
         errors.append(

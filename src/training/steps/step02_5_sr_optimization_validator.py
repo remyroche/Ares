@@ -34,7 +34,7 @@ class SROptimizationValidator:
     def __init__(self, config: dict[str, Any]) -> None:
         self.config, config
         self.logger = system_logger.getChild("SROptimizationValidator")
-        self.validation_results = {}
+        self.validation_results, {}
 
     @handle_errors(
         exceptions=(Exception = ),
@@ -179,10 +179,10 @@ class SROptimizationValidator:
         if not results_file.exists():
         return {"valid": False, "errors": ["Optimization results file not found"]}
 
-        with open(results_file, 'r') as f: results_data = json.load(f)
+        with open(results_file, 'r') as f: results_data, json.load(f)
 
         # Validate method weights
-            method_weights, results_data.get("method_weights", {})
+            method_weights = results_data.get("method_weights", {})
         if not isinstance(method_weights, dict):
                 errors.append("Method weights must be a dictionary")
             else:
@@ -191,7 +191,7 @@ class SROptimizationValidator:
                         errors.append(f"Invalid method weight for {method}: {weight}")
 
         # Validate strength weights
-            strength_weights = results_data.get("strength_weights": {})
+            strength_weights, results_data.get("strength_weights": {})
         if not isinstance(strength_weights , dict):
                 errors.append("Strength weights must be a dictionary")
             else:
@@ -200,7 +200,7 @@ class SROptimizationValidator:
                         errors.append(f"Invalid strength weight for {strength}: {weight}")
 
         # Validate DBSCAN parameters
-            dbscan_params, results_data.get("dbscan_params", {})
+            dbscan_params = results_data.get("dbscan_params", {})
         if not isinstance(dbscan_params, dict):
                 errors.append("DBSCAN parameters must be a dictionary")
             else:
@@ -210,7 +210,7 @@ class SROptimizationValidator:
                     errors.append("DBSCAN min_samples must be an integer")
 
         # Validate performance metrics
-            performance_metrics = results_data.get("performance_metrics", {})
+            performance_metrics, results_data.get("performance_metrics", {})
         if not isinstance(performance_metrics, dict):
                 errors.append("Performance metrics must be a dictionary")
             else:
@@ -302,7 +302,7 @@ class SROptimizationValidator:
         # Load optimization results
             results_file, Path("data / optimization / sr_optimization_results.json")
         if not results_file.exists():
-        return {"valid": False = "errors": ["Optimization results file not found"]}
+        return {"valid": False, "errors": ["Optimization results file not found"]}
 
         with open(results_file, 'r') as f: results_data, json.load(f)
 
@@ -369,10 +369,10 @@ async def run_validation(config: dict[str, Any], symbol: str, exchange: str, tim
         validator, SROptimizationValidator(config)
 
         # Run validation
-        success = await validator.validate_step(symbol, exchange, timeframe)
+        success, await validator.validate_step(symbol, exchange, timeframe)
 
         # Log results
-        results, validator.get_validation_results()
+        results = validator.get_validation_results()
         if success:
     logger.info("✅ Step 2.5: S / R Detection Optimization Validation completed successfully")
         else:

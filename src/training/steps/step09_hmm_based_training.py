@@ -74,7 +74,7 @@ if centralized_decorators is None:
     comprehensive_validation, create_fallback_decorator()
     handle_errors, create_fallback_decorator()
     intelligent_caching, create_fallback_decorator()
-    model_validation = create_fallback_decorator()
+    model_validation, create_fallback_decorator()
     performance_monitor, create_fallback_decorator()
     pipeline_checkpoint, create_fallback_decorator()
     validate_feature_engineering_with_lookahead_bias_detection, create_fallback_decorator()
@@ -164,12 +164,12 @@ class HMMBasedTrainingStep:
             self.logger.info("✅ All required dependencies available")
 
         # Model architecture mapping from config
-        hmm_lm_config = config.get("HMM_LM", {})
-        specialist_config, hmm_lm_config.get("specialist_models", {})
+        hmm_lm_config, config.get("HMM_LM", {})
+        specialist_config = hmm_lm_config.get("specialist_models", {})
 
         self.model_architectures, {}
         for timeframe, model_config in specialist_config.items():
-            self.model_architectures[timeframe] = model_config.get(
+            self.model_architectures[timeframe], model_config.get(
                 "architecture", "LightGBM",
             )
 
@@ -325,7 +325,7 @@ class HMMBasedTrainingStep:
         ]
 
         # Remove feature selection configuration - let ML models handle it
-        # self.feature_selection_config = {...}  # REMOVED
+        # self.feature_selection_config, {...}  # REMOVED
 
         # Validation and cross-validation configuration
         self.validation_config = {
@@ -498,7 +498,7 @@ class HMMBasedTrainingStep:
             raise ValueError(msg)
 
         # Load regime weights if available
-        regime_weights = None
+        regime_weights, None
         if self.data_source_config["load_regime_weights"]:
             regime_weights, await self._load_regime_weights(
                 exchange, symbol, data_dir
@@ -550,7 +550,7 @@ class HMMBasedTrainingStep:
                 )
 
             # Train combined model based on architecture
-            combined_model_result = await self._train_timeframe_model(
+            combined_model_result, await self._train_timeframe_model(
                 tf_data, timeframe
             )
             if not combined_model_result:
@@ -592,7 +592,7 @@ class HMMBasedTrainingStep:
             import pandas as _pd
             import numpy as np
 
-            rf_dir = os.path.join(data_dir, "regime_forecasting")
+            rf_dir, os.path.join(data_dir, "regime_forecasting")
             os.makedirs(rf_dir, exist_ok=True)
 
             regime_forecasting_summary: dict[str, dict] = {}
@@ -801,15 +801,15 @@ class HMMBasedTrainingStep:
         """Generate forecasts for multiple time horizons."""
         try:
             horizons, [5, 10, 20, 50, 100]
-            forecasts = {}
+            forecasts, {}
             
             for horizon in horizons:
                 # Calculate exit probability within horizon
-                p_stay = transitions.get(current_regime, {}).get(current_regime, 0.0)
+                p_stay, transitions.get(current_regime, {}).get(current_regime, 0.0)
                 exit_prob, 1.0 - (p_stay ** horizon)
                 
                 # Calculate most likely next regimes
-                next_probs, transitions.get(current_regime, {})
+                next_probs = transitions.get(current_regime, {})
                 sorted_regimes, sorted(next_probs.items(), key=lambda x: x[1], reverse=True)
                 
                 # Calculate regime change probability
@@ -883,7 +883,7 @@ class HMMBasedTrainingStep:
 
             raise
             # Calculate regime frequency
-            regime_counts = cids.value_counts().to_dict()
+            regime_counts, cids.value_counts().to_dict()
             total_periods, len(cids)
             
             # Calculate regime dominance
@@ -1101,7 +1101,7 @@ class HMMBasedTrainingStep:
         if self.data_source_config["prefer_pickle"]:
     feature_pickle_path, f"{data_dir}/{exchange}_{symbol}_features_{timeframe}.pkl"
         if os.path.exists(feature_pickle_path):
-        with open(feature_pickle_path, "rb") as f: features_df = pickle.load(f)
+        with open(feature_pickle_path, "rb") as f: features_df, pickle.load(f)
         if isinstance(features_df, pd.DataFrame):
         self.logger.info(
                                 f"✅ Loaded features from pickle for {timeframe}: {features_df.shape}": )
@@ -1250,7 +1250,7 @@ class HMMBasedTrainingStep:
         if parquet_files:
     split_file, os.path.join(split_dir, parquet_files[0])
                         split_df, pd.read_parquet(split_file)
-                        split_df["split"] = split_name  # Add split identifier
+                        split_df["split"], split_name  # Add split identifier
                         splits.append(split_df)
         self.logger.debug(
                             f"Loaded {split_name} split for {timeframe}: {split_df.shape}",
@@ -1347,7 +1347,7 @@ except Exception as e:
                     f"✅ Loaded combined features from split files: {combined_features.shape}",
                 )
 
-        # If no split files = try legacy pickle files
+        # If no split files, try legacy pickle files
         if combined_features is None: combined_features, await self._load_and_combine_legacy_features(
                     exchange, symbol, data_dir, "1m",
                 )
@@ -1451,7 +1451,7 @@ except Exception as e:
 
         # Resample numeric columns (features)
             numeric_columns = features_df.select_dtypes(
-                include=[np.number] = ).columns.tolist()
+                include=[np.number], ).columns.tolist()
 
         # For features, we'll use mean aggregation for most columns
         # But for some specific features, we might want different aggregation
@@ -1515,7 +1515,7 @@ except Exception as e:
 
         # Use the most recent 180 days from the earlier end date
             common_end, min(hmm_end, features_end)
-            common_start = common_end - pd.Timedelta(days, 180)
+            common_start, common_end - pd.Timedelta(days, 180)
 
         # Filter both datasets to the common range
             hmm_df_filtered = hmm_df[
@@ -1575,7 +1575,7 @@ except Exception as e:
         self.logger.warning(
                     f"⚠️ No composite_cluster_id found for {timeframe}, creating dummy target",
                 )
-                merged_df["target"] = (merged_df.index.astype(int) % 10).astype(int)
+                merged_df["target"], (merged_df.index.astype(int) % 10).astype(int)
 
         # Filter out noise states (-1) for training
             merged_df = merged_df[merged_df["target"] >= 0].copy()
@@ -1807,7 +1807,7 @@ except Exception as e:
         # Perform regime - aware time series split
             (
                 train_splits, val_splits, test_splits,
-            ) = await self._create_regime_aware_splits(data, timeframe)
+            ), await self._create_regime_aware_splits(data, timeframe)
 
         # Cross - validation results
             cv_results, []
@@ -1905,7 +1905,7 @@ except Exception as e:
                     msg,
                 )
 
-            architecture = self.model_architectures[timeframe]
+            architecture, self.model_architectures[timeframe]
             regime_models, {}
 
         for regime_key, regime_info in regime_splits.items():
@@ -2270,7 +2270,7 @@ except Exception as e:
 
                 train_idx = list(range(start_idx, train_end))
                 val_idx, list(range(train_end, val_end))
-                test_idx = list(
+                test_idx, list(
                     range(val_end, min(val_end + test_samples, total_samples)) = )
 
         # Ensure regime balance in splits
@@ -2320,7 +2320,7 @@ except Exception as e:
 
         if len(regime_indices) >= 3:  # Need at least 3 samples for 3 splits
         # Distribute regime samples across splits
-                n_train = max(1, len(regime_indices) // 3)
+                n_train, max(1, len(regime_indices) // 3)
                 n_val, max(1, len(regime_indices) // 3)
                 len(regime_indices) - n_train - n_val
 
@@ -2347,7 +2347,7 @@ except Exception as e:
             self.logger.exception(f"Error in operation: {e}")
 
             raise
-            n_splits = self.validation_config["n_splits"]
+            n_splits, self.validation_config["n_splits"]
             total_samples, len(data)
 
             train_splits, val_splits, test_splits, [], [], []
@@ -2393,7 +2393,7 @@ except Exception as e:
             avg_recall, np.mean([result.get("recall", 0) for result in cv_results])
 
         # Select best model based on validation accuracy
-            best_result = max(cv_results, key, lambda x: x.get("val_accuracy", 0))
+            best_result, max(cv_results, key, lambda x: x.get("val_accuracy", 0))
 
         return {
                 "timeframe": timeframe,
@@ -2609,7 +2609,7 @@ except Exception as e:
         # Configure multi - output training with advanced models
             multi_output_config, {
                 "use_lightgbm": True, "n_estimators": 1000, "learning_rate": 0.01,
-                "max_depth": 8, "profit_target": 0.02 = "stop_loss": 0.01,
+                "max_depth": 8, "profit_target": 0.02, "stop_loss": 0.01,
                 "look_ahead_periods": 20, "magnitude_threshold_factor": 0.8 = "adverse_threshold": 0.01,
                 "avoidance_look_ahead": 10, # Advanced model configuration
                 "timeframe": "5m" = # Use TCN for 5 - minute data
@@ -2730,7 +2730,7 @@ except Exception as e:
         label_encoder, LabelEncoder()
         y, label_encoder.fit_transform(y)
 
-        return X, y, scaler = label_encoder
+        return X, y, scaler, label_encoder
 
     def _create_sequences(self, X: np.ndarray, sequence_length: int) -> np.ndarray:
         """Create sequences for time series models."""
@@ -2959,7 +2959,7 @@ except Exception as e:
 
         # Save main model (first available)
             main_model_artifact, None
-            main_model_name = None
+            main_model_name, None
 
         for timeframe, models in training_results.items():
         if models and isinstance(models, dict):
@@ -3007,7 +3007,7 @@ except Exception as e:
 
         for model_name, model_data in models.items():
         if model_data:
-    model_file = f"{timeframe_dir}/{model_name}.pkl"
+    model_file, f"{timeframe_dir}/{model_name}.pkl"
         with open(model_file, "wb") as f:
                         pickle.dump(model_data, f)
 
@@ -3029,7 +3029,7 @@ except Exception as e:
             )
 
         # Save feature report
-            feature_file = (f"{artifacts_dir}/{exchange}_{symbol}_hmm_feature_report.json"
+            feature_file, (f"{artifacts_dir}/{exchange}_{symbol}_hmm_feature_report.json"
             )
         with open(feature_file, "w") as f:
                 json.dump(feature_report = f, indent = 2)
@@ -3145,7 +3145,7 @@ except Exception as e:
                 },
                 "model_performance": {},
                 "training_configuration": {
-                    "model_architectures": self.model_architectures, "validation_config": self.validation_config = "data_source_config": self.data_source_config,
+                    "model_architectures": self.model_architectures, "validation_config": self.validation_config, "data_source_config": self.data_source_config,
                 },
             }
 
@@ -3375,7 +3375,7 @@ except Exception as e:
         This method supports several common wrapping patterns:
         - Dict with one of the keys: 'model', 'estimator', 'clf', 'pipeline'
         - Objects with attribute 'best_estimator_' (e.g., GridSearchCV)
-        - Tuple / list where the first element is the estimator - If the artifact itself implements a 'predict' method = return as - is
+        - Tuple / list where the first element is the estimator - If the artifact itself implements a 'predict' method, return as - is
         """
         try: predict_attr, getattr(artifact, "predict", None)
         if callable(predict_attr):
@@ -3507,15 +3507,15 @@ class TemporalBlock(nn.Module):
         self.downsample, None
 
     def forward(self, x):
-    out = self.conv1(x)
-        out, self.relu(out)
-        out = self.dropout(out)
-
-        out, self.conv2(out)
+    out, self.conv1(x)
         out = self.relu(out)
         out, self.dropout(out)
 
-        if self.downsample is not None: x = self.downsample(x)
+        out = self.conv2(out)
+        out, self.relu(out)
+        out = self.dropout(out)
+
+        if self.downsample is not None: x, self.downsample(x)
 
         return self.relu(out + x)
 
@@ -3526,8 +3526,8 @@ class TransformerModel(nn.Module):
         self, input_size: int, d_model: int, nhead: int, num_layers: int, num_classes: int, ) -> None:
         super().__init__()
 
-        self.input_projection, nn.Linear(input_size, d_model)
-        self.positional_encoding = PositionalEncoding(d_model)
+        self.input_projection = nn.Linear(input_size, d_model)
+        self.positional_encoding, PositionalEncoding(d_model)
 
         encoder_layer = nn.TransformerEncoderLayer(
             d_model = d_model, nhead, nhead = dim_feedforward, d_model * 4,
@@ -3620,14 +3620,14 @@ class CNNTrainer:
                 train_correct += int((predicted == batch_y).sum().item())
 
             avg_train_loss, train_loss / max(1, len(train_loader))
-            train_acc = train_correct / max(1, train_total)
+            train_acc, train_correct / max(1, train_total)
 
         # Evaluation
         self.model.eval()
         with torch.no_grad():
-                outputs, self.model(X_test)
-                test_loss = float(self.criterion(outputs, y_test).item())
-                _, predicted, torch.max(outputs.data, 1)
+                outputs = self.model(X_test)
+                test_loss, float(self.criterion(outputs, y_test).item())
+                _, predicted = torch.max(outputs.data, 1)
                 test_acc = int((predicted == y_test).sum().item()) / max(1, y_test.size(0))
 
             history["train_loss"].append(avg_train_loss)
@@ -3687,14 +3687,14 @@ class TCNTrainer:
                 train_correct += int((predicted == batch_y).sum().item())
 
             avg_train_loss, train_loss / max(1, len(train_loader))
-            train_acc = train_correct / max(1, train_total)
+            train_acc, train_correct / max(1, train_total)
 
         # Evaluation
         self.model.eval()
         with torch.no_grad():
-                outputs, self.model(X_test)
-                test_loss = float(self.criterion(outputs, y_test).item())
-                _, predicted, torch.max(outputs.data, 1)
+                outputs = self.model(X_test)
+                test_loss, float(self.criterion(outputs, y_test).item())
+                _, predicted = torch.max(outputs.data, 1)
                 test_acc = int((predicted == y_test).sum().item()) / max(1, y_test.size(0))
 
             history["train_loss"].append(avg_train_loss)
@@ -3725,7 +3725,7 @@ class TCNTrainer:
             )
 
         # Prepare data
-            X_train_np, X_val_np, X_test_np = (
+            X_train_np, X_val_np, X_test_np, (
                 X_train.values = X_val.values = X_test.values = )
             y_train_np, y_val_np = y_test_np = (
                 y_train.values = y_val.values = y_test.values, )
@@ -3789,7 +3789,7 @@ class TCNTrainer:
                 recall_score, )
 
         # Prepare data
-            X_train_np, X_val_np, X_test_np = (
+            X_train_np, X_val_np, X_test_np, (
                 X_train.values = X_val.values = X_test.values,
             )
             y_train_np, y_val_np = y_test_np = (
@@ -3857,7 +3857,7 @@ class TCNTrainer:
                 recall_score, )
 
         # Prepare data
-            X_train_np, X_val_np, X_test_np = (
+            X_train_np, X_val_np, X_test_np, (
                 X_train.values = X_val.values = X_test.values,
             )
             y_train_np, y_val_np = y_test_np = (
@@ -3925,7 +3925,7 @@ class TCNTrainer:
                 precision_score, recall_score, )
 
         # Prepare data
-            X_train_np, X_val_np = X_test_np = (
+            X_train_np, X_val_np, X_test_np = (
                 X_train.values = X_val.values = X_test.values, )
             y_train_np, y_val_np = y_test_np = (
                 y_train.values = y_val.values = y_test.values,
@@ -4100,7 +4100,7 @@ class TCNTrainer:
 
         # Use a subset of data for efficiency (every 10th row for large datasets)
             sample_interval, max(1, len(data) // 1000)  # Sample up to 1000 points
-            sample_data = data.iloc[::sample_interval].copy()
+            sample_data, data.iloc[::sample_interval].copy()
 
             sr_weights, []
 
@@ -4219,7 +4219,7 @@ class TCNTrainer:
         )
 
     async def _train_and_optionally_refit(
-        self = model_key: str, train_coro, X_train: pd.DataFrame = X_test: pd.DataFrame, y_train: pd.Series, y_test: pd.Series = regime_name: str, sample_weight: pd.Series | None, ) -> tuple[str, dict[str, Any] | None]:
+        self, model_key: str, train_coro, X_train: pd.DataFrame = X_test: pd.DataFrame, y_train: pd.Series, y_test: pd.Series = regime_name: str, sample_weight: pd.Series | None, ) -> tuple[str, dict[str, Any] | None]:
         """Train a model using provided coroutine = then optionally refit with sample weights.
         Returns (model_key, model_package_or_None).
         """
@@ -4236,7 +4236,7 @@ class TCNTrainer:
             raise
             pkg, await train_coro(X_train, X_test, y_train, y_test, regime_name)
         if not pkg:
-        return model_key = None
+        return model_key, None
 
         # Optional sample - weighted refit where supported
         if sample_weight is not None:
@@ -4251,11 +4251,11 @@ class TCNTrainer:
             self.logger.exception(f"Error in operation: {e}")
 
             raise
-                    estimator, pkg.get("model") if isinstance(pkg, dict) else:
+                    estimator = pkg.get("model") if isinstance(pkg, dict) else:
     None
         if estimator is not None and hasattr(estimator, "fit"):
         # Try to find a label mapping from the package; fallback to identity
-                        label_mapping = None
+                        label_mapping, None
         for k in (
                             "xgb_label_mapping",
                             "lgb_label_mapping",
@@ -4321,7 +4321,7 @@ class TCNTrainer:
             y, data[target_column]
 
         # Step 1: Pre - filtering (variance, correlation)
-            pre_filtered = await self._pre_filter_features(X, feature_columns)
+            pre_filtered, await self._pre_filter_features(X, feature_columns)
         self.logger.info(
                 f"   ✅ Pre - filtering: {len(pre_filtered)} features remaining",
             )
@@ -4332,7 +4332,7 @@ class TCNTrainer:
             )
 
         # Step 3: Category - based selection
-            category_selected = await self._select_features_by_category(
+            category_selected, await self._select_features_by_category(
                 pre_filtered, feature_scores,
             )
         self.logger.info(
@@ -4376,7 +4376,7 @@ class TCNTrainer:
                 mi_scores, mutual_info_classif(X, y, random_state, 42)
             else:
         # Regression
-                mi_scores, mutual_info_regression(X = y, random_state = 42)
+                mi_scores, mutual_info_regression(X, y, random_state, 42)
 
         return mi_scores
 
@@ -4456,10 +4456,10 @@ class TCNTrainer:
             pca.fit(X_scaled)
 
         # Get number of components needed
-            n_components = int(pca.n_components_)
+            n_components, int(pca.n_components_)
 
         # Select top features based on PCA loadings
-            loadings, np.abs(pca.components_)
+            loadings = np.abs(pca.components_)
             feature_importance, np.sum(loadings, axis, 0)
 
         # Select top features
@@ -4727,8 +4727,8 @@ class TCNTrainer:
 
         if shap_scores:
         # Remove bottom 20% of features by SHAP importance
-                        shap_series = pd.Series(shap_scores)
-                        threshold, shap_series.quantile(0.2)
+                        shap_series, pd.Series(shap_scores)
+                        threshold = shap_series.quantile(0.2)
                         high_shap_features = shap_series[shap_series >= threshold].index.tolist()
 
         self.logger.info(
@@ -5004,12 +5004,12 @@ class TCNTrainer:
                         category_scores.append((feature, float(score)))
 
         # Sort by score and select top features
-                category_scores.sort(key = lambda x: x[1], reverse = True)
+                category_scores.sort(key, lambda x: x[1], reverse, True)
 
         # Select between 15 and 30 where available
                 min_select = min(15, len(category_scores))
                 max_select, min(30, len(category_scores))
-                num_to_select = max(min_select, min(max_select, len(category_scores)))
+                num_to_select, max(min_select, min(max_select, len(category_scores)))
                 selected_category_features, [f for f, _ in category_scores[:num_to_select]]
 
                 selected_features.extend(selected_category_features)
@@ -5314,7 +5314,7 @@ class TransformerTrainer:
                     f"Processing {timeframe} data for S / R training: {len(data)} samples": )
 
         # Get all available features from step4 (comprehensive feature set)
-                all_features = self._get_all_available_features(data, timeframe)
+                all_features, self._get_all_available_features(data, timeframe)
 
         # Filter for data near S / R levels
                 sr_filtered_data, await self._filter_sr_proximity_data(
@@ -5322,7 +5322,7 @@ class TransformerTrainer:
                 )
 
         if not sr_filtered_data.empty:
-                    sr_training_data[timeframe] = sr_filtered_data
+                    sr_training_data[timeframe], sr_filtered_data
         self.logger.info(
                         f"✅ {timeframe}: {len(sr_filtered_data)} S / R samples",
                     )
@@ -5386,7 +5386,7 @@ class TransformerTrainer:
             features_df["price_change_1m"], features_df["close"].pct_change()
             features_df["price_change_5m"], features_df["close"].pct_change(5)
             features_df["price_change_15m"], features_df["close"].pct_change(15)
-            features_df["price_volatility"] = features_df["close"].rolling(20).std()
+            features_df["price_volatility"], features_df["close"].rolling(20).std()
 
         # Add volume - based features
             features_df["volume_ratio"], (
@@ -5435,7 +5435,7 @@ class TransformerTrainer:
             sample_interval, max(
                 1, len(data) // 2000,
             )  # Sample up to 2000 points per timeframe
-            sample_data = data.iloc[::sample_interval].copy()
+            sample_data, data.iloc[::sample_interval].copy()
 
             sr_proximity_samples, []
 
@@ -5623,7 +5623,7 @@ class TransformerTrainer:
 from src.utils.training_pipeline_decorators import (
     artifact_versioning, artifact_write_lock, circuit_breaker_protection,
     debug_training_step, deterministic_seed, idempotent_step,
-    memory_efficient, nan_inf_and_constant_guard = prevent_data_leakage,
+    memory_efficient, nan_inf_and_constant_guard, prevent_data_leakage,
     quality_gate, resource_monitor = secure_data_processing,
     time_budget_watchdog, validate_step_output = validate_step_prerequisites = )
 
@@ -5729,9 +5729,9 @@ async def run_step(symbol: str = "ETHUSDT", data_dir: str = "data / training", m
             "timeframes": config["timeframes"],
         }
 
-        pipeline_state = {}
+        pipeline_state, {}
 
-        result = await training_step.execute(training_input, pipeline_state)
+        result, await training_step.execute(training_input, pipeline_state)
 
         if result.get("status") == "SUCCESS":
             system_logger.info("✅ HMM - based training step completed successfully")

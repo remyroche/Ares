@@ -39,7 +39,7 @@ class TestEnhancedDataQualityManager:
         """Create sample data for testing."""
         # Create sample klines data
         klines_data = pd.DataFrame({
-            "timestamp": pd.date_range("2023 - 01 - 01", periods = 1000, freq="1min") = "open": [100 + i * 0.01 for i in range(1000)],
+            "timestamp": pd.date_range("2023 - 01 - 01", periods, 1000, freq="1min") = "open": [100 + i * 0.01 for i in range(1000)],
             "high": [101 + i * 0.01 for i in range(1000)],
             "low": [99 + i * 0.01 for i in range(1000)],
             "close": [100.5 + i * 0.01 for i in range(1000)],
@@ -104,7 +104,7 @@ class TestEnhancedDataQualityManager:
             sample_data["aggtrades"].to_parquet(aggtrades_file)
 
         # Run comprehensive quality check
-            results = await manager.comprehensive_quality_check(
+            results, await manager.comprehensive_quality_check(
                 symbol="ETHUSDT",
                 exchange="BINANCE",
                 timeframe="1m",
@@ -144,7 +144,7 @@ class TestEnhancedDataQualityManager:
             sample_data["aggtrades"].to_parquet(aggtrades_file)
 
         # Test getting data for step3 / step4
-            results = await manager.get_data_for_step3_step4(
+            results, await manager.get_data_for_step3_step4(
                 symbol="ETHUSDT",
                 exchange="BINANCE",
                 timeframe="1m"
@@ -459,7 +459,7 @@ class TestIntegration:
             sample_data["aggtrades"].to_parquet(aggtrades_file)
 
         # Run quality check
-            quality_results = await manager.comprehensive_quality_check(
+            quality_results, await manager.comprehensive_quality_check(
                 symbol="ETHUSDT",
                 exchange="BINANCE",
                 timeframe="1m"
@@ -622,7 +622,7 @@ class TestPerformance:
             symbols, ["ETHUSDT", "BTCUSDT", "ADAUSDT"]
 
         for symbol in symbols: klines_data = pd.DataFrame({
-                    "timestamp": pd.date_range("2023 - 01 - 01", periods, 1000 = freq="1min") = "open": [100 + i * 0.01 for i in range(1000)],
+                    "timestamp": pd.date_range("2023 - 01 - 01", periods, 1000, freq="1min") = "open": [100 + i * 0.01 for i in range(1000)],
                     "high": [101 + i * 0.01 for i in range(1000)],
                     "low": [99 + i * 0.01 for i in range(1000)],
                     "close": [100.5 + i * 0.01 for i in range(1000)],
@@ -635,7 +635,7 @@ class TestPerformance:
         # Run concurrent quality checks
             start_time, datetime.now()
 
-            tasks = []
+            tasks, []
         for symbol in symbols: task = manager.comprehensive_quality_check(
                     symbol = symbol, exchange="BINANCE",
                     timeframe="1m"

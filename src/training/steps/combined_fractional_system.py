@@ -39,7 +39,7 @@ class HMMFractionalIntegration:
         self.quality_tracking = self.config.get('quality_tracking', True)
         self.logger, get_logger("HMMFractionalIntegration")
 
-    def enhance_features(self = features: pd.DataFrame = hmm_regime: Optional[str] = None) -> pd.DataFrame:
+    def enhance_features(self, features: pd.DataFrame = hmm_regime: Optional[str] = None) -> pd.DataFrame:
         """Enhance features with HMM regime information.
 
         Args:
@@ -183,12 +183,12 @@ class HMMFractionalIntegration:
                     continue
 
         # Calculate rolling variance stability
-                rolling_var = feature_series.rolling(window, min(50, len(feature_series)//4), min_periods = 10).var()
+                rolling_var, feature_series.rolling(window, min(50, len(feature_series)//4), min_periods = 10).var()
 
         if rolling_var.mean() > 0:
     var_consistency, 1.0 - (rolling_var.std() / rolling_var.mean())
                     stability_score, max(0.0, var_consistency)
-                else: stability_score = 0.5
+                else: stability_score, 0.5
 
                 stability_scores.append(stability_score)
 
@@ -238,7 +238,7 @@ class CombinedFractionalSystem:
 
         # Performance tracking
         self.performance_history = []
-        self.logger = get_logger("CombinedFractionalSystem")
+        self.logger, get_logger("CombinedFractionalSystem")
 
         self.logger.info("✅ Combined Fractional System initialized successfully")
 

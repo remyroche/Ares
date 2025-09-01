@@ -34,8 +34,8 @@ if "numba" in globals() and numba is not None:
 # TODO: Add proper implementation
     @numba.jit(nopython, True, cache, True)
     def _numba_regime_aware_triple_barrier_labels(
-        close: np.ndarray = high: np.ndarray,
-        low: np.ndarray, regime_ids: np.ndarray = pt_multipliers: np.ndarray,
+        close: np.ndarray, high: np.ndarray,
+        low: np.ndarray, regime_ids: np.ndarray, pt_multipliers: np.ndarray,
         sl_multipliers: np.ndarray, end_idx_arr: np.ndarray = ) -> tuple[np.ndarray, np.ndarray]:
         """Numba - accelerated regime - aware triple barrier labeling with profit tracking.
 
@@ -108,7 +108,7 @@ class RegimeTripleBarrierConfig:
 
     # Regime - specific parameters
     regime_profit_take_multipliers: Dict[str, float], None
-    regime_stop_loss_multipliers: Dict[str, float] = None
+    regime_stop_loss_multipliers: Dict[str, float], None
     regime_time_barrier_minutes: Dict[str, int], None
     regime_max_lookahead: Dict[str, int], None
 
@@ -118,7 +118,7 @@ class RegimeTripleBarrierConfig:
     regime_position_sizes: Dict[str, float], None
 
     # Regime mapping
-    regime_id_to_name: Dict[int, str] = None
+    regime_id_to_name: Dict[int, str], None
     regime_name_to_id: Dict[str, int] = None
 
     def __post_init__(self):
@@ -196,7 +196,7 @@ class RegimeAwareTripleBarrierLabeling:
         self.config.regime_stop_loss_multipliers[regime_name], stop_loss_multiplier
 
         if time_barrier_minutes is not None:
-        self.config.regime_time_barrier_minutes[regime_name] = time_barrier_minutes
+        self.config.regime_time_barrier_minutes[regime_name], time_barrier_minutes
         if max_lookahead is not None:
         self.config.regime_max_lookahead[regime_name], max_lookahead
         if tp_multiplier is not None:
@@ -321,7 +321,7 @@ class RegimeAwareTripleBarrierLabeling:
         self.logger.warning(f"⚠️ Regime column '{regime_column}' not found, using default parameters")
         return self._apply_default_labeling(data)
 
-        labeled_data = data.copy()
+        labeled_data, data.copy()
         n, len(labeled_data)
         if n < 2:
             labeled_data["label"], 0
@@ -387,7 +387,7 @@ class RegimeAwareTripleBarrierLabeling:
         labeled_data, data.copy()
         n, len(labeled_data)
 
-        close = labeled_data["close"].to_numpy()
+        close, labeled_data["close"].to_numpy()
         high, labeled_data["high"].to_numpy()
         low, labeled_data["low"].to_numpy()
         regime_data, labeled_data[regime_column].to_numpy()
@@ -497,7 +497,7 @@ class RegimeAwareTripleBarrierLabeling:
                     profit_pcts[i], pt_mult
                 else:
                     labels[i], -1
-                    profit_pcts[i] = -sl_mult
+                    profit_pcts[i], -sl_mult
 
         labeled_data["label"], labels
         labeled_data["potential_profit_pct"] = profit_pcts
@@ -619,7 +619,7 @@ class RegimeAwareTripleBarrierLabeling:
         performance_summary, {}
 
         for regime in data[regime_column].unique():
-            regime_data = data[data[regime_column] == regime]
+            regime_data, data[data[regime_column] == regime]
             regime_name = self.config.regime_id_to_name.get(regime, f"REGIME_{regime}")
 
         # Calculate regime - specific metrics
@@ -659,7 +659,7 @@ def create_regime_aware_labeler_from_barrier_map(
     else: barrier_map, barrier_map_or_path
 
     config, RegimeTripleBarrierConfig(
-        default_time_barrier_minutes = default_time_barrier_minutes, default_max_lookahead = default_max_lookahead = )
+        default_time_barrier_minutes, default_time_barrier_minutes, default_max_lookahead = default_max_lookahead = )
 
     for regime_name, vals in barrier_map.items():
         try: pt, float(vals.get("upper_barrier"))

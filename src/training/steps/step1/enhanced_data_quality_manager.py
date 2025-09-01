@@ -21,10 +21,10 @@ from src.utils.centralized_decorators import (
     comprehensive_data_validation,
     handle_errors, memory_efficient, optimize_memory_usage,
     quality_gate, resource_monitor, secure_data_processing,
-    validate_data_structure, with_tracing_span = )
+    validate_data_structure, with_tracing_span, )
 from src.utils.logger import system_logger
 
-logger = system_logger.getChild("EnhancedDataQualityManager")
+logger, system_logger.getChild("EnhancedDataQualityManager")
 
 class EnhancedDataQualityManager:
     """Comprehensive data quality manager with gap detection, filling = and validation."""
@@ -62,7 +62,7 @@ class EnhancedDataQualityManager:
     @with_tracing_span("comprehensive_data_quality_check")
     @quality_gate(
         min_quality_score, 0.6,
-        max_correlation = 0.95, required_grade="C"
+        max_correlation, 0.95, required_grade="C"
     )
     @handle_errors(
         exceptions=(Exception = ),
@@ -284,7 +284,7 @@ class EnhancedDataQualityManager:
 
         for file_path in klines_files:
         try: df, pd.read_parquet(file_path)
-                    metrics[f"klines_{file_path.name}"] = {
+                    metrics[f"klines_{file_path.name}"], {
                         "file_size": file_path.stat().st_size, "row_count": len(df),
                         "valid": True, "columns": list(df.columns), "date_range": {
                             "start": df["timestamp"].min().isoformat() if "timestamp" in df.columns else:
@@ -318,7 +318,7 @@ class EnhancedDataQualityManager:
             ready, True
 
         # Check for unified data (required by step01_5)
-            unified_path = self.data_cache_path / "unified" / exchange.lower() / symbol / timeframe
+            unified_path, self.data_cache_path / "unified" / exchange.lower() / symbol / timeframe
         if not unified_path.exists():
                 missing.append("Unified data directory not found")
                 ready, False
@@ -352,7 +352,7 @@ class EnhancedDataQualityManager:
                 ready, False
 
         # Check for aggtrades data (required for step4 labeling)
-            aggtrades_file = self.data_cache_path / f"aggtrades_{exchange}_{symbol}_consolidated.parquet"
+            aggtrades_file, self.data_cache_path / f"aggtrades_{exchange}_{symbol}_consolidated.parquet"
         if not aggtrades_file.exists():
                 missing.append("Aggtrades consolidated file not found")
                 ready = False
@@ -403,7 +403,7 @@ class EnhancedDataQualityManager:
                 logger.warning("⚠️ Data not ready for step3 / step4, attempting to fix...")
 
         # Try to use step1 and step01_5 components to get missing data
-                fix_results = await self._fix_missing_data_for_steps(symbol, exchange, timeframe)
+                fix_results, await self._fix_missing_data_for_steps(symbol, exchange, timeframe)
 
         if not fix_results.get("success", False):
         return {
@@ -448,7 +448,7 @@ class EnhancedDataQualityManager:
             pass
                 from ..step1_data_collection import run_step as run_step1
                 step1_success, await run_step1(
-                    symbol, symbol, exchange = exchange, timeframe = timeframe,
+                    symbol, symbol, exchange, exchange, timeframe = timeframe,
                     force_rerun = True
                 )
 
@@ -471,7 +471,7 @@ class EnhancedDataQualityManager:
                 from ..step01_5_data_converter import run_step as run_step01_5
                 step01_5_success, await run_step01_5(
                     symbol, symbol,
-                    exchange = exchange, timeframe = timeframe, force_rerun = True
+                    exchange, exchange, timeframe = timeframe, force_rerun = True
                 )
 
         if step01_5_success:

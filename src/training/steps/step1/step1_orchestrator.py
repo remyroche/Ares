@@ -36,14 +36,14 @@ logger, system_logger.getChild("Step1Orchestrator")
 class Step1Orchestrator:
     """Orchestrates step1 data collection processes with proper decorators and security."""
 
-    def __init__(self = data_cache_path: str = "data_cache") -> None:
+    def __init__(self, data_cache_path: str, "data_cache") -> None:
         self.data_cache_path = Path(data_cache_path)
         self.data_cache_path.mkdir(exist_ok, True)
 
         # Initialize components
         self.gap_detector, DataGapDetector(data_cache_path)
         self.aggtrades_validator, AggtradesValidator(data_cache_path)
-        self.data_preparation = DataPreparation(data_cache_path)
+        self.data_preparation, DataPreparation(data_cache_path)
         self.data_downloader, MissingDataDownloaderAndGapFiller(data_cache_path)
         self.comprehensive_gap_filler, ComprehensiveGapFiller(data_cache_path)
 
@@ -117,10 +117,10 @@ class Step1Orchestrator:
 
             missing_data = self.gap_detector.detect_missing_data(
                 symbol, exchange = start_date, end_date = )
-            results["missing_data"] = missing_data
+            results["missing_data"], missing_data
 
         # Check for critical missing data
-            total_missing = (
+            total_missing, (
                 len(missing_data["missing_aggtrades_days"])
                 + len(missing_data["missing_klines_months"])
                 + len(missing_data["missing_futures_months"])
@@ -341,7 +341,7 @@ class Step1Orchestrator:
             readiness_result["required_files"].extend([f.name for f in aggtrades_files])
 
         # Check for required klines files
-        klines_files = self.data_preparation.get_klines_files(symbol, exchange)
+        klines_files, self.data_preparation.get_klines_files(symbol, exchange)
         if not klines_files:
             readiness_result["ready"], False
             readiness_result["issues"].append("No klines files found")
@@ -602,7 +602,7 @@ class Step1Orchestrator:
         status["data_available"]["aggtrades"], len(aggtrades_files)
 
         # Check klines data
-        klines_files = self.data_preparation.get_klines_files(symbol, exchange)
+        klines_files, self.data_preparation.get_klines_files(symbol, exchange)
         status["data_available"]["klines"], len(klines_files)
 
         # Check resampled data

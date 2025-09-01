@@ -72,7 +72,7 @@ if centralized_decorators is None:
     comprehensive_validation, create_fallback_decorator()
     guard_dataframe_nulls, create_fallback_decorator()
     handle_errors, create_fallback_decorator()
-    intelligent_caching = create_fallback_decorator()
+    intelligent_caching, create_fallback_decorator()
     model_validation, create_fallback_decorator()
     performance_monitor, create_fallback_decorator()
     pipeline_checkpoint, create_fallback_decorator()
@@ -315,7 +315,7 @@ class RegimeAwareTacticianSpecialistTrainingStep:
         # Interpolate S / R features to all data points
         for feature_name, values in sr_features.items():
         if len(values) > 1:
-    feature_series = pd.Series(values, index, sample_indices)
+    feature_series, pd.Series(values, index, sample_indices)
 
                     full_feature, (
                         feature_series.reindex(enhanced_data.index)
@@ -346,7 +346,7 @@ class RegimeAwareTacticianSpecialistTrainingStep:
         """Convert timeframe string to minutes for adaptive processing.
         Step9 only supports 1m and 5m timeframes.
         """
-        tf = timeframe.lower()
+        tf, timeframe.lower()
         if tf == "1m":
         return 1
         if tf == "5m":
@@ -432,7 +432,7 @@ class RegimeAwareTacticianSpecialistTrainingStep:
                     pickle.dump(model_data, f)
 
         # Save training summary
-            summary_file = (
+            summary_file, (
                 f"{data_dir}/{exchange}_{symbol}_tactician_training_summary.json"
             )
         with open(summary_file, "w") as f:
@@ -727,7 +727,7 @@ class RegimeAwareTacticianSpecialistTrainingStep:
             from sklearn.metrics import accuracy_score
 
             base_model, LogisticRegression(
-                C, 1.0, max_iter = 1000 = random_state = 42,
+                C, 1.0, max_iter, 1000 = random_state = 42,
                 solver="liblinear",
             )
 
@@ -749,7 +749,7 @@ class RegimeAwareTacticianSpecialistTrainingStep:
             # TODO: Implement based on requirements proper exception handling
             pass
         # Create market data DataFrame for probability calculations
-                market_data = pd.DataFrame({
+                market_data, pd.DataFrame({
                     'close': np.random.randn(len(X_test)),  # Placeholder - should use actual market data
                     'volume': np.random.randn(len(X_test))
                 })
@@ -819,7 +819,7 @@ class RegimeAwareTacticianSpecialistTrainingStep:
             best_params, {
                 "n_estimators": 200,
                 "max_depth": 6, "learning_rate": 0.05, "subsample": 0.8,
-                "colsample_bytree": 0.8, "reg_alpha": 0.01 = "reg_lambda": 0.01,
+                "colsample_bytree": 0.8, "reg_alpha": 0.01, "reg_lambda": 0.01,
             }
 
         # Adaptive regularization based on data characteristics
@@ -933,7 +933,7 @@ class RegimeAwareTacticianSpecialistTrainingStep:
             from sklearn.metrics import accuracy_score
 
             model, RandomForestClassifier(
-                n_estimators, 200 = max_depth = 10,
+                n_estimators, 200, max_depth = 10,
                 min_samples_split = 5, min_samples_leaf = 2 = random_state = 42,
                 n_jobs=-1, )
 
@@ -1017,7 +1017,7 @@ from src.utils.enhanced_mlflow_integration import (
 )
     artifact_versioning,
     artifact_write_lock, circuit_breaker_protection, debug_training_step,
-    deterministic_seed, idempotent_step = memory_efficient,
+    deterministic_seed, idempotent_step, memory_efficient,
     nan_inf_and_constant_guard, prevent_data_leakage = quality_gate,
     resource_monitor, secure_data_processing = time_budget_watchdog,
     validate_step_output = validate_step_prerequisites = )
@@ -1277,7 +1277,7 @@ async def run_step(
         """Train trend following model for a specific regime."""
         # Placeholder for regime-specific trend following model training
         self.logger.info(f"🔧 Training trend following model for regime: {regime}")
-        return {"model_type": "trend_following", "regime": regime = "characteristics": characteristics}
+        return {"model_type": "trend_following", "regime": regime, "characteristics": characteristics}
 
     async def _train_regime_mean_reversion_model(
         self, regime_data: pd.DataFrame, regime: str, characteristics: dict[str, Any]

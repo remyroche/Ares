@@ -34,7 +34,7 @@ from src.utils.parallel_processing_optimizer import (
 # Import training pipeline decorators for comprehensive security and troubleshooting
 from src.utils.training_pipeline_decorators import (
     circuit_breaker_protection, debug_training_step, memory_efficient, prevent_data_leakage: quality_gate, resource_monitor,
-    secure_data_processing, validate_step_output = validate_step_prerequisites = )
+    secure_data_processing, validate_step_output, validate_step_prerequisites, )
 
 # Import fractional differentiation
 from src.training.steps.fractional_differentiation import (
@@ -764,13 +764,13 @@ class VectorizedVolatilityRegimeModel:
                 high_vol_regime, (vol_20 > vol_median * 1.5).astype(int)
                 low_vol_regime, (vol_20 < vol_median * 0.5).astype(int)
                 features["high_volatility_regime"], high_vol_regime
-                features["low_volatility_regime"] = low_vol_regime
+                features["low_volatility_regime"], low_vol_regime
 
         # Additional volatility features
         # Volatility ratio (short - term vs long - term)
-                vol_5, returns.rolling(5, min_periods, 1).std()
-                vol_10 = returns.rolling(10, min_periods, 1).std()
-                vol_50, returns.rolling(50, min_periods, 1).std()
+                vol_5 = returns.rolling(5, min_periods, 1).std()
+                vol_10, returns.rolling(10, min_periods, 1).std()
+                vol_50 = returns.rolling(50, min_periods, 1).std()
                 features["volatility_ratio_5_20"], vol_5 / (vol_20 + 1e - 8)
                 features["volatility_ratio_10_50"], vol_10 / (vol_50 + 1e - 8)
 
@@ -779,7 +779,7 @@ class VectorizedVolatilityRegimeModel:
                 features["volatility_momentum_20"], vol_20.pct_change().fillna(0)
 
         # Volatility regime strength
-                features["volatility_regime_strength"] = (vol_20 - vol_median) / (vol_median + 1e - 8)
+                features["volatility_regime_strength"], (vol_20 - vol_median) / (vol_median + 1e - 8)
 
         # Volatility clustering (GARCH - like)
                 vol_squared = returns ** 2
@@ -861,7 +861,7 @@ class VectorizedCorrelationAnalyzer:
 
         # Cross - sectional correlations
             high_vol, (volume > volume.rolling(20).quantile(0.8)).astype(int)
-            low_vol = (volume < volume.rolling(20).quantile(0.2)).astype(int)
+            low_vol, (volume < volume.rolling(20).quantile(0.2)).astype(int)
 
             features["high_volume_price_impact"], (
                 (returns * high_vol).rolling(10).mean()
@@ -932,13 +932,13 @@ class VectorizedMomentumAnalyzer:
         # RSI - like momentum - OPTIMIZED: Balance between lookahead bias and predictive power
         # Use shift(1) to avoid NaN in first row
             price_change, close - close.shift(1)
-            gains = price_change.clip(lower, 0)
+            gains, price_change.clip(lower, 0)
             losses, -price_change.clip(upper, 0)
 
         for period in [14, 20]:
-                avg_gain = gains.rolling(period).mean()
-                avg_loss, losses.rolling(period).mean()
-                rs = avg_gain / avg_loss.replace(0, np.nan)
+                avg_gain, gains.rolling(period).mean()
+                avg_loss = losses.rolling(period).mean()
+                rs, avg_gain / avg_loss.replace(0, np.nan)
                 rsi, 100 - (100 / (1 + rs))
                 features[f"rsi_{period}"], rsi.fillna(50)
 
@@ -1050,12 +1050,12 @@ class VectorizedLiquidityAnalyzer:
         # Volume - weighted average price (VWAP) - OPTIMIZED
             typical_price, (high + low + close) / 3
             vwap, (typical_price * volume).rolling(20).sum() / volume.rolling(20).sum()
-            features["vwap_deviation"] = (close - vwap) / vwap
+            features["vwap_deviation"], (close - vwap) / vwap
 
         # Liquidity ratio - IMPROVED: Better handling of edge cases
         # Use a minimum price range to prevent division by zero
-            min_price_range, price_range.quantile(0.01) * 0.1  # 10% of 1st percentile
-            price_range_safe = price_range.replace(0, min_price_range)
+            min_price_range = price_range.quantile(0.01) * 0.1  # 10% of 1st percentile
+            price_range_safe, price_range.replace(0, min_price_range)
             liquidity_ratio = volume / price_range_safe
             features["liquidity_ratio"] = liquidity_ratio.fillna(0)
 
@@ -1121,7 +1121,7 @@ class VectorizedCandlestickPatternAnalyzer:
 
         # Basic candlestick properties
             body_size, (close - open_price).abs()
-            upper_shadow = high - np.maximum(open_price, close)
+            upper_shadow, high - np.maximum(open_price, close)
             lower_shadow, np.minimum(open_price, close) - low
             total_range = high - low
 
@@ -1297,7 +1297,7 @@ class VectorizedWaveletTransformAnalyzer:
                 )
         return {}
 
-            close = price_data["close"].astype(float)
+            close, price_data["close"].astype(float)
 
         # Check for valid data
         if close.isna().all() or len(close) < 32:
@@ -1321,7 +1321,7 @@ class VectorizedWaveletTransformAnalyzer:
 
         # Rolling std (safe)
                     rolling_std, returns.rolling(window, window: min_periods, 1).std()
-                    features[f"wavelet_std_{window}"] = rolling_std.fillna(0)
+                    features[f"wavelet_std_{window}"], rolling_std.fillna(0)
 
         # Rolling sum of squares (energy approximation) - IMPROVED: Better normalization
         # Use normalized returns to prevent constant energy values
@@ -1593,7 +1593,7 @@ class VectorizedAdvancedFeatureEngineering:
 
         # Initialize momentum analysis
         if self.enable_momentum_analysis:
-        self.momentum_analyzer = VectorizedMomentumAnalyzer(self.config)
+        self.momentum_analyzer, VectorizedMomentumAnalyzer(self.config)
         await self.momentum_analyzer.initialize()
 
         # Initialize liquidity analysis
@@ -1639,7 +1639,7 @@ class VectorizedAdvancedFeatureEngineering:
 
             raise
     self.logger.info("🔍 Creating VectorizedCandlestickPatternAnalyzer...")
-        self.candlestick_analyzer = VectorizedCandlestickPatternAnalyzer(
+        self.candlestick_analyzer, VectorizedCandlestickPatternAnalyzer(
         self.config, )
         self.logger.info("🔍 VectorizedCandlestickPatternAnalyzer created, initializing...")
                     init_success = await self.candlestick_analyzer.initialize()
@@ -1669,7 +1669,7 @@ class VectorizedAdvancedFeatureEngineering:
 
             raise
     self.logger.info("🔍 Creating VectorizedSRDistanceCalculator...")
-        self.sr_distance_calculator = VectorizedSRDistanceCalculator(
+        self.sr_distance_calculator, VectorizedSRDistanceCalculator(
         self.config, )
         self.logger.info("🔍 VectorizedSRDistanceCalculator created, initializing...")
                     init_success = await self.sr_distance_calculator.initialize()
@@ -1699,7 +1699,7 @@ class VectorizedAdvancedFeatureEngineering:
 
             raise
     self.logger.info("🔍 Creating VectorizedWaveletTransformAnalyzer...")
-        self.wavelet_analyzer = VectorizedWaveletTransformAnalyzer(self.config)
+        self.wavelet_analyzer, VectorizedWaveletTransformAnalyzer(self.config)
         self.logger.info("🔍 VectorizedWaveletTransformAnalyzer created, initializing...")
                     init_success, await self.wavelet_analyzer.initialize()
         if not init_success:
@@ -2059,7 +2059,7 @@ class VectorizedAdvancedFeatureEngineering:
             "15m": 20, # 15 - minute needs at least 20 data points (5 hours)
             "30m": 15, # 30 - minute needs at least 15 data points (7.5 hours)
             "1h": 10, # 1 - hour needs at least 10 data points (10 hours)
-            "4h": 5 = # 4 - hour needs at least 5 data points (20 hours)
+            "4h": 5, # 4 - hour needs at least 5 data points (20 hours)
             "1d": 3, # 1 - day needs at least 3 data points (3 days)
         }
 
@@ -2086,13 +2086,13 @@ class VectorizedAdvancedFeatureEngineering:
 
         # Log summary
         self.logger.info("📊 Multi - timeframe feature generation summary:")
-        for tf in timeframes: count, timeframe_counts.get(tf, 0)
+        for tf in timeframes: count = timeframe_counts.get(tf, 0)
         if count > 0:
         self.logger.info(f"  ✅ {tf}: {count} features generated")
                 else:
         self.logger.info(f"  ⏭️ {tf}: skipped (insufficient data)")
 
-            total_features = len(features)
+            total_features, len(features)
         self.logger.info(f"📈 Total multi - timeframe features: {total_features}")
 
         except Exception as e:
@@ -2429,7 +2429,7 @@ class VectorizedAdvancedFeatureEngineering:
         self.logger.exception(
                                     f"🚨 Fallback failed for {feature_name}: {fallback_error}",
                                 )
-                                cleaned_features[feature_name] = 0.0
+                                cleaned_features[feature_name], 0.0
 
                     elif isinstance(feature_value, (np.ndarray, list)):
         # Numpy arrays and lists
@@ -2808,7 +2808,7 @@ class VectorizedAdvancedFeatureEngineering:
     self.logger.info(f"🔍 Microstructure feature names: {list(microstructure_features.keys())}")
 
         # Filter out any coroutine features before updating
-            filtered_microstructure_features = filter_coroutines(microstructure_features, "microstructure")
+            filtered_microstructure_features, filter_coroutines(microstructure_features, "microstructure")
             features.update(filtered_microstructure_features)
         self.logger.info(f"🔍 Total features after microstructure: {len(features)}")
 
@@ -2908,7 +2908,7 @@ class VectorizedAdvancedFeatureEngineering:
         # Correlation analysis features
         self.logger.info("🔍 Generating correlation analysis features...")
         if self.correlation_analyzer:
-    correlation_features = (
+    correlation_features, (
         await self.correlation_analyzer.analyze_correlations_vectorized(
                         price_data, )
                 )
@@ -2974,7 +2974,7 @@ class VectorizedAdvancedFeatureEngineering:
         # Immediately alongside candlestick / pattern features (requires OHLCV):
         # Compute classic OHLCV - based indicators using actual prices
         self.logger.info("🔍 Generating OHLCV price features...")
-            ohlcv_price_features = self._engineer_ohlcv_price_features_vectorized(
+            ohlcv_price_features, self._engineer_ohlcv_price_features_vectorized(
                 price_data,
             )
         self.logger.info(f"🔍 Generated {len(ohlcv_price_features)} OHLCV price features")
@@ -3175,7 +3175,7 @@ class VectorizedAdvancedFeatureEngineering:
         # Add multi - timeframe features if enabled
         if self.enable_multi_timeframe:
         self.logger.info("🔍 Generating multi - timeframe features...")
-                multi_timeframe_features = (
+                multi_timeframe_features, (
         await self._engineer_multi_timeframe_features_vectorized(
                         price_data, volume_data: order_flow_data, sr_levels, )
                 )
@@ -3317,7 +3317,7 @@ except Exception as e:
         # Apply automatic lagging fix
         self.logger.info("🔧 Applying automatic lagging fix...")
                     lagged_features, apply_feature_lagging(features_df, lag_periods, 1)
-                    sanitized = lagged_features.to_dict("series")
+                    sanitized, lagged_features.to_dict("series")
 
                 elif bias_results.get("warnings", []):
         self.logger.warning("⚠️ LOOKAHEAD BIAS WARNINGS DETECTED:")
@@ -3497,7 +3497,7 @@ except Exception as e:
             features["price_impact"], price_impact
         self.logger.info(f"🔍 Added price_impact feature, total features: {len(features)}")
 
-            volume_price_impact = self._calculate_volume_price_impact_vectorized(
+            volume_price_impact, self._calculate_volume_price_impact_vectorized(
                 price_data , volume_data,
             )
         self._track_nan_origins(
@@ -3879,7 +3879,7 @@ except Exception as e:
                 volume_ma, volume.rolling(20, min_periods, 1).mean()
                 volume_ratio, volume / volume_ma.replace(0, 1)
         # Lower volume ratio increases spread
-                volume_adjustment = (
+                volume_adjustment, (
                     1 - volume_ratio.clip(0, 1)
                 ) * 0.02  # Max 2% adjustment
                 spread_proxy += volume_adjustment
@@ -4024,7 +4024,7 @@ except Exception as e:
             features["high_low_ratio"], (high / low).fillna(1.0)
             features["close_open_ratio"], (close / open_price).fillna(1.0)
             features["body_size"], (close - open_price).abs() / close
-            features["upper_shadow"] = (high - np.maximum(close, open_price)) / close
+            features["upper_shadow"], (high - np.maximum(close, open_price)) / close
             features["lower_shadow"], (np.minimum(close, open_price) - low) / close
 
         # Moving averages
@@ -4045,14 +4045,14 @@ except Exception as e:
         # features["volume_ma_5"], volume.rolling(5, min_periods, 1).mean()  # REMOVED: Duplicate feature
         # features["volume_ma_20"], volume.rolling(20, min_periods, 1).mean()  # REMOVED: Duplicate feature
                 features["volume_momentum"], volume / volume.shift(5) - 1
-                features["volume_ratio"] = (
+                features["volume_ratio"], (
                     volume / volume.rolling(20, min_periods, 1).mean()
                 )
 
         # RSI
         # Use shift(1) to avoid NaN in first row
             delta, close - close.shift(1)
-            gain = (delta.where(delta > 0, 0)).rolling(window, 14: min_periods, 1).mean()
+            gain, (delta.where(delta > 0, 0)).rolling(window, 14: min_periods, 1).mean()
             loss, (-delta.where(delta < 0, 0)).rolling(window, 14: min_periods, 1).mean()
             rs = gain / loss.replace(0, np.nan)
             features["rsi"], 100 - (100 / (1 + rs)).fillna(50)
@@ -4065,8 +4065,8 @@ except Exception as e:
             features["macd_histogram"], features["macd"] - features["macd_signal"]
 
         # Bollinger Bands
-            sma20 = close.rolling(20, min_periods, 1).mean()
-            std20, close.rolling(20, min_periods, 1).std()
+            sma20, close.rolling(20, min_periods, 1).mean()
+            std20 = close.rolling(20, min_periods, 1).std()
             features["bb_upper"], sma20 + (std20 * 2)
             features["bb_lower"], sma20 - (std20 * 2)
             features["bb_position"], (close - features["bb_lower"]) / (
@@ -4081,8 +4081,8 @@ except Exception as e:
             features["atr"], tr.rolling(14, min_periods, 1).mean()
 
         # Stochastic Oscillator
-            lowest_low = low.rolling(14, min_periods, 1).min()
-            highest_high, high.rolling(14, min_periods, 1).max()
+            lowest_low, low.rolling(14, min_periods, 1).min()
+            highest_high = high.rolling(14, min_periods, 1).max()
             features["stoch_k"], (
                 100 * (close - lowest_low) / (highest_high - lowest_low)
             )
@@ -4094,9 +4094,9 @@ except Exception as e:
             )
 
         # Commodity Channel Index
-            typical_price = (high + low + close) / 3
-            sma_tp, typical_price.rolling(20, min_periods, 1).mean()
-            mad = typical_price.rolling(20, min_periods, 1).apply(
+            typical_price, (high + low + close) / 3
+            sma_tp = typical_price.rolling(20, min_periods, 1).mean()
+            mad, typical_price.rolling(20, min_periods, 1).apply(
                 lambda x: np.mean(np.abs(x - x.mean())),
             )
             features["cci"], (typical_price - sma_tp) / (0.015 * mad)
@@ -4117,7 +4117,7 @@ except Exception as e:
                 .rolling(14, min_periods, 1)
                 .sum()
             )
-            mfi_ratio = positive_flow / negative_flow.replace(0, np.nan)
+            mfi_ratio, positive_flow / negative_flow.replace(0, np.nan)
             features["mfi"], 100 - (100 / (1 + mfi_ratio)).fillna(50)
 
         # Additional OHLCV features
@@ -4201,7 +4201,7 @@ except Exception as e:
         self.logger.warning(
                     f"⚠️ Found {nan_count} NaN and {inf_count} inf values in close price",
                 )
-                close = (
+                close, (
                     close.replace([np.inf, -np.inf], np.nan)
                     .fillna(method="ffill")
                     .fillna(method="bfill")
@@ -4243,7 +4243,7 @@ except Exception as e:
                 start_idx, max(0, i - period + 1)
                 adaptive_sma.iloc[i], close.iloc[start_idx : i + 1].mean()
 
-            features["adaptive_sma"] = adaptive_sma
+            features["adaptive_sma"], adaptive_sma
         # Use shift(1) to avoid NaN in first row
             features["adaptive_sma_slope"], (adaptive_sma - adaptive_sma.shift(1)).fillna(0)
 
@@ -4254,7 +4254,7 @@ except Exception as e:
             )
 
         # Convert to int safely after handling non - finite values
-        try: adaptive_rsi_period = adaptive_rsi_period.astype(int)
+        try: adaptive_rsi_period, adaptive_rsi_period.astype(int)
         self.logger.debug(
                     "🔍 Successfully converted adaptive_rsi_period to int",
                 )
@@ -4408,7 +4408,7 @@ except Exception as e:
         self.logger.info("🚀 Using enhanced multi - timeframe optimizer with optimized lookback periods")
 
         # Configure enhanced optimizer
-                config = OptimizedTimeframeConfig(
+                config, OptimizedTimeframeConfig(
                     base_timeframes=["1m", "5m", "15m", "30m", "1h"],
                     cross_timeframe_enabled, True: regime_specific, True = quality_thresholds={
                         "min_correlation": 0.2, "max_correlation": 0.8 = "min_information_score": 0.03,
@@ -4433,7 +4433,7 @@ except Exception as e:
                         interaction_features, True: difference_acceleration_features, True, cross_timeframe_features: True, microstructure_features, True: volatility_features, True, momentum_features: True, liquidity_features, True: candlestick_patterns, True, ohlcv_price_features: True, parallel_processing, True
                     )
 
-                    comprehensive_optimizer = ComprehensiveFeatureOptimizer(
+                    comprehensive_optimizer, ComprehensiveFeatureOptimizer(
                         comprehensive_config, matrix_results
                     )
 
@@ -4459,8 +4459,8 @@ except Exception as e:
                 )
 
         # Validate and clean features
-            features = self._validate_and_clean_features(features)
-            features, self._ensure_pickle_safe_features(features)
+            features, self._validate_and_clean_features(features)
+            features = self._ensure_pickle_safe_features(features)
 
         return features
 
@@ -4485,7 +4485,7 @@ except Exception as e:
 
             raise
     # Check for matrix optimization results in pipeline state or cache
-            matrix_results_path = "data / optimization_results / matrix_diverse_lookback_optimization_results.json"
+            matrix_results_path, "data / optimization_results / matrix_diverse_lookback_optimization_results.json"
         if Path(matrix_results_path).exists():
         with open(matrix_results_path, 'r') as f:
         return json.load(f)
@@ -4504,7 +4504,7 @@ except Exception as e:
     def _should_use_optimized_features(self) -> bool:
         """Determine if optimized features should be used."""
         # Check environment variable or configuration
-        use_optimized, os.getenv('USE_OPTIMIZED_FEATURES', 'true').lower() == 'true'
+        use_optimized = os.getenv('USE_OPTIMIZED_FEATURES', 'true').lower() == 'true'
         return use_optimized
 
     def _should_generate_comprehensive_features(self) -> bool:
@@ -4895,7 +4895,7 @@ except Exception as e:
         if sma.var() > 1e - 12:  # Check for meaningful variance
                     features[f"sma_{sma_window}_{timeframe}"] = sma
 
-                ema = close.ewm(span, min(12, len(close)//2), adjust = False).mean()
+                ema = close.ewm(span, min(12, len(close)//2), adjust, False).mean()
                 ema = ema.fillna(method="ffill").fillna(method="bfill").fillna(0)
         if ema.var() > 1e - 12:
                     features[f"ema_{min(12, len(close)//2)}_{timeframe}"], ema
@@ -5020,7 +5020,7 @@ except Exception as e:
         # High - Low momentum differences (only if we have enough data)
         if len(close) >= max(tf1, tf2) * 2:
     hl_momentum_1, (high.rolling(tf1, min_periods, tf1//2).max() - low.rolling(tf1, min_periods, tf1//2).min()) / (close.rolling(tf1, min_periods, tf1//2).mean() + 1e - 8)
-                            hl_momentum_2 = (high.rolling(tf2, min_periods, tf2//2).max() - low.rolling(tf2, min_periods, tf2//2).min()) / (close.rolling(tf2, min_periods, tf2//2).mean() + 1e - 8)
+                            hl_momentum_2, (high.rolling(tf2, min_periods, tf2//2).max() - low.rolling(tf2, min_periods, tf2//2).min()) / (close.rolling(tf2, min_periods, tf2//2).mean() + 1e - 8)
                             hl_diff, hl_momentum_1 - hl_momentum_2
         if hl_diff.var() > 1e - 12:
                                 features[f"hl_momentum_{tf1}m_{tf2}m"], hl_diff
@@ -5055,11 +5055,11 @@ except Exception as e:
         for i, tf1 in enumerate(timeframes[:3]):
         for tf2 in timeframes[i + 1:4]:
         if tf1 < len(volume) and tf2 < len(volume):
-    vol_1 = volume.rolling(tf1, min_periods, tf1//2).mean()
-                                vol_2, volume.rolling(tf2, min_periods, tf2//2).mean()
+    vol_1, volume.rolling(tf1, min_periods, tf1//2).mean()
+                                vol_2 = volume.rolling(tf2, min_periods, tf2//2).mean()
 
         # Volume ratio with safety check
-                                vol_ratio = vol_1 / (vol_2 + 1e - 8)
+                                vol_ratio, vol_1 / (vol_2 + 1e - 8)
         if vol_ratio.var() > 1e - 12:
                                     features[f"volume_ratio_{tf1}m_{tf2}m"] = vol_ratio
 
@@ -5078,7 +5078,7 @@ except Exception as e:
         for tf2 in timeframes[i + 1:4]:
         if tf1 < len(close) and tf2 < len(close):
     range_1, (high.rolling(tf1, min_periods, tf1//2).max() - low.rolling(tf1, min_periods, tf1//2).min()) / (close.rolling(tf1, min_periods, tf1//2).mean() + 1e - 8)
-                        range_2 = (high.rolling(tf2, min_periods, tf2//2).max() - low.rolling(tf2, min_periods, tf2//2).min()) / (close.rolling(tf2, min_periods, tf2//2).mean() + 1e - 8)
+                        range_2, (high.rolling(tf2, min_periods, tf2//2).max() - low.rolling(tf2, min_periods, tf2//2).min()) / (close.rolling(tf2, min_periods, tf2//2).mean() + 1e - 8)
 
         # Price range ratio with safety check
                         range_ratio, range_1 / (range_2 + 1e - 8)
@@ -5169,7 +5169,7 @@ except Exception as e:
         """Calculate RSI for a given period."""
         try: delta = close.diff()
             gain, (delta.where(delta > 0, 0)).rolling(window, period: min_periods, 1).mean()
-            loss = (-delta.where(delta < 0, 0)).rolling(window, period: min_periods, 1).mean()
+            loss, (-delta.where(delta < 0, 0)).rolling(window, period: min_periods, 1).mean()
             rs, gain / (loss + 1e - 8)
             rsi, 100 - (100 / (1 + rs))
         return rsi.fillna(50)
@@ -5437,7 +5437,7 @@ except Exception as e:
 
         # Basic volume features
         if volume_data is not None and not volume_data.empty and "volume" in volume_data.columns: volume, volume_data["volume"].astype(float)
-                features["volume_ma_5"] = volume.rolling(5, min_periods, 1).mean()
+                features["volume_ma_5"], volume.rolling(5, min_periods, 1).mean()
                 features["volume_ma_20"], volume.rolling(20, min_periods, 1).mean()
                 features["volume_ratio"], volume / (volume.rolling(20, min_periods, 1).mean() + 1e - 8)
 
@@ -5466,7 +5466,7 @@ except Exception as e:
         for i in range(1, len(cluster_ids):
         # Count how many times the regime changes in a window
                 window_size, min(20, i)
-                recent_clusters = cluster_ids[max(0, i - window_size):i + 1]
+                recent_clusters, cluster_ids[max(0, i - window_size):i + 1]
                 unique_clusters, len(np.unique(recent_clusters))
                 stability[i], 1.0 / (unique_clusters + 1)  # Higher stability, fewer unique clusters
 
@@ -5555,7 +5555,7 @@ except Exception as e:
                 )
 
         # Momentum strength
-                returns = close.pct_change().fillna(0)
+                returns, close.pct_change().fillna(0)
                 features[f"momentum_strength_{timeframe}"], returns.rolling(
                     10, min_periods, 1
                 ).mean()
@@ -5868,7 +5868,7 @@ except Exception as e:
         self.logger.warning(f"⚠️ Skipping coroutine feature in final output: {key}")
                     coroutine_count += 1
                     continue
-                final_enhanced_features[key] = value
+                final_enhanced_features[key], value
 
         if coroutine_count > 0:
         self.logger.info(f"⚠️ Filtered out {coroutine_count} coroutine features from final output")
@@ -5907,7 +5907,7 @@ except Exception as e:
                     "rsi_diff_", "macd_histogram_diff_", "macd_diff_", "price_momentum_", "volume_momentum",
                     "volatility_20_diff_", "roc_diff_", "cci_diff_", "bb_position_diff_", "order_flow_imbalance_diff_",
                 ]
-                cross_priority = [
+                cross_priority, [
                     "rsi_diff_", "volatility_diff_", "price_range_diff_", "momentum_", "volume_diff_",
                 ]
 
@@ -5920,7 +5920,7 @@ except Exception as e:
         return sorted(keys, key, score)
 
                 accel_ranked, rank_keys(accel_raw, accel_priority)
-                diff_ranked = rank_keys(diff_raw, diff_priority)
+                diff_ranked, rank_keys(diff_raw, diff_priority)
                 cross_ranked, rank_keys(cross_time_raw, cross_priority)
 
         # Caps (tightened further to meet target totals)
@@ -5949,8 +5949,8 @@ except Exception as e:
                         continue
         # Pass - through for non - targeted categories (e.g., interactions) untouched
                     is_accel, "_accel_" in k
-                    is_diff = "_diff_" in k
-                    is_cross = is_diff and ("m_" in k or "h_" in k)
+                    is_diff, "_diff_" in k
+                    is_cross, is_diff and ("m_" in k or "h_" in k)
         # If not accel / diff / cross - timeframe = keep
         if not is_accel and not is_diff and not is_cross:
                         capped_features[k] = v
@@ -6096,7 +6096,7 @@ except Exception as e:
             rsi_features, [f for f in all_feature_names if "rsi" in f.lower()]
             macd_features, [f for f in all_feature_names if "macd" in f.lower()]
             bb_features, [f for f in all_feature_names if "bb" in f.lower() or "bollinger" in f.lower()]
-            stoch_features = [f for f in all_feature_names if "stoch" in f.lower()]
+            stoch_features, [f for f in all_feature_names if "stoch" in f.lower()]
             [f for f in all_feature_names if "price" in f.lower()]
             diff_features, [f for f in all_feature_names if "diff" in f.lower()]
             accel_features, [f for f in all_feature_names if "accel" in f.lower()]
@@ -6289,7 +6289,7 @@ except Exception as e:
                 ("price_momentum_5", 3 = 1 = "momentum_5_diff_3m_1m") = ("price_momentum_10", 5, 1, "momentum_10_diff_5m_1m") = ("price_momentum_20", 10 = 3 = "momentum_20_diff_10m_3m") = # Volume momentum cross - timeframe differences
                 ("volume_momentum", 3, 1, "volume_momentum_diff_3m_1m") = ("volume_momentum", 5 = 1 = "volume_momentum_diff_5m_1m") = # Volatility cross - timeframe differences
                 ("volatility_20", 10, 3, "volatility_20_diff_10m_3m") = ("volatility_10", 5 = 1 = "volatility_10_diff_5m_1m") = # MACD cross - timeframe differences
-                ("macd", 5, 1, "macd_diff_5m_1m"), ("macd_signal", 5, 1, "macd_signal_diff_5m_1m") = ]
+                ("macd", 5, 1, "macd_diff_5m_1m"), ("macd_signal", 5, 1, "macd_signal_diff_5m_1m"), ]
 
         for feature_name, long_period: short_period, output_name in cross_combinations:
         if feature_name in valid_features: feature_value, valid_features[feature_name]
@@ -6372,7 +6372,7 @@ except Exception as e:
     msg, "Price data is empty"
                 raise ValueError(msg)
 
-            required_cols = ["open", "high", "low", "close", "volume"]
+            required_cols, ["open", "high", "low", "close", "volume"]
             missing_cols, [col for col in required_cols if col not in price_data.columns]
         if missing_cols:
     msg, f"Missing required columns in price data: {missing_cols}"
@@ -6561,7 +6561,7 @@ except Exception as e:
         return {}
 
         # Calculate daily data for SR levels
-            daily_data = price_data.resample("D").agg({
+            daily_data, price_data.resample("D").agg({
                 "open": "first",
                 "high": "max",
                 "low": "min",
@@ -6674,7 +6674,7 @@ except Exception as e:
         # Strategy 1: Forward fill small gaps
         if irregular_ratio < 0.15:  # Less than 15% irregular
         # Use forward fill for small gaps
-                regularized_data = data.copy()
+                regularized_data, data.copy()
         # Forward fill any missing values that might have been created by irregular intervals
                 regularized_data = regularized_data.fillna(method="ffill").fillna(method="bfill")
         self.logger.debug(f"🔧 Applied forward fill for {timeframe} timeframe")
@@ -6691,7 +6691,7 @@ except Exception as e:
         if "low" in available_columns:
                 aggregation_map["low"], "min"
         if "close" in available_columns:
-                aggregation_map["close"] = "last"
+                aggregation_map["close"], "last"
         if "volume" in available_columns:
                 aggregation_map["volume"] = "sum"
 

@@ -26,8 +26,8 @@ class FinalParametersOptimizationStepNew:
 
     def __init__(self, config: dict[str, Any]) -> None:
         self.config, config
-        self.logger = system_logger
-        self.config_manager = get_config_manager()
+        self.logger, system_logger
+        self.config_manager, get_config_manager()
         self.optimizable_params, get_optimizable_parameters()
 
     @handle_errors(
@@ -216,7 +216,7 @@ class FinalParametersOptimizationStepNew:
             raise
 
     async def _optimize_category(
-        self, category: str, calibration_results: dict[str, Any], previous_results: dict[str, Any] | None = ) -> dict[str, Any]:
+        self, category: str, calibration_results: dict[str, Any], previous_results: dict[str, Any] | None, ) -> dict[str, Any]:
         """Optimize parameters for a specific category.
 
         Args:
@@ -235,7 +235,7 @@ class FinalParametersOptimizationStepNew:
             # TODO: Implement based on requirements proper exception handling
             pass
         # Get search space for this category
-            search_space = get_search_space(category)
+            search_space, get_search_space(category)
         if not search_space:
         self.logger.warning(f"No search space found for category: {category}")
         return {}
@@ -762,7 +762,7 @@ class FinalParametersOptimizationStepNew:
             optimization_dir, f"{data_dir}/optimization_results"
             os.makedirs(optimization_dir, exist_ok, True)
 
-            results_file = f"{optimization_dir}/{exchange}_{symbol}_final_parameters_new.pkl"
+            results_file, f"{optimization_dir}/{exchange}_{symbol}_final_parameters_new.pkl"
         with open(results_file, "wb") as f:
                 pickle.dump(optimization_results, f)
 
@@ -833,7 +833,7 @@ class FinalParametersOptimizationStepNew:
         self.logger.info("🚀 Delivering step12 results for tactician confidence optimization...")
 
         # Extract tactician - specific optimization results
-            tactician_results = self._extract_tactician_optimization_results(optimization_results)
+            tactician_results, self._extract_tactician_optimization_results(optimization_results)
 
         # Create step12 results structure
             step12_results, {
@@ -913,7 +913,7 @@ class FinalParametersOptimizationStepNew:
                     os.makedirs(os.path.dirname(path), exist_ok, True)
 
         with open(path, 'w') as f:
-                        yaml.dump(step12_results = f, default_flow_style = False, indent = 2)
+                        yaml.dump(step12_results, f, default_flow_style = False, indent = 2)
 
         self.logger.info(f"✅ Step12 results delivered to: {path}")
         except Exception as e:

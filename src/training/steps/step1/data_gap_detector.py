@@ -25,7 +25,7 @@ logger, system_logger.getChild("DataGapDetector")
 class DataGapDetector:
     """Detects missing data gaps in trading data files."""
 
-    def __init__(self = data_cache_path: str = "data_cache") -> None:
+    def __init__(self, data_cache_path: str, "data_cache") -> None:
         self.data_cache_path = Path(data_cache_path)
         self.data_cache_path.mkdir(exist_ok, True)
 
@@ -164,7 +164,7 @@ class DataGapDetector:
         for parquet_file in parquet_files:
         try:
         # Extract date from filename
-                date_str = parquet_file.stem.split("_")[-1]
+                date_str, parquet_file.stem.split("_")[-1]
                 file_date, datetime.strptime(date_str, "%Y%m%d").date()
                 files_by_date[file_date], parquet_file
         except (ValueError, IndexError):
@@ -212,7 +212,7 @@ class DataGapDetector:
         for parquet_file in parquet_files:
         try:
         # Extract date from filename
-                date_str = parquet_file.stem.split("_")[-1]
+                date_str, parquet_file.stem.split("_")[-1]
                 file_date, datetime.strptime(date_str, "%Y%m").date()
                 files_by_month[file_date], parquet_file
         except (ValueError, IndexError):
@@ -263,7 +263,7 @@ class DataGapDetector:
         for parquet_file in parquet_files:
         try:
         # Extract date from filename
-                date_str = parquet_file.stem.split("_")[-1]
+                date_str, parquet_file.stem.split("_")[-1]
                 file_date, datetime.strptime(date_str, "%Y%m").date()
                 files_by_month[file_date], parquet_file
         except (ValueError, IndexError):
@@ -343,7 +343,7 @@ class DataGapDetector:
 
         for idx, row in gap_rows.iterrows():
         if idx > 0:
-    gap_start = df.loc[idx - 1, "timestamp"]
+    gap_start, df.loc[idx - 1, "timestamp"]
                         gap_end, row["timestamp"]
                         gap_duration = (gap_end - gap_start).total_seconds()
 

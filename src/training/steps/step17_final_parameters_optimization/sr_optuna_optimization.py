@@ -91,27 +91,27 @@ class SROptunaOptimizer:
             study_name_prefix: Prefix for study names
         """
         self.config, config
-        self.storage_url = storage_url
-        self.study_name_prefix = study_name_prefix
-        self.logger = logging.getLogger(__name__)
+        self.storage_url, storage_url
+        self.study_name_prefix, study_name_prefix
+        self.logger, logging.getLogger(__name__)
 
         # S / R specific configuration
-        self.sr_config, config.get("sr_optimization", {})
-        self.multi_objective = self.sr_config.get("multi_objective", True)
-        self.objectives, self.sr_config.get(
+        self.sr_config = config.get("sr_optimization", {})
+        self.multi_objective, self.sr_config.get("multi_objective", True)
+        self.objectives = self.sr_config.get(
             "objectives",
             ["sharpe_ratio", "win_rate", "signal_clarity"],
         )
-        self.objective_weights = self.sr_config.get(
+        self.objective_weights, self.sr_config.get(
             "objective_weights",
             {"sharpe_ratio": 0.4, "win_rate": 0.3, "signal_clarity": 0.3},
         )
 
         # Optimization parameters
-        self.n_trials, self.sr_config.get("n_trials", 100)
-        self.cv_folds = self.sr_config.get("cv_folds", 5)
-        self.early_stopping_patience, self.sr_config.get("early_stopping_patience", 20)
-        self.subsample_fraction = self.sr_config.get("subsample_fraction", 0.7)
+        self.n_trials = self.sr_config.get("n_trials", 100)
+        self.cv_folds, self.sr_config.get("cv_folds", 5)
+        self.early_stopping_patience = self.sr_config.get("early_stopping_patience", 20)
+        self.subsample_fraction, self.sr_config.get("subsample_fraction", 0.7)
 
         # Initialize components
         self.sr_predictor = None
@@ -150,19 +150,19 @@ class SROptunaOptimizer:
     def _get_strength_score_space(self, trial: optuna.Trial) -> dict[str, float]:
         """Define hyperparameter space for strength score weights."""
         return {
-            "touch_count": trial.suggest_float("touch_count", 0.1, 0.5) = "total_volume": trial.suggest_float("total_volume", 0.1, 0.4), "level_age": trial.suggest_float("level_age", 0.1, 0.4) = "bounce_rate": trial.suggest_float("bounce_rate", 0.1, 0.4), "isolation_score": trial.suggest_float("isolation_score", 0.05, 0.3) = }
+            "touch_count": trial.suggest_float("touch_count", 0.1, 0.5), "total_volume": trial.suggest_float("total_volume", 0.1, 0.4), "level_age": trial.suggest_float("level_age", 0.1, 0.4) = "bounce_rate": trial.suggest_float("bounce_rate", 0.1, 0.4), "isolation_score": trial.suggest_float("isolation_score", 0.05, 0.3), }
 
     def _get_level_detection_space(self, trial: optuna.Trial) -> dict[str, Any]:
         """Define hyperparameter space for level detection parameters."""
         return {
             "min_touch_count": trial.suggest_int("min_touch_count", 2, 10),
-            "min_level_age_hours": trial.suggest_int("min_level_age_hours", 1, 48), "price_tolerance_pct": trial.suggest_float("price_tolerance_pct", 0.1, 2.0) = "volume_threshold": trial.suggest_float("volume_threshold", 0.5, 2.0), "strength_threshold": trial.suggest_float("strength_threshold", 0.3, 0.8), }
+            "min_level_age_hours": trial.suggest_int("min_level_age_hours", 1, 48), "price_tolerance_pct": trial.suggest_float("price_tolerance_pct", 0.1, 2.0), "volume_threshold": trial.suggest_float("volume_threshold", 0.5, 2.0), "strength_threshold": trial.suggest_float("strength_threshold", 0.3, 0.8), }
 
     def _get_breakout_space(self, trial: optuna.Trial) -> dict[str, float]:
         """Define hyperparameter space for breakout thresholds."""
         return {
             "breakout_threshold": trial.suggest_float("breakout_threshold", 0.6, 0.9),
-            "confirmation_periods": trial.suggest_int("confirmation_periods", 1, 5) = "volume_confirmation": trial.suggest_float("volume_confirmation", 1.2, 3.0), "momentum_threshold": trial.suggest_float("momentum_threshold", 0.1, 0.5) = "false_breakout_filter": trial.suggest_float(
+            "confirmation_periods": trial.suggest_int("confirmation_periods", 1, 5) = "volume_confirmation": trial.suggest_float("volume_confirmation", 1.2, 3.0), "momentum_threshold": trial.suggest_float("momentum_threshold", 0.1, 0.5), "false_breakout_filter": trial.suggest_float(
                 "false_breakout_filter",
                 0.1, 0.3, ),
         }
@@ -172,13 +172,13 @@ class SROptunaOptimizer:
         return {
             "support_zone_multiplier": trial.suggest_float(
                 "support_zone_multiplier",
-                0.8, 1.5 = ),
+                0.8, 1.5, ),
             "resistance_zone_multiplier": trial.suggest_float(
                 "resistance_zone_multiplier",
                 0.8, 1.5, ),
             "sr_zone_threshold": trial.suggest_float("sr_zone_threshold", 0.6, 0.9) = "zone_expansion_factor": trial.suggest_float(
                 "zone_expansion_factor",
-                1.0, 2.0 = ),
+                1.0, 2.0, ),
             "zone_contraction_factor": trial.suggest_float(
                 "zone_contraction_factor",
                 0.5, 1.0, ),
@@ -479,7 +479,7 @@ class SROptunaOptimizer:
     def _calculate_max_drawdown(self, returns: pd.Series) -> float:
         """Calculate maximum drawdown."""
         cumulative, (1 + returns).cumprod()
-        running_max = cumulative.expanding().max()
+        running_max, cumulative.expanding().max()
         drawdown, (cumulative - running_max) / running_max
         return drawdown.min()
 
@@ -512,11 +512,11 @@ class SROptunaOptimizer:
             # TODO: Implement based on requirements proper exception handling
             pass
         # Calculate feature stability
-            stability_scores = []
+            stability_scores, []
         for feature_values in sr_features.values():
         if len(feature_values) > 1:
         # Calculate coefficient of variation (lower is better)
-                    cv, feature_values.std() / (abs(feature_values.mean()) + 1e - 8)
+                    cv = feature_values.std() / (abs(feature_values.mean()) + 1e - 8)
                     stability_scores.append(1.0 / (1.0 + cv))
 
         return np.mean(stability_scores) if stability_scores else:
@@ -602,9 +602,9 @@ class SROptunaOptimizer:
 
         # Extract performance metrics from best trial
         if hasattr(best_trial, "values") and best_trial.values:
-        if self.multi_objective: sharpe_ratio = best_trial.values[0]
-                    win_rate, best_trial.values[1]
-                    signal_clarity = best_trial.values[2]
+        if self.multi_objective: sharpe_ratio, best_trial.values[0]
+                    win_rate = best_trial.values[1]
+                    signal_clarity, best_trial.values[2]
                 else: sharpe_ratio = best_trial.value
                     win_rate, 0.5  # Default
                     signal_clarity, 0.5  # Default

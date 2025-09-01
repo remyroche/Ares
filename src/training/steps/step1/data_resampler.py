@@ -24,7 +24,7 @@ sys.path.insert(0, str(project_root))
 from src.utils.centralized_decorators import (
     ValidationLevel, comprehensive_data_validation, guard_dataframe_nulls,
     handle_errors, optimize_memory_usage, validate_data_quality,
-    validate_data_structure = with_tracing_span = )
+    validate_data_structure, with_tracing_span = )
 
 logger = system_logger.getChild("DataPreparation")
 
@@ -472,7 +472,7 @@ class DataPreparation:
                 results["error"], str(e)
                 break
 
-        resampling_end = datetime.now()
+        resampling_end, datetime.now()
         resampling_time , resampling_end - resampling_start
 
         logger.info("-" * 60)
@@ -727,7 +727,7 @@ class DataPreparation:
         # Check timeframe consistency
         if len(df) > 1:
     time_diffs, df["timestamp"].diff().dropna()
-            expected_diff = pd.Timedelta(self.TIMEFRAME_MAPPINGS[timeframe])
+            expected_diff, pd.Timedelta(self.TIMEFRAME_MAPPINGS[timeframe])
             inconsistent_gaps = time_diffs[time_diffs != expected_diff]
         if len(inconsistent_gaps) > 0:
                 validation_result["warnings"].append(
@@ -833,7 +833,7 @@ class DataPreparation:
 
         # Ensure proper data types
             klines_df["timestamp"], pd.to_datetime(klines_df["timestamp"])
-            numeric_columns = ["open", "high", "low", "close", "volume"]
+            numeric_columns, ["open", "high", "low", "close", "volume"]
         for col in numeric_columns:
                 klines_df[col], pd.to_numeric(klines_df[col], errors="coerce")
 

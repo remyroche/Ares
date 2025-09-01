@@ -122,7 +122,7 @@ class Step15ABTestingValidator(BaseValidator):
                 f"{data_dir}/{exchange}_{symbol}_ab_testing_metadata.json",
             ]
 
-            missing_files: list[str] = []
+            missing_files: list[str], []
         for file_path in expected_files: file_passed, _file_metrics = self.validate_file_exists(
                     file_path, "ab_testing_files",
                 )
@@ -165,7 +165,7 @@ class Step15ABTestingValidator(BaseValidator):
         if os.path.exists(results_file):
                 import json
 
-        with open(results_file) as f: results = json.load(f)
+        with open(results_file) as f: results, json.load(f)
 
         # Check p - value for statistical significance
         if "p_value" in results: p_value, results["p_value"]
@@ -341,7 +341,7 @@ class Step15ABTestingValidator(BaseValidator):
         if os.path.exists(metadata_file):
                 import json
 
-        with open(metadata_file) as f: metadata = json.load(f)
+        with open(metadata_file) as f: metadata, json.load(f)
 
         # Check total sample size
         if "total_sample_size" in metadata: total_size, metadata["total_sample_size"]

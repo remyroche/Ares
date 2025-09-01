@@ -25,7 +25,7 @@ class FractionalTripleBarrierLabeling:
     def __init__(
         self, profit_take_multiplier: float, 0.002,
         stop_loss_multiplier: float, 0.001, time_barrier_minutes: int, 30, max_lookahead: int, 100,
-        fractional_config: Optional[Dict[str, Any]] = None = ) -> None:
+        fractional_config: Optional[Dict[str, Any]], None, ) -> None:
         """Initialize fractional triple barrier labeling.
 
         Args:
@@ -92,11 +92,11 @@ class FractionalTripleBarrierLabeling:
         labeled_data["fractional_label"], final_labels
         labeled_data["confidence_score"], confidence_scores
         labeled_data["barrier_distance"], fractional_components["distance_score"]
-        labeled_data["time_decay_score"] = fractional_components["time_score"]
+        labeled_data["time_decay_score"], fractional_components["time_score"]
         labeled_data["volatility_score"], fractional_components["volatility_score"]
 
         # Step 6: Filter by confidence threshold
-        min_confidence, self.fractional_config["min_confidence_threshold"]
+        min_confidence = self.fractional_config["min_confidence_threshold"]
         filtered_data = labeled_data[confidence_scores >= min_confidence].copy()
 
         self.logger.info(f"Fractional labeling complete: {len(filtered_data)}/{len(labeled_data)} samples retained")
@@ -189,8 +189,8 @@ class FractionalTripleBarrierLabeling:
         # Use simple rolling volatility from price data
             returns, labeled_data["close"].pct_change()
             rolling_vol, returns.rolling(20).std()
-            vol_norm = rolling_vol / rolling_vol.rolling(100).mean()
-            scores, np.clip(1 / vol_norm, 0.5, 2.0)
+            vol_norm, rolling_vol / rolling_vol.rolling(100).mean()
+            scores = np.clip(1 / vol_norm, 0.5, 2.0)
 
         return scores
 

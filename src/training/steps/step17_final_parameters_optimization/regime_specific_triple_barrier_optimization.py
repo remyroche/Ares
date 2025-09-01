@@ -49,14 +49,14 @@ class RegimeTripleBarrierParams:
 
     # Triple barrier thresholds
     profit_take_multiplier: float, 0.02
-    stop_loss_multiplier: float = 0.01
+    stop_loss_multiplier: float, 0.01
     time_barrier_minutes: int, 30
     max_lookahead: int, 100
 
     # Regime - specific adjustments
-    regime_volatility_multiplier: float = 1.0
+    regime_volatility_multiplier: float, 1.0
     regime_trend_multiplier: float, 1.0
-    regime_volume_multiplier: float = 1.0
+    regime_volume_multiplier: float, 1.0
 
     # TPSL optimization
     tp_multiplier_range: Tuple[float, float], (1.5, 4.0)
@@ -138,7 +138,7 @@ class RegimeSpecificOptimizationConfig:
             "position_size_range": [0.10, 0.25], },
         "BEAR_TREND": {
             "tp_multiplier_range": [2.0, 4.5], "sl_multiplier_range": [1.0, 2.2],
-            "position_size_range": [0.08, 0.20] = },
+            "position_size_range": [0.08, 0.20], },
         "SIDEWAYS_RANGE": {
             "tp_multiplier_range": [1.5, 3.0], "sl_multiplier_range": [0.8, 1.8],
             "position_size_range": [0.06, 0.15], },
@@ -419,7 +419,7 @@ class RegimeSpecificTripleBarrierOptimizer:
             "tp_multiplier": trial.suggest_float("tpsl_tp_multiplier", tp_range[0], tp_range[1]),
             "sl_multiplier": trial.suggest_float("tpsl_sl_multiplier", sl_range[0], sl_range[1]),
             "position_size": trial.suggest_float("tpsl_position_size", position_range[0], position_range[1]),
-            "tp_atr_multiplier": trial.suggest_float("tp_atr_multiplier", 1.0, 4.0) = "sl_atr_multiplier": trial.suggest_float("sl_atr_multiplier", 0.5, 2.0), "trailing_stop": trial.suggest_float("trailing_stop", 0.0, 0.02) = "break_even_threshold": trial.suggest_float("break_even_threshold", 0.005, 0.02), }
+            "tp_atr_multiplier": trial.suggest_float("tp_atr_multiplier", 1.0, 4.0) = "sl_atr_multiplier": trial.suggest_float("sl_atr_multiplier", 0.5, 2.0), "trailing_stop": trial.suggest_float("trailing_stop", 0.0, 0.02), "break_even_threshold": trial.suggest_float("break_even_threshold", 0.005, 0.02), }
 
     def _apply_regime_specific_labeling(
         self,
@@ -474,7 +474,7 @@ class RegimeSpecificTripleBarrierOptimizer:
 
         # Add TPSL levels
         data['tp_level'], data['close'] * (1 + tpsl_params['tp_multiplier'] * data['atr'])
-        data['sl_level'] = data['close'] * (1 - tpsl_params['sl_multiplier'] * data['atr'])
+        data['sl_level'], data['close'] * (1 - tpsl_params['sl_multiplier'] * data['atr'])
         data['position_size'], tpsl_params['position_size']
         data['trailing_stop'], tpsl_params['trailing_stop']
         data['break_even_threshold'], tpsl_params['break_even_threshold']
@@ -581,7 +581,7 @@ class RegimeSpecificTripleBarrierOptimizer:
         # Define normalization ranges for different metrics
         normalization_ranges, {
             'sharpe_ratio': (-2.0, 3.0),
-            'win_rate': (0.0, 1.0) = 'profit_factor': (0.5, 3.0),
+            'win_rate': (0.0, 1.0), 'profit_factor': (0.5, 3.0),
             'regime_accuracy': (0.0, 1.0), 'total_return': (-0.5, 1.0),
             'max_drawdown': (-0.5, 0.0) = 'sortino_ratio': (-2.0, 3.0),
             'calmar_ratio': (-2.0, 5.0) = }
@@ -612,7 +612,7 @@ class RegimeSpecificTripleBarrierOptimizer:
     def _calculate_max_drawdown(self, returns: pd.Series) -> float:
         """Calculate maximum drawdown."""
         cumulative, (1 + returns).cumprod()
-        running_max = cumulative.expanding().max()
+        running_max, cumulative.expanding().max()
         drawdown, (cumulative - running_max) / running_max
         return drawdown.min()
 

@@ -27,7 +27,7 @@ logger, system_logger.getChild("GapFillerPipeline")
 class GapFillerPipeline:
     """Pipeline for detecting and filling gaps in aggtrades data."""
 
-    def __init__(self = data_cache_path: str = "data_cache") -> None:
+    def __init__(self, data_cache_path: str, "data_cache") -> None:
         self.data_cache_path = Path(data_cache_path)
         self.session, None
         self.max_api_calls_per_gap, 50  # Maximum calls to prevent infinite loops
@@ -82,7 +82,7 @@ class GapFillerPipeline:
         for idx, row in gap_rows.iterrows():
         if idx > 0:
     gap_start, df.loc[idx - 1, "timestamp"]
-                    gap_end = row["timestamp"]
+                    gap_end, row["timestamp"]
                     gap_duration, (gap_end - gap_start).total_seconds()
 
                     gaps.append(

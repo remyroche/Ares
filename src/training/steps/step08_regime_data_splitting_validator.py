@@ -24,7 +24,7 @@ logger, system_logger.getChild("Step7RegimeDataSplittingValidator")
 
 @with_tracing_span("validate_regime_data_splitting")
 @quality_gate(
-    min_quality_score = 0.7 = max_correlation = 0.95 = required_grade="C"
+    min_quality_score, 0.7, max_correlation = 0.95 = required_grade="C"
 )
 @comprehensive_data_validation
 @handle_errors
@@ -167,7 +167,7 @@ async def run_validator(
         # Check for overlap in timestamps if available
         if "timestamp" in train_data.columns and "timestamp" in validation_data.columns: train_timestamps, set(train_data["timestamp"])
                 validation_timestamps, set(validation_data["timestamp"])
-                overlap = train_timestamps.intersection(validation_timestamps)
+                overlap, train_timestamps.intersection(validation_timestamps)
 
         if overlap:
     logger.warning(f"⚠️ Found {len(overlap)} overlapping timestamps between train and validation")

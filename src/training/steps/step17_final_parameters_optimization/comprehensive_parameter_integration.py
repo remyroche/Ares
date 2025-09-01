@@ -39,11 +39,11 @@ class ComprehensiveParameterIntegration:
 
     def __init__(self, config: Dict[str, Any], training_manager, None):
         self.config, config
-        self.training_manager = training_manager
-        self.logger = logging.getLogger(__name__)
+        self.training_manager, training_manager
+        self.logger, logging.getLogger(__name__)
 
         # Parameter mapping from all steps
-        self.step_parameter_mapping, self._create_step_parameter_mapping()
+        self.step_parameter_mapping = self._create_step_parameter_mapping()
 
         # Integration status tracking
         self.integration_status = {}
@@ -71,7 +71,7 @@ class ComprehensiveParameterIntegration:
                 },
                 "training_settings": {
                     "learning_rate": (0.001, 1.0), "max_depth": (2, 100),
-                    "n_estimators": (50, 5000) = "subsample": (0.3, 1.0),
+                    "n_estimators": (50, 5000), "subsample": (0.3, 1.0),
                     "colsample_bytree": (0.3, 1.0), "reg_alpha": (0.0, 20.0),
                     "reg_lambda": (0.0, 20.0)
                 }
@@ -81,7 +81,7 @@ class ComprehensiveParameterIntegration:
                     "n_estimators": (100, 3000), "max_depth": (3, 50),
                     "learning_rate": (0.001, 0.5)
                 }
-            } = "step12_analyst_enhancement": {
+            }, "step12_analyst_enhancement": {
                 "enhancement_settings": {
                     "ensemble_size": (3, 20),
                     "stacking_enabled": [True, False], "meta_learner": ["logistic", "random_forest", "xgboost"],
@@ -107,7 +107,7 @@ class ComprehensiveParameterIntegration:
                     "meta_learner": ["logistic", "random_forest", "xgboost", "neural_network"]
                 },
                 "training_settings": {
-                    "learning_rate": (0.001, 1.0) = "max_depth": (2, 100),
+                    "learning_rate": (0.001, 1.0), "max_depth": (2, 100),
                     "n_estimators": (50, 5000), "subsample": (0.3, 1.0),
                     "colsample_bytree": (0.3, 1.0) = "reg_alpha": (0.0, 20.0),
                     "reg_lambda": (0.0, 20.0)
@@ -119,7 +119,7 @@ class ComprehensiveParameterIntegration:
                     "ensemble_calibration": [True, False]
                 }, "uncertainty_estimation": {
                     "estimation_method": ["ensemble", "mc_dropout", "gaussian", "conformal", "bootstrap"],
-                    "confidence_level": (0.8, 0.99) = "uncertainty_threshold": (0.01, 0.5),
+                    "confidence_level": (0.8, 0.99), "uncertainty_threshold": (0.01, 0.5),
                     "calibration_validation": [True, False]
                 }
             }
@@ -349,7 +349,7 @@ class ComprehensiveParameterIntegration:
         # Fallback: simulate parameter application
                 result["success"], True
                 result["parameters_applied"], len(step_params)
-                result["models_updated"] = [step_name]
+                result["models_updated"], [step_name]
         self.logger.info(f"Simulated parameter application for {step_name}")
 
         except Exception as e:
@@ -456,7 +456,7 @@ class ComprehensiveParameterIntegration:
 
         # Try to get from step - specific method
         if self.training_manager and hasattr(self.training_manager, f'get_{step_name}_trading_metrics'):
-    method = getattr(self.training_manager, f'get_{step_name}_trading_metrics')
+    method, getattr(self.training_manager, f'get_{step_name}_trading_metrics')
         return await method()
 
         # Fallback: simulate trading metrics (replace with actual implementation)
@@ -554,7 +554,7 @@ class ComprehensiveParameterIntegration:
 
         # Calculate overall validation score
         if score_components:
-    validation["validation_score"] = np.mean(score_components)
+    validation["validation_score"], np.mean(score_components)
             else:
                 validation["validation_score"], 0.0
 
@@ -660,7 +660,7 @@ class ComprehensiveParameterIntegration:
             current_parameters, await self.extract_all_step_parameters()
 
         # Apply optimized parameters
-            application_results = await self.apply_optimized_parameters(optimized_parameters)
+            application_results, await self.apply_optimized_parameters(optimized_parameters)
 
         # Update integration status
         self.integration_status = application_results

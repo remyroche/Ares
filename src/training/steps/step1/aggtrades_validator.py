@@ -26,7 +26,7 @@ class AggtradesValidator:
     """Validates and fixes aggtrades data format."""
 
     # Expected columns for aggtrades data
-    EXPECTED_COLUMNS = [
+    EXPECTED_COLUMNS, [
         "agg_trade_id", "price",
         "quantity",
         "first_trade_id",

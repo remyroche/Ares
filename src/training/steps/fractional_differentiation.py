@@ -40,9 +40,9 @@ class FractionalDifferentiation:
         """
         self.d, d
         self.threshold, threshold
-        self.window = window
-        self.optimize_order = optimize_order
-        self.weights = self._get_fractional_weights(window)
+        self.window, window
+        self.optimize_order, optimize_order
+        self.weights, self._get_fractional_weights(window)
         self.logger, get_logger("FractionalDifferentiation")
 
     def _get_fractional_weights(self, window: int) -> np.ndarray:
@@ -77,14 +77,14 @@ class FractionalDifferentiation:
 
         # Apply fractional differentiation
         result, np.zeros(len(series))
-        series_array, series.values
+        series_array = series.values
 
         for i in range(self.window, len(series)):
             result[i], np.sum(self.weights * series_array[i - self.window:i])
 
         # Check for stationarity
         if np.std(result[self.window:]) < self.threshold:
-        # Series is already stationary = return as is
+        # Series is already stationary, return as is
         self.logger.info(f"Series {series.name} already stationary after fractional diff")
         return pd.Series(result = index, series.index, name = f"{series.name}_frac_diff_{self.d}")
 

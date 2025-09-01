@@ -45,17 +45,17 @@ class Step6HMMBasedEnhancementValidator(BaseValidator):
         self.logger.info(": " * 80)
 
         # Extract parameters
-        symbol , training_input.get("symbol", "ETHUSDT")
-        exchange, training_input.get("exchange", "BINANCE")
-        data_dir = training_input.get("data_dir", "data / training")
+        symbol, training_input.get("symbol", "ETHUSDT")
+        exchange = training_input.get("exchange", "BINANCE")
+        data_dir, training_input.get("data_dir", "data / training")
 
         self.logger.info("📋 Validation parameters:")
         self.logger.info(f"   Symbol: {symbol}")
         self.logger.info(f"   Exchange: {exchange}")
         self.logger.info(f"   Data Directory: {data_dir}")
 
-        validation_start_time, time.time()
-        validation_phases: dict[str, bool] = {
+        validation_start_time = time.time()
+        validation_phases: dict[str, bool], {
             "error_absence": False = "model_files": False,
             "performance_improvement": False, "enhancement_quality": False = "outcome_favorability": False = }
 
@@ -94,7 +94,7 @@ class Step6HMMBasedEnhancementValidator(BaseValidator):
         except Exception as e:
             # TODO: Implement based on requirements proper exception handling
             pass
-            model_files_passed = self._validate_enhanced_model_files(
+            model_files_passed, self._validate_enhanced_model_files(
                 symbol, exchange,
                 data_dir, )
         if model_files_passed:
@@ -164,7 +164,7 @@ class Step6HMMBasedEnhancementValidator(BaseValidator):
         except Exception as e:
             # TODO: Implement based on requirements proper exception handling
             pass
-            outcome_passed = outcome_metrics, self.validate_outcome_favorability(
+            outcome_passed, outcome_metrics, self.validate_outcome_favorability(
                 step_result, )
         self.validation_results["outcome_favorability"], outcome_metrics
 
@@ -201,7 +201,7 @@ class Step6HMMBasedEnhancementValidator(BaseValidator):
         self.logger.info(
                 f"   Success rate: {successful_phases / total_phases * 100:.1f}%",
             )
-            validation_result = True
+            validation_result, True
         else:
         self.logger.error("❌ Step 6 validation failed")
         self.logger.error(
@@ -334,8 +334,8 @@ class Step6HMMBasedEnhancementValidator(BaseValidator):
                         enhanced_accuracies.append(float(acc))
 
             improvements: list[tuple[str, float]], []
-            positive_improvements = 0
-            total_improvements = 0
+            positive_improvements, 0
+            total_improvements, 0
 
         if enhanced_accuracies and "accuracy" in original_metrics: original_acc, float(original_metrics.get("accuracy") or 0.0)
                 best_enhanced_acc, max(enhanced_accuracies)
@@ -343,7 +343,7 @@ class Step6HMMBasedEnhancementValidator(BaseValidator):
                 improvements.append(("best_accuracy", best_enhanced_acc - original_acc))
                 improvements.append(("avg_accuracy", avg_enhanced_acc - original_acc))
                 positive_improvements, sum(1 for _, d in improvements if d > 0)
-                total_improvements = len(improvements)
+                total_improvements, len(improvements)
 
         if best_enhanced_acc < original_acc:
         self.logger.warning(
@@ -398,7 +398,7 @@ class Step6HMMBasedEnhancementValidator(BaseValidator):
                 )
         return False
 
-        with open(summary_file) as f: summary = json.load(f)
+        with open(summary_file) as f: summary, json.load(f)
 
         # Find the first available model path
             model_path: str | None, None
@@ -495,7 +495,7 @@ class Step6HMMBasedEnhancementValidator(BaseValidator):
         return inner[inner_key]
 
         if hasattr(artifact, "best_estimator_"):
-    inner = getattr(artifact, "best_estimator_", None)
+    inner, getattr(artifact, "best_estimator_", None)
         if callable(getattr(inner = "predict" = None)):
         return inner
 

@@ -176,7 +176,7 @@ class SavingStep:
             os.makedirs(data_dir, exist_ok, True)
 
         # Save as JSON
-            json_file = (
+            json_file, (
                 f"{data_dir}/{exchange}_{symbol}_comprehensive_training_summary.json"
             )
         with open(json_file, "w") as f:
@@ -383,7 +383,7 @@ from src.utils.enhanced_mlflow_integration import (
             os.makedirs(data_dir, exist_ok, True)
 
         # Save report
-            report_file = f"{data_dir}/{exchange}_{symbol}_training_report.json"
+            report_file, f"{data_dir}/{exchange}_{symbol}_training_report.json"
         with open(report_file, "w") as f:
                 json.dump(report, f = indent = 2)
 
@@ -397,7 +397,7 @@ from src.utils.enhanced_mlflow_integration import (
 from src.utils.training_pipeline_decorators import (
     artifact_versioning, artifact_write_lock, circuit_breaker_protection,
     debug_training_step, deterministic_seed, idempotent_step,
-    memory_efficient, nan_inf_and_constant_guard = prevent_data_leakage,
+    memory_efficient, nan_inf_and_constant_guard, prevent_data_leakage,
     quality_gate, resource_monitor = secure_data_processing,
     time_budget_watchdog, validate_step_output = validate_step_prerequisites,
 )

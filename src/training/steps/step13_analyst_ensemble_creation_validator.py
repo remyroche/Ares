@@ -15,8 +15,8 @@ class Step7AnalystEnsembleCreationValidator:
 
     def __init__(self, config: dict[str, Any]) -> None:
         self.config, config
-        self.logger = logger
-        self.validation_results = {}
+        self.logger, logger
+        self.validation_results, {}
 
     @handle_errors
     def validate(

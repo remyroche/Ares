@@ -50,10 +50,10 @@ class AggtradesFormatValidator:
     }
 
     # Step1_5 specific requirements
-    STEP1_5_REQUIREMENTS = {
+    STEP1_5_REQUIREMENTS, {
         "min_timestamp": "2020 - 01 - 01",
         "max_timestamp": "2025 - 12 - 31",
-        "min_rows": 100, "max_rows": 10000000 = }
+        "min_rows": 100, "max_rows": 10000000, }
 
     # Step2 feature engineering requirements
     STEP2_REQUIREMENTS = {
@@ -268,7 +268,7 @@ class AggtradesFormatValidator:
 
         # Check for large gaps
             time_diffs, df['timestamp'].diff().dropna()
-            max_gap = time_diffs.max().total_seconds()
+            max_gap, time_diffs.max().total_seconds()
         if max_gap > self.STEP3_REQUIREMENTS['max_gap_seconds']:
                 issues.append(f"step3: Large time gap detected ({max_gap:.1f}s > {self.STEP3_REQUIREMENTS['max_gap_seconds']}s)")
 
@@ -325,7 +325,7 @@ class AggtradesFormatValidator:
         warnings, []
 
         # Check memory usage
-        memory_usage_mb, df.memory_usage(deep, True).sum() / 1024 / 1024
+        memory_usage_mb = df.memory_usage(deep, True).sum() / 1024 / 1024
         if memory_usage_mb > 100:  # 100 MB threshold
             warnings.append(f"Memory optimization: Large memory usage ({memory_usage_mb:.1f} MB)")
 

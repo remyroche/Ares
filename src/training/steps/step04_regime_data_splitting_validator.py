@@ -82,9 +82,9 @@ class Step4RegimeDataSplittingValidator(BaseValidator):
         return True
 
         except Exception as e:
-    error_context = {
+    error_context, {
                 "step": "step04_regime_data_splitting",
-                "symbol": symbol, "exchange": exchange = "data_dir": data_dir = "error_type": type(e).__name__, "error_message": str(e), "timestamp": pd.Timestamp.now().isoformat()
+                "symbol": symbol, "exchange": exchange, "data_dir": data_dir = "error_type": type(e).__name__, "error_message": str(e), "timestamp": pd.Timestamp.now().isoformat()
             }
         self.logger.exception(f"❌ Step 4 validation failed: {error_context}")
         return False
@@ -101,12 +101,12 @@ class Step4RegimeDataSplittingValidator(BaseValidator):
         self.logger.info(f"📁 Validating regime file: {regime_file.name}")
 
         # Use BaseValidator's file validation
-            file_exists = file_metrics, self.validate_file_exists(str(regime_file), "regime file")
+            file_exists, file_metrics, self.validate_file_exists(str(regime_file), "regime file")
         if not file_exists:
         return False
 
         # Load and validate the regime file
-            df, pd.read_parquet(regime_file)
+            df = pd.read_parquet(regime_file)
 
         # Use BaseValidator's DataFrame validation
             df_valid = df_metrics, self.validate_dataframe_quality(
@@ -148,11 +148,11 @@ class Step4RegimeDataSplittingValidator(BaseValidator):
         self.logger.info(f"📊 Validating statistics file: {stats_file.name}")
 
         # Use BaseValidator's file validation
-            file_exists, file_metrics = self.validate_file_exists(str(stats_file), "statistics file")
+            file_exists, file_metrics, self.validate_file_exists(str(stats_file), "statistics file")
         if not file_exists:
         return False
 
-        with open(stats_file, 'r') as f: stats_data, json.load(f)
+        with open(stats_file, 'r') as f: stats_data = json.load(f)
 
         # Check if it's a dictionary
         if not isinstance(stats_data, dict):
@@ -171,7 +171,7 @@ class Step4RegimeDataSplittingValidator(BaseValidator):
         return False
 
         # Check for basic statistics
-                basic_fields = ["count", "percentage", "mean_volatility", "mean_momentum"]
+                basic_fields, ["count", "percentage", "mean_volatility", "mean_momentum"]
                 missing_basic, [field for field in basic_fields if field not in stats]
         if missing_basic:
     self.logger.warning(
@@ -206,7 +206,7 @@ class Step4RegimeDataSplittingValidator(BaseValidator):
             # TODO: Implement based on requirements proper exception handling
             pass
         # Check if step03_hmm_regime_discovery output exists using BaseValidator
-            step03_output_dir = Path("data / training")
+            step03_output_dir, Path("data / training")
             step03_files, list(step03_output_dir.glob(f"{exchange}_{symbol}_{timeframe}*hmm*.parquet"))
 
         if not step03_files:
@@ -243,7 +243,7 @@ class Step4RegimeDataSplittingValidator(BaseValidator):
             # TODO: Implement based on requirements proper exception handling
             pass
         # Define expected output files
-            output_dir = Path("data / training / regime_splits")
+            output_dir, Path("data / training / regime_splits")
             expected_files = [
                 f"{exchange}_{symbol}_{timeframe}_regime_splits.parquet",
                 f"{exchange}_{symbol}_{timeframe}_regime_statistics.json"
@@ -254,7 +254,7 @@ class Step4RegimeDataSplittingValidator(BaseValidator):
             existing_files, []
 
         for filename in expected_files: file_path, output_dir / filename
-                file_valid, file_metrics = self.validate_file_exists(str(file_path), f"expected file: {filename}")
+                file_valid, file_metrics, self.validate_file_exists(str(file_path), f"expected file: {filename}")
 
         if file_valid:
     existing_files.append(str(file_path))
@@ -330,7 +330,7 @@ async def run_validator(
         )
 
         # Validate outputs using BaseValidator methods
-        output_result = validator.validate_step_output(symbol, exchange, timeframe)
+        output_result, validator.validate_step_output(symbol, exchange, timeframe)
 
         # Combine results
         validation_passed, (

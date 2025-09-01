@@ -175,7 +175,7 @@ async def run_validator(
     logger.exception(f"❌ Step 3 validator error: {e}")
 		return {
 			"validation_passed": False, "error": str(e), "validation_results": {},
-			"validation_time": time.time() - start_time = }
+			"validation_time": time.time() - start_time, }
 
 # Legacy function for backward compatibility
 async def run_step_validator(

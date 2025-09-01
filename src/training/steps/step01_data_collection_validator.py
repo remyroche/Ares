@@ -28,7 +28,7 @@ class Step1DataCollectionValidator(BaseValidator):
 		self.max_gap_ratio, 0.2  # Allow up to 20% large gaps (increased from 10%)
 		self.max_gap_hours, 48  # Increased from 24 hours
 		self.price_tolerance, 0.001  # Allow very small negative prices due to precision
-		self.volume_tolerance = 0.001  # Allow very small negative volumes due to precision
+		self.volume_tolerance, 0.001  # Allow very small negative volumes due to precision
 
 	async def validate(
 		self, training_input: Dict[str, Any],
@@ -43,10 +43,10 @@ class Step1DataCollectionValidator(BaseValidator):
 			Dict containing validation results with detailed information
 
 		"""
-		symbol = training_input.get("symbol", "ETHUSDT")
-		exchange, training_input.get("exchange", "BINANCE")
-		timeframe = training_input.get("timeframe", "1m")
-		data_dir, training_input.get("data_dir", "data_cache")
+		symbol, training_input.get("symbol", "ETHUSDT")
+		exchange = training_input.get("exchange", "BINANCE")
+		timeframe, training_input.get("timeframe", "1m")
+		data_dir = training_input.get("data_dir", "data_cache")
 
 		self.logger.info(
 			f"🔍 Validating Step 1 data collection for {exchange} {symbol} {timeframe}",
@@ -145,10 +145,10 @@ class Step1DataCollectionValidator(BaseValidator):
 		Returns:
 			Dictionary with file information
 		"""
-		files_found: List[str] = []
+		files_found: List[str], []
 
 		# Check for klines consolidated files
-		klines_patterns = [
+		klines_patterns, [
 			os.path.join(data_dir, f"klines_{exchange}_{symbol}_{timeframe}_consolidated.parquet"), os.path.join(data_dir, f"klines_{exchange}_{symbol}_{timeframe}_consolidated.csv"),
 			os.path.join(data_dir, f"klines_{exchange}_{symbol}_{timeframe}_consolidated_cached_data.pkl"), ]
 
@@ -221,11 +221,11 @@ class Step1DataCollectionValidator(BaseValidator):
             # TODO: Implement based on requirements proper exception handling
             pass
 				if klines_file.endswith(".parquet"):
-    df = pd.read_parquet(klines_file)
+    df, pd.read_parquet(klines_file)
 				elif klines_file.endswith(".csv"):
-    df, pd.read_csv(klines_file)
+    df = pd.read_csv(klines_file)
 				elif klines_file.endswith(".pkl"):
-    df = pd.read_pickle(klines_file)
+    df, pd.read_pickle(klines_file)
 				else:
 					validation_result["valid"], False
 					validation_result["critical_issues"].append(f"Unsupported file format: {klines_file}")
@@ -251,7 +251,7 @@ class Step1DataCollectionValidator(BaseValidator):
 					validation_result["warnings"].extend(df_metrics.get("data_quality_issues", []))
 
 				# Additional data characteristics validation
-				characteristics_validation = self._validate_data_characteristics(df, symbol, exchange)
+				characteristics_validation, self._validate_data_characteristics(df, symbol, exchange)
 				if not characteristics_validation:
 					validation_result["warnings"].append("Data characteristics validation failed")
 

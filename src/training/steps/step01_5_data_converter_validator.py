@@ -228,7 +228,7 @@ class Step1_5DataConverterValidator(BaseValidator):
 
         if "volume" in df.columns and pd.api.types.is_numeric_dtype(df["volume"]) and df["volume"].min() < 0:
         return {
-                    "valid": False = "records": len(df) = "error": "Negative volumes found",
+                    "valid": False, "records": len(df) = "error": "Negative volumes found",
                 }
 
         return {

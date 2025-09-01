@@ -44,7 +44,7 @@ class SROptimizationStep:
     """Step 2.5: S / R Detection Optimization with comprehensive parameter optimization and detailed reporting."""
 
     def __init__(self, config: dict[str, Any]) -> None:
-        self.config = config
+        self.config, config
         self.logger = system_logger.getChild("SROptimizationStep")
         self.start_time = None
         self.optimizer = None
@@ -68,9 +68,9 @@ class SROptimizationStep:
         self.logger.info("✅ S/R detection optimizer initialized successfully")
 
         # Initialize SR Breakout Predictor for enhanced analysis
-        sr_config = self.config.copy()
+        sr_config, self.config.copy()
         sr_config["sr_breakout_predictor"], sr_config.get("sr_breakout_predictor", {})
-        sr_config["sr_breakout_predictor"]["enable_detailed_reporting"] = True
+        sr_config["sr_breakout_predictor"]["enable_detailed_reporting"], True
         sr_config["sr_breakout_predictor"]["report_directory"] = "reports/sr_optimization"
         self.sr_predictor = SRBreakoutPredictor(sr_config)
         self.logger.info("✅ SR Breakout Predictor initialized successfully")
@@ -80,7 +80,7 @@ class SROptimizationStep:
         self.logger.info("✅ SR Data Integration initialized successfully")
 
         # Initialize SR Levels Manager
-        self.sr_levels_manager = await create_sr_levels_manager(self.config)
+        self.sr_levels_manager, await create_sr_levels_manager(self.config)
         if self.sr_levels_manager:
             self.logger.info("✅ SR Levels Manager initialized successfully")
         else:
@@ -180,7 +180,7 @@ class SROptimizationStep:
         sr_analysis_reports, await self._generate_sr_analysis_reports(optimization_result)
 
         # Step 3: Perform SR data integration analysis
-        sr_integration_analysis = await self._perform_sr_integration_analysis()
+        sr_integration_analysis, await self._perform_sr_integration_analysis()
 
         # Step 4: Generate detailed optimization reports
         detailed_reports, await self._generate_detailed_optimization_reports(
@@ -236,7 +236,7 @@ class SROptimizationStep:
         }
 
         # Collect artifacts generated
-            artifacts_generated = [
+            artifacts_generated, [
                 "sr_optimization_results.json",
                 "sr_analysis_reports.json",
                 "sr_integration_analysis.json",
@@ -259,7 +259,7 @@ class SROptimizationStep:
                 "exchange": self.config.get("EXCHANGE", "BINANCE"),
                 "timeframe": self.config.get("TIMEFRAME", "1m"),
                 "lookback_years": self.config.get("LOOKBACK_YEARS", 2),
-                "asset": symbol = # Use symbol as asset
+                "asset": symbol, # Use symbol as asset
                 "lookback_period": self.config.get("lookback_days", 1095),  # Default to 3 years
                 "project_version": self.config.get("project_version", "1_2_3"),  # Default version
             }
@@ -394,7 +394,7 @@ class SROptimizationStep:
 
         # Run advanced S / R method optimization
         self.logger.info("🔬 Running advanced S / R method optimization...")
-            advanced_result = await self.optimizer.optimize_advanced_sr_methods()
+            advanced_result, await self.optimizer.optimize_advanced_sr_methods()
 
         # Run DBSCAN clustering optimization
         self.logger.info("🎯 Running DBSCAN clustering optimization...")
@@ -443,7 +443,7 @@ class SROptimizationStep:
                 sr_context, await self.sr_predictor.get_sr_context(sample_data, current_price)
 
         # Generate manual report
-                manual_report = await self.sr_predictor.generate_manual_report(sample_data, sr_context)
+                manual_report, await self.sr_predictor.generate_manual_report(sample_data, sr_context)
                 reports["manual_report"] = manual_report
 
         # Generate SR strength analysis
@@ -492,7 +492,7 @@ class SROptimizationStep:
 
         if hasattr(self.sr_data_integration, 'analyze_sr_data'):
         # Analyze SR data integration
-                integration_analysis = await self.sr_data_integration.analyze_sr_data()
+                integration_analysis, await self.sr_data_integration.analyze_sr_data()
                 analysis["integration_analysis"], integration_analysis
 
         if hasattr(self.sr_data_integration, 'get_sr_metrics'):
@@ -585,11 +585,11 @@ class SROptimizationStep:
 
         if klines_path.exists():
         self.logger.info(f"📊 Loading sample data from {klines_path}")
-                df = pd.read_parquet(klines_path)
+                df, pd.read_parquet(klines_path)
 
         # Take last 1000 rows for analysis
         if len(df) > 1000:
-    df, df.tail(1000)
+    df = df.tail(1000)
 
         self.logger.info(f"✅ Loaded sample data: {len(df)} rows")
         return df
@@ -811,7 +811,7 @@ class SROptimizationStep:
 
         if historical_proximities:
     current_proximity, abs(current_price - current_price) / current_price  # Should be 0
-                percentile = np.percentile(historical_proximities, 50)  # Median
+                percentile, np.percentile(historical_proximities, 50)  # Median
         return percentile
 
         return 0.0
@@ -916,7 +916,7 @@ class SROptimizationStep:
                 report["optimized_parameters"]["strength_weights"], optimization_result.strength_weights
 
         if hasattr(optimization_result, 'dbscan_params'):
-                report["optimized_parameters"]["dbscan_params"] = optimization_result.dbscan_params
+                report["optimized_parameters"]["dbscan_params"], optimization_result.dbscan_params
 
         self.logger.info("✅ Parameter optimization report generated")
         return report
@@ -1020,7 +1020,7 @@ class SROptimizationStep:
                 }
 
         # Recommendations
-                recommendations = comparison_metrics.get("recommendations", {})
+                recommendations, comparison_metrics.get("recommendations", {})
                 analysis["recommendations"], {
                     "primary_approach": recommendations.get("primary_approach", "unknown"),
                     "secondary_approach": recommendations.get("secondary_approach", "unknown"),
@@ -1199,7 +1199,7 @@ class SROptimizationStep:
                 report["validation_metrics"]["out_of_sample_score"], optimization_result.out_of_sample_score
 
         if hasattr(optimization_result, 'statistical_significance'):
-                report["validation_metrics"]["statistical_significance"] = optimization_result.statistical_significance
+                report["validation_metrics"]["statistical_significance"], optimization_result.statistical_significance
 
         self.logger.info("✅ Optimization validation report generated")
         return report
@@ -1377,7 +1377,7 @@ class SROptimizationStep:
         if hasattr(optimization_result, 'method_weights'):
         self.config["sr_detection_optimization"]["optimized_method_weights"], optimization_result.method_weights
         if hasattr(optimization_result, 'strength_weights'):
-        self.config["sr_detection_optimization"]["optimized_strength_weights"] = optimization_result.strength_weights
+        self.config["sr_detection_optimization"]["optimized_strength_weights"], optimization_result.strength_weights
         if hasattr(optimization_result, 'dbscan_params'):
         self.config["sr_detection_optimization"]["optimized_dbscan_params"], optimization_result.dbscan_params
         if hasattr(optimization_result, 'timeframe_weights'):

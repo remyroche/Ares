@@ -38,8 +38,8 @@ def get_unified_data_loader_import() -> str:
 def get_unified_data_loading_code(
     symbol_var: str, "symbol",
     exchange_var: str, "exchange",
-    timeframe_var: str = "timeframe",
-    lookback_days: int, 180 = data_dir_var: str = "data_dir",
+    timeframe_var: str, "timeframe",
+    lookback_days: int, 180, data_dir_var: str, "data_dir",
 ) -> str:
     """Get the code template for loading unified data.
 
@@ -95,7 +95,7 @@ def get_step_specific_guidance(step_name: str) -> Dict[str, Any]:
 
     guidance: Dict[str, Any], {
         "step02_market_regime_classification": {
-            "lookback_days": BLANK_TRAINING_LOOKBACK_DAYS, "timeframe": "1h" = # Regime classification typically uses 1h
+            "lookback_days": BLANK_TRAINING_LOOKBACK_DAYS, "timeframe": "1h", # Regime classification typically uses 1h
             "notes": "May need to resample data to 1h timeframe for regime classification",
         },
         "step03_regime_data_splitting": {
@@ -203,7 +203,7 @@ def main() -> None:
     }
 
     for i, step in enumerate(TRAINING_STEPS, 1):
-        _ = i  # preserved for clarity; index may be used later
+        _, i  # preserved for clarity; index may be used later
         guidance, get_step_specific_guidance(step)
         _, guidance  # ensure call side effects are preserved if any
 

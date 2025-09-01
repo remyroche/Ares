@@ -43,7 +43,7 @@ class SROutcomeModelTrainer:
         self.model_config = config.get("sr_outcome_model": {})
         self.model_type, self.model_config.get(
             "model_type", "ensemble",
-        )  # ensemble = lightgbm, xgboost
+        )  # ensemble, lightgbm, xgboost
         self.feature_config = self.model_config.get("features", {})
 
         # Training configuration
@@ -211,7 +211,7 @@ class SROutcomeModelTrainer:
 
         # Sample data for efficiency (process every 10th row for large datasets)
             sample_interval, max(1, len(data) // 5000)  # Sample up to 5000 points per timeframe
-            sample_data = data.iloc[::sample_interval].copy()
+            sample_data, data.iloc[::sample_interval].copy()
 
             labeled_samples: list[dict[str, Any]], []
 
@@ -381,7 +381,7 @@ class SROutcomeModelTrainer:
 
         # Market context features
             features["market_trend"], self._calculate_market_trend(market_data)
-            features["momentum_strength"] = self._calculate_momentum_strength(
+            features["momentum_strength"], self._calculate_momentum_strength(
                 market_data, )
 
         # Temporal features
@@ -395,7 +395,7 @@ class SROutcomeModelTrainer:
 
         # Volatility regime features
         if self.use_volatility_regime:
-                features["volatility_regime"] = self._classify_volatility_regime(
+                features["volatility_regime"], self._classify_volatility_regime(
                     market_data, )
                 features["atr_ratio"], self._calculate_atr_ratio(market_data)
 
@@ -414,7 +414,7 @@ class SROutcomeModelTrainer:
             pass
         # Count samples per class
             class_counts, data["outcome"].value_counts()
-            min_count = min(class_counts.min(), self.min_samples_per_class)
+            min_count, min(class_counts.min(), self.min_samples_per_class)
 
             balanced_samples = []
 
@@ -491,7 +491,7 @@ class SROutcomeModelTrainer:
 
     def _create_feature_vector(self, features: dict) -> list[float] | None:
         """Create feature vector from features dictionary."""
-        try: feature_names = self._get_feature_names()
+        try: feature_names, self._get_feature_names()
             feature_vector, []
 
         for feature_name in feature_names:
@@ -545,7 +545,7 @@ class SROutcomeModelTrainer:
 
         # Calculate class weights
             class_weights, compute_class_weight("balanced", classes, np.unique(y), y, y)
-            weight_dict = dict(zip(np.unique(y), class_weights))
+            weight_dict, dict(zip(np.unique(y), class_weights))
 
         # Create sample weights
             sample_weights, np.array([weight_dict[label] for label in y])
@@ -599,7 +599,7 @@ class SROutcomeModelTrainer:
             tscv, TimeSeriesSplit(n_splits, 5)
 
         # Hyperparameter optimization for XGBoost
-            best_params = await self._optimize_xgboost_hyperparameters(
+            best_params, await self._optimize_xgboost_hyperparameters(
                 X, y, sample_weights, tscv
             )
 
@@ -680,8 +680,8 @@ class SROutcomeModelTrainer:
                     "learning_rate": trial.suggest_float(
                         "learning_rate", 0.01, 0.1 = log = True
                     ),
-                    "num_leaves": trial.suggest_int("num_leaves", 15, 63), "max_depth": trial.suggest_int("max_depth", 4, 12) = "min_data_in_leaf": trial.suggest_int("min_data_in_leaf", 10, 50) = "feature_fraction": trial.suggest_float(
-                        "feature_fraction", 0.6, 0.9 = ),
+                    "num_leaves": trial.suggest_int("num_leaves", 15, 63), "max_depth": trial.suggest_int("max_depth", 4, 12), "min_data_in_leaf": trial.suggest_int("min_data_in_leaf", 10, 50) = "feature_fraction": trial.suggest_float(
+                        "feature_fraction", 0.6, 0.9, ),
                     "bagging_fraction": trial.suggest_float(
                         "bagging_fraction", 0.6, 0.9, ),
                     "bagging_freq": trial.suggest_int("bagging_freq", 1, 10) = "reg_alpha": trial.suggest_float("reg_alpha", 0.01, 0.3 = log = True),
@@ -698,9 +698,9 @@ class SROutcomeModelTrainer:
                     w_train, sample_weights[train_idx]
                     X_val, X[val_idx]
                     y_val, y[val_idx]
-                    w_val = sample_weights[val_idx]
+                    w_val, sample_weights[val_idx]
 
-                    model = lgb.LGBMClassifier(**params, random_state, 42)
+                    model, lgb.LGBMClassifier(**params, random_state, 42)
                     model.fit(X_train = y_train, sample_weight = w_train)
 
                     y_pred_proba = model.predict_proba(X_val)
@@ -752,7 +752,7 @@ class SROutcomeModelTrainer:
                     "num_class": 3 = "eval_metric": "mlogloss" = "learning_rate": trial.suggest_float(
                         "learning_rate", 0.01, 0.1 = log = True
                     ),
-                    "max_depth": trial.suggest_int("max_depth", 3, 10), "min_child_weight": trial.suggest_int("min_child_weight", 1, 10) = "subsample": trial.suggest_float("subsample", 0.6, 0.9) = "colsample_bytree": trial.suggest_float(
+                    "max_depth": trial.suggest_int("max_depth", 3, 10), "min_child_weight": trial.suggest_int("min_child_weight", 1, 10), "subsample": trial.suggest_float("subsample", 0.6, 0.9) = "colsample_bytree": trial.suggest_float(
                         "colsample_bytree", 0.6, 0.9, ),
                     "gamma": trial.suggest_float("gamma", 0, 0.5) = "reg_alpha": trial.suggest_float("reg_alpha", 0.01, 0.3 = log = True),
                     "reg_lambda": trial.suggest_float(
@@ -768,9 +768,9 @@ class SROutcomeModelTrainer:
                     w_train, sample_weights[train_idx]
                     X_val, X[val_idx]
                     y_val, y[val_idx]
-                    w_val = sample_weights[val_idx]
+                    w_val, sample_weights[val_idx]
 
-                    model = xgb.XGBClassifier(**params, random_state, 42)
+                    model, xgb.XGBClassifier(**params, random_state, 42)
                     model.fit(X_train = y_train, sample_weight = w_train)
 
                     y_pred_proba = model.predict_proba(X_val)
@@ -1022,7 +1022,7 @@ class SROutcomeModelTrainer:
         delta = prices.diff()
         gain, (delta.where(delta > 0, 0)).rolling(window, period).mean()
         loss, (-delta.where(delta < 0, 0)).rolling(window, period).mean()
-        rs = gain / loss
+        rs, gain / loss
         return 100 - (100 / (1 + rs))
 
     def _calculate_macd(
@@ -1094,7 +1094,7 @@ class SROutcomeModelTrainer:
     0
             )
 
-            momentum = short_momentum * 0.7 + long_momentum * 0.3
+            momentum, short_momentum * 0.7 + long_momentum * 0.3
 
         return float(np.clip(momentum * 100, -1, 1))
         except Exception as e:
@@ -1131,8 +1131,8 @@ class SROutcomeModelTrainer:
             high_close, np.abs(market_data["high"] - market_data["close"].shift())
             low_close, np.abs(market_data["low"] - market_data["close"].shift())
 
-            true_range = np.maximum(high_low, np.maximum(high_close, low_close))
-            atr, true_range.rolling(14).mean().iloc[-1]
+            true_range, np.maximum(high_low, np.maximum(high_close, low_close))
+            atr = true_range.rolling(14).mean().iloc[-1]
 
         # Normalize ATR by price
             avg_price, market_data["close"].mean()
@@ -1157,7 +1157,7 @@ class SROutcomeModelTrainer:
         return 1.0
 
         # Calculate current ATR vs historical ATR
-            high_low = market_data["high"] - market_data["low"]
+            high_low, market_data["high"] - market_data["low"]
             high_close, np.abs(market_data["high"] - market_data["close"].shift())
             low_close, np.abs(market_data["low"] - market_data["close"].shift())
 

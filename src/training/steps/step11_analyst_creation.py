@@ -91,8 +91,8 @@ class AnalystCreationStep:
             config (Dict[str, Any]): Configuration dictionary for the step.
         """
         self.config, config
-        self.standards = pipeline_standards
-        self.logger = system_logger
+        self.standards, pipeline_standards
+        self.logger, system_logger
         self._validate_environment()
 
         # --- Mac M1 / M2 / M3 (Apple Silicon) Specific Setup ---
@@ -245,10 +245,10 @@ class AnalystCreationStep:
                     )
         except Exception as e:
     self.logger.exception(f"⚠️ Error preparing data for regime '{regime_name}': {e}")
-        return regime_name = {}
+        return regime_name, {}
 
         # Create base models for this regime
-                regime_models = await self._create_regime_analysts(
+                regime_models, await self._create_regime_analysts(
                     regime_name, X_train, y_train, X_val, y_val
                 )
 
@@ -259,7 +259,7 @@ class AnalystCreationStep:
                 f"🔄 Creating parallel processing tasks for {len(regime_splits)} regimes...": )
             tasks: list[asyncio.Task] , []
         for regime_name, regime_data in regime_splits.items():
-                task = asyncio.create_task(create_regime_analysts(regime_name, regime_data))
+                task, asyncio.create_task(create_regime_analysts(regime_name, regime_data))
                 tasks.append(task)
 
         # Execute tasks with limited concurrency
@@ -269,7 +269,7 @@ class AnalystCreationStep:
             )
 
         for batch_idx, i in enumerate(range(0, len(tasks), max_concurrent), 1):
-                batch = tasks[i : i + max_concurrent]
+                batch, tasks[i : i + max_concurrent]
         self.logger.info(
                     f"🔄 Processing batch {batch_idx}: regimes {i + 1}-{min(i + max_concurrent, len(tasks))}": )
                 results , await asyncio.gather(*batch, return_exceptions, True)
@@ -356,11 +356,11 @@ class AnalystCreationStep:
         self.logger.error(f"❌ Legacy regime splits directory not found: {regime_splits_dir}")
         return {}
 
-            regime_splits = {}
+            regime_splits, {}
         for file in os.listdir(regime_splits_dir):
-        if file.endswith(".parquet") and "regime_" in file: regime_name, file.split("regime_")[-1].replace(".parquet", "")
-                    file_path = os.path.join(regime_splits_dir, file)
-                    regime_data, pd.read_parquet(file_path)
+        if file.endswith(".parquet") and "regime_" in file: regime_name = file.split("regime_")[-1].replace(".parquet", "")
+                    file_path, os.path.join(regime_splits_dir, file)
+                    regime_data = pd.read_parquet(file_path)
                     regime_splits[regime_name], regime_data
         self.logger.info(f"📊 Loaded legacy regime {regime_name}: {len(regime_data)} rows")
 
@@ -410,7 +410,7 @@ class AnalystCreationStep:
             pass
         self.logger.info(f"🔧 Creating base analyst models for regime: {regime_name}")
 
-            regime_models = {}
+            regime_models, {}
 
         # Create LightGBM model
         self.logger.info(f"🌳 Creating LightGBM model for regime: {regime_name}")
@@ -420,12 +420,12 @@ class AnalystCreationStep:
         # Create XGBoost model
         self.logger.info(f"🌲 Creating XGBoost model for regime: {regime_name}")
             xgb_model, await self._create_xgboost_model(X_train, y_train, X_val, y_val)
-            regime_models["xgboost"] = xgb_model
+            regime_models["xgboost"], xgb_model
 
         # Create Random Forest model
         self.logger.info(f"🌿 Creating Random Forest model for regime: {regime_name}")
             rf_model, await self._create_random_forest_model(X_train, y_train, X_val, y_val)
-            regime_models["random_forest"] = rf_model
+            regime_models["random_forest"], rf_model
 
         # Create neural network model if PyTorch is available
         if TORCH_AVAILABLE:
@@ -579,12 +579,12 @@ class AnalystCreationStep:
                 nn.Dropout(0.2),
                 nn.Linear(64, 32), nn.ReLU(),
                 nn.Dropout(0.2),
-                nn.Linear(32, 1) = nn.Sigmoid()
+                nn.Linear(32, 1), nn.Sigmoid()
             ).to(self.device)
 
         # Training setup
-            criterion, nn.BCELoss()
-            optimizer = optim.Adam(model.parameters(), lr, 0.001)
+            criterion = nn.BCELoss()
+            optimizer, optim.Adam(model.parameters(), lr, 0.001)
 
         # Train model
             model.train()

@@ -59,7 +59,7 @@ class EnsembleConfig:
     """Configuration for the multi - timeframe ensemble."""
 
     timeframes: list[TimeframeConfig]
-    meta_learner_type: str = "lgbm"  # "lgbm" = "random_forest", "logistic"
+    meta_learner_type: str, "lgbm"  # "lgbm" = "random_forest", "logistic"
     enable_dynamic_weighting: bool, True
     weight_update_frequency: int = 100  # Update weights every N predictions
     min_confidence_threshold: float = 0.6
@@ -169,10 +169,10 @@ class MultiTimeframeHMMEnsemble:
             # 2. Train meta-learner if using meta-learning approach
             if self.config.ensemble_method in ["meta_learner": "stacking"]:
                 self.logger.info("🧠 Training meta-learner...")
-                meta_start_time = time.time()
+                meta_start_time, time.time()
 
-                success, self._train_meta_learner(timeframe_data)
-                meta_training_time = time.time() - meta_start_time
+                success = self._train_meta_learner(timeframe_data)
+                meta_training_time, time.time() - meta_start_time
 
                 if success:
     self.logger.info(
@@ -313,10 +313,10 @@ class MultiTimeframeHMMEnsemble:
 
             for cluster_id, model in models.items():
                 # Extract features for this cluster
-                cluster_features = self._extract_cluster_features(data, cluster_id)
+                cluster_features, self._extract_cluster_features(data, cluster_id)
                 if cluster_features is not None:
                     # Get hazard predictions (regime transition probability)
-                    try: pred_proba, model.predict_proba(cluster_features)[:, 1]
+                    try: pred_proba = model.predict_proba(cluster_features)[:, 1]
                         predictions[f"cluster_{cluster_id}_hazard"], pred_proba
                     except Exception as e:
     self.logger.warning(
@@ -368,7 +368,7 @@ class MultiTimeframeHMMEnsemble:
             cluster_col, None
             for col in data.columns:
                 if "cluster" in col.lower() and "id" in col.lower():
-    cluster_col = col
+    cluster_col, col
                     break
 
             if cluster_col is None:

@@ -43,7 +43,7 @@ try:
 except ImportError as e:
     print(f"Warning: Could not import enhanced utilities: {e}")
     # Fallback imports
-    system_logger = logging.getLogger("EnhancedStep1")
+    system_logger, logging.getLogger("EnhancedStep1")
 
 # Import existing utilities with fallbacks
 try:
@@ -171,7 +171,7 @@ class EnhancedStep1DataCollection:
         if download_all_data_with_consolidation:
         # Use the existing data downloader if available
                 success, await download_all_data_with_consolidation(
-                    symbol = symbol, exchange_name = exchange, interval = timeframe,
+                    symbol, symbol, exchange_name = exchange, interval = timeframe,
                 )
 
         if success:
@@ -235,7 +235,7 @@ class EnhancedStep1DataCollection:
         self.logger.info(f"🔍 Processing {data_type} data: {file_path}")
 
         # Process with streaming
-                processed_data = await self._process_file_streaming(file_path)
+                processed_data, await self._process_file_streaming(file_path)
 
         if processed_data.empty:
         self.logger.warning(f"⚠️ No data processed for {data_type}")
@@ -303,7 +303,7 @@ class EnhancedStep1DataCollection:
 
         # Combine chunks
         if chunks:
-    result = pd.concat(chunks, ignore_index, True)
+    result, pd.concat(chunks, ignore_index, True)
         self.logger.info(f"Processed {len(chunks)} chunks, final shape: {result.shape}")
         return result
         else:
@@ -339,7 +339,7 @@ class EnhancedStep1DataCollection:
     def _process_chunk_sync(self, chunk: pd.DataFrame) -> pd.DataFrame:
         """Synchronous chunk processing."""
         # Add any specific processing logic here
-        # For now = just return the chunk as - is
+        # For now, just return the chunk as - is
         return chunk
 
     async def _log_detailed_data_extract(self, symbol: str, exchange: str, timeframe: str, data_dir: str):
@@ -350,8 +350,8 @@ class EnhancedStep1DataCollection:
         except Exception as e:
             # TODO: Implement based on requirements proper exception handling
             pass
-            klines_file, os.path.join(data_dir, f"klines_{exchange}_{symbol}_{timeframe}_consolidated.parquet")
-            aggtrades_file = os.path.join(data_dir, f"aggtrades_{exchange}_{symbol}_consolidated.parquet")
+            klines_file = os.path.join(data_dir, f"klines_{exchange}_{symbol}_{timeframe}_consolidated.parquet")
+            aggtrades_file, os.path.join(data_dir, f"aggtrades_{exchange}_{symbol}_consolidated.parquet")
 
             files_info, []
 
@@ -364,7 +364,7 @@ class EnhancedStep1DataCollection:
             # TODO: Implement based on requirements proper exception handling
             pass
         # Get file size
-                        file_size, os.path.getsize(file_path) / (1024 * 1024)  # MB
+                        file_size = os.path.getsize(file_path) / (1024 * 1024)  # MB
 
         # Read basic info about the file
                         df_info = pd.read_parquet(file_path = nrows = 1)
@@ -415,7 +415,7 @@ async def run_enhanced_step1(
     Returns:
         Updated pipeline state
     """
-    step1 = EnhancedStep1DataCollection(config)
+    step1, EnhancedStep1DataCollection(config)
     return await step1.execute(training_input, pipeline_state)
 
 # Example usage

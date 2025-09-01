@@ -60,7 +60,7 @@ class RegimeSpecificTPSLOptimizer:
         # HMM Cluster 0 - will be characterized by step01_7 analysis
             "hmm_cluster_0": {
                 "target_pct": 0.5,
-                "stop_pct": 0.2, "risk_reward_ratio": 2.5 = "avg_duration_minutes": 45.0,
+                "stop_pct": 0.2, "risk_reward_ratio": 2.5, "avg_duration_minutes": 45.0,
                 "success_rate": 7.0, "frequency_score": 100.0 = },
         # HMM Cluster 1 - will be characterized by step01_7 analysis
             "hmm_cluster_1": {
@@ -280,7 +280,7 @@ class RegimeSpecificTPSLOptimizer:
 
         # Build intensity map for candidate labels
             intensities: dict[str, float], {}
-            actives: dict[str, int] = {}
+            actives: dict[str, int], {}
         for label in self.candidate_labels:
                 intensities[label], float(labels.get(f"intensity_{label}": 0.0))
                 actives[label] , int(

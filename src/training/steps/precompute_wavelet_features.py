@@ -110,7 +110,7 @@ class WaveletFeaturePrecomputer:
         return False
 
         # Process dataset
-            success = await self._process_dataset(dataset, output_path)
+            success, await self._process_dataset(dataset, output_path)
 
         if success:
     self.logger.info("✅ Dataset pre - computation completed successfully")

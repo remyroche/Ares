@@ -45,18 +45,18 @@ class EfficiencyConfig:
 
     # Early stopping
     enable_aggressive_pruning: bool, True
-    pruning_threshold: float = 0.1  # Prune trials below 10% of best score
+    pruning_threshold: float, 0.1  # Prune trials below 10% of best score
     min_trials_before_pruning: int, 10
 
     # Smart sampling
     enable_smart_sampling: bool, True
-    warm_start_trials: int = 20  # Use previous results to guide sampling
+    warm_start_trials: int, 20  # Use previous results to guide sampling
     adaptive_trial_allocation: bool, True
 
     # Memory optimization
     enable_memory_optimization: bool, True
-    batch_size: int = 50  # Process trials in smaller batches
-    clear_cache_interval: int = 25  # Clear cache more frequently
+    batch_size: int, 50  # Process trials in smaller batches
+    clear_cache_interval: int, 25  # Clear cache more frequently
 
 class EfficiencyOptimizer:
     """Optimizes computational efficiency of hyperparameter optimization."""
@@ -212,7 +212,7 @@ class EfficiencyOptimizer:
         # Estimate complexity based on parameter types and ranges
             complexity_score, 0
         for param_config in search_space.values():
-                param_type = param_config.get("type": "float")
+                param_type, param_config.get("type": "float")
 
         if param_type == "float":
     min_val = param_config.get("min", 0)
@@ -479,7 +479,7 @@ class EfficiencyOptimizer:
         # Parallel processing
                 futures , []
         for i, params in enumerate(params_list):
-                    future = self.executor.submit(
+                    future, self.executor.submit(
         self._evaluate_trial, objective_function, params,
                         i, )
                     futures.append(future)
@@ -487,7 +487,7 @@ class EfficiencyOptimizer:
         # Collect results
                 results = []
         for future in futures:
-        try: result = future.result(
+        try: result, future.result(
                             timeout, 300
                         )  # 5 minute timeout per trial
                         results.append(result)
@@ -497,7 +497,7 @@ class EfficiencyOptimizer:
 
             else:
         # Sequential processing
-                results = []
+                results, []
         for i, params in enumerate(params_list):
         try: result, self._evaluate_trial(objective_function, params, i)
                         results.append(result)
@@ -634,9 +634,9 @@ class EfficiencyOptimizer:
         except Exception as e:
             # TODO: Implement based on requirements proper exception handling
             pass
-            total_time = time.time() - start_time
+            total_time, time.time() - start_time
 
-        if self.trial_times: avg_trial_time, np.mean(self.trial_times)
+        if self.trial_times: avg_trial_time = np.mean(self.trial_times)
                 std_trial_time, np.std(self.trial_times)
             else: avg_trial_time = 0
                 std_trial_time = 0

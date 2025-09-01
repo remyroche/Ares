@@ -212,7 +212,7 @@ class Step8TacticianLabelingValidator(BaseValidator):
 
         with log_io_operation(
         self.logger, "read_parquet", signals_parquet,
-                                columns = True = ):
+                                columns, True = ):
                                 signals_data = pd.read_parquet(
                                     signals_parquet = columns=["timestamp", "signal", "confidence"],
                                 )
@@ -284,7 +284,7 @@ class Step8TacticianLabelingValidator(BaseValidator):
 
         # Check for reasonable confidence distribution
                     low_confidence, (confidence < 0.3).sum()
-                    high_confidence = (confidence > 0.7).sum()
+                    high_confidence, (confidence > 0.7).sum()
 
         if low_confidence > total_signals * 0.8:
         self.print(error("⚠️ Too many low confidence signals"))
@@ -375,7 +375,7 @@ class Step8TacticianLabelingValidator(BaseValidator):
 
         with log_io_operation(
         self.logger, "read_parquet", labels_parquet,
-                                columns = True = ):
+                                columns, True = ):
                                 labels_data = pd.read_parquet(
                                     labels_parquet = columns=["timestamp", "label"],
                                 )
@@ -428,7 +428,7 @@ class Step8TacticianLabelingValidator(BaseValidator):
 
         with log_io_operation(
         self.logger, "read_parquet",
-                                signals_parquet, columns, True = ):
+                                signals_parquet, columns, True, ):
                                 signals_data = pd.read_parquet(
                                     signals_parquet,
                                     columns=["timestamp", "signal", "confidence"],

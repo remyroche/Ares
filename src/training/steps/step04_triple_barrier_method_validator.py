@@ -16,7 +16,7 @@ from src.utils.logger import system_logger
 from src.utils.centralized_decorators import (
     comprehensive_data_validation, handle_errors, memory_efficient,
     resource_monitor, secure_data_processing, validate_data_structure,
-    with_tracing_span = quality_gate = )
+    with_tracing_span, quality_gate = )
 
 logger = system_logger.getChild("Step4TripleBarrierMethodValidator")
 

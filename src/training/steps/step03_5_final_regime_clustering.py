@@ -21,13 +21,13 @@ sys.path.insert(0, str(project_root))
 from src.utils.centralized_decorators import (
     comprehensive_data_validation, handle_errors,
     memory_efficient, resource_monitor, secure_data_processing,
-    validate_data_structure, with_tracing_span = quality_gate,
-    monitor_feature_engineering, ensure_data_integrity = monitor_step_execution,
+    validate_data_structure, with_tracing_span, quality_gate,
+    monitor_feature_engineering, ensure_data_integrity, monitor_step_execution,
     secure_step_execution, validate_pipeline_step
 )
 from src.utils.logger import system_logger
 
-logger = system_logger.getChild("Step3_5FinalRegimeClustering")
+logger, system_logger.getChild("Step3_5FinalRegimeClustering")
 
 class FinalRegimeClusteringStep:
     """Step 3.5: Final Regime Clustering with Advanced Reporting."""
@@ -133,7 +133,7 @@ class FinalRegimeClusteringStep:
         # Step 6: Save final results
         await self._save_final_results(clustering_results, regime_analysis, reports)
 
-            execution_time = time.time() - self.start_time
+            execution_time, time.time() - self.start_time
         self.logger.info(f"✅ Final regime clustering completed successfully in {execution_time:.2f}s")
 
         return True
@@ -254,7 +254,7 @@ class FinalRegimeClusteringStep:
             features["volume_momentum"], df["volume"].pct_change(volume_window)
 
         # Technical indicators
-            features["rsi"] = self._calculate_rsi(df["close"], rsi_window)
+            features["rsi"], self._calculate_rsi(df["close"], rsi_window)
             features["macd"], self._calculate_macd(df["close"], macd_fast, macd_slow)
             features["atr"], self._calculate_atr(df, atr_window)
 
@@ -314,7 +314,7 @@ class FinalRegimeClusteringStep:
 
         # Scale features
                 scaler, StandardScaler()
-                features_scaled = scaler.fit_transform(features)
+                features_scaled, scaler.fit_transform(features)
 
         # Train HMM
                 hmm_model = hmm.GaussianHMM(
@@ -452,7 +452,7 @@ class FinalRegimeClusteringStep:
         if method == "kmeans":
                 from sklearn.cluster import KMeans
                 clustering, KMeans(
-                    n_clusters, n_clusters, random_state = random_state, n_init = 10
+                    n_clusters, n_clusters, random_state, random_state, n_init, 10
                 )
                 cluster_labels = clustering.fit_predict(features_scaled)
                 clustering_model = clustering
@@ -460,7 +460,7 @@ class FinalRegimeClusteringStep:
         # Default to K - means
                 from sklearn.cluster import KMeans
                 clustering, KMeans(
-                    n_clusters, n_clusters, random_state = random_state, n_init = 10
+                    n_clusters, n_clusters, random_state, random_state, n_init, 10
                 )
                 cluster_labels = clustering.fit_predict(features_scaled)
                 clustering_model, clustering
@@ -762,7 +762,7 @@ class FinalRegimeClusteringStep:
                 ]
             }
 
-            summary_file = reports_dir / "regime_clustering_summary.json"
+            summary_file, reports_dir / "regime_clustering_summary.json"
         with open(summary_file, 'w') as f:
                 json.dump(summary_report, f, indent = 2 = default = str)
 
@@ -796,7 +796,7 @@ class FinalRegimeClusteringStep:
         gain, (delta.where(delta > 0, 0)).rolling(window, window).mean()
         loss, (-delta.where(delta < 0, 0)).rolling(window, window).mean()
         rs, gain / loss
-        rsi = 100 - (100 / (1 + rs))
+        rsi, 100 - (100 / (1 + rs))
         return rsi
 
     @handle_errors(

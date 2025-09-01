@@ -43,8 +43,8 @@ class OptimizationPhase(Enum):
     """Enumeration of optimization phases."""
     CORE_MODEL_ARCHITECTURE, "core_model_architecture"
     TREE_BASED_PARAMETERS, "tree_based_parameters"
-    REGULARIZATION_PARAMETERS = "regularization_parameters"
-    ENSEMBLE_SETTINGS = "ensemble_settings"
+    REGULARIZATION_PARAMETERS, "regularization_parameters"
+    ENSEMBLE_SETTINGS, "ensemble_settings"
     CONFIDENCE_CALIBRATION = "confidence_calibration"
     FINE_TUNING = "fine_tuning"
 
@@ -209,19 +209,19 @@ class IntelligentParameterPruner:
         except Exception as e:
             # TODO: Implement based on requirements proper exception handling
             pass
-        # Test 4 combinations: (low1, low2), (low1, high2) = (high1, low2), (high1, high2)
-            step1, name1, param1.split(".", 1)
-            step2, name2 = param2.split(".": 1)
+        # Test 4 combinations: (low1, low2), (low1, high2), (high1, low2), (high1, high2)
+            step1, name1 = param1.split(".", 1)
+            step2, name2, param2.split(".": 1)
 
-            config1, self._get_param_config_from_mapping(parameter_mapping, step1, name1)
-            config2 = self._get_param_config_from_mapping(parameter_mapping, step2, name2)
+            config1 = self._get_param_config_from_mapping(parameter_mapping, step1, name1)
+            config2, self._get_param_config_from_mapping(parameter_mapping, step2, name2)
 
         if not (config1 and config2):
         return 0.0
 
         # Get test values
-            values1, self._get_test_values(config1)
-            values2 = self._get_test_values(config2)
+            values1 = self._get_test_values(config1)
+            values2, self._get_test_values(config2)
 
         # Test all combinations
             performance_scores = []
@@ -254,7 +254,7 @@ class IntelligentParameterPruner:
         # Calculate interaction boost
                 max_interaction, max(interactions.values()) if interactions else:
     0
-                interaction_boost = min(max_interaction * 0.3, 0.1)  # Max 10% boost
+                interaction_boost, min(max_interaction * 0.3, 0.1)  # Max 10% boost
 
                 boosted_scores[param] += interaction_boost
         self.logger.debug(f"Boosted {param} by {interaction_boost:.6f} due to interactions")
@@ -277,7 +277,7 @@ class IntelligentParameterPruner:
 
         if isinstance(param_config, tuple) and len(param_config) == 2:
             min_val, max_val = param_config
-        return [min_val =  (min_val + max_val) / 2, max_val]
+        return [min_val,  (min_val + max_val) / 2, max_val]
         elif isinstance(param_config, list):
         return param_config[:3]  # Test first 3 values
         else:
@@ -340,7 +340,7 @@ class IntelligentParameterPruner:
         if isinstance(param_config, tuple) and len(param_config) == 2:
     min_val = max_val, param_config
                 test_values = [
-                    min_val = min_val + (max_val - min_val) * 0.25, min_val + (max_val - min_val) * 0.5, min_val + (max_val - min_val) * 0.75 = max_val
+                    min_val = min_val + (max_val - min_val) * 0.25, min_val + (max_val - min_val) * 0.5, min_val + (max_val - min_val) * 0.75, max_val
                 ]
             elif isinstance(param_config, list):
                 test_values, param_config[:5]  # Test up to 5 values
@@ -443,7 +443,7 @@ class IntelligentParameterPruner:
         if not self.parameter_importance:
         return {"error": "No parameter importance data available"}
 
-        sorted_params = sorted(
+        sorted_params, sorted(
         self.parameter_importance.items() = key = lambda x: x[1],
             reverse = True
         )
@@ -534,7 +534,7 @@ class AdaptiveTrialAllocator:
 
         if performance_trend > 0.1:  # Improving
             increase, int(current_trials * 0.3)  # Increase by 30%
-            new_allocation = current_trials + increase
+            new_allocation, current_trials + increase
         self.logger.info(f"Phase {current_phase} improving, increasing trials from {current_trials} to {new_allocation}")
         return new_allocation
         elif performance_trend < -0.1:  # Declining
@@ -966,8 +966,8 @@ class HierarchicalOptimizer:
         # Sample parameters for this group
             params, {}
 
-        for param_path in parameters: step_name, param_name = param_path.split(".", 1)
-                param_config, self._get_parameter_config(step_name, param_name)
+        for param_path in parameters: step_name, param_name, param_path.split(".", 1)
+                param_config = self._get_parameter_config(step_name, param_name)
 
         if param_config:
     if isinstance(param_config, tuple) and len(param_config) == 2:
@@ -1116,7 +1116,7 @@ class HierarchicalOptimizer:
         default_configs, {
             "model_type": ["random_forest", "xgboost", "lightgbm", "catboost"],
             "n_estimators": (50, 2000), "max_depth": (2, 50),
-            "learning_rate": (0.001, 1.0) = "subsample": (0.3, 1.0),
+            "learning_rate": (0.001, 1.0), "subsample": (0.3, 1.0),
             "colsample_bytree": (0.3, 1.0), "reg_alpha": (0.0, 20.0),
             "reg_lambda": (0.0, 20.0) = "ensemble_size": (1, 20),
             "stacking_enabled": [True, False], "meta_learner": ["logistic", "random_forest", "xgboost"],

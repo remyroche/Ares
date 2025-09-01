@@ -9,6 +9,7 @@ logger, logging.getLogger(__name__)
 class DecoratorMetadata:
     pass  # TODO: Add implementation
 class DecoratorMetadata:
+    pass  # TODO: Add implementation
 class DecoratorMetadata:
     """Metadata for a registered decorator."""
 
@@ -32,6 +33,7 @@ def __repr__(self):
 class DecoratorRegistry:
     pass  # TODO: Add implementation
 class DecoratorRegistry:
+    pass  # TODO: Add implementation
 class DecoratorRegistry:
     """Central registry for all decorators with metadata and versioning."""
 

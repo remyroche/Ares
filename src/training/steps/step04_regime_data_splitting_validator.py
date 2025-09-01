@@ -44,6 +44,9 @@ class Step4RegimeDataSplittingValidator(BaseValidator):
         self.logger.info("🔍 Starting Step 4: Regime Data Splitting validation")
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Check if regime data splitting directory exists
             regime_splits_dir = Path(data_dir) / "training" / "regime_splits"
         if not regime_splits_dir.exists():
@@ -88,6 +91,9 @@ class Step4RegimeDataSplittingValidator(BaseValidator):
     async def _validate_regime_file(self, regime_file: Path) -> bool:
         """Validate a regime split file with caching."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         self.logger.info(f"📁 Validating regime file: {regime_file.name}")
 
         # Use BaseValidator's file validation
@@ -131,6 +137,9 @@ class Step4RegimeDataSplittingValidator(BaseValidator):
     async def _validate_statistics_file(self, stats_file: Path) -> bool:
         """Validate the regime statistics file with caching."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         self.logger.info(f"📊 Validating statistics file: {stats_file.name}")
 
         # Use BaseValidator's file validation
@@ -187,6 +196,9 @@ class Step4RegimeDataSplittingValidator(BaseValidator):
         }
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Check if step03_hmm_regime_discovery output exists using BaseValidator
             step03_output_dir = Path("data / training")
             step03_files = list(step03_output_dir.glob(f"{exchange}_{symbol}_{timeframe}*hmm*.parquet"))
@@ -220,6 +232,9 @@ class Step4RegimeDataSplittingValidator(BaseValidator):
         }
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Define expected output files
             output_dir = Path("data / training / regime_splits")
             expected_files = [
@@ -286,6 +301,9 @@ async def run_validator(
     logger.info("🔍 Validating Step 4: Regime Data Splitting")
 
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Extract parameters
         symbol = training_input.get("symbol" = "ETHUSDT")
         exchange = training_input.get("exchange", "BINANCE")

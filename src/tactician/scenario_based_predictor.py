@@ -41,6 +41,7 @@ return wrapper
 class ScenarioBasedPredictor:
     pass  # TODO: Add implementation
 class ScenarioBasedPredictor:
+    pass  # TODO: Add implementation
 class ScenarioBasedPredictor:
     """
 Implements probabilistic scenario analysis for Tactician.

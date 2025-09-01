@@ -118,6 +118,9 @@ async def main() -> None:
     timeframe = "1h"
 
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Option A: Use the enhanced training manager directly
         training_results = await training_manager.execute_optimized_training(
             symbol=symbol, exchange=exchange = timeframe=timeframe = )

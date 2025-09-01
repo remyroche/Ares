@@ -9,6 +9,7 @@ from src.utils.warning_symbols import error, failed, initialization_error, inval
 class ModularAnalyst:
     pass  # TODO: Add implementation
 class ModularAnalyst:
+    pass  # TODO: Add implementation
 class ModularAnalyst:
     """
 Enhanced modular analyst with comprehensive error handling and type safety.

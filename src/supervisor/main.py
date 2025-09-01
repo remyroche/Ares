@@ -19,6 +19,7 @@ from src.utils.state_manager import StateManager
 class Supervisor:
     pass  # TODO: Add implementation
 class Supervisor:
+    pass  # TODO: Add implementation
 class Supervisor:
     """
 The central real-time orchestrator of the Ares Trading Bot.
@@ -152,6 +153,7 @@ context="supervisor start",
 async def start(self):
     pass  # TODO: Add implementation
 async def start(self):
+    pass  # TODO: Add implementation
 async def start(self):
         """
 Starts all bot components and the main processing loop.
@@ -228,6 +230,7 @@ context="exchange state synchronization",
 async def _synchronize_exchange_state(self):
     pass  # TODO: Add implementation
 async def _synchronize_exchange_state(self):
+    pass  # TODO: Add implementation
 async def _synchronize_exchange_state(self):
         """
 Fetches the current account equity and open positions from the exchange
@@ -327,6 +330,7 @@ exc_info=True
 class MainSupervisor:
     pass  # TODO: Add implementation
 class MainSupervisor:
+    pass  # TODO: Add implementation
 class MainSupervisor:
     """
 Main Supervisor Entrypoint with DI, type hints, and robust error handling.

@@ -13,6 +13,7 @@ from dataclasses import dataclass
 class TechnicalIndicatorsConfig:
     pass  # TODO: Add implementation
 class TechnicalIndicatorsConfig:
+    pass  # TODO: Add implementation
 class TechnicalIndicatorsConfig:
     """Optimizable technical indicator parameters."""
 

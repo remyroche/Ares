@@ -10,6 +10,7 @@ import sys
 class ColorCodes:
     pass  # TODO: Add implementation
 class ColorCodes:
+    pass  # TODO: Add implementation
 class ColorCodes:
     """ANSI color codes for terminal output."""
 
@@ -41,6 +42,7 @@ BRIGHT_WHITE = "\033[97m"
 class WarningSymbols:
     pass  # TODO: Add implementation
 class WarningSymbols:
+    pass  # TODO: Add implementation
 class WarningSymbols:
     """Unicode warning symbols for enhanced visual feedback."""
 

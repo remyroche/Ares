@@ -124,6 +124,9 @@ class AggtradesFormatValidator:
             "step04_compatible": False = }
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Check file size
             result['file_size'] = file_path.stat().st_size
 
@@ -356,6 +359,9 @@ class AggtradesFormatValidator:
 
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             logger.info(f"🔧 Fixing format for {file_path.name}")
 
         # Read the file
@@ -459,6 +465,9 @@ class AggtradesFormatValidator:
 
         for file_path in aggtrades_files:
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Validate file format
                 validation = self.validate_file_format(file_path)
 
@@ -520,6 +529,9 @@ class AggtradesFormatValidator:
 
         for file_path in aggtrades_files:
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                 validation = self.validate_file_format(file_path)
                 file_size = file_path.stat().st_size
                 total_size += file_size

@@ -12,9 +12,12 @@ import pandas as pd
 if TYPE_CHECKING:
     pass  # TODO: Add proper implementation
 @dataclass
+class PlaceholderDataClass:
+    pass  # TODO: Add implementation
 class EventConfig:
     pass  # TODO: Add implementation
 class EventConfig:
+    pass  # TODO: Add implementation
 class EventConfig:
     pre_window: int
 post_window: int
@@ -27,6 +30,7 @@ preserve_secondary_labels: bool
 class EventTriggerIndexer:
     pass  # TODO: Add implementation
 class EventTriggerIndexer:
+    pass  # TODO: Add implementation
 class EventTriggerIndexer:
     """
 Build event triggers (t, 0) from meta-label intensities with safeguards:

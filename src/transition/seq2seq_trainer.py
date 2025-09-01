@@ -48,6 +48,7 @@ except Exception:
 class TransitionSeqDataset(Dataset):
     pass  # TODO: Add implementation
 class TransitionSeqDataset(Dataset):
+    pass  # TODO: Add implementation
 class TransitionSeqDataset(Dataset):
     pass  # TODO: Add proper implementation
 def __init__(
@@ -96,6 +97,7 @@ return {
 class SmallTransformer(pl.LightningModule if pl else nn.Module):
     pass  # TODO: Add implementation
 class SmallTransformer(pl.LightningModule if pl else nn.Module):
+    pass  # TODO: Add implementation
 class SmallTransformer(pl.LightningModule if pl else nn.Module):
     pass  # TODO: Add proper implementation
 def __init__(
@@ -259,6 +261,7 @@ return {
 class SmallTCN(SmallTransformer):
     pass  # TODO: Add implementation
 class SmallTCN(SmallTransformer):
+    pass  # TODO: Add implementation
 class SmallTCN(SmallTransformer):
     pass  # TODO: Add proper implementation
 def __init__(

@@ -27,9 +27,6 @@ if str(project_root) not in sys.path:
 from src.utils.logger import system_logger
 
 class ValidationSeverity(Enum):
-    pass  # TODO: Add implementation
-class ValidationSeverity(Enum):
-class ValidationSeverity(Enum):
     """Validation severity levels."""
 INFO = "info"
 WARNING = "warning"
@@ -37,9 +34,12 @@ ERROR = "error"
 CRITICAL = "critical"
 
 @dataclass
+class PlaceholderDataClass:
+    pass  # TODO: Add implementation
 class ValidationIssue:
     pass  # TODO: Add implementation
 class ValidationIssue:
+    pass  # TODO: Add implementation
 class ValidationIssue:
     """Represents a validation issue."""
 issue_type: str
@@ -50,9 +50,12 @@ affected_columns: Optional[List[str]] = None
 affected_rows: Optional[List[int]] = None
 
 @dataclass
+class PlaceholderDataClass:
+    pass  # TODO: Add implementation
 class FileValidationResult:
     pass  # TODO: Add implementation
 class FileValidationResult:
+    pass  # TODO: Add implementation
 class FileValidationResult:
     """Result of file validation."""
 is_valid: bool
@@ -65,6 +68,7 @@ validation_timestamp: datetime
 class ComprehensiveFileValidator:
     pass  # TODO: Add implementation
 class ComprehensiveFileValidator:
+    pass  # TODO: Add implementation
 class ComprehensiveFileValidator:
     """
 Comprehensive file format validator for training pipeline steps.

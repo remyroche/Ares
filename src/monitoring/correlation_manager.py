@@ -1,3 +1,6 @@
+from enum import Enum
+from dataclasses import dataclass
+
 #!/usr/bin/env python3
 """
 Correlation Manager
@@ -7,15 +10,9 @@ for the Ares trading bot.
 """
 
 
-from datetime import datetime
-from enum import Enum
-from typing import Any, Dict, List, Optional
 
 
 
-class CorrelationStatus(Enum):
-    pass  # TODO: Add implementation
-class CorrelationStatus(Enum):
 class CorrelationStatus(Enum):
     """Correlation status enumeration."""
 

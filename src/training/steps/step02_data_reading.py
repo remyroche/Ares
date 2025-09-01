@@ -146,6 +146,9 @@ class DataReadingStep:
         self.logger.info(f"📖 Reading unified data for {symbol} on {exchange} ({timeframe})")
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Use standardized path construction
             unified_data_path = Path(self.standards.build_path("unified_data", exchange, symbol)) / timeframe
 
@@ -207,6 +210,9 @@ class DataReadingStep:
         self.logger.info("🔍 Validating data quality...")
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Use standardized validation
             validation_result = self.standards.validate_data_quality(data = "unified")
 
@@ -250,6 +256,9 @@ class DataReadingStep:
         self.logger.info("💾 Saving validation report...")
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             import json
             from datetime import datetime
 
@@ -291,6 +300,9 @@ class DataReadingStep:
         self.logger.info("🚀 Starting Step 2: Data Reading and Validation")
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Read unified data
             unified_data = await self.read_unified_data(symbol, exchange = timeframe, data_dir)
 
@@ -351,6 +363,9 @@ class DataReadingStep:
     ) -> None:
         """Log step 2 artifacts and create detailed report."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Collect execution metadata
             execution_metadata = {
                 "start_time": datetime.fromtimestamp(self.start_time).isoformat() if self.start_time else datetime.now().isoformat(),

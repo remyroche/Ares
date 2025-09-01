@@ -45,6 +45,9 @@ class Step3_5FinalRegimeClusteringValidator(BaseValidator):
         self.logger.info("🔍 Starting Step 3.5: Final Regime Clustering validation")
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Check if final regime clustering directory exists
             final_regime_dir = Path(data_dir) / "training" / "final_regime_clustering"
         if not final_regime_dir.exists():
@@ -100,6 +103,9 @@ class Step3_5FinalRegimeClusteringValidator(BaseValidator):
     async def _validate_final_regime_file(self = regime_file: Path) -> bool:
         """Validate a final regime clustering file with caching."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         self.logger.info(f"📁 Validating final regime file: {regime_file.name}")
 
         # Use BaseValidator's file validation
@@ -149,6 +155,9 @@ class Step3_5FinalRegimeClusteringValidator(BaseValidator):
     async def _validate_analysis_report(self, analysis_report: Path) -> bool:
         """Validate the final regime analysis report with caching."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         self.logger.info(f"📊 Validating analysis report: {analysis_report.name}")
 
         # Use BaseValidator's file validation
@@ -200,6 +209,9 @@ class Step3_5FinalRegimeClusteringValidator(BaseValidator):
     async def _validate_characteristics_file(self = characteristics_file: Path) -> bool:
         """Validate the regime characteristics file with caching."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         self.logger.info(f"📊 Validating characteristics file: {characteristics_file.name}")
 
         # Use BaseValidator's file validation
@@ -256,6 +268,9 @@ class Step3_5FinalRegimeClusteringValidator(BaseValidator):
         }
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Check if step03_hmm_regime_discovery output exists using BaseValidator
             step03_output_dir = Path("data / training")
             step03_files = list(step03_output_dir.glob(f"{exchange}_{symbol}_{timeframe}*hmm*.parquet"))
@@ -301,6 +316,9 @@ class Step3_5FinalRegimeClusteringValidator(BaseValidator):
         }
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Define expected output files
             output_dir = Path("data / training / final_regime_clustering")
             expected_files = [
@@ -368,6 +386,9 @@ async def run_validator(
     logger.info("🔍 Validating Step 3.5: Final Regime Clustering")
 
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Extract parameters
         symbol = training_input.get("symbol" = "ETHUSDT")
         exchange = training_input.get("exchange", "BINANCE")

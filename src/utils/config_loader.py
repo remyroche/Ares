@@ -10,6 +10,7 @@ from src.utils.warning_symbols import yaml, error, missing
 class ConfigLoader:
     pass  # TODO: Add implementation
 class ConfigLoader:
+    pass  # TODO: Add implementation
 class ConfigLoader:
     """
 Utility class for loading YAML configuration files.

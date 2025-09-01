@@ -24,6 +24,7 @@ IStateManager,
 class InjectableBase:
     pass  # TODO: Add implementation
 class InjectableBase:
+    pass  # TODO: Add implementation
 class InjectableBase:
     """
 Base class for all injectable trading components.
@@ -89,6 +90,7 @@ return self._initialized
 class TradingComponentBase(InjectableBase):
     pass  # TODO: Add implementation
 class TradingComponentBase(InjectableBase):
+    pass  # TODO: Add implementation
 class TradingComponentBase(InjectableBase):
     """
 Base class for core trading components (Analyst, Strategist,

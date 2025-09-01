@@ -11,9 +11,6 @@ from enum import Enum
 
 
 class AlertSeverity(Enum):
-    pass  # TODO: Add implementation
-class AlertSeverity(Enum):
-class AlertSeverity(Enum):
     INFO , "info"
 WARNING = "warning"
 ERROR = "error"
@@ -21,9 +18,6 @@ CRITICAL = "critical"
 EMERGENCY = "emergency"
 
 
-class ErrorCategory(Enum):
-    pass  # TODO: Add implementation
-class ErrorCategory(Enum):
 class ErrorCategory(Enum):
     SYSTEM = "system"
 NETWORK = "network"
@@ -35,9 +29,6 @@ SECURITY = "security"
 CONFIGURATION = "configuration"
 
 
-class AnomalyType(Enum):
-    pass  # TODO: Add implementation
-class AnomalyType(Enum):
 class AnomalyType(Enum):
     PREDICTION_DRIFT , "prediction_drift"
 PERFORMANCE_DEGRADATION = "performance_degradation"

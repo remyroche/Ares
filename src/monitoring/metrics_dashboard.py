@@ -7,15 +7,10 @@ Provides real-time metrics visualization scaffolding for the Ares trading bot.
 
 
 from dataclasses import dataclass
-from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional
 
 
 
-class MetricType(Enum):
-    pass  # TODO: Add implementation
-class MetricType(Enum):
 class MetricType(Enum):
     """Metric types for categorization."""
 

@@ -36,6 +36,7 @@ validation_error,
 class PaperTrader:
     pass  # TODO: Add implementation
 class PaperTrader:
+    pass  # TODO: Add implementation
 class PaperTrader:
     """
 Enhanced paper trader with comprehensive error handling and type safety.

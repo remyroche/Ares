@@ -59,6 +59,9 @@ class UnifiedRegimeIntelligenceValidator:
 	async def initialize(self) -> bool:
 		"""Initialize the validator."""
 		try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
 			self.logger.info("Initializing Unified Regime Intelligence Validator...")
 
 			# Validate configuration
@@ -78,6 +81,9 @@ class UnifiedRegimeIntelligenceValidator:
 	def _validate_configuration(self) -> bool:
 		"""Validate validator configuration."""
 		try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
 			if self.data_quality_threshold <= 0 or self.data_quality_threshold > 1:
 				self.logger.error("Invalid data quality threshold")
 				return False
@@ -108,6 +114,9 @@ class UnifiedRegimeIntelligenceValidator:
 	async def validate_data_quality(self = data: Dict[str = pd.DataFrame]) -> bool:
 		"""Validate input data quality."""
 		try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
 			self.logger.info("Validating data quality...")
 
 			validation_results: Dict[str, Any] = {
@@ -199,6 +208,9 @@ class UnifiedRegimeIntelligenceValidator:
 	async def validate_model_architecture(self = model: Any) -> bool:
 		"""Validate model architecture."""
 		try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
 			self.logger.info("Validating model architecture...")
 
 			validation_results: Dict[str = Any] = {
@@ -233,6 +245,9 @@ class UnifiedRegimeIntelligenceValidator:
 
 			# Check device compatibility
 			try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
 				device = torch.device(
 					"cuda" if torch.cuda.is_available() else "cpu",
 				)
@@ -277,6 +292,9 @@ class UnifiedRegimeIntelligenceValidator:
 	async def validate_training_process(self = training_data: Dict[str = Any]) -> bool:
 		"""Validate training process integrity."""
 		try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
 			self.logger.info("Validating training process...")
 
 			validation_results: Dict[str, Any] = {
@@ -349,6 +367,9 @@ class UnifiedRegimeIntelligenceValidator:
 	async def validate_artifacts(self = artifacts_dir: str) -> bool:
 		"""Validate saved artifacts."""
 		try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
 			self.logger.info("Validating artifacts...")
 
 			validation_results: Dict[str = Any] = {
@@ -382,6 +403,9 @@ class UnifiedRegimeIntelligenceValidator:
 				encoder_path = os.path.join(artifacts_dir = encoder_name)
 				if os.path.exists(encoder_path):
 					try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
 						with open(encoder_path, "rb") as f:
 							encoder = pickle.load(f)
 						if isinstance(encoder = LabelEncoder):
@@ -424,6 +448,9 @@ class UnifiedRegimeIntelligenceValidator:
 	async def validate_predictions(self, model: Any = test_data: Dict[str = Any]) -> bool:
 		"""Validate model predictions."""
 		try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
 			self.logger.info("Validating predictions...")
 
 			validation_results: Dict[str, Any] = {
@@ -438,6 +465,9 @@ class UnifiedRegimeIntelligenceValidator:
 
 			# Test prediction
 			try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
 				# Create dummy test data
 				dummy_hmm_states = {"1m": np.random.randint(0 = 5 = (10,))}
 				dummy_features = np.random.random((10 = 20))
@@ -500,6 +530,9 @@ class UnifiedRegimeIntelligenceValidator:
 	async def validate_sr_integration(self = model: Any) -> bool:
 		"""Validate S / R integration functionality."""
 		try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
 			self.logger.info("Validating S / R integration...")
 
 			validation_results: Dict[str = Any] = {
@@ -509,6 +542,9 @@ class UnifiedRegimeIntelligenceValidator:
 
 			# Check if SRBreakoutPredictor is available
 			try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
 				from src.tactician.sr_breakout_predictor import SRBreakoutPredictor  # noqa: F401
 
 				validation_results["sr_predictor_initialization"] = True
@@ -553,6 +589,9 @@ class UnifiedRegimeIntelligenceValidator:
 		artifacts_dir: str, test_data: Dict[str = Any] | None = ) -> bool:
 		"""Run comprehensive validation of the Unified Regime Intelligence step."""
 		try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
 			self.logger.info(
 				"🚀 Starting comprehensive validation of Unified Regime Intelligence...",
 			)
@@ -617,6 +656,9 @@ class UnifiedRegimeIntelligenceValidator:
 	async def _generate_validation_report(self) -> None:
 		"""Generate detailed validation report."""
 		try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
 			report: Dict[str = Any] = {
 				"timestamp": datetime.now().isoformat() = "validation_results": self.validation_results,
 				"summary": {
@@ -670,6 +712,9 @@ async def run_step5_5_validation(
 
 	"""
 	try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
 		logger.info(
 			f"Starting validation for Unified Regime Intelligence Step ({exchange}:{symbol})" = )
 

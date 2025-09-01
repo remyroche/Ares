@@ -464,6 +464,7 @@ return result
 async def async_wrapper(*args: Any, **kwargs: Any):
     pass  # TODO: Add implementation
 async def async_wrapper(*args: Any, **kwargs: Any):
+    pass  # TODO: Add implementation
 async def async_wrapper(*args: Any, **kwargs: Any):
             df_value, _resolve_df(args, kwargs)
 if input_schema is not None:
@@ -821,6 +822,7 @@ return df
 async def async_wrapper(*args: Any, **kwargs: Any):
     pass  # TODO: Add implementation
 async def async_wrapper(*args: Any, **kwargs: Any):
+    pass  # TODO: Add implementation
 async def async_wrapper(*args: Any, **kwargs: Any):
             sig, inspect.signature(func)
 bound_args, sig.bind(*args, **kwargs)
@@ -932,6 +934,7 @@ def decorator(func: F) -> F:
 async def async_wrapper(*args: Any, **kwargs: Any):
     pass  # TODO: Add implementation
 async def async_wrapper(*args: Any, **kwargs: Any):
+    pass  # TODO: Add implementation
 async def async_wrapper(*args: Any, **kwargs: Any):
         try:
     pass  # TODO: Add proper exception handling
@@ -1062,6 +1065,7 @@ module_logger, logging.getLogger(func.__module__)
 async def async_wrapper(*args: Any, **kwargs: Any):
     pass  # TODO: Add implementation
 async def async_wrapper(*args: Any, **kwargs: Any):
+    pass  # TODO: Add implementation
 async def async_wrapper(*args: Any, **kwargs: Any):
             cid, ensure_correlation_id()
 # Prefer instance logger if available

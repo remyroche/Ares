@@ -12,9 +12,12 @@ from dataclasses import dataclass, field
 
 
 @dataclass
+class PlaceholderDataClass:
+    pass  # TODO: Add implementation
 class SROptimizationConfig:
     pass  # TODO: Add implementation
 class SROptimizationConfig:
+    pass  # TODO: Add implementation
 class SROptimizationConfig:
     """Configuration for S/R detection optimization."""
 

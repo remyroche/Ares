@@ -17,6 +17,9 @@ sys.path.insert(0 = str(project_root))
 
 # Try to import required modules
 try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
     from src.utils.centralized_decorators import (
         handle_errors = validate_data_quality,
         validate_data_structure, guard_dataframe_nulls = optimize_memory_usage,
@@ -125,6 +128,9 @@ class MissingDataDownloaderAndGapFiller:
         """Ensure the exchange is properly initialized."""
         if not self._exchange_initialized:
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                 logger.info("🔧 Initializing Binance exchange connection...")
         if self.exchange:
                     success = await self.exchange.initialize()
@@ -194,6 +200,9 @@ class MissingDataDownloaderAndGapFiller:
         # Download data for each date
         for date in dates_to_download:
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                 success = await self._download_single_aggtrades_day(symbol, exchange = date)
         if success:
                     results["downloaded_days"] += 1
@@ -224,6 +233,9 @@ class MissingDataDownloaderAndGapFiller:
     ) -> bool:
         """Download aggtrades data for a single day."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Create filename
             filename = f"aggtrades_{exchange}_{symbol}_{date.strftime('%Y%m%d')}.parquet"
             file_path = self.data_cache_path / filename
@@ -278,6 +290,9 @@ class MissingDataDownloaderAndGapFiller:
     async def _count_aggtrades_rows(self, symbol: str, exchange: str) -> int:
         """Count total rows in aggtrades files."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             pattern = f"aggtrades_{exchange}_{symbol}_*.parquet"
             files = list(self.data_cache_path.glob(pattern))
 
@@ -346,6 +361,9 @@ class MissingDataDownloaderAndGapFiller:
         # Download data for each month
         for month in months_to_download:
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                 success = await self._download_single_klines_month(symbol = exchange, month)
         if success:
                     results["downloaded_months"] += 1
@@ -376,6 +394,9 @@ class MissingDataDownloaderAndGapFiller:
     ) -> bool:
         """Download klines data for a single month."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Create filename
             filename = f"klines_{exchange}_{symbol}_1m_{month.strftime('%Y%m')}.parquet"
             file_path = self.data_cache_path / filename
@@ -419,6 +440,9 @@ class MissingDataDownloaderAndGapFiller:
     async def _count_klines_rows(self, symbol: str, exchange: str) -> int:
         """Count total rows in klines files."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             pattern = f"klines_{exchange}_{symbol}_1m_*.parquet"
             files = list(self.data_cache_path.glob(pattern))
 
@@ -487,6 +511,9 @@ class MissingDataDownloaderAndGapFiller:
         # Download data for each month
         for month in months_to_download:
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                 success = await self._download_single_futures_month(symbol = exchange, month)
         if success:
                     results["downloaded_months"] += 1
@@ -517,6 +544,9 @@ class MissingDataDownloaderAndGapFiller:
     ) -> bool:
         """Download futures data for a single month."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Create filename
             filename = f"futures_{exchange}_{symbol}_{month.strftime('%Y%m')}.parquet"
             file_path = self.data_cache_path / filename
@@ -563,6 +593,9 @@ class MissingDataDownloaderAndGapFiller:
     async def _count_futures_rows(self, symbol: str, exchange: str) -> int:
         """Count total rows in futures files."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             pattern = f"futures_{exchange}_{symbol}_*.parquet"
             files = list(self.data_cache_path.glob(pattern))
 

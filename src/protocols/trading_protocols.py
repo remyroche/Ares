@@ -25,6 +25,7 @@ TradingSignal,
 class TradingDataProvider(Protocol):
     pass  # TODO: Add implementation
 class TradingDataProvider(Protocol):
+    pass  # TODO: Add implementation
 class TradingDataProvider(Protocol):
     """Protocol for trading data providers."""
 
@@ -53,6 +54,7 @@ def is_connected(self) -> bool:
 class TradingMLPredictor(Protocol):
     pass  # TODO: Add implementation
 class TradingMLPredictor(Protocol):
+    pass  # TODO: Add implementation
 class TradingMLPredictor(Protocol):
     """Protocol for ML trading predictors."""
 
@@ -81,6 +83,7 @@ def is_model_ready(self) -> bool:
 class TradingRiskManager(Protocol):
     pass  # TODO: Add implementation
 class TradingRiskManager(Protocol):
+    pass  # TODO: Add implementation
 class TradingRiskManager(Protocol):
     """Protocol for trading risk management."""
 

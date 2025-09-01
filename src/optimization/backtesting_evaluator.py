@@ -14,6 +14,7 @@ from src.utils.logger import system_logger
 class BacktestingEvaluator:
     pass  # TODO: Add implementation
 class BacktestingEvaluator:
+    pass  # TODO: Add implementation
 class BacktestingEvaluator:
     """
 Backtesting evaluator for parameter optimization.

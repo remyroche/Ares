@@ -16,6 +16,7 @@ from .pipeline_standards import PipelineStandards, pipeline_standards
 class StandardizedConfigManager:
     pass  # TODO: Add implementation
 class StandardizedConfigManager:
+    pass  # TODO: Add implementation
 class StandardizedConfigManager:
     """Centralized configuration manager with validation and versioning."""
 

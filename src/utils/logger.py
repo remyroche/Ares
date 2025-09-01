@@ -18,7 +18,7 @@ import threading
 import sys as _sys
 
 # Import pipeline standards
-from .pipeline_standards import PipelineStandards, pipeline_standards
+from .pipeline_standards import PipelineStandards
 
 # Standardized import management
 REQUIRED_MODULES = [

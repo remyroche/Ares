@@ -2,19 +2,14 @@
 
 import json
 from datetime import datetime
-from typing import Any, Dict, List, Tuple, Optional
-import warnings
+from typing import Any
 
 import lightgbm as lgb
 import numpy as np
 import pandas as pd
-from sklearn.feature_selection import RFE, mutual_info_classif, SelectKBest, f_classif
+from sklearn.feature_selection import RFE, mutual_info_classif, f_classif
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.preprocessing import StandardScaler
-from sklearn.decomposition import PCA
-from sklearn.cluster import KMeans
-from scipy.stats import spearmanr
-from scipy.spatial.distance import pdist, squareform
+from scipy.spatial.distance import squareform
 
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger

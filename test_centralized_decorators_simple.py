@@ -23,7 +23,6 @@ def test_centralized_decorators():
             step_specific_ml_validation,
             auto_fix_data_quality_issues,
             monitor_feature_engineering,
-            monitor_data_collection,
             deterministic_seed,
             idempotent_step,
             handle_errors,

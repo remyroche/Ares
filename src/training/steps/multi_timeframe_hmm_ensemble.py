@@ -28,11 +28,6 @@ from typing import TYPE_CHECKING, Any
 import joblib
 import numpy as np
 import pandas as pd
-from lightgbm import LGBMClassifier
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import roc_auc_score
-from sklearn.model_selection import StratifiedKFold
 
 from src.config import CONFIG
 from src.utils.error_handler import handle_errors

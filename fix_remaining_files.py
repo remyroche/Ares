@@ -5,8 +5,6 @@ This script addresses the complex structural issues that couldn't be fixed with 
 """
 
 import re
-import os
-from pathlib import Path
 
 def fix_state_manager():
     """Fix src/utils/state_manager.py"""

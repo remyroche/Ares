@@ -10,7 +10,6 @@ from src.utils.logger import system_logger
 from typing import Any
 import contextlib
 
-from src.config_optuna import get_parameter_value
 from src.utils.confidence import normalize_dual_confidence
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.warning_symbols import error, initialization_error, missing

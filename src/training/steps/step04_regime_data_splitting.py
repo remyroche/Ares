@@ -7,11 +7,10 @@ This ensures trading indicators have the necessary lookback periods.
 """
 
 import asyncio
-import os
 import sys
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent

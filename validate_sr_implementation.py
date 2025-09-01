@@ -9,7 +9,6 @@ without requiring external dependencies.
 import ast
 import os
 import sys
-from pathlib import Path
 
 def check_file_syntax(file_path):
     """Check if a Python file has valid syntax."""

@@ -4,7 +4,6 @@ Targeted script to fix specific syntax issues without breaking import statements
 """
 
 import re
-import os
 
 def fix_state_manager():
     """Fix src/utils/state_manager.py with targeted patterns"""

@@ -11,30 +11,20 @@ This module provides transfer learning capabilities for surrogate optimization:
 """
 
 import numpy as np
-import pandas as pd
-from typing import Dict, Any, List, Tuple, Optional, Callable
+from typing import Dict, Any, List, Tuple, Callable
 import time
 import json
 import os
 import pickle
-from dataclasses import dataclass, asdict
-from datetime import datetime
+from dataclasses import dataclass
 import hashlib
 
 # ML libraries
 from sklearn.metrics.pairwise import cosine_similarity, euclidean_distances
-from sklearn.decomposition import PCA
-from sklearn.preprocessing import StandardScaler
-from sklearn.cluster import KMeans
 from sklearn.ensemble import RandomForestRegressor
-from sklearn.gaussian_process import GaussianProcessRegressor
-from sklearn.gaussian_process.kernels import RBF, ConstantKernel, WhiteKernel
-from sklearn.model_selection import cross_val_score
-from sklearn.feature_extraction import FeatureHasher
 
 # Utilities
 from src.utils.logger import system_logger
-from src.utils.decorators import handle_errors
 
 
 @dataclass

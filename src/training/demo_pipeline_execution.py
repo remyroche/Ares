@@ -7,12 +7,11 @@ without requiring external dependencies like pandas or numpy.
 """
 
 import asyncio
-import json
 import sys
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent

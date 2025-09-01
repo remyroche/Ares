@@ -5,9 +5,8 @@ This module validates the regime data splitting step outputs with support for 10
 """
 
 import json
-import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict
 
 import pandas as pd
 

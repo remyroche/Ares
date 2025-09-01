@@ -17,7 +17,6 @@ import pandas as pd
 warnings.filterwarnings("ignore")
 
 from src.utils.logger import system_logger
-from src.utils.warning_symbols import critical
 
 
 class RawDataQualityChecker:

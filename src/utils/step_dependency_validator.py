@@ -3,14 +3,11 @@ Step dependency validator for the training pipeline.
 Ensures that steps don't proceed if their prerequisites have failed.
 """
 
-import asyncio
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any
 from pathlib import Path
 import json
 
 from src.utils.logger import system_logger
-from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
-from src.utils.warning_symbols import error, warning, critical
 
 
 class StepDependencyValidator:
@@ -285,8 +282,8 @@ class StepDependencyValidator:
                         # Check if the step is marked as completed in the centralized file
                         pipeline_state = progress_data.get("pipeline_state", {})
                         
-                                                    # Map step names to their status keys in the centralized file
-                            step_status_mapping = {
+                        # Map step names to their status keys in the centralized file
+                        step_status_mapping = {
                                 "step01_data_collection": "data_collection",
                                 "step02_feature_engineering": "feature_engineering",
                                 "step02_5_sr_optimization": "sr_optimization",

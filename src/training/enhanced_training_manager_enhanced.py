@@ -3,12 +3,11 @@ Enhanced Training Manager with Existing Decorators Integration
 Provides thorough decorators, detailed reports, and consistent storage for all pipeline steps.
 """
 
-import asyncio
 import json
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from src.training.enhanced_training_manager import EnhancedTrainingManager
 from src.utils.logger import system_logger

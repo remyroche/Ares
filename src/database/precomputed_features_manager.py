@@ -3,14 +3,14 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Iterable
+from typing import Any
 import json
 
 import pandas as pd
 
 from src.utils.logger import system_logger
 from src.utils.error_handler import handle_errors
-from src.utils.warning_symbols import error, failed, warning
+from src.utils.warning_symbols import warning
 
 try:
     from src.database.influxdb_manager import InfluxDBManager

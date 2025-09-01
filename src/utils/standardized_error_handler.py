@@ -9,12 +9,11 @@ This module provides unified error handling patterns across all steps including:
 """
 
 import traceback
-import sys
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Union, Callable
+from typing import Any, Dict, List, Optional, Union
 from enum import Enum
 
-from .pipeline_standards import PipelineStandards, pipeline_standards
+from .pipeline_standards import pipeline_standards
 from .logger import system_logger
 
 

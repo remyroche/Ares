@@ -15,9 +15,6 @@ import asyncio
 import logging
 import numpy as np
 import pandas as pd
-from datetime import datetime, timedelta
-from pathlib import Path
-import json
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')

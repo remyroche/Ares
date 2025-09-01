@@ -7,7 +7,7 @@ It downloads and consolidates all required data for training.
 import sys
 import os
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 from datetime import datetime
 
 # Add the project root to the Python path

@@ -19,7 +19,6 @@ from __future__ import annotations
 import argparse
 import ast
 import csv
-import io
 import json
 import logging
 import os

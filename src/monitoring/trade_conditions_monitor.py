@@ -10,7 +10,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Any, Dict
 
-from src.utils.error_handler import handle_errors, handle_specific_errors
+from src.utils.error_handler import handle_specific_errors
 from src.utils.logger import system_logger
 
 

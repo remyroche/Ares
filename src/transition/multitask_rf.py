@@ -5,7 +5,7 @@ from collections import Counter
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sklearn.metrics import classification_report, f1_score, mean_absolute_error
 from src.utils.logger import system_logger
-from typing import Any, List, Dict
+from typing import Any
 import json
 import os
 from dataclasses import dataclass

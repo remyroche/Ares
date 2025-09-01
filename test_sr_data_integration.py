@@ -21,7 +21,7 @@ import os
 # Add the src directory to the Python path
 sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
 
-from tactician.sr_data_integration_simple import SRDataIntegrationSimple, create_sr_data_integration_simple
+from tactician.sr_data_integration_simple import create_sr_data_integration_simple
 from tactician.sr_breakout_predictor import SRBreakoutPredictor
 from tactician.sr_backtesting_validator import SRBacktestingValidator
 from tactician.sr_detection_optimization import SRDetectionOptimizer

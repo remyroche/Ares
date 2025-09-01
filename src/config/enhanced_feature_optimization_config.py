@@ -7,7 +7,7 @@ Configuration settings for the enhanced feature engineering optimization system 
 optimizes the optimization process itself using RF, SHAP, MI, and multi-objective optimization.
 """
 
-from typing import Any, Dict, List
+from typing import Any
 
 
 def get_enhanced_feature_optimization_config() -> dict[str, Any]:

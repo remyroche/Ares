@@ -14,9 +14,6 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import StratifiedKFold, cross_val_score
 
 from src.utils.logger import setup_logging
-from src.utils.warning_symbols import (
-    failed,
-)
 
 setup_logging()
 

@@ -23,7 +23,7 @@ import inspect
 import logging
 import time
 from collections.abc import Callable
-from typing import Any, Iterable, TypeVar, cast, Dict, Optional
+from typing import Any, Iterable, TypeVar, cast, Dict
 
 # Handle optional dependencies
 try:
@@ -49,13 +49,12 @@ from src.utils.domain_errors import (
     SchemaValidationError,
     VectorizationError,
 )
-from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 from src.utils.structured_logging import ensure_correlation_id, get_correlation_id
 
 # Import enhanced system components (optional to avoid circular imports)
 try:
     from .decorator_config import global_config
-    from .decorator_registry import decorator_registry, register_decorator
+    from .decorator_registry import decorator_registry
     ENHANCED_SYSTEM_AVAILABLE = True
 except ImportError:
     ENHANCED_SYSTEM_AVAILABLE = False

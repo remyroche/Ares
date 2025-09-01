@@ -17,7 +17,7 @@ from src.training.steps.backtesting_with_cached_features import (
 )
 from src.training.steps.precompute_wavelet_features import WaveletFeaturePrecomputer
 from src.utils.data_optimizer import ohlcv_columns
-from src.utils.error_handler import handle_errors, handle_specific_errors
+from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 
 

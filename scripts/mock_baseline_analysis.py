@@ -3,7 +3,6 @@
 """Mock baseline performance analysis for demonstration purposes."""
 
 import json
-import os
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, Any

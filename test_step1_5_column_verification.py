@@ -10,9 +10,7 @@ import asyncio
 import pandas as pd
 import numpy as np
 import sys
-import os
 from pathlib import Path
-from datetime import datetime, timedelta
 
 # Add project root to path
 project_root = Path(__file__).parent

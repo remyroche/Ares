@@ -4,10 +4,7 @@ import logging
 import os
 from typing import Any
 
-from src.utils.warning_symbols import (
-from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
-    failed,
-)
+from src.utils.warning_symbols import failed
 
 logger = logging.getLogger(__name__)
 
@@ -40,8 +37,8 @@ def init_sentry() -> None:
             send_default_pii=False,
         )
         logger.info("Sentry initialized")
-    except Exception:  # pragma: no cover
-        print(failed("Failed to initialize Sentry: {exc}"))
+    except Exception as exc:  # pragma: no cover
+        print(failed(f"Failed to initialize Sentry: {exc}"))
 
 
 def init_otlp_logging() -> None:
@@ -66,8 +63,8 @@ def init_otlp_logging() -> None:
         provider.add_log_record_processor(BatchLogRecordProcessor(exporter))
         otel_logs.set_logger_provider(provider)
         logger.info("OpenTelemetry logging exporter initialized")
-    except Exception:  # pragma: no cover
-        print(failed("Failed to initialize OTLP logging: {exc}"))
+    except Exception as exc:  # pragma: no cover
+        print(failed(f"Failed to initialize OTLP logging: {exc}"))
 
 
 def init_observability(_: dict[str, Any] | None = None) -> None:

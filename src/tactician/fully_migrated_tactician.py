@@ -9,7 +9,7 @@ fractal scenario analysis with comprehensive technical indicators.
 import numpy as np
 import pandas as pd
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict
 import logging
 
 from .enhanced_scenario_based_predictor import EnhancedScenarioBasedPredictor

@@ -7,7 +7,6 @@ This script validates that the new categorized configuration system works correc
 
 import sys
 import os
-from typing import Any, Dict
 
 # Add the src directory to the path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
@@ -21,7 +20,6 @@ from config.config_manager import (
     get_all_search_spaces,
     get_complete_config,
     get_parameter_value,
-    get_optimizable_parameters,
     update_optimizable_config,
     validate_config,
 )

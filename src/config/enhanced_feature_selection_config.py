@@ -1,7 +1,7 @@
 # src/config/enhanced_feature_selection_config.py
 
 from dataclasses import dataclass, field
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
 from pydantic import Field
 
 

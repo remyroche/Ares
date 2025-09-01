@@ -9,17 +9,14 @@ It ensures the S/R system uses the same data sources and configurations as the
 main trading system.
 """
 
-import asyncio
-import os
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional
 from datetime import datetime, timedelta
 import warnings
 warnings.filterwarnings('ignore')
 
 import pandas as pd
-import numpy as np
 
 # Add the project root to the Python path
 project_root = Path(__file__).parent.parent.parent

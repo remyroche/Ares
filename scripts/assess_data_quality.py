@@ -19,7 +19,6 @@ import asyncio
 import sys
 
 from sklearn.impute import SimpleImputer
-from training.steps.vectorized_labelling_orchestrator import VectorizedLabellingOrchestrator
 import numpy as np
 import pandas as pd
 

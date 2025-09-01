@@ -13,16 +13,7 @@ from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     error,
     warning,
-    critical,
-    problem,
-    failed,
-    invalid,
     missing,
-    timeout,
-    connection_error,
-    validation_error,
-    initialization_error,
-    execution_error,
 )
 
 

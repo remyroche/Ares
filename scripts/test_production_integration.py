@@ -5,11 +5,10 @@ Tests the integration of fractional feature selector, monitoring system, and com
 """
 
 import sys
-import os
 from pathlib import Path
 import json
 from datetime import datetime
-from typing import Dict, Any, List, Tuple
+from typing import Dict, Any, Tuple
 import asyncio
 
 # Add project root to path
@@ -571,7 +570,6 @@ class ProductionIntegrationTester:
 
 async def main():
     """Main function to run production integration test."""
-    import pandas as pd
     
     tester = ProductionIntegrationTester()
     results = await tester.run_production_integration_test(n_samples=2000)

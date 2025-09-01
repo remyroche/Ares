@@ -1,7 +1,6 @@
 # src/utils/confidence.py
 
 import numpy as np
-from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 
 # Empirically derived baseline and range for dual confidence normalization
 DUAL_CONF_BASELINE = 0.216

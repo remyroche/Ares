@@ -11,21 +11,15 @@ This module provides advanced surrogate models including:
 """
 
 import numpy as np
-import pandas as pd
-from typing import Dict, Any, List, Tuple, Optional, Union
+from typing import Dict, Any, List, Tuple
 from abc import ABC, abstractmethod
 import joblib
 import time
 
 # Core ML libraries
-from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
 from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import RBF, ConstantKernel, WhiteKernel, Matern, RationalQuadratic
-from sklearn.neural_network import MLPRegressor
-from sklearn.svm import SVR
-from sklearn.kernel_ridge import KernelRidge
 from sklearn.model_selection import cross_val_score
-from sklearn.preprocessing import StandardScaler, RobustScaler
 
 # Advanced ML libraries
 try:
@@ -51,7 +45,6 @@ except ImportError:
 
 # Utilities
 from src.utils.logger import system_logger
-from src.utils.decorators import handle_errors
 
 
 class BaseSurrogateModel(ABC):

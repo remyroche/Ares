@@ -7,7 +7,7 @@ Investigates feature calculation issues, NaN sources, and data quality in HMM re
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Callable, Dict, Iterable, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 import sys
 import traceback
 import warnings

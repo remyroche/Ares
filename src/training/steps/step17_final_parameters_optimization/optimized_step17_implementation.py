@@ -11,14 +11,11 @@ This module implements advanced optimization strategies for step17:
 These strategies dramatically improve optimization efficiency while maintaining quality.
 """
 
-import asyncio
 import logging
 import numpy as np
 import pandas as pd
-from datetime import datetime, timedelta
-from pathlib import Path
-from typing import Dict, Any, List, Optional, Tuple, Union
-import json
+from datetime import datetime
+from typing import Dict, Any, List
 import warnings
 from dataclasses import dataclass
 from enum import Enum

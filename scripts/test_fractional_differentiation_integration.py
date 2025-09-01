@@ -3,11 +3,10 @@
 """Test fractional differentiation integration into feature engineering pipeline."""
 
 import sys
-import os
 from pathlib import Path
 import json
 from datetime import datetime
-from typing import Dict, Any, List
+from typing import Dict, Any
 
 # Add project root to path
 project_root = Path(__file__).parent.parent
@@ -479,7 +478,6 @@ class FractionalDifferentiationIntegrationTester:
 
 async def main():
     """Main function to run fractional differentiation integration test."""
-    import pandas as pd
     
     tester = FractionalDifferentiationIntegrationTester()
     results = await tester.run_complete_test(n_samples=1000)

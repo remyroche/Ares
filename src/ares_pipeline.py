@@ -12,7 +12,7 @@ import argparse
 
 import pandas as pd
 
-from exchange.factory import ExchangeFactory, RootExchangeFactory
+from exchange.factory import RootExchangeFactory
 from src.analyst.analyst import Analyst
 from src.config.environment import get_exchange_name
 from src.database.sqlite_manager import SQLiteManager

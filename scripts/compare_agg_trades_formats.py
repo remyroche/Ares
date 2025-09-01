@@ -13,7 +13,7 @@ import pandas as pd
 
 from exchange.factory import ExchangeFactory
 from src.utils.error_handler import handle_errors
-from src.utils.warning_symbols import error, failed, missing, warning
+from src.utils.warning_symbols import missing, warning
 
 # Add the project root to the Python path
 project_root = Path(__file__).parent.parent

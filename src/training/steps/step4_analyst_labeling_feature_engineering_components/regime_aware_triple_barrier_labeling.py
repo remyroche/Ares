@@ -17,7 +17,6 @@ Key Features:
 
 import contextlib
 from typing import Any, Dict, List, Optional, Union
-import warnings
 
 import numpy as np
 import pandas as pd

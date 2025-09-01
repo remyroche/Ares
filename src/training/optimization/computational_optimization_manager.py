@@ -24,8 +24,6 @@ from sklearn.gaussian_process.kernels import RBF, ConstantKernel
 from sklearn.gaussian_process.kernels import WhiteKernel
 from sklearn.model_selection import cross_val_score
 from sklearn.neural_network import MLPRegressor
-from sklearn.svm import SVR
-from sklearn.tree import DecisionTreeRegressor
 from xgboost import XGBRegressor
 
 from src.utils.decorators import (

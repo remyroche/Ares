@@ -8,10 +8,9 @@ profit-based feature engineering.
 
 import json
 import os
-import pickle
 import time
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple
 
 import joblib
 import lightgbm as lgb
@@ -52,20 +51,15 @@ from sklearn.metrics import (
     mean_squared_error, mean_absolute_error, r2_score
 )
 from sklearn.model_selection import TimeSeriesSplit
-from sklearn.multioutput import MultiOutputRegressor, MultiOutputClassifier
-from sklearn.preprocessing import StandardScaler, LabelEncoder
-from torch.utils.data import DataLoader, TensorDataset
+from sklearn.preprocessing import StandardScaler
 
 from src.training.steps.step04_analyst_labeling_feature_engineering_components.profit_based_feature_engineering import (
     ProfitBasedFeatureEngineering
 )
 from src.utils.centralized_decorators import (
     handle_errors,
-    comprehensive_validation,
     performance_monitor,
-    validate_data_structure,
     memory_efficient,
-    secure_data_processing,
 )
 from src.utils.logger import system_logger
 
@@ -697,7 +691,6 @@ class MultiOutputModelTrainer:
         # Use enhanced data-driven feature selection if enabled
         if use_enhanced_feature_selection:
             try:
-                from src.training.steps.step09_hmm_based_training import HMMBasedTrainingStep
                 
                 self.logger.info("🔧 Using enhanced data-driven feature selection (VIF, MI, SHAP, RF)...")
                 

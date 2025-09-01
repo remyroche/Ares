@@ -7,8 +7,8 @@ This module provides memory monitoring and optimization capabilities for the tra
 import functools
 import logging
 import time
-from typing import Any, Callable, Dict, List, Optional, Union
-from dataclasses import dataclass, field
+from typing import Any, Callable, Dict, List, Optional
+from dataclasses import dataclass
 import gc
 
 try:
@@ -18,7 +18,6 @@ except ImportError:
     PSUTIL_AVAILABLE = False
 
 try:
-    import numpy as np
     import pandas as pd
     PANDAS_AVAILABLE = True
 except ImportError:
@@ -26,7 +25,6 @@ except ImportError:
 
 try:
     from src.utils.logger import system_logger
-from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 except ImportError:
     system_logger = logging.getLogger("EnhancedMemoryManagement")
 

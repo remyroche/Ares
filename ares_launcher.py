@@ -91,15 +91,12 @@ except ImportError:
 from src.config import CONFIG
 from src.config.constants import (
     FULL_TRAINING_LOOKBACK_DAYS,
-    BLANK_TRAINING_LOOKBACK_DAYS,
-    SHORT_BLANK_LOOKBACK_DAYS,
 )
 from src.config.training_modes import (
     get_training_mode_config,
     get_training_config_dict,
     get_training_input_dict,
     list_available_modes,
-    validate_mode_parameters,
     get_mode_recommendations,
     get_intensity_percentage,
     get_intensity_comparison,

@@ -7,19 +7,14 @@ and feature importance ranking.
 
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
-from scipy import stats
 from sklearn.feature_selection import (
-    SelectKBest, f_regression, mutual_info_regression,
-    RFE, SelectFromModel
+    f_regression, mutual_info_regression
 )
 from sklearn.ensemble import RandomForestRegressor
-from sklearn.linear_model import LassoCV
-from sklearn.preprocessing import StandardScaler
-from sklearn.decomposition import PCA
 
 from src.utils.logger import get_logger
 from src.utils.error_handler import handle_errors

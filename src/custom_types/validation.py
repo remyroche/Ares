@@ -6,7 +6,7 @@ Runtime type validation utilities for critical paths.
 
 from collections.abc import Callable
 import logging
-from typing import Any, TypeVar, Union, get_args, get_origin, Type
+from typing import Any, TypeVar, Union, get_args, get_origin
 from src.utils.warning_symbols import validation_error
 import inspect
 import types

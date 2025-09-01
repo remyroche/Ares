@@ -18,7 +18,6 @@ from src.training.enhanced_multi_timeframe_optimizer import (
     EnhancedMultiTimeframeOptimizer, 
     OptimizedTimeframeConfig
 )
-from src.config.enhanced_multi_timeframe_config import get_enhanced_multi_timeframe_config
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')

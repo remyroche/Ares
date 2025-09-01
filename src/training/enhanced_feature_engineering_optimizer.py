@@ -10,21 +10,16 @@ This module optimizes the period optimization process itself using:
 4. Multi-objective optimization considering multiple metrics
 """
 
-import asyncio
 import json
-import os
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Tuple, Optional, Callable
+from typing import Any, List, Optional
 
 import numpy as np
 import pandas as pd
 import shap
-from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
-from sklearn.feature_selection import mutual_info_regression, mutual_info_classif
-from sklearn.preprocessing import StandardScaler
-from sklearn.model_selection import cross_val_score, StratifiedKFold
-from sklearn.metrics import mean_squared_error, accuracy_score, roc_auc_score
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.model_selection import cross_val_score
 import optuna
 from optuna.samplers import TPESampler
 from optuna.pruners import MedianPruner

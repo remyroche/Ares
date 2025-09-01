@@ -11,13 +11,11 @@ This module provides sophisticated outlier detection and handling including:
 
 import pandas as pd
 import numpy as np
-from typing import Any, Dict, List, Optional, Union, Tuple, Set
-from datetime import datetime, timedelta
-from pathlib import Path
-import logging
+from typing import Any, Dict, List, Optional
+from datetime import datetime
 from enum import Enum
 
-from .pipeline_standards import PipelineStandards, pipeline_standards
+from .pipeline_standards import pipeline_standards
 from .logger import system_logger
 from .error_handler import handle_errors
 
@@ -524,8 +522,6 @@ class EnhancedOutlierHandler:
         outliers = []
         
         try:
-            from scipy.stats import chi2
-            
             # For single column, use modified Z-score approach
             median = data[column].median()
             mad = np.median(np.abs(data[column] - median))

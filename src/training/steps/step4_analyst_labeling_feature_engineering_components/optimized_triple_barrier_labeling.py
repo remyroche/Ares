@@ -1,7 +1,6 @@
 # src/training/steps/step04_analyst_labeling_feature_engineering_components/optimized_triple_barrier_labeling.py
 
 import contextlib
-from typing import Any
 
 import numpy as np
 import pandas as pd

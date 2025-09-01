@@ -3,7 +3,6 @@
 """Comprehensive validation and testing of fractional differentiation performance."""
 
 import sys
-import os
 from pathlib import Path
 import json
 from datetime import datetime
@@ -666,7 +665,6 @@ class FractionalDifferentiationValidator:
 
 async def main():
     """Main function to run comprehensive validation."""
-    import pandas as pd
     
     validator = FractionalDifferentiationValidator()
     results = await validator.run_comprehensive_validation()

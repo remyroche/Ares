@@ -6,8 +6,6 @@ all use the optimized parameters from sr_detection_optimization.py
 """
 
 import asyncio
-import json
-import os
 import sys
 from pathlib import Path
 from typing import Dict, Any
@@ -31,7 +29,6 @@ from src.training.steps.step3_hmm_regime_discovery import HMMRegimeDiscoveryStep
 from src.training.steps.step9_hmm_based_training_enhanced import HMMBasedTrainingEnhancedStep
 from src.training.steps.step9_hmm_based_training import HMMBasedTrainingStep
 from src.training.steps.step6_feature_engineering import FeatureEngineeringStep
-from src.utils.logger import system_logger
 
 
 def generate_test_market_data(days: int = 100) -> pd.DataFrame:

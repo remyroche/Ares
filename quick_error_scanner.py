@@ -9,7 +9,7 @@ focusing on the most important information for prioritization.
 import os
 import subprocess
 from collections import defaultdict, Counter
-from typing import Dict, List, Tuple
+from typing import Dict
 
 def quick_scan() -> Dict:
     """Perform a quick scan of all Python files."""

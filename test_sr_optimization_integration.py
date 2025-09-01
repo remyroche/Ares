@@ -10,7 +10,6 @@ This script tests:
 import asyncio
 import sys
 from pathlib import Path
-from typing import Any, Dict
 
 # Add project root to path
 project_root = Path(__file__).parent

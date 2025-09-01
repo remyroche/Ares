@@ -11,7 +11,7 @@ import asyncio
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
-from src.utils.error_handler import handle_errors, handle_specific_errors
+from src.utils.error_handler import handle_specific_errors
 from src.utils.centralized_decorators import (
     performance_monitor,
     PerformanceLevel,

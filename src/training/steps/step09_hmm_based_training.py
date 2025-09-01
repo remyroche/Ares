@@ -588,7 +588,6 @@ class HMMBasedTrainingStep:
             try:
                 import json
                 import os
-                import pandas as _pd
 
                 rf_dir = os.path.join(data_dir, "regime_forecasting")
                 os.makedirs(rf_dir, exist_ok=True)

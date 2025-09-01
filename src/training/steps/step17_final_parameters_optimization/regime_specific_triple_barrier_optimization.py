@@ -15,11 +15,10 @@ Key Features:
 - Comprehensive reporting and visualization
 """
 
-import asyncio
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple
 import warnings
 
 import numpy as np
@@ -29,17 +28,9 @@ from optuna.pruners import HyperbandPruner
 from optuna.samplers import TPESampler
 from optuna.visualization import plot_optimization_history, plot_param_importances
 import matplotlib.pyplot as plt
-import seaborn as sns
-from sklearn.model_selection import TimeSeriesSplit
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
-from scipy import stats
+from sklearn.metrics import precision_score, recall_score
 
 from src.utils.logger import setup_logging
-from src.config.config_optuna import (
-    SROptimizationParameters,
-    HyperparameterOptimizationConfig,
-    get_parameter_search_space
-)
 
 setup_logging()
 warnings.filterwarnings('ignore')

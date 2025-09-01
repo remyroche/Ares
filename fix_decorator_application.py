@@ -6,7 +6,7 @@ but not applied to the execute method.
 
 import re
 from pathlib import Path
-from typing import List, Tuple
+from typing import Tuple
 
 # Steps that need decorator application fixes
 STEPS_TO_FIX = [

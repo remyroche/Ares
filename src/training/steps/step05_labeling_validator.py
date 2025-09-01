@@ -5,9 +5,8 @@ This module validates the labeling step outputs.
 """
 
 import json
-import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict
 
 import pandas as pd
 

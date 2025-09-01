@@ -7,7 +7,7 @@ This module validates the triple barrier method step outputs.
 import asyncio
 import sys
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent

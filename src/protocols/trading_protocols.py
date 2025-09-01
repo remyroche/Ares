@@ -10,11 +10,8 @@ from abc import abstractmethod
 from typing import Protocol, runtime_checkable
 
 from src.custom_types.base_types import Symbol, Timestamp
-from src.custom_types.data_types import OrderInfo
 from src.custom_types.ml_types import ModelInput, PredictionResult
 from src.custom_types.trading_types import (
-    OrderRequest,
-    PerformanceMetrics,
     PositionInfo,
     RegimeClassification,
     RiskParameters,

@@ -9,7 +9,6 @@ works in practice with real-world examples.
 import pandas as pd
 import numpy as np
 import sys
-from datetime import datetime, timedelta
 
 # Import the ColumnVerifier from the enhanced Step1_5
 from test_step1_5_simple import ColumnVerifier

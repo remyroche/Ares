@@ -11,7 +11,7 @@ This module validates the S/R detection optimization step to ensure:
 import asyncio
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict
 import json
 import time
 
@@ -20,11 +20,7 @@ project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from src.utils.centralized_decorators import (
-    handle_errors,
-    validate_pipeline_step,
-    monitor_step_execution,
-    secure_step_execution,
-    quality_gate
+    handle_errors
 )
 from src.utils.logger import system_logger
 

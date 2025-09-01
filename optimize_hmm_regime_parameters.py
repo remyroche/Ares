@@ -16,7 +16,7 @@ import json
 import sys
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 import warnings
 
 import numpy as np
@@ -25,13 +25,11 @@ import optuna
 from optuna.samplers import TPESampler
 from optuna.pruners import MedianPruner
 import matplotlib.pyplot as plt
-import seaborn as sns
 from sklearn.cluster import KMeans
 from sklearn.mixture import GaussianMixture
 from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bouldin_score
 from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
-import joblib
 
 # Add project root to path
 project_root = Path(__file__).parent

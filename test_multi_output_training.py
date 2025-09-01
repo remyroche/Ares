@@ -21,8 +21,7 @@ from src.training.multi_output_probability_trainer import (
     ProbabilityTargetGenerator
 )
 from src.training.multi_output_model_trainer import (
-    create_multi_output_trainer,
-    MultiOutputModelConfig
+    create_multi_output_trainer
 )
 from src.training.model_saving_utils import (
     save_multi_output_model_with_probabilities,

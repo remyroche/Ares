@@ -3,11 +3,10 @@
 """Mock combined fractional system test - simulates expected results."""
 
 import sys
-import os
 from pathlib import Path
 import json
 from datetime import datetime
-from typing import Dict, Any, List, Tuple
+from typing import Dict, Any
 
 # Add project root to path
 project_root = Path(__file__).parent.parent

@@ -7,21 +7,15 @@ This module uses matrix/vector operations to efficiently find 2-3 lookback perio
 for each feature that deliver meaningful yet significantly different information.
 """
 
-import asyncio
 import json
 import numpy as np
 import pandas as pd
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Tuple, Optional
+from typing import Any, List, Optional
 
 import shap
 from sklearn.ensemble import RandomForestRegressor
-from sklearn.feature_selection import mutual_info_regression
-from sklearn.preprocessing import StandardScaler
-from sklearn.metrics import mean_squared_error
-from scipy.stats import pearsonr
-from scipy.spatial.distance import pdist, squareform
 from scipy.optimize import minimize
 import optuna
 from optuna.samplers import TPESampler

@@ -11,7 +11,6 @@ import re
 import sys
 from typing import Tuple, List
 
-from src.utils.warning_symbols import warning
 
 # Add project root to path
 project_root = Path(__file__).parent.parent

@@ -5,7 +5,6 @@ Downloads 15-minute klines from Binance for multiple assets over 2 years
 """
 
 import pandas as pd
-import numpy as np
 import requests
 import time
 from datetime import datetime, timedelta

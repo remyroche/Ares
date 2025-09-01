@@ -13,11 +13,9 @@ This script demonstrates:
 import asyncio
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
-import json
 import pandas as pd
 import numpy as np
-from datetime import datetime, timedelta
+from datetime import datetime
 
 # Add project root to path
 project_root = Path(__file__).parent

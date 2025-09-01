@@ -3,12 +3,9 @@
 """Validator for Step 7: Enhanced Matrix Operations."""
 
 import json
-import os
 from pathlib import Path
 from typing import Any, Dict, List
 
-import numpy as np
-import pandas as pd
 
 from src.utils.base_validator import BaseValidator
 from src.utils.logger import system_logger

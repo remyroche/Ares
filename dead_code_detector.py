@@ -13,13 +13,12 @@ Usage:
 """
 
 import argparse
-import json
 import os
 import re
 import subprocess
 import sys
 from pathlib import Path
-from typing import Dict, List, Set, Tuple, Optional
+from typing import Dict, List, Tuple
 import ast
 import logging
 

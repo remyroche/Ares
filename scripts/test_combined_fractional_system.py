@@ -3,11 +3,10 @@
 """Test combined fractional system integration and performance."""
 
 import sys
-import os
 from pathlib import Path
 import json
 from datetime import datetime
-from typing import Dict, Any, List, Tuple
+from typing import Dict, Any, Tuple
 import asyncio
 
 # Add project root to path
@@ -542,7 +541,6 @@ class CombinedFractionalSystemTester:
 
 async def main():
     """Main function to run combined fractional system integration test."""
-    import pandas as pd
     
     tester = CombinedFractionalSystemTester()
     results = await tester.run_complete_test(n_samples=1000)

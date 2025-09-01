@@ -8,8 +8,6 @@ import pandas as pd
 import numpy as np
 import asyncio
 import time
-import warnings
-from datetime import datetime, timedelta
 
 def test_enhanced_decorator_system():
     """Test the enhanced decorator system."""
@@ -19,15 +17,11 @@ def test_enhanced_decorator_system():
     
     try:
         # Test imports from the new system
-        from src.utils.decorator_config import global_config, ValidationMode, PerformanceMode
-        from src.utils.decorator_registry import decorator_registry
+        from src.utils.decorator_config import global_config
         from src.utils.enhanced_decorators import (
             smart_error_recovery,
             cached_validation,
-            enhanced_validation,
-            performance_monitor_v2,
-            ValidationResult,
-            ValidatableData
+            performance_monitor_v2
         )
         from src.utils.decorator_compatibility import (
             get_decorator_config,
@@ -196,11 +190,9 @@ def test_enhanced_decorator_system():
         from src.utils.decorator_compatibility import (
             validate_call,  # Legacy name
             check_input,    # Legacy name
-            check_output,   # Legacy name
             smart_recovery, # Alias
             cached,         # Alias
-            validation,     # Alias
-            performance     # Alias
+                 # Alias
         )
         
         print("Testing legacy decorator names...")

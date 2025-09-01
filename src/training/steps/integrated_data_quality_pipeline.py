@@ -12,14 +12,13 @@ This script demonstrates the comprehensive data quality management system that:
 import asyncio
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from src.utils.centralized_decorators import (
-    comprehensive_data_validation,
     handle_errors,
     quality_gate,
     with_tracing_span,

@@ -12,13 +12,11 @@ These optimizations happen early in the pipeline to ensure:
 - Optimal foundation for ML model training
 """
 
-import asyncio
 import logging
 import numpy as np
 import pandas as pd
-from datetime import datetime, timedelta
-from pathlib import Path
-from typing import Dict, Any, List, Optional, Tuple, Union
+from datetime import datetime
+from typing import Dict, Any, List, Optional
 import json
 import warnings
 
@@ -55,7 +53,6 @@ except ImportError:
 try:
     from .hmm_regime_barrier_optimizer import (
         HMMRegimeBarrierOptimizer,
-        optimize_hmm_regime_barriers,
     )
     HMM_BARRIER_OPTIMIZER_AVAILABLE = True
 except Exception:

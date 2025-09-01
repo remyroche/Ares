@@ -3,7 +3,6 @@
 """Optimize fractional differentiation parameters for enhanced feature engineering."""
 
 import sys
-import os
 from pathlib import Path
 import json
 from datetime import datetime
@@ -524,7 +523,6 @@ class FractionalDifferentiationOptimizer:
 
 def main():
     """Main function to run fractional differentiation parameter optimization."""
-    import pandas as pd
     
     optimizer = FractionalDifferentiationOptimizer()
     results = optimizer.run_grid_search(max_combinations=30)

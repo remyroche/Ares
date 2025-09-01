@@ -14,7 +14,7 @@ import time
 
 from dataclasses import dataclass
 from src.utils.error_handler import handle_errors
-from src.utils.warning_symbols import error, initialization_error, timeout, warning
+from src.utils.warning_symbols import initialization_error, warning
 import numpy as np
 import pandas as pd
 import pywt

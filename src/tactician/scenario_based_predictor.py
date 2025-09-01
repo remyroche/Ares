@@ -9,10 +9,9 @@ with scenario-specific predictions.
 import numpy as np
 import pandas as pd
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Optional
 import lightgbm as lgb
 from sklearn.model_selection import train_test_split
-from sklearn.calibration import CalibratedClassifierCV
 from sklearn.metrics import log_loss, accuracy_score
 import logging
 

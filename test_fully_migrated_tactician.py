@@ -13,7 +13,6 @@ This script tests the complete fully migrated Tactician implementation with:
 import asyncio
 import numpy as np
 import pandas as pd
-from datetime import datetime, timedelta
 from typing import Dict, Any
 import logging
 

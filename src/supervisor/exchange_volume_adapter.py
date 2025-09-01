@@ -14,7 +14,6 @@ from src.utils.warning_symbols import (
     error,
     execution_error,
     initialization_error,
-    invalid,
     warning
 )
 

@@ -1,15 +1,11 @@
 # src/training/steps/step17_*.py
 
-import asyncio
-import contextlib
 import json
 import os
 import pickle
 from datetime import datetime
-from typing import Any, Dict
+from typing import Any
 
-import numpy as np
-import pandas as pd
 import optuna
 
 from src.config.config_manager import (
@@ -20,11 +16,6 @@ from src.config.config_manager import (
 )
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
-from src.utils.warning_symbols import (
-    error,
-    failed,
-    missing,
-)
 
 
 class FinalParametersOptimizationStepNew:

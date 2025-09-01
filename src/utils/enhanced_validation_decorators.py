@@ -6,17 +6,13 @@ provide comprehensive validation capabilities with better performance, error han
 and consistency across all training steps.
 """
 
-import asyncio
 import functools
 import inspect
 import time
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Union, Tuple
-from datetime import datetime
-import logging
+from typing import Any, Callable, Dict, List, Optional
 
 from src.utils.logger import system_logger
-from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 from src.utils.base_validator import BaseValidator
 from src.utils.comprehensive_file_validation import ComprehensiveFileValidator
 
@@ -296,7 +292,7 @@ def smart_validation_cache(
             if cache_key_func:
                 cache_key = cache_key_func(*args, **kwargs)
             else:
-                cache_key = str(hash(str(args) + str(sorted(kwargs.items())))
+                cache_key = str(hash(str(args) + str(sorted(kwargs.items()))))
             
             # Check cache
             current_time = time.time()
@@ -612,7 +608,7 @@ def _validate_outputs_sync(
     try:
         if hasattr(validator, 'validate_step_output'):
             # Extract common parameters from context
-            symbol = getattr(validator, 'symbol', 'symbol', 'ETHUSDT')
+            symbol = getattr(validator, 'symbol', 'ETHUSDT')
             exchange = getattr(validator, 'exchange', 'BINANCE')
             timeframe = getattr(validator, 'timeframe', '1m')
             

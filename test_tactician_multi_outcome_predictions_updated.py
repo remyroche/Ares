@@ -14,13 +14,12 @@ multi-outcome predictions similar to the Analyst but with:
 import asyncio
 import numpy as np
 import pandas as pd
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Dict, Any
 
 # Import components
 from src.tactician.enhanced_prediction_integrator import TacticianEnhancedPredictionIntegrator
 from src.tactician.enhanced_execution_manager import EnhancedExecutionManager
-from src.tactician.dynamic_barrier_calculator import DynamicBarrierCalculator
 from src.training.steps.step14_tactician_labeling import TacticianTripleBarrierLabeler
 
 

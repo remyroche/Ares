@@ -8,7 +8,6 @@ from src.analyst.ml_confidence_predictor import MLConfidencePredictor
 from src.analyst.ml_confidence_predictor import MLConfidencePredictor
 import asyncio
 
-from src.utils.warning_symbols import missing
 import numpy as np
 import pandas as pd
 

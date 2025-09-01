@@ -4,8 +4,6 @@
 
 import numpy as np
 import pandas as pd
-import pytest
-from typing import Dict, Any
 
 from src.training.steps.step4_analyst_labeling_feature_engineering_components.fractional_triple_barrier_labeling import (
     FractionalTripleBarrierLabeling

@@ -9,7 +9,7 @@ without actually downloading data (dry run mode).
 import traceback
 import asyncio
 import sys
-from datetime import datetime, timedelta
+from datetime import timedelta
 from pathlib import Path
 
 import pandas as pd

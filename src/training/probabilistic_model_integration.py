@@ -10,10 +10,9 @@ of probabilistic outputs and uncertainty quantification.
 import logging
 import numpy as np
 import pandas as pd
-from typing import Dict, Any, List, Optional, Tuple, Union
+from typing import Dict, Any, List, Optional, Tuple
 from dataclasses import dataclass
 import asyncio
-from pathlib import Path
 
 # Import the probabilistic Bayesian optimizer
 from .probabilistic_bayesian_optimizer import (

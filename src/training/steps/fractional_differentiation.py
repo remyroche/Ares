@@ -8,7 +8,6 @@ stationarity while avoiding over-differencing.
 import numpy as np
 import pandas as pd
 from typing import Optional, Tuple, Dict, Any
-from scipy import stats
 from statsmodels.tsa.stattools import adfuller
 
 from src.utils.centralized_decorators import (

@@ -5,15 +5,10 @@ This step creates comprehensive features including both basic and advanced featu
 with regime-aware optimization after HMM regime discovery.
 """
 
-import asyncio
-import hashlib
 import json
-import os
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List
-from concurrent.futures import ThreadPoolExecutor, as_completed
-import multiprocessing
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent

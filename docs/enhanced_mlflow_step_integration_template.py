@@ -13,14 +13,12 @@ from pathlib import Path
 
 from src.utils.enhanced_mlflow_integration import (
     with_enhanced_mlflow_logging,
-    log_step_artifact,
     log_step_dataframe,
     log_step_model,
     log_step_metrics,
     log_step_dataframe_with_standardized_name,
     log_step_artifact_with_standardized_name,
     log_step_report,
-    generate_standardized_artifact_name,
     EnhancedMLflowManager,
 )
 

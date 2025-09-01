@@ -3,11 +3,10 @@
 """Mock Production Integration Test: Simulates end-to-end testing of the complete fractional system."""
 
 import sys
-import os
 from pathlib import Path
 import json
 from datetime import datetime
-from typing import Dict, Any, List, Tuple
+from typing import Dict, Any, Tuple
 
 # Add project root to path
 project_root = Path(__file__).parent.parent

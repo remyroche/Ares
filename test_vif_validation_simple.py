@@ -6,7 +6,6 @@ This script tests the VIF validation decorators without requiring external depen
 """
 
 import sys
-import os
 from pathlib import Path
 
 # Add src to path

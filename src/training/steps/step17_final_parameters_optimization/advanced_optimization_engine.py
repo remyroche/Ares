@@ -11,20 +11,14 @@ This module implements the core advanced optimization strategies:
 These are production-ready implementations with robust error handling and optimization.
 """
 
-import asyncio
 import logging
 import numpy as np
 import pandas as pd
-from datetime import datetime, timedelta
-from pathlib import Path
-from typing import Dict, Any, List, Optional, Tuple, Union, NamedTuple
-import json
+from typing import Dict, Any, List, Optional, Tuple, NamedTuple
 import warnings
 from dataclasses import dataclass
 from enum import Enum
 from sklearn.model_selection import KFold
-from sklearn.metrics import mean_squared_error, accuracy_score
-import itertools
 
 # Suppress warnings for cleaner output
 warnings.filterwarnings('ignore')

@@ -5,7 +5,7 @@ Script to fix the 5 partially integrated steps to reach 90%+ completion.
 
 import re
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import Dict
 
 # Steps that need completion fixes
 STEPS_TO_FIX = [

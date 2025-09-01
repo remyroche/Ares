@@ -6,7 +6,6 @@ import glob
 import os
 import sys
 import time
-from collections.abc import Callable
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Optional

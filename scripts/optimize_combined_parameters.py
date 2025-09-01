@@ -3,7 +3,6 @@
 """Joint parameter optimization for combined fractional system."""
 
 import sys
-import os
 from pathlib import Path
 import json
 from datetime import datetime
@@ -590,7 +589,6 @@ class CombinedParameterOptimizer:
 
 async def main():
     """Main function to run combined parameter optimization."""
-    import pandas as pd
     
     optimizer = CombinedParameterOptimizer()
     results = await optimizer.run_grid_search(max_combinations=30)

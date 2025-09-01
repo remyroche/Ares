@@ -6,10 +6,9 @@ This script will systematically update the remaining steps that weren't fully in
 by the previous automated script.
 """
 
-import os
 import re
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import Dict
 
 # Define the remaining steps that need manual integration
 REMAINING_STEPS = [

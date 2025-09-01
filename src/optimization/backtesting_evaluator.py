@@ -7,12 +7,10 @@ Provides realistic performance evaluation during parameter optimization.
 
 import numpy as np
 import pandas as pd
-from datetime import datetime, timedelta
-from typing import Dict, Any, List, Tuple, Optional
-import asyncio
+from typing import Dict, Any, List
 
 from src.utils.logger import system_logger
-from src.utils.error_handler import handle_errors, handle_specific_errors
+from src.utils.error_handler import handle_errors
 
 
 class BacktestingEvaluator:

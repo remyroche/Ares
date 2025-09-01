@@ -8,12 +8,9 @@ of the Ares trading bot with correlation IDs for debugging and performance analy
 
 from __future__ import annotations
 
-import asyncio
-import json
-import time
 import uuid
-from dataclasses import asdict, dataclass, field
-from datetime import datetime, timedelta
+from dataclasses import dataclass, field
+from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional
 

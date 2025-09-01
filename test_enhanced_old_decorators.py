@@ -8,8 +8,6 @@ import pandas as pd
 import numpy as np
 import asyncio
 import time
-import warnings
-from datetime import datetime
 
 def test_enhanced_old_decorators():
     """Test that all old decorators work with new enhancements."""
@@ -21,9 +19,6 @@ def test_enhanced_old_decorators():
         # Test imports from the original decorators module
         from src.utils.decorators import (
             validate_call_or_runtime_types,
-            pa_check_input,
-            pa_check_output,
-            pa_check_io,
             enforce_ndarray,
             auto_vectorize,
             guard_array_nan_inf,
@@ -211,7 +206,6 @@ def test_enhanced_old_decorators():
         from src.utils.decorator_compatibility import (
             validate_call,  # Legacy name
             check_input,    # Legacy name
-            check_output,   # Legacy name
             vectorize,      # Legacy name
             guard_nan_inf,  # Legacy name
             guard_nulls,    # Legacy name

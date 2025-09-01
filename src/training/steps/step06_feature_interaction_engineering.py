@@ -15,11 +15,10 @@ Key Features:
 import numpy as np
 import pandas as pd
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 import logging
 from sklearn.preprocessing import StandardScaler
 from sklearn.feature_selection import mutual_info_classif
-from sklearn.decomposition import PCA
 import talib
 
 # Configure logging

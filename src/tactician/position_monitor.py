@@ -8,7 +8,6 @@ PositionDivisionStrategy for consistency.
 """
 
 import asyncio
-import yaml
 from datetime import datetime
 from dataclasses import dataclass, field
 from enum import Enum

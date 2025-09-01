@@ -7,8 +7,7 @@ triple barrier labeling to create rich feature sets for machine learning models.
 """
 
 import time
-from typing import Any, Dict, List, Optional, Tuple, Union
-import warnings
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd

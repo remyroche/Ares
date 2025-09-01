@@ -8,7 +8,6 @@ Coordinates data collection processes for step1. This orchestrator focuses on:
 Note: Data conversion and formatting is handled by step01_5_data_converter.py
 """
 
-import asyncio
 import sys
 from datetime import datetime
 from pathlib import Path

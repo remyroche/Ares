@@ -7,7 +7,7 @@ This module validates the HMM-based training step outputs with comprehensive mod
 import asyncio
 import sys
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent
@@ -86,7 +86,6 @@ async def run_validator(
         # Try to load and validate the models
         try:
             import pickle
-            import numpy as np
             
             # Load the models
             with open(hmm_models_path, 'rb') as f:

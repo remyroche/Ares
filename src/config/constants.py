@@ -53,13 +53,13 @@ DEFAULT_LOG_FORMAT: Final[str] = "%(asctime)s - %(name)s - %(levelname)s - %(mes
 
 # Feature Categories and Weights
 DEFAULT_FEATURE_WEIGHTS: Final[dict[str, float]] = {
-    "volatility": 0.15,
-    "liquidity": 0.15,
-    "microstructure": 0.10,
-    "regime": 0.10,
-    "sr_features": 0.15,
-    "interaction": 0.15,
-    "volume": 0.10,
+"volatility": 0.15,
+"liquidity": 0.15,
+"microstructure": 0.10,
+"regime": 0.10,
+"sr_features": 0.15,
+"interaction": 0.15,
+"volume": 0.10,
 }
 
 # Note: Regime adjustments removed - per-regime distinct LM models handle regime-specific adjustments

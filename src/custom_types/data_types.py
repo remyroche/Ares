@@ -5,107 +5,131 @@
 from typing import Literal, TypedDict
 
 from .base_types import (
-    OrderId,
-    PositionId,
-    Price,
-    Symbol,
-    Timestamp,
-    TradeId,
-    Volume,
+OrderId,
+PositionId,
+Price,
+Symbol,
+Timestamp,
+TradeId,
+Volume,
 )
 
 
 class OHLCVData(TypedDict):
+    pass  # TODO: Add implementation
+class OHLCVData(TypedDict):
+class OHLCVData(TypedDict):
     """Type-safe OHLCV market data."""
 
-    timestamp: Timestamp
-    open: Price
-    high: Price
-    low: Price
-    close: Price
-    volume: Volume
+timestamp: Timestamp
+open: Price
+high: Price
+low: Price
+close: Price
+volume: Volume
 
 
 class TickerData(TypedDict):
+    pass  # TODO: Add implementation
+class TickerData(TypedDict):
+class TickerData(TypedDict):
     """Type-safe ticker data."""
 
-    symbol: Symbol
-    price: Price
-    change_24h: float
-    volume_24h: Volume
-    high_24h: Price
-    low_24h: Price
-    timestamp: Timestamp
+symbol: Symbol
+price: Price
+change_24h: float
+volume_24h: Volume
+high_24h: Price
+low_24h: Price
+timestamp: Timestamp
 
 
 class OrderBookLevel(TypedDict):
+    pass  # TODO: Add implementation
+class OrderBookLevel(TypedDict):
+class OrderBookLevel(TypedDict):
     """Type-safe order book level."""
 
-    price: Price
-    quantity: Volume
+price: Price
+quantity: Volume
 
 
 class OrderBookData(TypedDict):
+    pass  # TODO: Add implementation
+class OrderBookData(TypedDict):
+class OrderBookData(TypedDict):
     """Type-safe order book data."""
 
-    symbol: Symbol
-    timestamp: Timestamp
-    bids: list[OrderBookLevel]
-    asks: list[OrderBookLevel]
+symbol: Symbol
+timestamp: Timestamp
+bids: list[OrderBookLevel]
+asks: list[OrderBookLevel]
 
 
 class TradeData(TypedDict):
+    pass  # TODO: Add implementation
+class TradeData(TypedDict):
+class TradeData(TypedDict):
     """Type-safe individual trade data."""
 
-    trade_id: TradeId
-    symbol: Symbol
-    price: Price
-    quantity: Volume
-    side: Literal["buy", "sell"]
-    timestamp: Timestamp
+trade_id: TradeId
+symbol: Symbol
+price: Price
+quantity: Volume
+side: Literal["buy", "sell"]
+timestamp: Timestamp
 
 
 class AccountInfo(TypedDict):
+    pass  # TODO: Add implementation
+class AccountInfo(TypedDict):
+class AccountInfo(TypedDict):
     """Type-safe account information."""
 
-    account_id: str
-    total_balance: float
-    available_balance: float
-    margin_balance: float | None
-    unrealized_pnl: float | None
-    margin_ratio: float | None
-    positions: list[dict[str, float]]  # Will be typed more specifically
-    open_orders: list[dict[str, str]]  # Will be typed more specifically
+account_id: str
+total_balance: float
+available_balance: float
+margin_balance: float | None
+unrealized_pnl: float | None
+margin_ratio: float | None
+positions: list[dict[str, float]]  # Will be typed more specifically
+open_orders: list[dict[str, str]]  # Will be typed more specifically
 
 
 class PositionInfo(TypedDict):
+    pass  # TODO: Add implementation
+class PositionInfo(TypedDict):
+class PositionInfo(TypedDict):
     """Type-safe position information."""
 
-    position_id: PositionId
-    symbol: Symbol
-    side: Literal["long", "short"]
-    size: Volume
-    entry_price: Price
-    mark_price: Price
-    unrealized_pnl: float
-    leverage: float
-    margin: float
-    timestamp: Timestamp
+position_id: PositionId
+symbol: Symbol
+side: Literal["long", "short"]
+size: Volume
+entry_price: Price
+mark_price: Price
+unrealized_pnl: float
+leverage: float
+margin: float
+timestamp: Timestamp
 
 
 class OrderInfo(TypedDict):
+    pass  # TODO: Add implementation
+class OrderInfo(TypedDict):
+class OrderInfo(TypedDict):
     """Type-safe order information."""
 
-    order_id: OrderId
-    symbol: Symbol
-    side: Literal["buy", "sell"]
-    type: Literal["market", "limit", "stop", "stop_limit"]
-    quantity: Volume
-    price: Price | None
-    stop_price: Price | None
-    status: Literal["pending", "open", "filled", "cancelled", "rejected"]
-    filled_quantity: Volume
-    timestamp: Timestamp
+order_id: OrderId
+symbol: Symbol
+side: Literal["buy", "sell"]
+type: Literal["market", "limit", "stop", "stop_limit"]
+quantity: Volume
+price: Price | None
+stop_price: Price | None
+status: Literal["pending", "open", "filled", "cancelled", "rejected"]
+filled_quantity: Volume
+timestamp: Timestamp
 
 
 # Aggregate types for convenience

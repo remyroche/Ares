@@ -11,9 +11,6 @@ invalid,
 )
 
 class GlobalPortfolioManager:
-    pass  # TODO: Add implementation
-class GlobalPortfolioManager:
-class GlobalPortfolioManager:
     """
 Global Portfolio Manager with comprehensive error handling and type safety.
 """
@@ -77,11 +74,8 @@ Initialize global portfolio manager with enhanced error handling.
 Returns:
             bool: True if initialization successful, False otherwise
 """
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-self.logger.info("Initializing Global Portfolio Manager...")
+        try:
+            self.logger.info("Initializing Global Portfolio Manager...")
 
 # Load global portfolio manager configuration
 await self._load_portfolio_configuration()

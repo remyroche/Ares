@@ -9,9 +9,6 @@ import numpy as np
 from src.utils.error_handler import handle_errors, handle_specific_errors
 
 class AdvancedReportingEngine:
-    pass  # TODO: Add implementation
-class AdvancedReportingEngine:
-class AdvancedReportingEngine:
     """Advanced reporting engine with real-time analytics and comprehensive analysis."""
 
 def __init__(self, config: dict[str, Any]) -> None:
@@ -30,11 +27,8 @@ self,
 performance_data: dict[str, Any],
 ) -> dict[str, Any]:
         """Generate real-time performance report with advanced analytics."""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-report = {
+        try:
+            report = {
 "timestamp": datetime.now().isoformat(),
 "real_time_metrics": await self._calculate_real_time_metrics(
 performance_data,
@@ -68,12 +62,9 @@ async def _calculate_real_time_metrics(
 self,
 performance_data: dict[str, Any],
 ) -> dict[str, Any]:
-        """Calculate real-time performance metrics."""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-returns = performance_data.get("returns", [])
+                """Calculate real-time performance metrics."""
+        try:
+            returns = performance_data.get("returns", [])
 if not returns:
                 return {}
 

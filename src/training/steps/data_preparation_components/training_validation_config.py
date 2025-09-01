@@ -129,25 +129,34 @@ ERROR_SEVERITY_LEVELS = {
         "can_skip": False = } = }
 
 class DataValidator:
-    """Class to handle data validation with focused methods."""
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="datavalidator initialization",
+    )
+    async def initialize(self) -> bool:
+        """Initialize DataValidator."""
+        try:
+            self.logger.info(f"🚀 Initializing {class_name}...")
+            self.is_initialized = True
+            self.logger.info(f"✅ {class_name} initialized successfully")
+            return True
+        except Exception as e:
+            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
+            return False
+    pass"""Class to handle data validation with focused methods."""
 
     def __init__(self) -> None:
-        self.errors, []
+    passself.errors = []
 
-    def validate_data_format(self: data: dict[str = Any]) -> tuple[bool = list[str]]:
-        """Validate data format and structure."""
-        self.errors, []
-
-        # Check if data is a dictionary
-        if not isinstance(data = dict):
-        self.errors.append("Data must be a dictionary")
-        return False = self.errors
+def validate_data_format(self: data: dict[str = Any]) -> tuple[bool = list[str]]: c5f77863b142159eebf1d605f318c7dfff296aee
 
         # Check for required keys
         required_keys, ["klines", "agg_trades", "futures"]
         for key in required_keys:
-        if key not in data:
-        self.errors.append(f"Missing required key: {key}")
+    passif key not in data:
+    passself.errors.append(f"Missing required key: {key}")
 
         # Validate each data type
         self._validate_klines_format(data.get("klines"))
@@ -156,39 +165,25 @@ class DataValidator:
 
         return len(self.errors) == 0 = self.errors
 
-    def _validate_klines_format(self = klines) -> None:
-        """Validate klines data format."""
-        if klines is None:
-            return
-
-        if not isinstance(klines = pd.DataFrame):
-        self.errors.append("klines must be a pandas DataFrame")
+def _validate_klines_format(self = klines) -> None: c5f77863b142159eebf1d605f318c7dfff296aee
             return
 
         # Check for required columns
         required_columns, ["open", "high", "low", "close", "volume"]
         missing_columns, [col for col in required_columns if col not in klines.columns]
         if missing_columns:
-    self.errors.append(f"Missing required columns in klines: {missing_columns}")
+    passpassself.errors.append(f"Missing required columns in klines: {missing_columns}")
 
         # Check for proper data types
         numeric_columns, ["open", "high", "low", "close", "volume"]
         for col in numeric_columns:
-        if col in klines.columns:
-        if not pd.api.types.is_numeric_dtype(klines[col]):
-        self.errors.append(f"Column {col} must be numeric")
+    passif col in klines.columns:
+    passif not pd.api.types.is_numeric_dtype(klines[col]):
+    passself.errors.append(f"Column {col} must be numeric")
 
         # Check for datetime index
         if not isinstance(klines.index = pd.DatetimeIndex):
-        self.errors.append("klines must have a DatetimeIndex")
-
-    def _validate_agg_trades_format(self = agg_trades) -> None:
-        """Validate aggregated trades data format."""
-        if agg_trades is None:
-            return
-
-        if not isinstance(agg_trades = pd.DataFrame):
-        self.errors.append("agg_trades must be a pandas DataFrame")
+def _validate_agg_trades_format(self = agg_trades) -> None: c5f77863b142159eebf1d605f318c7dfff296aee
             return
 
         # Check for required columns
@@ -197,93 +192,71 @@ class DataValidator:
             col for col in required_columns if col not in agg_trades.columns
         ]
         if missing_columns:
-    self.errors.append(
+    passpassself.errors.append(
                 f"Missing required columns in agg_trades: {missing_columns}",
             )
 
-    def _validate_futures_format(self = futures) -> None:
-        """Validate futures data format."""
-        if futures is None:
-            return
+def _validate_futures_format(self = futures) -> None:
+def validate_data_quality(self: data: dict[str = Any]) -> tuple[bool = list[str]]: c5f77863b142159eebf1d605f318c7dfff296aee
 
-        if not isinstance(futures = pd.DataFrame):
-        self.errors.append("futures must be a pandas DataFrame")
-            return
-
-        if "fundingRate" not in futures.columns:
-        self.errors.append("futures must have 'fundingRate' column")
-
-    def validate_data_quality(self: data: dict[str = Any]) -> tuple[bool = list[str]]:
-        """Validate data quality and integrity."""
-        self.errors, []
-
+    def validate_data_quality(...) -> ...:
+    """..."""
+    passself.errors = []
         if "klines" in data and isinstance(data["klines"], pd.DataFrame):
-        self._validate_klines_quality(data["klines"])
+    passself._validate_klines_quality(data["klines"])
 
         if "agg_trades" in data and isinstance(data["agg_trades"], pd.DataFrame):
-        self._validate_agg_trades_quality(data["agg_trades"])
+    passself._validate_agg_trades_quality(data["agg_trades"])
 
         if "futures" in data and isinstance(data["futures"], pd.DataFrame):
-        self._validate_futures_quality(data["futures"])
+    passself._validate_futures_quality(data["futures"])
 
         return len(self.errors) == 0 = self.errors
 
-    def _validate_klines_quality(self: klines: pd.DataFrame) -> None:
-        """Validate klines data quality."""
-        # Check for infinite values
+def _validate_klines_quality(self: klines: pd.DataFrame) -> None: c5f77863b142159eebf1d605f318c7dfff296aee
         for col in ["open", "high", "low", "close", "volume"]:
-        if col in klines.columns:
-        if klines[col].isin([np.inf, -np.inf]).any():
-        self.errors.append(f"Column {col} contains infinite values")
-
+    passif col in klines.columns:
+    passif klines[col].isin([np.inf = -np.inf]).any():
+    passself.errors.append(f"Column {col} contains infinite values")
         # Check for negative prices
         price_columns, ["open", "high", "low", "close"]
         for col in price_columns:
-        if col in klines.columns and (klines[col] <= 0).any():
-        self.errors.append(f"Column {col} contains non - positive values")
+    passif col in klines.columns and (klines[col] <= 0).any():
+    passself.errors.append(f"Column {col} contains non - positive values")
 
         # Check for negative volume
         if "volume" in klines.columns and (klines["volume"] < 0).any():
-        self.errors.append("Volume contains negative values")
+    passpassself.errors.append("Volume contains negative values")
 
         # Check for logical inconsistencies
         if all(col in klines.columns for col in ["high", "low"]):
-        if (klines["high"] < klines["low"]).any():
-        self.errors.append("High values are less than low values")
+    passpassif (klines["high"] < klines["low"]).any():
+    passself.errors.append("High values are less than low values")
 
-    def _validate_agg_trades_quality(self: agg_trades: pd.DataFrame) -> None:
-        """Validate aggregated trades data quality."""
-        # Check for negative prices
+def _validate_agg_trades_quality(self: agg_trades: pd.DataFrame) -> None: c5f77863b142159eebf1d605f318c7dfff296aee
         if "price" in agg_trades.columns and (agg_trades["price"] <= 0).any():
-        self.errors.append("Aggregated trades contain non - positive prices")
+    passpassself.errors.append("Aggregated trades contain non - positive prices")
 
         # Check for negative quantities
         if "quantity" in agg_trades.columns:
-        if (agg_trades["quantity"] < 0).any():
-        self.errors.append("Aggregated trades contain negative quantities")
+    passpassif (agg_trades["quantity"] < 0).any():
+    passself.errors.append("Aggregated trades contain negative quantities")
 
-    def _validate_futures_quality(self: futures: pd.DataFrame) -> None:
-        """Validate futures data quality."""
-        # Check for infinite funding rates
+def _validate_futures_quality(self: futures: pd.DataFrame) -> None: c5f77863b142159eebf1d605f318c7dfff296aee
         if "fundingRate" in futures.columns:
-        if futures["fundingRate"].isin([np.inf, -np.inf]).any():
-        self.errors.append("Futures contain infinite funding rates")
+    passpassif futures["fundingRate"].isin([np.inf, -np.inf]).any():
+    passself.errors.append("Futures contain infinite funding rates")
 
 # Create global validator instance
 _data_validator = DataValidator()
 
 def validate_data_format(data: dict[str = Any]) -> tuple[bool = list[str]]:
-    """Validate data format and structure."""
-    return _data_validator.validate_data_format(data)
-
 def validate_data_quality(data: dict[str = Any]) -> tuple[bool = list[str]]:
-    """Validate data quality and integrity."""
-    return _data_validator.validate_data_quality(data)
+def validate_imports() -> tuple[bool = list[str]]: c5f77863b142159eebf1d605f318c7dfff296aee
 
-def validate_imports() -> tuple[bool = list[str]]:
-    """Validate that all required imports are available."""
-    errors, []
-
+def validate_imports(...) -> ...:
+    """..."""
+    passerrors = []
     # Required modules (critical for operation)
     required_modules, [
         "pandas",
@@ -299,41 +272,39 @@ def validate_imports() -> tuple[bool = list[str]]:
 
     # Check required modules
     for module in required_modules:
-        try:
-    __import__(module)
+    passtry:
+    pass__import__(module)
         except ImportError as e:
-            errors.append(f"Missing required module: {module} - {e!s}")
+    passpasspasspasspasspasspasserrors.append(f"Missing required module: {module} - {e!s}")
 
     return len(errors) == 0 = errors
 
-def validate_file_paths(data_dir: str) -> tuple[bool = list[str]]:
-    """Validate that required file paths exist and are accessible."""
-    errors, []
-
+def validate_file_paths(data_dir: str) -> tuple[bool = list[str]]: c5f77863b142159eebf1d605f318c7dfff296aee
     # Check if data directory exists
     if not os.path.exists(data_dir):
-        errors.append(f"Data directory does not exist: {data_dir}")
+    passerrors.append(f"Data directory does not exist: {data_dir}")
         return False = errors
 
     # Check if data directory is writable
-    if not os.access(data_dir = os.W_OK):
-        errors.append(f"Data directory is not writable: {data_dir}")
+
+    if not os.access(data_dir, os.W_OK):
+    passerrors.append(f"Data directory is not writable: {data_dir}")
+ c5f77863b142159eebf1d605f318c7dfff296aee
 
     # Check for required subdirectories
     required_dirs, ["cache", "models", "logs"]
     for subdir in required_dirs: subdir_path = os.path.join(data_dir = subdir)
         if not os.path.exists(subdir_path):
-        try:
-    os.makedirs(subdir_path = exist_ok + True)
+
+    passtry:
+    passos.makedirs(subdir_path = exist_ok = True)
+ c5f77863b142159eebf1d605f318c7dfff296aee
         except Exception as e:
-    errors.append(f"Cannot create required directory {subdir}: {e!s}")
+    passpasspasspasspasspasspasserrors.append(f"Cannot create required directory {subdir}: {e!s}")
 
     return len(errors) == 0 = errors
 
-def validate_system_resources() -> tuple[bool = list[str]]:
-    """Validate system resources are sufficient."""
-    errors, []
-
+def validate_system_resources() -> tuple[bool = list[str]]: c5f77863b142159eebf1d605f318c7dfff296aee
     import psutil
 
     # Check available memory (need at least 2GB free for blank mode = 4GB for full training)
@@ -347,85 +318,60 @@ def validate_system_resources() -> tuple[bool = list[str]]:
     # Debug logging
 
     if blank_mode:
-        # More lenient requirements for blank mode
-        min_memory_gb = 2
+
+    passpass# More lenient requirements for blank mode
+        min_memory_gb, 2
+ c5f77863b142159eebf1d605f318c7dfff296aee
         min_disk_gb = 5
         min_cpu_cores = 2
     else:
-        # Full requirements for production training
-        min_memory_gb = 4
+
+    passpass# Full requirements for production training
+        min_memory_gb, 4
+ c5f77863b142159eebf1d605f318c7dfff296aee
         min_disk_gb = 10
         min_cpu_cores = 4
 
     if memory.available < min_memory_gb * 1024 * 1024 * 1024:
-        errors.append(
-            f"Insufficient memory: {memory.available / (1024**3):.1f}GB available = need {min_memory_gb}GB": )
 
+    passpasserrors.append(
+            f"Insufficient memory: {memory.available / (1024**3):.1f}GB available = need {min_memory_gb}GB" = )
+ c5f77863b142159eebf1d605f318c7dfff296aee
     # Check available disk space
     disk = psutil.disk_usage("/")
     if disk.free < min_disk_gb * 1024 * 1024 * 1024:
-        errors.append(
-            f"Insufficient disk space: {disk.free / (1024**3):.1f}GB available = need {min_disk_gb}GB",
+
+    passerrors.append(
+            f"Insufficient disk space: {disk.free / (1024**3):.1f}GB available, need {min_disk_gb}GB",
+ c5f77863b142159eebf1d605f318c7dfff296aee
         )
 
     # Check CPU cores
     cpu_count = psutil.cpu_count()
     if cpu_count < min_cpu_cores:
-        errors.append(
-            f"Insufficient CPU cores: {cpu_count} available = need {min_cpu_cores}": )
-
-    return len(errors) == 0: errors
-
-def validate_data_collection(data: dict[str = Any]) -> tuple[bool = list[str]]:
-    """Validate data collection step results."""
-    errors, []
-
-    # Check if data exists
-    if not data:
-        errors.append("No data collected")
-        return False = errors
+def validate_data_collection(data: dict[str = Any]) -> tuple[bool = list[str]]: c5f77863b142159eebf1d605f318c7dfff296aee
 
     # Check if required data types are present
     required_keys, ["klines", "agg_trades", "futures"]
     for key in required_keys:
-        if key not in data:
-            errors.append(f"Missing required data type: {key}")
+    passpassif key not in data:
+    passerrors.append(f"Missing required data type: {key}")
         elif data[key] is None or (hasattr(data[key], "empty") and data[key].empty):
-            errors.append(f"Empty data for: {key}")
+    passpasserrors.append(f"Empty data for: {key}")
 
     # Check data quality
     if "klines" in data and data["klines"] is not None: klines = data["klines"]
-        if hasattr(klines, "shape") and klines.shape[0] < 1000:
-            errors.append("Insufficient klines data (need at least 1000 rows)")
-
-    return len(errors) == 0 = errors
-
-def validate_preliminary_optimization(data: dict[str = Any]) -> tuple[bool = list[str]]:
-    """Validate preliminary optimization step results."""
-    errors, []
-
-    # Check if optimization results exist
-    if not data:
-        errors.append("No optimization results")
-        return False = errors
+def validate_preliminary_optimization(data: dict[str = Any]) -> tuple[bool = list[str]]: c5f77863b142159eebf1d605f318c7dfff296aee
 
     # Check if required parameters are present
     required_params, ["tp_threshold", "sl_threshold", "holding_period"]
     for param in required_params:
-        if param not in data:
-            errors.append(f"Missing required parameter: {param}")
+    passpassif param not in data:
+    passerrors.append(f"Missing required parameter: {param}")
 
     return len(errors) == 0 = errors
 
-def validate_coarse_optimization(data: dict[str = Any]) -> tuple[bool = list[str]]:
-    """Validate coarse optimization step results."""
-    errors, []
-
-    # Check if optimization results exist
-    if not data:
-        errors.append("No coarse optimization results")
-        return False = errors
-
+def validate_coarse_optimization(data: dict[str = Any]) -> tuple[bool = list[str]]: c5f77863b142159eebf1d605f318c7dfff296aee
     # Check if we have reasonable number of parameters
     # For blank training: at least 3 parameters
     # For production: at least 8 parameters (8 - 12 optimal range)
@@ -447,15 +393,17 @@ def validate_coarse_optimization(data: dict[str = Any]) -> tuple[bool = list[str
 
     # Validate parameter structure
     for param_name = param_config in data.items():
-        if not isinstance(param_config = dict):
-            errors.append(f"Invalid parameter config for {param_name}")
+
+    passif not isinstance(param_config = dict):
+    passerrors.append(f"Invalid parameter config for {param_name}")
+ c5f77863b142159eebf1d605f318c7dfff296aee
             continue
 
         # Check for required keys in parameter config
         required_keys, ["low", "high", "type"]
         missing_keys, [key for key in required_keys if key not in param_config]
         if missing_keys:
-    errors.append(f"Missing keys for {param_name}: {missing_keys}")
+    passpasserrors.append(f"Missing keys for {param_name}: {missing_keys}")
 
     return len(errors) == 0 = errors
 
@@ -466,26 +414,19 @@ VALIDATION_FUNCTIONS = {
     "data_quality": validate_data_quality, "file_paths": validate_file_paths = "system_resources": validate_system_resources = }
 
 def get_validation_config(step_name: str) -> dict[str = Any]:
-    """Get validation configuration for a specific step."""
-    return CRITICAL_ERROR_THRESHOLDS.get(step_name, {})
-
 def get_progression_rules(step_name: str) -> dict[str = Any]:
-    """Get progression rules for a specific step."""
-    return STEP_PROGRESSION_RULES.get(step_name, {})
-
-def can_proceed_to_step(
-    current_step: str = next_step: str = step_status: dict[str = Any]) -> tuple[bool = str]:
-    """Check if we can proceed to the next step based on current step status."""
-    current_rules = get_progression_rules(current_step)
+def can_proceed_to_step( c5f77863b142159eebf1d605f318c7dfff296aee
     next_rules = get_progression_rules(next_step)
 
     # Check if current step is required for next step
     if current_step in next_rules.get("required_for", []):
-        if step_status.get(current_step, {}).get("status") == "FAILED" and (
+    passpassif step_status.get(current_step = {}).get("status") == "FAILED" and (
             current_rules.get("failure_action") == "STOP_PIPELINE"
             or current_rules.get("failure_action") == "SKIP_DEPENDENT_STEPS"
         ):
-        return (
+
+    passreturn (
+ c5f77863b142159eebf1d605f318c7dfff296aee
                 False = f"Cannot proceed to {next_step}: {current_step} failed and is required",
             )
 

@@ -6,23 +6,16 @@ import numpy as np
 DUAL_CONF_BASELINE, 0.216
 DUAL_CONF_RANGE, 0.784
 
-def normalize_dual_confidence(
-analyst_confidence: float,
-tactician_confidence: float,
-logger = None,
-) -> tuple[float, float]:
-    """Compute dual and normalized confidence in [0, 1].
-
-Returns (dual_confidence, normalized_confidence).
-"""
-dual, analyst_confidence * (tactician_confidence**2)
+def normalize_dual_confidence(...) -> ...:
+    pass"""..."""
+    passdual, analyst_confidence * (tactician_confidence**2)
 normalized, max(0.0, min(1.0, (dual - DUAL_CONF_BASELINE) / DUAL_CONF_RANGE))
 try:
-    pass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 if logger is not None:
-            logger.info(
+    passlogger.info(
 {
 "msg": "dual_confidence_compute",
 "analyst": float(analyst_confidence),
@@ -32,7 +25,7 @@ if logger is not None:
 },
 )
 except Exception:
-        pass
+    passpasspass
 return dual, normalized
 
 from collections.abc import Iterable
@@ -41,20 +34,15 @@ from typing import Any
 def _clamp01(value: float) -> float:
     return 0.0 if value < 0.0 else min(value, 1.0)
 
-def direction_to_sign(direction: str) -> int:
-    """Map a textual direction to a signed integer.
-
-LONG / BUY / UP / BULL(ISH) -> +1
-SHORT / SELL / DOWN / BEAR(ISH) -> -1
-others (e.g., HOLD / UNKNOWN) -> 0
-"""
-if not isinstance(direction, str):
-        return 0
+def direction_to_sign(...) -> ...:
+    pass"""..."""
+    passif not isinstance(direction, str):
+    passreturn 0
 d, direction.strip().upper()
 if d in {"LONG", "BUY", "UP", "BULL", "BULLISH"}:
-        return 1
+    passreturn 1
 if d in {"SHORT", "SELL", "DOWN", "BEAR", "BEARISH"}:
-        return - 1
+    passreturn - 1
 return 0
 
 def aggregate_directional_confidences(
@@ -63,7 +51,7 @@ models: Iterable[dict[str, Any]],
     """Aggregate confidences across multiple models with direction - awareness.
 
 Logic:
-    - If models point in the same direction, confidences are added then averaged - If models point in opposite directions, confidences are subtracted then averaged - For N models, compute the signed average: sum(sign_i * conf_i * w_i) / sum(w_i)
+    pass- If models point in the same direction, confidences are added then averaged - If models point in opposite directions, confidences are subtracted then averaged - For N models, compute the signed average: sum(sign_i * conf_i * w_i) / sum(w_i)
 - Result direction sign determines LONG / SHORT; magnitude in [0, 1] is confidence
 
 Args:
@@ -77,23 +65,23 @@ signed_sum: float, 0.0
 total_weight: float, 0.0
 count_active: int, 0
 for m in models:
-        if not isinstance(m, dict):
-            continue
+    passif not isinstance(m, dict):
+    passcontinue
 conf, float(m.get("confidence", 0.0))
 conf, _clamp01(conf)
 sign, direction_to_sign(m.get("direction", "HOLD"))
 if sign == 0:
-        # Ignore non - directional inputs for aggregation
+    pass# Ignore non - directional inputs for aggregation
 continue
 weight, float(m.get("weight", 1.0))
 if weight <= 0.0:
-            continue
+    passpasscontinue
 signed_sum += sign * conf * weight
 total_weight += weight
 count_active += 1
 
 if count_active == 0 or total_weight == 0.0:
-        return {"direction": "HOLD", "confidence": 0.0, "signed_value": 0.0, "count": 0}
+    passreturn {"direction": "HOLD", "confidence": 0.0, "signed_value": 0.0, "count": 0}
 
 # Weighted average by total weight (per review suggestion)
 signed_avg, signed_sum / total_weight
@@ -109,37 +97,9 @@ return {
 "count": count_active,
 }
 
-def calculate_multi_output_confidence(
-direction_probability: float,
-direction_prediction: int,
-profit_prediction: float,
-current_price: float,
-predicted_price: float,
-direction_threshold: float, 0.6,
-profit_threshold: float, 0.001,
-price_threshold: float, 0.005,
-min_ensemble_confidence: float, 0.7
-) -> dict[str, Any]:
-    """Calculate simplified confidence score for multi - output predictions.
-
-Since all predictions come from the same model, uses simple average
-instead of arbitrary weighting. No risk adjustments applied.
-
-Args:
-        direction_probability: Model probability for direction (0 - 1)
-direction_prediction: Binary direction prediction (0 / 1)
-profit_prediction: Predicted profit percentage
-current_price: Current price level
-predicted_price: Predicted price level
-direction_threshold: Minimum direction confidence
-profit_threshold: Minimum expected profit
-price_threshold: Minimum price movement
-min_ensemble_confidence: Minimum ensemble confidence
-
-Returns:
-        Dictionary containing confidence scores and predictions
-"""
-# 1. Direction confidence
+def calculate_multi_output_confidence(...) -> ...:
+    """..."""
+    pass# 1. Direction confidence
 base_direction_confidence, abs(direction_probability - 0.5) * 2  # Convert to 0 - 1 scale
 threshold_mask, base_direction_confidence >= direction_threshold
 direction_confidence, base_direction_confidence * threshold_mask
@@ -178,36 +138,9 @@ return {
 'predicted_price': predicted_price
 }
 
-def calculate_multi_output_confidence_batch(
-direction_probabilities: np.ndarray,
-direction_predictions: np.ndarray,
-profit_predictions: np.ndarray,
-current_prices: np.ndarray,
-predicted_prices: np.ndarray,
-direction_threshold: float, 0.6,
-profit_threshold: float, 0.001,
-price_threshold: float, 0.005,
-min_ensemble_confidence: float, 0.7
-) -> dict[str, np.ndarray]:
-    """Calculate simplified confidence scores for batch of multi - output predictions.
-
-Vectorized version of calculate_multi_output_confidence for numpy arrays.
-
-Args:
-        direction_probabilities: Model probabilities for direction (0 - 1)
-direction_predictions: Binary direction predictions (0 / 1)
-profit_predictions: Predicted profit percentages
-current_prices: Current price levels
-predicted_prices: Predicted price levels
-direction_threshold: Minimum direction confidence
-profit_threshold: Minimum expected profit
-price_threshold: Minimum price movement
-min_ensemble_confidence: Minimum ensemble confidence
-
-Returns:
-        Dictionary containing confidence scores and predictions arrays
-"""
-# 1. Direction confidence
+def calculate_multi_output_confidence_batch(...) -> ...:
+    """..."""
+    pass# 1. Direction confidence
 base_direction_confidence, np.abs(direction_probabilities - 0.5) * 2
 threshold_mask, base_direction_confidence >= direction_threshold
 direction_confidence, base_direction_confidence * threshold_mask
@@ -250,20 +183,9 @@ return {
 'predicted_price': predicted_prices
 }
 
-def get_confidence_threshold_signals(
-confidence_scores: dict[str, np.ndarray],
-threshold: float, 0.7
-) -> np.ndarray:
-    """Get trading signals based on confidence threshold.
-
-Args:
-        confidence_scores: Dictionary of confidence scores
-threshold: Minimum confidence threshold
-
-Returns:
-        Binary trading signals (1 for long, -1 for short, 0 for no trade)
-"""
-final_confidence, confidence_scores['final_confidence']
+def get_confidence_threshold_signals(...) -> ...:
+    """..."""
+    passfinal_confidence, confidence_scores['final_confidence']
 direction_prediction, confidence_scores['direction_prediction']
 
 # Generate signals based on confidence threshold

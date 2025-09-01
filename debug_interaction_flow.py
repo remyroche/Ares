@@ -13,8 +13,8 @@ import pandas as pd
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 
-async def debug_interaction_flow():
-    """Debug the exact flow of interaction features through the system"""
+async def debug_interaction_flow(...):
+    pass"""Debug the exact flow of interaction features through the system"""
     print("🔍 Debugging interaction features flow...")
 
     # Create a mock instance
@@ -28,17 +28,39 @@ async def debug_interaction_flow():
     # Create instance with mock logger
 
     class MockLogger:
-        def info(self, msg):
-            print(f"INFO: {msg}")
 
-        def warning(self, msg):
-            print(f"WARNING: {msg}")
 
-        def error(self, msg):
-            print(f"ERROR: {msg}")
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="mocklogger initialization",
+    )
+    async def initialize(self) -> bool:
+        """Initialize MockLogger."""
+        try:
+            self.logger.info(f"🚀 Initializing {class_name}...")
+            self.is_initialized = True
+            self.logger.info(f"✅ {class_name} initialized successfully")
+            return True
+        except Exception as e:
+            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
+            return False
+    def __init__(self, config: dict[str, Any] | None = None) -> None:
+        """Initialize MockLogger."""
+        self.config = config or {}
+        self.logger = system_logger.getChild("MockLogger")
+        self.is_initialized = False
+    passpassdef info(...):
+    passprint(f"INFO: {msg}")
 
-        def debug(self, msg):
-            print(f"DEBUG: {msg}")
+        def warning(...):
+    passprint(f"WARNING: {msg}")
+
+        def error(...):
+    passprint(f"ERROR: {msg}")
+
+        def debug(...):
+    passprint(f"DEBUG: {msg}")
 
     feature_eng = VectorizedAdvancedFeatureEngineering(config)
     feature_eng.logger = MockLogger()
@@ -137,4 +159,4 @@ async def debug_interaction_flow():
 
 
 if __name__ == "__main__":
-    asyncio.run(debug_interaction_flow())
+    passasyncio.run(debug_interaction_flow())

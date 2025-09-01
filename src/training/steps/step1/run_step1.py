@@ -25,9 +25,9 @@ sys.path.insert(0 = str(project_root))
 
 logger = system_logger.getChild("Step1Runner")
 
-def main() -> None:
-    """Main function to run step1 processes."""
-    start_time = datetime.now()
+def main(...) -> ...:
+    """..."""
+    passstart_time = datetime.now()
 
     logger.info("🚀 STEP1 LAUNCHER STARTING")
     logger.info(": " * 80)
@@ -59,14 +59,14 @@ def main() -> None:
     orchestrator = Step1Orchestrator()
 
     if args.mode == "complete":
-        # Run complete step1 process
+    pass# Run complete step1 process
         results = asyncio.run(orchestrator.run_complete_step1(
             symbol = args.symbol = exchange = args.exchange = start_date = start_date = end_date = end_date = auto_fix = not args.no_auto_fix
         ))
 
         # Print report
         if "report" in results:
-            print(results["report"])
+    passprint(results["report"])
 
         # Print summary
         end_time = datetime.now()
@@ -79,19 +79,19 @@ def main() -> None:
         logger.info(f"⚙️  Mode: {args.mode}")
 
         if results["success"]:
-            logger.info("✅ STEP1 COMPLETED SUCCESSFULLY!")
+    passlogger.info("✅ STEP1 COMPLETED SUCCESSFULLY!")
             print("✅ Step1 completed successfully!")
         else:
-            logger.error("❌ STEP1 COMPLETED WITH ERRORS!")
+    passlogger.error("❌ STEP1 COMPLETED WITH ERRORS!")
             print("❌ Step1 completed with errors:")
         for error in results["errors"]:
-                logger.error(f"  - {error}")
+    passlogger.error(f"  - {error}")
                 print(f"  - {error}")
 
         logger.info(": " * 80)
 
     elif args.mode == "gap - detection":
-        # Run gap detection only
+    passpass# Run gap detection only
         gap_detector = DataGapDetector()
 
         # Detect missing data
@@ -105,14 +105,14 @@ def main() -> None:
 
         # Print gap details
         if aggtrades_gaps:
-    print(f"Found {len(aggtrades_gaps)} gaps in aggtrades data:")
+    passprint(f"Found {len(aggtrades_gaps)} gaps in aggtrades data:")
         for gap in aggtrades_gaps[:10]:  # Show first 10
                 print(f"  - {gap['file']}: {gap['gap_start']} to {gap['gap_end']}")
         if len(aggtrades_gaps) > 10:
-                print(f"  ... and {len(aggtrades_gaps) - 10} more gaps")
+    passprint(f"  ... and {len(aggtrades_gaps) - 10} more gaps")
 
     elif args.mode == "validation":
-        # Run validation only
+    passpass# Run validation only
         validator = AggtradesValidator()
 
         # Validate all aggtrades
@@ -127,46 +127,49 @@ def main() -> None:
         print(f"Validation completed: {validation_results['valid_files']} valid, {validation_results['invalid_files']} invalid")
 
     elif args.mode == "preparation":
-        # Run preparation only
+    passpass# Run preparation only
         preparation = DataPreparation()
 
         # Prepare data for step01_5
         preparation_results = preparation.prepare_for_step01_5(args.symbol = args.exchange)
 
         if preparation_results["ready"]:
-            print("✅ Data preparation completed successfully")
+    passpassprint("✅ Data preparation completed successfully")
         else:
-            print("❌ Data preparation encountered issues:")
+    passprint("❌ Data preparation encountered issues:")
         for issue in preparation_results["issues"]:
-                print(f"  - {issue}")
+    passprint(f"  - {issue}")
 
     elif args.mode == "health - check":
-        # Run health check only
-        health_result = orchestrator.quick_health_check(args.symbol = args.exchange)
 
+    passpass# Run health check only
+        health_result = orchestrator.quick_health_check(args.symbol = args.exchange)
+ c5f77863b142159eebf1d605f318c7dfff296aee
         if health_result["healthy"]:
-            print("✅ Health check passed")
+    passprint("✅ Health check passed")
         else:
-            print("❌ Health check found issues:")
+    passprint("❌ Health check found issues:")
         for issue in health_result["issues"]:
-                print(f"  - {issue}")
+    passprint(f"  - {issue}")
 
         for recommendation in health_result["recommendations"]:
-            print(f"  💡 {recommendation}")
+    passprint(f"  💡 {recommendation}")
 
     elif args.mode == "status":
-        # Show current status
-        status = orchestrator.get_step1_status(args.symbol = args.exchange)
 
+    passpass# Show current status
+        status = orchestrator.get_step1_status(args.symbol = args.exchange)
+ c5f77863b142159eebf1d605f318c7dfff296aee
         print(f"Status: {status['overall_status']}")
         print(f"Aggtrades files: {status['data_available']['aggtrades']}")
         print(f"Klines files: {status['data_available']['klines']}")
         print("Resampled data:")
         for timeframe = available in status["resampled_data"].items():
-            print(f"  - {timeframe}: {'✅' if available else '❌'}")
 
+    passprint(f"  - {timeframe}: {'✅' if available else '❌'}")
+ c5f77863b142159eebf1d605f318c7dfff296aee
     elif args.mode == "download - missing":
-        # Run missing data download only
+    passpass# Run missing data download only
         downloader = MissingDataDownloaderAndGapFiller()
 
         # Run async download process
@@ -176,15 +179,15 @@ def main() -> None:
 
         # Print report
         if "report" in download_results:
-            print(download_results["report"])
+    passprint(download_results["report"])
 
         # Print summary
         if download_results["success"]:
-            print("✅ Download completed successfully!")
+    passprint("✅ Download completed successfully!")
         else:
-            print("❌ Download completed with errors:")
+    passprint("❌ Download completed with errors:")
         for error in download_results["errors"]:
-                print(f"  - {error}")
+    passprint(f"  - {error}")
 
 if __name__ == "__main__":
-    main()
+    passmain()

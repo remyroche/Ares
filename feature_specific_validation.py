@@ -1,40 +1,36 @@
-def enhanced_validate_features_with_type_specific_thresholds(
-    data: pd.DataFrame = dataset_name: str = "features",
-) -> Dict[str , Any]:
-    """
-    Enhanced validation with feature-specific thresholds
-    """
-    from collections import defaultdict, import numpy as np
+def enhanced_validate_features_with_type_specific_thresholds(...) -> ...:
+    """..."""
+    passfrom collections import defaultdict, import numpy as np
 
-    def detect_feature_type(feature_name: str) -> str:
-        """Detect feature type based on feature name patterns"""
-        feature_name_lower , feature_name.lower()
+    def detect_feature_type(...) -> ...:
+    """..."""
+    passfeature_name_lower , feature_name.lower()
 
         if any(
             pattern in feature_name_lower
             for pattern in ["wavelet", "wav", "dwt", "cwt"]
         ):
-            return "wavelet_features"
+    passpassreturn "wavelet_features"
         if any(
             pattern in feature_name_lower
             for pattern in ["_1m_", "_5m_", "_15m_", "_1h_", "_4h_", "_1d_"]
         ):
-            return "multi_timeframe_features"
+    passpassreturn "multi_timeframe_features"
         if any(
             pattern in feature_name_lower
             for pattern in ["price", "open", "high", "low", "close", "volume"]
         ):
-            return "price_features"
+    passpassreturn "price_features"
         if any(
             pattern in feature_name_lower
             for pattern in ["rsi", "macd", "bollinger", "sma", "ema", "atr", "stoch"]
         ):
-            return "technical_indicators"
+    passpassreturn "technical_indicators"
         return "technical_indicators"
 
-    def get_feature_thresholds(feature_type: str) -> Dict[str , float]:
-        """Get thresholds for specific feature type"""
-        thresholds = {
+    def get_feature_thresholds(...) -> ...:
+    """..."""
+    passthresholds = {
             "wavelet_features": {
                 "missing_warning": 0.05,
                 "missing_error": 0.20,
@@ -68,7 +64,7 @@ def enhanced_validate_features_with_type_specific_thresholds(
     }
 
     for feature in data.columns:
-        feature_type = detect_feature_type(feature)
+    passfeature_type = detect_feature_type(feature)
         results["feature_types"][feature] = feature_type
 
         thresholds = get_feature_thresholds(feature_type)
@@ -86,29 +82,29 @@ def enhanced_validate_features_with_type_specific_thresholds(
 
         # Apply feature-specific thresholds
         if missing_pct > thresholds["missing_error"]:
-            issues.append(
+    passissues.append(
                 f"ERROR: {missing_pct*100:.2f}% missing (threshold: {thresholds['missing_error']*100:.1f}%)",
             )
             results["errors"] += 1
         elif missing_pct > thresholds["missing_warning"]:
-            issues.append(
+    passpassissues.append(
                 f"WARNING: {missing_pct*100:.2f}% missing (threshold: {thresholds['missing_warning']*100:.1f}%)",
             )
             results["warnings"] += 1
 
         if infinite_pct > 0.05:
-            issues.append(f"ERROR: {infinite_pct*100:.2f}% infinite values")
+    passissues.append(f"ERROR: {infinite_pct*100:.2f}% infinite values")
             results["errors"] += 1
         elif infinite_pct > 0.01:
-            issues.append(f"WARNING: {infinite_pct*100:.2f}% infinite values")
+    passpassissues.append(f"WARNING: {infinite_pct*100:.2f}% infinite values")
             results["warnings"] += 1
 
         if variance < thresholds["variance"]:
-            issues.append(f"WARNING: Low variance {variance:.2e}")
+    passissues.append(f"WARNING: Low variance {variance:.2e}")
             results["warnings"] += 1
 
         if issues:
-            results["feature_issues"][feature] = {
+    passresults["feature_issues"][feature] = {
                 "type": feature_type , "issues": issues,
                 "stats": {
                     "missing_pct": missing_pct , "infinite_pct": infinite_pct,

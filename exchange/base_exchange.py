@@ -6,13 +6,25 @@ from typing import Any
 from src.interfaces.base_interfaces import IExchangeClient, MarketData
 
 
-class BaseExchange(IExchangeClient, ABC):
-    """
-    Base class for all exchange implementations.
-    Provides standardized method signatures and common functionality.
-    """
+class BaseExchange(...):
 
-    def __init__(
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="baseexchange initialization",
+    )
+    async def initialize(self) -> bool:
+        """Initialize BaseExchange."""
+        try:
+            self.logger.info(f"🚀 Initializing {class_name}...")
+            self.is_initialized = True
+            self.logger.info(f"✅ {class_name} initialized successfully")
+            return True
+        except Exception as e:
+            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
+            return False
+    """..."""
+    passdef __init__(
         self,
         api_key: str,
         api_secret: str,
@@ -26,23 +38,15 @@ class BaseExchange(IExchangeClient, ABC):
         self.exchange: Any | None = None  # Will be set by subclasses
 
     @abstractmethod
-    async def _initialize_exchange(self) -> None:
-        """Initialize the exchange client. Must be implemented by subclasses."""
-
-    @abstractmethod
-    async def _convert_to_market_data(
-        self,
-        raw_data: list[dict[str, Any]],
-        symbol: str,
-        interval: str,
-    ) -> list[MarketData]:
-        """Convert raw exchange data to standardized MarketData format."""
-
-    @abstractmethod
-    async def _get_market_id(self, symbol: str) -> str:
-        """Get the market ID for a given symbol."""
-
-    async def get_klines(
+    async def _initialize_exchange(...) -> ...:
+    """..."""
+    pass@abstractmethod
+    async def _convert_to_market_data(...) -> ...:
+    """..."""
+    pass@abstractmethod
+    async def _get_market_id(...) -> ...:
+    """..."""
+    passasync def get_klines(
         self,
         symbol: str,
         interval: str,
@@ -52,22 +56,15 @@ class BaseExchange(IExchangeClient, ABC):
         return await self._convert_to_market_data(raw_data, symbol, interval)
 
     @abstractmethod
-    async def _get_klines_raw(
-        self,
-        symbol: str,
-        interval: str,
-        limit: int,
-    ) -> list[dict[str, Any]]:
-        """Get raw kline data from exchange."""
-
-    async def get_account_info(self) -> dict[str, Any]:
+    async def _get_klines_raw(...) -> ...:
+    """..."""
+    passasync def get_account_info(self) -> dict[str, Any]:
         return await self._get_account_info_raw()
 
     @abstractmethod
-    async def _get_account_info_raw(self) -> dict[str, Any]:
-        """Get raw account information from exchange."""
-
-    async def create_order(
+    async def _get_account_info_raw(...) -> ...:
+    """..."""
+    passasync def create_order(
         self,
         symbol: str,
         side: str,
@@ -78,25 +75,15 @@ class BaseExchange(IExchangeClient, ABC):
         return await self._create_order_raw(symbol, side, order_type, quantity, price, None)
 
     @abstractmethod
-    async def _create_order_raw(
-        self,
-        symbol: str,
-        side: str,
-        order_type: str,
-        quantity: float,
-        price: float | None,
-        params: dict[str, Any] | None,
-    ) -> dict[str, Any]:
-        """Create raw order on exchange."""
-
-    async def get_position_risk(self, symbol: str) -> dict[str, Any]:
+    async def _create_order_raw(...) -> ...:
+    """..."""
+    passasync def get_position_risk(self, symbol: str) -> dict[str, Any]:
         return await self._get_position_risk_raw(symbol)
 
     @abstractmethod
-    async def _get_position_risk_raw(self, symbol: str) -> dict[str, Any]:
-        """Get raw position risk information from exchange."""
-
-    # Additional standardized helpers
+    async def _get_position_risk_raw(...) -> ...:
+    """..."""
+    pass# Additional standardized helpers
     async def get_historical_klines(
         self,
         symbol: str,
@@ -115,17 +102,9 @@ class BaseExchange(IExchangeClient, ABC):
         return await self._convert_to_market_data(raw_data, symbol, interval)
 
     @abstractmethod
-    async def _get_historical_klines_raw(
-        self,
-        symbol: str,
-        interval: str,
-        start_time_ms: int,
-        end_time_ms: int,
-        limit: int,
-    ) -> list[dict[str, Any]]:
-        """Get raw historical kline data from exchange."""
-
-    async def get_historical_agg_trades(
+    async def _get_historical_klines_raw(...) -> ...:
+    """..."""
+    passasync def get_historical_agg_trades(
         self,
         symbol: str,
         start_time_ms: int,
@@ -140,45 +119,35 @@ class BaseExchange(IExchangeClient, ABC):
         )
 
     @abstractmethod
-    async def _get_historical_agg_trades_raw(
-        self,
-        symbol: str,
-        start_time_ms: int,
-        end_time_ms: int,
-        limit: int,
-    ) -> list[dict[str, Any]]:
-        """Get raw historical aggregated trades from exchange."""
-
-    async def get_open_orders(self, symbol: str | None = None) -> list[dict[str, Any]]:
+    async def _get_historical_agg_trades_raw(...) -> ...:
+    """..."""
+    passasync def get_open_orders(self, symbol: str | None = None) -> list[dict[str, Any]]:
         return await self._get_open_orders_raw(symbol)
 
     @abstractmethod
-    async def _get_open_orders_raw(self, symbol: str | None) -> list[dict[str, Any]]:
-        """Get raw open orders from exchange."""
-
-    async def cancel_order(self, symbol: str, order_id: Any) -> dict[str, Any]:
+    async def _get_open_orders_raw(...) -> ...:
+    """..."""
+    passasync def cancel_order(self, symbol: str, order_id: Any) -> dict[str, Any]:
         return await self._cancel_order_raw(symbol, order_id)
 
     @abstractmethod
-    async def _cancel_order_raw(self, symbol: str, order_id: Any) -> dict[str, Any]:
-        """Cancel raw order on exchange."""
-
-    async def get_order_status(self, symbol: str, order_id: Any) -> dict[str, Any]:
+    async def _cancel_order_raw(...) -> ...:
+    """..."""
+    passasync def get_order_status(self, symbol: str, order_id: Any) -> dict[str, Any]:
         return await self._get_order_status_raw(symbol, order_id)
 
     @abstractmethod
-    async def _get_order_status_raw(self, symbol: str, order_id: Any) -> dict[str, Any]:
-        """Get raw order status from exchange."""
-
-    async def set_leverage(self, symbol: str, leverage: float) -> bool:
-        """Best-effort leverage setter using underlying client if supported."""
-        try:
-            market_id = await self._get_market_id(symbol)
+    async def _get_order_status_raw(...) -> ...:
+    """..."""
+    passasync def set_leverage(...) -> ...:
+    """..."""
+    passtry:
+    passmarket_id = await self._get_market_id(symbol)
         except Exception:
-            market_id = symbol
+    passpassmarket_id = symbol
 
         if not self.exchange:
-            return False
+    passreturn False
 
         attempts: list[tuple[str, tuple[Any, ...], dict[str, Any]]] = [
             ("set_leverage", (leverage, market_id), {}),
@@ -187,23 +156,23 @@ class BaseExchange(IExchangeClient, ABC):
         ]
 
         for method, args, kwargs in attempts:
-            if hasattr(self.exchange, method):
-                try:
-                    await getattr(self.exchange, method)(*args, **kwargs)
+    passif hasattr(self.exchange, method):
+    passtry:
+    passawait getattr(self.exchange, method)(*args, **kwargs)
                     return True
                 except Exception:
-                    continue
+    passpasscontinue
         return False
 
-    async def set_margin_mode(self, symbol: str, mode: str) -> bool:
-        """Best-effort margin mode setter using underlying client if supported."""
-        try:
-            market_id = await self._get_market_id(symbol)
+    async def set_margin_mode(...) -> ...:
+    """..."""
+    passtry:
+    passmarket_id = await self._get_market_id(symbol)
         except Exception:
-            market_id = symbol
+    passpassmarket_id = symbol
 
         if not self.exchange:
-            return False
+    passreturn False
 
         attempts: list[tuple[str, tuple[Any, ...], dict[str, Any]]] = [
             ("set_margin_mode", (mode, market_id), {}),
@@ -212,36 +181,36 @@ class BaseExchange(IExchangeClient, ABC):
         ]
 
         for method, args, kwargs in attempts:
-            if hasattr(self.exchange, method):
-                try:
-                    await getattr(self.exchange, method)(*args, **kwargs)
+    passif hasattr(self.exchange, method):
+    passtry:
+    passawait getattr(self.exchange, method)(*args, **kwargs)
                     return True
                 except Exception:
-                    continue
+    passpasscontinue
         return False
 
-    async def close(self) -> None:
-        """Close the exchange connection if supported by underlying client."""
-        if self.exchange and hasattr(self.exchange, "close"):
-            await self.exchange.close()
+    async def close(...) -> ...:
+    """..."""
+    passif self.exchange and hasattr(self.exchange, "close"):
+    passawait self.exchange.close()
 
-    def _convert_timestamp(self, timestamp: Any) -> datetime:
-        """Convert exchange timestamp to datetime."""
-        if isinstance(timestamp, (int, float)):
-            # Assume milliseconds if timestamp is large
+    def _convert_timestamp(...) -> ...:
+    """..."""
+    passif isinstance(timestamp, (int, float)):
+    pass# Assume milliseconds if timestamp is large
             if timestamp > 1e10:
-                timestamp = timestamp / 1000
+    passtimestamp = timestamp / 1000
             return datetime.fromtimestamp(timestamp)
         if isinstance(timestamp, str):
-            # Try to parse as ISO format, fall back to common formats
+    pass# Try to parse as ISO format, fall back to common formats
             try:
-                return datetime.fromisoformat(timestamp)
+    passreturn datetime.fromisoformat(timestamp)
             except ValueError:
-                for fmt in ["%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S"]:
+    passpassfor fmt in ["%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S"]:
                     try:
-                        return datetime.strptime(timestamp, fmt)
+    passreturn datetime.strptime(timestamp, fmt)
                     except ValueError:
-                        continue
+    passpasscontinue
                 msg = f"Unable to parse timestamp: {timestamp}"
                 raise ValueError(msg)
         msg = f"Unsupported timestamp type: {type(timestamp)}"
@@ -270,92 +239,92 @@ class BaseExchange(IExchangeClient, ABC):
         raise NotImplementedError
 
     # --- Convenience polling helpers ---
-    async def fetch_price(self, symbol: str) -> float | None:
-        """Fetch current price using ticker, falling back to order book mid."""
-        try:
-    pass  # TODO: Add proper exception handling
+    async def fetch_price(...) -> ...:
+    """..."""
+    passtry:
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Prefer a direct ticker if subclass implements get_ticker
             if hasattr(self, "get_ticker"):
-                ticker = await self.get_ticker(symbol)  # type: ignore[attr-defined]
+    passticker = await self.get_ticker(symbol)  # type: ignore[attr-defined]
                 if ticker:
-                    last = ticker.get("last") or ticker.get("mark") or ticker.get("close")
+    passlast = ticker.get("last") or ticker.get("mark") or ticker.get("close")
                     if last is not None:
-                        return float(last)
+    passreturn float(last)
                     bid = ticker.get("bid")
                     ask = ticker.get("ask")
                     if bid is not None and ask is not None:
-                        return (float(bid) + float(ask)) / 2.0
+    passreturn (float(bid) + float(ask)) / 2.0
             # Fallback to order book mid
             if hasattr(self, "get_order_book"):
-                book = await self.get_order_book(symbol, 5)  # type: ignore[attr-defined]
+    passbook = await self.get_order_book(symbol, 5)  # type: ignore[attr-defined]
                 bids = book.get("bids") or []
                 asks = book.get("asks") or []
                 best_bid = float(bids[0][0]) if bids else None
                 best_ask = float(asks[0][0]) if asks else None
                 if best_bid is not None and best_ask is not None:
-                    return (best_bid + best_ask) / 2.0
+    passreturn (best_bid + best_ask) / 2.0
                 if best_bid is not None:
-                    return best_bid
+    passreturn best_bid
                 if best_ask is not None:
-                    return best_ask
+    passreturn best_ask
         except Exception:
-            return None
+    passpassreturn None
         return None
 
-    async def get_liquidation_price(self, symbol: str) -> float | None:
-        """Best-effort liquidation price for current position on symbol."""
-        try:
-    pass  # TODO: Add proper exception handling
+    async def get_liquidation_price(...) -> ...:
+    """..."""
+    passtry:
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             risk = await self.get_position_risk(symbol)
             # Try common ccxt fields
             if isinstance(risk, list) and risk:
-                # Find matching symbol
+    pass# Find matching symbol
                 for position in risk:
-                    inst = position.get("symbol") or position.get("info", {}).get("symbol")
+    passinst = position.get("symbol") or position.get("info", {}).get("symbol")
                     if inst and inst.replace("-", "").replace("_", "").upper().startswith(
                         symbol.upper().replace("USDT", "")
                     ):
-                        liq = (
+    passliq = (
                             position.get("liquidationPrice")
                             or position.get("liqPrice")
                             or position.get("liquidation_price")
                         )
                         if liq:
-                            return float(liq)
+    passreturn float(liq)
                 # Otherwise take first
                 pos0 = risk[0]
                 liq = pos0.get("liquidationPrice") or pos0.get("liqPrice") or pos0.get("liquidation_price")
                 if liq:
-                    return float(liq)
+    passreturn float(liq)
         except Exception:
-            return None
+    passpassreturn None
         return None
 
     # --- Default CCXT-based helpers (can be overridden by subclasses) ---
-    async def get_ticker(self, symbol: str | None = None) -> dict[str, Any]:
-        """Default ticker fetch using ccxt if underlying client is set."""
-        try:
-            if not self.exchange:
-                return {}
+    async def get_ticker(...) -> ...:
+    """..."""
+    passtry:
+    passif not self.exchange:
+    passreturn {}
             market_id = await self._get_market_id(symbol) if symbol else None  # type: ignore[arg-type]
             if market_id:
-                return await self.exchange.fetch_ticker(market_id)  # type: ignore[union-attr]
+    passreturn await self.exchange.fetch_ticker(market_id)  # type: ignore[union-attr]
             # All tickers fallback
             tickers = await self.exchange.fetch_tickers()  # type: ignore[union-attr]
             return tickers or {}
         except Exception:
-            return {}
+    passpassreturn {}
 
-    async def get_order_book(self, symbol: str, limit: int = 10) -> dict[str, Any]:
-        """Default order book fetch using ccxt if underlying client is set."""
-        try:
-            if not self.exchange:
-                return {}
+    async def get_order_book(...) -> ...:
+    """..."""
+    passtry:
+    passif not self.exchange:
+    passreturn {}
             market_id = await self._get_market_id(symbol)
             return await self.exchange.fetch_order_book(market_id, limit)  # type: ignore[union-attr]
         except Exception:
-            return {}
+    passpassreturn {}

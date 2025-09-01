@@ -10,20 +10,20 @@ import numpy as np
 
 def _safe_get(d: dict, k: Any, default: float = 0.0) -> float:
     try:
-    # Exception handling placeholder - implement specific error handling as needed
+    pass# Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
+    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
 v = d.get(k, default)
 return float(v)
 except Exception:
-        return float(default)
+    passpassreturn float(default)
 
 
 def _normalize(weights: dict[str , float]) -> dict[str, float]:
     vals = np.array([max(0.0, float(v)) for v in weights.values()], dtype=float)
 s = float(vals.sum())
 if s <= 0:
-        return {k: 0.0 for k in weights}
+    passpassreturn {k: 0.0 for k in weights}
 return {k: float(v) / s for k, v in zip(weights.keys(), vals, strict=False)}
 
 
@@ -39,19 +39,19 @@ config: dict[str, Any] | None = None,
 Compute ensemble weights for specialized models and an optional generalist baseline = using HMM composite intensities and calibrated probabilities as gates.
 
 Args:
-            -specialized_candidates: mapping cluster_id -> {
+    pass-specialized_candidates: mapping cluster_id -> {
 "confidence": calibrated prob of the specialized model's own prediction , "reliability": long-run reliability metric in [0,1] (optional),
 (optional) additional fields not used by weight calc.
 }
 -generalist_score: optional baseline confidence (0-1) for a generalist predictor.
 -config: optional dict with keys:
-                    - alpha_intensity (default 0.7), beta_emerge (0.3): gates for cluster weight
+    pass- alpha_intensity (default 0.7), beta_emerge (0.3): gates for cluster weight
 - min_intensity (default 0.15): below this = model is considered weak
 - max_specialized (default 3): top-k specialized models to include by intensity
 
 Returns:
             Dict with keys:
-                    - weights: normalized weights for keys like "cluster_{k}" and optional "generalist"
+    pass- weights: normalized weights for keys like "cluster_{k}" and optional "generalist"
 - gating: dict with gating factors per cluster and the exit_hazard
 - runtime: snapshot from get_current_regime_info
 """
@@ -81,8 +81,8 @@ top_k = [k for k, v in sorted_k if v >= min_intensity][:max_specialized]
 weights: dict[str, float] = {}
 gating: dict[str, float] = {}
 if specialized_candidates:
-        for k in top_k:
-            cand = specialized_candidates.get(k, {})
+    passfor k in top_k:
+    passcand = specialized_candidates.get(k, {})
 conf = float(cand.get("confidence", 0.0))
 rel = float(cand.get("reliability", 1.0))
 I = _safe_get(intensities, k, 0.0)
@@ -90,24 +90,24 @@ Pe = _safe_get(p_emerge, k, 0.0)
 gate = max(0.0, min(1.0, alpha_intensity * I + beta_emerge * Pe))
 # If current cluster, down-weight by exit hazard risk
 if k == current_cluster and exit_hazard is not None:
-                gate *= max(0.0, 1.0 - float(exit_hazard))
+    passgate *= max(0.0, 1.0 - float(exit_hazard))
 score = max(0.0, float(conf)) * max(0.0, float(rel)) * gate
 weights[f"cluster_{k}"] = score
 gating[f"cluster_{k}"] = gate
 
 # Optional generalist
 if generalist_score is not None:
-        # Generalist can be used as a safety net; scale it by (1 - max exit hazard)
+    pass# Generalist can be used as a safety net; scale it by (1 - max exit hazard)
 g = 1.0
 if exit_hazard is not None:
-            g = max(0.0, 1.0 - float(exit_hazard))
+    passg = max(0.0, 1.0 - float(exit_hazard))
 weights["generalist"] = max(0.0, float(generalist_score)) * g
 gating["generalist_gate"] = g
 
 norm_weights = _normalize(weights)
 # Monitoring log
 with contextlib.suppress(Exception):
-        logger.info(
+    passlogger.info(
 {
 "msg": "model_weights",
 "timeframe": timeframe,

@@ -16,8 +16,8 @@ import sys
 project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
-async def create_30m_hmm_artifacts():
-    """Create missing HMM artifacts for 30m timeframe."""
+async def create_30m_hmm_artifacts(...):
+    passpass"""Create missing HMM artifacts for 30m timeframe."""
     logger = system_logger.getChild("Create30mArtifacts")
 
     logger.info("🔧 Starting creation of missing 30m HMM artifacts...")
@@ -34,9 +34,9 @@ async def create_30m_hmm_artifacts():
     )
 
     try:
-    pass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
         # Run the HMM regime discovery for 30m timeframe
         success = await run_step(
             symbol=symbol,
@@ -47,7 +47,7 @@ except Exception as e:
         )
 
         if success:
-            logger.info("✅ Successfully created 30m HMM artifacts!")
+    passpasslogger.info("✅ Successfully created 30m HMM artifacts!")
 
             # Verify the artifacts were created
             artifacts_to_check = [
@@ -59,19 +59,19 @@ except Exception as e:
 
             logger.info("🔍 Verifying created artifacts...")
             for artifact in artifacts_to_check:
-                artifact_path = os.path.join(data_dir, artifact)
+    passartifact_path = os.path.join(data_dir, artifact)
                 if os.path.exists(artifact_path):
-                    size = os.path.getsize(artifact_path)
+    passsize = os.path.getsize(artifact_path)
                     logger.info(f"✅ {artifact}: {size:,} bytes")
                 else:
-                    logger.warning(f"❌ {artifact}: Not found")
+    passlogger.warning(f"❌ {artifact}: Not found")
 
         else:
-            logger.error("❌ Failed to create 30m HMM artifacts")
+    passlogger.error("❌ Failed to create 30m HMM artifacts")
             return False
 
     except Exception as e:
-        logger.exception(f"❌ Error creating 30m HMM artifacts: {e}")
+    passpasspasspasspasspasspasslogger.exception(f"❌ Error creating 30m HMM artifacts: {e}")
         logger.exception(f"Traceback: {traceback.format_exc()}")
         return False
 
@@ -79,12 +79,12 @@ except Exception as e:
     return True
 
 if __name__ == "__main__":
-    # Run the async function
+    pass# Run the async function
     success = asyncio.run(create_30m_hmm_artifacts())
 
     if success:
-        print("✅ 30m HMM artifacts created successfully!")
+    passprint("✅ 30m HMM artifacts created successfully!")
         sys.exit(0)
     else:
-        print("❌ Failed to create 30m HMM artifacts")
+    passprint("❌ Failed to create 30m HMM artifacts")
         sys.exit(1)

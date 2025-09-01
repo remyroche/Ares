@@ -1,194 +1,151 @@
 #!/usr/bin/env python3
 """
-Comprehensive Code Quality Tools Runner
-Finds compilable Python files and runs syntax fixing, unused import removal, and dead code removal.
+Script to run code quality tools on files outside of src/ directory
 """
 
 import os
-import ast
 import subprocess
-import sys
-from pathlib import Path
 
-
-def check_file_compiles(filepath):
-    """Check if a Python file compiles without syntax errors."""
-    try:
-        with open(filepath, 'r', encoding='utf-8') as f:
-            content = f.read()
-        ast.parse(content)
-        return True
-    except (SyntaxError, IndentationError, UnicodeDecodeError):
-        return False
-    except Exception:
-        return False
-
-
-def find_compilable_files(directory):
-    """Find all Python files that compile successfully."""
-    compilable_files = []
-    directory_path = Path(directory)
+def run_syntax_fixer(...):
+    pass"""Run syntax fixer on files outside of src/"""
+    print("🔧 Running syntax fixer...")
     
-    for py_file in directory_path.rglob("*.py"):
-        if check_file_compiles(py_file):
-            compilable_files.append(str(py_file))
+    # Find all Python files outside of src/
+    python_files = []
+    for root, dirs, files in os.walk('.'):
+    pass# Skip src/ directory
+        if 'src' in root.split(os.sep):
+    passcontinue
+        # Skip other directories we don't want to process
+        if any(skip in root for skip in ['.git', '__pycache__', 'test_results', 'log']):
+    passpasscontinue
+            
+        for file in files:
+    passif file.endswith('.py'):
+    passpython_files.append(os.path.join(root, file))
     
-    return compilable_files
-
-
-def run_syntax_fixer(directory):
-    """Run the syntax fixer on the directory."""
-    print("\n=== Running Syntax Fixer ===")
-    try:
-    pass  # TODO: Add proper exception handling
+    print(f"Found {len(python_files)} Python files outside of src/")
+    
+    # Process each file individually
+    fixed_count = 0
+    for file_path in python_files:
+    passtry:
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    pass  # TODO: Add proper exception handling
-        result = subprocess.run([
-            sys.executable, "code_quality/tools/syntax_fixer.py", 
-            directory, "--no-dry-run"
-        ], capture_output=True, text=True)
-        
-        print("STDOUT:", result.stdout)
-        if result.stderr:
-            print("STDERR:", result.stderr)
-        print(f"Exit code: {result.returncode}")
-        
-    except Exception as e:
-        print(f"Error running syntax fixer: {e}")
-
-
-def run_unused_import_cleaner(files):
-    """Run the unused import cleaner on specific files."""
-    print("\n=== Running Unused Import Cleaner ===")
-    
-    if not files:
-        print("No compilable files found for import cleaning.")
-        return
-    
-    print(f"Processing {len(files)} compilable files...")
-    
-    processed_count = 0
-    cleaned_count = 0
-    
-    for filepath in files:
-        try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-            # First run in dry-run mode to see what would be cleaned
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             result = subprocess.run([
-                sys.executable, "code_quality/tools/batch_import_cleaner.py", 
-                filepath, "--dry-run"
+                'python3', 'code_quality/tools/syntax_fixer.py', 
+                file_path, '--no-dry-run'
             ], capture_output=True, text=True)
             
-            if "Would remove line" in result.stdout:
-                print(f"\nFound unused imports in: {filepath}")
-                print(result.stdout)
+            if "Fixed:" in result.stdout or "Would fix:" in result.stdout:
+                print(f"✅ Fixed syntax issues in: {file_path}")
+                fixed_count += 1
                 
-                # Now actually clean the imports
-                result_clean = subprocess.run([
-                    sys.executable, "code_quality/tools/batch_import_cleaner.py", 
-                    filepath
-                ], capture_output=True, text=True)
-                
-                if result_clean.returncode == 0:
-                    cleaned_count += 1
-                    print(f"Cleaned imports in: {filepath}")
-                
-            processed_count += 1
-            
         except Exception as e:
-            print(f"Error processing {filepath}: {e}")
+    passpasspasspasspasspasspassprint(f"❌ Error processing {file_path}: {e}")
     
-    print(f"\nImport cleaning summary:")
-    print(f"Files processed: {processed_count}")
-    print(f"Files cleaned: {cleaned_count}")
+    print(f"Syntax fixer completed. Fixed {fixed_count} files.")
 
-
-def run_dead_code_remover(files):
-    """Run the dead code remover on specific files."""
-    print("\n=== Running Dead Code Remover ===")
+def run_import_cleaner(...):
+    pass"""Run import cleaner on files outside of src/"""
+    print("🧹 Running import cleaner...")
     
-    if not files:
-        print("No compilable files found for dead code removal.")
-        return
+    # Find all Python files outside of src/
+    python_files = []
+    for root, dirs, files in os.walk('.'):
+    pass# Skip src/ directory
+        if 'src' in root.split(os.sep):
+    passcontinue
+        # Skip other directories we don't want to process
+        if any(skip in root for skip in ['.git', '__pycache__', 'test_results', 'log']):
+    passpasscontinue
+            
+        for file in files:
+    passif file.endswith('.py'):
+    passpython_files.append(os.path.join(root, file))
     
-    print(f"Processing {len(files)} compilable files...")
+    print(f"Found {len(python_files)} Python files outside of src/")
     
-    processed_count = 0
+    # Process each file individually
     cleaned_count = 0
-    total_removals = 0
-    
-    for filepath in files:
-        try:
-    pass  # TODO: Add proper exception handling
+    for file_path in python_files:
+    passtry:
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    pass  # TODO: Add proper exception handling
-            # First run in dry-run mode (default) to see what would be removed
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             result = subprocess.run([
-                sys.executable, "code_quality/tools/dead_code_remover.py", 
-                filepath
+                'python3', 'code_quality/tools/batch_import_cleaner.py', 
+                file_path
             ], capture_output=True, text=True)
             
-            if "Would remove line" in result.stdout:
-                print(f"\nFound dead code in: {filepath}")
-                print(result.stdout)
+            if "Removing line" in result.stdout:
+    passprint(f"✅ Cleaned imports in: {file_path}")
+                cleaned_count += 1
                 
-                # Now actually remove the dead code
-                result_clean = subprocess.run([
-                    sys.executable, "code_quality/tools/dead_code_remover.py", 
-                    filepath, "--no-dry-run"
-                ], capture_output=True, text=True)
-                
-                if result_clean.returncode == 0:
-                    cleaned_count += 1
-                    print(f"Removed dead code from: {filepath}")
-                
-            processed_count += 1
-            
         except Exception as e:
-            print(f"Error processing {filepath}: {e}")
+    passpasspasspasspasspasspassprint(f"❌ Error processing {file_path}: {e}")
     
-    print(f"\nDead code removal summary:")
-    print(f"Files processed: {processed_count}")
-    print(f"Files cleaned: {cleaned_count}")
+    print(f"Import cleaner completed. Cleaned {cleaned_count} files.")
 
+def run_dead_code_remover(...):
+    pass"""Run dead code remover on files outside of src/"""
+    print("🗑️ Running dead code remover...")
+    
+    # Find all Python files outside of src/
+    python_files = []
+    for root, dirs, files in os.walk('.'):
+    pass# Skip src/ directory
+        if 'src' in root.split(os.sep):
+    passcontinue
+        # Skip other directories we don't want to process
+        if any(skip in root for skip in ['.git', '__pycache__', 'test_results', 'log']):
+    passpasscontinue
+            
+        for file in files:
+    passif file.endswith('.py'):
+    passpython_files.append(os.path.join(root, file))
+    
+    print(f"Found {len(python_files)} Python files outside of src/")
+    
+    # Process each file individually
+    cleaned_count = 0
+    for file_path in python_files:
+    passtry:
+    passself.logger.error(f"Error in {file_path}: {{e}}")
+except Exception as e:
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
+            result = subprocess.run([
+                'python3', 'code_quality/tools/dead_code_remover.py', 
+                file_path, '--no-dry-run'
+            ], capture_output=True, text=True)
+            
+            if "Removing line" in result.stdout:
+    passprint(f"✅ Removed dead code in: {file_path}")
+                cleaned_count += 1
+                
+        except Exception as e:
+    passpasspasspasspasspasspassprint(f"❌ Error processing {file_path}: {e}")
+    
+    print(f"Dead code remover completed. Cleaned {cleaned_count} files.")
 
-def main():
-    """Main function to run all code quality tools."""
-    src_directory = "src"
+def main(...):
+    pass"""Run all code quality tools"""
+    print("🚀 Starting code quality tools (excluding src/ directory)...")
     
-    if not os.path.exists(src_directory):
-        print(f"Directory {src_directory} not found!")
-        return
+    # Run syntax fixer
+    run_syntax_fixer()
+    print()
     
-    print("=== Code Quality Tools Runner ===")
-    print(f"Analyzing directory: {src_directory}")
+    # Run import cleaner
+    run_import_cleaner()
+    print()
     
-    # Step 1: Run syntax fixer first
-    run_syntax_fixer(src_directory)
+    # Run dead code remover
+    run_dead_code_remover()
+    print()
     
-    # Step 2: Find all compilable files after syntax fixing
-    print(f"\n=== Finding Compilable Files ===")
-    compilable_files = find_compilable_files(src_directory)
-    print(f"Found {len(compilable_files)} compilable Python files")
-    
-    if len(compilable_files) > 0:
-        print("Sample compilable files:")
-        for i, filepath in enumerate(compilable_files[:10]):
-            print(f"  {i+1}. {filepath}")
-        if len(compilable_files) > 10:
-            print(f"  ... and {len(compilable_files) - 10} more")
-    
-    # Step 3: Run unused import cleaner on compilable files
-    run_unused_import_cleaner(compilable_files)
-    
-    # Step 4: Run dead code remover on compilable files
-    run_dead_code_remover(compilable_files)
-    
-    print("\n=== Code Quality Analysis Complete ===")
-    print(f"Total compilable files analyzed: {len(compilable_files)}")
-
+    print("✅ All code quality tools completed!")
 
 if __name__ == "__main__":
-    main()
+    passmain()

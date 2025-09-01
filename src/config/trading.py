@@ -5,14 +5,9 @@ from typing import Any
 from src.config.environment import get_environment_settings
 
 
-def get_trading_config() -> dict[str, Any]:
-    """Get the complete trading configuration.
-
-Returns:
-        dict: Complete trading configuration
-
-"""
-settings = get_environment_settings()
+def get_trading_config(...) -> ...:
+    """..."""
+    passsettings = get_environment_settings()
 
 return {
 # --- Basic Trading Parameters ---
@@ -156,71 +151,38 @@ return {
 }
 
 
-def get_exchange_config(exchange_name: str) -> dict[str, Any]:
-    """Get configuration for a specific exchange.
-
-Args:
-        exchange_name: Name of the exchange
-
-Returns:
-        dict: Exchange configuration
-
-"""
-trading_config = get_trading_config()
+def get_exchange_config(...) -> ...:
+    """..."""
+    passtrading_config = get_trading_config()
 exchanges = trading_config.get("exchanges", {})
 return exchanges.get(exchange_name.lower(), {})
 
 
-def get_risk_management_config() -> dict[str, Any]:
-    """Get risk management configuration.
-
-Returns:
-        dict: Risk management configuration
-
-"""
-trading_config = get_trading_config()
+def get_risk_management_config(...) -> ...:
+    """..."""
+    passtrading_config = get_trading_config()
 return trading_config.get("risk_management", {})
 
 
-def get_position_sizing_config() -> dict[str, Any]:
-    """Get position sizing configuration.
-
-Returns:
-        dict: Position sizing configuration
-
-"""
-risk_config = get_risk_management_config()
+def get_position_sizing_config(...) -> ...:
+    """..."""
+    passrisk_config = get_risk_management_config()
 return risk_config.get("position_sizing", {})
 
 
-def get_stop_loss_config() -> dict[str, Any]:
-    """Get stop loss configuration.
-
-Returns:
-        dict: Stop loss configuration
-
-"""
-trading_config = get_trading_config()
+def get_stop_loss_config(...) -> ...:
+    """..."""
+    passtrading_config = get_trading_config()
 return trading_config.get("stop_loss", {})
 
 
-def get_take_profit_config() -> dict[str, Any]:
-    """Get take profit configuration.
-
-Returns:
-        dict: Take profit configuration
-
-"""
-trading_config = get_trading_config()
+def get_take_profit_config(...) -> ...:
+    """..."""
+    passtrading_config = get_trading_config()
 return trading_config.get("take_profit", {})
 
 
-def get_time_based_exit_config() -> dict[str, Any]:
-    """Get time-based exit configuration.
-
-Returns:
-        dict: Time-based exit configuration
-
-"""
-trading_config = get_trading_config()
+def get_time_based_exit_config(...) -> ...:
+    """..."""
+    passtrading_config = get_trading_config()
 return trading_config.get("time_based_exit", {})

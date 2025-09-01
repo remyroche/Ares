@@ -7,204 +7,122 @@ import pandas as pd
 
 from src.utils.error_handler import handle_errors, handle_specific_errors
 
-from src.utils.supervisor_error_handler import (supervisor_component_error_handler,, supervisor_critical_error_handler,, supervisor_safe_error_handler,, supervisor_error_context,, handle_component_failure,, handle_portfolio_error,, handle_risk_error,, handle_performance_error,, handle_model_error,, handle_exchange_error,, ComponentFailureError,, PortfolioManagementError,, RiskManagementError,, PerformanceMonitoringError,, ModelManagementError,, ExchangeIntegrationError,, )
-)
+from src.utils.supervisor_error_handler import (supervisor_component_error_handler, supervisor_critical_error_handler, supervisor_safe_error_handler, supervisor_error_context, handle_component_failure, handle_portfolio_error, handle_risk_error, handle_performance_error, handle_model_error, handle_exchange_error, ComponentFailureError, PortfolioManagementError, RiskManagementError, PerformanceMonitoringError, ModelManagementError, ExchangeIntegrationError)
 
 class Optimizer:
-    self.logger.info("Functionality implemented")
-            # Add specific implementation based on method name and context
-            return True
-class Optimizer:
-    self.logger.info("Functionality implemented")
-            # Add specific implementation based on method name and context
-            return True
-class Optimizer:
-    pass"""
+        """
 Enhanced Optimizer component with DI, type hints, and robust error handling.
-"""
+        """
 
     def __init__(self, config: dict[str, Any]) -> None:
-        self.config: dict[str, Any] = config
+        self.        self.config:: dict[str, Any] = config
 self.logger = system_logger.getChild("Optimizer")
-self.is_running: bool = False
-self.status: dict[str, Any] = {}
-self.history: list[dict[str, Any]] = []
-self.optimizer_config: dict[str, Any] = self.config.get("optimizer", {})
-self.optimization_interval: int = self.optimizer_config.get(
+        self.        self.is_running:: bool = False
+        self.        self.status:: dict[str, Any] = {}
+        self.        self.history:: list[dict[str, Any]] = []
+        self.        self.optimizer_config:: dict[str, Any] = self.config.get("optimizer", {})
+        self.        self.optimization_interval:: int = self.optimizer_config.get(
 "optimization_interval",
-300,
-)
-self.max_history: int = self.optimizer_config.get("max_history", 100)
-self.optimization_results: dict[str, Any] = {}
-self.parameters: dict[str, Any] = {}
+300)
+        self.        self.max_history:: int = self.optimizer_config.get("max_history", 100)
+        self.        self.optimization_results:: dict[str, Any] = {}
+        self.        self.parameters:: dict[str, Any] = {}
 
-@handle_specific_errors(
+    @handle_specific_errors(
 error_handlers={
 ValueError: (False, "Invalid optimizer configuration"),
 AttributeError: (False, "Missing required optimizer parameters"),
 KeyError: (False, "Missing configuration keys"),
 },
 default_return=False,
-context="optimizer initialization",
-)
-async def initialize(self) -> bool:
-        try:
-    self.logger.info("Executing functionality")
-            # Implement based on method context
-            result = self._execute_core_functionality()
-            return result
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-    passpasspasspasspasspasspasshandle_component_failure("optimizer", e, {"operation": "initialize"})
-            return None
-        except Exception as e:
-    passpasspasspasspasspasspasshandle_component_failure("optimizer", e, {"operation": "initialize"})
-            return None
+context="optimizer initialization")
+    async def initialize(self) -> bool:
+                try:
 self.logger.info("Initializing Optimizer...")
 await self._load_optimizer_configuration()
 if not self._validate_configuration():
-    passself.logger.error("Invalid configuration for optimizer")
+                self.logger.error("Invalid configuration for optimizer")
 return False
 self.logger.info("✅ Optimizer initialization completed successfully")
 return True
 except Exception as e:
-    passpasspasspasspasspasspasspassself.logger.error(f"❌ Optimizer initialization failed: {e}")
+            self.logger.error(f"❌ Optimizer initialization failed: {e}")
 return False
 
-@handle_errors(
+    @handle_errors(
 exceptions=(ValueError, AttributeError),
 default_return=None,
-context="optimizer configuration loading",
-)
-async def _load_optimizer_configuration(self) -> None:
-        try:
-    self.logger.info("Executing functionality")
-            # Implement based on method context
-            result = self._execute_core_functionality()
-            return result
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-    passpasspasspasspasspasspasshandle_component_failure("optimizer", e, {"operation": "_load_optimizer_configuration"})
-            return None
-        except Exception as e:
-    passpasspasspasspasspasspasshandle_component_failure("optimizer", e, {"operation": "_load_optimizer_configuration"})
-            return None
+context="optimizer configuration loading")
+    async def _load_optimizer_configuration(self) -> None:
+                try:
 self.optimizer_config.setdefault("optimization_interval", 300)
 self.optimizer_config.setdefault("max_history", 100)
 self.optimization_interval = self.optimizer_config["optimization_interval"]
 self.max_history = self.optimizer_config["max_history"]
 self.logger.info("Optimizer configuration loaded successfully")
 except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error loading optimizer configuration: {e}")
+            self.logger.error(f"Error loading optimizer configuration: {e}")
 
-@handle_errors(
+    @handle_errors(
 exceptions=(ValueError, AttributeError),
 default_return=False,
-context="configuration validation",
-)
-def _validate_configuration(self) -> bool:
-        try:
-    self.logger.info("Executing functionality")
-            # Implement based on method context
-            result = self._execute_core_functionality()
-            return result
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-    passpasspasspasspasspasspasshandle_component_failure("optimizer", e, {"operation": "_validate_configuration"})
-            return None
-        except Exception as e:
-    passpasspasspasspasspasspasshandle_component_failure("optimizer", e, {"operation": "_validate_configuration"})
-            return None
+context="configuration validation")
+    def _validate_configuration(self) -> bool:
+                try:
 if self.optimization_interval <= 0:
-    passself.logger.error("Invalid optimization interval")
+                self.logger.error("Invalid optimization interval")
 return False
 if self.max_history <= 0:
-    passself.logger.error("Invalid max history")
+                self.logger.error("Invalid max history")
 return False
 self.logger.info("Configuration validation successful")
 return True
 except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error validating configuration: {e}")
+            self.logger.error(f"Error validating configuration: {e}")
 return False
 
-@handle_specific_errors(
+    @handle_specific_errors(
 error_handlers={
 Exception: (False, "Optimizer run failed"),
 },
 default_return=False,
-context="optimizer run",
-)
-async def run(self) -> bool:
-        try:
-    self.logger.info("Executing functionality")
-            # Implement based on method context
-            result = self._execute_core_functionality()
-            return result
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-    passpasspasspasspasspasspasshandle_component_failure("optimizer", e, {"operation": "run"})
-            return None
-        except Exception as e:
-    passpasspasspasspasspasspasshandle_component_failure("optimizer", e, {"operation": "run"})
-            return None
+context="optimizer run")
+    async def run(self) -> bool:
+                try:
 self.is_running = True
 self.logger.info("🚦 Optimizer started.")
 while self.is_running:
-    passawait self._perform_optimization()
+                await self._perform_optimization()
 await asyncio.sleep(self.optimization_interval)
 return True
 except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in optimizer run: {e}")
+            self.logger.error(f"Error in optimizer run: {e}")
 self.is_running = False
 return False
 
-@handle_errors(
-exceptions=(Exception,),
+    @handle_errors(
+exceptions=(Exception),
 default_return=None,
-context="optimization step",
-)
-async def _perform_optimization(self) -> None:
-        try:
-    self.logger.info("Executing functionality")
-            # Implement based on method context
-            result = self._execute_core_functionality()
-            return result
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-    passpasspasspasspasspasspasshandle_component_failure("optimizer", e, {"operation": "_perform_optimization"})
-            return None
-        except Exception as e:
-    passpasspasspasspasspasspasshandle_component_failure("optimizer", e, {"operation": "_perform_optimization"})
-            return None
+context="optimization step")
+    async def _perform_optimization(self) -> None:
+                try:
 now = datetime.now().isoformat()
 self.status = {"timestamp": now, "status": "running"}
 self.history.append(self.status.copy())
 if len(self.history) > self.max_history:
-    passself.history.pop(0)
+                self.history.pop(0)
 await self._optimize_parameters()
 await self._update_optimization_results()
 self.logger.info(f"Optimization tick at {now}")
 except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in optimization step: {e}")
+            self.logger.error(f"Error in optimization step: {e}")
 
-@handle_errors(
-exceptions=(Exception,),
+    @handle_errors(
+exceptions=(Exception),
 default_return=None,
-context="parameter optimization",
-)
-async def _optimize_parameters(self) -> None:
-        try:
-    self.logger.info("Executing functionality")
-            # Implement based on method context
-            result = self._execute_core_functionality()
-            return result
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-    passpasspasspasspasspasspasshandle_component_failure("optimizer", e, {"operation": "_optimize_parameters"})
-            return None
-        except Exception as e:
-    passpasspasspasspasspasspasshandle_component_failure("optimizer", e, {"operation": "_optimize_parameters"})
-            return None
+context="parameter optimization")
+    async def _optimize_parameters(self) -> None:
+                try:
 # Simulate parameter optimization
 optimized_params = {
 "learning_rate": 0.001,
@@ -215,96 +133,77 @@ optimized_params = {
 self.parameters.update(optimized_params)
 self.logger.info("Parameter optimization completed")
 except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error optimizing parameters: {e}")
+            self.logger.error(f"Error optimizing parameters: {e}")
 
-@handle_errors(
-exceptions=(Exception,),
+    @handle_errors(
+exceptions=(Exception),
 default_return=None,
-context="optimization results update",
-)
-async def _update_optimization_results(self) -> None:
-        try:
-    self.logger.info("Executing functionality")
-            # Implement based on method context
-            result = self._execute_core_functionality()
-            return result
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-    passpasspasspasspasspasspasshandle_component_failure("optimizer", e, {"operation": "_update_optimization_results"})
-            return None
-        except Exception as e:
-    passpasspasspasspasspasspasshandle_component_failure("optimizer", e, {"operation": "_update_optimization_results"})
-            return None
+context="optimization results update")
+    async def _update_optimization_results(self) -> None:
+                try:
 # Update optimization results
 self.optimization_results["last_update"] = datetime.now().isoformat()
 self.optimization_results["optimization_score"] = 0.85
 self.optimization_results["parameters"] = self.parameters.copy()
 self.logger.info("Optimization results updated successfully")
 except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error updating optimization results: {e}")
+            self.logger.error(f"Error updating optimization results: {e}")
 
-@handle_errors(
-exceptions=(Exception,),
+    @handle_errors(
+exceptions=(Exception),
 default_return=None,
-context="optimizer stop",
-)
-async def stop(self) -> None:
+context="optimizer stop")
+    async def stop(self) -> None:
         self.logger.info("🛑 Stopping Optimizer...")
-try:
-    self.logger.info("Executing functionality")
-            # Implement based on method context
-            result = self._execute_core_functionality()
-            return result
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-    passpasspasspasspasspasspasshandle_component_failure("optimizer", e, {"operation": "stop"})
-            return None
-        except Exception as e:
-    passpasspasspasspasspasspasshandle_component_failure("optimizer", e, {"operation": "stop"})
-            return None
+        try:
 self.is_running = False
 self.status = {"timestamp": datetime.now().isoformat(), "status": "stopped"}
 self.logger.info("✅ Optimizer stopped successfully")
 except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error stopping optimizer: {e}")
+            self.logger.error(f"Error stopping optimizer: {e}")
 
-def get_status(self) -> dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         return self.status.copy()
 
-def get_history(self, limit: int | None = None) -> list[dict[str, Any]]:
+    def get_history(self, limit: int | None = None) -> list[dict[str, Any]]:
         history = self.history.copy()
 if limit:
-    passhistory = history[-limit:]
+            history = history[-limit:]
 return history
 
-def get_optimization_results(self) -> dict[str, Any]:
+    def get_optimization_results(self) -> dict[str, Any]:
         return self.optimization_results.copy()
 
-def get_parameters(self) -> dict[str, Any]:
+    def get_parameters(self) -> dict[str, Any]:
         return self.parameters.copy()
 
-@handle_errors(
-exceptions=(Exception,),
+    @handle_errors(
+exceptions=(Exception),
 default_return=None,
-context="global system optimization",
-)
-async def implement_global_system_optimization(...) -> ...:
-    """..."""
-    passtry:
-    self.logger.info("Executing functionality")
-            # Implement based on method context
-            result = self._execute_core_functionality()
-            return result
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-    passpasspasspasspasspasspasshandle_component_failure("optimizer", e, {"operation": "unknown_function"})
-            return None
-        except Exception as e:
-    passpasspasspasspasspasspasshandle_component_failure("optimizer", e, {"operation": "unknown_function"})
-            return None
+context="global system optimization")
+    async def implement_global_system_optimization(
+self, historical_pnl_data: pd.DataFrame,
+strategy_breakdown_data: dict, checkpoint_file_path: str,
+hpo_ranges: dict, klines_df: pd.DataFrame,
+agg_trades_df: pd.DataFrame, futures_df: pd.DataFrame) -> dict:
+        """
+Implement global system optimization with enhanced error handling.
+
+Args:
+            historical_pnl_data: Historical PnL data
+strategy_breakdown_data: Strategy breakdown data
+checkpoint_file_path: Path to checkpoint file
+hpo_ranges: Hyperparameter optimization ranges
+klines_df: Klines data
+agg_trades_df: Aggregated trades data
+futures_df: Futures data
+
+Returns:
+            dict: Optimization results
+        """
+        try:
 self.logger.info(
-"Running Final Fine-Tuned System Optimization (Stage 3b)...",
-)
+"Running Final Fine-Tuned System Optimization (Stage 3b)...")
 
 # Store data for optimization
 self._optimization_klines_df = klines_df
@@ -319,16 +218,14 @@ daily_df = self._optimization_klines_df.resample("D").agg(
 "low": "min",
 "close": "last",
 "volume": "sum",
-},
-)
+})
 # Ensure column names are lowercase for consistency
 daily_df.columns = daily_df.columns.str.lower()
 self._optimization_sr_levels = self._get_sr_levels(daily_df)
 
 # Define optimization dimensions from HPO ranges
 self.logger.info(
-"Defining optimization dimensions from narrowed HPO ranges.",
-)
+"Defining optimization dimensions from narrowed HPO ranges.")
 
 # Simulate optimization results
 optimization_results = {
@@ -346,27 +243,16 @@ self.logger.info("Global system optimization completed successfully")
 return optimization_results
 
 except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in global system optimization: {e}")
+            self.logger.error(f"Error in global system optimization: {e}")
 return {"status": "failed", "error": str(e)}
 
-def _get_sr_levels(...) -> ...:
-    """..."""
-    passtry:
-    self.logger.info("Executing functionality")
-            # Implement based on method context
-            result = self._execute_core_functionality()
-            return result
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-    passpasspasspasspasspasspasshandle_component_failure("optimizer", e, {"operation": "_get_sr_levels"})
-            return None
-        except Exception as e:
-    passpasspasspasspasspasspasshandle_component_failure("optimizer", e, {"operation": "_get_sr_levels"})
-            return None
+    def _get_sr_levels(self, daily_df: pd.DataFrame) -> list:
+        """Get support/resistance levels from daily data."""
+        try:
 # Simple SR level calculation
 levels = []
 if not daily_df.empty:
-    passhigh = daily_df["high"].max()
+                high = daily_df["high"].max()
 low = daily_df["low"].min()
 close = daily_df["close"].iloc[-1]
 
@@ -378,56 +264,25 @@ levels = [
 
 return levels
 except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error calculating SR levels: {e}")
+            self.logger.error(f"Error calculating SR levels: {e}")
 return []
 
 optimizer: Optimizer | None = None
 
-@handle_errors(
-exceptions=(Exception,),
+    @handle_errors(
+exceptions=(Exception),
 default_return=None,
-context="optimizer setup",
-)
-async def setup_optimizer(config: dict[str, Any] | None = None) -> Optimizer | None:
-    try:
-    self.logger.info("Executing functionality")
-            # Implement based on method context
-            result = self._execute_core_functionality()
-            return result
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-    passpasspasspasspasspasspasshandle_component_failure("optimizer", e, {"operation": "setup_optimizer"})
-            return None
-        except Exception as e:
-    passpasspasspasspasspasspasshandle_component_failure("optimizer", e, {"operation": "setup_optimizer"})
-            return None
+context="optimizer setup")
+    async def setup_optimizer(config: dict[str, Any] | None = None) -> Optimizer | None:
+            try:
 global optimizer
 if config is None:
-    passconfig = {"optimizer": {"optimization_interval": 300, "max_history": 100}}
+            config = {"optimizer": {"optimization_interval": 300, "max_history": 100}}
 optimizer = Optimizer(config)
 success = await optimizer.initialize()
 if success:
-    passreturn optimizer
+            return optimizer
 return None
 except Exception as e:
-    passpasspasspasspasspasspassprint(f"Error setting up optimizer: {e}")
+        print(f"Error setting up optimizer: {e}")
 return None
-    def _validate_data_quality(self, data):
-        """Validate data quality."""
-        try:
-            if data is None or data.empty:
-                return type('ValidationResult', (), {'is_valid': False, 'errors': ['Empty data']})()
-            
-            errors = []
-            if data.isnull().sum().sum() > 0:
-                errors.append('Missing values detected')
-            
-            if len(data) < 10:
-                errors.append('Insufficient data')
-            
-            is_valid = len(errors) == 0
-            return type('ValidationResult', (), {'is_valid': is_valid, 'errors': errors})()
-        except Exception as e:
-            self.logger.error(f"Data validation failed: {e}")
-            return type('ValidationResult', (), {'is_valid': False, 'errors': [str(e)]})()
-

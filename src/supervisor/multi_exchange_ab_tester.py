@@ -10,99 +10,187 @@ from src.supervisor.exchange_volume_adapter import ExchangeVolumeAdapter
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from dataclasses import dataclass
 
-from src.utils.supervisor_error_handler import (supervisor_component_error_handler,, supervisor_critical_error_handler,, supervisor_safe_error_handler,, supervisor_error_context,, handle_component_failure,, handle_portfolio_error,, handle_risk_error,, handle_performance_error,, handle_model_error,, handle_exchange_error,, ComponentFailureError,, PortfolioManagementError,, RiskManagementError,, PerformanceMonitoringError,, ModelManagementError,, ExchangeIntegrationError,, )
-)
+from src.utils.supervisor_error_handler import (supervisor_component_error_handler, supervisor_critical_error_handler, supervisor_safe_error_handler, supervisor_error_context, handle_component_failure, handle_portfolio_error, handle_risk_error, handle_performance_error, handle_model_error, handle_exchange_error, ComponentFailureError, PortfolioManagementError, RiskManagementError, PerformanceMonitoringError, ModelManagementError, ExchangeIntegrationError)
 
 #!/usr/bin/env python3
-"""
+        """
 Multi-Exchange A/B Testing Framework
 
 This module enables simultaneous testing of the same model across different exchanges
 to compare performance, validate transfer learning, and identify exchange-specific characteristics.
-"""
+        """
 
 
 if TYPE_CHECKING:
-    try:
-            # Validate data quality
-            validation_result = self._validate_data_quality(data)
-            if validation_result.is_valid:
-                self.logger.info("Data validation passed")
-                return True
-            else:
-                self.logger.warning(f"Data validation failed: {{validation_result.errors}}")
-                return False
-        except Exception as e:
-            self.logger.error(f"Data validation error: {{e}}")
-            return False_test_config(...) -> ...:
-    """..."""
-    passtry:
-    self.logger.info("Executing functionality")
-            # Implement based on method context
-            result = self._execute_core_functionality()
-            return result
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-    passpasspasspasspasspasspasshandle_component_failure("multi_exchange_ab_tester", e, {"operation": "_validate_test_config"})
-            return None
-        except Exception as e:
-    passpasspasspasspasspasspasshandle_component_failure("multi_exchange_ab_tester", e, {"operation": "_validate_test_config"})
-            return None
+    pass
+    @dataclass
+class MultiExchangeTestConfig:
+        """Multi-exchange A/B test configuration."""
+
+test_name: str
+model_id: str
+exchanges: list[str]
+test_duration_hours: int = 24
+sample_interval_seconds: int = 60
+min_confidence_threshold: float = 0.6
+max_position_size: float = 0.05
+enable_volume_adaptation: bool = True
+enable_performance_tracking: bool = True
+
+    @dataclass
+class ExchangeTestResult:
+        """Single exchange test result."""
+
+exchange: str
+timestamp: datetime
+prediction: float
+confidence: float
+position_size: float
+executed: bool
+profit_loss: float | None = None
+slippage: float | None = None
+volume_adapted: bool = False
+adaptation_factor: float | None = None
+error_message: str | None = None
+
+    @dataclass
+class MultiExchangeTestSummary:
+        """Multi-exchange test summary."""
+
+test_name: str
+model_id: str
+start_time: datetime
+end_time: datetime
+exchanges_tested: list[str]
+total_samples: int
+successful_executions: int
+failed_executions: int
+exchange_performance: dict[str, dict[str, Any]]
+volume_adaptation_impact: dict[str, float]
+best_performing_exchange: str | None = None
+worst_performing_exchange: str | None = None
+
+class MultiExchangeABTester:
+        """
+Multi-exchange A/B testing framework for comparing model performance across exchanges.
+        """
+
+    def __init__(self, config: dict[str, Any]) -> None:
+        """
+Initialize multi-exchange A/B tester.
+
+Args:
+            config: Configuration dictionary
+        """
+self.config = config
+self.logger = system_logger.getChild("MultiExchangeABTester")
+
+# Test state
+        self.        self.current_test:: MultiExchangeTestConfig | None = None
+        self.        self.test_results:: dict[str, list[ExchangeTestResult]] = {}
+        self.        self.test_start_time:: datetime | None = None
+        self.        self.is_running:: bool = False
+
+# Performance tracking
+        self.        self.performance_metrics:: dict[str, dict[str, Any]] = {}
+        self.        self.volume_adaptation_metrics:: dict[str, dict[str, Any]] = {}
+
+# Configuration
+self.ab_config = self.config.get("multi_exchange_ab_tester", {})
+self.result_storage_path = self.ab_config.get(
+"result_storage_path",
+"multi_exchange_ab_test_results")
+self.enable_volume_adaptation = self.ab_config.get(
+"enable_volume_adaptation",
+True
+)
+self.enable_performance_tracking = self.ab_config.get(
+"enable_performance_tracking",
+True
+)
+
+# Volume adapter for exchange-specific adjustments
+        self.        self.volume_adapter:: ExchangeVolumeAdapter | None = None
+if self.enable_volume_adaptation:
+            self.volume_adapter = ExchangeVolumeAdapter(self.config)
+
+    @handle_specific_errors(
+error_handlers={
+ValueError: (False, "Invalid multi-exchange A/B test configuration"),
+AttributeError: (False, "Missing required multi-exchange A/B test parameters"),
+KeyError: (False, "Missing configuration keys"),
+},
+default_return=False,
+context="multi-exchange A/B test initialization")
+    async def initialize(self) -> bool:
+        """Initialize the multi-exchange A/B tester."""
+        try:
+self.logger.info("Initializing Multi-Exchange A/B Tester...")
+
+# Create result storage directory
+os.makedirs(self.result_storage_path, exist_ok=True)
+
+# Initialize volume adapter if enabled
+if self.volume_adapter:
+                await self.volume_adapter.initialize()
+
+self.logger.info("✅ Multi-Exchange A/B Tester initialization completed")
+return True
+
+except Exception as e:
+            self.logger.error(f"❌ Multi-Exchange A/B Tester initialization failed: {e}")
+return False
+
+    @handle_errors(
+exceptions=(ValueError, AttributeError),
+default_return=False,
+context="test configuration validation")
+    def _validate_test_config(self, test_config: MultiExchangeTestConfig) -> bool:
+        """Validate test configuration."""
+        try:
 if not test_config.test_name:
-    passself.logger.error("Test name is required")
+                self.logger.error("Test name is required")
 return False
 
 if not test_config.model_id:
-    passself.logger.error("Model ID is required")
+                self.logger.error("Model ID is required")
 return False
 
 if len(test_config.exchanges) < 2:
-    passself.logger.error("Multi-exchange test requires at least 2 exchanges")
+                self.logger.error("Multi-exchange test requires at least 2 exchanges")
 return False
 
 if test_config.test_duration_hours <= 0:
-    passself.logger.error("Test duration must be positive")
+                self.logger.error("Test duration must be positive")
 return False
 
 if test_config.sample_interval_seconds <= 0:
-    passself.logger.error("Sample interval must be positive")
+                self.logger.error("Sample interval must be positive")
 return False
 
 return True
 
 except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error validating test configuration: {e}")
+            self.logger.error(f"Error validating test configuration: {e}")
 return False
 
-@handle_specific_errors(
+    @handle_specific_errors(
 error_handlers={
 ValueError: (False, "Failed to start multi-exchange A/B test"),
 RuntimeError: (False, "A/B test already running"),
 },
 default_return=False,
-context="multi-exchange A/B test start",
-)
-async def start_multi_exchange_test(...) -> ...:
-    """..."""
-    passtry:
-    self.logger.info("Executing functionality")
-            # Implement based on method context
-            result = self._execute_core_functionality()
-            return result
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-    passpasspasspasspasspasspasshandle_component_failure("multi_exchange_ab_tester", e, {"operation": "start_multi_exchange_test"})
-            return None
-        except Exception as e:
-    passpasspasspasspasspasspasshandle_component_failure("multi_exchange_ab_tester", e, {"operation": "start_multi_exchange_test"})
-            return None
+context="multi-exchange A/B test start")
+    async def start_multi_exchange_test(self, test_config: MultiExchangeTestConfig) -> bool:
+        """Start a new multi-exchange A/B test."""
+        try:
 if self.is_running:
-    passself.logger.error("Multi-exchange A/B test already running")
+                self.logger.error("Multi-exchange A/B test already running")
 return False
 
 # Validate test configuration
 if not self._validate_test_config(test_config):
-    passreturn False
+                return False
 
 # Initialize test state
 self.current_test = test_config
@@ -110,7 +198,7 @@ self.test_start_time = datetime.now()
 
 # Initialize results for each exchange
 for exchange in test_config.exchanges:
-    passself.test_results[exchange] = []
+                self.test_results[exchange] = []
 self.performance_metrics[exchange] = {
 "total_samples": 0,
 "successful_executions": 0,
@@ -130,66 +218,42 @@ self.logger.info(f"✅ Multi-exchange A/B test '{test_config.test_name}' started
 return True
 
 except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"❌ Failed to start multi-exchange A/B test: {e}")
+            self.logger.error(f"❌ Failed to start multi-exchange A/B test: {e}")
 return False
 
-@handle_errors(
-exceptions=(Exception,),
+    @handle_errors(
+exceptions=(Exception),
 default_return=None,
-context="multi-exchange test execution",
-)
-async def execute_multi_exchange_test(...) -> ...:
-    """..."""
-    passtry:
-    self.logger.info("Executing functionality")
-            # Implement based on method context
-            result = self._execute_core_functionality()
-            return result
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-    passpasspasspasspasspasspasshandle_component_failure("multi_exchange_ab_tester", e, {"operation": "execute_multi_exchange_test"})
-            return None
-        except Exception as e:
-    passpasspasspasspasspasspasshandle_component_failure("multi_exchange_ab_tester", e, {"operation": "execute_multi_exchange_test"})
-            return None
+context="multi-exchange test execution")
+    async def execute_multi_exchange_test(self) -> None:
+        """Execute the multi-exchange A/B test."""
+        try:
 if not self.current_test or not self.is_running:
-    passreturn
+                return
 
 test_end_time = self.test_start_time + timedelta(
 hours=self.current_test.test_duration_hours
 )
 
 while datetime.now() < test_end_time and self.is_running:
-    passawait self._execute_test_cycle()
+                await self._execute_test_cycle()
 await asyncio.sleep(self.current_test.sample_interval_seconds)
 
 # Generate test summary
 await self._generate_test_summary()
 
 except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error executing multi-exchange test: {e}")
+            self.logger.error(f"Error executing multi-exchange test: {e}")
 
-@handle_errors(
-exceptions=(Exception,),
+    @handle_errors(
+exceptions=(Exception),
 default_return=None,
-context="test cycle execution",
-)
-async def _execute_test_cycle(...) -> ...:
-    """..."""
-    passtry:
-    self.logger.info("Executing functionality")
-            # Implement based on method context
-            result = self._execute_core_functionality()
-            return result
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-    passpasspasspasspasspasspasshandle_component_failure("multi_exchange_ab_tester", e, {"operation": "_execute_test_cycle"})
-            return None
-        except Exception as e:
-    passpasspasspasspasspasspasshandle_component_failure("multi_exchange_ab_tester", e, {"operation": "_execute_test_cycle"})
-            return None
+context="test cycle execution")
+    async def _execute_test_cycle(self) -> None:
+        """Execute a single test cycle across all exchanges."""
+        try:
 if not self.current_test:
-    passreturn
+                return
 
 # Simulate model prediction (in real implementation, this would come from the model)
 prediction = np.random.uniform(-1, 1)
@@ -197,32 +261,25 @@ confidence = np.random.uniform(0.5, 0.95)
 
 # Execute test on each exchange
 for exchange in self.current_test.exchanges:
-    passawait self._execute_exchange_test(exchange, prediction, confidence)
+                await self._execute_exchange_test(exchange, prediction, confidence)
 
 except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error executing test cycle: {e}")
+            self.logger.error(f"Error executing test cycle: {e}")
 
-@handle_errors(
-exceptions=(Exception,),
+    @handle_errors(
+exceptions=(Exception),
 default_return=None,
-context="exchange test execution",
-)
-async def _execute_exchange_test(...) -> ...:
-    """..."""
-    passtry:
-    self.logger.info("Executing functionality")
-            # Implement based on method context
-            result = self._execute_core_functionality()
-            return result
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-    passpasspasspasspasspasspasshandle_component_failure("multi_exchange_ab_tester", e, {"operation": "_execute_exchange_test"})
-            return None
-        except Exception as e:
-    passpasspasspasspasspasspasshandle_component_failure("multi_exchange_ab_tester", e, {"operation": "_execute_exchange_test"})
-            return None
+context="exchange test execution")
+    async def _execute_exchange_test(
+self,
+exchange: str,
+prediction: float,
+confidence: float
+) -> None:
+        """Execute test on a single exchange."""
+        try:
 if confidence < self.current_test.min_confidence_threshold:
-    passreturn
+                return
 
 # Calculate position size
 position_size = min(
@@ -234,7 +291,7 @@ self.current_test.max_position_size
 adaptation_factor = 1.0
 volume_adapted = False
 if self.volume_adapter:
-    passadaptation_factor = await self.volume_adapter.get_adaptation_factor(exchange)
+                adaptation_factor = await self.volume_adapter.get_adaptation_factor(exchange)
 position_size *= adaptation_factor
 volume_adapted = True
 
@@ -244,7 +301,7 @@ profit_loss = None
 slippage = None
 
 if executed:
-    passprofit_loss = np.random.uniform(-0.02, 0.03)
+                profit_loss = np.random.uniform(-0.02, 0.03)
 slippage = np.random.uniform(0.0001, 0.001)
 
 # Create test result
@@ -258,8 +315,7 @@ executed=executed,
 profit_loss=profit_loss,
 slippage=slippage,
 volume_adapted=volume_adapted,
-adaptation_factor=adaptation_factor,
-)
+adaptation_factor=adaptation_factor)
 
 # Store result
 self.test_results[exchange].append(result)
@@ -268,41 +324,29 @@ self.test_results[exchange].append(result)
 self._update_exchange_metrics(exchange, result)
 
 except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error executing exchange test for {exchange}: {e}")
+            self.logger.error(f"Error executing exchange test for {exchange}: {e}")
 
-@handle_errors(
-exceptions=(Exception,),
+    @handle_errors(
+exceptions=(Exception),
 default_return=None,
-context="metrics update",
-)
-def _update_exchange_metrics(...) -> ...:
-    """..."""
-    passtry:
-    self.logger.info("Executing functionality")
-            # Implement based on method context
-            result = self._execute_core_functionality()
-            return result
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-    passpasspasspasspasspasspasshandle_component_failure("multi_exchange_ab_tester", e, {"operation": "_update_exchange_metrics"})
-            return None
-        except Exception as e:
-    passpasspasspasspasspasspasshandle_component_failure("multi_exchange_ab_tester", e, {"operation": "_update_exchange_metrics"})
-            return None
+context="metrics update")
+    def _update_exchange_metrics(self, exchange: str, result: ExchangeTestResult) -> None:
+        """Update performance metrics for an exchange."""
+        try:
 metrics = self.performance_metrics[exchange]
 metrics["total_samples"] += 1
 
 if result.executed:
-    passmetrics["successful_executions"] += 1
+                metrics["successful_executions"] += 1
 if result.profit_loss is not None:
-    passmetrics["total_profit_loss"] += result.profit_loss
+                    metrics["total_profit_loss"] += result.profit_loss
 if result.slippage is not None:
-    passmetrics["average_slippage"] = (
+                    metrics["average_slippage"] = (
 (metrics["average_slippage"] * (metrics["successful_executions"] - 1) + result.slippage) /
 metrics["successful_executions"]
 )
 else:
-    passmetrics["failed_executions"] += 1
+                metrics["failed_executions"] += 1
 
 # Update average confidence
 metrics["average_confidence"] = (
@@ -312,7 +356,7 @@ metrics["total_samples"]
 
 # Update volume adaptation metrics
 if result.volume_adapted and result.adaptation_factor is not None:
-    passvol_metrics = self.volume_adaptation_metrics[exchange]
+                vol_metrics = self.volume_adaptation_metrics[exchange]
 vol_metrics["adaptations_applied"] += 1
 vol_metrics["average_adaptation_factor"] = (
 (vol_metrics["average_adaptation_factor"] * (vol_metrics["adaptations_applied"] - 1) + result.adaptation_factor) /
@@ -320,29 +364,17 @@ vol_metrics["adaptations_applied"]
 )
 
 except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error updating metrics for {exchange}: {e}")
+            self.logger.error(f"Error updating metrics for {exchange}: {e}")
 
-@handle_errors(
-exceptions=(Exception,),
+    @handle_errors(
+exceptions=(Exception),
 default_return=None,
-context="test summary generation",
-)
-async def _generate_test_summary(...) -> ...:
-    """..."""
-    passtry:
-    self.logger.info("Executing functionality")
-            # Implement based on method context
-            result = self._execute_core_functionality()
-            return result
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-    passpasspasspasspasspasspasshandle_component_failure("multi_exchange_ab_tester", e, {"operation": "_generate_test_summary"})
-            return None
-        except Exception as e:
-    passpasspasspasspasspasspasshandle_component_failure("multi_exchange_ab_tester", e, {"operation": "_generate_test_summary"})
-            return None
+context="test summary generation")
+    async def _generate_test_summary(self) -> None:
+        """Generate comprehensive test summary."""
+        try:
 if not self.current_test or not self.test_start_time:
-    passreturn
+                return
 
 end_time = datetime.now()
 
@@ -354,7 +386,7 @@ best_performance = float('-inf')
 worst_performance = float('inf')
 
 for exchange in self.current_test.exchanges:
-    passmetrics = self.performance_metrics[exchange]
+                metrics = self.performance_metrics[exchange]
 vol_metrics = self.volume_adaptation_metrics[exchange]
 
 # Calculate performance score
@@ -379,11 +411,11 @@ exchange_performance[exchange] = {
 
 # Track best/worst performing exchanges
 if performance_score > best_performance:
-    passbest_performance = performance_score
+                    best_performance = performance_score
 best_exchange = exchange
 
 if performance_score < worst_performance:
-    passworst_performance = performance_score
+                    worst_performance = performance_score
 worst_exchange = exchange
 
 # Create summary
@@ -402,8 +434,7 @@ exchange: metrics["average_adaptation_factor"]
 for exchange, metrics in self.volume_adaptation_metrics.items()
 },
 best_performing_exchange=best_exchange,
-worst_performing_exchange=worst_exchange,
-)
+worst_performing_exchange=worst_exchange)
 
 # Save summary
 await self._save_test_summary(summary)
@@ -413,27 +444,15 @@ self.logger.info(f"Best performing exchange: {best_exchange}")
 self.logger.info(f"Worst performing exchange: {worst_exchange}")
 
 except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error generating test summary: {e}")
+            self.logger.error(f"Error generating test summary: {e}")
 
-@handle_errors(
-exceptions=(Exception,),
+    @handle_errors(
+exceptions=(Exception),
 default_return=None,
-context="test summary saving",
-)
-async def _save_test_summary(...) -> ...:
-    """..."""
-    passtry:
-    self.logger.info("Executing functionality")
-            # Implement based on method context
-            result = self._execute_core_functionality()
-            return result
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-    passpasspasspasspasspasspasshandle_component_failure("multi_exchange_ab_tester", e, {"operation": "_save_test_summary"})
-            return None
-        except Exception as e:
-    passpasspasspasspasspasspasshandle_component_failure("multi_exchange_ab_tester", e, {"operation": "_save_test_summary"})
-            return None
+context="test summary saving")
+    async def _save_test_summary(self, summary: MultiExchangeTestSummary) -> None:
+        """Save test summary to file."""
+        try:
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 filename = f"{summary.test_name}_{timestamp}.json"
 filepath = os.path.join(self.result_storage_path, filename)
@@ -446,111 +465,72 @@ summary_dict["start_time"] = summary.start_time.isoformat()
 summary_dict["end_time"] = summary.end_time.isoformat()
 
 with open(filepath, 'w') as f:
-    passjson.dump(summary_dict, f, indent=2)
+                json.dump(summary_dict, f, indent=2)
 
 self.logger.info(f"Test summary saved to {filepath}")
 
 except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error saving test summary: {e}")
+            self.logger.error(f"Error saving test summary: {e}")
 
-@handle_errors(
-exceptions=(Exception,),
+    @handle_errors(
+exceptions=(Exception),
 default_return=None,
-context="multi-exchange A/B test stop",
-)
-async def stop_multi_exchange_test(...) -> ...:
-    """..."""
-    passtry:
-    self.logger.info("Executing functionality")
-            # Implement based on method context
-            result = self._execute_core_functionality()
-            return result
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-    passpasspasspasspasspasspasshandle_component_failure("multi_exchange_ab_tester", e, {"operation": "stop_multi_exchange_test"})
-            return None
-        except Exception as e:
-    passpasspasspasspasspasspasshandle_component_failure("multi_exchange_ab_tester", e, {"operation": "stop_multi_exchange_test"})
-            return None
+context="multi-exchange A/B test stop")
+    async def stop_multi_exchange_test(self) -> None:
+        """Stop the current multi-exchange A/B test."""
+        try:
 self.is_running = False
 if self.current_test:
-    passself.logger.info(f"🛑 Multi-exchange A/B test '{self.current_test.test_name}' stopped")
+                self.logger.info(f"🛑 Multi-exchange A/B test '{self.current_test.test_name}' stopped")
 
 except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error stopping multi-exchange A/B test: {e}")
+            self.logger.error(f"Error stopping multi-exchange A/B test: {e}")
 
-@handle_errors(
-exceptions=(Exception,),
+    @handle_errors(
+exceptions=(Exception),
 default_return=None,
-context="multi-exchange A/B test cleanup",
-)
-async def cleanup(...) -> ...:
-    """..."""
-    passtry:
-    self.logger.info("Executing functionality")
-            # Implement based on method context
-            result = self._execute_core_functionality()
-            return result
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-    passpasspasspasspasspasspasshandle_component_failure("multi_exchange_ab_tester", e, {"operation": "cleanup"})
-            return None
-        except Exception as e:
-    passpasspasspasspasspasspasshandle_component_failure("multi_exchange_ab_tester", e, {"operation": "cleanup"})
-            return None
+context="multi-exchange A/B test cleanup")
+    async def cleanup(self) -> None:
+        """Clean up resources."""
+        try:
 await self.stop_multi_exchange_test()
 
 if self.volume_adapter:
-    pass# Clean up volume adapter if it has a cleanup method
+                # Clean up volume adapter if it has a cleanup method
 if hasattr(self.volume_adapter, 'cleanup'):
-    passawait self.volume_adapter.cleanup()
+                    await self.volume_adapter.cleanup()
 
 self.logger.info("✅ Multi-exchange A/B tester cleanup completed")
 
 except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error during cleanup: {e}")
+            self.logger.error(f"Error during cleanup: {e}")
 
-@handle_errors(
-exceptions=(Exception,),
+    @handle_errors(
+exceptions=(Exception),
 default_return=None,
-context="multi-exchange A/B tester setup",
-)
-async def setup_multi_exchange_ab_tester(...) -> ...:
-    """..."""
-    passtry:
-    self.logger.info("Executing functionality")
-            # Implement based on method context
-            result = self._execute_core_functionality()
-            return result
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-    passpasspasspasspasspasspasshandle_component_failure("multi_exchange_ab_tester", e, {"operation": "unknown_function"})
-            return None
-        except Exception as e:
-    passpasspasspasspasspasspasshandle_component_failure("multi_exchange_ab_tester", e, {"operation": "unknown_function"})
-            return None
+context="multi-exchange A/B tester setup")
+    async def setup_multi_exchange_ab_tester(
+config: dict[str, Any] | None = None
+) -> MultiExchangeABTester | None:
+        """
+Setup multi-exchange A/B tester.
+
+Args:
+        config: Configuration dictionary
+
+Returns:
+        MultiExchangeABTester instance or None if setup fails
+        """
+        try:
 if config is None:
-    passconfig = {}
+            config = {}
 
 tester = MultiExchangeABTester(config)
 if await tester.initialize():
-    passreturn tester
+            return tester
 else:
-    passreturn None
+            return None
 
 except Exception as e:
-    passpasspasspasspasspasspasssystem_logger.error(f"Failed to setup multi-exchange A/B tester: {e}")
+        system_logger.error(f"Failed to setup multi-exchange A/B tester: {e}")
 return None
-    def _calculate_confidence(self, prediction):
-        """Calculate prediction confidence."""
-        try:
-            if hasattr(prediction, 'predict_proba'):
-                return np.max(prediction.predict_proba())
-            elif isinstance(prediction, (list, np.ndarray)):
-                return np.max(prediction)
-            else:
-                return 0.5
-        except Exception as e:
-            self.logger.error(f"Confidence calculation failed: {e}")
-            return 0.0
-

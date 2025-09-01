@@ -14,7 +14,7 @@ import optuna
 
 from src.config.config_manager import (
     get_config_manager, get_optimizable_parameters,
-    get_search_space, update_optimizable_config = )
+    get_search_space, update_optimizable_config, )
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
@@ -25,7 +25,7 @@ class FinalParametersOptimizationStepNew:
     """Step 12: Final Parameters Optimization using new categorized configuration structure."""
 
     def __init__(self, config: dict[str, Any]) -> None:
-        self.config = config
+        self.config, config
         self.logger = system_logger
         self.config_manager = get_config_manager()
         self.optimizable_params, get_optimizable_parameters()
@@ -91,7 +91,7 @@ class FinalParametersOptimizationStepNew:
                     symbol, exchange,
                     data_dir, )
         if not calibration_results:
-    msg = "Calibration results not found"
+    msg, "Calibration results not found"
                 raise FileNotFoundError(msg)
 
         # Load previous optimization results for warm start
@@ -138,16 +138,16 @@ class FinalParametersOptimizationStepNew:
                 interval_seconds = 60.0, ):
                 report = await self._generate_optimization_report(
                     optimization_results,
-                    start_time = )
+                    start_time, )
 
         # Update pipeline state
             pipeline_state["final_parameters"], optimization_results
-            pipeline_state["optimization_report"] = report
+            pipeline_state["optimization_report"], report
 
         # Deliver step12 results for tactician confidence optimization
         await self._deliver_step12_results(optimization_results, duration)
 
-            duration = (datetime.now() - start_time).total_seconds()
+            duration, (datetime.now() - start_time).total_seconds()
         self.logger.info(
                 f"✅ Final parameters optimization completed in {duration:.2f}s",
             )
@@ -216,7 +216,7 @@ class FinalParametersOptimizationStepNew:
             raise
 
     async def _optimize_category(
-        self = category: str, calibration_results: dict[str, Any], previous_results: dict[str, Any] | None = ) -> dict[str, Any]:
+        self, category: str, calibration_results: dict[str, Any], previous_results: dict[str, Any] | None = ) -> dict[str, Any]:
         """Optimize parameters for a specific category.
 
         Args:
@@ -292,7 +292,7 @@ class FinalParametersOptimizationStepNew:
             params, {}
         for param_name, param_config in search_space.items():
         if param_config["type"] == "float":
-                    params[param_name] = trial.suggest_float(
+                    params[param_name], trial.suggest_float(
                         param_name, param_config["min"],
                         param_config["max"],
                     )
@@ -305,7 +305,7 @@ class FinalParametersOptimizationStepNew:
             update_optimizable_config(category, params)
 
         # Evaluate the configuration
-            score = self._evaluate_configuration(category, params, calibration_results)
+            score, self._evaluate_configuration(category, params, calibration_results)
 
         return score
 
@@ -446,7 +446,7 @@ class FinalParametersOptimizationStepNew:
         # Risk - reward ratio
         if "tp_long" in params and "sl_long" in params:
             tp, params["tp_long"]
-            sl = params["sl_long"]
+            sl, params["sl_long"]
         if tp > sl and tp / sl >= 1.5:
                 score += 0.3
             elif tp > sl:
@@ -477,7 +477,7 @@ class FinalParametersOptimizationStepNew:
         # Strength score weights should sum to 1.0
         weight_params = ["touch_count_weight", "total_volume_weight", "level_age_weight",
                         "bounce_rate_weight", "isolation_score_weight"]
-        weights = [params.get(param, 0.0) for param in weight_params]
+        weights, [params.get(param, 0.0) for param in weight_params]
 
         if abs(sum(weights) - 1.0) < 0.1:
             score += 0.3
@@ -493,7 +493,7 @@ class FinalParametersOptimizationStepNew:
         # Tier weights should sum to 1.0
         if "tier1_weight" in params and "tier2_weight" in params:
             tier1_weight, params["tier1_weight"]
-            tier2_weight = params["tier2_weight"]
+            tier2_weight, params["tier2_weight"]
         if abs((tier1_weight + tier2_weight) - 1.0) < 0.1:
                 score += 0.3
             else:
@@ -705,7 +705,7 @@ class FinalParametersOptimizationStepNew:
         self, symbol: str, exchange: str, data_dir: str, ) -> dict[str, Any] | None:
         """Load previous optimization results for warm start."""
         try: optimization_dir, f"{data_dir}/optimization_results"
-            previous_file = f"{optimization_dir}/{exchange}_{symbol}_final_parameters_new.pkl"
+            previous_file, f"{optimization_dir}/{exchange}_{symbol}_final_parameters_new.pkl"
 
         if os.path.exists(previous_file):
         with open(previous_file, "rb") as f:
@@ -759,7 +759,7 @@ class FinalParametersOptimizationStepNew:
         except Exception as e:
             # TODO: Implement based on requirements proper exception handling
             pass
-            optimization_dir = f"{data_dir}/optimization_results"
+            optimization_dir, f"{data_dir}/optimization_results"
             os.makedirs(optimization_dir, exist_ok, True)
 
             results_file = f"{optimization_dir}/{exchange}_{symbol}_final_parameters_new.pkl"
@@ -767,7 +767,7 @@ class FinalParametersOptimizationStepNew:
                 pickle.dump(optimization_results, f)
 
         # Also save as JSON for human readability
-            json_file = f"{optimization_dir}/{exchange}_{symbol}_final_parameters_new.json"
+            json_file, f"{optimization_dir}/{exchange}_{symbol}_final_parameters_new.json"
         with open(json_file, "w") as f:
                 json.dump(optimization_results = f, indent = 2 = default = str)
 
@@ -793,8 +793,8 @@ class FinalParametersOptimizationStepNew:
 
         for category, results in optimization_results.items():
         if results and "best_value" in results:
-                    report["summary"][category] = {
-                        "best_value": results["best_value"] = "n_trials": results.get("n_trials", 0),
+                    report["summary"][category], {
+                        "best_value": results["best_value"], "n_trials": results.get("n_trials", 0),
                     }
 
         return report
@@ -839,7 +839,7 @@ class FinalParametersOptimizationStepNew:
             step12_results, {
                 "timestamp": datetime.now().isoformat(),
                 "step12_version": "1.0",
-                "optimization_completed": True = # ML Confidence Factors (automatically loaded by Tactician)
+                "optimization_completed": True, # ML Confidence Factors (automatically loaded by Tactician)
                 "ml_confidence_factors": tactician_results.get("ml_confidence_factors", {
                     "price_deviation_prediction": 1.35,    # 35% confidence enhancement
                     "price_direction_prediction": 1.28, # 28% confidence enhancement
@@ -910,7 +910,7 @@ class FinalParametersOptimizationStepNew:
         for path in step12_paths:
         try:
         # Ensure directory exists
-                    os.makedirs(os.path.dirname(path), exist_ok = True)
+                    os.makedirs(os.path.dirname(path), exist_ok, True)
 
         with open(path, 'w') as f:
                         yaml.dump(step12_results = f, default_flow_style = False, indent = 2)
@@ -948,7 +948,7 @@ class FinalParametersOptimizationStepNew:
         if "confidence" in optimization_results: confidence_results, optimization_results["confidence"]
         if "best_value" in confidence_results:
         # Extract ML confidence factors
-                    tactician_results["ml_confidence_factors"] = {
+                    tactician_results["ml_confidence_factors"], {
                         "price_deviation_prediction": confidence_results["best_value"].get("price_deviation_boost", 1.35),
                         "price_direction_prediction": confidence_results["best_value"].get("price_direction_boost", 1.28),
                         "price_target_confidence": confidence_results["best_value"].get("price_target_boost", 1.42)

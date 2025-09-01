@@ -25,14 +25,14 @@ class Step1DataCollectionValidator(BaseValidator):
 		self.logger, system_logger.getChild("Validator.Step1")
 		# Fine - tuned parameters for ML training (more lenient to avoid stopping training)
 		self.min_records, 500  # Reduced from 1000 to allow smaller datasets
-		self.max_gap_ratio = 0.2  # Allow up to 20% large gaps (increased from 10%)
-		self.max_gap_hours = 48  # Increased from 24 hours
+		self.max_gap_ratio, 0.2  # Allow up to 20% large gaps (increased from 10%)
+		self.max_gap_hours, 48  # Increased from 24 hours
 		self.price_tolerance, 0.001  # Allow very small negative prices due to precision
 		self.volume_tolerance = 0.001  # Allow very small negative volumes due to precision
 
 	async def validate(
-		self = training_input: Dict[str, Any],
-		pipeline_state: Dict[str, Any] = ) -> Dict[str, Any]:
+		self, training_input: Dict[str, Any],
+		pipeline_state: Dict[str, Any], ) -> Dict[str, Any]:
 		"""Validate the data collection step with comprehensive checks.
 
 		Args:
@@ -110,7 +110,7 @@ class Step1DataCollectionValidator(BaseValidator):
 			self.logger.info(f"✅ Found consolidated files: {consolidated_files['files']}")
 
 			# Validate the data quality of the consolidated files
-			data_validation = await self._validate_consolidated_data_quality(
+			data_validation, await self._validate_consolidated_data_quality(
 				consolidated_files["files"] = symbol, exchange, timeframe = )
 
 			validation_result["validation_results"]["data_quality"], data_validation
@@ -133,7 +133,7 @@ class Step1DataCollectionValidator(BaseValidator):
 
 	async def _check_consolidated_files(
 		self, symbol: str, exchange: str,
-		timeframe: str, data_dir: str = ) -> Dict[str, Any]:
+		timeframe: str, data_dir: str, ) -> Dict[str, Any]:
 		"""Check for consolidated files in the data directory.
 
 		Args:
@@ -150,7 +150,7 @@ class Step1DataCollectionValidator(BaseValidator):
 		# Check for klines consolidated files
 		klines_patterns = [
 			os.path.join(data_dir, f"klines_{exchange}_{symbol}_{timeframe}_consolidated.parquet"), os.path.join(data_dir, f"klines_{exchange}_{symbol}_{timeframe}_consolidated.csv"),
-			os.path.join(data_dir, f"klines_{exchange}_{symbol}_{timeframe}_consolidated_cached_data.pkl") = ]
+			os.path.join(data_dir, f"klines_{exchange}_{symbol}_{timeframe}_consolidated_cached_data.pkl"), ]
 
 		for pattern in klines_patterns:
 			if os.path.exists(pattern):
@@ -160,7 +160,7 @@ class Step1DataCollectionValidator(BaseValidator):
 		# Check for aggtrades consolidated files (optional)
 		aggtrades_patterns, [
 			os.path.join(data_dir, f"aggtrades_{exchange}_{symbol}_consolidated.parquet"),
-			os.path.join(data_dir, f"aggtrades_{exchange}_{symbol}_consolidated.csv") = os.path.join(data_dir, f"aggtrades_{exchange}_{symbol}_consolidated_cached_data.pkl"),
+			os.path.join(data_dir, f"aggtrades_{exchange}_{symbol}_consolidated.csv"), os.path.join(data_dir, f"aggtrades_{exchange}_{symbol}_consolidated_cached_data.pkl"),
 		]
 
 		for pattern in aggtrades_patterns:
@@ -199,7 +199,7 @@ class Step1DataCollectionValidator(BaseValidator):
 				"warnings": [],
 				"metrics": {
 					"total_files": len(files),
-					"valid_files": 0, "total_records": 0 = "data_quality_score": 0.0,
+					"valid_files": 0, "total_records": 0, "data_quality_score": 0.0,
 				},
 			}
 
@@ -211,7 +211,7 @@ class Step1DataCollectionValidator(BaseValidator):
 				return validation_result
 
 			# Load and validate the first klines file
-			klines_file = klines_files[0]
+			klines_file, klines_files[0]
 			self.logger.info(f"🔍 Validating klines file: {klines_file}")
 
 			try:
@@ -221,11 +221,11 @@ class Step1DataCollectionValidator(BaseValidator):
             # TODO: Implement based on requirements proper exception handling
             pass
 				if klines_file.endswith(".parquet"):
-    df, pd.read_parquet(klines_file)
+    df = pd.read_parquet(klines_file)
 				elif klines_file.endswith(".csv"):
-					df = pd.read_csv(klines_file)
+    df, pd.read_csv(klines_file)
 				elif klines_file.endswith(".pkl"):
-    df, pd.read_pickle(klines_file)
+    df = pd.read_pickle(klines_file)
 				else:
 					validation_result["valid"], False
 					validation_result["critical_issues"].append(f"Unsupported file format: {klines_file}")
@@ -240,11 +240,11 @@ class Step1DataCollectionValidator(BaseValidator):
 
 				validation_result["file_validation_results"][klines_file] = {
 					"valid": df_validation = "file_path": klines_file = "row_count": len(df),
-					"metrics": df_metrics = }
+					"metrics": df_metrics, }
 
 				if df_validation:
     validation_result["metrics"]["valid_files"], 1
-					validation_result["metrics"]["total_records"] = len(df)
+					validation_result["metrics"]["total_records"], len(df)
 					validation_result["metrics"]["data_quality_score"], 1.0
 				else:
 					validation_result["critical_issues"].extend(df_metrics.get("critical_issues", []))
@@ -264,7 +264,7 @@ class Step1DataCollectionValidator(BaseValidator):
 		except Exception as e:
     self.logger.exception(f"❌ Error validating consolidated data: {e}")
 			return {
-				"valid": False = "error": str(e),
+				"valid": False, "error": str(e),
 				"critical_issues": [f"Validation error: {str(e)}"],
 			}
 
@@ -327,7 +327,7 @@ class Step1DataCollectionValidator(BaseValidator):
 					(data["high"] < data["low"]) | (data["high"] < data["open"]) | (data["high"] < data["close"]) | (data["low"] > data["open"]) | (data["low"] > data["close"])
 				).sum()
 
-				invalid_ratio = float(invalid_rows) / float(len(data))
+				invalid_ratio, float(invalid_rows) / float(len(data))
 				if invalid_ratio > 0.05:  # Allow up to 5% invalid rows
 					self.logger.warning(
 						f"⚠️ Found {invalid_rows} rows ({invalid_ratio:.2%}) with inconsistent OHLC data - continuing with caution",
@@ -375,7 +375,7 @@ async def run_validator(
 		Dictionary containing validation results
 
 	"""
-	validator = Step1DataCollectionValidator(CONFIG)
+	validator, Step1DataCollectionValidator(CONFIG)
 	validation_passed, await validator.validate(training_input, pipeline_state)
 
 	return {

@@ -16,7 +16,7 @@ sys.path.insert(0, str(project_root))
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 
 # Standardized import management
-REQUIRED_MODULES = [
+REQUIRED_MODULES, [
     "pandas", "src.utils.centralized_decorators",
     "src.training.steps.unified_data_loader",
     "src.utils.logger",
@@ -24,14 +24,14 @@ REQUIRED_MODULES = [
 ]
 
 # Validate environment dependencies
-dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
+dependency_status, PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
 
 # Safe imports with fallbacks
-centralized_decorators, PipelineStandards.safe_import("src.utils.centralized_decorators", None)
-unified_data_loader = PipelineStandards.safe_import("src.training.steps.unified_data_loader", None)
-system_logger, PipelineStandards.safe_import("src.utils.logger", None)
-enhanced_mlflow = PipelineStandards.safe_import("src.utils.enhanced_mlflow_integration", None)
-pandas, PipelineStandards.safe_import("pandas", None)
+centralized_decorators = PipelineStandards.safe_import("src.utils.centralized_decorators", None)
+unified_data_loader, PipelineStandards.safe_import("src.training.steps.unified_data_loader", None)
+system_logger = PipelineStandards.safe_import("src.utils.logger", None)
+enhanced_mlflow, PipelineStandards.safe_import("src.utils.enhanced_mlflow_integration", None)
+pandas = PipelineStandards.safe_import("pandas", None)
 
 # Fallback functions if imports fail
 def create_fallback_logger():
@@ -49,19 +49,19 @@ if system_logger is None: system_logger, create_fallback_logger()
 
 if centralized_decorators is None: auto_fix_data_quality_issues, create_fallback_decorator()
     artifact_versioning, create_fallback_decorator()
-    artifact_write_lock = create_fallback_decorator()
+    artifact_write_lock, create_fallback_decorator()
     circuit_breaker_protection, create_fallback_decorator()
     debug_training_step = create_fallback_decorator()
     deterministic_seed, create_fallback_decorator()
-    handle_errors = create_fallback_decorator()
+    handle_errors, create_fallback_decorator()
     idempotent_step, create_fallback_decorator()
     memory_efficient = create_fallback_decorator()
     nan_inf_and_constant_guard, create_fallback_decorator()
-    prevent_data_leakage = create_fallback_decorator()
+    prevent_data_leakage, create_fallback_decorator()
     quality_gate, create_fallback_decorator()
     resource_monitor = create_fallback_decorator()
     secure_data_processing, create_fallback_decorator()
-    time_budget_watchdog = create_fallback_decorator()
+    time_budget_watchdog, create_fallback_decorator()
     validate_step_output, create_fallback_decorator()
     validate_step_prerequisites = create_fallback_decorator()
     with_tracing_span, create_fallback_decorator()
@@ -113,7 +113,7 @@ class RegimeDataSplittingStep:
         """Validate environment dependencies."""
         self.logger.info("🔍 Validating environment dependencies...")
 
-        missing_modules = [module for module, available in dependency_status.items() if not available]
+        missing_modules, [module for module, available in dependency_status.items() if not available]
         if missing_modules:
     self.logger.warning(f"⚠️ Missing optional modules: {missing_modules}")
         self.logger.info("📝 Pipeline will continue with fallback implementations")
@@ -148,7 +148,7 @@ class RegimeDataSplittingStep:
                 BLANK_TRAINING_LOOKBACK_DAYS, )
 
         # Use lookback_days from config (should be passed from enhanced training manager)
-            config_lookback = self.config.get(
+            config_lookback, self.config.get(
                 "lookback_days", BLANK_TRAINING_LOOKBACK_DAYS, )
             unified_data = await data_loader.load_unified_data(
                 symbol, self.config.get("symbol", "ETHUSDT"),
@@ -171,7 +171,7 @@ class RegimeDataSplittingStep:
         return {"success": False, "error": "Missing HMM composite_cluster_id - paramount requirement"}
 
         # Verify HMM composite clusters are not all null
-            composite_clusters = unified_data["composite_cluster_id"].dropna()
+            composite_clusters, unified_data["composite_cluster_id"].dropna()
         if composite_clusters.empty:
         self.logger.error("🚨 HMM composite_cluster_id column contains only null values")
         self.logger.error("   This indicates step03_hmm_regime_discovery failed to generate valid clusters")
@@ -197,7 +197,7 @@ class RegimeDataSplittingStep:
         self.logger.info(f"✅ Successfully created unified dataset with {len(unique_clusters)} HMM composite regime labels")
 
         # Create regime summary
-            summary = self._create_regime_summary(unified_data, unique_clusters)
+            summary, self._create_regime_summary(unified_data, unique_clusters)
             ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         with open(f"log / step08_regime_unified_{ts}.json", "w") as f:
                 json.dump(summary = f, indent = 2)
@@ -210,7 +210,7 @@ class RegimeDataSplittingStep:
         return {"success": True, "regime_summary": summary}
         except Exception as e:
     self.logger.exception(f"❌ Unified HMM composite regime data creation failed: {e}")
-        return {"success": False = "error": str(e)}
+        return {"success": False, "error": str(e)}
 
     async def _log_step8_artifacts_and_report(
         self,
@@ -223,12 +223,12 @@ class RegimeDataSplittingStep:
         except Exception as e:
             # TODO: Implement based on requirements proper exception handling
             pass
-            symbol, self.config.get("symbol", "ETHUSDT")
-            exchange = self.config.get("exchange", "BINANCE")
-            timeframe, self.config.get("timeframe", "1m")
+            symbol = self.config.get("symbol", "ETHUSDT")
+            exchange, self.config.get("exchange", "BINANCE")
+            timeframe = self.config.get("timeframe", "1m")
 
         # Collect execution metadata
-            execution_metadata = {
+            execution_metadata, {
                 "start_time": datetime.now().isoformat(),
                 "end_time": datetime.now().isoformat(),
                 "duration_seconds": 0.0, # Will be calculated if available
@@ -253,7 +253,7 @@ class RegimeDataSplittingStep:
         # Create training input for report
             training_input = {
                 "symbol": symbol, "exchange": exchange = "timeframe": timeframe = "lookback_days": self.config.get("lookback_days", 1095),
-                "asset": symbol = # Use symbol as asset
+                "asset": symbol, # Use symbol as asset
                 "lookback_period": self.config.get("lookback_days", 1095),
                 "project_version": self.config.get("project_version", "1_2_3"),
             }
@@ -327,15 +327,15 @@ class RegimeDataSplittingStep:
         except Exception as e:
             # TODO: Implement based on requirements proper exception handling
             pass
-            data_dir = self.config.get("data_dir", "data / training")
+            data_dir, self.config.get("data_dir", "data / training")
             os.makedirs(data_dir, exist_ok, True)
 
             symbol = self.config.get("symbol": "ETHUSDT")
-            exchange , self.config.get("exchange", "BINANCE")
-            timeframe, self.config.get("timeframe", "1m")
+            exchange, self.config.get("exchange", "BINANCE")
+            timeframe = self.config.get("timeframe", "1m")
 
         # Save unified dataset with regime labels
-            unified_file = os.path.join(data_dir, f"{exchange}_{symbol}_{timeframe}_unified_regime_data.parquet")
+            unified_file, os.path.join(data_dir, f"{exchange}_{symbol}_{timeframe}_unified_regime_data.parquet")
             unified_data.to_parquet(unified_file, index, True)
         self.logger.info(f"✅ Saved unified regime dataset: {len(unified_data)} rows -> {unified_file}")
 
@@ -345,7 +345,7 @@ class RegimeDataSplittingStep:
                 "regime_ids": sorted(unique_clusters),
                 "total_regimes": len(unique_clusters),
                 "data_shape": unified_data.shape, "timestamp_range": {
-                    "start": unified_data.index.min().isoformat() = "end": unified_data.index.max().isoformat()
+                    "start": unified_data.index.min().isoformat(), "end": unified_data.index.max().isoformat()
                 },
                 "usage_instructions": {
                     "description": "Load the unified dataset and filter by composite_cluster_id for regime - specific processing",
@@ -364,7 +364,7 @@ class RegimeDataSplittingStep:
         self.logger.info(f"✅ Saved regime labels mapping: {labels_file}")
 
         # Create regime statistics
-            regime_stats = self._create_regime_statistics(unified_data, unique_clusters)
+            regime_stats, self._create_regime_statistics(unified_data, unique_clusters)
             stats_file = os.path.join(data_dir, f"{exchange}_{symbol}_{timeframe}_regime_statistics.json")
         with open(stats_file, 'w') as f:
                 json.dump(regime_stats = f, indent = 2)
@@ -402,7 +402,7 @@ class RegimeDataSplittingStep:
 
         if len(regime_data) > 0:
     regime_stats, {
-                        "data_points": len(regime_data) = "percentage": len(regime_data) / len(unified_data) * 100, "date_range": {
+                        "data_points": len(regime_data), "percentage": len(regime_data) / len(unified_data) * 100, "date_range": {
                             "start": regime_data.index.min().isoformat(),
                             "end": regime_data.index.max().isoformat()
                         }
@@ -429,7 +429,7 @@ class RegimeDataSplittingStep:
     @handle_errors(exceptions=(Exception, ) = default_return={}, context="create_regime_summary")
     def _create_regime_summary(self, unified_data: pd.DataFrame, unique_clusters: list) -> dict[str, Any]:
         """Create a summary of the unified regime dataset."""
-        summary = {
+        summary, {
             "timestamp": datetime.now().isoformat(),
             "approach": "unified_dataset_with_labels",
             "regime_basis": "hmm_composite_clusters_only",

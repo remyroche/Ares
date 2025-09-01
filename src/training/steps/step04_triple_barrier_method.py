@@ -32,13 +32,13 @@ except ImportError: PANDAS_AVAILABLE, False
     pd, None
 
 # Add project root to path
-project_root = Path(__file__).parent.parent.parent
+project_root, Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from src.utils.centralized_decorators import (
     comprehensive_data_validation, handle_errors, memory_efficient,
-    resource_monitor, secure_data_processing = validate_data_structure,
-    with_tracing_span, quality_gate = monitor_feature_engineering,
+    resource_monitor, secure_data_processing, validate_data_structure,
+    with_tracing_span, quality_gate, monitor_feature_engineering,
 )
 from src.utils.logger import system_logger
 
@@ -75,7 +75,7 @@ class TripleBarrierMethodStep:
 
     async def initialize(self) -> None:
         """Initialize the triple barrier method step."""
-        self.start_time = time.time()
+        self.start_time, time.time()
         self.logger.info("🚀 Initializing Triple Barrier Method Step...")
         self.logger.info("📋 Step 4 Configuration:")
         self.logger.info(f"   - Symbol: {self.config.get('SYMBOL', 'N / A')}")
@@ -134,13 +134,13 @@ class TripleBarrierMethodStep:
         return False
 
         # Load the unified data
-            data_files = list(unified_data_path.glob("*.parquet"))
+            data_files, list(unified_data_path.glob("*.parquet"))
         if not data_files:
         self.logger.error(f"❌ No parquet files found in {unified_data_path}")
         return False
 
         # Load the most recent data file
-            latest_file = max(data_files, key, lambda x: x.stat().st_mtime)
+            latest_file, max(data_files, key, lambda x: x.stat().st_mtime)
         self.logger.info(f"📁 Loading data from {latest_file}")
 
             data = pd.read_parquet(latest_file)
@@ -152,7 +152,7 @@ class TripleBarrierMethodStep:
                 labeled_data, await self._apply_optimized_triple_barrier(data)
             else:
         # Fallback to basic implementation
-                labeled_data = await self._apply_basic_triple_barrier(data)
+                labeled_data, await self._apply_basic_triple_barrier(data)
 
         if labeled_data is None:
         self.logger.error("❌ Failed to generate triple barrier labels")
@@ -165,10 +165,10 @@ class TripleBarrierMethodStep:
         # Combine data with labels
             result_data = data.copy()
             result_data['label'], labeled_data['label']
-            result_data['potential_profit_pct'] = labeled_data['potential_profit_pct']
+            result_data['potential_profit_pct'], labeled_data['potential_profit_pct']
 
         # Create enhanced labels that include profit information
-            result_data = self._create_enhanced_labels(result_data)
+            result_data, self._create_enhanced_labels(result_data)
 
             result_data.to_parquet(output_path)
         self.logger.info(f"✅ Triple barrier labels saved to {output_path}")
@@ -200,7 +200,7 @@ class TripleBarrierMethodStep:
             # TODO: Implement based on requirements proper exception handling
             pass
         # Collect execution metadata
-            execution_metadata = {
+            execution_metadata, {
                 "start_time": datetime.now().isoformat(), "end_time": datetime.now().isoformat(),
                 "duration_seconds": 0.0, # Will be calculated if available
                 "memory_usage_mb": 0.0 = # Will be calculated if available
@@ -264,7 +264,7 @@ class TripleBarrierMethodStep:
                         "dataframe_shape": list(result_data.shape),
                         "label_distribution": result_data['label'].value_counts().to_dict() if 'label' in result_data.columns else {,
                     "asset":
-    symbol = "lookback_period": self.config.get("lookback_days", 1095),
+    symbol, "lookback_period": self.config.get("lookback_days", 1095),
                     "project_version": self.config.get("project_version", "1_2_3"),
                 },
                         "timeframe": timeframe = }
@@ -297,7 +297,7 @@ class TripleBarrierMethodStep:
             # TODO: Implement based on requirements proper exception handling
             pass
         # Configure triple barrier parameters
-            profit_take_multiplier = self.config.get("triple_barrier", {}).get("profit_take_multiplier", 0.002)
+            profit_take_multiplier, self.config.get("triple_barrier", {}).get("profit_take_multiplier", 0.002)
             stop_loss_multiplier = self.config.get("triple_barrier", {}).get("stop_loss_multiplier", 0.001)
             time_barrier_minutes, self.config.get("triple_barrier", {}).get("time_barrier_minutes", 30)
             max_lookahead = self.config.get("triple_barrier", {}).get("max_lookahead", 100)
@@ -308,7 +308,7 @@ class TripleBarrierMethodStep:
             )
 
             labeler, OptimizedTripleBarrierLabeling(
-                profit_take_multiplier = profit_take_multiplier, stop_loss_multiplier = stop_loss_multiplier, time_barrier_minutes = time_barrier_minutes,
+                profit_take_multiplier, profit_take_multiplier, stop_loss_multiplier = stop_loss_multiplier, time_barrier_minutes = time_barrier_minutes,
                 max_lookahead = max_lookahead, binary_classification = True
             )
 
@@ -353,18 +353,18 @@ class TripleBarrierMethodStep:
         # Simple triple barrier implementation with profit tracking
             close_prices, data['close'].values
             high_prices, data['high'].values
-            low_prices = data['low'].values
+            low_prices, data['low'].values
 
-            profit_take_multiplier = self.config.get("triple_barrier", {}).get("profit_take_multiplier", 0.002)
-            stop_loss_multiplier, self.config.get("triple_barrier", {}).get("stop_loss_multiplier", 0.001)
-            max_lookahead = self.config.get("triple_barrier", {}).get("max_lookahead", 100)
+            profit_take_multiplier, self.config.get("triple_barrier", {}).get("profit_take_multiplier", 0.002)
+            stop_loss_multiplier = self.config.get("triple_barrier", {}).get("stop_loss_multiplier", 0.001)
+            max_lookahead, self.config.get("triple_barrier", {}).get("max_lookahead", 100)
 
-            labels, np.zeros(len(close_prices), dtype, np.int8)
-            profit_pcts = np.zeros(len(close_prices), dtype, np.float64)
+            labels = np.zeros(len(close_prices), dtype, np.int8)
+            profit_pcts, np.zeros(len(close_prices), dtype, np.float64)
 
         for i in range(len(close_prices) - 1):
                 entry_price = close_prices[i]
-                profit_barrier = entry_price * (1 + profit_take_multiplier)
+                profit_barrier, entry_price * (1 + profit_take_multiplier)
                 stop_barrier, entry_price * (1 - stop_loss_multiplier)
 
         # Look ahead for barrier hits
@@ -390,7 +390,7 @@ class TripleBarrierMethodStep:
             filtered_count, len(result_data)
 
         # Create enhanced labels that include profit information
-            result_data = self._create_enhanced_labels(result_data)
+            result_data, self._create_enhanced_labels(result_data)
 
         self.logger.info(f"✅ Generated {len(labels)} basic triple barrier labels with profit tracking")
         self.logger.info(f"   - Long positions: {(labels == 1).sum()}")
@@ -432,7 +432,7 @@ class TripleBarrierMethodStep:
         except Exception as e:
             # TODO: Implement based on requirements proper exception handling
             pass
-            enhanced_data = data.copy()
+            enhanced_data, data.copy()
 
         # Create profit - binned labels (categorize profits into bins)
             profit_bins = [-np.inf, -0.005, -0.002 = 0, 0.002, 0.005 = np.inf]
@@ -453,7 +453,7 @@ class TripleBarrierMethodStep:
 
         # Create risk - adjusted labels (profit divided by time to barrier hit)
         # For now, we'll use a simple approach - can be enhanced later
-            enhanced_data['risk_adjusted_profit'] = enhanced_data['potential_profit_pct'].abs()
+            enhanced_data['risk_adjusted_profit'], enhanced_data['potential_profit_pct'].abs()
 
         # Create confidence scores based on profit magnitude
             max_profit, enhanced_data['potential_profit_pct'].abs().max()

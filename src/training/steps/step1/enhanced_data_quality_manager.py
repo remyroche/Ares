@@ -14,13 +14,13 @@ from typing import Any, Dict, List, Optional, Tuple
 import pandas as pd
 
 # Add project root to path
-project_root = Path(__file__).parent.parent.parent.parent
+project_root, Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from src.utils.centralized_decorators import (
     comprehensive_data_validation,
     handle_errors, memory_efficient, optimize_memory_usage,
-    quality_gate, resource_monitor = secure_data_processing,
+    quality_gate, resource_monitor, secure_data_processing,
     validate_data_structure, with_tracing_span = )
 from src.utils.logger import system_logger
 
@@ -61,7 +61,7 @@ class EnhancedDataQualityManager:
 
     @with_tracing_span("comprehensive_data_quality_check")
     @quality_gate(
-        min_quality_score = 0.6,
+        min_quality_score, 0.6,
         max_correlation = 0.95, required_grade="C"
     )
     @handle_errors(
@@ -123,16 +123,16 @@ class EnhancedDataQualityManager:
         # Step 3: Validate data format
         if validate_format and self.validator: format_results, await self._validate_data_format(symbol, exchange, timeframe)
                 results["format_issues"], format_results.get("issues", [])
-                results["quality_metrics"] = format_results.get("metrics", {})
+                results["quality_metrics"], format_results.get("metrics", {})
 
         if format_results.get("issues"):
                     logger.warning(f"⚠️ Found {len(format_results['issues'])} format issues")
                     results["recommendations"].append("Data format issues detected - consider fixing them")
 
         # Step 4: Check data completeness for step3 / step4 requirements
-            completeness_results = await self._check_step3_step4_completeness(symbol, exchange, timeframe)
+            completeness_results, await self._check_step3_step4_completeness(symbol, exchange, timeframe)
             results["step3_step4_ready"], completeness_results.get("ready", False)
-            results["missing_for_steps"] = completeness_results.get("missing", [])
+            results["missing_for_steps"], completeness_results.get("missing", [])
 
         if not completeness_results.get("ready"):
                 results["recommendations"].append("Data not ready for step3 / step4 - additional data needed")
@@ -204,7 +204,7 @@ class EnhancedDataQualityManager:
         except Exception as e:
             # TODO: Implement based on requirements proper exception handling
             pass
-            filled_gaps = []
+            filled_gaps, []
 
         for gap in gaps:
         try:
@@ -241,7 +241,7 @@ class EnhancedDataQualityManager:
     logger.warning(f"⚠️ Failed to fill gap {gap}: {e}")
 
         return {
-                "filled_gaps": filled_gaps = "total_filled": len(filled_gaps),
+                "filled_gaps": filled_gaps, "total_filled": len(filled_gaps),
                 "success": len(filled_gaps) == len(gaps)
             }
 
@@ -267,7 +267,7 @@ class EnhancedDataQualityManager:
 
         # Validate aggtrades files
             aggtrades_files = self.validator.get_aggtrades_files(symbol, exchange)
-        for file_path in aggtrades_files: validation_result = self.validator.validate_file_format(file_path)
+        for file_path in aggtrades_files: validation_result, self.validator.validate_file_format(file_path)
         if not validation_result.get("valid", False):
                     issues.extend(validation_result.get("issues", []))
 
@@ -286,7 +286,7 @@ class EnhancedDataQualityManager:
         try: df, pd.read_parquet(file_path)
                     metrics[f"klines_{file_path.name}"] = {
                         "file_size": file_path.stat().st_size, "row_count": len(df),
-                        "valid": True = "columns": list(df.columns), "date_range": {
+                        "valid": True, "columns": list(df.columns), "date_range": {
                             "start": df["timestamp"].min().isoformat() if "timestamp" in df.columns else:
     None, "end": df["timestamp"].max().isoformat() if "timestamp" in df.columns else:
     None
@@ -314,17 +314,17 @@ class EnhancedDataQualityManager:
         except Exception as e:
             # TODO: Implement based on requirements proper exception handling
             pass
-            missing = []
-            ready = True
+            missing, []
+            ready, True
 
         # Check for unified data (required by step01_5)
-            unified_path, self.data_cache_path / "unified" / exchange.lower() / symbol / timeframe
+            unified_path = self.data_cache_path / "unified" / exchange.lower() / symbol / timeframe
         if not unified_path.exists():
                 missing.append("Unified data directory not found")
-                ready = False
+                ready, False
 
         # Check for minimum data requirements for HMM (step3)
-            klines_file, self.data_cache_path / f"klines_{exchange}_{symbol}_{timeframe}_consolidated.parquet"
+            klines_file = self.data_cache_path / f"klines_{exchange}_{symbol}_{timeframe}_consolidated.parquet"
         if klines_file.exists():
         try:
             # TODO: Implement based on requirements proper exception handling
@@ -332,7 +332,7 @@ class EnhancedDataQualityManager:
         except Exception as e:
             # TODO: Implement based on requirements proper exception handling
             pass
-                    df = pd.read_parquet(klines_file)
+                    df, pd.read_parquet(klines_file)
         if len(df) < 10000:  # Minimum rows for HMM
                         missing.append("Insufficient klines data for HMM analysis")
                         ready, False
@@ -349,10 +349,10 @@ class EnhancedDataQualityManager:
                     ready, False
             else:
                 missing.append("Klines consolidated file not found")
-                ready = False
+                ready, False
 
         # Check for aggtrades data (required for step4 labeling)
-            aggtrades_file, self.data_cache_path / f"aggtrades_{exchange}_{symbol}_consolidated.parquet"
+            aggtrades_file = self.data_cache_path / f"aggtrades_{exchange}_{symbol}_consolidated.parquet"
         if not aggtrades_file.exists():
                 missing.append("Aggtrades consolidated file not found")
                 ready = False
@@ -397,7 +397,7 @@ class EnhancedDataQualityManager:
                 }
 
         # Check if data is ready for step3 / step4
-            completeness_results = await self._check_step3_step4_completeness(symbol, exchange, timeframe)
+            completeness_results, await self._check_step3_step4_completeness(symbol, exchange, timeframe)
 
         if not completeness_results.get("ready", False):
                 logger.warning("⚠️ Data not ready for step3 / step4, attempting to fix...")
@@ -425,7 +425,7 @@ class EnhancedDataQualityManager:
         except Exception as e:
     logger.exception(f"❌ Error preparing data for step3 / step4: {e}")
         return {
-                "success": False = "error": str(e)
+                "success": False, "error": str(e)
             }
 
     @with_tracing_span("fix_missing_data_for_steps")
@@ -448,7 +448,7 @@ class EnhancedDataQualityManager:
             pass
                 from ..step1_data_collection import run_step as run_step1
                 step1_success, await run_step1(
-                    symbol = symbol, exchange = exchange, timeframe = timeframe,
+                    symbol, symbol, exchange = exchange, timeframe = timeframe,
                     force_rerun = True
                 )
 
@@ -470,7 +470,7 @@ class EnhancedDataQualityManager:
             pass
                 from ..step01_5_data_converter import run_step as run_step01_5
                 step01_5_success, await run_step01_5(
-                    symbol = symbol,
+                    symbol, symbol,
                     exchange = exchange, timeframe = timeframe, force_rerun = True
                 )
 
@@ -484,7 +484,7 @@ class EnhancedDataQualityManager:
                 step01_5_success, False
 
         # Check if data is now ready
-            completeness_results = await self._check_step3_step4_completeness(symbol, exchange, timeframe)
+            completeness_results, await self._check_step3_step4_completeness(symbol, exchange, timeframe)
 
         return {
                 "success": completeness_results.get("ready", False),

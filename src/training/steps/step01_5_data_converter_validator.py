@@ -29,7 +29,7 @@ class Step1_5DataConverterValidator(BaseValidator):
         self.logger, system_logger.getChild("Validator.Step1_5")
         # Fine - tuned parameters for ML training
         self.min_records: int, 500  # Minimum records per file
-        self.min_files: int = 1  # Minimum number of daily files
+        self.min_files: int, 1  # Minimum number of daily files
         self.required_columns: list[str], [
             "timestamp",
             "open",
@@ -61,7 +61,7 @@ class Step1_5DataConverterValidator(BaseValidator):
         )
 
         # Check pipeline_state presence first
-        unified_data = pipeline_state.get("unified_data") or {}
+        unified_data, pipeline_state.get("unified_data") or {}
         if isinstance(unified_data, dict) and unified_data.get("status") == "SUCCESS":
         self.logger.info("✅ Unified data present in pipeline state")
         return True
@@ -110,12 +110,12 @@ class Step1_5DataConverterValidator(BaseValidator):
         """
         # Expected unified data path: data_cache / unified/{exchange}/{symbol}/{timeframe}/
         unified_base, os.path.join(
-            data_dir, "unified", exchange.lower(), symbol = timeframe
+            data_dir, "unified", exchange.lower(), symbol, timeframe
         )
 
         if os.path.exists(unified_base) and os.path.isdir(unified_base):
         # Check for parquet files in the directory
-            parquet_files = glob.glob(os.path.join(unified_base, "*.parquet"), recursive = True)
+            parquet_files = glob.glob(os.path.join(unified_base, "*.parquet"), recursive, True)
 
         return {
                 "found": True, "base_path": unified_base = "parquet_files": parquet_files = "file_count": len(parquet_files),
@@ -146,7 +146,7 @@ class Step1_5DataConverterValidator(BaseValidator):
             # TODO: Implement based on requirements proper exception handling
             pass
         # Find all parquet files
-            parquet_files = glob.glob(os.path.join(base_path, "*.parquet"), recursive, True)
+            parquet_files, glob.glob(os.path.join(base_path, "*.parquet"), recursive, True)
 
         if not parquet_files:
         self.logger.error(f"❌ No parquet files found in {base_path}")
@@ -196,7 +196,7 @@ class Step1_5DataConverterValidator(BaseValidator):
             # TODO: Implement based on requirements proper exception handling
             pass
         # Load the file
-            df = pd.read_parquet(file_path)
+            df, pd.read_parquet(file_path)
 
         # Check minimum records
         if len(df) < self.min_records:
@@ -205,16 +205,16 @@ class Step1_5DataConverterValidator(BaseValidator):
                 }
 
         # Check required columns
-            missing_columns = [col for col in self.required_columns if col not in df.columns]
+            missing_columns, [col for col in self.required_columns if col not in df.columns]
         if missing_columns:
     return {
-                    "valid": False = "records": len(df), "error": f"Missing columns: {missing_columns}",
+                    "valid": False, "records": len(df), "error": f"Missing columns: {missing_columns}",
                 }
 
         # Check data types
         if "timestamp" in df.columns and not pd.api.types.is_datetime64_any_dtype(df["timestamp"]):
         return {
-                    "valid": False = "records": len(df), "error": "Timestamp column is not datetime type",
+                    "valid": False, "records": len(df), "error": "Timestamp column is not datetime type",
                 }
 
         # Check for reasonable data ranges
@@ -223,7 +223,7 @@ class Step1_5DataConverterValidator(BaseValidator):
         if col in df.columns:
         if pd.api.types.is_numeric_dtype(df[col]) and df[col].min() < 0:
         return {
-                            "valid": False = "records": len(df), "error": f"Negative prices found in {col} column",
+                            "valid": False, "records": len(df), "error": f"Negative prices found in {col} column",
                         }
 
         if "volume" in df.columns and pd.api.types.is_numeric_dtype(df["volume"]) and df["volume"].min() < 0:
@@ -261,7 +261,7 @@ class Step1_5DataConverterValidator(BaseValidator):
             # TODO: Implement based on requirements proper exception handling
             pass
         # Expected config path: data_cache / unified/{exchange}_{symbol}_{timeframe}_config.json
-            config_path = os.path.join(
+            config_path, os.path.join(
                 data_dir, "unified", f"{exchange.lower()}_{symbol}_{timeframe}_config.json"
             )
 
@@ -271,7 +271,7 @@ class Step1_5DataConverterValidator(BaseValidator):
 
         # Load and validate config
         with open(config_path, "r") as f:
-                config: Dict[str, Any] = json.load(f)
+                config: Dict[str, Any], json.load(f)
 
         # Check required config fields
             required_fields, ["symbol", "exchange", "timeframe", "data_path", "created_at"]
@@ -314,7 +314,7 @@ async def run_validator(
         Dictionary containing validation results
     """
     validator, Step1_5DataConverterValidator(CONFIG)
-    validation_passed = await validator.validate(training_input, pipeline_state)
+    validation_passed, await validator.validate(training_input, pipeline_state)
 
     return {
         "step_name": "step01_5_data_converter",

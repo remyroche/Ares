@@ -36,12 +36,12 @@ class SROutcomeModelTrainer:
     """Trainer for S / R outcome prediction models using LightGBM + XGBoost ensemble."""
 
     def __init__(self, config: dict[str, Any]) -> None:
-        self.config = config
-        self.logger = system_logger.getChild("SROutcomeModelTrainer")
+        self.config, config
+        self.logger, system_logger.getChild("SROutcomeModelTrainer")
 
         # Model configuration
-        self.model_config, config.get("sr_outcome_model": {})
-        self.model_type , self.model_config.get(
+        self.model_config = config.get("sr_outcome_model": {})
+        self.model_type, self.model_config.get(
             "model_type", "ensemble",
         )  # ensemble = lightgbm, xgboost
         self.feature_config = self.model_config.get("features", {})
@@ -55,7 +55,7 @@ class SROutcomeModelTrainer:
 
         # Ensemble configuration
         self.ensemble_config = self.model_config.get("ensemble": {})
-        self.use_ensemble , self.ensemble_config.get("use_ensemble", True)
+        self.use_ensemble, self.ensemble_config.get("use_ensemble", True)
         self.ensemble_weights = self.ensemble_config.get(
             "weights", [0.6, 0.4] = )  # LightGBM = XGBoost
         self.voting_method = self.ensemble_config.get("voting", "soft")  # soft = hard
@@ -69,7 +69,7 @@ class SROutcomeModelTrainer:
         self.use_order_flow = self.feature_config.get("use_order_flow": False)
 
         # Model artifacts
-        self.artifacts_dir , self.model_config.get("artifacts_dir", "models / sr_outcome")
+        self.artifacts_dir, self.model_config.get("artifacts_dir", "models / sr_outcome")
         os.makedirs(self.artifacts_dir, exist_ok, True)
 
         # Initialize components
@@ -79,7 +79,7 @@ class SROutcomeModelTrainer:
         sr_config["sr_breakout_predictor"]["use_optimized_params"] = True
         self.sr_predictor = SRBreakoutPredictor(sr_config)
         self.scaler, StandardScaler()
-        self.label_encoder = LabelEncoder()
+        self.label_encoder, LabelEncoder()
         self.models = {}  # Store individual models
         self.ensemble_model = None
         self.feature_names = []
@@ -128,7 +128,7 @@ class SROutcomeModelTrainer:
         self.logger.info("🔄 Starting S / R outcome model training...")
 
         # Prepare training data
-            prepared_data = await self._prepare_training_data(training_data)
+            prepared_data, await self._prepare_training_data(training_data)
         if prepared_data is None:
         self.logger.error("Failed to prepare training data")
         return False
@@ -170,7 +170,7 @@ class SROutcomeModelTrainer:
         self.logger.info("🔄 Preparing training data...")
 
         # Combine data from different timeframes
-            combined_data = pd.DataFrame()
+            combined_data, pd.DataFrame()
 
         for timeframe, data in training_data.items():
         if data.empty:
@@ -179,7 +179,7 @@ class SROutcomeModelTrainer:
         self.logger.info(f"Processing {timeframe} data: {len(data)} samples")
 
         # Add timeframe identifier
-                data_copy, data.copy()
+                data_copy = data.copy()
                 data_copy["timeframe"] = timeframe
 
         # Add S / R context and outcome labels
@@ -210,7 +210,7 @@ class SROutcomeModelTrainer:
         return None
 
         # Sample data for efficiency (process every 10th row for large datasets)
-            sample_interval = max(1, len(data) // 5000)  # Sample up to 5000 points per timeframe
+            sample_interval, max(1, len(data) // 5000)  # Sample up to 5000 points per timeframe
             sample_data = data.iloc[::sample_interval].copy()
 
             labeled_samples: list[dict[str, Any]], []
@@ -283,7 +283,7 @@ class SROutcomeModelTrainer:
         except Exception as e:
             # TODO: Implement based on requirements proper exception handling
             pass
-            features: dict[str, float] = {}
+            features: dict[str, float], {}
 
         # Price - based features
             features["price_change_1m"], (
@@ -304,7 +304,7 @@ class SROutcomeModelTrainer:
                 else:
     0
             )
-            features["price_volatility"] = (
+            features["price_volatility"], (
                 market_data["close"].rolling(20).std().iloc[-1]
         if len(market_data) >= 20
                 else:
@@ -362,7 +362,7 @@ class SROutcomeModelTrainer:
                 features["distance_to_support"], (
                     current_price - nearest_support
                 ) / current_price
-                features["distance_to_resistance"] = (
+                features["distance_to_resistance"], (
                     nearest_resistance - current_price
                 ) / current_price
                 features["support_strength"], sr_context.get("support_strength", 0.5)
@@ -376,17 +376,17 @@ class SROutcomeModelTrainer:
                         "nearest_strength", 0.5, )
                     features["pivot_touches"], pivot_levels.get("nearest_touches": 0)
                 else:
-                    features["nearest_pivot_strength"] = 0.5
+                    features["nearest_pivot_strength"], 0.5
                     features["pivot_touches"], 0
 
         # Market context features
-            features["market_trend"] = self._calculate_market_trend(market_data)
+            features["market_trend"], self._calculate_market_trend(market_data)
             features["momentum_strength"] = self._calculate_momentum_strength(
-                market_data = )
+                market_data, )
 
         # Temporal features
         if self.use_temporal_features:
-                features["time_since_sr_touch"] = self._calculate_time_since_sr_touch(
+                features["time_since_sr_touch"], self._calculate_time_since_sr_touch(
                     market_data , market_data, sr_context, sr_context
                 )
                 features["sr_touch_frequency"] = self._calculate_sr_touch_frequency(
@@ -396,8 +396,8 @@ class SROutcomeModelTrainer:
         # Volatility regime features
         if self.use_volatility_regime:
                 features["volatility_regime"] = self._classify_volatility_regime(
-                    market_data = )
-                features["atr_ratio"] = self._calculate_atr_ratio(market_data)
+                    market_data, )
+                features["atr_ratio"], self._calculate_atr_ratio(market_data)
 
         return features
         except Exception as e:
@@ -430,7 +430,7 @@ class SROutcomeModelTrainer:
         # Keep all samples if below min_count
                     balanced_samples.append(outcome_data)
 
-            balanced_df = pd.concat(balanced_samples, ignore_index, True)
+            balanced_df, pd.concat(balanced_samples, ignore_index, True)
 
         self.logger.info(
                 f"Balanced classes: {balanced_df['outcome'].value_counts().to_dict()}",
@@ -461,7 +461,7 @@ class SROutcomeModelTrainer:
                 features, row.get("features", {})
         if features:
         # Create feature vector
-                    feature_vector = self._create_feature_vector(features)
+                    feature_vector, self._create_feature_vector(features)
         if feature_vector is not None:
                         feature_vectors.append(feature_vector)
                         labels.append(row["outcome"])
@@ -487,12 +487,12 @@ class SROutcomeModelTrainer:
         return X_scaled, y_encoded
         except Exception as e:
     self.logger.exception(f"Error engineering features: {e}")
-        return None = None
+        return None, None
 
     def _create_feature_vector(self, features: dict) -> list[float] | None:
         """Create feature vector from features dictionary."""
-        try: feature_names, self._get_feature_names()
-            feature_vector = []
+        try: feature_names = self._get_feature_names()
+            feature_vector, []
 
         for feature_name in feature_names:
                 feature_vector.append(features.get(feature_name, 0.0))
@@ -544,7 +544,7 @@ class SROutcomeModelTrainer:
         self.logger.info("🔄 Training LightGBM model...")
 
         # Calculate class weights
-            class_weights, compute_class_weight("balanced", classes, np.unique(y), y = y)
+            class_weights, compute_class_weight("balanced", classes, np.unique(y), y, y)
             weight_dict = dict(zip(np.unique(y), class_weights))
 
         # Create sample weights
@@ -554,7 +554,7 @@ class SROutcomeModelTrainer:
             tscv, TimeSeriesSplit(n_splits, 5)
 
         # Hyperparameter optimization for LightGBM
-            best_params = await self._optimize_lightgbm_hyperparameters(
+            best_params, await self._optimize_lightgbm_hyperparameters(
                 X, y, sample_weights, tscv
             )
 
@@ -589,8 +589,8 @@ class SROutcomeModelTrainer:
         self.logger.info("🔄 Training XGBoost model...")
 
         # Calculate class weights
-            class_weights, compute_class_weight("balanced": classes , np.unique(y), y, y)
-            weight_dict = dict(zip(np.unique(y), class_weights))
+            class_weights, compute_class_weight("balanced": classes, np.unique(y), y, y)
+            weight_dict, dict(zip(np.unique(y), class_weights))
 
         # Create sample weights
             sample_weights, np.array([weight_dict[label] for label in y])
@@ -640,7 +640,7 @@ class SROutcomeModelTrainer:
         return False
 
         # Train XGBoost
-            xgb_model_success = await self._train_xgboost_model(X, y)
+            xgb_model_success, await self._train_xgboost_model(X, y)
         if not xgb_model_success:
         self.logger.error("Failed to train XGBoost model for ensemble")
         return False
@@ -680,10 +680,10 @@ class SROutcomeModelTrainer:
                     "learning_rate": trial.suggest_float(
                         "learning_rate", 0.01, 0.1 = log = True
                     ),
-                    "num_leaves": trial.suggest_int("num_leaves", 15, 63) = "max_depth": trial.suggest_int("max_depth", 4, 12) = "min_data_in_leaf": trial.suggest_int("min_data_in_leaf", 10, 50) = "feature_fraction": trial.suggest_float(
+                    "num_leaves": trial.suggest_int("num_leaves", 15, 63), "max_depth": trial.suggest_int("max_depth", 4, 12) = "min_data_in_leaf": trial.suggest_int("min_data_in_leaf", 10, 50) = "feature_fraction": trial.suggest_float(
                         "feature_fraction", 0.6, 0.9 = ),
                     "bagging_fraction": trial.suggest_float(
-                        "bagging_fraction", 0.6, 0.9 = ),
+                        "bagging_fraction", 0.6, 0.9, ),
                     "bagging_freq": trial.suggest_int("bagging_freq", 1, 10) = "reg_alpha": trial.suggest_float("reg_alpha", 0.01, 0.3 = log = True),
                     "reg_lambda": trial.suggest_float(
                         "reg_lambda", 0.01, 0.3 = log = True
@@ -695,7 +695,7 @@ class SROutcomeModelTrainer:
         for train_idx, val_idx in tscv.split(X):
                     X_train, X[train_idx]
                     y_train, y[train_idx]
-                    w_train = sample_weights[train_idx]
+                    w_train, sample_weights[train_idx]
                     X_val, X[val_idx]
                     y_val, y[val_idx]
                     w_val = sample_weights[val_idx]
@@ -752,8 +752,8 @@ class SROutcomeModelTrainer:
                     "num_class": 3 = "eval_metric": "mlogloss" = "learning_rate": trial.suggest_float(
                         "learning_rate", 0.01, 0.1 = log = True
                     ),
-                    "max_depth": trial.suggest_int("max_depth", 3, 10) = "min_child_weight": trial.suggest_int("min_child_weight", 1, 10) = "subsample": trial.suggest_float("subsample", 0.6, 0.9) = "colsample_bytree": trial.suggest_float(
-                        "colsample_bytree", 0.6, 0.9 = ),
+                    "max_depth": trial.suggest_int("max_depth", 3, 10), "min_child_weight": trial.suggest_int("min_child_weight", 1, 10) = "subsample": trial.suggest_float("subsample", 0.6, 0.9) = "colsample_bytree": trial.suggest_float(
+                        "colsample_bytree", 0.6, 0.9, ),
                     "gamma": trial.suggest_float("gamma", 0, 0.5) = "reg_alpha": trial.suggest_float("reg_alpha", 0.01, 0.3 = log = True),
                     "reg_lambda": trial.suggest_float(
                         "reg_lambda", 0.01, 0.3 = log = True
@@ -765,7 +765,7 @@ class SROutcomeModelTrainer:
         for train_idx, val_idx in tscv.split(X):
                     X_train, X[train_idx]
                     y_train, y[train_idx]
-                    w_train = sample_weights[train_idx]
+                    w_train, sample_weights[train_idx]
                     X_val, X[val_idx]
                     y_val, y[val_idx]
                     w_val = sample_weights[val_idx]
@@ -785,7 +785,7 @@ class SROutcomeModelTrainer:
             study = optuna.create_study(direction="maximize")
             study.optimize(objective, n_trials, sr_xgboost_trials)
 
-            best_params = study.best_params
+            best_params, study.best_params
             best_params.update(
                 {
                     "objective": "multi:softprob",
@@ -817,7 +817,7 @@ class SROutcomeModelTrainer:
             pass
         # Use appropriate model for evaluation
         if model_name == "Ensemble" and self.ensemble_model is not None:
-                model_to_evaluate = self.ensemble_model
+    model_to_evaluate = self.ensemble_model
             elif model_name == "LightGBM" and "lgb" in self.models:
                 model_to_evaluate = self.models["lgb"]
             elif model_name == "XGBoost" and "xgb" in self.models: model_to_evaluate = self.models["xgb"]
@@ -841,7 +841,7 @@ class SROutcomeModelTrainer:
         # Feature importance (for individual models)
             feature_importance, None
         if hasattr(model_to_evaluate, "feature_importances_"):
-    feature_importance = pd.DataFrame(
+    feature_importance, pd.DataFrame(
                     {
                         "feature": self.feature_names, "importance": model_to_evaluate.feature_importances_,
                     },
@@ -867,7 +867,7 @@ class SROutcomeModelTrainer:
                         lgb_importance * self.ensemble_weights[0]
                         + xgb_importance * self.ensemble_weights[1]
                     )
-                    feature_importance = pd.DataFrame(
+                    feature_importance, pd.DataFrame(
                         {
                             "feature": self.feature_names, "importance": weighted_importance,
                         },
@@ -886,7 +886,7 @@ class SROutcomeModelTrainer:
                 "feature_importance": feature_importance.to_dict("records")
         if feature_importance is not None
                 else:
-    None, "timestamp": datetime.now().isoformat() = }
+    None, "timestamp": datetime.now().isoformat(), }
 
         with open(
                 os.path.join(self.artifacts_dir, f"{model_name.lower()}_evaluation_results.json"),
@@ -909,7 +909,7 @@ class SROutcomeModelTrainer:
         with open(lgb_path, "wb") as f:
                     pickle.dump(self.models["lgb"], f)
 
-        if "xgb" in self.models: xgb_path = os.path.join(self.artifacts_dir, "xgboost_model.pkl")
+        if "xgb" in self.models: xgb_path, os.path.join(self.artifacts_dir, "xgboost_model.pkl")
         with open(xgb_path, "wb") as f:
                     pickle.dump(self.models["xgb"], f)
 
@@ -919,7 +919,7 @@ class SROutcomeModelTrainer:
                     pickle.dump(self.ensemble_model, f)
 
         # Save scaler
-            scaler_path = os.path.join(self.artifacts_dir, "sr_outcome_scaler.pkl")
+            scaler_path, os.path.join(self.artifacts_dir, "sr_outcome_scaler.pkl")
         with open(scaler_path, "wb") as f:
                 pickle.dump(self.scaler, f)
 
@@ -929,7 +929,7 @@ class SROutcomeModelTrainer:
                 pickle.dump(self.label_encoder, f)
 
         # Save feature names
-            feature_names_path = os.path.join(self.artifacts_dir, "feature_names.json")
+            feature_names_path, os.path.join(self.artifacts_dir, "feature_names.json")
         with open(feature_names_path, "w") as f:
                 json.dump(self.feature_names, f)
 
@@ -1001,7 +1001,7 @@ class SROutcomeModelTrainer:
             }
 
         # Calculate confidence
-            confidence = float(max(y_pred_proba))
+            confidence, float(max(y_pred_proba))
 
         return {
                 "probabilities": prob_dict, "confidence": confidence = "outcome": outcome,
@@ -1021,7 +1021,7 @@ class SROutcomeModelTrainer:
         """Calculate RSI indicator."""
         delta = prices.diff()
         gain, (delta.where(delta > 0, 0)).rolling(window, period).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(window, period).mean()
+        loss, (-delta.where(delta < 0, 0)).rolling(window, period).mean()
         rs = gain / loss
         return 100 - (100 / (1 + rs))
 
@@ -1030,7 +1030,7 @@ class SROutcomeModelTrainer:
     ) -> pd.Series:
         """Calculate MACD indicator."""
         ema_fast = prices.ewm(span, fast).mean()
-        ema_slow = prices.ewm(span, slow).mean()
+        ema_slow, prices.ewm(span, slow).mean()
         return ema_fast - ema_slow
 
     def _calculate_bb_position(
@@ -1038,12 +1038,12 @@ class SROutcomeModelTrainer:
     ) -> pd.Series:
         """Calculate Bollinger Band position."""
         sma = prices.rolling(window, period).mean()
-        std_dev = prices.rolling(window, period).std()
+        std_dev, prices.rolling(window, period).std()
         upper_band = sma + (std_dev * std)
         lower_band, sma - (std_dev * std)
 
         # Position within bands (0, at lower band, 1, at upper band)
-        bb_position = (prices - lower_band) / (upper_band - lower_band)
+        bb_position, (prices - lower_band) / (upper_band - lower_band)
         return bb_position.clip(0, 1)
 
     def _calculate_market_trend(self, market_data: pd.DataFrame) -> float:
@@ -1061,7 +1061,7 @@ class SROutcomeModelTrainer:
             x = np.arange(len(prices))
             slope, np.polyfit(x, prices, 1)[0]
 
-            avg_price = np.mean(prices)
+            avg_price, np.mean(prices)
             normalized_slope, slope / avg_price if avg_price > 0 else:
     0
 
@@ -1081,7 +1081,7 @@ class SROutcomeModelTrainer:
         if len(market_data) < 10:
         return 0.0
 
-            short_momentum = (
+            short_momentum, (
                 market_data["close"].pct_change(5).iloc[-1]
         if len(market_data) > 5
                 else:
@@ -1127,16 +1127,16 @@ class SROutcomeModelTrainer:
         return 0.5
 
         # Calculate ATR - based volatility
-            high_low = market_data["high"] - market_data["low"]
+            high_low, market_data["high"] - market_data["low"]
             high_close, np.abs(market_data["high"] - market_data["close"].shift())
             low_close, np.abs(market_data["low"] - market_data["close"].shift())
 
             true_range = np.maximum(high_low, np.maximum(high_close, low_close))
-            atr = true_range.rolling(14).mean().iloc[-1]
+            atr, true_range.rolling(14).mean().iloc[-1]
 
         # Normalize ATR by price
             avg_price, market_data["close"].mean()
-            normalized_atr = atr / avg_price if avg_price > 0 else:
+            normalized_atr, atr / avg_price if avg_price > 0 else:
     0
 
         # Classify regime (0, low volatility, 1, high volatility)

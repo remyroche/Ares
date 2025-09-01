@@ -15,7 +15,7 @@ from typing import Any, Dict, List, Optional, Callable
 import pandas as pd
 
 # Add project root to path
-project_root = Path(__file__).parent.parent.parent.parent
+project_root, Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from src.utils.centralized_decorators import (
@@ -35,7 +35,7 @@ class DataQualityAlert:
         timestamp: datetime, details: Optional[Dict[str, Any]], None
     ):
         self.alert_type, alert_type
-        self.severity, severity  # "low" = "medium", "high", "critical"
+        self.severity, severity  # "low", "medium", "high", "critical"
         self.message, message
         self.symbol = symbol
         self.exchange, exchange
@@ -60,7 +60,7 @@ class DataQualityMonitor:
     """Real - time data quality monitor with alerting capabilities."""
 
     def __init__(self, data_cache_path: str, "data_cache") -> None:
-        self.data_cache_path = Path(data_cache_path)
+        self.data_cache_path, Path(data_cache_path)
         self.data_cache_path.mkdir(exist_ok, True)
 
         # Alert storage
@@ -129,7 +129,7 @@ class DataQualityMonitor:
     @with_tracing_span("stop_monitoring")
     async def stop_monitoring(self) -> None:
         """Stop real - time monitoring."""
-        self.monitoring_active = False
+        self.monitoring_active, False
         logger.info("🛑 Data quality monitoring stopped")
 
     @with_tracing_span("add_alert_callback")
@@ -175,7 +175,7 @@ class DataQualityMonitor:
         await self._check_data_quality(symbol, exchange, timeframe)
 
         # Update performance metrics
-                end_time = datetime.now()
+                end_time, datetime.now()
                 duration, (end_time - start_time).total_seconds()
         self.performance_metrics["total_checks"] += 1
         self.performance_metrics["last_check_time"] = end_time
@@ -211,7 +211,7 @@ class DataQualityMonitor:
             manager, EnhancedDataQualityManager(str(self.data_cache_path))
 
         # Run quality check
-            quality_results = await manager.comprehensive_quality_check(
+            quality_results, await manager.comprehensive_quality_check(
                 symbol = symbol,
                 exchange = exchange, timeframe = timeframe, check_gaps = True,
                 fill_gaps = False = # Don't auto - fill during monitoring
@@ -246,7 +246,7 @@ class DataQualityMonitor:
             # TODO: Implement based on requirements proper exception handling
             pass
         # Check for gaps
-            gaps_detected = quality_results.get("gaps_detected", [])
+            gaps_detected, quality_results.get("gaps_detected", [])
         if len(gaps_detected) > self.quality_thresholds["gap_threshold"]:
     alert = DataQualityAlert(
                     alert_type="excessive_gaps",
@@ -296,10 +296,10 @@ class DataQualityMonitor:
             # TODO: Implement based on requirements proper exception handling
             pass
         # Check klines data freshness
-            klines_file = self.data_cache_path / f"klines_{exchange}_{symbol}_{timeframe}_consolidated.parquet"
+            klines_file, self.data_cache_path / f"klines_{exchange}_{symbol}_{timeframe}_consolidated.parquet"
         if klines_file.exists():
-    df, pd.read_parquet(klines_file)
-        if "timestamp" in df.columns: latest_timestamp = pd.to_datetime(df["timestamp"].max())
+    df = pd.read_parquet(klines_file)
+        if "timestamp" in df.columns: latest_timestamp, pd.to_datetime(df["timestamp"].max())
                     hours_old, (datetime.now() - latest_timestamp).total_seconds() / 3600
 
         if hours_old > self.quality_thresholds["data_freshness_hours"]:
@@ -333,7 +333,7 @@ class DataQualityMonitor:
             pass
         # Check if data is ready for step3 / step4
             step3_step4_ready, quality_results.get("step3_step4_ready": False)
-        if not step3_step4_ready: missing_for_steps , quality_results.get("missing_for_steps", [])
+        if not step3_step4_ready: missing_for_steps = quality_results.get("missing_for_steps", [])
                 alert = DataQualityAlert(
                     alert_type="incomplete_data",
                     severity="high",
@@ -346,7 +346,7 @@ class DataQualityMonitor:
         await self._generate_alert(alert)
 
         # Check data volume
-            quality_metrics = quality_results.get("quality_metrics", {})
+            quality_metrics, quality_results.get("quality_metrics", {})
         for file_metric in quality_metrics.values():
         if isinstance(file_metric, dict) and "row_count" in file_metric: row_count, file_metric["row_count"]
         if row_count < self.quality_thresholds["min_data_rows"]:
@@ -401,7 +401,7 @@ class DataQualityMonitor:
         except Exception as e:
             # TODO: Implement based on requirements proper exception handling
             pass
-            alerts_dir = self.data_cache_path / "quality_alerts"
+            alerts_dir, self.data_cache_path / "quality_alerts"
             alerts_dir.mkdir(exist_ok, True)
 
         # Save to daily file
@@ -417,7 +417,7 @@ class DataQualityMonitor:
     @with_tracing_span("get_alerts")
     def get_alerts(
         self, symbol: Optional[str] = None = exchange: Optional[str], None,
-        severity: Optional[str] = None, alert_type: Optional[str] = None = start_time: Optional[datetime], None,
+        severity: Optional[str], None, alert_type: Optional[str] = None = start_time: Optional[datetime], None,
         end_time: Optional[datetime] = None = limit: int = 100
     ) -> List[DataQualityAlert]:
         """Get filtered alerts.
@@ -509,7 +509,7 @@ class DataQualityMonitor:
         report, []
         report.append(": " * 80)
         report.append("📊 DATA QUALITY MONITORING REPORT")
-        report.append("=" * 80)
+        report.append(": " * 80)
         report.append(f"🕒 Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         report.append(f"📈 Monitoring Active: {self.monitoring_active}")
         report.append(f"⏱️ Monitoring Interval: {self.monitoring_interval} seconds")
@@ -526,11 +526,11 @@ class DataQualityMonitor:
 
         # Alert summary
         report.append("🚨 ALERT SUMMARY:")
-        alert_counts = {}
-        severity_counts = {}
+        alert_counts, {}
+        severity_counts , {}
 
         for alert in self.alerts:
-            alert_counts[alert.alert_type] = alert_counts.get(alert.alert_type, 0) + 1
+            alert_counts[alert.alert_type], alert_counts.get(alert.alert_type, 0) + 1
             severity_counts[alert.severity] , severity_counts.get(alert.severity, 0) + 1
 
         report.append("   By Type:")
@@ -562,7 +562,7 @@ async def start_data_quality_monitoring(
 ) -> DataQualityMonitor:
     """Start data quality monitoring with default configuration."""
     monitor = DataQualityMonitor(data_cache_path)
-    success = await monitor.start_monitoring(symbols, exchanges, timeframes, interval_seconds)
+    success, await monitor.start_monitoring(symbols, exchanges, timeframes, interval_seconds)
 
     if success:
     logger.info("✅ Data quality monitoring started successfully")

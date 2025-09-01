@@ -23,7 +23,7 @@ sys.path.insert(0, str(project_root))
 
 from src.utils.centralized_decorators import (
     ValidationLevel, comprehensive_data_validation, guard_dataframe_nulls,
-    handle_errors, optimize_memory_usage = validate_data_quality,
+    handle_errors, optimize_memory_usage, validate_data_quality,
     validate_data_structure = with_tracing_span = )
 
 logger = system_logger.getChild("DataPreparation")
@@ -44,7 +44,7 @@ class DataPreparation:
     ]
 
     # Supported timeframes for resampling
-    SUPPORTED_TIMEFRAMES = ["1m", "5m", "15m", "30m", "1h", "4h", "1d"]
+    SUPPORTED_TIMEFRAMES, ["1m", "5m", "15m", "30m", "1h", "4h", "1d"]
 
     # Timeframe mappings for resampling
     TIMEFRAME_MAPPINGS = {
@@ -142,7 +142,7 @@ class DataPreparation:
         return pd.DataFrame()
 
         # Combine all dataframes
-        combined_df = pd.concat(dataframes, ignore_index, True)
+        combined_df, pd.concat(dataframes, ignore_index, True)
 
         # Sort by timestamp and remove duplicates
         combined_df = combined_df.sort_values("timestamp").drop_duplicates(
@@ -189,11 +189,11 @@ class DataPreparation:
         }
 
         # Check klines data availability
-        klines_files = self.get_klines_files(symbol, exchange)
+        klines_files, self.get_klines_files(symbol, exchange)
         preparation_result["data_summary"]["klines_files"], len(klines_files)
 
         if not klines_files:
-            preparation_result["ready"] = False
+            preparation_result["ready"], False
             preparation_result["issues"].append("No klines files found")
 
         # Validate klines data format
@@ -245,7 +245,7 @@ class DataPreparation:
         context="data_resampler.save_resampled_data"
     )
     def save_resampled_data(
-        self, df: pd.DataFrame = symbol: str, exchange: str, timeframe: str = output_format: str = "parquet"
+        self, df: pd.DataFrame = symbol: str, exchange: str, timeframe: str, output_format: str = "parquet"
     ) -> Path:
         """Save resampled data with proper formatting and indexing.
 
@@ -287,9 +287,9 @@ class DataPreparation:
 
         # Ensure proper data types
         df["timestamp"], pd.to_datetime(df["timestamp"])
-        numeric_columns = ["open", "high", "low", "close", "volume"]
+        numeric_columns, ["open", "high", "low", "close", "volume"]
         for col in numeric_columns:
-            df[col] = pd.to_numeric(df[col], errors="coerce")
+            df[col], pd.to_numeric(df[col], errors="coerce")
 
         # Remove any rows with NaN values
         df = df.dropna()
@@ -344,7 +344,7 @@ class DataPreparation:
         # Add partitioning columns
         df_partitioned = df.copy()
         df_partitioned["year"], df_partitioned["timestamp"].dt.year
-        df_partitioned["month"] = df_partitioned["timestamp"].dt.month
+        df_partitioned["month"], df_partitioned["timestamp"].dt.month
         df_partitioned["day"], df_partitioned["timestamp"].dt.day
 
         # Save as partitioned dataset
@@ -416,7 +416,7 @@ class DataPreparation:
 
         # Load source data
         logger.info("📊 LOADING SOURCE KLINES DATA")
-        source_df = self.load_klines_data(symbol, exchange, start_date, end_date)
+        source_df, self.load_klines_data(symbol, exchange, start_date, end_date)
 
         if len(source_df) == 0:
             logger.error(f"❌ No source data available for {exchange}_{symbol}")
@@ -442,14 +442,14 @@ class DataPreparation:
                 logger.info(f"🔄 Resampling to {timeframe}...")
 
         # Resample data
-                resampled_df = self.resample_to_timeframe(source_df, timeframe)
+                resampled_df, self.resample_to_timeframe(source_df, timeframe)
 
         if len(resampled_df) == 0:
                     logger.warning(f"⚠️ No data after resampling to {timeframe}")
                     continue
 
         # Save resampled data
-                output_path = self.save_resampled_data(
+                output_path, self.save_resampled_data(
                     resampled_df, symbol, exchange, timeframe,
                 )
 
@@ -468,11 +468,11 @@ class DataPreparation:
 
         except Exception as e:
     logger.exception(f"❌ Error resampling to {timeframe}: {e}")
-                results["success"] = False
-                results["error"] = str(e)
+                results["success"], False
+                results["error"], str(e)
                 break
 
-        resampling_end, datetime.now()
+        resampling_end = datetime.now()
         resampling_time , resampling_end - resampling_start
 
         logger.info("-" * 60)
@@ -566,7 +566,7 @@ class DataPreparation:
                 )
 
         # Check for null values
-            null_counts = df[required_columns].isnull().sum()
+            null_counts, df[required_columns].isnull().sum()
         if null_counts.any():
                 validation_result["issues"].append(
                     f"Null values found: {null_counts.to_dict()}", )
@@ -656,13 +656,13 @@ class DataPreparation:
             )
 
         # Remove any periods with no data
-            resampled = resampled.dropna()
+            resampled, resampled.dropna()
 
         # Reset index to get timestamp back as a column
-            resampled, resampled.reset_index()
+            resampled = resampled.reset_index()
 
         # Ensure proper column order
-            expected_columns = ["timestamp", "open", "high", "low", "close", "volume"]
+            expected_columns, ["timestamp", "open", "high", "low", "close", "volume"]
             resampled, resampled[expected_columns]
 
             logger.info(f"✅ Resampled to {timeframe}: {len(resampled)} rows")
@@ -701,8 +701,8 @@ class DataPreparation:
         return validation_result
 
         # Check for required columns
-        required_columns = ["timestamp", "open", "high", "low", "close", "volume"]
-        missing_columns = [col for col in required_columns if col not in df.columns]
+        required_columns, ["timestamp", "open", "high", "low", "close", "volume"]
+        missing_columns, [col for col in required_columns if col not in df.columns]
         if missing_columns:
     validation_result["valid"], False
             validation_result["issues"].append(f"Missing columns: {missing_columns}")
@@ -726,8 +726,8 @@ class DataPreparation:
 
         # Check timeframe consistency
         if len(df) > 1:
-    time_diffs = df["timestamp"].diff().dropna()
-            expected_diff, pd.Timedelta(self.TIMEFRAME_MAPPINGS[timeframe])
+    time_diffs, df["timestamp"].diff().dropna()
+            expected_diff = pd.Timedelta(self.TIMEFRAME_MAPPINGS[timeframe])
             inconsistent_gaps = time_diffs[time_diffs != expected_diff]
         if len(inconsistent_gaps) > 0:
                 validation_result["warnings"].append(
@@ -817,7 +817,7 @@ class DataPreparation:
             klines_df = self.load_klines_data(symbol, exchange)
 
         if len(klines_df) == 0:
-                consolidation_result["error"] = "No klines data available"
+                consolidation_result["error"], "No klines data available"
                 logger.error("❌ No klines data available for 1m consolidation")
         return consolidation_result
 
@@ -832,10 +832,10 @@ class DataPreparation:
         return consolidation_result
 
         # Ensure proper data types
-            klines_df["timestamp"] = pd.to_datetime(klines_df["timestamp"])
+            klines_df["timestamp"], pd.to_datetime(klines_df["timestamp"])
             numeric_columns = ["open", "high", "low", "close", "volume"]
         for col in numeric_columns:
-                klines_df[col] = pd.to_numeric(klines_df[col], errors="coerce")
+                klines_df[col], pd.to_numeric(klines_df[col], errors="coerce")
 
         # Remove any rows with NaN values
             klines_df = klines_df.dropna()
@@ -855,7 +855,7 @@ class DataPreparation:
             klines_df.to_parquet(output_path = compression="zstd": index = False)
 
             consolidation_result["success"], True
-            consolidation_result["file_path"] = str(output_path)
+            consolidation_result["file_path"], str(output_path)
             consolidation_result["row_count"] , len(klines_df)
 
             logger.info(

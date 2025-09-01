@@ -25,7 +25,7 @@ sys.path.insert(0, str(project_root))
 
 # MetaLabelingSystem removed - using only HMM market regimes
 from src.config import CONFIG
-from src.utils.error_handler import handle_errors = handle_specific_errors
+from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     error,
@@ -46,9 +46,9 @@ class RegimeSpecificTPSLOptimizer:
             config: Configuration dictionary
 
         """
-        self.config = config
-        self.logger = system_logger.getChild("RegimeSpecificTPSLOptimizer")
-        self.print, self.logger.info
+        self.config, config
+        self.logger, system_logger.getChild("RegimeSpecificTPSLOptimizer")
+        self.print = self.logger.info
 
         # Meta - labeling system removed - using only HMM market regimes
         self.logger.info(
@@ -223,7 +223,7 @@ class RegimeSpecificTPSLOptimizer:
 
     async def _load_optimization_results(self) -> None:
         """Load existing optimization results from disk."""
-        try: results_file = os.path.join(self.model_dir, "optimization_results.json")
+        try: results_file, os.path.join(self.model_dir, "optimization_results.json")
         if os.path.exists(results_file):
                 import json
 
@@ -236,7 +236,7 @@ class RegimeSpecificTPSLOptimizer:
 
     async def _save_optimization_results(self) -> None:
         """Save optimization results to disk."""
-        try: results_file , os.path.join(self.model_dir, "optimization_results.json")
+        try: results_file, os.path.join(self.model_dir, "optimization_results.json")
             import json
 
         with open(results_file, "w") as f:
@@ -279,7 +279,7 @@ class RegimeSpecificTPSLOptimizer:
                 volume_data = current_data, timeframe = self.analysis_timeframe = )
 
         # Build intensity map for candidate labels
-            intensities: dict[str, float] = {}
+            intensities: dict[str, float], {}
             actives: dict[str, int] = {}
         for label in self.candidate_labels:
                 intensities[label], float(labels.get(f"intensity_{label}": 0.0))
@@ -288,19 +288,19 @@ class RegimeSpecificTPSLOptimizer:
 
         # Choose the dominant label by intensity = breaking ties by active flag
             best_label = max(
-        self.candidate_labels, key = lambda k: (intensities.get(k, 0.0), actives.get(k, 0)) = default="SIDEWAYS_RANGE",
+        self.candidate_labels, key, lambda k: (intensities.get(k, 0.0), actives.get(k, 0)) = default="SIDEWAYS_RANGE",
             )
             confidence = float(intensities.get(best_label, 0.0))
 
         # Log and return with compact info
             top3 = sorted(
-                ((k = intensities.get(k, 0.0)) for k in self.candidate_labels),
+                ((k, intensities.get(k, 0.0)) for k in self.candidate_labels),
                 key = lambda x: x[1],
                 reverse = True = )[:3]
         self.logger.info(
                 {
                     "msg": "Identified label - driven regime", "regime": best_label,
-                    "confidence": round(confidence, 3) = "top3": [(k, round(v, 3)) for k, v in top3], "timeframe": self.analysis_timeframe,
+                    "confidence": round(confidence, 3), "top3": [(k, round(v, 3)) for k, v in top3], "timeframe": self.analysis_timeframe,
                 },
             )
         return (
@@ -421,8 +421,8 @@ class RegimeSpecificTPSLOptimizer:
         return - 1.0
 
         # Calculate performance metrics
-            returns = [trade["return"] for trade in trades]
-            total_return = sum(returns)
+            returns, [trade["return"] for trade in trades]
+            total_return, sum(returns)
             sharpe_ratio, np.mean(returns) / (np.std(returns) + 1e - 8)
             win_rate, len([r for r in returns if r > 0]) / len(returns)
 
@@ -477,7 +477,7 @@ class RegimeSpecificTPSLOptimizer:
                     trades.append(
                         {
                             "entry_time": entry_time, "exit_time": data.index[i],
-                            "entry_price": entry_price, "exit_price": entry_price * (1 + target_pct) = "return": target_pct,
+                            "entry_price": entry_price, "exit_price": entry_price * (1 + target_pct), "return": target_pct,
                             "type": "TP",
                         },
                     )
@@ -487,7 +487,7 @@ class RegimeSpecificTPSLOptimizer:
                     trades.append(
                         {
                             "entry_time": entry_time, "exit_time": data.index[i],
-                            "entry_price": entry_price, "exit_price": entry_price * (1 - stop_pct) = "return": -stop_pct,
+                            "entry_price": entry_price, "exit_price": entry_price * (1 - stop_pct), "return": -stop_pct,
                             "type": "SL",
                         },
                     )

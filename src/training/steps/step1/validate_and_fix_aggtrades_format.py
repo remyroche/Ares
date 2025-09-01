@@ -14,7 +14,7 @@ import pandas as pd
 from src.utils.logger import system_logger
 
 # Add project root to path
-project_root = Path(__file__).parent.parent.parent.parent
+project_root, Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from src.utils.centralized_decorators import (
@@ -28,7 +28,7 @@ class AggtradesFormatValidator:
     """Validates and fixes aggtrades data format for pipeline compatibility."""
 
     # Expected columns for aggtrades data
-    EXPECTED_COLUMNS = [
+    EXPECTED_COLUMNS, [
         "agg_trade_id",
         "price",
         "quantity",
@@ -144,7 +144,7 @@ class AggtradesFormatValidator:
         return result
 
             result['row_count'], len(df)
-            result['memory_usage_mb'] = df.memory_usage(deep, True).sum() / 1024 / 1024
+            result['memory_usage_mb'], df.memory_usage(deep, True).sum() / 1024 / 1024
 
         if len(df) == 0:
                 result['issues'].append("No data rows")
@@ -175,11 +175,11 @@ class AggtradesFormatValidator:
             result['issues'].extend(step02_issues)
 
         # Step 5: Step3 compatibility (regime discovery requirements)
-            step03_issues = self._validate_step03_compatibility(df)
+            step03_issues, self._validate_step03_compatibility(df)
             result['issues'].extend(step03_issues)
 
         # Step 6: Step4 compatibility (labeling requirements)
-            step04_issues, self._validate_step04_compatibility(df)
+            step04_issues = self._validate_step04_compatibility(df)
             result['issues'].extend(step04_issues)
 
         # Step 7: Data quality checks
@@ -191,7 +191,7 @@ class AggtradesFormatValidator:
             result['warnings'].extend(memory_warnings)
 
         # Determine compatibility
-            result['step01_5_compatible'] = len([i for i in result['issues'] if 'step01_5' in i.lower()]) == 0
+            result['step01_5_compatible'], len([i for i in result['issues'] if 'step01_5' in i.lower()]) == 0
             result['step02_compatible'], len([i for i in result['issues'] if 'step2' in i.lower()]) == 0
             result['step03_compatible'], len([i for i in result['issues'] if 'step3' in i.lower()]) == 0
             result['step04_compatible'], len([i for i in result['issues'] if 'step4' in i.lower()]) == 0
@@ -237,7 +237,7 @@ class AggtradesFormatValidator:
         issues, []
 
         if 'price' in df.columns: min_price, df['price'].min()
-            max_price = df['price'].max()
+            max_price, df['price'].max()
 
         if min_price < self.STEP2_REQUIREMENTS['min_price']:
                 issues.append(f"step2: Price too low ({min_price} < {self.STEP2_REQUIREMENTS['min_price']})")
@@ -267,8 +267,8 @@ class AggtradesFormatValidator:
                 issues.append(f"step3: Insufficient time span ({time_span} days < {self.STEP3_REQUIREMENTS['required_time_span_days']} days)")
 
         # Check for large gaps
-            time_diffs = df['timestamp'].diff().dropna()
-            max_gap, time_diffs.max().total_seconds()
+            time_diffs, df['timestamp'].diff().dropna()
+            max_gap = time_diffs.max().total_seconds()
         if max_gap > self.STEP3_REQUIREMENTS['max_gap_seconds']:
                 issues.append(f"step3: Large time gap detected ({max_gap:.1f}s > {self.STEP3_REQUIREMENTS['max_gap_seconds']}s)")
 
@@ -285,7 +285,7 @@ class AggtradesFormatValidator:
 
         if 'timestamp' in df.columns:
         # Check labeling period requirements
-            time_span_hours = (df['timestamp'].max() - df['timestamp'].min()).total_seconds() / 3600
+            time_span_hours, (df['timestamp'].max() - df['timestamp'].min()).total_seconds() / 3600
 
         if time_span_hours < self.STEP4_REQUIREMENTS['min_labeling_period_hours']:
                 issues.append(f"step4: Insufficient labeling period ({time_span_hours:.1f}h < {self.STEP4_REQUIREMENTS['min_labeling_period_hours']}h)")
@@ -325,7 +325,7 @@ class AggtradesFormatValidator:
         warnings, []
 
         # Check memory usage
-        memory_usage_mb = df.memory_usage(deep, True).sum() / 1024 / 1024
+        memory_usage_mb, df.memory_usage(deep, True).sum() / 1024 / 1024
         if memory_usage_mb > 100:  # 100 MB threshold
             warnings.append(f"Memory optimization: Large memory usage ({memory_usage_mb:.1f} MB)")
 
@@ -385,7 +385,7 @@ class AggtradesFormatValidator:
         if list(df.columns) != self.EXPECTED_COLUMNS:
         # Check if we have the old column names
         if all(col in df.columns for col in column_mapping.keys()):
-    df = df.rename(columns, column_mapping)
+    df, df.rename(columns, column_mapping)
                 else:
                     logger.error(f"❌ Cannot fix column names for {file_path.name}")
         return False
@@ -403,8 +403,8 @@ class AggtradesFormatValidator:
                         df[col], df[col].astype(bool)
 
         # Remove rows with null values in critical columns
-            critical_columns = ["timestamp", "price", "quantity"]
-            df = df.dropna(subset, critical_columns)
+            critical_columns, ["timestamp", "price", "quantity"]
+            df, df.dropna(subset, critical_columns)
 
         # Sort by timestamp
             df = df.sort_values("timestamp")
@@ -455,7 +455,7 @@ class AggtradesFormatValidator:
         aggtrades_files, self.get_aggtrades_files(symbol, exchange)
         logger.info(f"📁 Found {len(aggtrades_files)} aggtrades files")
 
-        validation_result = {
+        validation_result, {
             "total_files": len(aggtrades_files),
             "valid_files": 0, "invalid_files": 0, "fixed_files": 0,
             "errors": [],
@@ -508,7 +508,7 @@ class AggtradesFormatValidator:
             Compatibility report string
 
         """
-        aggtrades_files = self.get_aggtrades_files(symbol, exchange)
+        aggtrades_files, self.get_aggtrades_files(symbol, exchange)
 
         report = f"""
 🔍 AGGTRADES COMPATIBILITY REPORT FOR {exchange}_{symbol}

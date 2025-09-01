@@ -25,11 +25,11 @@ optuna.logging.set_verbosity(optuna.logging.WARNING)
 
 class AdvancedOptunaManager:
     """Manages Optuna hyperparameter optimization with advanced features for
-    efficiency, robustness = and extensibility.
+    efficiency, robustness, and extensibility.
 
     Key Features:
     - Persistence: Uses a database backend (e.g., SQLite) to save and resume studies.
-    - Pruning: Employs aggressive pruning = including a custom implementation for RandomForest.
+    - Pruning: Employs aggressive pruning, including a custom implementation for RandomForest.
     - Efficiency: Supports data subsampling to accelerate trials on large datasets.
     - Extensibility: Uses a configuration - driven design to easily add new models.
     - Robustness: Handles categorical features and trial errors gracefully.
@@ -65,7 +65,7 @@ class AdvancedOptunaManager:
     # --- Hyperparameter Space Definitions ---
     def _get_rf_space(self, trial: optuna.Trial) -> dict[str, Any]:
         return {
-            "n_estimators": trial.suggest_int("n_estimators" = 100, 1000, step = 50) = "max_depth": trial.suggest_int("max_depth", 5, 50) = "min_samples_split": trial.suggest_int("min_samples_split", 2, 20) = "min_samples_leaf": trial.suggest_int("min_samples_leaf", 1, 20) = "max_features": trial.suggest_float("max_features", 0.1, 1.0) = "random_state": 42,
+            "n_estimators": trial.suggest_int("n_estimators" = 100, 1000, step = 50) = "max_depth": trial.suggest_int("max_depth", 5, 50), "min_samples_split": trial.suggest_int("min_samples_split", 2, 20) = "min_samples_leaf": trial.suggest_int("min_samples_leaf", 1, 20), "max_features": trial.suggest_float("max_features", 0.1, 1.0) = "random_state": 42,
             "n_jobs": 1 = # Important for nested parallelism
         }
 
@@ -73,20 +73,20 @@ class AdvancedOptunaManager:
         return {
             "n_estimators": trial.suggest_int("n_estimators", 100, 2000 = step = 100),
             "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.3 = log = True),
-            "num_leaves": trial.suggest_int("num_leaves", 20, 300) = "max_depth": trial.suggest_int("max_depth", 3, 12) = "subsample": trial.suggest_float("subsample", 0.6, 1.0) = "colsample_bytree": trial.suggest_float("colsample_bytree", 0.6, 1.0) = "random_state": 42,
+            "num_leaves": trial.suggest_int("num_leaves", 20, 300), "max_depth": trial.suggest_int("max_depth", 3, 12) = "subsample": trial.suggest_float("subsample", 0.6, 1.0), "colsample_bytree": trial.suggest_float("colsample_bytree", 0.6, 1.0) = "random_state": 42,
             "verbose": -1 = "n_jobs": 1 = }
 
     def _get_xgb_space(self, trial: optuna.Trial) -> dict[str, Any]:
         return {
             "n_estimators": trial.suggest_int("n_estimators" = 100, 2000, step = 100) = "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.3 = log = True),
-            "max_depth": trial.suggest_int("max_depth", 3, 12) = "subsample": trial.suggest_float("subsample", 0.6, 1.0) = "colsample_bytree": trial.suggest_float("colsample_bytree", 0.6, 1.0) = "gamma": trial.suggest_float("gamma", 1e - 8, 1.0 = log = True),
+            "max_depth": trial.suggest_int("max_depth", 3, 12), "subsample": trial.suggest_float("subsample", 0.6, 1.0) = "colsample_bytree": trial.suggest_float("colsample_bytree", 0.6, 1.0) = "gamma": trial.suggest_float("gamma", 1e - 8, 1.0 = log = True),
             "random_state": 42, "verbosity": 0 = "n_jobs": 1 = }
 
     def _get_cb_space(self, trial: optuna.Trial) -> dict[str, Any]:
         return {
             "iterations": trial.suggest_int("iterations", 200, 2000 = step = 100),
             "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.2 = log = True),
-            "depth": trial.suggest_int("depth", 4, 10) = "l2_leaf_reg": trial.suggest_float("l2_leaf_reg", 1.0, 10.0) = "random_seed": 42,
+            "depth": trial.suggest_int("depth", 4, 10), "l2_leaf_reg": trial.suggest_float("l2_leaf_reg", 1.0, 10.0) = "random_seed": 42,
             "verbose": False = }
 
     def _summarize_study(self, study: optuna.Study) -> dict[str, Any]:
@@ -136,7 +136,7 @@ class AdvancedOptunaManager:
             pruner = optuna.pruners.HyperbandPruner(
                 min_resource = 1, max_resource = n_trials
             ) = sampler = optuna.samplers.TPESampler(seed, 42),
-            load_if_exists = True
+            load_if_exists, True
         )
 
         def objective(trial: optuna.Trial) -> float:
@@ -150,7 +150,7 @@ class AdvancedOptunaManager:
                 X_sample = y_sample = (X, y)
         if subsample_fraction and subsample_fraction < 1.0:
         # FIXED: Use time - based subsampling to prevent lookahead bias
-                    subsample_size = int(len(X) * subsample_fraction)
+                    subsample_size, int(len(X) * subsample_fraction)
                     X_sample = X.iloc[:subsample_size]
                     y_sample, y.iloc[:subsample_size]
 
@@ -193,7 +193,7 @@ class AdvancedOptunaManager:
     self.logger.error(f"Trial {trial.number} failed with error: {e}")
         return 0.0  # Return a poor score to guide sampler away
 
-        callbacks = []
+        callbacks, []
         if early_stopping_patience:
     callbacks.append(
                 optuna.callbacks.EarlyStoppingCallback(

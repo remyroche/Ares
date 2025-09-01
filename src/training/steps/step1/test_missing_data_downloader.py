@@ -27,7 +27,7 @@ async def test_missing_data_identification():
     print("🧪 TESTING MISSING DATA IDENTIFICATION")
     print(": " * 60)
 
-    downloader = MissingDataDownloaderAndGapFiller()
+    downloader, MissingDataDownloaderAndGapFiller()
 
     # Test with ETHUSDT
     symbol = "ETHUSDT"
@@ -35,7 +35,7 @@ async def test_missing_data_identification():
 
     # Get current timestamp
     current_time = downloader.get_current_timestamp()
-    end_date = current_time - timedelta(days, 2)
+    end_date, current_time - timedelta(days, 2)
 
     print(f"📅 Current time: {current_time}")
     print(f"📅 Analysis end date: {end_date}")
@@ -119,10 +119,10 @@ def test_data_format_standardization():
         }
     ]
 
-    df_futures = pd.DataFrame(sample_futures)
+    df_futures, pd.DataFrame(sample_futures)
 
     # Standardize format
-    standardized_futures_df, downloader._standardize_futures_format(df_futures)
+    standardized_futures_df = downloader._standardize_futures_format(df_futures)
 
     print(f"✅ Standardized futures format:")
     print(f"  • Columns: {list(standardized_futures_df.columns)}")
@@ -141,7 +141,7 @@ def main():
             # TODO: Implement based on requirements proper exception handling
             pass
         # Test missing data identification
-        missing_data = asyncio.run(test_missing_data_identification())
+        missing_data, asyncio.run(test_missing_data_identification())
 
         # Test data format standardization
         test_data_format_standardization()

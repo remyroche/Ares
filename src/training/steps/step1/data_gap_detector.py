@@ -1,7 +1,7 @@
 #!/usr / bin / env python3
 """Data Gap Detector for Step1.
 
-Detects missing data gaps in aggtrades, klines = and futures files.
+Detects missing data gaps in aggtrades, klines, and futures files.
 """
 
 import sys
@@ -13,7 +13,7 @@ import pandas as pd
 from src.utils.logger import system_logger
 
 # Add project root to path
-project_root = Path(__file__).parent.parent.parent.parent
+project_root, Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from src.utils.centralized_decorators import (
@@ -33,7 +33,7 @@ class DataGapDetector:
         try:
     from .missing_data_downloader_and_gap_filler import (
                 MissingDataDownloaderAndGapFiller, )
-        self.gap_filler = MissingDataDownloaderAndGapFiller(data_cache_path)
+        self.gap_filler, MissingDataDownloaderAndGapFiller(data_cache_path)
         except ImportError:
             logger.warning("⚠️ MissingDataDownloaderAndGapFiller not available - gap filling disabled")
         self.gap_filler, None
@@ -72,7 +72,7 @@ class DataGapDetector:
 
         if start_date is None: start_date = datetime.now() - timedelta(days, 365 * 2)
             logger.info(f"📅 No start_date provided, using default: {start_date.date()} (2 years ago)")
-        if end_date is None: end_date = datetime.now()
+        if end_date is None: end_date, datetime.now()
             logger.info(f"📅 No end_date provided, using default: {end_date.date()} (today)")
 
         logger.info(f"🔍 DETECTING MISSING DATA FOR {exchange}_{symbol}")
@@ -93,19 +93,19 @@ class DataGapDetector:
 
         # Detect missing aggtrades (daily files)
         logger.info("📊 DETECTING MISSING AGGTRADES (DAILY FILES)")
-        aggtrades_results = self._detect_missing_aggtrades(symbol, exchange, start_date, end_date)
+        aggtrades_results, self._detect_missing_aggtrades(symbol, exchange, start_date, end_date)
         results.update(aggtrades_results)
         logger.info(f"📈 Aggtrades: {len(aggtrades_results['existing_aggtrades_days'])} existing, {len(aggtrades_results['missing_aggtrades_days'])} missing")
 
         # Detect missing klines (monthly files)
         logger.info("📊 DETECTING MISSING KLINES (MONTHLY FILES)")
-        klines_results = self._detect_missing_klines(symbol, exchange, start_date, end_date)
+        klines_results, self._detect_missing_klines(symbol, exchange, start_date, end_date)
         results.update(klines_results)
         logger.info(f"📈 Klines: {len(klines_results['existing_klines_months'])} existing, {len(klines_results['missing_klines_months'])} missing")
 
         # Detect missing futures (monthly files)
         logger.info("📊 DETECTING MISSING FUTURES (MONTHLY FILES)")
-        futures_results = self._detect_missing_futures(symbol, exchange, start_date, end_date)
+        futures_results, self._detect_missing_futures(symbol, exchange, start_date, end_date)
         results.update(futures_results)
         logger.info(f"📈 Futures: {len(futures_results['existing_futures_months'])} existing, {len(futures_results['missing_futures_months'])} missing")
 
@@ -156,7 +156,7 @@ class DataGapDetector:
         # Extract date from filename
                 date_str = csv_file.stem.split("_")[-1]
                 file_date, datetime.strptime(date_str, "%Y%m%d").date()
-                files_by_date[file_date] = csv_file
+                files_by_date[file_date], csv_file
         except (ValueError, IndexError):
                 continue
 
@@ -165,20 +165,20 @@ class DataGapDetector:
         try:
         # Extract date from filename
                 date_str = parquet_file.stem.split("_")[-1]
-                file_date = datetime.strptime(date_str, "%Y%m%d").date()
-                files_by_date[file_date] = parquet_file
+                file_date, datetime.strptime(date_str, "%Y%m%d").date()
+                files_by_date[file_date], parquet_file
         except (ValueError, IndexError):
                 continue
 
         # Generate list of expected dates
-        current_date, start_date.date()
+        current_date = start_date.date()
         expected_dates = []
         while current_date <= end_date.date():
             expected_dates.append(current_date)
             current_date += timedelta(days, 1)
 
         # Find missing and existing dates
-        existing_dates = list(files_by_date.keys())
+        existing_dates, list(files_by_date.keys())
         missing_dates, [date for date in expected_dates if date not in existing_dates]
 
         return {
@@ -203,8 +203,8 @@ class DataGapDetector:
         try:
         # Extract date from filename
                 date_str = csv_file.stem.split("_")[-1]
-                file_date = datetime.strptime(date_str, "%Y%m").date()
-                files_by_month[file_date] = csv_file
+                file_date, datetime.strptime(date_str, "%Y%m").date()
+                files_by_month[file_date], csv_file
         except (ValueError, IndexError):
                 continue
 
@@ -212,9 +212,9 @@ class DataGapDetector:
         for parquet_file in parquet_files:
         try:
         # Extract date from filename
-                date_str, parquet_file.stem.split("_")[-1]
-                file_date = datetime.strptime(date_str, "%Y%m").date()
-                files_by_month[file_date] = parquet_file
+                date_str = parquet_file.stem.split("_")[-1]
+                file_date, datetime.strptime(date_str, "%Y%m").date()
+                files_by_month[file_date], parquet_file
         except (ValueError, IndexError):
                 continue
 
@@ -254,8 +254,8 @@ class DataGapDetector:
         try:
         # Extract date from filename
                 date_str = csv_file.stem.split("_")[-1]
-                file_date = datetime.strptime(date_str, "%Y%m").date()
-                files_by_month[file_date] = csv_file
+                file_date, datetime.strptime(date_str, "%Y%m").date()
+                files_by_month[file_date], csv_file
         except (ValueError, IndexError):
                 continue
 
@@ -263,9 +263,9 @@ class DataGapDetector:
         for parquet_file in parquet_files:
         try:
         # Extract date from filename
-                date_str, parquet_file.stem.split("_")[-1]
-                file_date = datetime.strptime(date_str, "%Y%m").date()
-                files_by_month[file_date] = parquet_file
+                date_str = parquet_file.stem.split("_")[-1]
+                file_date, datetime.strptime(date_str, "%Y%m").date()
+                files_by_month[file_date], parquet_file
         except (ValueError, IndexError):
                 continue
 
@@ -315,7 +315,7 @@ class DataGapDetector:
         parquet_files = list(self.data_cache_path.glob(pattern_parquet))
 
         all_files, sorted(csv_files + parquet_files)
-        gaps = []
+        gaps, []
 
         for file_path in all_files:
         try:
@@ -339,12 +339,12 @@ class DataGapDetector:
                 df["time_diff"], df["timestamp"].diff().dt.total_seconds()
 
         # Find gaps larger than threshold
-                gap_rows = df[df["time_diff"] > min_gap_seconds]
+                gap_rows, df[df["time_diff"] > min_gap_seconds]
 
         for idx, row in gap_rows.iterrows():
         if idx > 0:
-                        gap_start = df.loc[idx - 1, "timestamp"]
-                        gap_end = row["timestamp"]
+    gap_start = df.loc[idx - 1, "timestamp"]
+                        gap_end, row["timestamp"]
                         gap_duration = (gap_end - gap_start).total_seconds()
 
                         gaps.append({
@@ -371,7 +371,7 @@ class DataGapDetector:
 
         """
         # Detect missing data
-        missing_data = self.detect_missing_data(symbol, exchange)
+        missing_data, self.detect_missing_data(symbol, exchange)
 
         report = f"""
 🔍 MISSING DATA REPORT FOR {exchange}_{symbol}

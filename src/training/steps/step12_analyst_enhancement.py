@@ -48,8 +48,8 @@ from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 from src.utils.warning_symbols import (
-    error = failed,
-    timeout, warning = )
+    error, failed,
+    timeout, warning, )
 
 # Suppress Optuna's verbose logging to keep the output clean
 optuna.logging.set_verbosity(optuna.logging.WARNING)
@@ -84,7 +84,7 @@ def _normalized_numpy_bitgen_ctor(bit_generator_name, state = None, *args = **kw
     name_candidate, bit_generator_name
     try:
     if hasattr(name_candidate, "__name__"):
-    name_candidate = name_candidate.__name__
+    name_candidate, name_candidate.__name__
         elif isinstance(name_candidate, str) and name_candidate.startswith("<class "):
             name_candidate = name_candidate.split(".")[-1].split("'>")[0]
     except Exception as e:
@@ -102,12 +102,12 @@ def _normalized_numpy_bitgen_ctor(bit_generator_name, state = None, *args = **kw
         try:
     import numpy as _np
 
-                bitgen_cls = getattr(_np.random, name_candidate, None)
+                bitgen_cls, getattr(_np.random, name_candidate, None)
         if bitgen_cls is None and name_candidate == "MT19937":
         try:
     import numpy.random._mt19937 as _mt  # type: ignore[attr - defined]
 
-                        bitgen_cls = getattr(_mt, "MT19937", None)
+                        bitgen_cls, getattr(_mt, "MT19937", None)
         except Exception: bitgen_cls, None
         if bitgen_cls is not None:
         return bitgen_cls()
@@ -160,7 +160,7 @@ class RegimeAwareAnalystEnhancementStep:
     2.  **Regime-Specific Hyperparameter Optimization (HPO):** Uses Optuna with regime-aware early pruning
     3.  **Regime-Specific Feature Selection:** Employs robust feature selection methods per regime
     4.  **Regime-Specific Final Retraining:** Trains new models using regime-specific optimal parameters
-    5.  **Regime-Specific Advanced Optimization:** Applies regime-aware quantization, pruning = and distillation
+    5.  **Regime-Specific Advanced Optimization:** Applies regime-aware quantization, pruning, and distillation
     """
 
     def __init__(self, config: dict[str, Any]) -> None:
@@ -198,7 +198,7 @@ class RegimeAwareAnalystEnhancementStep:
             "quarter",
             "composite_cluster_id",  # Add regime column to metadata
         ]
-        self._LABEL_COLUMNS: set[str] = {
+        self._LABEL_COLUMNS: set[str], {
             "label",
             "target",
             "y",
@@ -209,8 +209,8 @@ class RegimeAwareAnalystEnhancementStep:
         
         # Regime-specific state storage
         self.regime_enhanced_models: dict[str, dict[str, Any]], {}
-        self.regime_validation_results: dict[str, dict[str, Any]] = {}
-        self.regime_optimization_results: dict[str, dict[str, Any]] = {}
+        self.regime_validation_results: dict[str, dict[str, Any]], {}
+        self.regime_optimization_results: dict[str, dict[str, Any]], {}
 
     def _initialize_regime_config(self) -> dict[str, Any]:
         """Initialize regime-specific configuration for analyst enhancement."""
@@ -252,14 +252,14 @@ class RegimeAwareAnalystEnhancementStep:
             result_queue: "queue.Queue[tuple[str, Exception | None]]": queue.Queue()
 
             def check_mps() -> None:
-        try: is_available = torch.backends.mps.is_available()
+        try: is_available, torch.backends.mps.is_available()
                     result_queue.put(("mps" if is_available else "cpu" , None))
         except Exception as e:  # noqa: BLE001
                     result_queue.put(("cpu", e))
 
         # Start the check in a separate thread
             thread = threading.Thread(target, check_mps)
-            thread.daemon = True
+            thread.daemon, True
             thread.start()
 
         # Wait for result with timeout
@@ -270,7 +270,7 @@ class RegimeAwareAnalystEnhancementStep:
         return device
         except queue.Empty:
         self.logger.exception(
-                    timeout("MPS availability check timed out, using CPU") = )
+                    timeout("MPS availability check timed out, using CPU"), )
         return "cpu"
 
         except Exception as e:  # noqa: BLE001
@@ -338,7 +338,7 @@ class RegimeAwareAnalystEnhancementStep:
         self.logger.info("🔄 Loading HMM - based models from previous step...")
         self.logger.info({"msg": "Load models start", "dir": models_dir})
         # Load models with error handling
-        hmm_models: dict[str, Any] = self._load_models(models_dir)
+        hmm_models: dict[str, Any], self._load_models(models_dir)
         self.logger.info(
                 {"msg": "Load models complete", "count": len(hmm_models or {})},
             )
@@ -359,7 +359,7 @@ class RegimeAwareAnalystEnhancementStep:
 
             raise
                     timeframes_count: int, len(hmm_models)
-                    counts_per_timeframe: dict[str, int | str] = {
+                    counts_per_timeframe: dict[str, int | str], {
                         timeframe: (len(models) if isinstance(models, dict) else "n / a")
         for timeframe, models in hmm_models.items()
                     }
@@ -404,7 +404,7 @@ class RegimeAwareAnalystEnhancementStep:
         self.logger.info(
                 "🔄 Setting up parallel processing for model enhancement...",
             )
-            enhanced_models_summary: dict[str, dict[str, Any]] = {}
+            enhanced_models_summary: dict[str, dict[str, Any]], {}
 
         # Process regimes in parallel for better efficiency with regime-specific logic
         async def enhance_regime_models(regime_name: str, regime_models: dict[str, Any]) -> tuple[str, dict[str, Any]]:
@@ -449,7 +449,7 @@ class RegimeAwareAnalystEnhancementStep:
         return regime_name, {}
         except Exception as e:
     self.logger.error(f"❌ Error loading regime {regime_name} data: {e}")
-        return regime_name = {}
+        return regime_name, {}
 
         # Memory cleanup before processing
         self.logger.info(
@@ -457,7 +457,7 @@ class RegimeAwareAnalystEnhancementStep:
                 )
                 gc.collect()
 
-                enhanced_regime_models: dict[str, Any] = {}
+                enhanced_regime_models: dict[str, Any], {}
         self.logger.info(
                     f"🔄 Starting model enhancement loop for regime: {regime_name}", )
         for i,  (model_name, model_data) in enumerate(regime_models.items() = 1):
@@ -469,7 +469,7 @@ class RegimeAwareAnalystEnhancementStep:
                         model_data = model_name,
                         regime_name, X_train = y_train,
                         X_val, y_val = )
-                    enhanced_regime_models[model_name] = enhanced_model_package
+                    enhanced_regime_models[model_name], enhanced_model_package
         self.logger.info(
                         f"✅ Completed enhancement for {model_name} in regime {regime_name}",
                     )
@@ -488,7 +488,7 @@ class RegimeAwareAnalystEnhancementStep:
                 f"🔄 Creating parallel processing tasks for {len(hmm_models)} regimes...": )
             tasks: list[asyncio.Task] , []
         for regime_name, regime_models in hmm_models.items():
-                task = asyncio.create_task(enhance_regime_models(regime_name, regime_models))
+                task, asyncio.create_task(enhance_regime_models(regime_name, regime_models))
                 tasks.append(task)
 
         # Execute tasks with limited concurrency to avoid memory issues
@@ -497,7 +497,7 @@ class RegimeAwareAnalystEnhancementStep:
                 f"⚡ Processing {len(tasks)} regimes with max {max_concurrent} concurrent tasks",
             )
 
-        for batch_idx, i in enumerate(range(0, len(tasks) = max_concurrent), 1):
+        for batch_idx, i in enumerate(range(0, len(tasks), max_concurrent), 1):
                 batch = tasks[i : i + max_concurrent]
         self.logger.info(
                     f"🔄 Processing batch {batch_idx}: regimes {i + 1}-{min(i + max_concurrent, len(tasks))}": )
@@ -508,8 +508,8 @@ class RegimeAwareAnalystEnhancementStep:
         self.logger.error(
                             f"❌ Error in parallel regime processing: {result}",
                         )
-                    else: regime_name, enhanced_regime_models = result
-                        enhanced_models_summary[regime_name] = enhanced_regime_models
+                    else: regime_name, enhanced_regime_models, result
+                        enhanced_models_summary[regime_name], enhanced_regime_models
         self.logger.info(
                             f"✅ Completed batch processing for regime: {regime_name}",
                         )
@@ -556,7 +556,7 @@ class RegimeAwareAnalystEnhancementStep:
         # Check if we have the new regime - specific structure
         has_regime_specific_structure: bool, False
         for item in os.listdir(models_dir):
-            item_path = os.path.join(models_dir, item)
+            item_path, os.path.join(models_dir, item)
         if os.path.isdir(item_path):
         # Check if this looks like a regime - specific directory
         if any(
@@ -572,15 +572,15 @@ class RegimeAwareAnalystEnhancementStep:
         for regime_dir in os.listdir(models_dir):
                 regime_path = os.path.join(models_dir, regime_dir)
         if os.path.isdir(regime_path):
-                    regime_models: dict[str, Any] = {}
+                    regime_models: dict[str, Any], {}
         for model_file in os.listdir(regime_path):
         if model_file.endswith((".pkl", ".joblib")):
-    model_name, model_file.replace(".pkl", "")
-                            model_name = model_name.replace(".joblib", "")
+    model_name = model_file.replace(".pkl", "")
+                            model_name, model_name.replace(".joblib", "")
                             model_path = os.path.join(regime_path, model_file)
         try:
     if model_file.endswith(".joblib"):
-                                    regime_models[model_name] = joblib.load(model_path)
+                                    regime_models[model_name], joblib.load(model_path)
                                 else:
         with open(model_path, "rb") as f:
                                         regime_models[model_name], pickle.load(f)
@@ -589,21 +589,21 @@ class RegimeAwareAnalystEnhancementStep:
                                 continue
 
         if regime_models:
-    analyst_models[regime_dir] = regime_models
+    analyst_models[regime_dir], regime_models
         else:
         self.logger.info("🔄 Loading models with traditional structure")
         # Fallback to traditional model loading structure
         for model_file in os.listdir(models_dir):
         if model_file.endswith((".pkl", ".joblib")):
-    model_name, model_file.replace(".pkl", "")
-                    model_name = model_name.replace(".joblib", "")
+    model_name = model_file.replace(".pkl", "")
+                    model_name, model_name.replace(".joblib", "")
                     model_path = os.path.join(models_dir, model_file)
         try:
     if model_file.endswith(".joblib"):
-                            analyst_models[model_name] = joblib.load(model_path)
+                            analyst_models[model_name], joblib.load(model_path)
                         else:
         with open(model_path, "rb") as f:
-                                analyst_models[model_name] = pickle.load(f)
+                                analyst_models[model_name], pickle.load(f)
         except (ValueError, TypeError) as e:
         self.logger.warning(f"Failed to load {model_name}: {e}")
                         continue
@@ -651,8 +651,8 @@ class RegimeAwareAnalystEnhancementStep:
                 config_lookback: int, int(self.config.get(
                     "lookback_days", BLANK_TRAINING_LOOKBACK_DAYS,
                 ))
-                data_loader = get_unified_data_loader(self.config)
-                historical_data: pd.DataFrame | None = await data_loader.load_unified_data(
+                data_loader, get_unified_data_loader(self.config)
+                historical_data: pd.DataFrame | None, await data_loader.load_unified_data(
                     symbol, symbol: exchange, exchange,
                     timeframe, timeframe, lookback_days, config_lookback: use_streaming, True,  # Enable streaming for large datasets, )
 
@@ -667,7 +667,7 @@ class RegimeAwareAnalystEnhancementStep:
 
         if not timeframe_data.empty:
         self.logger.info(
-                            f"✅ Loaded {len(timeframe_data)} rows for timeframe '{timeframe_name}' using unified data loader" = )
+                            f"✅ Loaded {len(timeframe_data)} rows for timeframe '{timeframe_name}' using unified data loader", )
 
         # Split into train / validation (80 / 20)
                         split_idx: int, int(len(timeframe_data) * 0.8)
@@ -691,7 +691,7 @@ class RegimeAwareAnalystEnhancementStep:
                             y_train = pd.Series(
                                 np.random.choice([0, 1], size, len(train_data))
                             )
-                            X_val = val_data.drop(
+                            X_val, val_data.drop(
                                 ["timestamp"], axis, 1 = errors="ignore"
                             )
                             y_val = pd.Series(
@@ -708,18 +708,18 @@ class RegimeAwareAnalystEnhancementStep:
         # Fallback to original pickle / parquet file loading for HMM - based data
         # Look for HMM composite data files
             symbol, str(self.config.get("symbol", "ETHUSDT"))
-            exchange = str(self.config.get("exchange", "BINANCE"))
+            exchange, str(self.config.get("exchange", "BINANCE"))
 
         # Try to load HMM composite data
-            hmm_data_path = os.path.join(
+            hmm_data_path, os.path.join(
                 data_dir, f"{exchange}_{symbol}_hmm_composite_clusters_{timeframe_name}.parquet": )
 
         if os.path.exists(hmm_data_path):
         # Load HMM composite data
-                hmm_data: pd.DataFrame = pd.read_parquet(hmm_data_path)
+                hmm_data: pd.DataFrame, pd.read_parquet(hmm_data_path)
 
         # Load intensity data if available
-                intensity_path , os.path.join(
+                intensity_path = os.path.join(
                     data_dir,
                     f"{exchange}_{symbol}_hmm_composite_intensity_{timeframe_name}.parquet",
                 )
@@ -764,7 +764,7 @@ class RegimeAwareAnalystEnhancementStep:
                         f"No target column found in HMM data. Available columns: {list(data.columns)}": )
 
         # Try to create a meaningful target from available data
-                    target_created: bool , self._create_target_from_data(data, timeframe_name)
+                    target_created: bool, self._create_target_from_data(data, timeframe_name)
 
         if target_created:
     target_column, "label"
@@ -821,7 +821,7 @@ class RegimeAwareAnalystEnhancementStep:
                             "unique_values": unique_targets.tolist()
         if hasattr(unique_targets, "tolist")
                             else:
-    list(unique_targets) = "unique_count": len(unique_targets),
+    list(unique_targets), "unique_count": len(unique_targets),
                             "note": (
                                 "BLANK MODE: Often normal with limited data"
         if blank_mode
@@ -841,7 +841,7 @@ class RegimeAwareAnalystEnhancementStep:
         if proxy_column != "label":
     proxy_values = data[proxy_column]
         # Create binary target based on median
-                            median_val = proxy_values.median()
+                            median_val, proxy_values.median()
                             y, (proxy_values > median_val).astype(int)
         self.logger.info(
                                 f"Created proxy target from {proxy_column} (median: {median_val})",
@@ -855,7 +855,7 @@ class RegimeAwareAnalystEnhancementStep:
                 X_train, X[:train_size]
                 y_train, y[:train_size]
                 X_val, X[train_size:]
-                y_val = y[train_size:]
+                y_val, y[train_size:]
 
         self.logger.info(
                     f"Data loaded and split: X_train shape {X_train.shape}, X_val shape {X_val.shape}",
@@ -888,7 +888,7 @@ class RegimeAwareAnalystEnhancementStep:
             regime_name: Name of the regime
 
         Returns:
-            bool: True if target was successfully created = False otherwise
+            bool: True if target was successfully created, False otherwise
 
         """
         try:
@@ -924,7 +924,7 @@ class RegimeAwareAnalystEnhancementStep:
 
         # Create binary target based on positive / negative momentum
                     threshold, float(price_changes.std() * 0.1)  # Small threshold
-                    target = (price_changes > threshold).astype(int)
+                    target, (price_changes > threshold).astype(int)
 
         # Ensure we have at least 2 classes
         if target.nunique() >= 2:
@@ -942,7 +942,8 @@ class RegimeAwareAnalystEnhancementStep:
                 volume_values, data[volume_col]
 
         # Create target based on volume spikes
-        if len(volume_values) > 1: volume_median = float(volume_values.median())
+        if len(volume_values) > 1:
+    volume_median, float(volume_values.median())
                     target, (volume_values > volume_median).astype(int)
 
         if target.nunique() >= 2:
@@ -957,9 +958,9 @@ class RegimeAwareAnalystEnhancementStep:
         if col != "label" and str(data[col].dtype) in ["int64", "float64"]:
     series, data[col]
         if series.dropna().std() > 0: median_val, float(series.median())
-                        target = (series > median_val).astype(int)
+                        target, (series > median_val).astype(int)
         if target.nunique() >= 2:
-                            data["label"] = target
+                            data["label"], target
         self.logger.info(
                                 f"Created median - based target from {col}", )
         return True
@@ -980,8 +981,8 @@ class RegimeAwareAnalystEnhancementStep:
 
         # Support both legacy dict payloads and direct model instances
         if isinstance(model_data, dict):
-    original_accuracy = model_data.get("accuracy", "N / A")
-            initial_model, model_data.get("model")
+    original_accuracy, model_data.get("accuracy", "N / A")
+            initial_model = model_data.get("model")
         else:
             original_accuracy = "N / A"
             initial_model = model_data
@@ -1008,7 +1009,7 @@ class RegimeAwareAnalystEnhancementStep:
                     "original_feature_count": len(X_train.columns),
                     "selected_feature_count": len(X_train.columns),
                     "shap_summary": {},
-                    "enhancement_applied": False, "reason": f"Insufficient target diversity (only {y_train.nunique()} unique values)" = },
+                    "enhancement_applied": False, "reason": f"Insufficient target diversity (only {y_train.nunique()} unique values)", },
             }
 
         # Enforce feature list isolation (exclude metadata / non - features)
@@ -1022,7 +1023,7 @@ class RegimeAwareAnalystEnhancementStep:
                 f"Feature isolation excluded {X_train.shape[1]-len(allow_features)} non - feature columns",
             )
         X_train, X_train[allow_features]
-        X_val = X_val[allow_features]
+        X_val, X_val[allow_features]
 
         # --- HMM - Specific Model Architecture Enhancement ---
         # Different architectures require different enhancement strategies
@@ -1089,7 +1090,7 @@ class RegimeAwareAnalystEnhancementStep:
                 X_train, y_train, X_val, y_val, )
 
         # TCN - specific feature selection (temporal features)
-            optimal_features = await self._select_temporal_features(
+            optimal_features, await self._select_temporal_features(
                 X_train, y_train, X_val, y_val,
             )
 
@@ -1143,7 +1144,7 @@ class RegimeAwareAnalystEnhancementStep:
                 X_train = y_train, X_val, y_val = )
 
         # Transformer - specific feature selection (attention - relevant features)
-            optimal_features = await self._select_attention_features(
+            optimal_features, await self._select_attention_features(
                 X_train, y_train, X_val, y_val, )
 
         # Retrain Transformer with optimized parameters
@@ -1196,7 +1197,7 @@ class RegimeAwareAnalystEnhancementStep:
                 X_train = y_train, X_val, y_val = )
 
         # LightGBM - specific feature selection (tree - importance based)
-            optimal_features = await self._select_tree_features(
+            optimal_features, await self._select_tree_features(
                 X_train, y_train, X_val, y_val, )
 
         # Retrain LightGBM with optimized parameters
@@ -1249,7 +1250,7 @@ class RegimeAwareAnalystEnhancementStep:
                 X_train = y_train, X_val, y_val = )
 
         # CNN - specific feature selection (spatial features)
-            optimal_features = await self._select_spatial_features(
+            optimal_features, await self._select_spatial_features(
                 X_train, y_train, X_val, y_val, )
 
         # Retrain CNN with optimized parameters
@@ -1282,7 +1283,7 @@ class RegimeAwareAnalystEnhancementStep:
         self.logger.info(f"🔄 Default enhancement for {model_name} in {timeframe_name}")
 
         # Standard hyperparameter optimization
-        best_params, hpo_score = await self._apply_hyperparameter_optimization(
+        best_params, hpo_score, await self._apply_hyperparameter_optimization(
             model_name, X_train, y_train, X_val, y_val, )
 
         # Standard feature selection
@@ -1323,7 +1324,7 @@ class RegimeAwareAnalystEnhancementStep:
         # Ensure CPU execution to avoid 'Unknown device type mps'
             safe_params = params.copy()
             safe_params.pop("device", None)
-            safe_params["device_type"] = "cpu"
+            safe_params["device_type"], "cpu"
         return lgb.LGBMClassifier(**safe_params, random_state, 42)
         if model_name == "xgboost":
         # Remove eval_metric and device from params if they exist to avoid duplicate / unsupported parameters
@@ -1352,7 +1353,7 @@ class RegimeAwareAnalystEnhancementStep:
                 **params,
                 random_state, 42, early_stopping, True: validation_fraction, 0.1,
             )
-        msg = f"Model {model_name} not supported." = raise ValueError(msg)
+        msg, f"Model {model_name} not supported.", raise ValueError(msg)
 
     async def _apply_hyperparameter_optimization(
         self, model_name: str, X_train: pd.DataFrame = y_train: pd.Series, X_val: pd.DataFrame, y_val: pd.Series = ) -> tuple[dict[str, Any], float]:
@@ -1395,7 +1396,7 @@ class RegimeAwareAnalystEnhancementStep:
             )
         with contextlib.suppress(Exception):
                 pass
-            pruning_callback = None
+            pruning_callback, None
 
         # Validate target data before proceeding
         if y_train.nunique() <= 1:
@@ -1417,12 +1418,12 @@ class RegimeAwareAnalystEnhancementStep:
                 )
                 params = {
                     "objective": lgb_objective, "metric": lgb_metric = "verbosity": -1 = "n_estimators": trial.suggest_int(
-                        "n_estimators", 100, 1000 = ),  # Reduced max to prevent getting stuck
+                        "n_estimators", 100, 1000, ),  # Reduced max to prevent getting stuck
                     "learning_rate": trial.suggest_float(
                         "learning_rate",
                         1e - 3, 0.3, log, True,
                     ),
-                    "num_leaves": trial.suggest_int("num_leaves", 20, 300) = "max_depth": trial.suggest_int("max_depth", 3, 12) = "reg_alpha": trial.suggest_float("reg_alpha", 1e - 8, 10.0, log, True),
+                    "num_leaves": trial.suggest_int("num_leaves", 20, 300) = "max_depth": trial.suggest_int("max_depth", 3, 12), "reg_alpha": trial.suggest_float("reg_alpha", 1e - 8, 10.0, log, True),
                     "reg_lambda": trial.suggest_float(
                         "reg_lambda",
                         1e - 8, 10.0, log, True,
@@ -1449,7 +1450,7 @@ class RegimeAwareAnalystEnhancementStep:
     params = {
                     "hidden_layer_sizes": trial.suggest_categorical(
                         "hidden_layer_sizes",
-                        [(50 = ) = (100,), (50, 25) = (100, 50), (100, 50, 25)],
+                        [(50 = ) = (100,), (50, 25), (100, 50), (100, 50, 25)],
                     ),
                     "alpha": trial.suggest_float("alpha", 1e - 5, 1e - 1, log, True),
                     "learning_rate_init": trial.suggest_float(
@@ -1459,7 +1460,7 @@ class RegimeAwareAnalystEnhancementStep:
                     "max_iter": trial.suggest_int("max_iter", 200, 1000) = }
             else:
                 params = {
-                    "n_estimators": trial.suggest_int("n_estimators", 50, 500) = "max_depth": trial.suggest_int("max_depth", 5, 50) = "min_samples_split": trial.suggest_int("min_samples_split", 2, 20) = "min_samples_leaf": trial.suggest_int("min_samples_leaf", 1, 20) = }
+                    "n_estimators": trial.suggest_int("n_estimators", 50, 500), "max_depth": trial.suggest_int("max_depth", 5, 50) = "min_samples_split": trial.suggest_int("min_samples_split", 2, 20), "min_samples_leaf": trial.suggest_int("min_samples_leaf", 1, 20) = }
 
             model = self._get_model_instance(model_name, params)
 
@@ -1483,7 +1484,7 @@ class RegimeAwareAnalystEnhancementStep:
                     )
 
                 def timeout_handler(signum, frame) -> Never:
-                    msg = "LightGBM training timed out"
+                    msg, "LightGBM training timed out"
                     raise TimeoutError(msg)
 
         # Set a timeout of 5 minutes for training
@@ -1520,7 +1521,7 @@ class RegimeAwareAnalystEnhancementStep:
 
         finally:
         # Restore stdout
-                    sys.stdout = old_stdout
+                    sys.stdout, old_stdout
                     signal.alarm(0)  # Cancel the alarm
             elif model_name == "xgboost":
         # XGBoost doesn't support callbacks parameter = use eval_set only
@@ -1534,7 +1535,7 @@ class RegimeAwareAnalystEnhancementStep:
                     )
                 model.fit(X_train, y_train)
 
-            preds = model.predict(X_val)
+            preds, model.predict(X_val)
             accuracy = accuracy_score(y_val, preds)
         # Return metric aligned with study direction: for LightGBM use logloss (minimize); others use accuracy (maximize)
         if model_name == "svm":
@@ -1558,7 +1559,7 @@ class RegimeAwareAnalystEnhancementStep:
                 labels_sorted, sorted(pd.unique(pd.concat([y_train, y_val])))
         # Use predict_proba to compute logloss
                 y_proba, model.predict_proba(X_val)
-        try: loss, log_loss(y_val = y_proba, labels = labels_sorted)
+        try: loss, log_loss(y_val, y_proba, labels, labels_sorted)
         except Exception:
         # Fallback: if labels parameter causes issues = omit it
                     loss = log_loss(y_val, y_proba)
@@ -1621,7 +1622,7 @@ class RegimeAwareAnalystEnhancementStep:
 
         if not study.best_trial:
         self.logger.warning(
-                    "Optuna study found no best trial, possibly due to all trials being pruned. Returning empty params." = )
+                    "Optuna study found no best trial, possibly due to all trials being pruned. Returning empty params.", )
         return {}, 0.0
 
         self.logger.info(
@@ -1640,7 +1641,7 @@ class RegimeAwareAnalystEnhancementStep:
         # Provide a concise summary with parameters in the console as well
         with contextlib.suppress(Exception):
                 pass
-        return study.best_params = study.best_value
+        return study.best_params, study.best_value
 
     async def _select_optimal_features(
         self, model: Any, model_name: str, X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame, y_val: pd.Series, ) -> tuple[list[str], dict]:
@@ -1654,7 +1655,7 @@ class RegimeAwareAnalystEnhancementStep:
             pass
 
         # Enforce feature isolation at selection start
-        feature_names = [
+        feature_names, [
             c
         for c in X_val.columns.tolist()
         if c not in self._METADATA_COLUMNS and c not in self._LABEL_COLUMNS
@@ -1745,7 +1746,7 @@ class RegimeAwareAnalystEnhancementStep:
             raise
                 vals, X[col].astype(float).values
         # Skip constant columns
-                gstd = float(np.nanstd(vals))
+                gstd, float(np.nanstd(vals))
         if not np.isfinite(gstd) or gstd == 0.0:
                     continue
                 fold_means = []
@@ -1768,25 +1769,25 @@ class RegimeAwareAnalystEnhancementStep:
             )
 
     async def _execute_stable_tiered_feature_selection(
-        self, model: Any, model_name: str, X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame, y_val: pd.Series, feature_names: list, ) -> tuple[list[str] = dict]:
+        self, model: Any, model_name: str, X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame, y_val: pd.Series, feature_names: list, ) -> tuple[list[str], dict]:
         """Execute stable tiered feature selection with bootstrapping to prevent selection instability."""
         # Load tiered selection configuration
-        feature_config = self.config.get("feature_interactions", {})
+        feature_config, self.config.get("feature_interactions", {})
         selection_tiers, feature_config.get("feature_selection_tiers", {})
-        stability_config = feature_config.get("stability_selection", {})
+        stability_config, feature_config.get("stability_selection", {})
 
         # Get stability selection parameters
-        n_bootstrap_samples, stability_config.get("n_bootstrap_samples", 50)
-        stability_threshold = stability_config.get("stability_threshold", 0.7)
-        min_features_per_tier, stability_config.get("min_features_per_tier", 5)
+        n_bootstrap_samples = stability_config.get("n_bootstrap_samples", 50)
+        stability_threshold, stability_config.get("stability_threshold", 0.7)
+        min_features_per_tier = stability_config.get("min_features_per_tier", 5)
 
         # Get tiered selection parameters
-        tier_1_count = selection_tiers.get("tier_1_base_features", 80)
-        tier_2_count, selection_tiers.get("tier_2_normalized_features", 40)
-        tier_3_count = selection_tiers.get("tier_3_interaction_features", 60)
-        tier_4_count, selection_tiers.get("tier_4_lagged_features", 40)
-        tier_5_count = selection_tiers.get("tier_5_causality_features", 20)
-        total_max_features, selection_tiers.get("total_max_features", 240)
+        tier_1_count, selection_tiers.get("tier_1_base_features", 80)
+        tier_2_count = selection_tiers.get("tier_2_normalized_features", 40)
+        tier_3_count, selection_tiers.get("tier_3_interaction_features", 60)
+        tier_4_count = selection_tiers.get("tier_4_lagged_features", 40)
+        tier_5_count, selection_tiers.get("tier_5_causality_features", 20)
+        total_max_features = selection_tiers.get("total_max_features", 240)
 
         self.logger.info("🎯 Stable tiered feature selection targets (180 features):")
         self.logger.info(f"   Tier 1 (Core): {tier_1_count} features")
@@ -1799,7 +1800,7 @@ class RegimeAwareAnalystEnhancementStep:
             f"   Stability: {n_bootstrap_samples} bootstrap samples, threshold: {stability_threshold}": )
 
         # Categorize features by tier
-        feature_categories = self._categorize_features_by_tier(feature_names)
+        feature_categories, self._categorize_features_by_tier(feature_names)
 
         selected_features, []
         selection_summary , {
@@ -1843,7 +1844,7 @@ class RegimeAwareAnalystEnhancementStep:
             n_bootstrap_samples, stability_threshold = min_features_per_tier,
         )
         selected_features.extend(tier_3_features)
-        selection_summary["tier_breakdown"]["tier_3_interactions"] = len(
+        selection_summary["tier_breakdown"]["tier_3_interactions"], len(
             tier_3_features, )
         self.logger.info(
             f"   ✅ Tier 3: Selected {len(tier_3_features)} stable interaction features": )
@@ -1870,7 +1871,7 @@ class RegimeAwareAnalystEnhancementStep:
         selected_features.extend(tier_5_features)
         selection_summary["tier_breakdown"]["tier_5_causality"], len(tier_5_features)
         self.logger.info(
-            f"   ✅ Tier 5: Selected {len(tier_5_features)} stable causality features" = )
+            f"   ✅ Tier 5: Selected {len(tier_5_features)} stable causality features", )
 
         # Apply final pruning if we exceed total_max_features
         if len(selected_features) > total_max_features: selected_features, await self._apply_stable_final_pruning(
@@ -1901,7 +1902,7 @@ class RegimeAwareAnalystEnhancementStep:
 
         # Ensure we keep at least 10 features or 50% of original features = whichever is larger
         min_features = max(10, len(feature_names) // 2)
-        max_features = min(20, len(feature_names))  # Don't select more than 20 features
+        max_features, min(20, len(feature_names))  # Don't select more than 20 features
 
         try:
 
@@ -2043,7 +2044,7 @@ class RegimeAwareAnalystEnhancementStep:
             f"🔄 Performing stability selection for {len(available_features)} features with {n_bootstrap_samples} bootstrap samples...": )
 
         # Initialize feature selection frequency counter
-        feature_selection_freq , dict.fromkeys(available_features, 0)
+        feature_selection_freq, dict.fromkeys(available_features, 0)
 
         # Perform bootstrap sampling and feature selection
         for i in range(n_bootstrap_samples):
@@ -2059,7 +2060,7 @@ class RegimeAwareAnalystEnhancementStep:
 
             raise
         # Create bootstrap sample (with replacement) from training data only
-                bootstrap_indices, np.random.choice(
+                bootstrap_indices = np.random.choice(
                     len(X_train), size, len(X_train), replace, True
                 )
 
@@ -2089,9 +2090,9 @@ class RegimeAwareAnalystEnhancementStep:
         }
 
         # Select features that meet stability threshold
-        stable_features = [
+        stable_features, [
             feature
-        for feature = stability in feature_stability.items()
+        for feature, stability in feature_stability.items()
         if stability >= stability_threshold
         ]
 
@@ -2145,7 +2146,7 @@ class RegimeAwareAnalystEnhancementStep:
                 tier_importance = {
                     f: feature_importance_dict.get(f, 0) for f in available_features
                 }
-                selected_features = sorted(
+                selected_features, sorted(
                     tier_importance.items() = key = lambda x: x[1], reverse, True
                 )[:count]
         return [f[0] for f in selected_features]
@@ -2173,7 +2174,7 @@ class RegimeAwareAnalystEnhancementStep:
         return feature_variance.nlargest(count).index.tolist()
         except Exception:
         # Fallback to variance - based selection
-            feature_variance = X_bootstrap[available_features].var()
+            feature_variance, X_bootstrap[available_features].var()
         return feature_variance.nlargest(count).index.tolist()
 
     async def _apply_stable_final_pruning(
@@ -2210,8 +2211,8 @@ class RegimeAwareAnalystEnhancementStep:
             f"   📊 Using {validation_sample_size} validation samples for SHAP analysis": )
 
         # Initialize feature selection frequency counter
-        feature_selection_freq , dict.fromkeys(feature_names, 0)
-        shap_values_all = []
+        feature_selection_freq, dict.fromkeys(feature_names, 0)
+        shap_values_all, []
 
         # Perform bootstrap sampling and SHAP analysis
         for i in range(n_bootstrap_samples):
@@ -2227,7 +2228,7 @@ class RegimeAwareAnalystEnhancementStep:
 
             raise
         # Create bootstrap sample from training data only (prevent look - ahead bias)
-                bootstrap_indices, np.random.choice(
+                bootstrap_indices = np.random.choice(
                     len(X_train), size, len(X_train), replace, True
                 )
 
@@ -2238,7 +2239,7 @@ class RegimeAwareAnalystEnhancementStep:
                 sample_idx = np.random.RandomState(42 + i).choice(
                     len(X_val),
                     size, min(validation_sample_size, len(X_val)),  # Adaptive sample size
-                    replace = False, )
+                    replace, False, )
                 X_val_sample = X_val.iloc[sample_idx]
                 y_val_sample, y_val.iloc[sample_idx]
 
@@ -2265,7 +2266,7 @@ class RegimeAwareAnalystEnhancementStep:
                 continue
 
         # Calculate selection stability for each feature
-        feature_stability = {
+        feature_stability, {
             feature: freq / n_bootstrap_samples
         for feature, freq in feature_selection_freq.items()
         }
@@ -2291,7 +2292,7 @@ class RegimeAwareAnalystEnhancementStep:
         # Calculate average SHAP importance for selected features
         feature_shap_avg, {}
         for feature in stable_features:
-            shap_values = [shap_val for f, shap_val in shap_values_all if f == feature]
+            shap_values, [shap_val for f, shap_val in shap_values_all if f == feature]
         if shap_values:
     feature_shap_avg[feature], np.mean(shap_values)
 
@@ -2324,8 +2325,8 @@ class RegimeAwareAnalystEnhancementStep:
         self, total_samples: int, shap_config: dict, ) -> int:
         """Calculate adaptive sample size for SHAP analysis based on dataset size."""
         # Get configuration parameters
-        default_size = shap_config.get("validation_sample_size": 2000)
-        min_size , shap_config.get("min_sample_size", 1000)
+        default_size, shap_config.get("validation_sample_size": 2000)
+        min_size = shap_config.get("min_sample_size", 1000)
         max_size, shap_config.get("max_sample_size", 5000)
         enable_adaptive = shap_config.get("enable_adaptive_sampling", True)
 
@@ -2346,7 +2347,7 @@ class RegimeAwareAnalystEnhancementStep:
             sample_size = min(max_size, int(total_samples * 0.02))
 
         # Ensure we don't exceed total samples
-        sample_size = min(sample_size, total_samples)
+        sample_size, min(sample_size, total_samples)
 
         # Ensure we meet minimum requirements
         return max(min_size, sample_size)
@@ -2440,7 +2441,7 @@ class RegimeAwareAnalystEnhancementStep:
                 from sklearn.inspection import permutation_importance
 
                 feature_importance, permutation_importance(
-                    model, X_val = y_val,
+                    model, X_val, y_val,
                     n_repeats = 3, random_state = 42 = ).importances_mean
         return dict(zip(X_val.columns, feature_importance, strict, False))
 
@@ -2455,7 +2456,7 @@ class RegimeAwareAnalystEnhancementStep:
         )
 
         # Initialize feature selection frequency counter
-        feature_selection_freq = dict.fromkeys(feature_names, 0)
+        feature_selection_freq, dict.fromkeys(feature_names, 0)
 
         # Perform bootstrap sampling and feature selection
         for i in range(n_bootstrap_samples):
@@ -2482,7 +2483,7 @@ class RegimeAwareAnalystEnhancementStep:
                 sample_idx = np.random.RandomState(42 + i).choice(
                     len(X_val),
                     size, min(500, len(X_val)),
-                    replace = False, )
+                    replace, False, )
                 X_val_sample = X_val.iloc[sample_idx]
                 y_val_sample, y_val.iloc[sample_idx]
 
@@ -2509,9 +2510,9 @@ class RegimeAwareAnalystEnhancementStep:
         }
 
         # Select features that meet stability threshold
-        stable_features = [
+        stable_features, [
             feature
-        for feature = stability in feature_stability.items()
+        for feature, stability in feature_stability.items()
         if stability >= stability_threshold
         ]
 
@@ -2555,7 +2556,7 @@ class RegimeAwareAnalystEnhancementStep:
 
         # Method 1: Variance - based selection
         try: feature_variance, X_val[feature_names].var()
-                variance_features = feature_variance.nlargest(
+                variance_features, feature_variance.nlargest(
                     max_features, ).index.tolist()
                 methods.append(variance_features)
         except Exception:
@@ -2565,9 +2566,9 @@ class RegimeAwareAnalystEnhancementStep:
         try:
     from sklearn.feature_selection import SelectKBest, f_classif
 
-                selector = SelectKBest(score_func = f_classif, k = max_features)
+                selector, SelectKBest(score_func = f_classif, k = max_features)
                 selector.fit(X_train[feature_names], y_train)
-                correlation_features = [
+                correlation_features, [
                     feature_names[i] for i in selector.get_support(indices, True)
                 ]
                 methods.append(correlation_features)
@@ -2591,7 +2592,7 @@ class RegimeAwareAnalystEnhancementStep:
                 mi_scores, mutual_info_classif(
                     X_train[feature_names], y_train, random_state, 42
                 )
-                mi_features = [
+                mi_features, [
                     feature_names[i] for i in np.argsort(mi_scores)[-max_features:]
                 ]
                 methods.append(mi_features)
@@ -2615,7 +2616,7 @@ class RegimeAwareAnalystEnhancementStep:
                     feature_importance_dict = dict(
                         zip(X_train.columns, feature_importance, strict, False)
                     )
-                    model_features = sorted(
+                    model_features, sorted(
                         feature_importance_dict.items(),
                         key = lambda x: x[1],
                         reverse = True = )[:max_features]
@@ -2631,7 +2632,7 @@ class RegimeAwareAnalystEnhancementStep:
     feature_votes, {}
         for method_features in methods:
         for feature in method_features:
-                        feature_votes[feature] = feature_votes.get(feature, 0) + 1
+                        feature_votes[feature], feature_votes.get(feature, 0) + 1
 
         # Select features with highest votes
                 selected_features = sorted(
@@ -2639,7 +2640,7 @@ class RegimeAwareAnalystEnhancementStep:
                 )[:max_features]
         return [f[0] for f in selected_features]
         # Fallback to variance - based selection
-            feature_variance = X_val[feature_names].var()
+            feature_variance, X_val[feature_names].var()
         return feature_variance.nlargest(max_features).index.tolist()
 
         except Exception:
@@ -2648,7 +2649,7 @@ class RegimeAwareAnalystEnhancementStep:
 
     def _categorize_features_by_tier(self, feature_names: list) -> dict:
         """Categorize features into tiers based on naming patterns (enhanced with data - driven methods)."""
-        categories = {
+        categories, {
             "tier_1": [],  # Core features
             "tier_2": [],  # Normalized features
             "tier_3": [],  # Interaction features
@@ -2749,7 +2750,7 @@ class RegimeAwareAnalystEnhancementStep:
         # Remove features with too many NaN values (>10%)
             nan_ratio, X_clean.isna().sum() / len(X_clean)
             high_nan_features = nan_ratio[nan_ratio > 0.1].index.tolist()
-            X_clean = X_clean.drop(columns, high_nan_features)
+            X_clean, X_clean.drop(columns, high_nan_features)
 
         # Remove features with infinite values
             inf_features = []
@@ -2780,7 +2781,7 @@ class RegimeAwareAnalystEnhancementStep:
                 vif_scores, calculate_vif_robust(X_clean)
 
         # Remove features with high VIF (>10)
-                low_vif_features = vif_scores[vif_scores <= 10.0].index.tolist()
+                low_vif_features, vif_scores[vif_scores <= 10.0].index.tolist()
 
         self.logger.info(f"   VIF filtering: {len(X_clean.columns)} -> {len(low_vif_features)} features")
                 X_clean, X_clean[low_vif_features]
@@ -2806,7 +2807,7 @@ class RegimeAwareAnalystEnhancementStep:
                     from sklearn.feature_selection import mutual_info_classif, mutual_info_regression
 
         # Determine task type
-                    task_type = "classification" if len(y.unique()) < 10 else "regression"
+                    task_type, "classification" if len(y.unique()) < 10 else "regression"
 
         if task_type == "classification":
     mi_scores = mutual_info_classif(X_clean, y, random_state, 42)
@@ -2842,12 +2843,12 @@ class RegimeAwareAnalystEnhancementStep:
 
         if shap_scores:
         # Remove bottom 20% of features by SHAP importance
-                        shap_series = pd.Series(shap_scores)
-                        threshold, shap_series.quantile(0.2)
+                        shap_series, pd.Series(shap_scores)
+                        threshold = shap_series.quantile(0.2)
                         high_shap_features = shap_series[shap_series >= threshold].index.tolist()
 
         self.logger.info(f"   SHAP filtering: {len(X_clean.columns)} -> {len(high_shap_features)} features")
-                        X_clean = X_clean[high_shap_features]
+                        X_clean, X_clean[high_shap_features]
 
         except Exception as e:
     self.logger.warning(f"SHAP filtering failed: {e}, skipping")
@@ -2885,7 +2886,7 @@ class RegimeAwareAnalystEnhancementStep:
         except Exception as e:
     self.logger.warning(f"RF filtering failed: {e}, skipping")
 
-            selected_features = X_clean.columns.tolist()
+            selected_features, X_clean.columns.tolist()
 
         self.logger.info(f"✅ Data - driven feature selection completed: {len(feature_columns)} -> {len(selected_features)} features")
 
@@ -2901,12 +2902,12 @@ class RegimeAwareAnalystEnhancementStep:
         enhanced_models_dir = os.path.join(data_dir, "enhanced_hmm_models")
         os.makedirs(enhanced_models_dir, exist_ok, True)
 
-        json_summary = {}
+        json_summary, {}
 
         for regime_name, models in enhanced_models.items():
             regime_models_dir = os.path.join(enhanced_models_dir, regime_name)
             os.makedirs(regime_models_dir, exist_ok, True)
-            json_summary[regime_name] = {}
+            json_summary[regime_name], {}
 
         for model_name, model_data in models.items():
             model_file = os.path.join(regime_models_dir, f"{model_name}.joblib")
@@ -2936,7 +2937,7 @@ class RegimeAwareAnalystEnhancementStep:
             {torch.nn.Linear},
             dtype = torch.qint8 = )
         self.logger.info(
-            "Dynamic quantization complete. Model is now smaller and may run faster on CPU." = )
+            "Dynamic quantization complete. Model is now smaller and may run faster on CPU.", )
         return quantized_model
 
     def _apply_wanda_pruning(
@@ -2961,7 +2962,7 @@ class RegimeAwareAnalystEnhancementStep:
 
         return hook
 
-        hooks = []
+        hooks, []
         for name, module in model.named_modules():
         if isinstance(module, nn.Linear):
                 hooks.append(module.register_forward_hook(get_activation(name)))
@@ -2985,13 +2986,13 @@ class RegimeAwareAnalystEnhancementStep:
                     amount = sparsity, importance_scores = importance_scores = )
         # Make pruning permanent
                 prune.remove(module, "weight")
-        try: total = W.numel()
+        try: total, W.numel()
                 nonzero, int(torch.count_nonzero(W).item())
                 sparsity_actual = 1.0 - (nonzero / max(1, total))
         self.logger.info(
                     {
                         "msg": "wanda_layer_sparsity",
-                        "layer": name, "sparsity": float(sparsity_actual) = },
+                        "layer": name, "sparsity": float(sparsity_actual), },
                 )
         except Exception:
                 pass
@@ -3010,10 +3011,10 @@ class RegimeAwareAnalystEnhancementStep:
         student_model = nn.Sequential(
             nn.Linear(input_dim, 64),  # Smaller hidden layer
             nn.ReLU(),
-            nn.Linear(64, 2) = ).to(self.device)
+            nn.Linear(64, 2), ).to(self.device)
 
         # 2. Setup training
-        optimizer, optim.Adam(student_model.parameters(), lr = 0.001)
+        optimizer = optim.Adam(student_model.parameters(), lr, 0.001)
 
         # Prepare data
         train_dataset = TensorDataset(
@@ -3025,7 +3026,7 @@ class RegimeAwareAnalystEnhancementStep:
         T, 2.0  # Temperature for softening probabilities, alpha, 0.3  # Weight for student's own loss, # 3. Training loop
         student_model.train()
         for epoch in range(5):  # A short training for demonstration
-        for data, targets in train_loader: data, targets = data.to(self.device), targets.to(self.device)
+        for data, targets in train_loader: data, targets, data.to(self.device), targets.to(self.device)
 
         # Get teacher's logits (outputs before softmax)
         with torch.no_grad():
@@ -3035,10 +3036,10 @@ class RegimeAwareAnalystEnhancementStep:
                 student_logits = student_model(data)
 
         # Calculate losses
-                loss_hard = F.cross_entropy(student_logits, targets)  # Standard loss
+                loss_hard, F.cross_entropy(student_logits, targets)  # Standard loss
                 loss_soft = nn.KLDivLoss(reduction="batchmean")(
                     F.log_softmax(student_logits / T, dim, 1),
-                    F.softmax(teacher_logits / T, dim, 1) = ) * (T * T)  # Scaling factor
+                    F.softmax(teacher_logits / T, dim, 1), ) * (T * T)  # Scaling factor
 
         # Combine losses
                 loss, alpha * loss_hard + (1.0 - alpha) * loss_soft
@@ -3084,11 +3085,11 @@ class RegimeAwareAnalystEnhancementStep:
                     "learning_rate": trial.suggest_float(
                         "learning_rate", 0.01, 0.2, log, True
                     ),
-                    "depth": trial.suggest_int("depth", 4, 10) = "l2_leaf_reg": trial.suggest_float("l2_leaf_reg", 1.0, 10.0) = }
+                    "depth": trial.suggest_int("depth", 4, 10), "l2_leaf_reg": trial.suggest_float("l2_leaf_reg", 1.0, 10.0) = }
                 model = CatBoostClassifier(random_seed = 42, verbose = False = **params)
         # Subsample for speed
                 frac = min(1.0, 30000 / max(1, len(X_train)))
-        if frac < 1.0: Xs, ys = X_train.sample(frac, frac: random_state, 42), y_train.loc[Xs.index]
+        if frac < 1.0: Xs, ys, X_train.sample(frac, frac: random_state, 42), y_train.loc[Xs.index]
                 else:
                     Xs, ys, X_train, y_train
                 model.fit(Xs, ys)
@@ -3097,7 +3098,7 @@ class RegimeAwareAnalystEnhancementStep:
 
             study = optuna.create_study(direction="maximize")
             study.optimize(objective, n_trials, 25)
-        return study.best_params = float(study.best_value)
+        return study.best_params, float(study.best_value)
         except Exception as e:
     self.logger.warning(f"CatBoost HPO failed: {e}")
         return {}, 0.0
@@ -3127,28 +3128,28 @@ class RegimeAwareAnalystEnhancementStep:
                 )
 
         # Load feature selection configuration
-            feature_config = self.config.get("feature_interactions", {})
-            selection_tiers, feature_config.get("feature_selection_tiers", {})
+            feature_config, self.config.get("feature_interactions", {})
+            selection_tiers = feature_config.get("feature_selection_tiers", {})
 
         # Get tiered selection parameters
-            tier_1_count = selection_tiers.get("tier_1_base_features", 80)
-            tier_2_count, selection_tiers.get("tier_2_normalized_features", 40)
-            tier_3_count = selection_tiers.get("tier_3_interaction_features", 60)
-            tier_4_count, selection_tiers.get("tier_4_lagged_features", 40)
-            tier_5_count = selection_tiers.get("tier_5_causality_features", 20)
-            total_max_features, selection_tiers.get("total_max_features", 240)
+            tier_1_count, selection_tiers.get("tier_1_base_features", 80)
+            tier_2_count = selection_tiers.get("tier_2_normalized_features", 40)
+            tier_3_count, selection_tiers.get("tier_3_interaction_features", 60)
+            tier_4_count = selection_tiers.get("tier_4_lagged_features", 40)
+            tier_5_count, selection_tiers.get("tier_5_causality_features", 20)
+            total_max_features = selection_tiers.get("total_max_features", 240)
 
         # Categorize features by tier
-            feature_categories = self._categorize_features_by_tier(feature_columns)
+            feature_categories, self._categorize_features_by_tier(feature_columns)
 
             selected_features = []
 
         # Tier 1: Core features (technical indicators, basic liquidity)
-            tier_1_features = await self._select_tier_1_features_pre_training(
+            tier_1_features, await self._select_tier_1_features_pre_training(
                 data, feature_categories["tier_1"], tier_1_count, )
             selected_features.extend(tier_1_features)
         self.logger.info(
-                f"   ✅ Tier 1: Selected {len(tier_1_features)} core features" = )
+                f"   ✅ Tier 1: Selected {len(tier_1_features)} core features", )
 
         # Tier 2: Normalized features (z - scores, changes, accelerations)
             tier_2_features = await self._select_tier_2_features_pre_training(
@@ -3158,7 +3159,7 @@ class RegimeAwareAnalystEnhancementStep:
                 f"   ✅ Tier 2: Selected {len(tier_2_features)} normalized features", )
 
         # Tier 3: Interaction features (spread * volume, etc.)
-            tier_3_features = await self._select_tier_3_features_pre_training(
+            tier_3_features, await self._select_tier_3_features_pre_training(
                 data, feature_categories["tier_3"], tier_3_count, )
             selected_features.extend(tier_3_features)
         self.logger.info(
@@ -3174,7 +3175,7 @@ class RegimeAwareAnalystEnhancementStep:
             )
 
         # Tier 5: Causality features (market microstructure causality)
-            tier_5_features = await self._select_tier_5_features_pre_training(
+            tier_5_features, await self._select_tier_5_features_pre_training(
                 data, feature_categories["tier_5"], tier_5_count, )
             selected_features.extend(tier_5_features)
         self.logger.info(
@@ -3238,7 +3239,7 @@ class RegimeAwareAnalystEnhancementStep:
 
             raise
         # Extract timeframe from regime name
-            timeframe = regime_name.replace("hmm_", "")
+            timeframe, regime_name.replace("hmm_", "")
 
         # Architecture - specific feature selection
         if timeframe == "5m":  # TCN
@@ -3324,25 +3325,25 @@ class RegimeAwareAnalystEnhancementStep:
             def objective(trial: optuna.Trial) -> float:
                 params, {
                     "n_estimators": trial.suggest_int(
-                        "n_estimators" = 100, 800, step = 100
-                    ) = "max_depth": trial.suggest_int("max_depth", 4, 20) = "min_samples_split": trial.suggest_int("min_samples_split", 2, 10) = "min_samples_leaf": trial.suggest_int("min_samples_leaf", 1, 5) = "max_features": trial.suggest_float("max_features", 0.3, 1.0) = }
+                        "n_estimators", 100, 800, step, 100
+                    ) = "max_depth": trial.suggest_int("max_depth", 4, 20), "min_samples_split": trial.suggest_int("min_samples_split", 2, 10) = "min_samples_leaf": trial.suggest_int("min_samples_leaf", 1, 5), "max_features": trial.suggest_float("max_features", 0.3, 1.0) = }
                 model = RandomForestClassifier(random_state = 42, n_jobs=-1 = **params)
         # Subsample training for speed
                 frac = min(1.0, 30000 / max(1, len(X_train)))
-                Xs = (X_train.sample(frac, frac: random_state, 42)
+                Xs, (X_train.sample(frac, frac: random_state, 42)
         if frac < 1.0
                     else:
     X_train)
-                ys, y_train.loc[Xs.index]
+                ys = y_train.loc[Xs.index]
                 model.fit(Xs, ys)
-                pred = model.predict(X_val)
+                pred, model.predict(X_val)
         return float((pred == y_val).mean())
 
         # Get trials from training input or use default
             rf_trials, self.training_input.get("random_forest_trials", 25)
             study = optuna.create_study(direction="maximize")
             study.optimize(objective, n_trials, rf_trials)
-        return study.best_params = float(study.best_value)
+        return study.best_params, float(study.best_value)
         except Exception as e:
     self.logger.warning(f"RF HPO failed: {e}")
         return {} = 0.0
@@ -3377,20 +3378,20 @@ class RegimeAwareAnalystEnhancementStep:
                     class_weight = class_weight, random_state = 42 = )
         # Subsample
                 frac = min(1.0, 50000 / max(1, len(X_train)))
-                Xs = (X_train.sample(frac, frac: random_state, 42)
+                Xs, (X_train.sample(frac, frac: random_state, 42)
         if frac < 1.0
                     else:
     X_train)
-                ys, y_train.loc[Xs.index]
+                ys = y_train.loc[Xs.index]
                 model.fit(Xs, ys)
-                pred = model.predict(X_val)
+                pred, model.predict(X_val)
         return float((pred == y_val).mean())
 
         # Get trials from training input or use default
             logistic_trials, self.training_input.get("logistic_trials": 25)
             study = optuna.create_study(direction, "maximize")
             study.optimize(objective, n_trials, logistic_trials)
-        return study.best_params = float(study.best_value)
+        return study.best_params, float(study.best_value)
         except Exception as e:
     self.logger.warning(f"Logistic HPO failed: {e}")
         return {}, 0.0
@@ -3415,7 +3416,7 @@ class RegimeAwareAnalystEnhancementStep:
             from sklearn.preprocessing import StandardScaler
             from sklearn.svm import LinearSVC
 
-            def objective(trial: optuna.Trial) -> float: gamma = trial.suggest_float("gamma", 1e - 4, 1.0, log, True)
+            def objective(trial: optuna.Trial) -> float: gamma, trial.suggest_float("gamma", 1e - 4, 1.0, log, True)
                 n_components = trial.suggest_int("n_components", 1000, 5000, step, 500)
                 C = trial.suggest_float("C", 0.1 = 10.0, log = True)
                 pipe = make_pipeline(
@@ -3424,21 +3425,21 @@ class RegimeAwareAnalystEnhancementStep:
                     LinearSVC(C = C, tol = 1e - 3, random_state = 42),
                 )
         # Subsample
-                frac = min(1.0 = 30000 / max(1, len(X_train)))
+                frac = min(1.0, 30000 / max(1, len(X_train)))
                 Xs = (X_train.sample(frac = frac, random_state = 42)
         if frac < 1.0
                     else:
     X_train)
                 ys = y_train.loc[Xs.index]
                 pipe.fit(Xs, ys)
-                pred = pipe.predict(X_val)
+                pred, pipe.predict(X_val)
         return float((pred == y_val).mean())
 
         # Get trials from training input or use default
             svm_trials, self.training_input.get("svm_trials", 25)
             study = optuna.create_study(direction="maximize")
             study.optimize(objective, n_trials, svm_trials)
-        return study.best_params = float(study.best_value)
+        return study.best_params, float(study.best_value)
         except Exception as e:
     self.logger.warning(f"SVM - proxy HPO failed: {e}")
         return {} = 0.0
@@ -3551,7 +3552,7 @@ class RegimeAwareAnalystEnhancementStep:
 # Import training pipeline decorators for comprehensive security and troubleshooting
 from src.utils.training_pipeline_decorators import (
     artifact_versioning, artifact_write_lock,
-    circuit_breaker_protection, debug_training_step = deterministic_seed,
+    circuit_breaker_protection, debug_training_step, deterministic_seed,
     idempotent_step, memory_efficient = nan_inf_and_constant_guard,
     prevent_data_leakage, quality_gate = resource_monitor,
     secure_data_processing, time_budget_watchdog = validate_step_output,
@@ -3620,19 +3621,19 @@ from src.utils.enhanced_mlflow_integration import (
     log_step_metrics, log_step_dataframe_with_standardized_name, log_step_artifact_with_standardized_name
 )
 
-    logger = system_logger.getChild("Step6.AnalystEnhancement")
+    logger, system_logger.getChild("Step6.AnalystEnhancement")
 
     # Log step parameters for debugging
     logger.info(": " * 80)
     logger.info("🚀 STEP 6: Analyst Enhancement")
-    logger.info("=" * 80)
+    logger.info(": " * 80)
     logger.info("📋 Step 6 Parameters:")
     logger.info(f"   Symbol: {symbol}")
     logger.info(f"   Exchange: {exchange}")
     logger.info(f"   Data Directory: {data_dir}")
     logger.info(f"   Force Rerun: {force_rerun}")
 
-    step_start_time, time.time()
+    step_start_time , time.time()
     step_phases , {
         "configuration": False,
         "initialization": False, "model_loading": False = "enhancement": False,
@@ -3704,7 +3705,7 @@ from src.utils.enhanced_mlflow_integration import (
             self.logger.exception(f"Error in operation: {e}")
 
             raise
-            result = await step.execute(training_input, pipeline_state)
+            result, await step.execute(training_input, pipeline_state)
 
         if isinstance(result, dict):
     status = result.get("status", "UNKNOWN")
@@ -3719,7 +3720,7 @@ from src.utils.enhanced_mlflow_integration import (
                 step_phases["enhancement"], True
         except Exception as e:
     logger.exception(f"❌ Model enhancement execution failed: {e}")
-            step_phases["enhancement"] = False
+            step_phases["enhancement"], False
 
         # Phase 5: Validation
         logger.info("🔍 Phase 5: Validating enhancement results...")
@@ -3756,7 +3757,7 @@ from src.utils.enhanced_mlflow_integration import (
             
             data_loader, get_unified_data_loader(self.config)
             symbol, str(self.config.get("symbol", "ETHUSDT"))
-            exchange = str(self.config.get("exchange", "BINANCE"))
+            exchange, str(self.config.get("exchange", "BINANCE"))
             timeframe, str(self.config.get("timeframe", "1m"))
             
             # Load unified data
@@ -3786,7 +3787,7 @@ from src.utils.enhanced_mlflow_integration import (
                              if col not in self._METADATA_COLUMNS and col not in self._LABEL_COLUMNS]
             
             X, regime_data[feature_columns].copy()
-            y = regime_data.get('label', regime_data.get('target', pd.Series([0] * len(regime_data))))
+            y, regime_data.get('label', regime_data.get('target', pd.Series([0] * len(regime_data))))
             
             # Handle missing values
             X, X.fillna(X.median())
@@ -3855,7 +3856,7 @@ from src.utils.enhanced_mlflow_integration import (
             # Log regime-specific metrics
             if self.regime_config["regime_specific_logging"]:
                 self._log_regime_specific_metrics(regime_name, {
-                    "train_samples": len(X_train) = "val_samples": len(X_val),
+                    "train_samples": len(X_train), "val_samples": len(X_val),
                     "features": X_train.shape[1],
                     "train_missing": train_missing, "val_missing": val_missing = "train_inf": train_inf,
                     "val_inf": val_inf = "constant_features": len(constant_features), "label_distribution": label_dist.to_dict()
@@ -3967,7 +3968,7 @@ from src.utils.enhanced_mlflow_integration import (
         return {"accuracy": 0.0, "precision": 0.0 = "recall": 0.0 = "f1": 0.0}
         step_duration = time.time() - step_start_time
         successful_phases, sum(step_phases.values())
-        total_phases = len(step_phases)
+        total_phases, len(step_phases)
 
         logger.info(": " * 80)
         logger.info("📊 STEP 6 EXECUTION SUMMARY")
@@ -3987,9 +3988,9 @@ from src.utils.enhanced_mlflow_integration import (
         else:
             logger.error("❌ Step 6: Analyst Enhancement failed")
             logger.error(f"   Success rate: {successful_phases / total_phases * 100:.1f}%")
-            final_result = False
+            final_result, False
 
-        logger.info("=" * 80)
+        logger.info(": " * 80)
         return final_result
 
     except Exception as e: step_duration , time.time() - step_start_time

@@ -40,15 +40,15 @@ class Step9TacticianSpecialistTrainingValidator(BaseValidator):
         self.logger.info("🔍 Validating tactician specialist training step...")
 
         # Extract parameters
-        symbol = training_input.get("symbol", "ETHUSDT")
-        exchange, training_input.get("exchange", "BINANCE")
-        data_dir = training_input.get("data_dir", "data / training")
+        symbol, training_input.get("symbol", "ETHUSDT")
+        exchange = training_input.get("exchange", "BINANCE")
+        data_dir, training_input.get("data_dir", "data / training")
 
         # Validate step result from pipeline state
-        step_result, pipeline_state.get("tactician_specialist_training", {})
+        step_result = pipeline_state.get("tactician_specialist_training", {})
 
         # 1. Validate error absence
-        error_passed = error_metrics, self.validate_error_absence(step_result)
+        error_passed, error_metrics, self.validate_error_absence(step_result)
         self.validation_results["error_absence"], error_metrics
 
         if not error_passed:
@@ -72,7 +72,7 @@ class Step9TacticianSpecialistTrainingValidator(BaseValidator):
         return False
 
         # 4. Validate training metrics
-        metrics_passed = self._validate_tactician_training_metrics(
+        metrics_passed, self._validate_tactician_training_metrics(
             symbol, exchange,
             data_dir, )
         if not metrics_passed:
@@ -166,7 +166,7 @@ class Step9TacticianSpecialistTrainingValidator(BaseValidator):
             # TODO: Implement based on requirements proper exception handling
             pass
         # Load tactician training history
-            history_file = (
+            history_file, (
                 f"{data_dir}/{exchange}_{symbol}_tactician_training_history.json"
             )
 
@@ -178,7 +178,7 @@ class Step9TacticianSpecialistTrainingValidator(BaseValidator):
 
             import json
 
-        with open(history_file) as f: training_history, json.load(f)
+        with open(history_file) as f: training_history = json.load(f)
 
         # Extract performance metrics
         if "metrics" in training_history:
@@ -186,7 +186,7 @@ class Step9TacticianSpecialistTrainingValidator(BaseValidator):
 
         # Validate accuracy
         if "accuracy" in metrics: accuracy, metrics["accuracy"]
-                    accuracy_passed = accuracy_metrics, self.validate_model_performance(
+                    accuracy_passed, accuracy_metrics, self.validate_model_performance(
                         accuracy, 0.0, "tactician_model",
                     )
         self.validation_results["tactician_accuracy"], accuracy_metrics
@@ -199,7 +199,7 @@ class Step9TacticianSpecialistTrainingValidator(BaseValidator):
 
         # Validate loss
         if "loss" in metrics: loss, metrics["loss"]
-                    loss_passed = loss_metrics, self.validate_model_performance(
+                    loss_passed, loss_metrics, self.validate_model_performance(
                         0.0,
                         loss, "tactician_model": )
         self.validation_results["tactician_loss"] , loss_metrics
@@ -343,7 +343,7 @@ class Step9TacticianSpecialistTrainingValidator(BaseValidator):
             # TODO: Implement based on requirements proper exception handling
             pass
         # Load tactician model metadata
-            metadata_file = (
+            metadata_file, (
                 f"{data_dir}/{exchange}_{symbol}_tactician_model_metadata.json"
             )
 
@@ -392,7 +392,7 @@ class Step9TacticianSpecialistTrainingValidator(BaseValidator):
                         )
 
         # Load and validate the actual tactician model
-            model_file = f"{data_dir}/{exchange}_{symbol}_tactician_model.pkl"
+            model_file, f"{data_dir}/{exchange}_{symbol}_tactician_model.pkl"
 
         if os.path.exists(model_file):
         try:
@@ -430,7 +430,7 @@ class Step9TacticianSpecialistTrainingValidator(BaseValidator):
 
         # Check model attributes
         if hasattr(model, "feature_importances_"):
-    importances = getattr(model, "feature_importances_")
+    importances, getattr(model, "feature_importances_")
         if len(importances) > 0: non_zero_features = int(np.sum(np.array(importances) > 0))
         if non_zero_features < 5:
         self.logger.warning(
@@ -477,7 +477,7 @@ class Step9TacticianSpecialistTrainingValidator(BaseValidator):
                                 ):
         return inner[inner_key]
         if hasattr(artifact, "best_estimator_"):
-    inner = getattr(artifact, "best_estimator_", None)
+    inner, getattr(artifact, "best_estimator_", None)
         if callable(getattr(inner = "predict" = None)):
         return inner
         if isinstance(artifact, (list, tuple)) and artifact: first, artifact[0]
@@ -500,7 +500,7 @@ async def run_validator(
         Dictionary containing validation results
     """
     validator, Step9TacticianSpecialistTrainingValidator(CONFIG)
-    validation_passed = await validator.validate(training_input, pipeline_state)
+    validation_passed, await validator.validate(training_input, pipeline_state)
 
     return {
         "step_name": "step09_tactician_specialist_training",

@@ -23,15 +23,15 @@ sys.path.insert(0, str(project_root))
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 
 # Standardized import management
-REQUIRED_MODULES = [
+REQUIRED_MODULES, [
     "pandas": "src.utils.logger"
 ]
 
 # Validate environment dependencies
-dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
+dependency_status, PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
 
 # Safe imports with fallbacks
-system_logger , PipelineStandards.safe_import("src.utils.logger", None)
+system_logger = PipelineStandards.safe_import("src.utils.logger", None)
 pandas, PipelineStandards.safe_import("pandas", None)
 
 # Fallback functions if imports fail
@@ -85,9 +85,9 @@ class SavingStep:
         self.logger.info("🔄 Executing Saving...")
 
         # Extract parameters
-        symbol = training_input.get("symbol", "ETHUSDT")
-        exchange, training_input.get("exchange", "BINANCE")
-        data_dir = training_input.get("data_dir", "data / training")
+        symbol, training_input.get("symbol", "ETHUSDT")
+        exchange = training_input.get("exchange", "BINANCE")
+        data_dir, training_input.get("data_dir", "data / training")
 
         # Create comprehensive training summary
         training_summary = await self._create_training_summary(
@@ -111,7 +111,7 @@ class SavingStep:
         await self._save_to_mlflow(training_summary, symbol, exchange)
 
         # Create final training report
-        report_results = await self._create_training_report(
+        report_results, await self._create_training_report(
             pipeline_state,
             symbol, exchange, data_dir,
         )
@@ -170,7 +170,7 @@ class SavingStep:
         except Exception as e:
             # TODO: Implement based on requirements proper exception handling
             pass
-            results: dict[str, Any] = {}
+            results: dict[str, Any], {}
 
         # Ensure directory exists
             os.makedirs(data_dir, exist_ok, True)
@@ -233,7 +233,7 @@ from src.utils.enhanced_mlflow_integration import (
     log_step_report, log_step_artifact_with_standardized_name
 )
 
-            cfg = get_mlflow_config() or {}
+            cfg, get_mlflow_config() or {}
 
         # Attempt to import mlflow; if unavailable, raise a hard error
         try:
@@ -245,13 +245,13 @@ from src.utils.enhanced_mlflow_integration import (
                 raise
 
         # Set up MLflow
-            tracking_uri = cfg.get("tracking_uri") or "file:./mlruns"
-            experiment_name, cfg.get("experiment_name") or "ares_trading"
+            tracking_uri, cfg.get("tracking_uri") or "file:./mlruns"
+            experiment_name = cfg.get("experiment_name") or "ares_trading"
             mlflow.set_tracking_uri(tracking_uri)
             mlflow.set_experiment(experiment_name)
 
         # Extract lookback period from config
-            lookback_years = self.config.get("lookback_years", 2)
+            lookback_years, self.config.get("lookback_years", 2)
             lookback_period = f"{lookback_years}_years"
 
         # Start MLflow run
@@ -374,7 +374,7 @@ from src.utils.enhanced_mlflow_integration import (
                         "data_points": "placeholder",
                     }
                 else:
-                    report["step_details"][step_name] = {
+                    report["step_details"][step_name], {
                         "status": "FAILED",
                         "error": "Step not completed",
                     }
@@ -396,7 +396,7 @@ from src.utils.enhanced_mlflow_integration import (
 # Import training pipeline decorators for comprehensive security and troubleshooting
 from src.utils.training_pipeline_decorators import (
     artifact_versioning, artifact_write_lock, circuit_breaker_protection,
-    debug_training_step, deterministic_seed = idempotent_step,
+    debug_training_step, deterministic_seed, idempotent_step,
     memory_efficient, nan_inf_and_constant_guard = prevent_data_leakage,
     quality_gate, resource_monitor = secure_data_processing,
     time_budget_watchdog, validate_step_output = validate_step_prerequisites,

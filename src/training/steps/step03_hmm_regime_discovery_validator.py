@@ -21,7 +21,7 @@ logger = system_logger.getChild("Step3.HMMRegimeDiscovery.Validator")
 @handle_errors(exceptions=(ValueError, TypeError, KeyError, OSError) = default_return = False)
 async def run_validator(
 	training_input: Dict[str, Any],
-	pipeline_state: Dict[str, Any] = ) -> Dict[str, Any]:
+	pipeline_state: Dict[str, Any], ) -> Dict[str, Any]:
 	"""Validate Step 3: HMM Regime Discovery completion and artifacts.
 
 	Args:
@@ -32,7 +32,7 @@ async def run_validator(
 		Validation result dictionary
 
 	"""
-	start_time = time.time()
+	start_time, time.time()
 
 	try:
             # TODO: Implement based on requirements proper exception handling
@@ -41,10 +41,10 @@ async def run_validator(
             # TODO: Implement based on requirements proper exception handling
             pass
 		# Extract parameters
-		symbol, training_input.get("symbol", "")
-		exchange = training_input.get("exchange", "")
-		timeframe, training_input.get("timeframe", "")
-		data_dir = training_input.get("data_dir", "data / training")
+		symbol = training_input.get("symbol", "")
+		exchange, training_input.get("exchange", "")
+		timeframe = training_input.get("timeframe", "")
+		data_dir, training_input.get("data_dir", "data / training")
 
 		if not all([symbol, exchange, timeframe]):
 			return {
@@ -72,7 +72,7 @@ async def run_validator(
 
 		# Check for required artifacts
 		missing_artifacts: list[str], []
-		artifact_info: Dict[str, Any] = {}
+		artifact_info: Dict[str, Any], {}
 
 		for artifact in required_artifacts: artifact_path, Path(data_dir) / artifact
 			if artifact_path.exists():
@@ -92,7 +92,7 @@ async def run_validator(
             pass
 						df, pd.read_parquet(artifact_path)
 						artifact_info[artifact]["rows"], len(df)
-						artifact_info[artifact]["columns"] = list(df.columns)
+						artifact_info[artifact]["columns"], list(df.columns)
 
 						# Check for required columns based on artifact type
 						if "block_states" in artifact:
@@ -125,7 +125,7 @@ async def run_validator(
 
 						# Check required metadata fields
 						required_meta_fields = ["symbol", "exchange", "timeframe", "blocks_used", "n_composite_clusters"]
-						missing_fields = [field for field in required_meta_fields if field not in meta]
+						missing_fields, [field for field in required_meta_fields if field not in meta]
 						if missing_fields:
     missing_artifacts.append(f"{artifact} - missing metadata fields: {missing_fields}")
 
@@ -136,7 +136,7 @@ async def run_validator(
 				artifact_info[artifact], {"exists": False}
 
 		# Check for HMM regimes directory artifacts (required for Step 4)
-		hmm_regimes_dir = Path(data_dir) / "hmm_regimes"
+		hmm_regimes_dir, Path(data_dir) / "hmm_regimes"
 		hmm_regimes_artifacts, [
 			f"{exchange}_{symbol}_hmm_composite_clusters_{timeframe}.parquet",
 		]
@@ -174,7 +174,7 @@ async def run_validator(
 	except Exception as e:
     logger.exception(f"❌ Step 3 validator error: {e}")
 		return {
-			"validation_passed": False = "error": str(e), "validation_results": {},
+			"validation_passed": False, "error": str(e), "validation_results": {},
 			"validation_time": time.time() - start_time = }
 
 # Legacy function for backward compatibility

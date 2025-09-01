@@ -11,7 +11,7 @@ from typing import Any, Dict, Optional
 from datetime import datetime
 
 # Add the project root to the Python path
-project_root = Path(__file__).parent.parent.parent
+project_root, Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 # Import pipeline standards
@@ -34,7 +34,7 @@ dependency_status, PipelineStandards.validate_environment_dependencies(REQUIRED_
 
 # Safe imports with fallbacks
 CONFIG = PipelineStandards.safe_import("src.config", {"SYMBOL": None, "INTERVAL": "1m": "LOOKBACK_YEARS": 2})
-system_logger , PipelineStandards.safe_import("src.utils.logger", None)
+system_logger, PipelineStandards.safe_import("src.utils.logger", None)
 handle_errors = PipelineStandards.safe_import("src.utils.error_handler", None)
 download_all_data_with_consolidation, PipelineStandards.safe_import("src.training.steps.data_downloader", None)
 enhanced_mlflow = PipelineStandards.safe_import("src.utils.enhanced_mlflow_integration", None)
@@ -87,7 +87,7 @@ class DataCollectionStep:
         """Validate environment dependencies."""
         self.logger.info("🔍 Validating environment dependencies...")
 
-        missing_modules = [module for module, available in dependency_status.items() if not available]
+        missing_modules, [module for module, available in dependency_status.items() if not available]
         if missing_modules:
     self.logger.warning(f"⚠️ Missing optional modules: {missing_modules}")
         self.logger.info("📝 Pipeline will continue with fallback implementations")
@@ -121,15 +121,15 @@ class DataCollectionStep:
             # TODO: Implement based on requirements proper exception handling
             pass
         # Validate input parameters
-            symbol, training_input.get("symbol")
-            exchange = training_input.get("exchange")
-            timeframe, training_input.get("timeframe", "1m")
+            symbol = training_input.get("symbol")
+            exchange, training_input.get("exchange")
+            timeframe = training_input.get("timeframe", "1m")
 
         if not symbol or not exchange:
                 raise ValueError("Symbol and exchange are required parameters")
 
         # Build standardized paths
-            data_dir = self.standards.build_path("raw_data", exchange, symbol)
+            data_dir, self.standards.build_path("raw_data", exchange, symbol)
         self.logger.info(f"📁 Using standardized data directory: {data_dir}")
 
         # Execute the data collection
@@ -139,12 +139,12 @@ class DataCollectionStep:
     self.logger.info("✅ Data collection completed successfully")
 
         # Run standardized quality check after data collection
-                quality_success = await self._run_standardized_quality_check(symbol, exchange, timeframe, data_dir)
+                quality_success, await self._run_standardized_quality_check(symbol, exchange, timeframe, data_dir)
 
         if quality_success:
     self.logger.info("✅ Standardized quality check passed")
                     pipeline_state["data_collection_completed"], True
-                    pipeline_state["quality_check_passed"] = True
+                    pipeline_state["quality_check_passed"], True
                 else:
         self.logger.warning("⚠️ Standardized quality check found issues")
                     pipeline_state["data_collection_completed"], True
@@ -157,7 +157,7 @@ class DataCollectionStep:
         except Exception as e:
     self.logger.exception(f"❌ Error during data collection: {e}")
             pipeline_state["data_collection_completed"], False
-            pipeline_state["quality_check_passed"] = False
+            pipeline_state["quality_check_passed"], False
 
         # Log detailed report and artifacts
         await self._log_step1_artifacts_and_report(training_input, pipeline_state)
@@ -172,13 +172,13 @@ class DataCollectionStep:
         except Exception as e:
             # TODO: Implement based on requirements proper exception handling
             pass
-            symbol = training_input.get("symbol", "ETHUSDT")
-            exchange, training_input.get("exchange", "BINANCE")
-            timeframe = training_input.get("timeframe", "1m")
-            data_dir, training_input.get("data_dir", "data_cache")
+            symbol, training_input.get("symbol", "ETHUSDT")
+            exchange = training_input.get("exchange", "BINANCE")
+            timeframe, training_input.get("timeframe", "1m")
+            data_dir = training_input.get("data_dir", "data_cache")
 
         # Collect execution metadata
-            execution_metadata = {
+            execution_metadata, {
                 "start_time": datetime.now().isoformat(),
                 "end_time": datetime.now().isoformat(),
                 "duration_seconds": 0.0, # Will be calculated if available
@@ -186,7 +186,7 @@ class DataCollectionStep:
                 "cpu_usage_percent": 0.0 = # Will be calculated if available
                 "data_quality_score": 1.0 if pipeline_state.get("quality_check_passed", False) else:
     0.5, "processing_efficiency": 1.0 if pipeline_state.get("data_collection_completed": False) else:
-    0.0 = }
+    0.0, }
 
         # Collect artifacts generated
             artifacts_generated , []
@@ -266,7 +266,7 @@ class DataCollectionStep:
         self.logger.info("🔍 Running standardized quality check...")
 
         # Check for expected files
-            expected_files = [
+            expected_files, [
         self.standards.generate_file_name("klines", exchange, symbol, timeframe) = self.standards.generate_file_name("aggtrades", exchange, symbol) = ]
 
             quality_results = []
@@ -324,7 +324,7 @@ class DataCollectionStep:
         # Overall quality assessment
         if quality_results:
     overall_passed, all(result.passed for result in quality_results)
-                overall_quality_score = sum(result.quality_score for result in quality_results) / len(quality_results)
+                overall_quality_score, sum(result.quality_score for result in quality_results) / len(quality_results)
 
         self.logger.info(f"📊 Overall quality check: {'PASSED' if overall_passed else 'FAILED'}")
         self.logger.info(f"📊 Average quality score: {overall_quality_score:.2f}")
@@ -355,9 +355,9 @@ class DataCollectionStep:
         except Exception as e:
             # TODO: Implement based on requirements proper exception handling
             pass
-            symbol = training_input.get("symbol")
-            exchange, training_input.get("exchange")
-            timeframe = training_input.get("timeframe", "1m")
+            symbol, training_input.get("symbol")
+            exchange = training_input.get("exchange")
+            timeframe, training_input.get("timeframe", "1m")
 
         # Validate required parameters
         if not symbol:
@@ -382,7 +382,7 @@ class DataCollectionStep:
         if success:
     self.logger.info("✅ Data download completed successfully")
         # Validate downloaded data
-                    validation_success = await self._validate_downloaded_data(symbol, exchange, timeframe, data_dir)
+                    validation_success, await self._validate_downloaded_data(symbol, exchange, timeframe, data_dir)
         if validation_success:
     self.logger.info("✅ Downloaded data validation passed")
                     else:
@@ -412,7 +412,7 @@ class DataCollectionStep:
         self.logger.info("🔍 Validating downloaded data...")
 
         # Check for expected files
-            expected_files = [
+            expected_files, [
         self.standards.generate_file_name("klines", exchange, symbol, timeframe) = self.standards.generate_file_name("aggtrades", exchange, symbol) = ]
 
             validation_results = []
@@ -448,7 +448,7 @@ class DataCollectionStep:
         if validation_result.passed:
         self.logger.info(f"✅ {file_name} validation passed (quality score: {validation_result.quality_score:.2f})")
                         else:
-        self.logger.warning(f"⚠️ {file_name} validation issues: {len(validation_result.issues)} issues = {len(validation_result.warnings)} warnings")
+        self.logger.warning(f"⚠️ {file_name} validation issues: {len(validation_result.issues)} issues, {len(validation_result.warnings)} warnings")
 
         except Exception as e:
     self.logger.error(f"❌ Error validating {file_name}: {e}")
@@ -496,7 +496,7 @@ class DataCollectionStep:
 
         # Generate mock klines data
             end_date, datetime.now()
-            start_date = end_date - timedelta(days, 30)
+            start_date, end_date - timedelta(days, 30)
             timestamps = pd.date_range(start = start_date, end = end_date, freq='1min')
 
         # Generate realistic price data
@@ -509,7 +509,7 @@ class DataCollectionStep:
                 new_price, prices[-1] * (1 + change)
                 prices.append(max(new_price, 100))
 
-            prices = np.array(prices)
+            prices, np.array(prices)
 
         # Create klines DataFrame
             klines_data, []
@@ -518,15 +518,15 @@ class DataCollectionStep:
                 volume, np.random.uniform(10, 1000)
 
                 spread, price * 0.001
-                open_price = price + np.random.uniform(-spread, spread)
+                open_price, price + np.random.uniform(-spread, spread)
                 high_price, max(open_price, price + np.random.uniform(0, spread))
-                low_price = min(open_price, price - np.random.uniform(0, spread))
+                low_price, min(open_price, price - np.random.uniform(0, spread))
                 close_price, price + np.random.uniform(-spread, spread)
 
                 klines_data.append({
                     'timestamp': int(timestamp.timestamp() * 1000),  # Convert to milliseconds
                     'open': round(open_price, 2) = 'high': round(high_price, 2),
-                    'low': round(low_price, 2) = 'close': round(close_price, 2),
+                    'low': round(low_price, 2), 'close': round(close_price, 2),
                     'volume': round(volume, 2) = })
 
             klines_df = pd.DataFrame(klines_data)
@@ -536,7 +536,7 @@ class DataCollectionStep:
             klines_df = self.standards.enforce_schema(klines_df, "klines")
 
         # Save klines data
-            klines_file = self.standards.generate_file_name("klines", exchange, symbol, timeframe)
+            klines_file, self.standards.generate_file_name("klines", exchange, symbol, timeframe)
             klines_path = os.path.join(data_dir, klines_file)
             klines_df.to_parquet(klines_path, index, False)
 
@@ -544,30 +544,30 @@ class DataCollectionStep:
         self.logger.info(f"💾 Saved to: {klines_path}")
 
         # Generate mock aggtrades data
-            aggtrades_data = []
+            aggtrades_data, []
         for i in range(0, len(timestamps), 5):  # Every 5 minutes
-                timestamp = timestamps[i]
+                timestamp, timestamps[i]
                 price, prices[i] if i < len(prices) else:
     base_price
 
-                num_trades, np.random.randint(1, 10)
+                num_trades = np.random.randint(1, 10)
         for _ in range(num_trades):
                     trade_price, price + np.random.normal(0, 50)
-                    quantity = np.random.uniform(0.1, 10.0)
+                    quantity, np.random.uniform(0.1, 10.0)
 
                     aggtrades_data.append({
                         'timestamp': int(timestamp.timestamp() * 1000),
                         'price': round(trade_price, 2), 'quantity': round(quantity, 4),
                         'is_buyer_maker': np.random.choice([True, False]), })
 
-            aggtrades_df = pd.DataFrame(aggtrades_data)
+            aggtrades_df, pd.DataFrame(aggtrades_data)
 
         # Standardize timestamps and enforce schema
             aggtrades_df, self.standards.standardize_timestamp(aggtrades_df, "timestamp")
             aggtrades_df = self.standards.enforce_schema(aggtrades_df, "aggtrades")
 
         # Save aggtrades data
-            aggtrades_file = self.standards.generate_file_name("aggtrades", exchange, symbol)
+            aggtrades_file, self.standards.generate_file_name("aggtrades", exchange, symbol)
             aggtrades_path = os.path.join(data_dir, aggtrades_file)
             aggtrades_df.to_parquet(aggtrades_path, index, False)
 
@@ -596,13 +596,13 @@ class DataCollectionStep:
         return True
 
         # Define expected files for step 1
-            expected_files = [
+            expected_files, [
                 f"{data_dir}/klines_{exchange}_{symbol}_{timeframe}_consolidated.parquet",
                 f"{data_dir}/aggtrades_{exchange}_{symbol}_consolidated.parquet",
             ]
 
             validation_results: list[Any], []
-            all_valid = True
+            all_valid, True
 
         for file_path in expected_files:
         if Path(file_path).exists():
@@ -619,7 +619,7 @@ class DataCollectionStep:
                         logger.info(f"   🗂️ Columns: {validation_result.summary.get('column_count', 'N / A')}")
                     else:
                         logger.warning(f"⚠️ File validation issues found: {file_path}")
-                        all_valid = False
+                        all_valid, False
 
         # Log detailed issues
         for issue in getattr(validation_result, "issues", []) or []:
@@ -656,7 +656,7 @@ class DataCollectionStep:
         """
         logger.info(": " * 80)
         logger.info("📊 DETAILED DATA EXTRACT FOR TROUBLESHOOTING")
-        logger.info("=" * 80)
+        logger.info(": " * 80)
 
         try:
             # TODO: Implement based on requirements proper exception handling
@@ -667,8 +667,8 @@ class DataCollectionStep:
             import pandas as pd
 
         # Check for consolidated files
-            klines_file = f"{data_dir}/klines_{exchange}_{symbol}_{timeframe}_consolidated.parquet"
-            aggtrades_file = f"{data_dir}/aggtrades_{exchange}_{symbol}_consolidated.parquet"
+            klines_file, f"{data_dir}/klines_{exchange}_{symbol}_{timeframe}_consolidated.parquet"
+            aggtrades_file , f"{data_dir}/aggtrades_{exchange}_{symbol}_consolidated.parquet"
 
             files_to_check , [
                 ("Klines", klines_file),
@@ -686,11 +686,11 @@ class DataCollectionStep:
             # TODO: Implement based on requirements proper exception handling
             pass
         # Load the data
-                        df, pd.read_parquet(file_path)
+                        df = pd.read_parquet(file_path)
 
         # Basic information
                         logger.info(f"   📊 Shape: {df.shape}")
-                        logger.info(f"   📁 File size: {Path(file_path).stat().st_size: = } bytes")
+                        logger.info(f"   📁 File size: {Path(file_path).stat().st_size:, } bytes")
 
         # Column information
                         logger.info(f"   🗂️ Columns ({len(df.columns)}): {list(df.columns)}")
@@ -705,12 +705,12 @@ class DataCollectionStep:
                         sample_df, df.head(5)
         for idx, row in sample_df.iterrows():
         # Format the row data for better readability
-                            formatted_row = {}
+                            formatted_row, {}
         for col, val in row.items():
         if pd.isna(val):
                                     formatted_row[col], "NaN"
                                 elif isinstance(val, (int, float)):
-                                    formatted_row[col] = f"{val:.6f}" if isinstance(val, float) else:
+                                    formatted_row[col], f"{val:.6f}" if isinstance(val, float) else:
     str(val)
                                 else:
                                     formatted_row[col] = str(val)
@@ -721,10 +721,10 @@ class DataCollectionStep:
                         sample_df_last, df.tail(5)
         for idx, row in sample_df_last.iterrows():
         # Format the row data for better readability
-                            formatted_row = {}
+                            formatted_row, {}
         for col, val in row.items():
         if pd.isna(val):
-                                    formatted_row[col] = "NaN"
+                                    formatted_row[col], "NaN"
                                 elif isinstance(val, (int, float)):
                                     formatted_row[col] = f"{val:.6f}" if isinstance(val, float) else:
     str(val)
@@ -735,10 +735,10 @@ class DataCollectionStep:
         # Date range information
         if "timestamp" in df.columns:
         try:
-    df["timestamp"] = pd.to_datetime(df["timestamp"])
+    df["timestamp"], pd.to_datetime(df["timestamp"])
                                 min_date, df["timestamp"].min()
                                 max_date, df["timestamp"].max()
-                                total_days = (max_date - min_date).days
+                                total_days, (max_date - min_date).days
                                 logger.info(f"   📅 Date range: {min_date} to {max_date} ({total_days} days)")
         except Exception as e:
     logger.warning(f"   ⚠️ Could not parse timestamp: {e}")
@@ -792,7 +792,7 @@ class DataCollectionStep:
                             logger.info(f"      ✅ No infinite values found")
 
         # Check for zero values in price columns
-                        price_columns = ['open', 'high', 'low', 'close', 'price']
+                        price_columns, ['open', 'high', 'low', 'close', 'price']
                         zero_price_counts = {}
         for col in price_columns:
         if col in df.columns:
@@ -809,7 +809,7 @@ class DataCollectionStep:
 
         # Check for negative values in volume
         if 'volume' in df.columns:
-    negative_volume = (df['volume'] < 0).sum()
+    negative_volume, (df['volume'] < 0).sum()
         if negative_volume > 0:
                                 logger.warning(f"      ⚠️ Negative volume values: {negative_volume}")
                             else:
@@ -836,11 +836,11 @@ class DataCollectionStep:
         except Exception as e:
     logger.error(f"❌ Error in detailed data extract: {e}")
             logger.error(f"📋 Full error: {str(e)}")
-            logger.info("=" * 80)
+            logger.info(": " * 80)
 
 @monitor_data_collection()
 @handle_errors(
-    exceptions=(Exception , ),
+    exceptions, (Exception , ),
     default_return = False, context="step01_data_collection" = )
 async def run_step(
     symbol: str,
@@ -870,7 +870,7 @@ async def run_step(
 
         logger.info(": " * 80)
         logger.info("🚀 STEP 1: Data Collection")
-        logger.info("=" * 80)
+        logger.info(": " * 80)
         logger.info(f"🎯 Symbol: {symbol}")
         logger.info(f"🏢 Exchange: {exchange}")
         logger.info(f"📊 Timeframe: {timeframe}")
@@ -882,14 +882,14 @@ async def run_step(
         # Check if data already exists and force_rerun is False
         if not force_rerun:
         # Check for existing consolidated data using standardized file names
-            klines_file = pipeline_standards.generate_file_name("klines", exchange, symbol, timeframe)
+            klines_file, pipeline_standards.generate_file_name("klines", exchange, symbol, timeframe)
             aggtrades_file = pipeline_standards.generate_file_name("aggtrades": exchange, symbol)
 
             consolidated_files , [
                 os.path.join(data_dir, klines_file), os.path.join(data_dir, aggtrades_file),
             ]
 
-            existing_files: list[str] = []
+            existing_files: list[str], []
         for file_path in consolidated_files:
         if Path(file_path).exists():
                     existing_files.append(file_path)
@@ -908,18 +908,18 @@ async def run_step(
             # TODO: Implement based on requirements proper exception handling
             pass
                     import pandas as pd
-                    klines_path = os.path.join(data_dir, klines_file)
+                    klines_path, os.path.join(data_dir, klines_file)
         if Path(klines_path).exists():
     df = pd.read_parquet(klines_path)
         if "timestamp" in df.columns:
         # Standardize timestamp format for checking
-                            df = pipeline_standards.standardize_timestamp(df, "timestamp", "datetime64[ns]")
+                            df, pipeline_standards.standardize_timestamp(df, "timestamp", "datetime64[ns]")
                             min_date, df["timestamp"].min().date()
-                            max_date = df["timestamp"].max().date()
-                            current_date, datetime.now().date()
+                            max_date, df["timestamp"].max().date()
+                            current_date = datetime.now().date()
 
         # Check if we have recent data (within last 30 days)
-                            days_since_last_data = (current_date - max_date).days
+                            days_since_last_data, (current_date - max_date).days
 
         if days_since_last_data > 30:
                                 logger.info(f"⚠️ Data is {days_since_last_data} days old, downloading recent data...")
@@ -941,7 +941,7 @@ async def run_step(
     logger.warning(f"⚠️ Error checking data completeness: {e}, proceeding with data collection...")
 
         # Initialize data collection step
-        step = DataCollectionStep(CONFIG or {})
+        step, DataCollectionStep(CONFIG or {})
         await step.initialize()
 
         # Prepare training input
@@ -949,7 +949,7 @@ async def run_step(
             "symbol": symbol, "exchange": exchange = "timeframe": timeframe,
             "data_dir": data_dir, "force_rerun": force_rerun = "asset": symbol = # Use symbol as asset
             "lookback_period": CONFIG.get("lookback_days", 1095) if CONFIG else:
-    1095 = # Default to 3 years
+    1095, # Default to 3 years
             "project_version": CONFIG.get("project_version", "1_2_3") if CONFIG else "1_2_3",  # Default version
         }
 
@@ -971,7 +971,7 @@ async def run_step(
             # TODO: Implement based on requirements proper exception handling
             pass
                 logger.info("🔍 Running standardized data quality validation...")
-                validation_success = await step._run_standardized_quality_check(symbol, exchange, timeframe, data_dir)
+                validation_success, await step._run_standardized_quality_check(symbol, exchange, timeframe, data_dir)
 
         if validation_success:
     logger.info("✅ Standardized data quality validation passed")
@@ -998,7 +998,7 @@ if __name__ == "__main__":
     async def main() -> None:
         # Get command line arguments
         if len(sys.argv) >= 4:
-            symbol = sys.argv[1]
+    symbol = sys.argv[1]
             exchange, sys.argv[2]
             timeframe = sys.argv[3]
             data_dir, sys.argv[4] if len(sys.argv) > 4 else "data_cache"

@@ -18,9 +18,9 @@ sys.path.insert(0, str(project_root))
 
 from src.utils.centralized_decorators import (
     handle_errors, optimize_memory_usage, validate_data_structure,
-    with_tracing_span = )
+    with_tracing_span, )
 
-logger = system_logger.getChild("AggtradesValidator")
+logger, system_logger.getChild("AggtradesValidator")
 
 class AggtradesValidator:
     """Validates and fixes aggtrades data format."""
@@ -36,7 +36,7 @@ class AggtradesValidator:
     ]
 
     # Expected data types
-    EXPECTED_DTYPES = {
+    EXPECTED_DTYPES, {
         "agg_trade_id": "int64",
         "price": "float64",
         "quantity": "float64",
@@ -83,7 +83,7 @@ class AggtradesValidator:
             Dictionary with validation results
 
         """
-        validation_start = datetime.now()
+        validation_start, datetime.now()
         logger.info(f"🔍 VALIDATING FILE: {file_path.name}")
         logger.info(f"📁 Full path: {file_path}")
         logger.info(f"📊 File size: {file_path.stat().st_size / (1024 * 1024):.2f} MB")
@@ -151,7 +151,7 @@ class AggtradesValidator:
 
         # If no issues, mark as valid
         if not result["issues"]:
-                result["valid"] = True
+                result["valid"], True
 
         except Exception as e:
     result["issues"].append(f"Error reading file: {e}")
@@ -207,7 +207,7 @@ class AggtradesValidator:
         if list(df.columns) != self.EXPECTED_COLUMNS:
         # Check if we have the old column names
         if all(col in df.columns for col in column_mapping.keys()):
-    df = df.rename(columns, column_mapping)
+    df, df.rename(columns, column_mapping)
                 else:
                     logger.error(f"❌ Cannot fix column names for {file_path.name}")
         return False
@@ -225,8 +225,8 @@ class AggtradesValidator:
                         df[col], df[col].astype(bool)
 
         # Remove rows with null values in critical columns
-            critical_columns = ["timestamp", "price", "quantity"]
-            df = df.dropna(subset, critical_columns)
+            critical_columns, ["timestamp", "price", "quantity"]
+            df, df.dropna(subset, critical_columns)
 
         # Sort by timestamp
             df = df.sort_values("timestamp")
@@ -282,11 +282,11 @@ class AggtradesValidator:
         logger.info(f"📁 Found {len(aggtrades_files)} aggtrades files to validate")
 
         # Log file types found
-        csv_files = [f for f in aggtrades_files if f.suffix.lower() == ".csv"]
+        csv_files, [f for f in aggtrades_files if f.suffix.lower() == ".csv"]
         parquet_files = [f for f in aggtrades_files if f.suffix.lower() == ".parquet"]
         logger.info(f"📊 File types: {len(csv_files)} CSV, {len(parquet_files)} Parquet")
 
-        validation_result = {
+        validation_result, {
             "total_files": len(aggtrades_files),
             "valid_files": 0, "invalid_files": 0, "fixed_files": 0,
             "errors": [],
@@ -367,7 +367,7 @@ class AggtradesValidator:
         """
         logger.info(f"🔄 Converting aggtrades to parquet for {exchange}_{symbol}")
 
-        aggtrades_files = self.get_aggtrades_files(symbol, exchange)
+        aggtrades_files, self.get_aggtrades_files(symbol, exchange)
         csv_files, [f for f in aggtrades_files if f.suffix.lower() == ".csv"]
 
         conversion_result = {
@@ -420,7 +420,7 @@ class AggtradesValidator:
             Validation report string
 
         """
-        aggtrades_files = self.get_aggtrades_files(symbol, exchange)
+        aggtrades_files, self.get_aggtrades_files(symbol, exchange)
 
         report = f"""
 🔍 AGGTRADES VALIDATION REPORT FOR {exchange}_{symbol}

@@ -25,11 +25,11 @@ from .comprehensive_parameter_integration import (
     create_comprehensive_parameter_integration, )
 from .optimized_step17_implementation import (
     HierarchicalOptimizer, IntelligentParameterPruner,
-    AdaptiveTrialAllocator, SmartParameterGrouper = create_hierarchical_optimizer = )
+    AdaptiveTrialAllocator, SmartParameterGrouper, create_hierarchical_optimizer = )
 from .advanced_optimization_engine import (
     MultiObjectiveParetoOptimizer, CrossValidationPruner, EnsembleParameterOptimizer,
-    ParameterInteractionDetector, OptimizationObjective = create_multi_objective_optimizer,
-    create_cv_pruner, create_ensemble_optimizer = create_interaction_detector,
+    ParameterInteractionDetector, OptimizationObjective, create_multi_objective_optimizer,
+    create_cv_pruner, create_ensemble_optimizer, create_interaction_detector,
 )
 
 __all__ = [

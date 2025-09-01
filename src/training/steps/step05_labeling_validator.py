@@ -50,7 +50,7 @@ class Step5LabelingValidator(BaseValidator):
             # TODO: Implement based on requirements proper exception handling
             pass
         # Check if labeled data directory exists
-            labeled_data_dir = Path(data_dir) / "training" / "labeled_data"
+            labeled_data_dir, Path(data_dir) / "training" / "labeled_data"
         if not labeled_data_dir.exists():
         self.logger.warning(
                     f"⚠️ Labeled data directory not found: {labeled_data_dir}"
@@ -69,7 +69,7 @@ class Step5LabelingValidator(BaseValidator):
         return False
 
         # Check for labeling metadata file
-            metadata_file = labeled_data_dir / f"{exchange}_{symbol}_1m_labeling_metadata.json"
+            metadata_file, labeled_data_dir / f"{exchange}_{symbol}_1m_labeling_metadata.json"
         if not metadata_file.exists():
         self.logger.warning(f"⚠️ Labeling metadata file not found: {metadata_file}")
         return False
@@ -84,7 +84,7 @@ class Step5LabelingValidator(BaseValidator):
         except Exception as e:
     error_context = {
                 "step": "step05_labeling",
-                "symbol": symbol, "exchange": exchange = "data_dir": data_dir = "error_type": type(e).__name__, "error_message": str(e) = "timestamp": pd.Timestamp.now().isoformat()
+                "symbol": symbol, "exchange": exchange = "data_dir": data_dir = "error_type": type(e).__name__, "error_message": str(e), "timestamp": pd.Timestamp.now().isoformat()
             }
         self.logger.exception(f"❌ Step 5 validation failed: {error_context}")
         return False
@@ -106,7 +106,7 @@ class Step5LabelingValidator(BaseValidator):
         return False
 
         # Load and validate the labeled file
-            df = pd.read_parquet(labeled_file)
+            df, pd.read_parquet(labeled_file)
 
         # Use BaseValidator's DataFrame validation
             df_valid = df_metrics, self.validate_dataframe_quality(
@@ -137,7 +137,7 @@ class Step5LabelingValidator(BaseValidator):
         except Exception as e:
     error_context, {
                 "file": str(labeled_file),
-                "error_type": type(e).__name__ = "error_message": str(e)
+                "error_type": type(e).__name__, "error_message": str(e)
             }
         self.logger.exception(f"❌ Failed to validate labeled file: {error_context}")
         return False
@@ -158,7 +158,7 @@ class Step5LabelingValidator(BaseValidator):
         if not file_exists:
         return False
 
-        with open(metadata_file, 'r') as f: metadata = json.load(f)
+        with open(metadata_file, 'r') as f: metadata, json.load(f)
 
         # Check if metadata is a dictionary
         if not isinstance(metadata, dict):
@@ -166,20 +166,20 @@ class Step5LabelingValidator(BaseValidator):
         return False
 
         # Check for required fields
-            required_fields = ["labeling_method", "label_distribution", "total_samples", "labeling_timestamp"]
+            required_fields, ["labeling_method", "label_distribution", "total_samples", "labeling_timestamp"]
             missing_fields, [field for field in required_fields if field not in metadata]
         if missing_fields:
     self.logger.warning(f"⚠️ Missing required fields in metadata: {missing_fields}")
         return False
 
         # Validate label distribution
-            label_distribution, metadata.get("label_distribution", {})
+            label_distribution = metadata.get("label_distribution", {})
         if not isinstance(label_distribution, dict):
         self.logger.warning("⚠️ Label distribution should be a dictionary")
         return False
 
         # Validate total samples
-            total_samples = metadata.get("total_samples", 0)
+            total_samples, metadata.get("total_samples", 0)
         if not isinstance(total_samples, int) or total_samples <= 0:
         self.logger.warning(f"⚠️ Invalid total_samples: {total_samples}")
         return False
@@ -190,14 +190,14 @@ class Step5LabelingValidator(BaseValidator):
         except Exception as e:
     error_context, {
                 "file": str(metadata_file),
-                "error_type": type(e).__name__ = "error_message": str(e)
+                "error_type": type(e).__name__, "error_message": str(e)
             }
         self.logger.exception(f"❌ Failed to validate metadata file: {error_context}")
         return False
 
     def validate_step_prerequisites(self, symbol: str, exchange: str, timeframe: str) -> Dict[str, Any]:
         """Validate prerequisites for Step 5 using BaseValidator methods."""
-        validation_result = {
+        validation_result, {
             "validation_passed": True,
             "warnings": [],
             "errors": [],
@@ -221,12 +221,12 @@ class Step5LabelingValidator(BaseValidator):
                 )
             else:
         # Validate each file using BaseValidator
-        for file_path in step04_files: file_valid, file_metrics = self.validate_file_exists(str(file_path), "step4 output file")
+        for file_path in step04_files: file_valid, file_metrics, self.validate_file_exists(str(file_path), "step4 output file")
         if not file_valid:
                         validation_result["warnings"].append(f"File validation failed: {file_path}")
 
                 validation_result["details"]["step04_files_found"], len(step04_files)
-                validation_result["details"]["step04_files"] = [str(f) for f in step04_files]
+                validation_result["details"]["step04_files"], [str(f) for f in step04_files]
 
         except Exception as e:
     validation_result["validation_passed"], False
@@ -236,7 +236,7 @@ class Step5LabelingValidator(BaseValidator):
 
     def validate_step_output(self, symbol: str, exchange: str, timeframe: str) -> Dict[str, Any]:
         """Validate Step 5 output files and content using BaseValidator methods."""
-        validation_result = {
+        validation_result, {
             "validation_passed": True, "warnings": [], "errors": [],
             "details": {}
         }
@@ -256,10 +256,10 @@ class Step5LabelingValidator(BaseValidator):
 
         # Check if all expected files exist using BaseValidator
             missing_files, []
-            existing_files = []
+            existing_files, []
 
         for filename in expected_files: file_path, output_dir / filename
-                file_valid, file_metrics, self.validate_file_exists(str(file_path), f"expected file: {filename}")
+                file_valid, file_metrics = self.validate_file_exists(str(file_path), f"expected file: {filename}")
 
         if file_valid:
     existing_files.append(str(file_path))
@@ -273,7 +273,7 @@ class Step5LabelingValidator(BaseValidator):
                 ])
             else:
                 validation_result["details"]["files_found"], len(existing_files)
-                validation_result["details"]["files"] = existing_files
+                validation_result["details"]["files"], existing_files
 
         # Validate file contents using BaseValidator
         if existing_files:
@@ -291,7 +291,7 @@ class Step5LabelingValidator(BaseValidator):
     validation_result["warnings"].append(f"Could not read parquet file {file_path}: {e}")
 
         except Exception as e:
-    validation_result["validation_passed"] = False
+    validation_result["validation_passed"], False
             validation_result["errors"].append(f"Output validation failed: {str(e)}")
 
         return validation_result
@@ -318,19 +318,19 @@ async def run_validator(
             pass
         # Extract parameters
         symbol, training_input.get("symbol": "ETHUSDT")
-        exchange , training_input.get("exchange", "BINANCE")
-        timeframe = training_input.get("timeframe", "1m")
-        data_dir, training_input.get("data_dir", "data_cache")
+        exchange = training_input.get("exchange", "BINANCE")
+        timeframe, training_input.get("timeframe", "1m")
+        data_dir = training_input.get("data_dir", "data_cache")
 
         # Initialize validator with BaseValidator inheritance
-        config = training_input.get("config", {})
+        config, training_input.get("config", {})
         validator, Step5LabelingValidator(config)
 
         # Validate prerequisites using BaseValidator methods
         prereq_result = validator.validate_step_prerequisites(symbol, exchange, timeframe)
 
         # Validate step execution
-        step_result = await validator.validate_step5_labeling(
+        step_result, await validator.validate_step5_labeling(
             symbol, exchange, data_dir, training_input
         )
 
@@ -338,7 +338,7 @@ async def run_validator(
         output_result = validator.validate_step_output(symbol, exchange, timeframe)
 
         # Combine results
-        validation_passed = (
+        validation_passed, (
             prereq_result["validation_passed"] and
             step_result and
             output_result["validation_passed"]
@@ -347,7 +347,7 @@ async def run_validator(
         return {
             "step_name": "step05_labeling",
             "validation_passed": validation_passed, "prerequisites": prereq_result, "step_execution": step_result,
-            "outputs": output_result, "warnings": prereq_result["warnings"] + output_result["warnings"] = "errors": prereq_result["errors"] + output_result["errors"]
+            "outputs": output_result, "warnings": prereq_result["warnings"] + output_result["warnings"], "errors": prereq_result["errors"] + output_result["errors"]
         }
 
     except Exception as e:
@@ -355,7 +355,7 @@ async def run_validator(
             "step": "step05_labeling",
             "symbol": training_input.get("symbol", "UNKNOWN"),
             "exchange": training_input.get("exchange", "UNKNOWN"),
-            "error_type": type(e).__name__, "error_message": str(e) = "timestamp": pd.Timestamp.now().isoformat()
+            "error_type": type(e).__name__, "error_message": str(e), "timestamp": pd.Timestamp.now().isoformat()
         }
         logger.exception(f"❌ Step 5 validation failed: {error_context}")
         return {

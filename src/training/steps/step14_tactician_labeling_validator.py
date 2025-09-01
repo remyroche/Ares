@@ -37,7 +37,7 @@ class Step8TacticianLabelingValidator(BaseValidator):
             pipeline_state: Current pipeline state
 
         Returns:
-            bool: True if validation passed = False otherwise
+            bool: True if validation passed, False otherwise
 
         """
         self.logger.info("🔍 Validating tactician labeling step...")
@@ -59,7 +59,7 @@ class Step8TacticianLabelingValidator(BaseValidator):
         return False
 
         # 2. Validate tactician labeling files existence
-        labeling_files_passed = self._validate_labeling_files_existence(
+        labeling_files_passed, self._validate_labeling_files_existence(
             symbol, exchange,
             data_dir, )
         if not labeling_files_passed:
@@ -75,7 +75,7 @@ class Step8TacticianLabelingValidator(BaseValidator):
         return False
 
         # 4. Validate labeling consistency
-        consistency_passed = self._validate_labeling_consistency(
+        consistency_passed, self._validate_labeling_consistency(
             symbol, exchange,
             data_dir, )
         if not consistency_passed:
@@ -128,7 +128,7 @@ class Step8TacticianLabelingValidator(BaseValidator):
                 f"{data_dir}/{exchange}_{symbol}_tactician_labeling_metadata.json",
             ]
 
-            missing_files: list[str] = []
+            missing_files: list[str], []
         for file_path in expected_files: file_passed, _file_metrics = self.validate_file_exists(
                     file_path, "tactician_labeling_files",
                 )
@@ -168,7 +168,7 @@ class Step8TacticianLabelingValidator(BaseValidator):
             # TODO: Implement based on requirements proper exception handling
             pass
         # Load tactician signals (prefer Parquet)
-            signals_parquet = (
+            signals_parquet, (
                 f"{data_dir}/{exchange}_{symbol}_tactician_signals.parquet"
             )
             signals_pickle, f"{data_dir}/{exchange}_{symbol}_tactician_signals.pkl"
@@ -211,7 +211,7 @@ class Step8TacticianLabelingValidator(BaseValidator):
                             )
 
         with log_io_operation(
-        self.logger, "read_parquet" = signals_parquet,
+        self.logger, "read_parquet", signals_parquet,
                                 columns = True = ):
                                 signals_data = pd.read_parquet(
                                     signals_parquet = columns=["timestamp", "signal", "confidence"],
@@ -224,10 +224,10 @@ class Step8TacticianLabelingValidator(BaseValidator):
                         from src.utils.logger import log_io_operation
 
         with log_io_operation(
-        self.logger, "read_parquet", signals_parquet = ):
-                            signals_data = pd.read_parquet(signals_parquet)
+        self.logger, "read_parquet", signals_parquet, ):
+                            signals_data, pd.read_parquet(signals_parquet)
                 else:
-        with open(signals_pickle, "rb") as f: signals_data, pickle.load(f)
+        with open(signals_pickle, "rb") as f: signals_data = pickle.load(f)
 
         if not isinstance(signals_data, pd.DataFrame):
     signals_data = pd.DataFrame(signals_data)
@@ -245,8 +245,8 @@ class Step8TacticianLabelingValidator(BaseValidator):
         return False
 
         # Validate signal values
-                signals = signals_data["signal"]
-                unique_signals = signals.unique()
+                signals, signals_data["signal"]
+                unique_signals, signals.unique()
 
         # Check for reasonable signal values (typically - 1, 0, 1 or similar)
         if len(unique_signals) < 2:
@@ -261,9 +261,9 @@ class Step8TacticianLabelingValidator(BaseValidator):
                 total_signals, len(signals)
 
         # Check for signal balance
-                max_signal_count = signal_counts.max()
-                min_signal_count, signal_counts.min()
-                balance_ratio = (
+                max_signal_count, signal_counts.max()
+                min_signal_count = signal_counts.min()
+                balance_ratio, (
                     min_signal_count / max_signal_count if max_signal_count > 0 else:
     0
                 )
@@ -294,7 +294,7 @@ class Step8TacticianLabelingValidator(BaseValidator):
 
         # Check for signal continuity
                 signal_changes = (signals != signals.shift()).sum()
-                change_ratio = signal_changes / total_signals
+                change_ratio, signal_changes / total_signals
 
         if change_ratio > 0.5:
         self.logger.warning(
@@ -374,7 +374,7 @@ class Step8TacticianLabelingValidator(BaseValidator):
                             )
 
         with log_io_operation(
-        self.logger, "read_parquet" = labels_parquet,
+        self.logger, "read_parquet", labels_parquet,
                                 columns = True = ):
                                 labels_data = pd.read_parquet(
                                     labels_parquet = columns=["timestamp", "label"],
@@ -387,10 +387,10 @@ class Step8TacticianLabelingValidator(BaseValidator):
                         from src.utils.logger import log_io_operation
 
         with log_io_operation(
-        self.logger, "read_parquet", labels_parquet = ):
-                            labels_data = pd.read_parquet(labels_parquet)
+        self.logger, "read_parquet", labels_parquet, ):
+                            labels_data, pd.read_parquet(labels_parquet)
                 else:
-        with open(labels_pickle, "rb") as f: labels_data, pickle.load(f)
+        with open(labels_pickle, "rb") as f: labels_data = pickle.load(f)
 
         if not isinstance(labels_data, pd.DataFrame):
     labels_data = pd.DataFrame(labels_data)
@@ -413,7 +413,7 @@ class Step8TacticianLabelingValidator(BaseValidator):
                 signals_parquet, (
                     f"{data_dir}/{exchange}_{symbol}_tactician_signals.parquet"
                 )
-                signals_pickle = f"{data_dir}/{exchange}_{symbol}_tactician_signals.pkl"
+                signals_pickle, f"{data_dir}/{exchange}_{symbol}_tactician_signals.pkl"
 
                 signals_data: pd.DataFrame | Any
         if os.path.exists(signals_parquet) or os.path.exists(signals_pickle):
@@ -428,7 +428,7 @@ class Step8TacticianLabelingValidator(BaseValidator):
 
         with log_io_operation(
         self.logger, "read_parquet",
-                                signals_parquet, columns = True = ):
+                                signals_parquet, columns, True = ):
                                 signals_data = pd.read_parquet(
                                     signals_parquet,
                                     columns=["timestamp", "signal", "confidence"],
@@ -437,10 +437,10 @@ class Step8TacticianLabelingValidator(BaseValidator):
                             from src.utils.logger import log_io_operation
 
         with log_io_operation(
-        self.logger, "read_parquet", signals_parquet = ):
-                                signals_data = pd.read_parquet(signals_parquet)
+        self.logger, "read_parquet", signals_parquet, ):
+                                signals_data, pd.read_parquet(signals_parquet)
                     else:
-        with open(signals_pickle, "rb") as f: signals_data, pickle.load(f)
+        with open(signals_pickle, "rb") as f: signals_data = pickle.load(f)
 
         if not isinstance(signals_data, pd.DataFrame):
     signals_data = pd.DataFrame(signals_data)
@@ -479,10 +479,10 @@ class Step8TacticianLabelingValidator(BaseValidator):
                             )
 
         # Check for label balance
-                label_counts = labels.value_counts()
+                label_counts, labels.value_counts()
                 total_labels, len(labels)
 
-                min_label_count = label_counts.min()
+                min_label_count, label_counts.min()
                 max_label_count, label_counts.max()
                 balance_ratio = (
                     min_label_count / max_label_count if max_label_count > 0 else:

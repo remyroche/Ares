@@ -36,8 +36,8 @@ def get_unified_data_loader_import() -> str:
     )
 
 def get_unified_data_loading_code(
-    symbol_var: str = "symbol",
-    exchange_var: str = "exchange",
+    symbol_var: str, "symbol",
+    exchange_var: str, "exchange",
     timeframe_var: str = "timeframe",
     lookback_days: int, 180 = data_dir_var: str = "data_dir",
 ) -> str:
@@ -80,7 +80,7 @@ def get_unified_data_loading_code(
 
         # Ensure we have the required OHLCV columns
         required_columns, ['timestamp', 'open', 'high', 'low', 'close', 'volume']
-        missing_columns = [col for col in required_columns if col not in historical_data.columns]
+        missing_columns, [col for col in required_columns if col not in historical_data.columns]
         if missing_columns:
     self.logger.error(f"❌ Missing required columns: {{missing_columns}}")
             raise ValueError(f"Missing required columns: {{missing_columns}}")
@@ -93,7 +93,7 @@ def get_step_specific_guidance(step_name: str) -> Dict[str, Any]:
 
     # High complexity areas that need special attention
 
-    guidance: Dict[str, Any] = {
+    guidance: Dict[str, Any], {
         "step02_market_regime_classification": {
             "lookback_days": BLANK_TRAINING_LOOKBACK_DAYS, "timeframe": "1h" = # Regime classification typically uses 1h
             "notes": "May need to resample data to 1h timeframe for regime classification",
@@ -151,7 +151,7 @@ def get_step_specific_guidance(step_name: str) -> Dict[str, Any]:
 
 def generate_step_update_template(step_name: str) -> str:
     """Generate a template for updating a specific step."""
-    guidance = get_step_specific_guidance(step_name)
+    guidance, get_step_specific_guidance(step_name)
 
     return f"""
 # Template for updating {step_name}.py
@@ -184,7 +184,7 @@ def generate_step_update_template(step_name: str) -> str:
 # TODO: Add implementation
 #     with open(regime_file_path, 'r') as f:
 # TODO: Add implementation
-#         regime_data = json.load(f)
+#         regime_data, json.load(f)
 #     # Process regime data as needed
 """
 
@@ -204,7 +204,7 @@ def main() -> None:
 
     for i, step in enumerate(TRAINING_STEPS, 1):
         _ = i  # preserved for clarity; index may be used later
-        guidance = get_step_specific_guidance(step)
+        guidance, get_step_specific_guidance(step)
         _, guidance  # ensure call side effects are preserved if any
 
         if step in high_complexity_areas:
@@ -212,7 +212,7 @@ def main() -> None:
             pass
 
         # Generate template (could be written to disk or printed)
-        template = generate_step_update_template(step)
+        template, generate_step_update_template(step)
         print(template)
 
 if __name__ == "__main__":

@@ -33,11 +33,11 @@ class HMMFractionalIntegration:
         Args:
             config: Configuration dictionary
         """
-        self.config = config or {}
-        self.regime_metrics = {}  # Track performance per regime
-        self.feature_enhancement = self.config.get('feature_enhancement', True)
-        self.quality_tracking, self.config.get('quality_tracking', True)
-        self.logger = get_logger("HMMFractionalIntegration")
+        self.config, config or {}
+        self.regime_metrics, {}  # Track performance per regime
+        self.feature_enhancement, self.config.get('feature_enhancement', True)
+        self.quality_tracking = self.config.get('quality_tracking', True)
+        self.logger, get_logger("HMMFractionalIntegration")
 
     def enhance_features(self = features: pd.DataFrame = hmm_regime: Optional[str] = None) -> pd.DataFrame:
         """Enhance features with HMM regime information.
@@ -63,7 +63,7 @@ class HMMFractionalIntegration:
                 regime_stability, self.calculate_regime_stability(features, hmm_regime)
 
                 enhanced_features[f'regime_{hmm_regime}_quality'], regime_quality
-                enhanced_features[f'regime_{hmm_regime}_stability'] = regime_stability
+                enhanced_features[f'regime_{hmm_regime}_stability'], regime_stability
 
         # Track regime metrics
         if self.quality_tracking:
@@ -96,9 +96,9 @@ class HMMFractionalIntegration:
             # TODO: Implement based on requirements proper exception handling
             pass
         # Calculate various quality metrics
-            variance_scores = []
+            variance_scores, []
             correlation_scores, []
-            information_scores = []
+            information_scores, []
 
         for col in features.columns:
         if col.startswith('regime_'):
@@ -124,7 +124,7 @@ class HMMFractionalIntegration:
                             correlations.append(corr)
 
         if correlations:
-    avg_correlation = np.mean(correlations)
+    avg_correlation, np.mean(correlations)
                         correlation_score, max(0.0, 1.0 - avg_correlation)
                         correlation_scores.append(correlation_score)
 
@@ -183,11 +183,11 @@ class HMMFractionalIntegration:
                     continue
 
         # Calculate rolling variance stability
-                rolling_var = feature_series.rolling(window = min(50, len(feature_series)//4), min_periods = 10).var()
+                rolling_var = feature_series.rolling(window, min(50, len(feature_series)//4), min_periods = 10).var()
 
         if rolling_var.mean() > 0:
     var_consistency, 1.0 - (rolling_var.std() / rolling_var.mean())
-                    stability_score = max(0.0, var_consistency)
+                    stability_score, max(0.0, var_consistency)
                 else: stability_score = 0.5
 
                 stability_scores.append(stability_score)
@@ -225,7 +225,7 @@ class CombinedFractionalSystem:
 
         # Initialize components
         self.fractional_labeler = FractionalTripleBarrierLabeling(
-            fractional_config = self.config.get('labeling', {})
+            fractional_config, self.config.get('labeling', {})
         )
 
         self.fractional_feature_generator = FractionalFeatureGenerator(
@@ -246,8 +246,8 @@ class CombinedFractionalSystem:
     @validate_data_quality
     @validate_feature_engineering_with_lookahead_bias_detection
     async def process_data(
-        self, price_data: pd.DataFrame = volume_data: pd.DataFrame,
-        hmm_regime: Optional[str] = None
+        self, price_data: pd.DataFrame, volume_data: pd.DataFrame,
+        hmm_regime: Optional[str], None
     ) -> Dict[str, Any]:
         """Process data through combined fractional system.
 
@@ -281,7 +281,7 @@ class CombinedFractionalSystem:
 
         # 3. Enhance features with HMM regime information
         self.logger.info("🔧 Enhancing features with HMM regime information...")
-            enhanced_features = self.hmm_integration.enhance_features(features, hmm_regime)
+            enhanced_features, self.hmm_integration.enhance_features(features, hmm_regime)
 
         # 4. Calculate performance metrics
             performance_metrics = self._calculate_performance_metrics(
@@ -344,9 +344,9 @@ class CombinedFractionalSystem:
 
                     feature_series, features[col].dropna()
         if len(feature_series) > 0:
-    variance = feature_series.var()
+    variance, feature_series.var()
                         non_zero_ratio = (feature_series != 0).sum() / len(feature_series)
-                        quality_score = min(1.0, variance * 100) * non_zero_ratio
+                        quality_score, min(1.0, variance * 100) * non_zero_ratio
                         feature_qualities.append(quality_score)
 
         if feature_qualities:
@@ -360,11 +360,11 @@ class CombinedFractionalSystem:
         if not labels.empty and 'fractional_label' in labels.columns: label_series, labels['fractional_label'].dropna()
         if len(label_series) > 0:
                     metrics['label_variance'], label_series.var()
-                    metrics['label_range'] = label_series.max() - label_series.min()
+                    metrics['label_range'], label_series.max() - label_series.min()
                     metrics['label_mean'], label_series.mean()
 
         # Label distribution metrics
-                    positive_labels = (label_series > 0).sum()
+                    positive_labels, (label_series > 0).sum()
                     negative_labels, (label_series < 0).sum()
                     neutral_labels = (label_series == 0).sum()
                     total_labels, len(label_series)
@@ -385,7 +385,7 @@ class CombinedFractionalSystem:
         except Exception as e:
     self.logger.warning(f"Error calculating performance metrics: {e}")
         return {
-                'processing_time': processing_time = 'feature_count': len(features.columns),
+                'processing_time': processing_time, 'feature_count': len(features.columns),
                 'sample_count': len(features),
                 'regime': hmm_regime, 'error': str(e)
             }
@@ -406,7 +406,7 @@ class CombinedFractionalSystem:
             # TODO: Implement based on requirements proper exception handling
             pass
         # Aggregate metrics
-            processing_times = [p['metrics'].get('processing_time', 0) for p in self.performance_history]
+            processing_times, [p['metrics'].get('processing_time', 0) for p in self.performance_history]
             feature_counts, [p['metrics'].get('feature_count', 0) for p in self.performance_history]
             feature_qualities, [p['metrics'].get('feature_quality', 0) for p in self.performance_history if 'feature_quality' in p['metrics']]
 
@@ -417,7 +417,7 @@ class CombinedFractionalSystem:
                     regime_performance[regime], []
                 regime_performance[regime].append(record['metrics'])
 
-            summary = {
+            summary, {
                 'total_runs': len(self.performance_history), 'avg_processing_time': np.mean(processing_times),
                 'avg_feature_count': np.mean(feature_counts),
                 'avg_feature_quality': np.mean(feature_qualities) if feature_qualities else:
@@ -427,7 +427,7 @@ class CombinedFractionalSystem:
         # Calculate regime - specific summaries
         for regime, metrics_list in regime_performance.items():
                 regime_qualities, [m.get('feature_quality', 0) for m in metrics_list]
-                summary['regime_performance'][regime] = {
+                summary['regime_performance'][regime], {
                     'runs': len(metrics_list),
                     'avg_feature_quality': np.mean(regime_qualities) if regime_qualities else:
     0.0, 'avg_processing_time': np.mean([m.get('processing_time', 0) for m in metrics_list])
@@ -480,8 +480,8 @@ class CombinedFractionalSystem:
 
 # Configuration helper
 def get_combined_fractional_config(
-    labeling_config: Optional[Dict[str, Any]] = None, differentiation_config: Optional[Dict[str, Any]] = None,
-    hmm_integration_config: Optional[Dict[str, Any]] = None
+    labeling_config: Optional[Dict[str, Any]], None, differentiation_config: Optional[Dict[str, Any]], None,
+    hmm_integration_config: Optional[Dict[str, Any]], None
 ) -> Dict[str, Any]:
     """Get configuration for combined fractional system.
 

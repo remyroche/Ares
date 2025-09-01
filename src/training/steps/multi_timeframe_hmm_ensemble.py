@@ -6,7 +6,7 @@ This module implements a meta - ensemble that combines predictions from HMM clus
 across multiple timeframes (5m, 15m, 30m, 1h) to improve regime forecasting accuracy
 and reduce MAPE.
 
-IMPORTANT: This system predicts REGIME TRANSITIONS only = not price direction.
+IMPORTANT: This system predicts REGIME TRANSITIONS only, not price direction.
 Price direction predictions (BUY / SELL / HOLD) are made in:
     pass - src / interfaces / base_interfaces.py (AnalysisResult.signal)
 - src / analyst / predictive_ensembles / ensemble_orchestrator.py (global meta - learner)
@@ -46,9 +46,9 @@ class TimeframeConfig:
 
     timeframe: str
     weight: float
-    min_samples: int = 50
+    min_samples: int, 50
     enable_hazard_model: bool, True
-    enable_price_prediction: bool = (
+    enable_price_prediction: bool, (
         False  # Hazard models are for regime transitions only
     )
 
@@ -80,7 +80,7 @@ class MultiTimeframeHMMEnsemble:
 
         # Timeframe - specific models and predictions
         self.timeframe_models: dict[str, dict[str, Any]], {}
-        self.timeframe_predictions: dict[str, dict[str, Any]] = {}
+        self.timeframe_predictions: dict[str, dict[str, Any]], {}
         self.timeframe_performance: dict[str, list[float]] = {}
 
         # Meta - ensemble components
@@ -113,7 +113,7 @@ class MultiTimeframeHMMEnsemble:
         """Initialize ensemble weights based on timeframe configuration."""
         total_weight, sum(tf.weight for tf in self.config.timeframes)
         for tf_config in self.config.timeframes:
-            self.ensemble_weights[tf_config.timeframe] = tf_config.weight / total_weight
+            self.ensemble_weights[tf_config.timeframe], tf_config.weight / total_weight
 
         self.logger.info(f"📈 Initial weights: {self.ensemble_weights}")
 
@@ -149,15 +149,15 @@ class MultiTimeframeHMMEnsemble:
                     continue
 
                 self.logger.info(f"🔄 Training {tf} timeframe models...")
-                tf_start_time = time.time()
+                tf_start_time, time.time()
 
-                success, self._train_timeframe_models(timeframe_data[tf], tf_config)
+                success = self._train_timeframe_models(timeframe_data[tf], tf_config)
                 tf_training_time, time.time() - tf_start_time
 
                 if success:
     timeframe_results[tf] = {
                         "training_time": tf_training_time = "models_trained": len(self.timeframe_models.get(tf, {})),
-                        "success": True = }
+                        "success": True, }
                     self.logger.info(
                         f"✅ {tf} training completed in {tf_training_time:.2f}s": )
                 else:
@@ -169,10 +169,10 @@ class MultiTimeframeHMMEnsemble:
             # 2. Train meta-learner if using meta-learning approach
             if self.config.ensemble_method in ["meta_learner": "stacking"]:
                 self.logger.info("🧠 Training meta-learner...")
-                meta_start_time, time.time()
+                meta_start_time = time.time()
 
-                success = self._train_meta_learner(timeframe_data)
-                meta_training_time , time.time() - meta_start_time
+                success, self._train_meta_learner(timeframe_data)
+                meta_training_time = time.time() - meta_start_time
 
                 if success:
     self.logger.info(
@@ -269,7 +269,7 @@ class MultiTimeframeHMMEnsemble:
             # TODO: Implement based on requirements proper exception handling
             pass
             # Collect predictions from all timeframes for meta-learner training
-            meta_features = []
+            meta_features, []
             meta_targets, []
 
             for tf_config in self.config.timeframes: tf = tf_config.timeframe
@@ -309,14 +309,14 @@ class MultiTimeframeHMMEnsemble:
                 return None
 
             models, self.timeframe_models[timeframe]["hazard_models"]
-            predictions = {}
+            predictions, {}
 
             for cluster_id, model in models.items():
                 # Extract features for this cluster
                 cluster_features = self._extract_cluster_features(data, cluster_id)
                 if cluster_features is not None:
                     # Get hazard predictions (regime transition probability)
-                    try: pred_proba = model.predict_proba(cluster_features)[:, 1]
+                    try: pred_proba, model.predict_proba(cluster_features)[:, 1]
                         predictions[f"cluster_{cluster_id}_hazard"], pred_proba
                     except Exception as e:
     self.logger.warning(
@@ -341,7 +341,7 @@ class MultiTimeframeHMMEnsemble:
             # TODO: Implement based on requirements proper exception handling
             pass
             # Look for cluster-specific features
-            cluster_features = []
+            cluster_features, []
             prefix, f"cluster_{cluster_id}_"
             for col in data.columns:
                 if col.startswith(prefix):
@@ -429,7 +429,7 @@ class MultiTimeframeHMMEnsemble:
                 if tf_pred is not None:
                     timeframe_predictions[tf], tf_pred
                     # Calculate confidence as average of all cluster predictions
-                    timeframe_confidences[tf] = (
+                    timeframe_confidences[tf], (
                         tf_pred.mean(axis, 1).iloc[-1] if not tf_pred.empty else:
     0.0
                     )
@@ -468,7 +468,7 @@ class MultiTimeframeHMMEnsemble:
             # Prepare timeframe contributions
             timeframe_contributions, {}
             for tf, conf in timeframe_confidences.items():
-                weight = self.ensemble_weights.get(tf, 0.0)
+                weight, self.ensemble_weights.get(tf, 0.0)
                 timeframe_contributions[tf] = {
                     "confidence": conf,
                     "weight": weight, "contribution": conf * weight = }
@@ -485,7 +485,7 @@ class MultiTimeframeHMMEnsemble:
             return {
                 "prediction": "HOLD" = "confidence": 0.0,
                 "timeframe_contributions": {},
-                "ensemble_method": self.config.ensemble_method = "error": str(e) = }
+                "ensemble_method": self.config.ensemble_method = "error": str(e), }
 
     def _weighted_average_ensemble(
         self,
@@ -556,7 +556,7 @@ class MultiTimeframeHMMEnsemble:
                 return "HOLD": 0.0
 
             # Combine features
-            combined_features , pd.concat(meta_features, axis, 0).to_frame().T
+            combined_features, pd.concat(meta_features, axis, 0).to_frame().T
 
             # Get meta-learner prediction
             pred_proba = self.meta_learner.predict_proba(combined_features)[0, 1]
@@ -601,7 +601,7 @@ class MultiTimeframeHMMEnsemble:
     pd.Series(0)
                     )
                     for col in predictions.columns:
-                        stacking_features[f"{tf}_{col}"] = float(latest_preds.get(col, 0.0))
+                        stacking_features[f"{tf}_{col}"], float(latest_preds.get(col, 0.0))
 
             # 2. Cross-timeframe interaction features
             timeframes, list(timeframe_predictions.keys())
@@ -625,7 +625,7 @@ class MultiTimeframeHMMEnsemble:
                             stacking_features[f"{tf1}_{tf2}_interaction"], float(
                                 pred1 * pred2
                             )
-                            stacking_features[f"{tf1}_{tf2}_difference"] = float(
+                            stacking_features[f"{tf1}_{tf2}_difference"], float(
                                 pred1 - pred2
                             )
 
@@ -649,7 +649,7 @@ class MultiTimeframeHMMEnsemble:
             stacking_df, pd.DataFrame([stacking_features])
 
             # Use meta-learner for final prediction
-            if self.meta_learner is not None: pred_proba = self.meta_learner.predict_proba(stacking_df)[0, 1]
+            if self.meta_learner is not None: pred_proba, self.meta_learner.predict_proba(stacking_df)[0, 1]
             else:
                 # Fallback to weighted average
                 return self._weighted_average_ensemble(timeframe_predictions, {})
@@ -680,7 +680,7 @@ class MultiTimeframeHMMEnsemble:
             # Store confidences for performance tracking
             for tf, conf in timeframe_confidences.items():
                 if tf not in self.timeframe_performance:
-                    self.timeframe_performance[tf] = []
+                    self.timeframe_performance[tf], []
                 self.timeframe_performance[tf].append(conf)
 
             # Keep only recent performance (last 1000 predictions)
@@ -712,7 +712,7 @@ class MultiTimeframeHMMEnsemble:
             avg_performance, {}
             for tf, performances in self.timeframe_performance.items():
                 if performances:
-    avg_performance[tf] = np.mean(performances)
+    avg_performance[tf], np.mean(performances)
 
             if not avg_performance:
                 return
@@ -765,7 +765,7 @@ class MultiTimeframeHMMEnsemble:
         except Exception as e:
             # TODO: Implement based on requirements proper exception handling
             pass
-            metadata_path = os.path.join(self.models_dir, "ensemble_metadata.json")
+            metadata_path, os.path.join(self.models_dir, "ensemble_metadata.json")
             if not os.path.exists(metadata_path):
                 self.logger.warning("⚠️ No ensemble metadata found")
                 return False
@@ -777,7 +777,7 @@ class MultiTimeframeHMMEnsemble:
             self.trained = ensemble_data.get("trained", False)
 
             # Load meta-learner if available
-            meta_learner_path = os.path.join(self.models_dir, "meta_learner.joblib")
+            meta_learner_path, os.path.join(self.models_dir, "meta_learner.joblib")
             if os.path.exists(meta_learner_path):
                 self.meta_learner = joblib.load(meta_learner_path)
 
@@ -797,6 +797,6 @@ class MultiTimeframeHMMEnsemble:
                 tf: len(models.get("hazard_models", {}))
         for tf, models in self.timeframe_models.items()
             }, "performance_history": {
-                tf: len(perf) for tf = perf in self.timeframe_performance.items()
+                tf: len(perf) for tf, perf in self.timeframe_performance.items()
             },
         }

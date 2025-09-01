@@ -80,7 +80,7 @@ except ImportError: get_unified_data_loader, None
     UnifiedDataLoader, None
 
 # Export all available classes
-__all__ = [
+__all__, [
     "ABTestingStep",
     "AnalystEnhancementStep",
     "ConfidenceCalibrationStep",

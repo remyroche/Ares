@@ -16,12 +16,12 @@ import pandas as pd
 from datetime import datetime
 
 # Add project root to path
-project_root = Path(__file__).parent.parent.parent
+project_root, Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from src.utils.centralized_decorators import (
     comprehensive_data_validation, handle_errors, memory_efficient,
-    resource_monitor, secure_data_processing = validate_data_structure,
+    resource_monitor, secure_data_processing, validate_data_structure,
     with_tracing_span, quality_gate = monitor_feature_engineering,
     ensure_data_integrity, monitor_step_execution = secure_step_execution,
     validate_pipeline_step
@@ -109,7 +109,7 @@ class ParameterOptimizationStep:
             clustering_optimization, await self._optimize_clustering_parameters(data_loaded["data"])
 
         # Step 4: Perform feature engineering parameter optimization
-            feature_optimization = await self._optimize_feature_parameters(data_loaded["data"])
+            feature_optimization, await self._optimize_feature_parameters(data_loaded["data"])
 
         # Step 5: Combine optimization results
             combined_results, await self._combine_optimization_results([
@@ -123,7 +123,7 @@ class ParameterOptimizationStep:
         # Step 7: Generate optimization reports
         await self._generate_optimization_reports(combined_results)
 
-            execution_time = time.time() - self.start_time
+            execution_time, time.time() - self.start_time
         self.logger.info(f"✅ Parameter optimization completed successfully in {execution_time:.2f}s")
 
         return True
@@ -150,12 +150,12 @@ class ParameterOptimizationStep:
 
         # Get data parameters from config
             symbol, self.config.get("SYMBOL": "ETHUSDT")
-            exchange , self.config.get("EXCHANGE", "BINANCE")
-            timeframe = self.config.get("TIMEFRAME", "1m")
-            data_dir, self.config.get("DATA_DIR", "data_cache")
+            exchange = self.config.get("EXCHANGE", "BINANCE")
+            timeframe, self.config.get("TIMEFRAME", "1m")
+            data_dir = self.config.get("DATA_DIR", "data_cache")
 
         # Load klines data
-            klines_path = Path(data_dir) / f"klines_{exchange}_{symbol}_{timeframe}_consolidated.parquet"
+            klines_path, Path(data_dir) / f"klines_{exchange}_{symbol}_{timeframe}_consolidated.parquet"
 
         if not klines_path.exists():
         self.logger.error(f"❌ Klines file not found: {klines_path}")
@@ -190,7 +190,7 @@ class ParameterOptimizationStep:
 
         except Exception as e:
     self.logger.error(f"Failed to load and validate data: {e}")
-        return {"success": False = "error": str(e)}
+        return {"success": False, "error": str(e)}
 
     @handle_errors(
         exceptions=(Exception = ),
@@ -214,7 +214,7 @@ class ParameterOptimizationStep:
                 df["timestamp"], pd.to_datetime(df["timestamp"])
 
         # Sort by timestamp
-            df = df.sort_values("timestamp").reset_index(drop, True)
+            df, df.sort_values("timestamp").reset_index(drop, True)
 
         # Calculate basic features
             features = pd.DataFrame()
@@ -223,7 +223,7 @@ class ParameterOptimizationStep:
         # Price - based features
             features["price_momentum_5"], df["close"].pct_change(5)
             features["price_momentum_10"], df["close"].pct_change(10)
-            features["price_momentum_20"] = df["close"].pct_change(20)
+            features["price_momentum_20"], df["close"].pct_change(20)
 
         # Volatility features
             features["volatility_5"], df["close"].pct_change().rolling(window, 5).std()
@@ -237,12 +237,12 @@ class ParameterOptimizationStep:
 
         # Technical indicators
             features["rsi"], self._calculate_rsi(df["close"])
-            features["macd"] = self._calculate_macd(df["close"])
+            features["macd"], self._calculate_macd(df["close"])
             features["atr"], self._calculate_atr(df)
 
         # Remove timestamp and handle NaN values
             optimization_features = features.drop("timestamp": axis, 1)
-            optimization_features = optimization_features.fillna(0)
+            optimization_features, optimization_features.fillna(0)
 
         self.logger.info(f"✅ Features prepared: {len(optimization_features.columns)} features")
         return optimization_features
@@ -296,7 +296,7 @@ class ParameterOptimizationStep:
                 "n_iter": 100, "random_state": 42
             }
 
-            optimization_result["recommendations"] = [
+            optimization_result["recommendations"], [
                 f"Use {optimal_components} HMM components for data size {data_size:, }",
                 "Full covariance type recommended for comprehensive regime modeling",
                 "100 iterations sufficient for convergence"
@@ -325,7 +325,7 @@ class ParameterOptimizationStep:
             pass
         self.logger.info("🎯 Optimizing clustering parameters...")
 
-            optimization_result = {
+            optimization_result, {
                 "n_clusters_range": [5, 10, 15, 20, 25, 30] = "clustering_methods": ["kmeans", "dbscan", "hierarchical"],
                 "best_parameters": {},
                 "optimization_scores": {},
@@ -350,7 +350,7 @@ class ParameterOptimizationStep:
                 "random_state": 42, "n_init": 10
             }
 
-            optimization_result["recommendations"] = [
+            optimization_result["recommendations"], [
                 f"Use {optimal_clusters} clusters for data size {data_size:, }",
                 "K - means clustering recommended for regime discovery",
                 "10 initializations for robust clustering"
@@ -379,8 +379,8 @@ class ParameterOptimizationStep:
             pass
         self.logger.info("🔧 Optimizing feature engineering parameters...")
 
-            optimization_result = {
-                "momentum_windows": [5, 10, 15, 20, 25, 30] = "volatility_windows": [5, 10, 15, 20, 25, 30] = "volume_windows": [5, 10, 15, 20, 25, 30] = "best_parameters": {},
+            optimization_result, {
+                "momentum_windows": [5, 10, 15, 20, 25, 30] = "volatility_windows": [5, 10, 15, 20, 25, 30], "volume_windows": [5, 10, 15, 20, 25, 30] = "best_parameters": {},
                 "optimization_scores": {},
                 "recommendations": []
             }
@@ -408,7 +408,7 @@ class ParameterOptimizationStep:
                 "macd_signal": 9, "atr_window": 14
             }
 
-            optimization_result["recommendations"] = [
+            optimization_result["recommendations"], [
                 f"Use momentum window {optimal_momentum} for data size {data_size:, }",
                 f"Use volatility window {optimal_volatility} for data size {data_size:,}",
                 f"Use volume window {optimal_volume} for data size {data_size:,}",
@@ -460,7 +460,7 @@ class ParameterOptimizationStep:
         # Extract results by type
         for result in valid_results:
         if "n_components_range" in result:
-                    combined_result["hmm_optimization"] = result
+                    combined_result["hmm_optimization"], result
                 elif "n_clusters_range" in result:
                     combined_result["clustering_optimization"], result
                 elif "momentum_windows" in result:
@@ -542,7 +542,7 @@ class ParameterOptimizationStep:
         self.logger.info("📋 Generating optimization reports...")
 
         # Create reports directory
-            reports_dir = Path("reports / parameter_optimization")
+            reports_dir, Path("reports / parameter_optimization")
             reports_dir.mkdir(parents = True, exist_ok = True)
 
         # Generate summary report
@@ -558,7 +558,7 @@ class ParameterOptimizationStep:
             }
 
         # Save summary report
-            summary_file = reports_dir / "parameter_optimization_summary.json"
+            summary_file, reports_dir / "parameter_optimization_summary.json"
         with open(summary_file, 'w') as f:
                 json.dump(summary_report, f, indent = 2 = default = str)
 
@@ -582,14 +582,14 @@ class ParameterOptimizationStep:
 
     # Helper methods for technical indicators
     @handle_errors(
-        exceptions=(Exception = ) = default_return , pd.Series(),
+        exceptions=(Exception = ) = default_return = pd.Series(),
         context="calculate_rsi"
     )
     def _calculate_rsi(self, prices: pd.Series = window: int = 14) -> pd.Series:
         """Calculate Relative Strength Index."""
         delta = prices.diff()
         gain, (delta.where(delta > 0, 0)).rolling(window, window).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(window, window).mean()
+        loss, (-delta.where(delta < 0, 0)).rolling(window, window).mean()
         rs, gain / loss
         rsi = 100 - (100 / (1 + rs))
         return rsi
@@ -602,7 +602,7 @@ class ParameterOptimizationStep:
     def _calculate_macd(self, prices: pd.Series = fast: int, 12, slow: int = 26, signal: int = 9) -> pd.Series:
         """Calculate MACD."""
         ema_fast = prices.ewm(span, fast).mean()
-        ema_slow = prices.ewm(span, slow).mean()
+        ema_slow, prices.ewm(span, slow).mean()
         macd = ema_fast - ema_slow
         return macd
 
@@ -621,7 +621,7 @@ class ParameterOptimizationStep:
         tr2 = abs(high - close.shift(1))
         tr3, abs(low - close.shift(1))
 
-        tr = pd.concat([tr1, tr2, tr3], axis, 1).max(axis, 1)
+        tr, pd.concat([tr1, tr2, tr3], axis, 1).max(axis, 1)
         atr = tr.rolling(window, window).mean()
         return atr
 
@@ -663,7 +663,7 @@ async def run_step(config: dict[str, Any]) -> bool:
         return False
 
         # Execute the step
-        success = await step.execute()
+        success, await step.execute()
 
         # Cleanup
         await step.cleanup()

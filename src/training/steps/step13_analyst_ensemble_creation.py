@@ -12,14 +12,14 @@ from src.utils.logger import system_logger
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 
 from src.utils.enhanced_mlflow_integration import (
-    with_enhanced_mlflow_logging, log_step_report = create_detailed_step_report,
-    log_step_metrics, log_step_dataframe_with_standardized_name = log_step_artifact_with_standardized_name
+    with_enhanced_mlflow_logging, log_step_report, create_detailed_step_report,
+    log_step_metrics, log_step_dataframe_with_standardized_name, log_step_artifact_with_standardized_name
 )
 
 logger, system_logger
 
 # Required modules for this step
-REQUIRED_MODULES = [
+REQUIRED_MODULES, [
     "pandas",
     "joblib",
     "src.utils.logger",
@@ -37,7 +37,7 @@ class AnalystEnsembleCreationStep:
         self.standards, pipeline_standards
         self.logger = logger
         self.ensemble_models: dict[str, Any] = {}
-        self.ensemble_weights: dict[str = dict[str, float]] = {}
+        self.ensemble_weights: dict[str, dict[str, float]] = {}
         self._validate_environment()
 
     def _validate_environment(self) -> None:
@@ -45,7 +45,7 @@ class AnalystEnsembleCreationStep:
         if not dependency_status["all_available"]:
     missing_modules, dependency_status["missing_modules"]
         self.logger.warning(f"Missing modules: {missing_modules}")
-        # Continue with available modules = using fallbacks where needed
+        # Continue with available modules, using fallbacks where needed
 
     @handle_errors
     def execute(
@@ -72,7 +72,7 @@ class AnalystEnsembleCreationStep:
             # TODO: Implement based on requirements proper exception handling
             pass
         # Check if enhanced HMM models exist from Step 6
-            enhanced_models_dir = os.path.join(data_dir, "enhanced_hmm_models")
+            enhanced_models_dir, os.path.join(data_dir, "enhanced_hmm_models")
         if not os.path.exists(enhanced_models_dir):
                 logger.warning(
                     f"⚠️ Enhanced HMM models directory not found: {enhanced_models_dir}", )
@@ -113,7 +113,7 @@ class AnalystEnsembleCreationStep:
         except Exception as e:
             # TODO: Implement based on requirements proper exception handling
             pass
-            ensemble_models: dict[str, Any] = {}
+            ensemble_models: dict[str, Any], {}
 
         if not os.path.exists(enhanced_models_dir):
         return ensemble_models
@@ -122,13 +122,13 @@ class AnalystEnsembleCreationStep:
         for regime_dir in os.listdir(enhanced_models_dir):
                 regime_path = os.path.join(enhanced_models_dir, regime_dir)
         if os.path.isdir(regime_path):
-                    ensemble_models[regime_dir] = {}
+                    ensemble_models[regime_dir], {}
 
         for model_file in os.listdir(regime_path):
         if model_file.endswith(".joblib"):
-    model_path, os.path.join(regime_path, model_file)
-        try: model = joblib.load(model_path)
-                                model_name, model_file.replace(".joblib", "")
+    model_path = os.path.join(regime_path, model_file)
+        try: model, joblib.load(model_path)
+                                model_name = model_file.replace(".joblib", "")
                                 ensemble_models[regime_dir][model_name], model
                                 logger.info(
                                     f"📦 Loaded model: {regime_dir}/{model_name}",
@@ -164,7 +164,7 @@ class AnalystEnsembleCreationStep:
                 from src.training.optimized_feature_selection_manager import (
                     OptimizedFeatureSelectionManager, )
 
-                optimized_feature_selection = OptimizedFeatureSelectionManager(self.config)
+                optimized_feature_selection, OptimizedFeatureSelectionManager(self.config)
 
         # Get sample data for feature selection (if available)
                 sample, self._get_sample_data_for_feature_selection(data_dir, symbol, exchange)
@@ -222,7 +222,7 @@ class AnalystEnsembleCreationStep:
         # Assign equal weights to all models for now
         for regime, models in ensemble_models.items():
         if models:
-    ensemble_result["ensemble_weights"][regime] = {
+    ensemble_result["ensemble_weights"][regime], {
                         model_name: 1.0 / max(1, len(models)) for model_name in models
                     }
 
@@ -312,7 +312,7 @@ class AnalystEnsembleCreationStep:
             # TODO: Implement based on requirements proper exception handling
             pass
         # Create ensemble directory
-            ensemble_dir = os.path.join(data_dir, "analyst_ensemble")
+            ensemble_dir, os.path.join(data_dir, "analyst_ensemble")
             os.makedirs(ensemble_dir, exist_ok, True)
 
         # Save ensemble summary

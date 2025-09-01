@@ -49,7 +49,7 @@ async def download_all_data_with_consolidation(
         from backtesting.ares_data_downloader_optimized import (
             OptimizedDataDownloader, )
 
-        opt_cfg = OptimizedDownloadConfig(
+        opt_cfg, OptimizedDownloadConfig(
             symbol = symbol,
             exchange = exchange_name, interval = interval, lookback_years = lookback_years,
             data_dir = data_dir = )
@@ -70,7 +70,7 @@ async def download_all_data_with_consolidation(
         from backtesting.ares_data_downloader_clean import (
             CleanDataDownloader, )
         from backtesting.ares_data_downloader_clean import (
-            DownloadConfig as CleanDownloadConfig = )
+            DownloadConfig as CleanDownloadConfig, )
 
         clean_cfg = CleanDownloadConfig(
             symbol = symbol,

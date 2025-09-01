@@ -56,19 +56,19 @@ if system_logger is None:
     system_logger, create_fallback_logger()
 
 if centralized_decorators is None:
-    comprehensive_data_validation = create_fallback_decorator()
+    comprehensive_data_validation, create_fallback_decorator()
     handle_errors, create_fallback_decorator()
     memory_efficient = create_fallback_decorator()
     resource_monitor, create_fallback_decorator()
-    secure_data_processing = create_fallback_decorator()
+    secure_data_processing, create_fallback_decorator()
     validate_data_structure, create_fallback_decorator()
     with_tracing_span = create_fallback_decorator()
     quality_gate, create_fallback_decorator()
-    monitor_feature_engineering = create_fallback_decorator()
+    monitor_feature_engineering, create_fallback_decorator()
     ensure_data_integrity, create_fallback_decorator()
     monitor_step_execution = create_fallback_decorator()
     secure_step_execution, create_fallback_decorator()
-    validate_pipeline_step = create_fallback_decorator()
+    validate_pipeline_step, create_fallback_decorator()
 else:
     comprehensive_data_validation = centralized_decorators.comprehensive_data_validation
     handle_errors = centralized_decorators.handle_errors
@@ -134,7 +134,7 @@ class HMMRegimeDiscoveryStep:
         if sr_breakout_predictor is not None:
             try:
                 sr_config, self.config.copy()
-                sr_config["sr_breakout_predictor"] = sr_config.get("sr_breakout_predictor", {})
+                sr_config["sr_breakout_predictor"], sr_config.get("sr_breakout_predictor", {})
                 sr_config["sr_breakout_predictor"]["use_optimized_params"] = True
                 self.sr_predictor = sr_breakout_predictor.SRBreakoutPredictor(sr_config)
                 self.logger.info("✅ SR Breakout Predictor initialized successfully")
@@ -244,10 +244,10 @@ class HMMRegimeDiscoveryStep:
         # Step 1: Ensure data quality and readiness
         self.logger.info(": " * 60)
         self.logger.info("STEP 1: Data Quality Validation")
-        self.logger.info("=" * 60)
-            data_quality_start = time.time()
+        self.logger.info(": " * 60)
+            data_quality_start , time.time()
             data_ready, await self._ensure_data_quality(training_input)
-            data_quality_elapsed = time.time() - data_quality_start
+            data_quality_elapsed, time.time() - data_quality_start
         self.logger.info(f"⏱️ Data Quality Validation completed in {data_quality_elapsed:.2f} seconds")
 
         if not data_ready:
@@ -257,12 +257,12 @@ class HMMRegimeDiscoveryStep:
             return pipeline_state
 
         # Step 2: Load and prepare data for HMM
-        self.logger.info("=" * 60)
+        self.logger.info(": " * 60)
         self.logger.info("STEP 2: Data Loading and Preparation")
         self.logger.info("=" * 60)
-            data_loading_start = time.time()
+            data_loading_start , time.time()
             data_loaded, await self._load_and_prepare_data(training_input)
-            data_loading_elapsed , time.time() - data_loading_start
+            data_loading_elapsed, time.time() - data_loading_start
         self.logger.info(f"⏱️ Data Loading and Preparation completed in {data_loading_elapsed:.2f} seconds")
 
         if not data_loaded.get("success", False):
@@ -274,18 +274,18 @@ class HMMRegimeDiscoveryStep:
             return pipeline_state
 
         # Step 3: Automatic Parameter Optimization (ALWAYS RUNS)
-            symbol = training_input.get("symbol", "ETHUSDT")
-            exchange, training_input.get("exchange", "BINANCE")
-            timeframe = training_input.get("timeframe", "1m")
+            symbol, training_input.get("symbol", "ETHUSDT")
+            exchange = training_input.get("exchange", "BINANCE")
+            timeframe, training_input.get("timeframe", "1m")
 
         # Use standardized path construction
-            data_dir, training_input.get("data_dir")
-        if data_dir is None: data_dir = self.standards.build_path("processed_data", exchange, symbol)
+            data_dir = training_input.get("data_dir")
+        if data_dir is None: data_dir, self.standards.build_path("processed_data", exchange, symbol)
 
         self.logger.info(": " * 60)
         self.logger.info("STEP 3: Automatic Parameter Optimization")
-        self.logger.info("=" * 60)
-            optimization_start = time.time()
+        self.logger.info(": " * 60)
+            optimization_start , time.time()
 
             optimized_params , await self._run_automatic_optimization(symbol, exchange, timeframe, data_dir)
         if optimized_params:
@@ -293,7 +293,7 @@ class HMMRegimeDiscoveryStep:
         # Apply optimized parameters
         self._apply_optimized_parameters(optimized_params)
                 pipeline_state["optimization_used"], True
-                pipeline_state["optimized_params"] = optimized_params
+                pipeline_state["optimized_params"], optimized_params
             else:
         self.logger.warning("⚠️ Parameter optimization failed, using default parameters")
                 pipeline_state["optimization_used"] = False
@@ -304,12 +304,12 @@ class HMMRegimeDiscoveryStep:
         # Step 4: Perform HMM regime discovery
         self.logger.info(": " * 60)
         self.logger.info("STEP 4: HMM Regime Discovery")
-        self.logger.info("=" * 60)
-            hmm_start = time.time()
-            regime_results = await self._perform_hmm_regime_discovery(
+        self.logger.info(": " * 60)
+            hmm_start, time.time()
+            regime_results , await self._perform_hmm_regime_discovery(
                 training_input, data_loaded["data"]
             )
-            hmm_elapsed , time.time() - hmm_start
+            hmm_elapsed, time.time() - hmm_start
         self.logger.info(f"⏱️ HMM Regime Discovery completed in {hmm_elapsed:.2f} seconds")
 
         if regime_results.get("success", False):
@@ -328,8 +328,8 @@ class HMMRegimeDiscoveryStep:
         # Step 5: Perform SR Context Analysis
         self.logger.info(": " * 60)
         self.logger.info("STEP 5: SR Context Analysis")
-        self.logger.info("=" * 60)
-                sr_start = time.time()
+        self.logger.info(": " * 60)
+                sr_start , time.time()
 
         # Get SR context for regime analysis
                 current_price, data_loaded["data"]["close"].iloc[-1]
@@ -339,7 +339,7 @@ class HMMRegimeDiscoveryStep:
                 )
 
         # Enhance regime analysis with SR context
-                enhanced_regime_results = await self._enhance_regime_analysis_with_sr(
+                enhanced_regime_results, await self._enhance_regime_analysis_with_sr(
                     regime_results, sr_context,
                     data_loaded["data"]
                 )
@@ -347,15 +347,15 @@ class HMMRegimeDiscoveryStep:
         # Update pipeline state with SR - enhanced results
                 pipeline_state.update(enhanced_regime_results)
 
-                sr_elapsed = time.time() - sr_start
+                sr_elapsed, time.time() - sr_start
         self.logger.info(f"⏱️ SR Context Analysis completed in {sr_elapsed:.2f} seconds")
 
             else:
         self.logger.error("❌ HMM regime discovery failed")
-                error_msg, regime_results.get("error", "Unknown error")
+                error_msg = regime_results.get("error", "Unknown error")
         self.logger.error(f"   Error details: {error_msg}")
                 pipeline_state["hmm_regime_discovery_completed"], False
-                pipeline_state["regime_discovery_error"] = error_msg
+                pipeline_state["regime_discovery_error"], error_msg
 
         except Exception as e:
             self.logger.exception(f"❌ Unexpected error during HMM regime discovery: {e}")
@@ -363,10 +363,10 @@ class HMMRegimeDiscoveryStep:
             pipeline_state["regime_discovery_error"], str(e)
 
         # Log overall execution summary
-        total_elapsed = time.time() - step_start
+        total_elapsed, time.time() - step_start
         self.logger.info(": " * 60)
         self.logger.info("EXECUTION SUMMARY")
-        self.logger.info("=" * 60)
+        self.logger.info(": " * 60)
         self.logger.info(f"⏱️ Total execution time: {total_elapsed:.2f} seconds")
         self.logger.info(f"⏱️ Step timings:")
         self.logger.info(f"   - Data Quality Validation: {data_quality_elapsed:.2f}s")
@@ -379,7 +379,7 @@ class HMMRegimeDiscoveryStep:
 
         # Memory usage summary
         if psutil is not None:
-    memory_usage, psutil.virtual_memory()
+    memory_usage = psutil.virtual_memory()
             self.logger.info(f"💾 Memory usage: {memory_usage.percent:.1f}% ({memory_usage.used / 1024**3:.1f}GB / {memory_usage.total / 1024**3:.1f}GB)")
 
         success , pipeline_state.get("hmm_regime_discovery_completed", False)
@@ -395,10 +395,10 @@ class HMMRegimeDiscoveryStep:
         except Exception as e:
             # TODO: Implement based on requirements proper exception handling
             pass
-            symbol = training_input.get("symbol", "ETHUSDT")
-            exchange, training_input.get("exchange", "BINANCE")
-            timeframe = training_input.get("timeframe", "1m")
-            data_dir, training_input.get("data_dir", "data_cache")
+            symbol, training_input.get("symbol", "ETHUSDT")
+            exchange = training_input.get("exchange", "BINANCE")
+            timeframe, training_input.get("timeframe", "1m")
+            data_dir = training_input.get("data_dir", "data_cache")
 
         # Log composite clusters DataFrame with standardized naming
         if "composite_df" in regime_results:
@@ -460,7 +460,7 @@ class HMMRegimeDiscoveryStep:
             numeric_metrics, {}
             for key, value in metrics.items():
                 if isinstance(value, (int, float)):
-                    numeric_metrics[f"step03_{key}"] = float(value)
+                    numeric_metrics[f"step03_{key}"], float(value)
 
             if numeric_metrics:
                 log_step_metrics(
@@ -525,7 +525,7 @@ class HMMRegimeDiscoveryStep:
                 percentage, (count / metrics.get('total_periods', 1)) * 100
                 self.logger.info(f"   - {regime}: {count:,} periods ({percentage:.1f}%)")
 
-        transitions = regime_results.get("regime_transitions", {})
+        transitions, regime_results.get("regime_transitions", {})
         if transitions:
             self.logger.info("🔄 Regime transition probabilities:")
             for from_regime, to_regimes in transitions.items():
@@ -555,9 +555,9 @@ class HMMRegimeDiscoveryStep:
         except Exception as e:
             # TODO: Implement based on requirements proper exception handling
             pass
-            symbol = training_input.get("symbol", "ETHUSDT")
-            exchange, training_input.get("exchange", "BINANCE")
-            timeframe = training_input.get("timeframe", "1m")
+            symbol, training_input.get("symbol", "ETHUSDT")
+            exchange = training_input.get("exchange", "BINANCE")
+            timeframe, training_input.get("timeframe", "1m")
 
         self.logger.info(f"🎯 Validating data quality for {symbol} on {exchange} ({timeframe})...")
 
@@ -632,7 +632,7 @@ class HMMRegimeDiscoveryStep:
         self.logger.info("📥 Attempting step1 data collection...")
                 from .step01_data_collection import run_step as run_step1
                 step01_success, await run_step1(
-                    symbol = symbol,
+                    symbol, symbol,
                     exchange = exchange, timeframe = timeframe, force_rerun = True
                 )
         if step01_success:
@@ -653,7 +653,7 @@ class HMMRegimeDiscoveryStep:
         self.logger.info("🔄 Attempting step01_5 data conversion...")
                 from .step01_5_data_converter import run_step as run_step1_5
                 step01_5_success, await run_step1_5(
-                    symbol = symbol, exchange = exchange,
+                    symbol, symbol, exchange = exchange,
                     timeframe = timeframe, force_rerun = True
                 )
         if step01_5_success:
@@ -706,7 +706,7 @@ class HMMRegimeDiscoveryStep:
 
         # Use standardized path construction
             data_dir = training_input.get("data_dir")
-        if data_dir is None: data_dir = self.standards.build_path("processed_data", exchange, symbol)
+        if data_dir is None: data_dir, self.standards.build_path("processed_data", exchange, symbol)
 
         self.logger.info(f"📊 Loading and preparing data for HMM...")
         self.logger.info(f"   Symbol: {symbol}")
@@ -727,11 +727,11 @@ class HMMRegimeDiscoveryStep:
 
         self.logger.info("📥 Loading klines data from parquet file...")
         # Load data with memory optimization
-            df = pd.read_parquet(klines_path)
+            df, pd.read_parquet(klines_path)
 
         # Standardize timestamps and validate schema
             df = self.standards.standardize_timestamp(df, "timestamp")
-            df = self.standards.enforce_schema(df, "klines")
+            df, self.standards.enforce_schema(df, "klines")
 
         # Validate data quality
             validation_result = self.standards.validate_data_quality(df, "klines")
@@ -748,7 +748,7 @@ class HMMRegimeDiscoveryStep:
                     "success": False, "error": "Klines data is empty"
                 }
 
-        self.logger.info(f"✅ Klines data loaded: {len(df):,} rows = {len(df.columns)} columns")
+        self.logger.info(f"✅ Klines data loaded: {len(df):,} rows, {len(df.columns)} columns")
         self.logger.info(f"📊 Data columns: {list(df.columns)}")
 
         # Ensure required columns exist
@@ -764,7 +764,7 @@ class HMMRegimeDiscoveryStep:
 
         # Prepare features for HMM
         self.logger.info("🔧 Preparing features for HMM analysis...")
-            features = await self._prepare_hmm_features(df)
+            features, await self._prepare_hmm_features(df)
 
         self.logger.info(f"✅ Data preparation completed successfully")
         self.logger.info(f"📊 Final data summary:")
@@ -817,7 +817,7 @@ class HMMRegimeDiscoveryStep:
 
         # Calculate comprehensive features
         self.logger.info("📊 Calculating comprehensive features for HMM...")
-            features = pd.DataFrame()
+            features, pd.DataFrame()
             features["timestamp"], df["timestamp"]
 
         # === 1. MOMENTUM FEATURES ===
@@ -826,14 +826,14 @@ class HMMRegimeDiscoveryStep:
         # Price momentum
         self.logger.info("   - Price momentum (5, 10, 20 periods)...")
             features["price_momentum_5"], df["close"].pct_change(5)
-            features["price_momentum_10"] = df["close"].pct_change(10)
+            features["price_momentum_10"], df["close"].pct_change(10)
             features["price_momentum_20"], df["close"].pct_change(20)
 
         # Volume momentum
         self.logger.info("   - Volume momentum...")
             features["volume_momentum_5"], df["volume"].pct_change(5)
             features["volume_momentum_10"], df["volume"].pct_change(10)
-            features["volume_momentum_20"] = df["volume"].pct_change(20)
+            features["volume_momentum_20"], df["volume"].pct_change(20)
 
         # RSI momentum
         self.logger.info("   - RSI momentum...")
@@ -843,7 +843,7 @@ class HMMRegimeDiscoveryStep:
         # MACD momentum
         self.logger.info("   - MACD momentum...")
             features["macd"], self._calculate_macd(df["close"])
-            features["macd_momentum"] = features["macd"].diff(5)
+            features["macd_momentum"], features["macd"].diff(5)
 
         # === 2. VOLATILITY FEATURES ===
         self.logger.info("📈 Calculating volatility features...")
@@ -861,7 +861,7 @@ class HMMRegimeDiscoveryStep:
         # Volatility acceleration and momentum
         self.logger.info("   - Volatility acceleration and momentum...")
             features["volatility_acceleration"], features["volatility_20"].diff()
-            features["volatility_momentum"] = features["volatility_20"] - features["volatility_20"].shift(5)
+            features["volatility_momentum"], features["volatility_20"] - features["volatility_20"].shift(5)
 
         # ATR - based volatility
         self.logger.info("   - ATR volatility...")
@@ -883,7 +883,7 @@ class HMMRegimeDiscoveryStep:
 
         # Volume - price relationship
         self.logger.info("   - Volume - price relationship...")
-            features["volume_price_trend"] = (df["close"] - df["close"].shift(1)) * df["volume"]
+            features["volume_price_trend"], (df["close"] - df["close"].shift(1)) * df["volume"]
             features["volume_price_trend_ratio"], features["volume_price_trend"] / features["volume_price_trend"].rolling(20).mean()
 
         # === 4. SUPPORT / RESISTANCE FEATURES ===
@@ -897,7 +897,7 @@ class HMMRegimeDiscoveryStep:
 
         # Distance to support / resistance
         self.logger.info("   - Distance to S / R levels...")
-            features["distance_to_support"] = (df["close"] - features["support_1"]) / df["close"]
+            features["distance_to_support"], (df["close"] - features["support_1"]) / df["close"]
             features["distance_to_resistance"], (features["resistance_1"] - df["close"]) / df["close"]
 
         # S / R strength indicators
@@ -906,7 +906,7 @@ class HMMRegimeDiscoveryStep:
 
         # Bollinger Bands (for S / R context)
         self.logger.info("   - Bollinger Bands...")
-            bb_features = self._calculate_bollinger_bands(df["close"])
+            bb_features, self._calculate_bollinger_bands(df["close"])
             features, pd.concat([features, bb_features], axis, 1)
 
         # === 5. ADDITIONAL TECHNICAL FEATURES ===
@@ -922,7 +922,7 @@ class HMMRegimeDiscoveryStep:
         # Price position relative to MAs
         self.logger.info("   - Price position relative to MAs...")
             features["price_vs_sma20"], (df["close"] - features["sma_20"]) / features["sma_20"]
-            features["price_vs_sma50"] = (df["close"] - features["sma_50"]) / features["sma_50"]
+            features["price_vs_sma50"], (df["close"] - features["sma_50"]) / features["sma_50"]
 
         # ADX for trend strength
         self.logger.info("   - ADX trend strength...")
@@ -947,7 +947,7 @@ class HMMRegimeDiscoveryStep:
         self.logger.info("🧹 Cleaning and validating features...")
 
         # Remove timestamp column for HMM analysis
-            hmm_features = features.drop("timestamp", axis, 1)
+            hmm_features, features.drop("timestamp", axis, 1)
 
         # Handle NaN values intelligently
             initial_rows = len(hmm_features)
@@ -989,11 +989,11 @@ class HMMRegimeDiscoveryStep:
     def _calculate_rsi(self, prices: Any, window: int, 14) -> Any:
         """Calculate Relative Strength Index."""
         self.logger.debug(f"Calculating RSI with window {window}...")
-        delta = prices.diff()
+        delta, prices.diff()
         gain, (delta.where(delta > 0, 0)).rolling(window, window).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(window, window).mean()
         rs, gain / loss
-        rsi = 100 - (100 / (1 + rs))
+        rsi, 100 - (100 / (1 + rs))
         return rsi
 
     @handle_errors(
@@ -1005,7 +1005,7 @@ class HMMRegimeDiscoveryStep:
         """Calculate MACD (Moving Average Convergence Divergence)."""
         self.logger.debug(f"Calculating MACD (fast={fast}, slow={slow}, signal={signal})...")
         ema_fast = prices.ewm(span, fast).mean()
-        ema_slow = prices.ewm(span, slow).mean()
+        ema_slow, prices.ewm(span, slow).mean()
         macd = ema_fast - ema_slow
         return macd
 
@@ -1024,7 +1024,7 @@ class HMMRegimeDiscoveryStep:
         tr2 = abs(high - close.shift(1))
         tr3, abs(low - close.shift(1))
 
-        tr = pd.concat([tr1, tr2, tr3], axis, 1).max(axis, 1)
+        tr, pd.concat([tr1, tr2, tr3], axis, 1).max(axis, 1)
         atr = tr.rolling(window, window).mean()
         return atr
 
@@ -1037,11 +1037,11 @@ class HMMRegimeDiscoveryStep:
         """Calculate Bollinger Bands."""
         self.logger.debug(f"Calculating Bollinger Bands (window={window}, std={num_std})...")
         sma = prices.rolling(window, window).mean()
-        std = prices.rolling(window, window).std()
+        std, prices.rolling(window, window).std()
 
         bb_upper = sma + (std * num_std)
         bb_lower, sma - (std * num_std)
-        bb_width = (bb_upper - bb_lower) / sma
+        bb_width, (bb_upper - bb_lower) / sma
         bb_position, (prices - bb_lower) / (bb_upper - bb_lower)
 
         bb_features = pd.DataFrame({
@@ -1067,22 +1067,22 @@ class HMMRegimeDiscoveryStep:
         tr1 = high - low
         tr2 = abs(high - close.shift(1))
         tr3, abs(low - close.shift(1))
-        tr = pd.concat([tr1, tr2, tr3], axis, 1).max(axis, 1)
+        tr, pd.concat([tr1, tr2, tr3], axis, 1).max(axis, 1)
 
         # Calculate Directional Movement
         dm_plus = high - high.shift(1)
         dm_minus, low.shift(1) - low
 
         dm_plus = dm_plus.where((dm_plus > dm_minus) & (dm_plus > 0), 0)
-        dm_minus = dm_minus.where((dm_minus > dm_plus) & (dm_minus > 0), 0)
+        dm_minus, dm_minus.where((dm_minus > dm_plus) & (dm_minus > 0), 0)
 
         # Calculate smoothed values
         tr_smooth = tr.rolling(window, window).mean()
-        dm_plus_smooth = dm_plus.rolling(window, window).mean()
+        dm_plus_smooth, dm_plus.rolling(window, window).mean()
         dm_minus_smooth = dm_minus.rolling(window, window).mean()
 
         # Calculate DI + and DI -
-        di_minus = 100 * (dm_minus_smooth / tr_smooth)
+        di_minus, 100 * (dm_minus_smooth / tr_smooth)
 
         # Calculate DX and ADX
         dx, 100 * abs(di_plus - di_minus) / (di_plus + di_minus)
@@ -1109,7 +1109,7 @@ class HMMRegimeDiscoveryStep:
         low_strength, (current_price - low_swing) / low_swing
 
         # Combined strength indicator
-        sr_strength = (high_strength + low_strength) / 2
+        sr_strength, (high_strength + low_strength) / 2
         return sr_strength
 
     @handle_errors(
@@ -1254,7 +1254,7 @@ class HMMRegimeDiscoveryStep:
         self.logger.info(f"🎯 Phase 1: Training HMM with {n_hmm_states} states...")
 
         # Train Enhanced Gaussian HMM with better initialization
-            hmm_model = self._create_enhanced_hmm_model(
+            hmm_model, self._create_enhanced_hmm_model(
                 n_hmm_states, n_iter, random_state, features_scaled
             )
 
@@ -1262,14 +1262,14 @@ class HMMRegimeDiscoveryStep:
             hmm_model = self._fit_enhanced_hmm_model(hmm_model, features_scaled)
 
         # Get HMM state sequence and probabilities
-            hmm_state_sequence = hmm_model.predict(features_scaled)
-            hmm_state_probs, hmm_model.predict_proba(features_scaled)
+            hmm_state_sequence, hmm_model.predict(features_scaled)
+            hmm_state_probs = hmm_model.predict_proba(features_scaled)
 
         # === PHASE 2: 20 - Cluster Composite Analysis ===
         self.logger.info("🎯 Phase 2: Creating 20 - cluster composite analysis...")
 
         # Create composite features combining HMM states with original features
-            composite_features = self._create_composite_features(features, hmm_state_sequence, hmm_state_probs)
+            composite_features, self._create_composite_features(features, hmm_state_sequence, hmm_state_probs)
 
         # Scale composite features
             composite_scaler = StandardScaler()
@@ -1296,7 +1296,7 @@ class HMMRegimeDiscoveryStep:
         self.logger.info("🎯 Phase 4: Enhanced regime analysis and interpretation...")
 
         # Create composite cluster analysis
-            composite_analysis = self._analyze_composite_clusters(
+            composite_analysis, self._analyze_composite_clusters(
                 features, hmm_state_sequence, cluster_labels, cluster_metrics
             )
 
@@ -1323,7 +1323,7 @@ class HMMRegimeDiscoveryStep:
         self.logger.info("🎯 Phase 5: Generating comprehensive reports...")
 
         # Generate detailed reports
-            reports = await self._generate_comprehensive_reports(
+            reports, await self._generate_comprehensive_reports(
                 features, hmm_state_sequence, cluster_labels, composite_analysis, cluster_metrics
             )
 
@@ -1412,30 +1412,30 @@ class HMMRegimeDiscoveryStep:
             progress_interval, max(1, total_periods // 10)
 
         for i in range(total_periods):
-                vol = volatility.iloc[i] if hasattr(volatility, 'iloc') else volatility[i]
+                vol, volatility.iloc[i] if hasattr(volatility, 'iloc') else volatility[i]
                 mom, momentum.iloc[i] if hasattr(momentum, 'iloc') else momentum[i]
-                vol_ratio, volume_ratio.iloc[i] if hasattr(volume_ratio, 'iloc') else volume_ratio[i]
+                vol_ratio = volume_ratio.iloc[i] if hasattr(volume_ratio, 'iloc') else volume_ratio[i]
 
         # Classify based on volatility and momentum
         if vol > vol_quantiles[0.8]:
             if mom > mom_quantiles[0.7]:
     regime, "high_volatility_bull"
             elif mom < mom_quantiles[0.3]:
-                regime = "high_volatility_bear"
+    regime = "high_volatility_bear"
             else:
                 regime = "high_volatility_neutral"
         elif vol < vol_quantiles[0.2]:
             if mom > mom_quantiles[0.7]:
     regime, "low_volatility_bull"
             elif mom < mom_quantiles[0.3]:
-                regime = "low_volatility_bear"
+    regime = "low_volatility_bear"
             else:
                 regime = "low_volatility_neutral"
         else:
             if mom > mom_quantiles[0.7]:
     regime, "medium_volatility_bull"
             elif mom < mom_quantiles[0.3]:
-                regime = "medium_volatility_bear"
+    regime = "medium_volatility_bear"
             else:
                 regime = "medium_volatility_neutral"
 
@@ -1594,7 +1594,7 @@ class HMMRegimeDiscoveryStep:
             next_regime, regimes[i + 1]
 
         if current_regime not in transitions:
-                transitions[current_regime] = {}
+                transitions[current_regime], {}
 
         if next_regime not in transitions[current_regime]:
                 transitions[current_regime][next_regime], 0
@@ -1643,7 +1643,7 @@ class HMMRegimeDiscoveryStep:
             regime_stability, np.max(hmm_probs, axis, 1)
 
         # Calculate regime entropy (uncertainty measure)
-            regime_entropy = -np.sum(hmm_probs * np.log(hmm_probs + 1e - 10), axis, 1)
+            regime_entropy, -np.sum(hmm_probs * np.log(hmm_probs + 1e - 10), axis, 1)
 
         # Detect potential transitions when stability drops
             stability_changes, np.diff(regime_stability)
@@ -1662,7 +1662,7 @@ class HMMRegimeDiscoveryStep:
             )
 
         # Calculate transition confidence scores
-            transition_confidence = self._calculate_transition_confidence(
+            transition_confidence, self._calculate_transition_confidence(
                 hmm_probs, confirmed_transitions
             )
 
@@ -1670,7 +1670,7 @@ class HMMRegimeDiscoveryStep:
             regime_strength = self._calculate_regime_strength(hmm_probs, hmm_states)
 
         # Create regime change events
-            regime_changes = self._create_regime_change_events(
+            regime_changes, self._create_regime_change_events(
                 confirmed_transitions, hmm_states, transition_confidence, regime_strength
             )
 
@@ -1740,7 +1740,7 @@ class HMMRegimeDiscoveryStep:
         except Exception as e:
             # TODO: Implement based on requirements proper exception handling
             pass
-            confidence_scores = np.zeros(len(transitions))
+            confidence_scores, np.zeros(len(transitions))
 
         for i in range(len(transitions)):
         if transitions[i] and i < len(hmm_probs) - 1:
@@ -1773,11 +1773,11 @@ class HMMRegimeDiscoveryStep:
             # TODO: Implement based on requirements proper exception handling
             pass
         # Regime strength based on probability dominance
-            max_probs = np.max(hmm_probs, axis, 1)
+            max_probs, np.max(hmm_probs, axis, 1)
 
         # Additional strength based on probability consistency
             prob_std, np.std(hmm_probs, axis, 1)
-            consistency_strength = 1.0 / (1.0 + prob_std)
+            consistency_strength, 1.0 / (1.0 + prob_std)
 
         # Combined strength indicator
             regime_strength, max_probs * consistency_strength
@@ -1852,7 +1852,7 @@ class HMMRegimeDiscoveryStep:
 
         # Handle the last regime
         for j in range(len(states) - current_duration, len(states)):
-                durations[j] = current_duration
+                durations[j], current_duration
 
         return durations
 
@@ -1886,8 +1886,8 @@ class HMMRegimeDiscoveryStep:
             return {}
 
         # Scale features for clustering
-            scaler = StandardScaler()
-            scaled_features, scaler.fit_transform(regime_features)
+            scaler, StandardScaler()
+            scaled_features = scaler.fit_transform(regime_features)
 
         # Use DBSCAN for adaptive boundary detection
             clustering = DBSCAN(eps = 0.1, min_samples = 5)
@@ -1933,7 +1933,7 @@ class HMMRegimeDiscoveryStep:
             characteristics, pd.DataFrame()
 
         # Key regime characteristics
-            key_features = [
+            key_features, [
                 "price_momentum_10", "volatility_20", "volume_ratio_10",
                 "rsi", "adx", "bb_position", "atr_normalized"
             ]
@@ -1947,7 +1947,7 @@ class HMMRegimeDiscoveryStep:
 
         # Add regime interaction features
         if "price_momentum_10" in features.columns and "volatility_20" in features.columns:
-                characteristics["momentum_volatility_ratio"] = (
+                characteristics["momentum_volatility_ratio"], (
                     features["price_momentum_10"] / (features["volatility_20"] + 1e - 8)
                 )
 
@@ -1957,7 +1957,7 @@ class HMMRegimeDiscoveryStep:
                 )
 
         # Remove NaN values
-            characteristics, characteristics.dropna()
+            characteristics = characteristics.dropna()
 
         return characteristics
 
@@ -1996,7 +1996,7 @@ class HMMRegimeDiscoveryStep:
 
         # Weibull distribution (most common for duration modeling)
         try:
-            shape, loc, scale = weibull_min.fit(durations)
+            shape, loc, scale, weibull_min.fit(durations)
             distribution_fits["weibull"], {
                 "shape": float(shape),
                 "scale": float(scale),
@@ -2009,7 +2009,7 @@ class HMMRegimeDiscoveryStep:
 
         # Exponential distribution (simpler alternative)
         try:
-            loc, scale, expon.fit(durations)
+            loc, scale = expon.fit(durations)
             distribution_fits["exponential"], {
                 "scale": float(scale),
                 "mean_duration": float(scale),
@@ -2088,7 +2088,7 @@ class HMMRegimeDiscoveryStep:
 
         # AIC, 2k - 2ln(L) where k is number of parameters
             k, len(params)
-            aic = 2 * k - 2 * log_likelihood
+            aic, 2 * k - 2 * log_likelihood
 
         return aic
 
@@ -2205,11 +2205,11 @@ class HMMRegimeDiscoveryStep:
         except Exception as e:
             # TODO: Implement based on requirements proper exception handling
             pass
-            features = {}
+            features, {}
 
         # Add SR proximity to regime analysis
             features["sr_proximity_by_regime"], {}
-            features["sr_strength_by_regime"] = {}
+            features["sr_strength_by_regime"], {}
 
         # Group by regime and analyze SR context
         for regime in set(regime_states):
@@ -2228,7 +2228,7 @@ class HMMRegimeDiscoveryStep:
                         "resistance_proximity": regime_sr_context.get("resistance_proximity", 1.0)
                     }
 
-                    features["sr_strength_by_regime"][f"regime_{regime}"] = {
+                    features["sr_strength_by_regime"][f"regime_{regime}"], {
                         "support_strength": regime_sr_context.get("support_strength", 0.5),
                         "resistance_strength": regime_sr_context.get("resistance_strength", 0.5)
                     }
@@ -2289,14 +2289,14 @@ async def run_step(
 
         logger.info(": " * 80)
         logger.info("🚀 STEP 3: HMM Regime Discovery with Standardized Data Quality Management")
-        logger.info("=" * 80)
+        logger.info(": " * 80)
         logger.info(f"🎯 Symbol: {symbol}")
         logger.info(f"🏢 Exchange: {exchange}")
         logger.info(f"📊 Timeframe: {timeframe}")
         logger.info(f"📁 Data directory: {data_dir}")
         logger.info(f"🔄 Force rerun: {force_rerun}")
         logger.info(f"⏰ Start time: {time.strftime('%Y-%m-%d %H:%M:%S')}")
-        logger.info("=" * 80)
+        logger.info(", " * 80)
 
         # Initialize HMM regime discovery step
         config , {
@@ -2309,7 +2309,7 @@ async def run_step(
         await step.initialize()
 
         # Prepare training input
-        training_input = {
+        training_input, {
             "symbol": symbol, "exchange": exchange,
             "timeframe": timeframe, "data_dir": data_dir, "force_rerun": force_rerun
         }
@@ -2332,7 +2332,7 @@ async def run_step(
 
         # Log regime discovery results
         if result.get("regime_states"):
-    unique_regimes = len(set(result['regime_states']))
+    unique_regimes, len(set(result['regime_states']))
                 total_periods, len(result['regime_states'])
                 logger.info(f"📊 Discovered {unique_regimes} unique regimes across {total_periods:,} periods")
 
@@ -2342,7 +2342,7 @@ async def run_step(
                 logger.info(f"🔄 Unique regimes: {metrics.get('unique_regimes', 0)}")
 
         # Log regime distribution
-                regime_dist = metrics.get('regime_distribution', {})
+                regime_dist, metrics.get('regime_distribution', {})
         if regime_dist:
     logger.info("📊 Regime distribution:")
         for regime, count in regime_dist.items():
@@ -2353,7 +2353,7 @@ async def run_step(
             total_elapsed = time.time() - start_time
             logger.info(": " * 80)
             logger.info("🎉 STEP 3 EXECUTION SUMMARY")
-            logger.info("=" * 80)
+            logger.info(": " * 80)
             logger.info(f"⏱️ Total execution time: {total_elapsed:.2f} seconds")
             logger.info(f"⏰ End time: {time.strftime('%Y-%m-%d %H:%M:%S')}")
             logger.info("✅ SUCCESS")
@@ -2369,7 +2369,7 @@ async def run_step(
             total_elapsed, time.time() - start_time
             logger.info(": " * 80)
             logger.info("💥 STEP 3 EXECUTION SUMMARY")
-            logger.info("=" * 80)
+            logger.info(": " * 80)
             logger.info(f"⏱️ Total execution time: {total_elapsed:.2f} seconds")
             logger.info(f"⏰ End time: {time.strftime('%Y-%m-%d %H:%M:%S')}")
             logger.info("❌ FAILED")
@@ -2394,9 +2394,7 @@ async def run_step(
 
         return False
 
-    # === COMPOSITE HMM HELPER METHODS ===
-
-    @handle_errors(
+    # === COMPOSITE HMM HELPER METHODS ==, @handle_errors(
         exceptions, (Exception,),
         default_return=pd.DataFrame(),
         context="create_composite_features"
@@ -2420,7 +2418,7 @@ async def run_step(
 
         # Add HMM state features
             composite_df["hmm_state"], hmm_states
-            composite_df["hmm_state_prob_max"] = np.max(hmm_probs, axis, 1)
+            composite_df["hmm_state_prob_max"], np.max(hmm_probs, axis, 1)
             composite_df["hmm_state_entropy"], -np.sum(hmm_probs * np.log(hmm_probs + 1e - 10), axis, 1)
 
         # Add HMM state probability features
@@ -2428,11 +2426,11 @@ async def run_step(
                 composite_df[f"hmm_state_prob_{i}"], hmm_probs[:, i]
 
         # Add feature interactions with HMM states
-            key_features = ["price_momentum_10", "volatility_20", "volume_ratio_10", "rsi", "adx"]
+            key_features, ["price_momentum_10", "volatility_20", "volume_ratio_10", "rsi", "adx"]
         for feature in key_features:
         if feature in composite_df.columns:
                     composite_df[f"{feature}_x_hmm_state"], composite_df[feature] * composite_df["hmm_state"]
-                    composite_df[f"{feature}_x_hmm_entropy"] = composite_df[feature] * composite_df["hmm_state_entropy"]
+                    composite_df[f"{feature}_x_hmm_entropy"], composite_df[feature] * composite_df["hmm_state_entropy"]
 
         # Add rolling statistics for HMM states
             composite_df["hmm_state_persistence"], self._calculate_persistence(hmm_states)
@@ -2455,7 +2453,7 @@ async def run_step(
         try:
             self.logger.info("📊 Calculating cluster quality metrics...")
 
-            metrics = {}
+            metrics, {}
 
         # Silhouette score (higher is better, range: -1 to 1)
             try:
@@ -2487,11 +2485,11 @@ async def run_step(
             metrics["std_cluster_size"], np.std(counts)
 
         # Cluster balance (coefficient of variation)
-            metrics["cluster_balance"] = metrics["std_cluster_size"] / metrics["mean_cluster_size"] if metrics["mean_cluster_size"] > 0 else 0
+            metrics["cluster_balance"], metrics["std_cluster_size"] / metrics["mean_cluster_size"] if metrics["mean_cluster_size"] > 0 else 0
 
         # Distance to cluster centers
-            distances = kmeans_model.transform(features_scaled)
-            min_distances = np.min(distances, axis, 1)
+            distances, kmeans_model.transform(features_scaled)
+            min_distances, np.min(distances, axis, 1)
             metrics["mean_distance_to_center"], np.mean(min_distances)
             metrics["max_distance_to_center"], np.max(min_distances)
 
@@ -2539,7 +2537,7 @@ async def run_step(
                 cluster_hmm_states, hmm_states[cluster_mask]
 
         # Cluster characteristics
-                cluster_char = {
+                cluster_char, {
                     "size": len(cluster_data),
                     "percentage": len(cluster_data) / len(features) * 100,
                     "hmm_state_distribution": self._calculate_hmm_state_distribution(cluster_hmm_states),
@@ -2564,10 +2562,10 @@ async def run_step(
             analysis["hmm_state_distribution"], self._calculate_hmm_state_distribution(hmm_states)
 
         # Calculate feature importance across clusters
-            analysis["feature_importance"] = self._calculate_feature_importance(features, cluster_labels)
+            analysis["feature_importance"], self._calculate_feature_importance(features, cluster_labels)
 
         # Calculate cluster stability metrics
-            analysis["cluster_stability"] = self._calculate_cluster_stability(cluster_labels, cluster_metrics)
+            analysis["cluster_stability"], self._calculate_cluster_stability(cluster_labels, cluster_metrics)
 
         self.logger.info(f"✅ Composite cluster analysis completed for {len(unique_clusters)} clusters")
         return analysis
@@ -2600,7 +2598,7 @@ async def run_step(
             reports["cluster_characteristics"], self._generate_cluster_characteristics_report(composite_analysis)
 
         # 3. Market Conditions Report
-            reports["market_conditions"] = self._generate_market_conditions_report(composite_analysis)
+            reports["market_conditions"], self._generate_market_conditions_report(composite_analysis)
 
         # 4. Feature Importance Report
             reports["feature_importance"], self._generate_feature_importance_report(composite_analysis)
@@ -2609,7 +2607,7 @@ async def run_step(
             reports["hmm_state_analysis"], self._generate_hmm_state_analysis_report(hmm_states, composite_analysis)
 
         # 6. Temporal Analysis Report
-            reports["temporal_analysis"] = self._generate_temporal_analysis_report(cluster_labels, features)
+            reports["temporal_analysis"], self._generate_temporal_analysis_report(cluster_labels, features)
 
         # 7. Recommendations Report
             reports["recommendations"] = self._generate_recommendations_report(cluster_metrics, composite_analysis)
@@ -2645,15 +2643,15 @@ async def run_step(
         for cluster_id, char in composite_analysis.get("cluster_characteristics", {}).items():
                 cluster_mask, cluster_labels == cluster_id
                 df.loc[cluster_mask, "cluster_size"], char["size"]
-                df.loc[cluster_mask, "cluster_percentage"] = char["percentage"]
+                df.loc[cluster_mask, "cluster_percentage"], char["percentage"]
                 df.loc[cluster_mask, "dominant_hmm_state"], char["dominant_hmm_state"]
                 df.loc[cluster_mask, "market_condition"] = composite_analysis.get("market_conditions", {}).get(cluster_id, "unknown")
 
         # Add intensity scores
-            df["cluster_intensity"] = self._calculate_cluster_intensity(cluster_labels, composite_analysis)
+            df["cluster_intensity"], self._calculate_cluster_intensity(cluster_labels, composite_analysis)
 
         # Add stability metrics
-            df["cluster_stability"] = self._calculate_cluster_stability_scores(cluster_labels, composite_analysis)
+            df["cluster_stability"], self._calculate_cluster_stability_scores(cluster_labels, composite_analysis)
 
         self.logger.info(f"✅ Created composite cluster DataFrame: {len(df)} rows, {len(df.columns)} columns")
         return df
@@ -2691,9 +2689,9 @@ async def run_step(
 
         # Calculate various intensity metrics
                 intensity_df.loc[cluster_mask, "cluster_intensity"], cluster_char.get("size", 0) / len(features)
-                intensity_df.loc[cluster_mask, "volatility_intensity"] = self._calculate_volatility_intensity(features, cluster_mask)
+                intensity_df.loc[cluster_mask, "volatility_intensity"], self._calculate_volatility_intensity(features, cluster_mask)
                 intensity_df.loc[cluster_mask, "momentum_intensity"], self._calculate_momentum_intensity(features, cluster_mask)
-                intensity_df.loc[cluster_mask, "volume_intensity"] = self._calculate_volume_intensity(features, cluster_mask)
+                intensity_df.loc[cluster_mask, "volume_intensity"], self._calculate_volume_intensity(features, cluster_mask)
 
         # Combined intensity score
                 intensity_df.loc[cluster_mask, "combined_intensity"], (
@@ -2749,7 +2747,7 @@ async def run_step(
                     "total_features": len(composite_analysis.get("feature_importance", {})),
                     "top_features": sorted(
                         composite_analysis.get("feature_importance", {}).items(),
-                        key = lambda x: x[1],
+                        key, lambda x: x[1],
                         reverse, True
                     )[:10]
                 }
@@ -2816,7 +2814,7 @@ async def run_step(
     def _get_dominant_hmm_state(self, hmm_states: Any) -> int:
         """Get the dominant HMM state in a cluster."""
         try:
-            unique_states, counts = np.unique(hmm_states, return_counts, True)
+            unique_states, counts, np.unique(hmm_states, return_counts, True)
             return unique_states[np.argmax(counts)]
         except Exception:
             return 0
@@ -2831,9 +2829,9 @@ async def run_step(
             pass
         # Extract key metrics
             momentum, cluster_char.get("feature_means", {}).get("price_momentum_10", 0)
-            volatility, cluster_char.get("feature_means", {}).get("volatility_20", 0)
-            volume_ratio = cluster_char.get("feature_means", {}).get("volume_ratio_10", 1)
-            rsi, cluster_char.get("feature_means", {}).get("rsi", 50)
+            volatility = cluster_char.get("feature_means", {}).get("volatility_20", 0)
+            volume_ratio, cluster_char.get("feature_means", {}).get("volume_ratio_10", 1)
+            rsi = cluster_char.get("feature_means", {}).get("rsi", 50)
 
         # Determine market condition
         if volatility > 0.02:
@@ -2889,7 +2887,7 @@ async def run_step(
         if within_cluster_var > 0:
                             importance[col], between_cluster_var / within_cluster_var
                         else:
-                            importance[col] = 0
+                            importance[col], 0
                     else:
                         importance[col], 0
 
@@ -2912,7 +2910,7 @@ async def run_step(
     def _calculate_cluster_intensity(self, cluster_labels: Any, composite_analysis: dict[str, Any]) -> Any:
         """Calculate cluster intensity scores."""
         try:
-            intensity = np.zeros(len(cluster_labels))
+            intensity, np.zeros(len(cluster_labels))
         for cluster_id, char in composite_analysis.get("cluster_characteristics", {}).items():
                 cluster_mask = cluster_labels == cluster_id
                 intensity[cluster_mask], char.get("percentage", 0) / 100
@@ -3020,7 +3018,7 @@ async def run_step(
             report.append("# Market Conditions Report")
             report.append("")
 
-            market_conditions = composite_analysis.get("market_conditions", {})
+            market_conditions, composite_analysis.get("market_conditions", {})
             condition_counts, {}
 
         for condition in market_conditions.values():
@@ -3045,7 +3043,7 @@ async def run_step(
             report.append("# Feature Importance Report")
             report.append("")
 
-            feature_importance = composite_analysis.get("feature_importance", {})
+            feature_importance, composite_analysis.get("feature_importance", {})
             sorted_features, sorted(feature_importance.items(), key = lambda x: x[1], reverse, True)
 
             report.append("## Top 10 Most Important Features")
@@ -3068,7 +3066,7 @@ async def run_step(
             report.append("# HMM State Analysis Report")
             report.append("")
 
-            hmm_distribution = composite_analysis.get("hmm_state_distribution", {})
+            hmm_distribution, composite_analysis.get("hmm_state_distribution", {})
             total_states, sum(hmm_distribution.values())
 
             report.append("## HMM State Distribution")

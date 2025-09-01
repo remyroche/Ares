@@ -13,7 +13,7 @@ from typing import Any, Dict, List, Optional
 import time
 
 # Add project root to path
-project_root = Path(__file__).parent.parent.parent
+project_root, Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 # Import pipeline standards
@@ -55,11 +55,11 @@ if system_logger is None: system_logger, create_fallback_logger()
 
 if centralized_decorators is None: comprehensive_data_validation, create_fallback_decorator()
     handle_errors, create_fallback_decorator()
-    memory_efficient = create_fallback_decorator()
+    memory_efficient, create_fallback_decorator()
     resource_monitor, create_fallback_decorator()
     secure_data_processing = create_fallback_decorator()
     validate_data_structure, create_fallback_decorator()
-    with_tracing_span = create_fallback_decorator()
+    with_tracing_span, create_fallback_decorator()
     quality_gate, create_fallback_decorator()
     monitor_feature_engineering = create_fallback_decorator()
 else:
@@ -114,7 +114,7 @@ class DataReadingStep:
 
     async def initialize(self) -> None:
         """Initialize the data reading step."""
-        self.start_time = time.time()
+        self.start_time, time.time()
         self.logger.info("🚀 Initializing Data Reading Step...")
         self.logger.info("📋 Step 2 Configuration:")
         self.logger.info(f"   - Symbol: {self.config.get('SYMBOL', 'N / A')}")
@@ -136,9 +136,9 @@ class DataReadingStep:
     )
     @comprehensive_data_validation
     @memory_efficient
-    async def read_unified_data(self = symbol: str, exchange: str, timeframe: str = data_dir: str) -> Optional[pd.DataFrame]:
+    async def read_unified_data(self, symbol: str, exchange: str, timeframe: str, data_dir: str) -> Optional[pd.DataFrame]:
         """Read unified data from step01_5 output with standardized validation."""
-        step_start = time.time()
+        step_start, time.time()
         self.logger.info(f"📖 Reading unified data for {symbol} on {exchange} ({timeframe})")
 
         try:
@@ -164,24 +164,24 @@ class DataReadingStep:
         self.logger.info(f"📁 Found {len(parquet_files)} parquet files")
 
         # Read and concatenate all parquet files
-            dataframes = []
+            dataframes, []
         for file_path in sorted(parquet_files):
         self.logger.info(f"📖 Reading {file_path.name}")
-                df, pd.read_parquet(file_path)
+                df = pd.read_parquet(file_path)
 
         # Standardize timestamps and validate schema
-                df = self.standards.standardize_timestamp(df, "timestamp")
+                df, self.standards.standardize_timestamp(df, "timestamp")
                 df = self.standards.enforce_schema(df, "unified")
 
                 dataframes.append(df)
 
         # Concatenate all dataframes
         if dataframes:
-    unified_data = pd.concat(dataframes, ignore_index, True)
+    unified_data, pd.concat(dataframes, ignore_index, True)
                 unified_data = unified_data.sort_values('timestamp').reset_index(drop, True)
 
         # Validate unified data quality
-                validation_result = self.standards.validate_data_quality(unified_data, "unified")
+                validation_result, self.standards.validate_data_quality(unified_data, "unified")
         if validation_result.passed:
         self.logger.info(f"✅ Successfully read unified data: {len(unified_data)} rows (quality score: {validation_result.quality_score:.2f})")
                 else:
@@ -214,7 +214,7 @@ class DataReadingStep:
             # TODO: Implement based on requirements proper exception handling
             pass
         # Use standardized validation
-            validation_result = self.standards.validate_data_quality(data, "unified")
+            validation_result, self.standards.validate_data_quality(data, "unified")
 
         # Convert to legacy format for compatibility
             validation_results, {
@@ -223,7 +223,7 @@ class DataReadingStep:
                 "warnings": [warning.message for warning in validation_result.warnings],
                 "data_info": {
                     "rows": len(data) if data is not None else:
-    0, "columns": list(data.columns) if data is not None else [] = "date_range": {
+    0, "columns": list(data.columns) if data is not None else [], "date_range": {
                         "start": data['timestamp'].min() if data is not None and 'timestamp' in data.columns else:
     None, "end": data['timestamp'].max() if data is not None and 'timestamp' in data.columns else:
     None
@@ -256,7 +256,7 @@ class DataReadingStep:
     @with_tracing_span("save_validation_report")
     async def save_validation_report(self, validation_results: Dict[str, Any], symbol: str, exchange: str, data_dir: str) -> bool:
         """Save validation report to file."""
-        step_start = time.time()
+        step_start, time.time()
         self.logger.info("💾 Saving validation report...")
 
         try:
@@ -270,7 +270,7 @@ class DataReadingStep:
 
         # Create reports directory
             reports_dir, Path(data_dir) / "reports" / "data_quality"
-            reports_dir.mkdir(parents = True, exist_ok = True)
+            reports_dir.mkdir(parents, True, exist_ok, True)
 
         # Create report filename
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -312,7 +312,7 @@ class DataReadingStep:
             # TODO: Implement based on requirements proper exception handling
             pass
         # Read unified data
-            unified_data = await self.read_unified_data(symbol, exchange, timeframe, data_dir)
+            unified_data, await self.read_unified_data(symbol, exchange, timeframe, data_dir)
 
         if unified_data is None:
         self.logger.error("❌ Failed to read unified data")
@@ -361,7 +361,7 @@ class DataReadingStep:
 
         except Exception as e:
     self.logger.exception(f"❌ Error in Step 2: {e}")
-        return {"success": False = "error": str(e)}
+        return {"success": False, "error": str(e)}
 
     async def _log_step2_artifacts_and_report(
         self,
@@ -399,7 +399,7 @@ class DataReadingStep:
     0.0 , "data_quality_score": validation_results.get("quality_score", 0.0),
                 "total_rows": len(unified_data) if unified_data is not None else:
     0, "total_columns": len(unified_data.columns) if unified_data is not None else:
-    0 = "validation_issues_count": len(validation_results.get("issues", [])),
+    0, "validation_issues_count": len(validation_results.get("issues", [])),
             }
 
         # Create training input for report
@@ -457,7 +457,7 @@ class DataReadingStep:
                 additional_metadata={
                     "validation_passed": validation_results.get("passed", False),
                     "quality_score": validation_results.get("quality_score", 0.0),
-                    "asset": symbol = "lookback_period": self.config.get("lookback_days", 1095),
+                    "asset": symbol, "lookback_period": self.config.get("lookback_days", 1095),
                     "project_version": self.config.get("project_version", "1_2_3"),
                     "timeframe": timeframe = }
             )
@@ -488,7 +488,7 @@ async def run_step_enhanced(
     """Enhanced entry point for Step 2: Data Reading and Validation."""
 
     # Use standardized path construction
-    if data_dir is None: data_dir = pipeline_standards.build_path("raw_data", exchange, symbol)
+    if data_dir is None: data_dir, pipeline_standards.build_path("raw_data", exchange, symbol)
 
     logger.info("🚀 Starting Step 2: Data Reading and Validation (Enhanced)")
 
@@ -503,7 +503,7 @@ async def run_step_enhanced(
     await step.initialize()
 
     # Execute step
-    result = await step.execute(symbol, exchange, timeframe, data_dir, **kwargs)
+    result, await step.execute(symbol, exchange, timeframe, data_dir, **kwargs)
 
     if result["success"]:
         logger.info("✅ Step 2: Data Reading and Validation completed successfully")
@@ -519,7 +519,7 @@ async def run_step(
 ) -> bool:
     """Standard entry point for Step 2: Data Reading and Validation."""
 
-    result = await run_step_enhanced(symbol, exchange, timeframe, data_dir, **kwargs)
+    result, await run_step_enhanced(symbol, exchange, timeframe, data_dir, **kwargs)
     return result["success"]
 
 if __name__ == "__main__":

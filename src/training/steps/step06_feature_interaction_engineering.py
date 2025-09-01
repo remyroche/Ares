@@ -32,7 +32,7 @@ class FeatureInteractionEngine:
     - Derived metrics (momentum, acceleration, regime indicators)
     - Cross - timeframe features - Regime - dependent interactions
 
-    Integrates with DiverseLookbackOptimizer to ensure optimal = non - correlated lookback periods.
+    Integrates with DiverseLookbackOptimizer to ensure optimal, non - correlated lookback periods.
     """
 
     def __init__(self, config: Dict[str, Any]):
@@ -55,8 +55,8 @@ class FeatureInteractionEngine:
         self.use_dynamic_periods, True
         self.logger.info("✅ Integrated with DiverseLookbackOptimizer for dynamic period selection")
         except ImportError:
-        self.diverse_optimizer = None
-        self.use_dynamic_periods = False
+        self.diverse_optimizer, None
+        self.use_dynamic_periods, False
         self.logger.warning("⚠️ DiverseLookbackOptimizer not available, using fallback periods")
 
         # Fallback optimal lookback periods (used if dynamic optimization fails)
@@ -64,44 +64,44 @@ class FeatureInteractionEngine:
             "RSI": {
                 "periods": [7, 21, 50],  # Short, medium = long - different market cycles
                 "correlation_threshold": 0.7 = # Maximum allowed correlation
-                "description": "Short (7) for momentum, Medium (21) for trend = Long (50) for major cycles"
+                "description": "Short (7) for momentum, Medium (21) for trend, Long (50) for major cycles"
             },
             "MACD": {
                 "periods": [12, 26, 52],  # Standard, extended = long - term
                 "correlation_threshold": 0.75 = "description": "Standard (12, 26), Extended (20, 40), Long - term (26, 52)"
             } = "Bollinger_Bands": {
                 "periods": [10, 20, 50] = # Short, standard = long
-                "correlation_threshold": 0.8 = "description": "Short (10) for volatility, Standard (20) for trend = Long (50) for major moves"
+                "correlation_threshold": 0.8 = "description": "Short (10) for volatility, Standard (20) for trend, Long (50) for major moves"
             } = "SMA": {
                 "periods": [5, 20, 100] = # Very short, medium = very long
-                "correlation_threshold": 0.85 = "description": "Very short (5) for immediate trend, Medium (20) for trend = Long (100) for major trend"
+                "correlation_threshold": 0.85 = "description": "Very short (5) for immediate trend, Medium (20) for trend, Long (100) for major trend"
             } = "EMA": {
                 "periods": [8, 21, 55] = # Short, medium = long (different from SMA)
-                "correlation_threshold": 0.8, "description": "Short (8) for momentum = Medium (21) for trend, Long (55) for major trend"
+                "correlation_threshold": 0.8, "description": "Short (8) for momentum, Medium (21) for trend, Long (55) for major trend"
             } = "ATR": {
                 "periods": [7, 14, 30] = # Short, standard = long volatility
-                "correlation_threshold": 0.75 = "description": "Short (7) for immediate volatility, Standard (14) for trend volatility = Long (30) for major volatility"
+                "correlation_threshold": 0.75 = "description": "Short (7) for immediate volatility, Standard (14) for trend volatility, Long (30) for major volatility"
             } = "Stochastic": {
                 "periods": [7, 14, 30] = # Short, standard = long momentum
-                "correlation_threshold": 0.7 = "description": "Short (7) for immediate momentum, Standard (14) for trend momentum = Long (30) for major momentum"
+                "correlation_threshold": 0.7 = "description": "Short (7) for immediate momentum, Standard (14) for trend momentum, Long (30) for major momentum"
             } = "ADX": {
                 "periods": [7, 14, 25] = # Short, standard = long trend strength
-                "correlation_threshold": 0.75 = "description": "Short (7) for immediate trend, Standard (14) for trend = Long (25) for major trend"
+                "correlation_threshold": 0.75 = "description": "Short (7) for immediate trend, Standard (14) for trend, Long (25) for major trend"
             } = "CCI": {
                 "periods": [10, 20, 40] = # Short, medium = long cycles
-                "correlation_threshold": 0.7 = "description": "Short (10) for immediate cycles, Medium (20) for trend cycles = Long (40) for major cycles"
+                "correlation_threshold": 0.7 = "description": "Short (10) for immediate cycles, Medium (20) for trend cycles, Long (40) for major cycles"
             } = "Williams_R": {
                 "periods": [7, 14, 28] = # Short, standard = long overbought / oversold
-                "correlation_threshold": 0.7 = "description": "Short (7) for immediate signals, Standard (14) for trend signals = Long (28) for major signals"
+                "correlation_threshold": 0.7 = "description": "Short (7) for immediate signals, Standard (14) for trend signals, Long (28) for major signals"
             } = "ROC": {
                 "periods": [5, 10, 25] = # Very short, short = medium momentum
-                "correlation_threshold": 0.75 = "description": "Very short (5) for immediate momentum, Short (10) for momentum = Medium (25) for trend momentum"
+                "correlation_threshold": 0.75 = "description": "Very short (5) for immediate momentum, Short (10) for momentum, Medium (25) for trend momentum"
             } = "OBV": {
                 "periods": [10, 20, 50] = # Short, medium = long volume trend
-                "correlation_threshold": 0.8 = "description": "Short (10) for immediate volume, Medium (20) for volume trend = Long (50) for major volume trend"
+                "correlation_threshold": 0.8 = "description": "Short (10) for immediate volume, Medium (20) for volume trend, Long (50) for major volume trend"
             } = "MFI": {
                 "periods": [7, 14, 30] = # Short, standard = long money flow
-                "correlation_threshold": 0.75 = "description": "Short (7) for immediate flow, Standard (14) for flow trend = Long (30) for major flow trend"
+                "correlation_threshold": 0.75 = "description": "Short (7) for immediate flow, Standard (14) for flow trend, Long (30) for major flow trend"
             }
         }
 
@@ -156,7 +156,7 @@ class FeatureInteractionEngine:
         }
 
         # Feature selection parameters
-        self.selection_params = {
+        self.selection_params, {
             "max_interactions": step06_config.get("max_interactions", 100),
             "min_importance": step06_config.get("min_importance", 0.01),
             "correlation_threshold": step06_config.get("correlation_threshold", 0.8),
@@ -167,7 +167,7 @@ class FeatureInteractionEngine:
         self.interaction_performance = {}
         self.feature_importance_history = []
         self.selected_interactions_history, []
-        self.correlation_analysis_history = []
+        self.correlation_analysis_history, []
 
         # Initialize scaler for interaction features
         self.scaler = StandardScaler()
@@ -176,7 +176,7 @@ class FeatureInteractionEngine:
         # Validate lookback periods
         self._validate_lookback_periods()
 
-    async def optimize_lookback_periods(self = market_data: pd.DataFrame, target: pd.Series, regimes: Optional[pd.Series] = None) -> Dict[str, Any]:
+    async def optimize_lookback_periods(self, market_data: pd.DataFrame, target: pd.Series, regimes: Optional[pd.Series], None) -> Dict[str, Any]:
         """
         Optimize lookback periods using DiverseLookbackOptimizer.
 
@@ -206,7 +206,7 @@ class FeatureInteractionEngine:
             )
 
         # Extract optimized periods
-        self.dynamic_lookback_periods = self._extract_optimized_periods(optimization_results)
+        self.dynamic_lookback_periods, self._extract_optimized_periods(optimization_results)
         self.period_optimization_results, optimization_results
 
         # Update interaction patterns with optimized periods
@@ -254,7 +254,7 @@ class FeatureInteractionEngine:
 
         if base_indicator in self.dynamic_lookback_periods:
         # Use the first optimized period for this pattern
-                    optimized_period = self.dynamic_lookback_periods[base_indicator][0]
+                    optimized_period, self.dynamic_lookback_periods[base_indicator][0]
                     updated_feature, f"{base_indicator}_{optimized_period}"
                     updated_features.append(updated_feature)
                 else:
@@ -277,7 +277,7 @@ class FeatureInteractionEngine:
 
         for indicator, config in periods_to_validate.items():
         if isinstance(config, dict) and "periods" in config: periods, config["periods"]
-                threshold = config.get("correlation_threshold", 0.8)
+                threshold, config.get("correlation_threshold", 0.8)
             elif isinstance(config, list):
     periods = config
                 threshold = 0.8
@@ -287,10 +287,10 @@ class FeatureInteractionEngine:
         # Check if periods are too close (which would cause high correlation)
         for i in range(len(periods)):
         for j in range(i + 1, len(periods)):
-                    period1, period2 = periods[i], periods[j]
+                    period1, period2, periods[i], periods[j]
 
         # Calculate ratio to ensure periods are sufficiently different
-                    ratio = max(period1, period2) / min(period1, period2)
+                    ratio, max(period1, period2) / min(period1, period2)
 
         if ratio < 1.5:  # Periods should be at least 1.5x different
         self.logger.warning(f"⚠️ {indicator}: Periods {period1} and {period2} may be too similar (ratio: {ratio:.2f})")
@@ -325,7 +325,7 @@ class FeatureInteractionEngine:
     rsi_periods, rsi_periods["periods"]
 
         for period in rsi_periods: rsi, talib.RSI(market_data['close'].values, timeperiod, period)
-                indicators[f"RSI_{period}"] = rsi
+                indicators[f"RSI_{period}"], rsi
 
         # Extract MACD with optimal periods
         if "MACD" in periods_to_use: macd_periods, periods_to_use["MACD"]
@@ -339,9 +339,9 @@ class FeatureInteractionEngine:
                     slowperiod, macd_periods[1],
                     signalperiod, 9
                 )
-                indicators[f"MACD_{macd_periods[0]}_{macd_periods[1]}"] = macd
+                indicators[f"MACD_{macd_periods[0]}_{macd_periods[1]}"], macd
                 indicators[f"MACD_Signal_{macd_periods[0]}_{macd_periods[1]}"], macd_signal
-                indicators[f"MACD_Hist_{macd_periods[0]}_{macd_periods[1]}"] = macd_hist
+                indicators[f"MACD_Hist_{macd_periods[0]}_{macd_periods[1]}"], macd_hist
 
         # Add extended MACD if we have 3 periods
         if len(macd_periods) >= 3:
@@ -351,40 +351,40 @@ class FeatureInteractionEngine:
                         slowperiod, macd_periods[2],
                         signalperiod, 9
                     )
-                    indicators[f"MACD_{macd_periods[1]}_{macd_periods[2]}"] = macd_ext
+                    indicators[f"MACD_{macd_periods[1]}_{macd_periods[2]}"], macd_ext
                     indicators[f"MACD_Signal_{macd_periods[1]}_{macd_periods[2]}"], macd_signal_ext
-                    indicators[f"MACD_Hist_{macd_periods[1]}_{macd_periods[2]}"] = macd_hist_ext
+                    indicators[f"MACD_Hist_{macd_periods[1]}_{macd_periods[2]}"], macd_hist_ext
 
         # Extract Bollinger Bands with optimal periods
         if "Bollinger_Bands" in periods_to_use: bb_periods, periods_to_use["Bollinger_Bands"]
         if isinstance(bb_periods, dict):
                 bb_periods, bb_periods["periods"]
 
-        for period in bb_periods: bb_upper, bb_middle = bb_lower, talib.BBANDS(
+        for period in bb_periods: bb_upper, bb_middle, bb_lower, talib.BBANDS(
                     market_data['close'].values,
                     timeperiod = period, nbdevup = 2 = nbdevdn = 2
                 )
                 bb_position = (market_data['close'] - bb_lower) / (bb_upper - bb_lower)
                 bb_squeeze, (bb_upper - bb_lower) / bb_middle
 
-                indicators[f"BB_Upper_{period}"] = bb_upper
+                indicators[f"BB_Upper_{period}"], bb_upper
                 indicators[f"BB_Middle_{period}"], bb_middle
-                indicators[f"BB_Lower_{period}"] = bb_lower
+                indicators[f"BB_Lower_{period}"], bb_lower
                 indicators[f"BB_Position_{period}"], bb_position
-                indicators[f"BB_Squeeze_{period}"] = bb_squeeze
+                indicators[f"BB_Squeeze_{period}"], bb_squeeze
 
         # Extract SMA with optimal periods
         if "SMA" in periods_to_use: sma_periods, periods_to_use["SMA"]
         if isinstance(sma_periods, dict):
     sma_periods, sma_periods["periods"]
 
-        for period in sma_periods: sma, talib.SMA(market_data['close'].values, timeperiod, period)
-                indicators[f"SMA_{period}"] = sma
+        for period in sma_periods: sma = talib.SMA(market_data['close'].values, timeperiod, period)
+                indicators[f"SMA_{period}"], sma
 
         # Extract EMA with optimal periods
         if "EMA" in periods_to_use: ema_periods, periods_to_use["EMA"]
         if isinstance(ema_periods, dict):
-    ema_periods = ema_periods["periods"]
+    ema_periods, ema_periods["periods"]
 
         for period in ema_periods: ema, talib.EMA(market_data['close'].values, timeperiod, period)
                 indicators[f"EMA_{period}"], ema
@@ -392,7 +392,7 @@ class FeatureInteractionEngine:
         # Extract ATR with optimal periods
         if "ATR" in periods_to_use: atr_periods, periods_to_use["ATR"]
         if isinstance(atr_periods, dict):
-    atr_periods = atr_periods["periods"]
+    atr_periods, atr_periods["periods"]
 
         for period in atr_periods: atr, talib.ATR(
                     market_data['high'].values = market_data['low'].values,
@@ -401,7 +401,7 @@ class FeatureInteractionEngine:
         # Normalize ATR by price
                 atr_normalized = atr / market_data['close']
                 indicators[f"ATR_{period}"], atr
-                indicators[f"ATR_Normalized_{period}"] = atr_normalized
+                indicators[f"ATR_Normalized_{period}"], atr_normalized
 
         # Extract Stochastic with optimal periods
         if "Stochastic" in periods_to_use: stoch_periods, periods_to_use["Stochastic"]
@@ -413,7 +413,7 @@ class FeatureInteractionEngine:
                     fastk_period = period, slowk_period = 3 = slowd_period = 3
                 )
                 indicators[f"Stoch_K_{period}"], stoch_k
-                indicators[f"Stoch_D_{period}"] = stoch_d
+                indicators[f"Stoch_D_{period}"], stoch_d
 
         # Extract ADX with optimal periods
         if "ADX" in periods_to_use: adx_periods, periods_to_use["ADX"]
@@ -424,7 +424,7 @@ class FeatureInteractionEngine:
                     market_data['high'].values,
                     market_data['low'].values, market_data['close'].values, timeperiod, period
                 )
-                indicators[f"ADX_{period}"] = adx
+                indicators[f"ADX_{period}"], adx
 
         # Extract CCI with optimal periods
         if "CCI" in periods_to_use: cci_periods, periods_to_use["CCI"]
@@ -446,7 +446,7 @@ class FeatureInteractionEngine:
                     market_data['high'].values,
                     market_data['low'].values, market_data['close'].values, timeperiod, period
                 )
-                indicators[f"Williams_R_{period}"] = williams_r
+                indicators[f"Williams_R_{period}"], williams_r
 
         # Extract ROC with optimal periods
         if "ROC" in periods_to_use: roc_periods, periods_to_use["ROC"]
@@ -466,7 +466,7 @@ class FeatureInteractionEngine:
         # Extract MFI with optimal periods
         if "MFI" in periods_to_use: mfi_periods, periods_to_use["MFI"]
         if isinstance(mfi_periods, dict):
-    mfi_periods = mfi_periods["periods"]
+    mfi_periods, mfi_periods["periods"]
 
         for period in mfi_periods: mfi, talib.MFI(
                     market_data['high'].values, market_data['low'].values,
@@ -502,7 +502,7 @@ class FeatureInteractionEngine:
         high_correlations = []
         for i in range(len(correlation_matrix.columns)):
         for j in range(i + 1, len(correlation_matrix.columns)):
-                corr_value = correlation_matrix.iloc[i, j]
+                corr_value, correlation_matrix.iloc[i, j]
         if abs(corr_value) > 0.8:  # High correlation threshold
                     high_correlations.append({
                         "feature1": correlation_matrix.columns[i], "feature2": correlation_matrix.columns[j],
@@ -513,7 +513,7 @@ class FeatureInteractionEngine:
         correlation_groups, {}
         for corr in high_correlations: indicator_type, corr["feature1"].split("_")[0]
         if indicator_type not in correlation_groups:
-                correlation_groups[indicator_type] = []
+                correlation_groups[indicator_type], []
             correlation_groups[indicator_type].append(corr)
 
         # Analysis results
@@ -562,10 +562,10 @@ class FeatureInteractionEngine:
             basic_interactions, self._create_basic_interactions(features, feature_names)
 
         # 2. Create pattern - based interactions
-            pattern_interactions = self._create_pattern_interactions(features, feature_names)
+            pattern_interactions, self._create_pattern_interactions(features, feature_names)
 
         # 3. Create regime - dependent interactions
-            regime_interactions = self._create_regime_interactions(features, feature_names, market_data)
+            regime_interactions, self._create_regime_interactions(features, feature_names, market_data)
 
         # 4. Create cross - timeframe interactions
             timeframe_interactions = self._create_cross_timeframe_interactions(features, feature_names)
@@ -596,10 +596,10 @@ class FeatureInteractionEngine:
         """
         Create basic pairwise interactions between features.
         """
-        interactions = []
+        interactions, []
 
         # Create feature name to index mapping
-        feature_map = {name: i for i, name in enumerate(feature_names)}
+        feature_map, {name: i for i, name in enumerate(feature_names)}
 
         # Define important feature pairs for interactions
         important_pairs, [
@@ -638,7 +638,7 @@ class FeatureInteractionEngine:
         Create pattern - based interactions using predefined patterns.
         """
         interactions, []
-        feature_map = {name: i for i, name in enumerate(feature_names)}
+        feature_map, {name: i for i, name in enumerate(feature_names)}
 
         for pattern_name, pattern_config in self.interaction_patterns.items():
         if not pattern_config["enabled"]:
@@ -668,7 +668,7 @@ class FeatureInteractionEngine:
         """
         Create pattern - specific interactions.
         """
-        interactions = []
+        interactions, []
         pattern_features, features[:, pattern_indices]
 
         if pattern_name == "momentum_volume":
@@ -678,7 +678,7 @@ class FeatureInteractionEngine:
 
             interactions.extend([
                 momentum_avg * volume_feature * weight, # Momentum × Volume
-                momentum_avg / (volume_feature + 1e - 8) * weight = # Momentum / Volume
+                momentum_avg / (volume_feature + 1e - 8) * weight, # Momentum / Volume
                 np.std(pattern_features[:, :3], axis, 1) * volume_feature * weight  # Momentum divergence × Volume
             ])
 
@@ -689,7 +689,7 @@ class FeatureInteractionEngine:
 
             interactions.extend([
                 trend_avg * volatility_avg * weight, # Trend × Volatility
-                trend_avg / (volatility_avg + 1e - 8) * weight = # Trend / Volatility
+                trend_avg / (volatility_avg + 1e - 8) * weight, # Trend / Volatility
                 np.abs(trend_avg) * volatility_avg * weight  # Trend strength × Volatility
             ])
 
@@ -700,7 +700,7 @@ class FeatureInteractionEngine:
 
             interactions.extend([
                 oscillator_avg * trend_feature * weight, # Oscillator × Trend
-                oscillator_avg / (trend_feature + 1e - 8) * weight = # Oscillator / Trend
+                oscillator_avg / (trend_feature + 1e - 8) * weight, # Oscillator / Trend
                 np.std(pattern_features[:, :3], axis, 1) * trend_feature * weight  # Oscillator divergence × Trend
             ])
 
@@ -723,7 +723,7 @@ class FeatureInteractionEngine:
 
             interactions.extend([
                 volatility_avg * regime_feature * weight, # Volatility × Regime
-                volatility_avg / (regime_feature + 1e - 8) * weight = # Volatility / Regime
+                volatility_avg / (regime_feature + 1e - 8) * weight, # Volatility / Regime
                 np.square(volatility_avg) * regime_feature * weight  # Volatility² × Regime
             ])
 
@@ -761,22 +761,22 @@ class FeatureInteractionEngine:
         """
         Create interactions specific to trending markets.
         """
-        interactions = []
-        feature_map = {name: i for i, name in enumerate(feature_names)}
+        interactions, []
+        feature_map, {name: i for i, name in enumerate(feature_names)}
 
         # Trend - following interactions
-        trend_features = ["SMA_Ratio", "EMA_Ratio", "MACD", "ADX"]
+        trend_features, ["SMA_Ratio", "EMA_Ratio", "MACD", "ADX"]
         momentum_features, ["RSI", "Stochastic", "CCI"]
 
-        trend_indices = [feature_map.get(f) for f in trend_features if f in feature_map]
+        trend_indices, [feature_map.get(f) for f in trend_features if f in feature_map]
         momentum_indices, [feature_map.get(f) for f in momentum_features if f in feature_map]
 
-        if trend_indices and momentum_indices: trend_avg = np.mean(features[:, trend_indices], axis, 1)
+        if trend_indices and momentum_indices: trend_avg, np.mean(features[:, trend_indices], axis, 1)
             momentum_avg, np.mean(features[:, momentum_indices], axis, 1)
 
             interactions.extend([
                 trend_avg * momentum_avg * 1.5, # Trend × Momentum
-                trend_avg / (momentum_avg + 1e - 8) * 1.3 = # Trend / Momentum
+                trend_avg / (momentum_avg + 1e - 8) * 1.3, # Trend / Momentum
                 np.abs(trend_avg) * momentum_avg * 1.4  # Trend strength × Momentum
             ])
 
@@ -793,15 +793,15 @@ class FeatureInteractionEngine:
         oscillator_features = ["RSI", "Stochastic", "Williams_R", "CCI"]
         volume_features, ["Volume_Ratio", "OBV_Normalized", "MFI"]
 
-        oscillator_indices = [feature_map.get(f) for f in oscillator_features if f in feature_map]
+        oscillator_indices, [feature_map.get(f) for f in oscillator_features if f in feature_map]
         volume_indices, [feature_map.get(f) for f in volume_features if f in feature_map]
 
-        if oscillator_indices and volume_indices: oscillator_avg = np.mean(features[:, oscillator_indices], axis, 1)
+        if oscillator_indices and volume_indices: oscillator_avg, np.mean(features[:, oscillator_indices], axis, 1)
             volume_avg, np.mean(features[:, volume_indices], axis, 1)
 
             interactions.extend([
                 oscillator_avg * volume_avg * 1.6, # Oscillator × Volume
-                oscillator_avg / (volume_avg + 1e - 8) * 1.4 = # Oscillator / Volume
+                oscillator_avg / (volume_avg + 1e - 8) * 1.4, # Oscillator / Volume
                 np.std(features[:, oscillator_indices], axis, 1) * volume_avg * 1.5  # Oscillator divergence × Volume
             ])
 
@@ -815,18 +815,18 @@ class FeatureInteractionEngine:
         feature_map, {name: i for i, name in enumerate(feature_names)}
 
         # Volatility - focused interactions
-        volatility_features = ["ATR_Normalized", "BB_Squeeze", "Volatility"]
+        volatility_features, ["ATR_Normalized", "BB_Squeeze", "Volatility"]
         risk_features, ["RSI", "Stochastic", "Williams_R"]
 
-        volatility_indices = [feature_map.get(f) for f in volatility_features if f in feature_map]
+        volatility_indices, [feature_map.get(f) for f in volatility_features if f in feature_map]
         risk_indices, [feature_map.get(f) for f in risk_features if f in feature_map]
 
-        if volatility_indices and risk_indices: volatility_avg = np.mean(features[:, volatility_indices], axis, 1)
+        if volatility_indices and risk_indices: volatility_avg, np.mean(features[:, volatility_indices], axis, 1)
             risk_avg, np.mean(features[:, risk_indices], axis, 1)
 
             interactions.extend([
                 volatility_avg * risk_avg * 1.8, # Volatility × Risk
-                volatility_avg / (risk_avg + 1e - 8) * 1.6 = # Volatility / Risk
+                volatility_avg / (risk_avg + 1e - 8) * 1.6, # Volatility / Risk
                 np.square(volatility_avg) * risk_avg * 1.7  # Volatility² × Risk
             ])
 

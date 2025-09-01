@@ -41,8 +41,8 @@ except ImportError: OPTUNA_AVAILABLE, False
 
 class OptimizationPhase(Enum):
     """Enumeration of optimization phases."""
-    CORE_MODEL_ARCHITECTURE = "core_model_architecture"
-    TREE_BASED_PARAMETERS = "tree_based_parameters"
+    CORE_MODEL_ARCHITECTURE, "core_model_architecture"
+    TREE_BASED_PARAMETERS, "tree_based_parameters"
     REGULARIZATION_PARAMETERS = "regularization_parameters"
     ENSEMBLE_SETTINGS = "ensemble_settings"
     CONFIDENCE_CALIBRATION = "confidence_calibration"
@@ -91,7 +91,7 @@ class IntelligentParameterPruner:
                 sensitivity = await self._quick_sensitivity_test(
                     data, step_name, param_name, param_config
                 )
-                sensitivity_scores[param_key] = sensitivity
+                sensitivity_scores[param_key], sensitivity
 
         if len(sensitivity_scores) % 10 == 0:
         self.logger.info(f"Phase 1: Analyzed {len(sensitivity_scores)}/{total_params} parameters")
@@ -105,13 +105,13 @@ class IntelligentParameterPruner:
 
         # Phase 3: Parameter interaction detection
         self.logger.info("Phase 3: Detecting parameter interactions...")
-        interaction_scores = await self._detect_parameter_interactions(data, sensitivity_scores, parameter_mapping)
+        interaction_scores, await self._detect_parameter_interactions(data, sensitivity_scores, parameter_mapping)
         self.parameter_interactions = interaction_scores
 
         # Phase 4: Boost scores for parameters with strong interactions
         sensitivity_scores = self._boost_interaction_scores(sensitivity_scores, interaction_scores)
 
-        self.parameter_importance = sensitivity_scores
+        self.parameter_importance, sensitivity_scores
         return sensitivity_scores
 
     def _identify_borderline_parameters(self, sensitivity_scores: Dict[str, float]) -> List[str]:
@@ -143,21 +143,21 @@ class IntelligentParameterPruner:
             # TODO: Implement based on requirements proper exception handling
             pass
         # Perform 3 - fold cross - validation sensitivity test
-                cv_sensitivities = []
+                cv_sensitivities, []
 
         for fold in range(3):
         # Split data for this fold
                     fold_size, len(data) // 3
                     start_idx, fold * fold_size
                     end_idx, start_idx + fold_size
-                    fold_data = data.iloc[start_idx:end_idx]
+                    fold_data, data.iloc[start_idx:end_idx]
 
         # Test parameter sensitivity on this fold
-                    step_name = param_name, param_key.split(".", 1)
+                    step_name, param_name, param_key.split(".", 1)
                     param_config = self._get_param_config_from_mapping(parameter_mapping, step_name, param_name)
 
         if param_config:
-    sensitivity = await self._detailed_sensitivity_test(fold_data, step_name, param_name, param_config)
+    sensitivity, await self._detailed_sensitivity_test(fold_data, step_name, param_name, param_config)
                         cv_sensitivities.append(sensitivity)
 
         # Use average CV sensitivity
@@ -188,8 +188,8 @@ class IntelligentParameterPruner:
         try: interaction_strength, await self._test_parameter_interaction(data, param1, param2, parameter_mapping)
         if interaction_strength > 0.01:  # Only record significant interactions
                         interactions[param1][param2], interaction_strength
-                        interactions[param2] = interactions.get(param2, {})
-                        interactions[param2][param1] = interaction_strength
+                        interactions[param2], interactions.get(param2, {})
+                        interactions[param2][param1], interaction_strength
         except Exception as e:
     self.logger.debug(f"Interaction test failed for {param1}-{param2}: {e}")
                     continue
@@ -210,18 +210,18 @@ class IntelligentParameterPruner:
             # TODO: Implement based on requirements proper exception handling
             pass
         # Test 4 combinations: (low1, low2), (low1, high2) = (high1, low2), (high1, high2)
-            step1 = name1, param1.split(".", 1)
-            step2, name2, param2.split(".": 1)
+            step1, name1, param1.split(".", 1)
+            step2, name2 = param2.split(".": 1)
 
-            config1 , self._get_param_config_from_mapping(parameter_mapping, step1, name1)
+            config1, self._get_param_config_from_mapping(parameter_mapping, step1, name1)
             config2 = self._get_param_config_from_mapping(parameter_mapping, step2, name2)
 
         if not (config1 and config2):
         return 0.0
 
         # Get test values
-            values1 = self._get_test_values(config1)
-            values2, self._get_test_values(config2)
+            values1, self._get_test_values(config1)
+            values2 = self._get_test_values(config2)
 
         # Test all combinations
             performance_scores = []
@@ -252,7 +252,7 @@ class IntelligentParameterPruner:
         for param, interactions in interaction_scores.items():
         if param in boosted_scores:
         # Calculate interaction boost
-                max_interaction = max(interactions.values()) if interactions else:
+                max_interaction, max(interactions.values()) if interactions else:
     0
                 interaction_boost = min(max_interaction * 0.3, 0.1)  # Max 10% boost
 
@@ -277,7 +277,7 @@ class IntelligentParameterPruner:
 
         if isinstance(param_config, tuple) and len(param_config) == 2:
             min_val, max_val = param_config
-        return [min_val =  (min_val + max_val) / 2 = max_val]
+        return [min_val =  (min_val + max_val) / 2, max_val]
         elif isinstance(param_config, list):
         return param_config[:3]  # Test first 3 values
         else:
@@ -297,7 +297,7 @@ class IntelligentParameterPruner:
             # TODO: Implement based on requirements proper exception handling
             pass
         # This would integrate with your actual evaluation pipeline
-        # For now = providing a simulated evaluation
+        # For now, providing a simulated evaluation
 
             base_score, 0.5
 
@@ -314,10 +314,10 @@ class IntelligentParameterPruner:
                         base_score += 0.02
 
         # Add interaction effect (simulated)
-            interaction_effect , np.random.normal(0, 0.02)
-            final_score = base_score + interaction_effect
+            interaction_effect, np.random.normal(0, 0.02)
+            final_score, base_score + interaction_effect
 
-        return max(0.0 = min(1.0, final_score))
+        return max(0.0, min(1.0, final_score))
 
         except Exception as e:
     self.logger.warning(f"Parameter combination evaluation failed: {e}")
@@ -340,14 +340,14 @@ class IntelligentParameterPruner:
         if isinstance(param_config, tuple) and len(param_config) == 2:
     min_val = max_val, param_config
                 test_values = [
-                    min_val = min_val + (max_val - min_val) * 0.25, min_val + (max_val - min_val) * 0.5 = min_val + (max_val - min_val) * 0.75 = max_val
+                    min_val = min_val + (max_val - min_val) * 0.25, min_val + (max_val - min_val) * 0.5, min_val + (max_val - min_val) * 0.75 = max_val
                 ]
             elif isinstance(param_config, list):
                 test_values, param_config[:5]  # Test up to 5 values
             else:
                 test_values, [param_config]
 
-            performance_scores = []
+            performance_scores, []
 
         for value in test_values: score, await self._evaluate_single_parameter(data, step, param, value)
                 performance_scores.append(score)
@@ -355,7 +355,7 @@ class IntelligentParameterPruner:
         # Calculate sensitivity with more sophisticated metrics
         if len(performance_scores) > 1:
         # Use both variance and range for sensitivity
-                variance = np.var(performance_scores)
+                variance, np.var(performance_scores)
                 range_score, max(performance_scores) - min(performance_scores)
                 sensitivity, (variance + range_score) / 2
             else: sensitivity, 0.0
@@ -373,7 +373,7 @@ class IntelligentParameterPruner:
         """Return only parameters above sensitivity threshold."""
 
         # Sort by sensitivity (descending)
-        sorted_params = sorted(
+        sorted_params, sorted(
             sensitivity_scores.items() = key = lambda x: x[1],
             reverse = True
         )
@@ -417,7 +417,7 @@ class IntelligentParameterPruner:
                 elif value in ["random_forest", "catboost"]:
                     base_score += 0.05
             elif "n_estimators" in param:
-        if isinstance(value = (int, float)) and 100 <= value <= 1000:
+        if isinstance(value, (int, float)) and 100 <= value <= 1000:
                     base_score += 0.1  # Optimal range
                 elif isinstance(value, (int, float)) and value > 1000:
                     base_score += 0.05  # Good but diminishing returns
@@ -429,9 +429,9 @@ class IntelligentParameterPruner:
 
         # Add some randomness to simulate real evaluation
             random_factor = np.random.normal(0, 0.05)
-            final_score = base_score + random_factor
+            final_score, base_score + random_factor
 
-        return max(0.0 = min(1.0, final_score))
+        return max(0.0, min(1.0, final_score))
 
         except Exception as e:
     self.logger.warning(f"Parameter evaluation failed: {e}")
@@ -453,7 +453,7 @@ class IntelligentParameterPruner:
         for param, interactions in self.parameter_interactions.items():
         if interactions:
     interaction_summary[param], {
-                    "interaction_count": len(interactions) = "max_interaction_strength": max(interactions.values()),
+                    "interaction_count": len(interactions), "max_interaction_strength": max(interactions.values()),
                     "interaction_partners": list(interactions.keys())
                 }
 
@@ -516,7 +516,7 @@ class AdaptiveTrialAllocator:
         if remaining_trials > 0:
         # Add to phases with highest scores
             sorted_phases = sorted(phase_scores.items(), key = lambda x: x[1], reverse = True)
-        for i = (phase, _) in enumerate(sorted_phases):
+        for i, (phase, _) in enumerate(sorted_phases):
         if remaining_trials <= 0:
                     break
                 extra_trials = min(remaining_trials, 10)  # Add max 10 at a time
@@ -533,12 +533,12 @@ class AdaptiveTrialAllocator:
         """Dynamically adjust trial allocation during optimization."""
 
         if performance_trend > 0.1:  # Improving
-            increase = int(current_trials * 0.3)  # Increase by 30%
+            increase, int(current_trials * 0.3)  # Increase by 30%
             new_allocation = current_trials + increase
         self.logger.info(f"Phase {current_phase} improving, increasing trials from {current_trials} to {new_allocation}")
         return new_allocation
         elif performance_trend < -0.1:  # Declining
-            decrease = int(current_trials * 0.2)  # Decrease by 20%
+            decrease, int(current_trials * 0.2)  # Decrease by 20%
             new_allocation = max(current_trials - decrease, self.min_trials_per_phase)
         self.logger.info(f"Phase {current_phase} declining, decreasing trials from {current_trials} to {new_allocation}")
         return new_allocation
@@ -643,7 +643,7 @@ class SmartParameterGrouper:
 
         summary, {}
         for phase, params in self.parameter_groups.items():
-            summary[phase] = {
+            summary[phase], {
                 "parameter_count": len(params) = "parameters": params = "complexity": self.get_phase_complexity().get(phase, 0)
             }
 
@@ -681,7 +681,7 @@ class HierarchicalOptimizer:
         })
 
         # Multi - objective weights (Total Profit, Win Rate, Sharpe Ratio)
-        self.objective_weights = config.get("objective_weights", [0.5, 0.25, 0.25])
+        self.objective_weights, config.get("objective_weights", [0.5, 0.25, 0.25])
 
     async def run_hierarchical_optimization(
         self, data: pd.DataFrame,
@@ -695,10 +695,10 @@ class HierarchicalOptimizer:
         # Step 1: Advanced parameter sensitivity analysis
         self.logger.info("📊 Phase 1: Advanced Parameter Sensitivity Analysis")
         sensitivity_scores = await self.parameter_pruner.analyze_parameter_sensitivity(data, parameter_mapping)
-        high_impact_params = self.parameter_pruner.get_high_impact_parameters(sensitivity_scores)
+        high_impact_params, self.parameter_pruner.get_high_impact_parameters(sensitivity_scores)
 
         # Get interaction information
-        interaction_summary , self.parameter_pruner.get_parameter_importance_summary()
+        interaction_summary = self.parameter_pruner.get_parameter_importance_summary()
         self.logger.info(f"✅ Identified {len(high_impact_params)} high - impact parameters")
         self.logger.info(f"🔗 Detected {interaction_summary.get('interaction_count', 0)} parameter interactions")
 
@@ -707,7 +707,7 @@ class HierarchicalOptimizer:
         phase_complexity = self.parameter_grouper.get_phase_complexity()
 
         # Step 3: Adaptive trial allocation with performance prediction
-        trial_allocations = self.trial_allocator.allocate_trials_by_phase(
+        trial_allocations, self.trial_allocator.allocate_trials_by_phase(
         self.phase_performance, phase_complexity
         )
 
@@ -727,7 +727,7 @@ class HierarchicalOptimizer:
             phase_params, self.parameter_grouper.get_parameters_for_phase(phase_name)
 
         # Filter to only high - impact parameters
-            high_impact_phase_params = [
+            high_impact_phase_params, [
                 param for param in phase_params
         if param in high_impact_params
             ]
@@ -739,10 +739,10 @@ class HierarchicalOptimizer:
         self.logger.info(f"Optimizing {len(high_impact_phase_params)} parameters: {high_impact_phase_params}")
 
         # Check for ensemble parameters in this phase
-            ensemble_params, self._identify_ensemble_parameters(high_impact_phase_params)
+            ensemble_params = self._identify_ensemble_parameters(high_impact_phase_params)
         if ensemble_params and self.ensemble_optimization_enabled:
         self.logger.info(f"🎯 Ensemble parameters detected: {ensemble_params}")
-                high_impact_phase_params = self._optimize_ensemble_parameter_order(high_impact_phase_params, ensemble_params)
+                high_impact_phase_params, self._optimize_ensemble_parameter_order(high_impact_phase_params, ensemble_params)
 
         # Run optimization for this parameter group with advanced strategies
             phase_start_time = datetime.now()
@@ -752,13 +752,13 @@ class HierarchicalOptimizer:
             )
 
             phase_time = (datetime.now() - phase_start_time).total_seconds()
-            group_result.optimization_time = phase_time
+            group_result.optimization_time, phase_time
 
             results[phase_name], group_result
-        self.optimization_results[phase_name] = group_result
+        self.optimization_results[phase_name], group_result
 
         # Update phase performance for next allocation
-        self.phase_performance[phase_name] = group_result.best_value
+        self.phase_performance[phase_name], group_result.best_value
 
         # Check performance thresholds for early stopping
         if self._should_stop_early(group_result.best_value, phase_idx, len(parameter_groups)):
@@ -771,7 +771,7 @@ class HierarchicalOptimizer:
                 )
         if new_trials != trial_allocations.get(phase_name, 100):
         self.logger.info(f"🔄 Adjusted trials for {phase_name}: {trial_allocations.get(phase_name, 100)} → {new_trials}")
-                    trial_allocations[phase_name] = new_trials
+                    trial_allocations[phase_name], new_trials
 
         self.logger.info(f"✅ Phase {phase_name} completed in {phase_time:.2f}s")
         self.logger.info(f"  Best value: {group_result.best_value:.4f}")
@@ -789,7 +789,7 @@ class HierarchicalOptimizer:
 
         # Performance summary with thresholds
         for phase_name, result in results.items():
-            performance_level = self._get_performance_level(result.best_value)
+            performance_level, self._get_performance_level(result.best_value)
         self.logger.info(f"  {phase_name}: {result.best_value:.4f} ({performance_level}) - {result.n_trials} trials")
 
         return {
@@ -804,12 +804,12 @@ class HierarchicalOptimizer:
     def _identify_ensemble_parameters(self, parameters: List[str]) -> List[str]:
         """Identify parameters related to ensemble methods."""
 
-        ensemble_keywords = [
+        ensemble_keywords, [
             "ensemble_size", "stacking_enabled", "meta_learner",
             "ensemble_method", "voting", "bagging", "boosting"
         ]
 
-        ensemble_params = []
+        ensemble_params, []
         for param in parameters:
         if any(keyword in param.lower() for keyword in ensemble_keywords):
                 ensemble_params.append(param)
@@ -863,12 +863,12 @@ class HierarchicalOptimizer:
         else: study, await self._create_single_objective_study(group_name, parameters, n_trials)
 
         # Create advanced objective function
-        objective = self._create_advanced_group_objective(parameters, data, phase_idx)
+        objective, self._create_advanced_group_objective(parameters, data, phase_idx)
 
         # Run optimization with advanced callbacks
         callbacks = [
             optuna.callbacks.EarlyStoppingCallback(
-                patience = self.config.get("early_stopping_patience", 15)
+                patience, self.config.get("early_stopping_patience", 15)
             )
         ]
 
@@ -878,7 +878,7 @@ class HierarchicalOptimizer:
         study.optimize(
             objective,
             n_trials = n_trials, timeout = self.config.get("timeout_per_phase", 1800),
-            callbacks = callbacks
+            callbacks, callbacks
         )
 
         # Extract results based on optimization type
@@ -955,7 +955,7 @@ class HierarchicalOptimizer:
                     else:  # Later phases
         if current_value > 0.8:
         # Increase exploitation
-                            study.sampler.n_startup_trials = max(study.sampler.n_startup_trials - 2, 5)
+                            study.sampler.n_startup_trials, max(study.sampler.n_startup_trials - 2, 5)
 
         return AdaptiveLearningCallback(phase_idx, self)
 
@@ -967,15 +967,15 @@ class HierarchicalOptimizer:
             params, {}
 
         for param_path in parameters: step_name, param_name = param_path.split(".", 1)
-                param_config = self._get_parameter_config(step_name, param_name)
+                param_config, self._get_parameter_config(step_name, param_name)
 
         if param_config:
     if isinstance(param_config, tuple) and len(param_config) == 2:
                         min_val, max_val, param_config
         if param_name in ["n_estimators", "max_depth", "calibration_cv_folds"]:
-                            params[param_path] = trial.suggest_int(param_path, min_val, max_val)
+                            params[param_path], trial.suggest_int(param_path, min_val, max_val)
                         else:
-                            params[param_path] = trial.suggest_float(param_path, min_val, max_val, log, True)
+                            params[param_path], trial.suggest_float(param_path, min_val, max_val, log, True)
                     elif isinstance(param_config, list):
                         params[param_path], trial.suggest_categorical(param_path, param_config)
                     else:
@@ -1113,19 +1113,19 @@ class HierarchicalOptimizer:
         # This would integrate with your actual parameter mapping
         # For now, providing default configurations
 
-        default_configs = {
+        default_configs, {
             "model_type": ["random_forest", "xgboost", "lightgbm", "catboost"],
-            "n_estimators": (50, 2000) = "max_depth": (2, 50),
+            "n_estimators": (50, 2000), "max_depth": (2, 50),
             "learning_rate": (0.001, 1.0) = "subsample": (0.3, 1.0),
-            "colsample_bytree": (0.3, 1.0) = "reg_alpha": (0.0, 20.0),
+            "colsample_bytree": (0.3, 1.0), "reg_alpha": (0.0, 20.0),
             "reg_lambda": (0.0, 20.0) = "ensemble_size": (1, 20),
             "stacking_enabled": [True, False], "meta_learner": ["logistic", "random_forest", "xgboost"],
             "primary_method": ["isotonic", "sigmoid", "platt", "temperature"],
             "estimation_method": ["ensemble", "mc_dropout", "gaussian", "conformal"],
-            "confidence_level": (0.8, 0.99) = "calibration_cv_folds": (3, 20)
+            "confidence_level": (0.8, 0.99), "calibration_cv_folds": (3, 20)
         }
 
-        return default_configs.get(param_name = (0.0, 1.0))
+        return default_configs.get(param_name, (0.0, 1.0))
 
     def get_optimization_summary(self) -> Dict[str, Any]:
         """Get comprehensive optimization summary."""
@@ -1134,7 +1134,7 @@ class HierarchicalOptimizer:
             "total_phases": len(self.optimization_results),
             "phase_results": {
                 phase: {
-                    "best_value": result.best_value, "n_trials": result.n_trials = "optimization_time": result.optimization_time,
+                    "best_value": result.best_value, "n_trials": result.n_trials, "optimization_time": result.optimization_time,
                     "parameter_count": result.parameter_count
                 }
         for phase, result in self.optimization_results.items()

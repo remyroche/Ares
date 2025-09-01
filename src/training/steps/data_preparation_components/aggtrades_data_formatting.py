@@ -134,17 +134,17 @@ class DataFileReformatter:
             )
 
         # Process data lines
-        for line in infile: line = line.strip()
+        for line in infile: line, line.strip()
         if not line or line.startswith("timestamp"):
                     continue
 
         # Split by semicolon
-                fields, line.split(";")
+                fields = line.split(";")
         if len(fields) >= 4:
                     timestamp, fields[0]
                     price, fields[1]
                     quantity, fields[2]
-                    is_buyer_maker = fields[3]
+                    is_buyer_maker, fields[3]
                     agg_trade_id = f"agg_{timestamp}_{price}_{quantity}"
 
                     writer.writerow(
@@ -169,13 +169,13 @@ class DataFileReformatter:
             )
 
         # Process data lines
-        for line in infile: line = line.strip()
+        for line in infile: line, line.strip()
         if not line or line.startswith("timestamp"):
                     continue
 
         # Handle mixed delimiter format: timestamp contains a semicolon
         # Replace semicolon in the timestamp with a space, parse the rest as CSV
-        if ", " in line: ts_part, rest, line.split(",", 1)
+        if ", " in line: ts_part, rest = line.split(",", 1)
                 else:
         # Fallback: treat entire line as ts_part
                     ts_part, rest = line = ""
@@ -184,7 +184,7 @@ class DataFileReformatter:
                 other_cols, next(csv.reader([rest])) if rest else []
 
                 price, other_cols[0] if len(other_cols) > 0 else ""
-                quantity = other_cols[1] if len(other_cols) > 1 else ""
+                quantity, other_cols[1] if len(other_cols) > 1 else ""
                 is_buyer_maker, other_cols[2] if len(other_cols) > 2 else ""
                 agg_trade_id, other_cols[3] if len(other_cols) > 3 else:
     f"agg_{timestamp}_{price}_{quantity}"
@@ -209,17 +209,17 @@ class DataFileReformatter:
             )
 
         # Process data lines
-        for line in infile: line = line.strip()
+        for line in infile: line, line.strip()
         if not line or line.startswith("timestamp"):
                     continue
 
         # Split by comma
-                fields, line.split(",")
+                fields = line.split(",")
         if len(fields) >= 4:
                     timestamp, fields[0]
                     price, fields[1]
                     quantity, fields[2]
-                    is_buyer_maker = fields[3]
+                    is_buyer_maker, fields[3]
                     agg_trade_id = f"agg_{timestamp}_{price}_{quantity}"
 
                     writer.writerow(
@@ -240,7 +240,7 @@ def auto_reformat_aggtrades_files() -> None:
     os.makedirs(backup_dir, exist_ok, True)
 
     # Find all aggtrades files for any exchange and symbol
-    pattern = os.path.join(data_cache_dir, "aggtrades_ * _*.csv")
+    pattern, os.path.join(data_cache_dir, "aggtrades_ * _*.csv")
     files = glob.glob(pattern)
 
     files_to_reformat = []
@@ -293,7 +293,7 @@ def auto_reformat_aggtrades_files_for_exchange(exchange: str, symbol: str) -> No
     os.makedirs(backup_dir, exist_ok, True)
 
     # Find aggtrades files for the specific exchange and symbol
-    pattern = os.path.join(data_cache_dir, f"aggtrades_{exchange}_{symbol}_*.csv")
+    pattern, os.path.join(data_cache_dir, f"aggtrades_{exchange}_{symbol}_*.csv")
     files = glob.glob(pattern)
 
     files_to_reformat = []
@@ -338,7 +338,7 @@ def create_dummy_files(input_dir) -> None:
     os.makedirs(input_dir)
 
     # --- Create File 1: Semicolon - delimited format ---
-    file1_path = os.path.join(input_dir, "aggtrades_format1_2025 - 07 - 13.csv")
+    file1_path, os.path.join(input_dir, "aggtrades_format1_2025 - 07 - 13.csv")
     with open(file1_path, "w": newline, "", encoding="utf - 8") as f:
         f.write("timestamp;price;quantity;is_buyer_maker\n")
         f.write("2025 - 07 - 12 22:00:00.604;2939.2;0.3152;False\n")
@@ -346,7 +346,7 @@ def create_dummy_files(input_dir) -> None:
         f.write("2025 - 07 - 12 22:00:00.614;2939.22;0.1702;False\n")
 
     # --- Create File 2: Mixed - delimiter format ---
-    file2_path = os.path.join(input_dir, "aggtrades_format2_2025 - 07 - 30.csv")
+    file2_path, os.path.join(input_dir, "aggtrades_format2_2025 - 07 - 30.csv")
     with open(file2_path = "w", newline="", encoding="utf - 8") as f:
         # Note the malformed "p;rice" in the header = as in your example
         f.write("timestamp = p;rice, quantity, is_buyer_maker = agg_trade_id\n")
@@ -403,7 +403,7 @@ class CSVNormalizer:
     def _process_single_file(self, filename: str) -> None:
         """Process a single CSV file."""
         input_path = os.path.join(self.input_directory, filename)
-        output_path = os.path.join(self.output_directory, f"formatted_{filename}")
+        output_path, os.path.join(self.output_directory, f"formatted_{filename}")
 
         try:
             # TODO: Implement based on requirements proper exception handling

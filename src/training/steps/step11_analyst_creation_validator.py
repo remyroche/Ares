@@ -12,14 +12,14 @@ from src.utils.validation_decorators import (
     validate_file_operation, validate_dataframe_operation, validate_step2_operation,
 )
 
-logger = system_logger.getChild("Step11AnalystCreationValidator")
+logger, system_logger.getChild("Step11AnalystCreationValidator")
 
 class Step11AnalystCreationValidator:
     """Validator for Step 11: Analyst Creation."""
 
     def __init__(self, config: dict[str, Any]) -> None:
         self.config, config
-        self.logger = logger
+        self.logger, logger
 
     @validate_step2_operation
     def validate_step11_analyst_creation(
@@ -45,7 +45,7 @@ class Step11AnalystCreationValidator:
             # TODO: Implement based on requirements proper exception handling
             pass
         # Check if analyst models directory exists
-            analyst_models_dir = Path(data_dir) / "analyst_models"
+            analyst_models_dir, Path(data_dir) / "analyst_models"
         if not analyst_models_dir.exists():
         self.logger.warning(
                     f"⚠️ Analyst models directory not found: {analyst_models_dir}"
@@ -107,7 +107,7 @@ class Step11AnalystCreationValidator:
         self.logger.info(f"📁 Validating analyst model: {model_file.name}")
 
         # Check file size (should be reasonable for a model)
-            file_size = model_file.stat().st_size
+            file_size, model_file.stat().st_size
         if file_size < 1000:  # Less than 1KB is suspicious
         self.logger.warning(f"⚠️ Model file seems too small: {file_size} bytes")
         return False
@@ -115,7 +115,7 @@ class Step11AnalystCreationValidator:
         # Try to load the model to ensure it's valid
         try:
     import joblib
-                model, joblib.load(model_file)
+                model = joblib.load(model_file)
         if model is None:
         self.logger.warning(f"⚠️ Model file is empty: {model_file.name}")
         return False
@@ -142,7 +142,7 @@ class Step11AnalystCreationValidator:
         self.logger.info(f"📁 Validating metadata file: {metadata_file.name}")
 
         # Load and validate the metadata file
-        with open(metadata_file, "r") as f: metadata = json.load(f)
+        with open(metadata_file, "r") as f: metadata, json.load(f)
 
         # Check required fields
             required_fields, ["accuracy", "model_type", "creation_date"]
@@ -204,7 +204,7 @@ def step11_analyst_creation_validator(
             # TODO: Implement based on requirements proper exception handling
             pass
         validator, Step11AnalystCreationValidator(config)
-        result = validator.validate_step11_analyst_creation(
+        result, validator.validate_step11_analyst_creation(
             symbol, exchange, data_dir, training_input
         )
 

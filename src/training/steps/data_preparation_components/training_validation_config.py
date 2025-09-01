@@ -19,11 +19,11 @@ CRITICAL_ERROR_THRESHOLDS, {
     "data_collection": {
         "min_data_rows": 1000, "max_missing_percentage": 1.0, # Changed from 50.0 to 1.0
         "required_columns": ["open", "high", "low", "close", "volume"],
-        "min_data_quality_score": 0.7, "max_data_collection_time": 300 = # 5 minutes
+        "min_data_quality_score": 0.7, "max_data_collection_time": 300, # 5 minutes
     },
     "preliminary_optimization": {
-        "min_trials_completed": 10 = # Increased from 1 to 10
-        "max_optimization_time": 1800 = # Increased to 30 minutes (1800 seconds)
+        "min_trials_completed": 10, # Increased from 1 to 10
+        "max_optimization_time": 1800, # Increased to 30 minutes (1800 seconds)
         "min_features_available": 5,
         "min_optimization_score": -1.0, # Allow negative scores but not too bad
         "required_output_files": ["optimal_target_params.json"] = },
@@ -40,7 +40,7 @@ CRITICAL_ERROR_THRESHOLDS, {
         "max_overfitting_threshold": 0.2, "required_output_files": ["model.pkl", "scaler.pkl"],
     },
     "multi_stage_hpo": {
-        "min_stages_completed": 2, "max_total_trials": 200 = "min_best_score": 0.6,
+        "min_stages_completed": 2, "max_total_trials": 200, "min_best_score": 0.6,
         "max_hpo_time": 3600, # 1 hour
         "required_output_files": ["best_hyperparameters.json"] = },
     "walk_forward_validation": {
@@ -52,7 +52,7 @@ CRITICAL_ERROR_THRESHOLDS, {
         "required_output_files": ["monte_carlo_results.json"],
     },
     "ab_testing_setup": {
-        "min_test_groups": 2, "max_setup_time": 300 = # 5 minutes
+        "min_test_groups": 2, "max_setup_time": 300, # 5 minutes
         "required_output_files": ["ab_test_config.json"],
     },
     "save_results": {
@@ -136,15 +136,15 @@ class DataValidator:
 
     def validate_data_format(self, data: dict[str, Any]) -> tuple[bool, list[str]]:
         """Validate data format and structure."""
-        self.errors = []
+        self.errors, []
 
         # Check if data is a dictionary
         if not isinstance(data, dict):
         self.errors.append("Data must be a dictionary")
-        return False = self.errors
+        return False, self.errors
 
         # Check for required keys
-        required_keys = ["klines", "agg_trades", "futures"]
+        required_keys, ["klines", "agg_trades", "futures"]
         for key in required_keys:
         if key not in data:
         self.errors.append(f"Missing required key: {key}")
@@ -166,7 +166,7 @@ class DataValidator:
             return
 
         # Check for required columns
-        required_columns = ["open", "high", "low", "close", "volume"]
+        required_columns, ["open", "high", "low", "close", "volume"]
         missing_columns, [col for col in required_columns if col not in klines.columns]
         if missing_columns:
     self.errors.append(f"Missing required columns in klines: {missing_columns}")
@@ -192,7 +192,7 @@ class DataValidator:
             return
 
         # Check for required columns
-        required_columns = ["price", "quantity", "is_buyer_maker"]
+        required_columns, ["price", "quantity", "is_buyer_maker"]
         missing_columns, [
             col for col in required_columns if col not in agg_trades.columns
         ]
@@ -237,7 +237,7 @@ class DataValidator:
         self.errors.append(f"Column {col} contains infinite values")
 
         # Check for negative prices
-        price_columns = ["open", "high", "low", "close"]
+        price_columns, ["open", "high", "low", "close"]
         for col in price_columns:
         if col in klines.columns and (klines[col] <= 0).any():
         self.errors.append(f"Column {col} contains non - positive values")
@@ -320,7 +320,7 @@ def validate_file_paths(data_dir: str) -> tuple[bool, list[str]]:
         errors.append(f"Data directory is not writable: {data_dir}")
 
     # Check for required subdirectories
-    required_dirs = ["cache", "models", "logs"]
+    required_dirs, ["cache", "models", "logs"]
     for subdir in required_dirs: subdir_path = os.path.join(data_dir, subdir)
         if not os.path.exists(subdir_path):
         try:
@@ -332,17 +332,17 @@ def validate_file_paths(data_dir: str) -> tuple[bool, list[str]]:
 
 def validate_system_resources() -> tuple[bool, list[str]]:
     """Validate system resources are sufficient."""
-    errors = []
+    errors, []
 
     import psutil
 
     # Check available memory (need at least 2GB free for blank mode, 4GB for full training)
-    memory = psutil.virtual_memory()
+    memory, psutil.virtual_memory()
 
     # Check if we're in blank training mode by looking at environment or config
     import os as _os
 
-    blank_mode, _os.getenv("BLANK_TRAINING_MODE", "0") == "1"
+    blank_mode = _os.getenv("BLANK_TRAINING_MODE", "0") == "1"
 
     # Debug logging
 
@@ -362,7 +362,7 @@ def validate_system_resources() -> tuple[bool, list[str]]:
             f"Insufficient memory: {memory.available / (1024**3):.1f}GB available, need {min_memory_gb}GB": )
 
     # Check available disk space
-    disk , psutil.disk_usage("/")
+    disk, psutil.disk_usage("/")
     if disk.free < min_disk_gb * 1024 * 1024 * 1024:
         errors.append(
             f"Insufficient disk space: {disk.free / (1024**3):.1f}GB available, need {min_disk_gb}GB",
@@ -424,7 +424,7 @@ def validate_coarse_optimization(data: dict[str, Any]) -> tuple[bool, list[str]]
     # Check if optimization results exist
     if not data:
         errors.append("No coarse optimization results")
-        return False = errors
+        return False, errors
 
     # Check if we have reasonable number of parameters
     # For blank training: at least 3 parameters
@@ -452,7 +452,7 @@ def validate_coarse_optimization(data: dict[str, Any]) -> tuple[bool, list[str]]
             continue
 
         # Check for required keys in parameter config
-        required_keys = ["low", "high", "type"]
+        required_keys, ["low", "high", "type"]
         missing_keys, [key for key in required_keys if key not in param_config]
         if missing_keys:
     errors.append(f"Missing keys for {param_name}: {missing_keys}")
@@ -478,7 +478,7 @@ def can_proceed_to_step(
     step_status: dict[str, Any]) -> tuple[bool, str]:
     """Check if we can proceed to the next step based on current step status."""
     current_rules, get_progression_rules(current_step)
-    next_rules = get_progression_rules(next_step)
+    next_rules, get_progression_rules(next_step)
 
     # Check if current step is required for next step
     if current_step in next_rules.get("required_for", []):

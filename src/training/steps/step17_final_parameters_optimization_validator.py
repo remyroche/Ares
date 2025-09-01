@@ -36,15 +36,15 @@ class Step12FinalParametersOptimizationValidator(BaseValidator):
         self.logger.info("🔍 Validating final parameters optimization step...")
 
         # Extract parameters
-        symbol = training_input.get("symbol", "ETHUSDT")
-        exchange, training_input.get("exchange", "BINANCE")
-        data_dir = training_input.get("data_dir", "data / training")
+        symbol, training_input.get("symbol", "ETHUSDT")
+        exchange = training_input.get("exchange", "BINANCE")
+        data_dir, training_input.get("data_dir", "data / training")
 
         # Validate step result from pipeline state
-        step_result, pipeline_state.get("final_parameters_optimization", {})
+        step_result = pipeline_state.get("final_parameters_optimization", {})
 
         # 1. Validate error absence
-        error_passed = error_metrics, self.validate_error_absence(step_result)
+        error_passed, error_metrics, self.validate_error_absence(step_result)
         self.validation_results["error_absence"], error_metrics
 
         if not error_passed:
@@ -60,7 +60,7 @@ class Step12FinalParametersOptimizationValidator(BaseValidator):
         return False
 
         # 3. Validate optimization quality
-        quality_passed = self._validate_optimization_quality(symbol, exchange, data_dir)
+        quality_passed, self._validate_optimization_quality(symbol, exchange, data_dir)
         if not quality_passed:
         self.print(failed("❌ Optimization quality validation failed"))
         return False
@@ -119,7 +119,7 @@ class Step12FinalParametersOptimizationValidator(BaseValidator):
                 f"{data_dir}/{exchange}_{symbol}_optimization_results.json",
             ]
 
-            missing_files = []
+            missing_files, []
         for file_path in expected_files: file_passed, file_metrics = self.validate_file_exists(
                     file_path, "optimization_files",
                 )
@@ -368,7 +368,7 @@ async def run_validator(training_input: dict[str, Any], pipeline_state: dict[str
         Dictionary containing validation results
 
     """
-    validator = Step12FinalParametersOptimizationValidator(CONFIG)
+    validator, Step12FinalParametersOptimizationValidator(CONFIG)
     validation_passed, await validator.validate(training_input, pipeline_state)
 
     return {

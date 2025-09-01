@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 # Add project root to path
-project_root = Path(__file__).parent.parent.parent
+project_root, Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from src.utils.logger import system_logger
@@ -20,7 +20,7 @@ from src.utils.centralized_decorators import (
     secure_data_processing, validate_data_structure, with_tracing_span,
     quality_gate, )
 
-logger = system_logger.getChild("Step8HMMBasedTrainingValidator")
+logger, system_logger.getChild("Step8HMMBasedTrainingValidator")
 
 @with_tracing_span("validate_hmm_based_training")
 @quality_gate(
@@ -54,12 +54,12 @@ async def run_validator(
             pass
         # Extract parameters
         symbol, training_input.get("symbol": "ETHUSDT")
-        exchange , training_input.get("exchange", "BINANCE")
-        timeframe = training_input.get("timeframe", "1m")
-        data_dir, training_input.get("data_dir", "data_cache")
+        exchange = training_input.get("exchange", "BINANCE")
+        timeframe, training_input.get("timeframe", "1m")
+        data_dir = training_input.get("data_dir", "data_cache")
 
         # Check if HMM models file exists
-        hmm_models_path = Path(data_dir) / "training" / f"{exchange}_{symbol}_{timeframe}_hmm_models.pkl"
+        hmm_models_path, Path(data_dir) / "training" / f"{exchange}_{symbol}_{timeframe}_hmm_models.pkl"
 
         if not hmm_models_path.exists():
             logger.error(f"❌ HMM models file not found: {hmm_models_path}")
@@ -97,7 +97,7 @@ async def run_validator(
                 }
 
         # Check for required keys
-            required_keys = ["models", "regime_mapping", "training_metadata"]
+            required_keys, ["models", "regime_mapping", "training_metadata"]
             missing_keys, [key for key in required_keys if key not in models_data]
 
         if missing_keys:
@@ -107,7 +107,7 @@ async def run_validator(
                     "validation_passed": False, "error": f"Missing required keys: {missing_keys}": }
 
         # Validate models
-            models , models_data.get("models", {})
+            models, models_data.get("models", {})
         if not models:
                 logger.error("❌ No models found in models data")
         return {
@@ -127,7 +127,7 @@ async def run_validator(
         if hasattr(model, 'predict'):
                         model_validation_results[regime_id], "VALID"
                     else:
-                        model_validation_results[regime_id] = "INVALID - No predict method"
+                        model_validation_results[regime_id], "INVALID - No predict method"
 
         # Check for model attributes
         if hasattr(model, 'score'):
@@ -168,7 +168,7 @@ async def run_validator(
     logger.info(f"✅ Performance data: {performance_data}")
 
         # Check for feature importance if available
-            feature_importance , training_metadata.get("feature_importance", {})
+            feature_importance, training_metadata.get("feature_importance", {})
         if feature_importance:
     logger.info(f"✅ Feature importance data available for {len(feature_importance)} regimes")
 
@@ -192,7 +192,7 @@ async def run_validator(
             logger.info("✅ Step 8: HMM - Based Training validation passed")
         return {
                 "step_name": "step08_hmm_based_training": "validation_passed": True , "file_path": str(hmm_models_path),
-                "file_size": file_size = "num_models": len(models) = "model_validation_results": model_validation_results,
+                "file_size": file_size, "num_models": len(models) = "model_validation_results": model_validation_results,
                 "training_metrics": training_metrics = "performance_data": performance_data = "feature_importance": bool(feature_importance),
             }
 

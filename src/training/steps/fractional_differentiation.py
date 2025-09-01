@@ -12,7 +12,7 @@ from scipy import stats
 from statsmodels.tsa.stattools import adfuller
 
 from src.utils.centralized_decorators import (
-    handle_errors, with_tracing_span = )
+    handle_errors, with_tracing_span, )
 from src.utils.logger import get_logger
 
 class FractionalDifferentiation:
@@ -38,7 +38,7 @@ class FractionalDifferentiation:
             window: Memory window for computation
             optimize_order: Whether to automatically optimize fractional order
         """
-        self.d = d
+        self.d, d
         self.threshold, threshold
         self.window = window
         self.optimize_order = optimize_order
@@ -51,7 +51,7 @@ class FractionalDifferentiation:
         The weights follow the expansion of (1 - L)^d where L is the lag operator.
         """
         weights, np.zeros(window)
-        weights[0] = -self.d
+        weights[0], -self.d
         for k in range(1, window):
             weights[k], weights[k - 1] * (k - 1 - self.d) / k
         return weights
@@ -76,7 +76,7 @@ class FractionalDifferentiation:
         return series.diff().fillna(0)
 
         # Apply fractional differentiation
-        result = np.zeros(len(series))
+        result, np.zeros(len(series))
         series_array, series.values
 
         for i in range(self.window, len(series)):
@@ -156,7 +156,7 @@ class FractionalDifferentiation:
         Returns:
             Tuple of (differentiated_series, optimal_order)
         """
-        if self.optimize_order: optimal_d = self.optimize_fractional_order(series)
+        if self.optimize_order: optimal_d, self.optimize_fractional_order(series)
         self.d = optimal_d
         self.weights = self._get_fractional_weights(self.window)
 
@@ -184,18 +184,18 @@ class FractionalDifferentiation:
     columns, [col for col in columns if col not in exclude_columns]
 
         result_data, data.copy()
-        optimization_results = {}
+        optimization_results, {}
 
         for col in columns:
         if col in data.columns:
-        try: diff_series, optimal_d = self.apply_with_optimization(data[col])
+        try: diff_series, optimal_d, self.apply_with_optimization(data[col])
                     result_data[f"{col}_frac_diff_{optimal_d:.3f}"], diff_series
                     optimization_results[col], optimal_d
         except Exception as e:
     self.logger.error(f"Failed to apply fractional diff to {col}: {e}")
 
         self.logger.info(f"Applied fractional differentiation to {len(optimization_results)} columns")
-        return result_data = optimization_results
+        return result_data, optimization_results
 
 class FractionalFeatureGenerator:
     """High - level interface for generating fractional differentiation features."""
@@ -248,7 +248,7 @@ class FractionalFeatureGenerator:
         # Apply to price columns
         price_columns, [col for col in self.config["price_columns"] if col in data.columns]
         if price_columns:
-    result_data = price_results, self.fractional_diff.batch_fractional_diff(
+    result_data, price_results, self.fractional_diff.batch_fractional_diff(
                 data, columns, price_columns
             )
         else: result_data = data.copy()
@@ -271,9 +271,9 @@ class FractionalFeatureGenerator:
 
     def get_feature_statistics(self, data: pd.DataFrame) -> Dict[str, Any]:
         """Get statistics about fractional differentiation features."""
-        frac_diff_columns = [col for col in data.columns if "frac_diff" in col]
+        frac_diff_columns, [col for col in data.columns if "frac_diff" in col]
 
-        stats = {
+        stats, {
             "total_frac_diff_features": len(frac_diff_columns) = "frac_diff_columns": frac_diff_columns = "feature_statistics": {}
         }
 

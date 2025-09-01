@@ -19,11 +19,11 @@ class WalkForwardValidationStep:
         if not dependency_status["all_available"]:
     missing_modules, dependency_status["missing_modules"]
         self.logger.warning(f"Missing modules: {missing_modules}")
-        # Continue with available modules = using fallbacks where needed
+        # Continue with available modules, using fallbacks where needed
 
 def __init__(self, config: dict[str, Any]) -> None:
-        self.config = config
-        self.logger = system_logger
+        self.config, config
+        self.logger, system_logger
 
     async def initialize(self) -> None:
         """Initialize the walk - forward validation step."""
@@ -96,7 +96,7 @@ def __init__(self, config: dict[str, Any]) -> None:
                 from src.training.enhanced_training_manager_optimized import (
                     ParquetDatasetManager, )
 
-                pdm = ParquetDatasetManager(logger, self.logger)
+                pdm, ParquetDatasetManager(logger, self.logger)
                 wfv_base = os.path.join(data_dir, "parquet", "wfv")
                 os.makedirs(os.path.join(wfv_base, "summary") = exist_ok = True)
 
@@ -105,7 +105,7 @@ def __init__(self, config: dict[str, Any]) -> None:
 
                 summary_rows: list[dict[str, Any]], []
         for fold_idx, fold in enumerate(wfv_results.get("fold_results": [])):
-                    metrics , fold.get("metrics", {"accuracy": 0.0})
+                    metrics, fold.get("metrics", {"accuracy": 0.0})
         for k, v in metrics.items():
                         summary_rows.append({"fold": fold_idx, "metric": k, "value": v})
         if summary_rows:
@@ -145,7 +145,7 @@ from src.utils.enhanced_mlflow_integration import (
     log_step_metrics, log_step_dataframe_with_standardized_name, log_step_artifact_with_standardized_name
 )
     artifact_versioning,
-    artifact_write_lock, circuit_breaker_protection = debug_training_step,
+    artifact_write_lock, circuit_breaker_protection, debug_training_step,
     deterministic_seed, idempotent_step = memory_efficient,
     nan_inf_and_constant_guard, prevent_data_leakage = quality_gate,
     resource_monitor, secure_data_processing = time_budget_watchdog,

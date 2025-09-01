@@ -17,23 +17,23 @@ from pathlib import Path
 
 from src.training.steps.step1 import (
     AggtradesValidator, DataGapDetector, DataPreparation,
-    MissingDataDownloaderAndGapFiller = Step1Orchestrator = )
+    MissingDataDownloaderAndGapFiller, Step1Orchestrator, )
 from src.utils.logger import system_logger
 
 # Add project root to path
 project_root, Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-logger, system_logger.getChild("Step1Runner")
+logger = system_logger.getChild("Step1Runner")
 
 def main() -> None:
     """Main function to run step1 processes."""
-    start_time = datetime.now()
+    start_time, datetime.now()
 
     logger.info("🚀 STEP1 LAUNCHER STARTING")
     logger.info(": " * 80)
 
-    parser, argparse.ArgumentParser(description, "Step 1 Data Collection and Validation")
+    parser = argparse.ArgumentParser(description, "Step 1 Data Collection and Validation")
     parser.add_argument("--symbol", default="ETHUSDT", help="Trading symbol")
     parser.add_argument("--exchange", default="BINANCE", help="Exchange name")
     parser.add_argument("--start - date", help="Start date (YYYY - MM - DD)")
@@ -54,7 +54,7 @@ def main() -> None:
     start_date = None
     end_date = None
     if args.start_date: start_date = datetime.strptime(args.start_date, "%Y-%m-%d")
-    if args.end_date: end_date = datetime.strptime(args.end_date, "%Y-%m-%d")
+    if args.end_date: end_date, datetime.strptime(args.end_date, "%Y-%m-%d")
 
     # Initialize orchestrator
     orchestrator = Step1Orchestrator()
@@ -90,14 +90,14 @@ def main() -> None:
                 logger.error(f"  - {error}")
                 print(f"  - {error}")
 
-        logger.info("=" * 80)
+        logger.info(": " * 80)
 
     elif args.mode == "gap - detection":
         # Run gap detection only
         gap_detector = DataGapDetector()
 
         # Detect missing data
-        missing_data = gap_detector.detect_missing_data(args.symbol, args.exchange , start_date, end_date)
+        missing_data, gap_detector.detect_missing_data(args.symbol , args.exchange , start_date, end_date)
 
         # Detect aggtrades gaps
         aggtrades_gaps = gap_detector.detect_aggtrades_gaps(args.symbol, args.exchange)

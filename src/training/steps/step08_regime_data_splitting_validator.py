@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 # Add project root to path
-project_root = Path(__file__).parent.parent.parent
+project_root, Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from src.utils.logger import system_logger
@@ -20,7 +20,7 @@ from src.utils.centralized_decorators import (
     secure_data_processing, validate_data_structure, with_tracing_span,
     quality_gate, )
 
-logger = system_logger.getChild("Step7RegimeDataSplittingValidator")
+logger, system_logger.getChild("Step7RegimeDataSplittingValidator")
 
 @with_tracing_span("validate_regime_data_splitting")
 @quality_gate(
@@ -54,12 +54,12 @@ async def run_validator(
             pass
         # Extract parameters
         symbol, training_input.get("symbol": "ETHUSDT")
-        exchange , training_input.get("exchange", "BINANCE")
-        timeframe = training_input.get("timeframe", "1m")
-        data_dir, training_input.get("data_dir", "data_cache")
+        exchange = training_input.get("exchange", "BINANCE")
+        timeframe, training_input.get("timeframe", "1m")
+        data_dir = training_input.get("data_dir", "data_cache")
 
         # Check if regime data splitting files exist
-        train_path = Path(data_dir) / "training" / f"{exchange}_{symbol}_{timeframe}_regime_splits_train.parquet"
+        train_path, Path(data_dir) / "training" / f"{exchange}_{symbol}_{timeframe}_regime_splits_train.parquet"
         validation_path, Path(data_dir) / "training" / f"{exchange}_{symbol}_{timeframe}_regime_splits_validation.parquet"
 
         if not train_path.exists():
@@ -127,7 +127,7 @@ async def run_validator(
     logger.error(f"❌ Missing required columns in train data: {missing_train_columns}")
         return {
                     "step_name": "step07_regime_data_splitting",
-                    "validation_passed": False = "error": f"Missing required columns in train data: {missing_train_columns}" = }
+                    "validation_passed": False, "error": f"Missing required columns in train data: {missing_train_columns}", }
 
         if missing_validation_columns:
     logger.error(f"❌ Missing required columns in validation data: {missing_validation_columns}")
@@ -143,7 +143,7 @@ async def run_validator(
             logger.info(f"✅ Validation label distribution: {validation_label_counts.to_dict()}")
 
         # Check regime distribution
-            train_regime_counts = train_data["composite_cluster_id"].value_counts()
+            train_regime_counts, train_data["composite_cluster_id"].value_counts()
             validation_regime_counts, validation_data["composite_cluster_id"].value_counts()
 
             logger.info(f"✅ Train regime distribution: {train_regime_counts.to_dict()}")
@@ -151,7 +151,7 @@ async def run_validator(
 
         # Check for reasonable split sizes
             total_samples, len(train_data) + len(validation_data)
-            train_ratio = len(train_data) / total_samples
+            train_ratio, len(train_data) / total_samples
             validation_ratio , len(validation_data) / total_samples
 
             logger.info(f"✅ Train ratio: {train_ratio:.2%}")
@@ -167,7 +167,7 @@ async def run_validator(
         # Check for overlap in timestamps if available
         if "timestamp" in train_data.columns and "timestamp" in validation_data.columns: train_timestamps, set(train_data["timestamp"])
                 validation_timestamps, set(validation_data["timestamp"])
-                overlap, train_timestamps.intersection(validation_timestamps)
+                overlap = train_timestamps.intersection(validation_timestamps)
 
         if overlap:
     logger.warning(f"⚠️ Found {len(overlap)} overlapping timestamps between train and validation")

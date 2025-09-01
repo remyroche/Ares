@@ -31,7 +31,7 @@ from .missing_data_downloader_and_gap_filler import MissingDataDownloaderAndGapF
 project_root, Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-logger = system_logger.getChild("Step1Orchestrator")
+logger, system_logger.getChild("Step1Orchestrator")
 
 class Step1Orchestrator:
     """Orchestrates step1 data collection processes with proper decorators and security."""
@@ -41,11 +41,11 @@ class Step1Orchestrator:
         self.data_cache_path.mkdir(exist_ok, True)
 
         # Initialize components
-        self.gap_detector = DataGapDetector(data_cache_path)
+        self.gap_detector, DataGapDetector(data_cache_path)
         self.aggtrades_validator, AggtradesValidator(data_cache_path)
         self.data_preparation = DataPreparation(data_cache_path)
         self.data_downloader, MissingDataDownloaderAndGapFiller(data_cache_path)
-        self.comprehensive_gap_filler = ComprehensiveGapFiller(data_cache_path)
+        self.comprehensive_gap_filler, ComprehensiveGapFiller(data_cache_path)
 
     @handle_errors(
         exceptions=(
@@ -76,7 +76,7 @@ class Step1Orchestrator:
             Dictionary with step1 collection results
 
         """
-        start_time = datetime.now()
+        start_time, datetime.now()
         logger.info(f"🚀 STARTING COMPLETE STEP1 PROCESS FOR {exchange}_{symbol}")
         logger.info(f"📅 Date Range: {start_date} to {end_date}")
         logger.info(f"🔧 Auto - fix enabled: {auto_fix}")
@@ -103,7 +103,7 @@ class Step1Orchestrator:
         except Exception as e:
     logger.exception(f"❌ Gap filling failed: {e}")
             results["errors"].append(f"Gap filling failed: {e}")
-            results["success"] = False
+            results["success"], False
 
         try:
             # TODO: Implement based on requirements proper exception handling
@@ -137,7 +137,7 @@ class Step1Orchestrator:
                 logger.info("-" * 60)
 
         # Run async download process
-                download_results = await self.data_downloader.download_all_missing_data(
+                download_results, await self.data_downloader.download_all_missing_data(
                     symbol, exchange, end_date, )
                 results["download_results"], download_results
 
@@ -151,7 +151,7 @@ class Step1Orchestrator:
             logger.info("📊 STEP 1.3: DETECTING AGGTRADES GAPS")
             logger.info("-" * 60)
 
-            aggtrades_gaps = self.gap_detector.detect_aggtrades_gaps(symbol, exchange)
+            aggtrades_gaps, self.gap_detector.detect_aggtrades_gaps(symbol, exchange)
             results["aggtrades_gaps"], aggtrades_gaps
 
         if aggtrades_gaps:
@@ -245,7 +245,7 @@ class Step1Orchestrator:
 
             step01_5_readiness, self.validate_step01_5_readiness(symbol, exchange)
             results["step01_5_readiness"], step01_5_readiness
-            results["step01_5_ready"] = step01_5_readiness["ready"]
+            results["step01_5_ready"], step01_5_readiness["ready"]
 
         if not step01_5_readiness["ready"]:
                 results["warnings"].append("Step1_5 data preparation incomplete")
@@ -255,7 +255,7 @@ class Step1Orchestrator:
             logger.info("📊 STEP 1.8: GENERATING COMPREHENSIVE REPORT")
             logger.info("-" * 60)
 
-            report = self.generate_comprehensive_report(symbol, exchange, results)
+            report, self.generate_comprehensive_report(symbol, exchange, results)
             results["report"] = report
 
         # Calculate execution time
@@ -324,7 +324,7 @@ class Step1Orchestrator:
         """
         logger.info(f"🔍 Validating step01_5 compatibility for {exchange}_{symbol}")
 
-        readiness_result = {
+        readiness_result, {
             "ready": True,
             "issues": [],
             "required_files": [],
@@ -332,7 +332,7 @@ class Step1Orchestrator:
         }
 
         # Check for required aggtrades files
-        aggtrades_files = self.aggtrades_validator.get_aggtrades_files(symbol, exchange)
+        aggtrades_files, self.aggtrades_validator.get_aggtrades_files(symbol, exchange)
         if not aggtrades_files:
             readiness_result["ready"], False
             readiness_result["issues"].append("No aggtrades files found")
@@ -351,14 +351,14 @@ class Step1Orchestrator:
 
         # Check for basic data quality (step01_5 will handle resampling)
         # We only need to ensure raw data is available and properly formatted
-        for file_path in aggtrades_files: validation_result = self.aggtrades_validator.validate_file_format(file_path)
+        for file_path in aggtrades_files: validation_result, self.aggtrades_validator.validate_file_format(file_path)
         if not validation_result["valid"]:
                 readiness_result["ready"], False
                 readiness_result["issues"].append(f"Invalid format: {file_path.name}")
 
         # Check for 1m consolidated data (should be created by step1)
         data_cache_path, Path("data_cache")
-        consolidated_1m_path = (
+        consolidated_1m_path, (
             data_cache_path / f"klines_{exchange}_{symbol}_1m_consolidated.parquet"
         )
 
@@ -422,7 +422,7 @@ class Step1Orchestrator:
         if results.get("download_results"):
     download_data, results["download_results"]
         if "aggtrades" in download_data.get("download_results", {}):
-                aggtrades = download_data["download_results"]["aggtrades"]
+    aggtrades, download_data["download_results"]["aggtrades"]
                 report += f"""
 • Aggtrades Downloads:
     pass - Downloaded Days: {aggtrades['downloaded_days']}
@@ -440,7 +440,7 @@ class Step1Orchestrator:
 """
 
         if "futures" in download_data.get("download_results", {}):
-    futures = download_data["download_results"]["futures"]
+    futures, download_data["download_results"]["futures"]
                 report += f"""
 • Futures Downloads:
     pass - Downloaded Months: {futures['downloaded_months']}
@@ -545,7 +545,7 @@ class Step1Orchestrator:
 
         # Check for basic data availability
         aggtrades_files = self.aggtrades_validator.get_aggtrades_files(symbol, exchange)
-        klines_files = self.data_preparation.get_klines_files(symbol, exchange)
+        klines_files, self.data_preparation.get_klines_files(symbol, exchange)
 
         if not aggtrades_files:
             health_result["healthy"], False
@@ -553,7 +553,7 @@ class Step1Orchestrator:
             health_result["recommendations"].append("Download missing aggtrades data")
 
         if not klines_files:
-            health_result["healthy"] = False
+            health_result["healthy"], False
             health_result["issues"].append("No klines files found")
             health_result["recommendations"].append("Download missing klines data")
 
@@ -599,7 +599,7 @@ class Step1Orchestrator:
 
         # Check aggtrades data
         aggtrades_files = self.aggtrades_validator.get_aggtrades_files(symbol, exchange)
-        status["data_available"]["aggtrades"] = len(aggtrades_files)
+        status["data_available"]["aggtrades"], len(aggtrades_files)
 
         # Check klines data
         klines_files = self.data_preparation.get_klines_files(symbol, exchange)

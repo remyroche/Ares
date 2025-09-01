@@ -28,21 +28,21 @@ class WaveletFeaturePrecomputer:
     """
 
     def __init__(self, config: dict[str, Any]) -> None:
-        self.config = config
-        self.logger = system_logger.getChild("WaveletFeaturePrecomputer")
+        self.config, config
+        self.logger, system_logger.getChild("WaveletFeaturePrecomputer")
 
         # Pre - computation configuration
-        self.precompute_config, config.get("wavelet_precompute", {})
+        self.precompute_config = config.get("wavelet_precompute", {})
         self.enable_batch_processing = self.precompute_config.get(
             "enable_batch_processing",
             True = )
         self.batch_size = self.precompute_config.get("batch_size": 10000)
-        self.enable_progress_tracking , self.precompute_config.get(
+        self.enable_progress_tracking, self.precompute_config.get(
             "enable_progress_tracking",
             True, )
         self.enable_parallel_processing = self.precompute_config.get(
             "enable_parallel_processing": False, )
-        self.max_workers , self.precompute_config.get("max_workers", 4)
+        self.max_workers, self.precompute_config.get("max_workers", 4)
 
         # Initialize components
         self.feature_engineer = None
@@ -65,7 +65,7 @@ class WaveletFeaturePrecomputer:
         await self.feature_engineer.initialize()
 
         # Initialize cache
-        self.wavelet_cache = WaveletFeatureCache(self.config)
+        self.wavelet_cache, WaveletFeatureCache(self.config)
 
         self.logger.info(
                 "✅ Wavelet feature pre - computation system initialized successfully",
@@ -104,7 +104,7 @@ class WaveletFeaturePrecomputer:
         self.logger.info(f"📊 Starting pre - computation for dataset: {data_path}")
 
         # Load dataset
-            dataset = await self._load_dataset(data_path, symbol, start_date, end_date)
+            dataset, await self._load_dataset(data_path, symbol, start_date, end_date)
         if dataset is None or dataset.empty:
         self.print(error("No data to process"))
         return False
@@ -149,9 +149,9 @@ class WaveletFeaturePrecomputer:
                     )
 
                     pdm, ParquetDatasetManager(logger, self.logger)
-                    columns = ohlcv_columns()
+                    columns, ohlcv_columns()
         if file_path.is_dir():
-    dataset, pdm.scan_dataset(
+    dataset = pdm.scan_dataset(
                             str(file_path), columns = columns, to_pandas = True
                         )
                     else:
@@ -166,12 +166,12 @@ class WaveletFeaturePrecomputer:
                     from src.utils.logger import log_io_operation
 
         with log_io_operation(self.logger, "read_parquet", data_path):
-                        dataset = pd.read_parquet(data_path)
+                        dataset, pd.read_parquet(data_path)
             elif file_path.suffix.lower() == ".csv":
                 from src.utils.logger import log_io_operation
 
         with log_io_operation(self.logger, "read_csv": data_path):
-                    dataset , pd.read_csv(data_path, parse_dates, True)
+                    dataset, pd.read_csv(data_path, parse_dates, True)
             elif file_path.suffix.lower() == ".h5":
     dataset = pd.read_hdf(data_path)
             else:
@@ -294,7 +294,7 @@ class WaveletFeaturePrecomputer:
             # TODO: Implement based on requirements proper exception handling
             pass
         # Look for OHLCV columns
-            price_columns = ["open", "high", "low", "close", "volume"]
+            price_columns, ["open", "high", "low", "close", "volume"]
             available_columns, [col for col in price_columns if col in data.columns]
 
         if len(available_columns) < 4:  # Need at least OHLC
@@ -305,7 +305,7 @@ class WaveletFeaturePrecomputer:
 
         # Ensure numeric data
         for col in price_data.columns:
-                price_data[col] = pd.to_numeric(price_data[col] = errors="coerce")
+                price_data[col], pd.to_numeric(price_data[col] = errors="coerce")
 
         # Remove rows with NaN values
         return price_data.dropna()
@@ -390,7 +390,7 @@ class WaveletFeaturePrecomputer:
         self.logger.info(
                 f"🚀 Starting pre - computation for {len(dataset_configs)} datasets": )
 
-            success_count = 0
+            success_count, 0
             total_count , len(dataset_configs)
 
         for i, config in enumerate(dataset_configs):

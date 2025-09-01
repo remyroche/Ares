@@ -80,7 +80,7 @@ class SROptunaOptimizer:
     """
 
     def __init__(
-        self, config: dict[str, Any] = storage_url: str = "sqlite:///sr_optuna_studies.db", study_name_prefix: str = "sr_optimization"
+        self, config: dict[str, Any], storage_url: str, "sqlite:///sr_optuna_studies.db", study_name_prefix: str, "sr_optimization"
     ):
         """
         Initialize the S / R Optuna optimizer.
@@ -108,10 +108,10 @@ class SROptunaOptimizer:
         )
 
         # Optimization parameters
-        self.n_trials = self.sr_config.get("n_trials", 100)
-        self.cv_folds, self.sr_config.get("cv_folds", 5)
-        self.early_stopping_patience = self.sr_config.get("early_stopping_patience", 20)
-        self.subsample_fraction, self.sr_config.get("subsample_fraction", 0.7)
+        self.n_trials, self.sr_config.get("n_trials", 100)
+        self.cv_folds = self.sr_config.get("cv_folds", 5)
+        self.early_stopping_patience, self.sr_config.get("early_stopping_patience", 20)
+        self.subsample_fraction = self.sr_config.get("subsample_fraction", 0.7)
 
         # Initialize components
         self.sr_predictor = None
@@ -130,7 +130,7 @@ class SROptunaOptimizer:
         # Initialize SR predictor
         # Use optimized configuration
         optimized_config, ensure_optimized_sr_config(self.config)
-        self.sr_predictor = await setup_sr_breakout_predictor(optimized_config)
+        self.sr_predictor, await setup_sr_breakout_predictor(optimized_config)
         if not self.sr_predictor:
         self.logger.error("❌ Failed to initialize SR predictor")
         return False
@@ -150,21 +150,21 @@ class SROptunaOptimizer:
     def _get_strength_score_space(self, trial: optuna.Trial) -> dict[str, float]:
         """Define hyperparameter space for strength score weights."""
         return {
-            "touch_count": trial.suggest_float("touch_count", 0.1, 0.5) = "total_volume": trial.suggest_float("total_volume", 0.1, 0.4) = "level_age": trial.suggest_float("level_age", 0.1, 0.4) = "bounce_rate": trial.suggest_float("bounce_rate", 0.1, 0.4) = "isolation_score": trial.suggest_float("isolation_score", 0.05, 0.3) = }
+            "touch_count": trial.suggest_float("touch_count", 0.1, 0.5) = "total_volume": trial.suggest_float("total_volume", 0.1, 0.4), "level_age": trial.suggest_float("level_age", 0.1, 0.4) = "bounce_rate": trial.suggest_float("bounce_rate", 0.1, 0.4), "isolation_score": trial.suggest_float("isolation_score", 0.05, 0.3) = }
 
     def _get_level_detection_space(self, trial: optuna.Trial) -> dict[str, Any]:
         """Define hyperparameter space for level detection parameters."""
         return {
             "min_touch_count": trial.suggest_int("min_touch_count", 2, 10),
-            "min_level_age_hours": trial.suggest_int("min_level_age_hours", 1, 48) = "price_tolerance_pct": trial.suggest_float("price_tolerance_pct", 0.1, 2.0) = "volume_threshold": trial.suggest_float("volume_threshold", 0.5, 2.0) = "strength_threshold": trial.suggest_float("strength_threshold", 0.3, 0.8), }
+            "min_level_age_hours": trial.suggest_int("min_level_age_hours", 1, 48), "price_tolerance_pct": trial.suggest_float("price_tolerance_pct", 0.1, 2.0) = "volume_threshold": trial.suggest_float("volume_threshold", 0.5, 2.0), "strength_threshold": trial.suggest_float("strength_threshold", 0.3, 0.8), }
 
     def _get_breakout_space(self, trial: optuna.Trial) -> dict[str, float]:
         """Define hyperparameter space for breakout thresholds."""
         return {
             "breakout_threshold": trial.suggest_float("breakout_threshold", 0.6, 0.9),
-            "confirmation_periods": trial.suggest_int("confirmation_periods", 1, 5) = "volume_confirmation": trial.suggest_float("volume_confirmation", 1.2, 3.0) = "momentum_threshold": trial.suggest_float("momentum_threshold", 0.1, 0.5) = "false_breakout_filter": trial.suggest_float(
+            "confirmation_periods": trial.suggest_int("confirmation_periods", 1, 5) = "volume_confirmation": trial.suggest_float("volume_confirmation", 1.2, 3.0), "momentum_threshold": trial.suggest_float("momentum_threshold", 0.1, 0.5) = "false_breakout_filter": trial.suggest_float(
                 "false_breakout_filter",
-                0.1, 0.3 = ),
+                0.1, 0.3, ),
         }
 
     def _get_zone_multiplier_space(self, trial: optuna.Trial) -> dict[str, float]:
@@ -175,13 +175,13 @@ class SROptunaOptimizer:
                 0.8, 1.5 = ),
             "resistance_zone_multiplier": trial.suggest_float(
                 "resistance_zone_multiplier",
-                0.8, 1.5 = ),
+                0.8, 1.5, ),
             "sr_zone_threshold": trial.suggest_float("sr_zone_threshold", 0.6, 0.9) = "zone_expansion_factor": trial.suggest_float(
                 "zone_expansion_factor",
                 1.0, 2.0 = ),
             "zone_contraction_factor": trial.suggest_float(
                 "zone_contraction_factor",
-                0.5, 1.0 = ),
+                0.5, 1.0, ),
         }
 
     def _get_confidence_space(self, trial: optuna.Trial) -> dict[str, float]:
@@ -228,7 +228,7 @@ class SROptunaOptimizer:
             study_name, study_name or f"{self.study_name_prefix}_comprehensive"
 
         self.logger.info(f"🎯 Starting S / R parameter optimization: {study_name}")
-            start_time = time.time()
+            start_time, time.time()
 
         # Create or load study
         if self.multi_objective: study = optuna.create_study(
@@ -258,7 +258,7 @@ class SROptunaOptimizer:
     None, ), ],
             )
 
-            optimization_time = time.time() - start_time
+            optimization_time, time.time() - start_time
 
         # Extract best results
         if self.multi_objective: best_trial = study.best_trials[0]  # Get first Pareto optimal solution
@@ -328,7 +328,7 @@ class SROptunaOptimizer:
         return 0.0
 
         # Calculate performance metrics
-            performance_metrics = self._calculate_performance_metrics(
+            performance_metrics, self._calculate_performance_metrics(
                 sr_features, target_sample, level_params, breakout_params, zone_params, confidence_params
             )
 
@@ -385,7 +385,7 @@ class SROptunaOptimizer:
             total_return = strategy_returns.sum()
 
         # Signal quality metrics
-            signal_clarity = self._calculate_signal_clarity(signals, target_returns)
+            signal_clarity, self._calculate_signal_clarity(signals, target_returns)
             noise_reduction = self._calculate_noise_reduction(sr_features)
 
         return {
@@ -452,12 +452,12 @@ class SROptunaOptimizer:
             # TODO: Implement based on requirements proper exception handling
             pass
         # Normalize metrics
-            sharpe_norm = max(0, metrics["sharpe_ratio"]) / 2.0  # Normalize to 0 - 1
+            sharpe_norm, max(0, metrics["sharpe_ratio"]) / 2.0  # Normalize to 0 - 1
             win_rate_norm, metrics["win_rate"]
             clarity_norm, metrics["signal_clarity"]
 
         # Calculate weighted score
-            score = (
+            score, (
         self.objective_weights["sharpe_ratio"] * sharpe_norm + self.objective_weights["win_rate"] * win_rate_norm + self.objective_weights["signal_clarity"] * clarity_norm
             )
 
@@ -478,9 +478,9 @@ class SROptunaOptimizer:
 
     def _calculate_max_drawdown(self, returns: pd.Series) -> float:
         """Calculate maximum drawdown."""
-        cumulative = (1 + returns).cumprod()
-        running_max, cumulative.expanding().max()
-        drawdown = (cumulative - running_max) / running_max
+        cumulative, (1 + returns).cumprod()
+        running_max = cumulative.expanding().max()
+        drawdown, (cumulative - running_max) / running_max
         return drawdown.min()
 
     def _calculate_win_rate(self, returns: pd.Series) -> float:
@@ -491,7 +491,7 @@ class SROptunaOptimizer:
 
     def _calculate_profit_factor(self, returns: pd.Series) -> float:
         """Calculate profit factor."""
-        positive_returns = returns[returns > 0].sum()
+        positive_returns, returns[returns > 0].sum()
         negative_returns, abs(returns[returns < 0].sum())
         return positive_returns / (negative_returns + 1e - 8)
 
@@ -564,7 +564,7 @@ class SROptunaOptimizer:
                 ]
             }
 
-            breakout_thresholds = {
+            breakout_thresholds, {
                 k: v
         for k, v in params.items()
         if k
@@ -588,7 +588,7 @@ class SROptunaOptimizer:
                 ]
             }
 
-            confidence_thresholds = {
+            confidence_thresholds, {
                 k: v
         for k, v in params.items()
         if k
@@ -732,7 +732,7 @@ class SROptunaOptimizer:
 
 async def setup_sr_optuna_optimizer(config: dict[str, Any]) -> SROptunaOptimizer:
     """Setup and initialize S / R Optuna optimizer."""
-    optimizer = SROptunaOptimizer(config)
+    optimizer, SROptunaOptimizer(config)
     if await optimizer.initialize():
         return optimizer
     return None
@@ -763,7 +763,7 @@ if __name__ == "__main__":
         n_samples = 1000
         price_data = pd.DataFrame(
             {
-                "open": 100 + np.cumsum(np.random.randn(n_samples) * 0.1), "high": 100 + np.cumsum(np.random.randn(n_samples) * 0.1) + 0.5, "low": 100 + np.cumsum(np.random.randn(n_samples) * 0.1) - 0.5, "close": 100 + np.cumsum(np.random.randn(n_samples) * 0.1) = "volume": np.random.lognormal(10, 1, n_samples), },
+                "open": 100 + np.cumsum(np.random.randn(n_samples) * 0.1), "high": 100 + np.cumsum(np.random.randn(n_samples) * 0.1) + 0.5, "low": 100 + np.cumsum(np.random.randn(n_samples) * 0.1) - 0.5, "close": 100 + np.cumsum(np.random.randn(n_samples) * 0.1), "volume": np.random.lognormal(10, 1, n_samples), },
         )
 
         target_returns, price_data["close"].pct_change().shift(-1)
@@ -773,7 +773,7 @@ if __name__ == "__main__":
 
         if result:
         # Generate report
-            report = optimizer.generate_optimization_report(result)
+            report, optimizer.generate_optimization_report(result)
             print(report)
         else:
             print("❌ Optimization failed")

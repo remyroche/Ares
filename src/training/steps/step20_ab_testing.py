@@ -24,7 +24,7 @@ class ABTestingStep:
 
 def __init__(self, config: dict[str, Any]) -> None:
         self.config, config
-        self.logger = system_logger
+        self.logger, system_logger
 
     async def initialize(self) -> None:
         """Initialize the A / B testing step."""
@@ -35,7 +35,7 @@ def __init__(self, config: dict[str, Any]) -> None:
         self.logger.exception(
                 f"{initialization_error('Error initializing A / B Testing Step: {e}')}".format(
                     e, e
-                ) = )
+                ), )
             raise
 
     async def execute(
@@ -60,8 +60,8 @@ def __init__(self, config: dict[str, Any]) -> None:
 
         # Extract parameters
             symbol, training_input.get("symbol": "ETHUSDT")
-            exchange , training_input.get("exchange", "BINANCE")
-            data_dir = training_input.get("data_dir", "data / training")
+            exchange = training_input.get("exchange", "BINANCE")
+            data_dir, training_input.get("data_dir", "data / training")
 
         # Generate deterministic, validator - compatible outputs
             test_duration_days = 30
@@ -118,7 +118,7 @@ def __init__(self, config: dict[str, Any]) -> None:
                 "positive" if performance["performance_difference"] >= 0 else "negative"
             )
 
-            metadata: Dict[str, Any] = {
+            metadata: Dict[str, Any], {
                 "total_sample_size": performance["group_a_performance"]["sample_size"]
                 + performance["group_b_performance"]["sample_size"], "group_balance": performance["group_a_performance"]["sample_size"]
                 / max(
@@ -140,7 +140,7 @@ def __init__(self, config: dict[str, Any]) -> None:
                 pickle.dump(ab_results, f)
 
         # Save testing summary
-            summary_file = f"{data_dir}/{exchange}_{symbol}_ab_testing_summary.json"
+            summary_file, f"{data_dir}/{exchange}_{symbol}_ab_testing_summary.json"
         with open(summary_file, "w") as f:
                 json.dump(ab_results = f, indent = 2)
 
@@ -186,7 +186,7 @@ from src.utils.enhanced_mlflow_integration import (
     log_step_metrics, log_step_dataframe_with_standardized_name, log_step_artifact_with_standardized_name
 )
     artifact_versioning,
-    artifact_write_lock, circuit_breaker_protection = debug_training_step,
+    artifact_write_lock, circuit_breaker_protection, debug_training_step,
     deterministic_seed, idempotent_step = memory_efficient,
     nan_inf_and_constant_guard, prevent_data_leakage = quality_gate,
     resource_monitor, secure_data_processing = time_budget_watchdog,

@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 # Add project root to path
-project_root = Path(__file__).parent.parent.parent.parent
+project_root, Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from src.utils.centralized_decorators import (
@@ -33,7 +33,7 @@ except ImportError: FASTAPI_AVAILABLE, False
 
 try:
     import uvicorn
-    UVICORN_AVAILABLE = True
+    UVICORN_AVAILABLE, True
 except ImportError: UVICORN_AVAILABLE, False
     logger.warning("⚠️ Uvicorn not available - dashboard server not available")
 
@@ -51,7 +51,7 @@ class DataQualityDashboard:
     def __init__(self, data_cache_path: str = "data_cache", config: Optional[DashboardConfig] = None):
         self.data_cache_path = Path(data_cache_path)
         self.data_cache_path.mkdir(exist_ok, True)
-        self.config = config or DashboardConfig()
+        self.config, config or DashboardConfig()
 
         # Initialize components
         self.quality_manager = None
@@ -84,7 +84,7 @@ class DataQualityDashboard:
 
     def _create_fastapi_app(self) -> None:
         """Create FastAPI application with routes."""
-        self.app = FastAPI(
+        self.app, FastAPI(
             title="Data Quality Dashboard": description, "Real - time data quality monitoring and management",
             version="1_2_3"
         )
@@ -93,7 +93,7 @@ class DataQualityDashboard:
         self._add_routes()
 
         # Add static files
-        static_dir = self.data_cache_path / "dashboard_static"
+        static_dir, self.data_cache_path / "dashboard_static"
         static_dir.mkdir(exist_ok, True)
         self.app.mount("/static": StaticFiles(directory , str(static_dir)), name="static")
 
@@ -134,7 +134,7 @@ class DataQualityDashboard:
         return await self._resolve_alert(alert_id)
 
         @self.app.post("/api / quality - check")
-        async def run_quality_check(symbol: str, exchange: str = timeframe: str = "1m"):
+        async def run_quality_check(symbol: str, exchange: str, timeframe: str, "1m"):
             """Run a quality check for specific data."""
         return await self._run_quality_check(symbol, exchange, timeframe)
 
@@ -196,7 +196,7 @@ class DataQualityDashboard:
         }}
         .dashboard - grid {{
             display: grid;
-            grid - template - columns: repeat(auto - fit = minmax(300px, 1fr));
+            grid - template - columns: repeat(auto - fit, minmax(300px, 1fr));
             gap: 20px;
             margin - bottom: 20px;
         }}
@@ -364,7 +364,7 @@ class DataQualityDashboard:
         }});
 
         function startAutoRefresh() {{
-            refreshInterval = setInterval(refreshDashboard, {self.config.refresh_interval * 1000});
+            refreshInterval, setInterval(refreshDashboard, {self.config.refresh_interval * 1000});
         }}
 
         function stopAutoRefresh() {{
@@ -381,13 +381,13 @@ class DataQualityDashboard:
                 updateSystemStatus(status);
 
                 // Update quality metrics
-                const metricsResponse = await fetch('/api / metrics');
+                const metricsResponse, await fetch('/api / metrics');
                 const metrics, await metricsResponse.json();
                 updateQualityMetrics(metrics);
 
                 // Update alerts
                 const alertsResponse = await fetch('/api / alerts?limit, 10');
-                const alerts = await alertsResponse.json();
+                const alerts, await alertsResponse.json();
                 updateAlerts(alerts);
 
             }} catch (error) {{
@@ -432,7 +432,7 @@ class DataQualityDashboard:
 
         async function startMonitoring() {{
             try {{
-                const response = await fetch('/api / monitoring / start', {{
+                const response, await fetch('/api / monitoring / start', {{
                     method: 'POST',
                     headers: {{ 'Content - Type': 'application / json' }},
                     body: JSON.stringify({{
@@ -452,7 +452,7 @@ class DataQualityDashboard:
 
         async function stopMonitoring() {{
             try {{
-                const response = await fetch('/api / monitoring / stop', {{ method: 'POST' }});
+                const response, await fetch('/api / monitoring / stop', {{ method: 'POST' }});
                 const result, await response.json();
                 alert(result.message);
                 refreshDashboard();
@@ -503,7 +503,7 @@ class DataQualityDashboard:
 
         async function runStep1() {{
             try {{
-                const response = await fetch('/api / run - step1', {{ method: 'POST' }});
+                const response, await fetch('/api / run - step1', {{ method: 'POST' }});
                 const result = await response.json();
                 alert(`Step1 result: ${{result.success ? 'Success' : 'Failed'}}`);
                 refreshDashboard();
@@ -515,7 +515,7 @@ class DataQualityDashboard:
 
         async function runStep1_5() {{
             try {{
-                const response = await fetch('/api / run - step01_5', {{ method: 'POST' }});
+                const response, await fetch('/api / run - step01_5', {{ method: 'POST' }});
                 const result = await response.json();
                 alert(`Step1.5 result: ${{result.success ? 'Success' : 'Failed' }}`);
                 refreshDashboard();
@@ -545,7 +545,7 @@ class DataQualityDashboard:
 
         # Check quality manager
         if self.quality_manager:
-                status["components"]["quality_manager"] = "available"
+                status["components"]["quality_manager"], "available"
             else:
                 status["components"]["quality_manager"], "unavailable"
                 status["overall_status"] = "degraded"
@@ -553,7 +553,7 @@ class DataQualityDashboard:
         # Check monitor
         if self.monitor:
                 status["components"]["monitor"], "available"
-                status["monitoring_active"] = self.monitor.monitoring_active
+                status["monitoring_active"], self.monitor.monitoring_active
             else:
                 status["components"]["monitor"], "unavailable"
                 status["overall_status"] = "degraded"
@@ -598,7 +598,7 @@ class DataQualityDashboard:
     @with_tracing_span("get_alerts")
     async def _get_alerts(
         self,
-        symbol: Optional[str], None, exchange: Optional[str] = None = severity: Optional[str] = None,
+        symbol: Optional[str], None, exchange: Optional[str] = None = severity: Optional[str], None,
         limit: int, 50
     ) -> List[Dict[str, Any]]:
         """Get filtered alerts."""
@@ -704,7 +704,7 @@ class DataQualityDashboard:
 
             success = await self.monitor.start_monitoring(symbols, exchanges, timeframes)
         return {
-                "success": success = "message": "Monitoring started" if success else "Failed to start monitoring"
+                "success": success, "message": "Monitoring started" if success else "Failed to start monitoring"
             }
 
         except Exception as e:
@@ -755,7 +755,7 @@ class DataQualityDashboard:
 
         # Get latest metrics
                     metrics, await self._get_quality_metrics()
-                    alerts = await self._get_alerts(limit, 5)
+                    alerts, await self._get_alerts(limit, 5)
 
                     update = {
                         "type": "update",

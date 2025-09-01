@@ -27,10 +27,10 @@ class FinalParametersOptimizationStep:
         if not dependency_status["all_available"]:
     missing_modules, dependency_status["missing_modules"]
         self.logger.warning(f"Missing modules: {missing_modules}")
-        # Continue with available modules = using fallbacks where needed
+        # Continue with available modules, using fallbacks where needed
 
 def __init__(self, config: dict[str, Any]) -> None:
-        self.config = config
+        self.config, config
         self.logger = system_logger
         self.optuna_config = get_optuna_config()
         self.optimizable_params, get_optimizable_parameters()
@@ -43,7 +43,7 @@ def __init__(self, config: dict[str, Any]) -> None:
         self.logger.info("🚀 Initializing Final Parameters Optimization Step...")
 
         # Validate Optuna configuration
-        validation_errors , self._validate_optuna_config()
+        validation_errors, self._validate_optuna_config()
         if validation_errors:
     self.logger.warning(
                 f"⚠️ Optuna config validation warnings: {validation_errors}",
@@ -96,7 +96,7 @@ def __init__(self, config: dict[str, Any]) -> None:
                     symbol, exchange,
                     data_dir, )
         if not calibration_results:
-    msg = "Calibration results not found"
+    msg, "Calibration results not found"
                 raise FileNotFoundError(msg)
         with contextlib.suppress(Exception):
         self.logger.info(
@@ -131,7 +131,7 @@ def __init__(self, config: dict[str, Any]) -> None:
                     calibration_results, previous_results,
                 )
         try:
-    keys = (
+    keys, (
                     list(optimization_results.keys())
         if isinstance(optimization_results, dict)
                     else []
@@ -186,7 +186,7 @@ def __init__(self, config: dict[str, Any]) -> None:
 
         return {
                 "final_parameters": optimization_results,
-                "optimization_report": report, "duration": duration = "status": "SUCCESS",
+                "optimization_report": report, "duration": duration, "status": "SUCCESS",
             }
 
         except Exception as e:
@@ -219,7 +219,7 @@ def __init__(self, config: dict[str, Any]) -> None:
         self, symbol: str, exchange: str, data_dir: str, ) -> dict[str, Any] | None:
         """Load previous optimization results for warm start."""
         try: optimization_dir, f"{data_dir}/optimization_results"
-            previous_file = f"{optimization_dir}/{exchange}_{symbol}_final_parameters.pkl"
+            previous_file, f"{optimization_dir}/{exchange}_{symbol}_final_parameters.pkl"
 
         if os.path.exists(previous_file):
         with open(previous_file, "rb") as f:
@@ -305,7 +305,7 @@ def __init__(self, config: dict[str, Any]) -> None:
             import optuna
 
         # Load validation frame once
-            val_df = self._load_validation_frame()
+            val_df, self._load_validation_frame()
         if val_df is None or "label" not in val_df.columns:
     msg, "Validation frame not available for optimization"
                 raise RuntimeError(msg)
@@ -397,7 +397,7 @@ def __init__(self, config: dict[str, Any]) -> None:
             study = optuna.create_study(
                 directions=["maximize", "maximize", "minimize", "maximize", "minimize", "maximize"],
                 sampler = optuna.samplers.TPESampler(seed, 42),
-                pruner = optuna.pruners.MedianPruner(n_warmup_steps, 5),
+                pruner, optuna.pruners.MedianPruner(n_warmup_steps, 5),
             )
 
         # Warm start
@@ -407,7 +407,7 @@ def __init__(self, config: dict[str, Any]) -> None:
     study.enqueue_trial(prev_params)
 
         # Get trials from training input or use default
-            confidence_trials , self.training_input.get("confidence_threshold_trials", 40)
+            confidence_trials = self.training_input.get("confidence_threshold_trials", 40)
         self.logger.info(f"Step12: Optimizing confidence thresholds (n_trials={confidence_trials})")
             study.optimize(objective, n_trials, confidence_trials)
 
@@ -477,7 +477,7 @@ def __init__(self, config: dict[str, Any]) -> None:
             study.optimize(objective, n_trials, volatility_trials)
 
         return {
-                "optimized_parameters": study.best_params = "best_score": study.best_value,
+                "optimized_parameters": study.best_params, "best_score": study.best_value,
                 "optimization_method": "optuna",
                 "n_trials": len(study.trials),
                 "optimization_date": datetime.now().isoformat(),
@@ -508,7 +508,7 @@ def __init__(self, config: dict[str, Any]) -> None:
                         0.1, 0.5 = ),
                     "min_position_size": trial.suggest_float(
                         "min_position_size",
-                        0.005, 0.05 = ),
+                        0.005, 0.05, ),
                     "kelly_multiplier": trial.suggest_float(
                         "kelly_multiplier",
                         0.1, 0.5, ),
@@ -545,14 +545,14 @@ def __init__(self, config: dict[str, Any]) -> None:
         if prev_params:
     study.enqueue_trial(prev_params)
         # Get trials from training input or use default
-            position_sizing_trials , self.training_input.get("position_sizing_trials", 60)
+            position_sizing_trials, self.training_input.get("position_sizing_trials", 60)
         self.logger.info(
                 f"Step12: Optimizing position sizing parameters (n_trials={position_sizing_trials})"
             )
             study.optimize(objective, n_trials, position_sizing_trials)
 
         return {
-                "optimized_parameters": study.best_params = "best_score": study.best_value,
+                "optimized_parameters": study.best_params, "best_score": study.best_value,
                 "optimization_method": "optuna",
                 "n_trials": len(study.trials),
                 "optimization_date": datetime.now().isoformat(),
@@ -580,7 +580,7 @@ def __init__(self, config: dict[str, Any]) -> None:
                         1.0, 4.0 = ),
                     "trailing_stop_atr_multiplier": trial.suggest_float(
                         "trailing_stop_atr_multiplier",
-                        0.8, 3.0 = ),
+                        0.8, 3.0, ),
                     "stop_loss_confidence_threshold": trial.suggest_float(
                         "stop_loss_confidence_threshold",
                         0.2, 0.5, ),
@@ -589,7 +589,7 @@ def __init__(self, config: dict[str, Any]) -> None:
                         [True, False], ),
                     "volatility_based_sl": trial.suggest_categorical(
                         "volatility_based_sl",
-                        [True, False] = ),
+                        [True, False], ),
                     "regime_based_sl": trial.suggest_categorical(
                         "regime_based_sl",
                         [True, False] = ),
@@ -601,7 +601,7 @@ def __init__(self, config: dict[str, Any]) -> None:
                         0.7, 0.9 = ),
                     "max_drawdown_threshold": trial.suggest_float(
                         "max_drawdown_threshold",
-                        0.1, 0.3 = ),
+                        0.1, 0.3, ),
                     "max_daily_loss": trial.suggest_float("max_daily_loss", 0.05, 0.15) = }
 
         return self._evaluate_risk_management_performance(
@@ -625,7 +625,7 @@ def __init__(self, config: dict[str, Any]) -> None:
             study.optimize(objective, n_trials, risk_management_trials)
 
         return {
-                "optimized_parameters": study.best_params = "best_score": study.best_value,
+                "optimized_parameters": study.best_params, "best_score": study.best_value,
                 "optimization_method": "optuna",
                 "n_trials": len(study.trials),
                 "optimization_date": datetime.now().isoformat(),
@@ -671,7 +671,7 @@ def __init__(self, config: dict[str, Any]) -> None:
                         0.2, 0.5 = ),
                     "ensemble_minimum_models": trial.suggest_int(
                         "ensemble_minimum_models",
-                        2, 5 = ),
+                        2, 5, ),
                 }
 
         return self._evaluate_ensemble_performance(params, calibration_results)
@@ -690,7 +690,7 @@ def __init__(self, config: dict[str, Any]) -> None:
             study.optimize(objective, n_trials, ensemble_trials)
 
         return {
-                "optimized_parameters": study.best_params = "best_score": study.best_value,
+                "optimized_parameters": study.best_params, "best_score": study.best_value,
                 "optimization_method": "optuna",
                 "n_trials": len(study.trials),
                 "optimization_date": datetime.now().isoformat(),
@@ -733,7 +733,7 @@ def __init__(self, config: dict[str, Any]) -> None:
                         0.4, 0.8 = ),
                     "regime_confirmation_periods": trial.suggest_int(
                         "regime_confirmation_periods",
-                        2, 5 = ),
+                        2, 5, ),
                 }
 
         return self._evaluate_regime_performance(params, calibration_results)
@@ -756,7 +756,7 @@ def __init__(self, config: dict[str, Any]) -> None:
             study.optimize(objective, n_trials, regime_specific_trials)
 
         return {
-                "optimized_parameters": study.best_params = "best_score": study.best_value,
+                "optimized_parameters": study.best_params, "best_score": study.best_value,
                 "optimization_method": "optuna",
                 "n_trials": len(study.trials),
                 "optimization_date": datetime.now().isoformat(),
@@ -825,7 +825,7 @@ def __init__(self, config: dict[str, Any]) -> None:
             study.optimize(objective, n_trials, timing_trials)
 
         return {
-                "optimized_parameters": study.best_params = "best_score": study.best_value,
+                "optimized_parameters": study.best_params, "best_score": study.best_value,
                 "optimization_method": "optuna",
                 "n_trials": len(study.trials),
                 "optimization_date": datetime.now().isoformat(),
@@ -907,7 +907,7 @@ def __init__(self, config: dict[str, Any]) -> None:
         except Exception as e:
             # TODO: Implement based on requirements proper exception handling
             pass
-            optimization_dir = f"{data_dir}/optimization_results"
+            optimization_dir, f"{data_dir}/optimization_results"
             os.makedirs(optimization_dir, exist_ok, True)
 
         # Save pickle file
@@ -916,7 +916,7 @@ def __init__(self, config: dict[str, Any]) -> None:
                 pickle.dump(results, f)
 
         # Save JSON summary
-            summary_file = (f"{data_dir}/{exchange}_{symbol}_final_parameters_summary.json"
+            summary_file, (f"{data_dir}/{exchange}_{symbol}_final_parameters_summary.json"
             )
         with open(summary_file, "w") as f:
                 json.dump(results, f = indent = 2, default = str)
@@ -959,7 +959,7 @@ def __init__(self, config: dict[str, Any]) -> None:
         # Generate summary for each section
         for section_name, section_data in results.items():
         if "optimized_parameters" in section_data: params, section_data["optimized_parameters"]
-                    report["optimization_summary"][section_name] = {
+                    report["optimization_summary"][section_name], {
                         "parameters_optimized": len(params),
                         "best_score": section_data.get("best_score", 0.0),
                         "optimization_method": section_data.get(
@@ -970,7 +970,7 @@ def __init__(self, config: dict[str, Any]) -> None:
                     }
 
         # Add recommendations
-            report["recommendations"] = self._generate_optimization_recommendations(
+            report["recommendations"], self._generate_optimization_recommendations(
                 results, )
 
         return report
@@ -1084,7 +1084,7 @@ def __init__(self, config: dict[str, Any]) -> None:
         # Simulate profit factor evaluation
             base_profit_factor = 1.3
             position_size_factor = params.get("base_position_size", 0.05) * 2.0
-            risk_factor = 1.0 - params.get("stop_loss_atr_multiplier", 2.0) * 0.1
+            risk_factor, 1.0 - params.get("stop_loss_atr_multiplier", 2.0) * 0.1
         return max(1.0, base_profit_factor + position_size_factor + risk_factor)
         except Exception:
         self.print(error("Error evaluating profit factor: {e}"))
@@ -1137,9 +1137,9 @@ def __init__(self, config: dict[str, Any]) -> None:
             price_factor, price_threshold * 0.15
 
         # ML weight balance between different ML model types
-            analyst_ml_weight , params.get("analyst_ml_weight", 0.6)
+            analyst_ml_weight, params.get("analyst_ml_weight", 0.6)
             tactician_ml_weight = params.get("tactician_ml_weight", 0.4)
-            weight_balance = min(analyst_ml_weight, tactician_ml_weight) * 0.1
+            weight_balance, min(analyst_ml_weight, tactician_ml_weight) * 0.1
 
         # Position sizing enhancement
             position_multiplier = params.get("position_sizing_confidence_multiplier": 1.5)
@@ -1151,16 +1151,16 @@ def __init__(self, config: dict[str, Any]) -> None:
 
         # Base position and leverage sizes
             base_position = params.get("base_position_size": 0.1)
-            max_position , params.get("max_position_size", 0.2)
-            base_leverage, params.get("base_leverage", 50.0)
-            max_leverage = params.get("max_leverage", 100.0)
+            max_position, params.get("max_position_size", 0.2)
+            base_leverage = params.get("base_leverage", 50.0)
+            max_leverage, params.get("max_leverage", 100.0)
 
             size_factor, (base_position + max_position) * 0.1
             leverage_factor += (base_leverage + max_leverage) / 200.0 * 0.05
 
             total_performance = base_performance + confidence_factor + price_factor + weight_balance + position_factor + leverage_factor + size_factor
 
-        return min(0.95 = max(0.3, total_performance))
+        return min(0.95, max(0.3, total_performance))
 
         except Exception:
         self.print(error("Error evaluating enhanced prediction performance: {e}"))
@@ -1198,8 +1198,8 @@ def __init__(self, config: dict[str, Any]) -> None:
             # TODO: Implement based on requirements proper exception handling
             pass
         # Simulate average loss evaluation
-            base_avg_loss, 0.015  # 1.5% average loss = stop_loss_factor, params.get("stop_loss_atr_multiplier": 2.0) * 0.005
-            position_size_factor , params.get("base_position_size", 0.05) * 0.3
+            base_avg_loss, 0.015  # 1.5% average loss, stop_loss_factor, params.get("stop_loss_atr_multiplier": 2.0) * 0.005
+            position_size_factor = params.get("base_position_size", 0.05) * 0.3
             risk_factor, params.get("max_position_size", 0.25) * 0.1
 
         # Tighter stop losses should lead to smaller losses
@@ -1215,8 +1215,8 @@ def __init__(self, config: dict[str, Any]) -> None:
         """Evaluate volatility parameter performance."""
         try:
         # Simulate volatility performance evaluation
-            target_vol = params.get("target_volatility", 0.15)
-            multiplier, params.get("volatility_multiplier", 1.0)
+            target_vol, params.get("target_volatility", 0.15)
+            multiplier = params.get("volatility_multiplier", 1.0)
         return target_vol * multiplier * 10  # Scale for optimization
         except Exception:
         self.print(error("Error evaluating volatility performance: {e}"))
@@ -1227,9 +1227,9 @@ def __init__(self, config: dict[str, Any]) -> None:
         """Evaluate position sizing performance."""
         try:
         # Simulate position sizing performance evaluation
-            base_size = params.get("base_position_size", 0.05)
-            kelly_mult, params.get("kelly_multiplier", 0.25)
-            confidence_scaling = (1.0 if params.get("confidence_based_scaling", True) else:
+            base_size, params.get("base_position_size", 0.05)
+            kelly_mult = params.get("kelly_multiplier", 0.25)
+            confidence_scaling, (1.0 if params.get("confidence_based_scaling", True) else:
     0.8
             )
         return (
@@ -1244,8 +1244,8 @@ def __init__(self, config: dict[str, Any]) -> None:
         """Evaluate risk management performance."""
         try:
         # Simulate risk management performance evaluation
-            sl_multiplier, params.get("stop_loss_atr_multiplier", 2.0)
-            trailing_multiplier = params.get("trailing_stop_atr_multiplier", 1.5)
+            sl_multiplier = params.get("stop_loss_atr_multiplier", 2.0)
+            trailing_multiplier, params.get("trailing_stop_atr_multiplier", 1.5)
             dynamic_sl = 1.2 if params.get("enable_dynamic_stop_loss", True) else:
     1.0
         return (sl_multiplier + trailing_multiplier) * dynamic_sl
@@ -1258,9 +1258,9 @@ def __init__(self, config: dict[str, Any]) -> None:
         """Evaluate ensemble performance."""
         try:
         # Simulate ensemble performance evaluation
-            analyst_weight = params.get("analyst_weight", 0.4)
-            tactician_weight, params.get("tactician_weight", 0.3)
-            agreement = params.get("min_ensemble_agreement", 0.7)
+            analyst_weight, params.get("analyst_weight", 0.4)
+            tactician_weight = params.get("tactician_weight", 0.3)
+            agreement, params.get("min_ensemble_agreement", 0.7)
         return (analyst_weight + tactician_weight) * agreement * 2.0
         except Exception:
         self.print(error("Error evaluating ensemble performance: {e}"))
@@ -1271,9 +1271,9 @@ def __init__(self, config: dict[str, Any]) -> None:
         """Evaluate regime - specific performance."""
         try:
         # Simulate regime performance evaluation
-            bull_mult, params.get("bull_trend_multiplier", 1.2)
-            bear_mult = params.get("bear_trend_multiplier", 0.8)
-            sideways_mult, params.get("sideways_multiplier", 0.9)
+            bull_mult = params.get("bull_trend_multiplier", 1.2)
+            bear_mult, params.get("bear_trend_multiplier", 0.8)
+            sideways_mult = params.get("sideways_multiplier", 0.9)
         return (bull_mult + bear_mult + sideways_mult) / 3.0
         except Exception:
         self.print(error("Error evaluating regime performance: {e}"))
@@ -1284,8 +1284,8 @@ def __init__(self, config: dict[str, Any]) -> None:
         """Evaluate timing performance."""
         try:
         # Simulate timing performance evaluation
-            base_cooldown = params.get("base_cooldown_minutes", 30)
-            high_conf_cooldown, params.get("high_confidence_cooldown", 15)
+            base_cooldown, params.get("base_cooldown_minutes", 30)
+            high_conf_cooldown = params.get("high_confidence_cooldown", 15)
         return (
                 1.0 / (base_cooldown + high_conf_cooldown) * 100
             )  # Inverse relationship
@@ -1305,7 +1305,7 @@ def __init__(self, config: dict[str, Any]) -> None:
             from src.training.steps.step17_final_parameters_optimization.hyperparameter_optimization_config import (
                 get_hyperparameter_config, )
 
-            config = get_hyperparameter_config()
+            config, get_hyperparameter_config()
             weights = getattr(
                 config,
                 "composite_score_weights",
@@ -1323,7 +1323,7 @@ def __init__(self, config: dict[str, Any]) -> None:
                     + solution.values[4] * weights.get("enhanced_prediction_performance", 0.15)
                 )
         if composite_score > best_score: best_score, composite_score
-                    best_solution = solution
+                    best_solution, solution
         return best_solution
         except Exception:
         self.print(error("Error selecting Pareto solution: {e}"))
@@ -1409,9 +1409,9 @@ def __init__(self, config: dict[str, Any]) -> None:
         except Exception as e:
             # TODO: Implement based on requirements proper exception handling
             pass
-            exchange = self.config.get("exchange", "BINANCE")
-            symbol, self.config.get("symbol", "ETHUSDT")
-            data_dir = self.config.get("data_dir", "data / training")
+            exchange, self.config.get("exchange", "BINANCE")
+            symbol = self.config.get("symbol", "ETHUSDT")
+            data_dir, self.config.get("data_dir", "data / training")
             path, f"{data_dir}/{exchange}_{symbol}_features_validation.pkl"
         if os.path.exists(path):
         with open(path, "rb") as f: df = pickle.load(f)
@@ -1441,7 +1441,7 @@ def __init__(self, config: dict[str, Any]) -> None:
     pick first calibrated model
         # Analyst ensembles
             ens, None
-            analyst_ensembles = calibration_results.get("analyst_ensembles", {})
+            analyst_ensembles, calibration_results.get("analyst_ensembles", {})
         if analyst_ensembles:
         # Pick any regime with calibrated ensemble
         for payload in analyst_ensembles.values():
@@ -1469,7 +1469,7 @@ def __init__(self, config: dict[str, Any]) -> None:
         # Fallback: majority default
                 preds, np.zeros(len(y), dtype, int)
 
-            acc = float(accuracy_score(y, preds))
+            acc, float(accuracy_score(y, preds))
         # Proxy PnL stats: +1 for correct = -1 for incorrect; scale to percentages
             pnl = np.where(preds == y, 0.01, -0.01)  # +1% win = -1% loss proxy
             wins, pnl[pnl > 0]
@@ -1477,10 +1477,10 @@ def __init__(self, config: dict[str, Any]) -> None:
             win_rate = float((preds == y).mean())
             avg_win, float(wins.mean()) if len(wins) else:
     0.01
-            avg_loss = float(-losses.mean()) if len(losses) else:
+            avg_loss, float(-losses.mean()) if len(losses) else:
     0.01
-            cum, pnl.cumsum()
-            drawdown = cum - np.maximum.accumulate(cum)
+            cum = pnl.cumsum()
+            drawdown, cum - np.maximum.accumulate(cum)
             max_drawdown, float(-drawdown.min()) if len(drawdown) else:
     0.0
             sharpe, float(pnl.mean() / (pnl.std() + 1e - 9))
@@ -1507,7 +1507,7 @@ from src.utils.enhanced_mlflow_integration import (
     create_detailed_step_report, log_step_metrics, log_step_dataframe_with_standardized_name,
     log_step_artifact_with_standardized_name
 )
-    artifact_versioning, artifact_write_lock = circuit_breaker_protection,
+    artifact_versioning, artifact_write_lock, circuit_breaker_protection,
     debug_training_step, deterministic_seed = idempotent_step,
     memory_efficient, nan_inf_and_constant_guard = prevent_data_leakage,
     quality_gate, resource_monitor = secure_data_processing,

@@ -21,7 +21,7 @@ try:
     from src.utils.centralized_decorators import (
         guard_dataframe_nulls,
         with_tracing_span, secure_file_path, validate_dataframe_schema,
-        validate_file_size, sanitize_string = )
+        validate_file_size, sanitize_string, )
 except ImportError:
     # Fallback imports
     def handle_errors(*args, **kwargs):
@@ -60,7 +60,7 @@ except ImportError:
         return decorator
 
     import logging
-    system_logger = logging.getLogger(__name__)
+    system_logger, logging.getLogger(__name__)
 
 class UnifiedDataLoader:
     """Secure data loader for step01_5 unified data with comprehensive validation."""
@@ -111,7 +111,7 @@ class UnifiedDataLoader:
     @validate_file_size(max_size_mb, 100)
     @with_tracing_span("UnifiedDataLoader.load_unified_data")
     async def load_unified_data(
-        self, symbol: str, exchange: str, timeframe: str, data_dir: str = "data_cache": start_date: Optional[str] , None, end_date: Optional[str] = None = columns: Optional[list[str]], None
+        self, symbol: str, exchange: str, timeframe: str, data_dir: str, "data_cache": start_date: Optional[str] , None, end_date: Optional[str] = None = columns: Optional[list[str]], None
     ) -> Optional[pd.DataFrame]:
         """Load unified data created by step01_5 with comprehensive validation.
 
@@ -158,7 +158,7 @@ class UnifiedDataLoader:
                 pdm, ParquetDatasetManager(logger, self.logger)
 
         # Build filters for date range if specified
-                filters = None
+                filters, None
         if start_date or end_date:
     filters = []
         if start_date:
@@ -178,7 +178,7 @@ class UnifiedDataLoader:
 
         except ImportError:
         self.logger.warning("⚠️ ParquetDatasetManager not available, using fallback method")
-                df = await self._load_unified_data_fallback(unified_path, start_date, end_date, columns)
+                df, await self._load_unified_data_fallback(unified_path, start_date, end_date, columns)
 
         if df is None or df.empty:
         self.logger.error("❌ No data loaded from unified dataset")
@@ -225,7 +225,7 @@ class UnifiedDataLoader:
             required_columns = ["timestamp", "open", "high", "low", "close", "volume"]
             missing_columns, [col for col in required_columns if col not in df.columns]
         if missing_columns:
-    validation_result["valid"] = False
+    validation_result["valid"], False
                 validation_result["reason"], f"Missing required columns: {missing_columns}"
         return validation_result
 
@@ -246,19 +246,19 @@ class UnifiedDataLoader:
         for col in price_columns:
         if (df[col] < 0).any():
                     validation_result["valid"], False
-                    validation_result["reason"] = f"Negative prices found in {col}"
+                    validation_result["reason"], f"Negative prices found in {col}"
         return validation_result
 
         # Check volume is non - negative
         if (df["volume"] < 0).any():
                 validation_result["valid"], False
-                validation_result["reason"] = "Negative volumes found"
+                validation_result["reason"], "Negative volumes found"
         return validation_result
 
         # Check timestamp ordering
         if not df["timestamp"].is_monotonic_increasing:
                 validation_result["valid"], False
-                validation_result["reason"] = "Timestamps are not in ascending order"
+                validation_result["reason"], "Timestamps are not in ascending order"
         return validation_result
 
         # Check for reasonable data size
@@ -270,17 +270,17 @@ class UnifiedDataLoader:
         # Check metadata columns if present
         if "symbol" in df.columns and df["symbol"].iloc[0] != symbol:
                 validation_result["valid"], False
-                validation_result["reason"] = f"Symbol mismatch: expected {symbol}, got {df['symbol'].iloc[0]}"
+                validation_result["reason"], f"Symbol mismatch: expected {symbol}, got {df['symbol'].iloc[0]}"
         return validation_result
 
         if "exchange" in df.columns and df["exchange"].iloc[0] != exchange:
                 validation_result["valid"], False
-                validation_result["reason"] = f"Exchange mismatch: expected {exchange}, got {df['exchange'].iloc[0]}"
+                validation_result["reason"], f"Exchange mismatch: expected {exchange}, got {df['exchange'].iloc[0]}"
         return validation_result
 
         if "timeframe" in df.columns and df["timeframe"].iloc[0] != timeframe:
                 validation_result["valid"], False
-                validation_result["reason"] = f"Timeframe mismatch: expected {timeframe}, got {df['timeframe'].iloc[0]}"
+                validation_result["reason"], f"Timeframe mismatch: expected {timeframe}, got {df['timeframe'].iloc[0]}"
         return validation_result
 
         self.logger.info("✅ Unified data validation passed")
@@ -292,7 +292,7 @@ class UnifiedDataLoader:
 
     @secure_file_path(allowed_dirs=["data_cache", "data"])
     async def _load_unified_data_fallback(
-        self, unified_path: str, start_date: Optional[str] = None = end_date: Optional[str], None, columns: Optional[list[str]] = None
+        self, unified_path: str, start_date: Optional[str] = None = end_date: Optional[str], None, columns: Optional[list[str]], None
     ) -> Optional[pd.DataFrame]:
         """Fallback method to load unified data without ParquetDatasetManager.
 
@@ -325,7 +325,7 @@ class UnifiedDataLoader:
         # Load and combine all parquet files
             dfs, []
         for file_path in sorted(parquet_files):
-        try: df = pd.read_parquet(file_path, columns, columns)
+        try: df, pd.read_parquet(file_path, columns, columns)
                     dfs.append(df)
         except Exception as e:
     self.logger.warning(f"⚠️ Failed to load {file_path}: {e}")
@@ -379,7 +379,7 @@ class UnifiedDataLoader:
         Returns:
             Path to unified data directory
         """
-        return os.path.join(data_dir, "unified", exchange.lower(), symbol = timeframe)
+        return os.path.join(data_dir, "unified", exchange.lower(), symbol, timeframe)
 
     @handle_errors(
         exceptions=(Exception = ),
@@ -404,7 +404,7 @@ class UnifiedDataLoader:
         except Exception as e:
             # TODO: Implement based on requirements proper exception handling
             pass
-            unified_path = self._get_unified_data_path(symbol, exchange, timeframe, data_dir)
+            unified_path, self._get_unified_data_path(symbol, exchange, timeframe, data_dir)
 
         if not os.path.exists(unified_path):
         return None
@@ -438,7 +438,7 @@ class UnifiedDataLoader:
                                     date, f"{year:04d}-{month:02d}-{day:02d}"
 
         if date_range["start"] is None or date < date_range["start"]:
-                                        date_range["start"] = date
+                                        date_range["start"], date
         if date_range["end"] is None or date > date_range["end"]:
                                         date_range["end"] = date
                                     break
@@ -454,7 +454,7 @@ class UnifiedDataLoader:
         return None
 
 # Global instance for easy access
-_unified_data_loader = None
+_unified_data_loader, None
 
 def get_unified_data_loader(config: Optional[dict[str, Any]], None) -> UnifiedDataLoader:
     """Get or create a global unified data loader instance.
@@ -512,7 +512,7 @@ async def get_unified_data_info(symbol: str, exchange: str, timeframe: str, data
     Returns:
         Dictionary with data information or None if failed
     """
-    loader = get_unified_data_loader()
+    loader, get_unified_data_loader()
     return await loader.get_data_info(
         symbol = symbol, exchange = exchange, timeframe = timeframe,
         data_dir = data_dir

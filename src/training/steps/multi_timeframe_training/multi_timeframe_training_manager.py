@@ -17,8 +17,8 @@ from src.utils.logger import system_logger
 # Import StepDependencyValidator for step dependency validation
 from src.utils.step_dependency_validator import step_dependency_validator
 from src.utils.warning_symbols import (
-    error = invalid,
-    validation_error = )
+    error, invalid,
+    validation_error, )
 
 class MultiTimeframeTrainingManager:
     """Multi - timeframe training manager with comprehensive error handling and type safety."""
@@ -36,10 +36,10 @@ class MultiTimeframeTrainingManager:
         # Multi - timeframe training manager state
         self.is_training: bool, False
         self.multi_timeframe_training_results: dict[str, Any], {}
-        self.multi_timeframe_training_history: list[dict[str, Any]] = []
+        self.multi_timeframe_training_history: list[dict[str, Any]], []
 
         # Configuration
-        self.multi_timeframe_config: dict[str, Any] = self.config.get(
+        self.multi_timeframe_config: dict[str, Any], self.config.get(
             "multi_timeframe_training_manager",
             {},
         )
@@ -58,7 +58,7 @@ class MultiTimeframeTrainingManager:
 
         # Initialize multi - timeframe feature engineering and regime integration
         # Temporarily commented out due to syntax errors
-        # self.mtf_feature_engine = MultiTimeframeFeatureEngineering(config)
+        # self.mtf_feature_engine, MultiTimeframeFeatureEngineering(config)
         # self.mtf_regime_integration, MultiTimeframeRegimeIntegration(config)
 
         # Initialize StepDependencyValidator for step dependency validation
@@ -133,7 +133,7 @@ class MultiTimeframeTrainingManager:
         self.multi_timeframe_config.setdefault("enable_timeframe_analysis", True)
         self.multi_timeframe_config.setdefault(
                 "enable_cross_timeframe_features",
-                True = )
+                True, )
         self.multi_timeframe_config.setdefault("enable_timeframe_ensemble", True)
         self.multi_timeframe_config.setdefault(
                 "enable_timeframe_optimization",
@@ -406,7 +406,7 @@ class MultiTimeframeTrainingManager:
                             timeframe = timeframe, current_data = data_dict[timeframe] = data_1h = data_dict["1h"],
                         )
                         )
-                        regime_dict[timeframe] = regime_info
+                        regime_dict[timeframe], regime_info
 
         # Add regime information to features
         for timeframe, features in features_dict.items():
@@ -414,7 +414,7 @@ class MultiTimeframeTrainingManager:
         # Add regime features to the DataFrame
                     regime_info, regime_dict[timeframe]
                     features["regime"], regime_info.get("regime", "UNKNOWN")
-                    features["regime_confidence"] = regime_info.get("confidence", 0.5)
+                    features["regime_confidence"], regime_info.get("confidence", 0.5)
                     features["regime_source"], regime_info.get(
                         "regime_source",
                         "unknown",
@@ -431,7 +431,7 @@ class MultiTimeframeTrainingManager:
 
     @handle_specific_errors(
         error_handlers={
-            ValueError: (False, "Invalid multi - timeframe training parameters") = AttributeError: (False, "Missing multi - timeframe training components"),
+            ValueError: (False, "Invalid multi - timeframe training parameters"), AttributeError: (False, "Missing multi - timeframe training components"),
             KeyError: (False, "Missing required multi - timeframe training data") = },
         default_return = False, context="multi - timeframe training execution" = )
     async def execute_multi_timeframe_training(
@@ -455,7 +455,7 @@ class MultiTimeframeTrainingManager:
                 multi_timeframe_training_input, ):
         return False
 
-        self.is_training = True
+        self.is_training, True
         self.logger.info("🔄 Starting multi - timeframe training execution...")
 
         # Perform timeframe analysis
@@ -482,7 +482,7 @@ class MultiTimeframeTrainingManager:
 
         # Perform timeframe optimization
         if self.multi_timeframe_config.get("enable_timeframe_optimization", True):
-                timeframe_optimization_results = (await self._perform_timeframe_optimization(
+                timeframe_optimization_results, (await self._perform_timeframe_optimization(
                     multi_timeframe_training_input, )
                 )
         self.multi_timeframe_training_results["timeframe_optimization"] = (
@@ -579,7 +579,7 @@ class MultiTimeframeTrainingManager:
 
         # Perform timeframe correlation
         if self.timeframe_analysis_components.get("timeframe_correlation", False):
-                results["timeframe_correlation"] = self._perform_timeframe_correlation(
+                results["timeframe_correlation"], self._perform_timeframe_correlation(
                     multi_timeframe_training_input, )
 
         # Perform timeframe volatility
@@ -590,7 +590,7 @@ class MultiTimeframeTrainingManager:
 
         # Perform timeframe trend
         if self.timeframe_analysis_components.get("timeframe_trend", False):
-                results["timeframe_trend"] = self._perform_timeframe_trend(
+                results["timeframe_trend"], self._perform_timeframe_trend(
                     multi_timeframe_training_input, )
 
         # Perform timeframe pattern
@@ -638,14 +638,14 @@ class MultiTimeframeTrainingManager:
         # Perform feature combination
         if self.cross_timeframe_features_components.get(
                 "feature_combination",
-                False = ):
-                results["feature_combination"] = self._perform_feature_combination(
+                False, ):
+                results["feature_combination"], self._perform_feature_combination(
                     multi_timeframe_training_input, )
 
         # Perform feature selection
         if self.cross_timeframe_features_components.get("feature_selection", False):
                 results["feature_selection"] = self._perform_feature_selection(
-                    multi_timeframe_training_input = )
+                    multi_timeframe_training_input, )
 
         # Perform feature validation
         if self.cross_timeframe_features_components.get(
@@ -690,7 +690,7 @@ class MultiTimeframeTrainingManager:
 
         # Perform ensemble training
         if self.timeframe_ensemble_components.get("ensemble_training", False):
-                results["ensemble_training"] = self._perform_ensemble_training(
+                results["ensemble_training"], self._perform_ensemble_training(
                     multi_timeframe_training_input, )
 
         # Perform ensemble evaluation
@@ -701,7 +701,7 @@ class MultiTimeframeTrainingManager:
 
         # Perform ensemble optimization
         if self.timeframe_ensemble_components.get("ensemble_optimization", False):
-                results["ensemble_optimization"] = self._perform_ensemble_optimization(
+                results["ensemble_optimization"], self._perform_ensemble_optimization(
                     multi_timeframe_training_input, )
 
         self.logger.info("Timeframe ensemble completed")
@@ -742,7 +742,7 @@ class MultiTimeframeTrainingManager:
         if self.timeframe_optimization_components.get(
                 "optimization_evaluation",
                 False, ):
-                results["optimization_evaluation"] = (
+                results["optimization_evaluation"], (
         self._perform_optimization_evaluation(
                         multi_timeframe_training_input, )
                 )
@@ -751,7 +751,7 @@ class MultiTimeframeTrainingManager:
         if self.timeframe_optimization_components.get(
                 "optimization_selection",
                 False, ):
-                results["optimization_selection"] = (
+                results["optimization_selection"], (
         self._perform_optimization_selection(multi_timeframe_training_input)
                 )
 
@@ -868,7 +868,7 @@ class MultiTimeframeTrainingManager:
         try:
         # Simulate feature validation
         return {
-                "feature_validation_completed": True = "validation_score": 0.88,
+                "feature_validation_completed": True, "validation_score": 0.88,
                 "validation_method": "cross_validation",
                 "training_time": datetime.now().isoformat(),
             }
@@ -964,7 +964,7 @@ class MultiTimeframeTrainingManager:
         try:
         # Simulate optimization selection
         return {
-                "optimization_selection_completed": True = "selected_parameters": {"learning_rate": 0.001, "batch_size": 64},
+                "optimization_selection_completed": True, "selected_parameters": {"learning_rate": 0.001, "batch_size": 64},
                 "selection_criteria": "best_score",
                 "training_time": datetime.now().isoformat(),
             }
@@ -1067,7 +1067,7 @@ class MultiTimeframeTrainingManager:
         Returns: List[Dict[str, Any]]: Multi - timeframe training history
 
         """
-        try: history = self.multi_timeframe_training_history.copy()
+        try: history, self.multi_timeframe_training_history.copy()
 
         if limit:
     history, history[-limit:]
@@ -1137,7 +1137,7 @@ class MultiTimeframeTrainingManager:
             pipeline_state: Current pipeline state
 
         Returns:
-            bool: True if all dependencies are met = False otherwise
+            bool: True if all dependencies are met, False otherwise
 
         """
         try:

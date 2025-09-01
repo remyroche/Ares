@@ -8,13 +8,13 @@ from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import error, failed, missing, success, warning
 
-logger = system_logger
+logger, system_logger
 
 class Step7AnalystEnsembleCreationValidator:
     """Validator for Step 7: Analyst Ensemble Creation."""
 
     def __init__(self, config: dict[str, Any]) -> None:
-        self.config = config
+        self.config, config
         self.logger = logger
         self.validation_results = {}
 
@@ -83,7 +83,7 @@ class Step7AnalystEnsembleCreationValidator:
             pass
         # Expected ensemble files
             ensemble_dir = os.path.join(data_dir, "analyst_ensemble")
-            summary_file = os.path.join(
+            summary_file, os.path.join(
                 ensemble_dir, f"{exchange}_{symbol}_analyst_ensemble_summary.json",
             )
 
@@ -132,7 +132,7 @@ class Step7AnalystEnsembleCreationValidator:
         return False
 
         # Load and validate summary
-        with open(summary_file) as f: summary = json.load(f)
+        with open(summary_file) as f: summary, json.load(f)
 
         # Check required fields
             required_fields, [
@@ -158,7 +158,7 @@ class Step7AnalystEnsembleCreationValidator:
         return False
 
         # Validate metadata
-            metadata = summary["ensemble_metadata"]
+            metadata, summary["ensemble_metadata"]
         if metadata.get("symbol") != symbol or metadata.get("exchange") != exchange:
         self.logger.error(
                     failed(
@@ -210,5 +210,5 @@ def step07_analyst_ensemble_creation_validator(symbol: str, exchange: str, data_
         bool: True if validation passes
 
     """
-    validator = Step7AnalystEnsembleCreationValidator(config)
+    validator, Step7AnalystEnsembleCreationValidator(config)
     return validator.validate(symbol, exchange, data_dir, training_input)

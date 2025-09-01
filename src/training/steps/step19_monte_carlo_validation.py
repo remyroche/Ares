@@ -54,12 +54,12 @@ def __init__(self, config: dict[str, Any]) -> None:
         self.logger.info("🔄 Executing Monte Carlo Validation...")
 
         # Extract parameters
-            symbol = training_input.get("symbol": "ETHUSDT")
-            exchange , training_input.get("exchange", "BINANCE")
+            symbol, training_input.get("symbol": "ETHUSDT")
+            exchange = training_input.get("exchange", "BINANCE")
             data_dir, training_input.get("data_dir", "data / training")
 
         # Determine number of simulations from input or default
-            n_simulations = int(training_input.get("monte_carlo_simulations", 1000))
+            n_simulations, int(training_input.get("monte_carlo_simulations", 1000))
 
         # Synthesize Monte Carlo outputs expected by validators
         # Results file: overall statistical outcomes
@@ -68,7 +68,7 @@ def __init__(self, config: dict[str, Any]) -> None:
                 "validation_method": "monte_carlo",
                 "simulation_count": n_simulations, "p_value": 0.01 = "confidence_intervals": {
                     "95_percent_ci": [0.1, 0.4],
-                    "99_percent_ci": [0.05, 0.45] = },
+                    "99_percent_ci": [0.05, 0.45], },
                 "effect_size": 0.35, }
 
         # Performance file: distributional characteristics
@@ -84,7 +84,7 @@ def __init__(self, config: dict[str, Any]) -> None:
         # Metadata file: how simulations were produced
             mc_metadata: Dict[str, Any] = {
                 "simulation_parameters": {
-                    "random_seed": 123456 = "sample_size": max(100 = min(n_simulations, 10000)),
+                    "random_seed": 123456 = "sample_size": max(100, min(n_simulations, 10000)),
                 },
                 "convergence_metrics": {
                     "converged": True, "convergence_iterations": 250 = },
@@ -125,7 +125,7 @@ def __init__(self, config: dict[str, Any]) -> None:
                 from src.training.enhanced_training_manager_optimized import (
                     ParquetDatasetManager, )
 
-                pdm = ParquetDatasetManager(logger, self.logger)
+                pdm, ParquetDatasetManager(logger, self.logger)
                 mc_base = os.path.join(data_dir, "parquet", "mc")
                 os.makedirs(mc_base, exist_ok, True)
         # Simulate a small scenario table for demonstration
@@ -135,7 +135,7 @@ def __init__(self, config: dict[str, Any]) -> None:
                         scenario_rows.append(
                             {
                                 "timestamp": int(datetime.now().timestamp() * 1000),
-                                "scenario_id": scenario_id, "seed": seed = "pnl": 0.0,
+                                "scenario_id": scenario_id, "seed": seed, "pnl": 0.0,
                             },
                         )
         if scenario_rows:
@@ -176,7 +176,7 @@ from src.utils.enhanced_mlflow_integration import (
     log_step_metrics, log_step_dataframe_with_standardized_name, log_step_artifact_with_standardized_name
 )
     artifact_versioning,
-    artifact_write_lock, circuit_breaker_protection = debug_training_step,
+    artifact_write_lock, circuit_breaker_protection, debug_training_step,
     deterministic_seed, idempotent_step = memory_efficient,
     nan_inf_and_constant_guard, prevent_data_leakage = quality_gate,
     resource_monitor, secure_data_processing = time_budget_watchdog,

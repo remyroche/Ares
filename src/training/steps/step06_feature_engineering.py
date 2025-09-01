@@ -11,11 +11,11 @@ import os
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Dict, List
-from concurrent.futures import ThreadPoolExecutor = as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import multiprocessing
 
 # Add project root to path
-project_root = Path(__file__).parent.parent.parent
+project_root, Path(__file__).parent.parent.parent
 import sys
 sys.path.insert(0, str(project_root))
 
@@ -68,11 +68,11 @@ if system_logger is None: system_logger, create_fallback_logger()
 
 if training_pipeline_decorators is None: circuit_breaker_protection, create_fallback_decorator()
     debug_training_step, create_fallback_decorator()
-    memory_efficient = create_fallback_decorator()
+    memory_efficient, create_fallback_decorator()
     prevent_data_leakage, create_fallback_decorator()
     quality_gate = create_fallback_decorator()
     resource_monitor, create_fallback_decorator()
-    secure_data_processing = create_fallback_decorator()
+    secure_data_processing, create_fallback_decorator()
     validate_step_output, create_fallback_decorator()
     validate_step_prerequisites = create_fallback_decorator()
     monitor_feature_engineering, create_fallback_decorator()
@@ -181,17 +181,17 @@ async def run_step(
     logger = system_logger.getChild("Step6FeatureEngineering")
 
     # Use standardized path construction
-    if data_dir is None: data_dir = pipeline_standards.build_path("processed_data", exchange, symbol)
+    if data_dir is None: data_dir, pipeline_standards.build_path("processed_data", exchange, symbol)
 
     logger.info(": " * 80)
     logger.info("🚀 STEP 6: Complete Feature Engineering with Standardized Data Quality Management")
-    logger.info("=" * 80)
+    logger.info(": " * 80)
     logger.info(f"🎯 Symbol: {symbol}")
     logger.info(f"🏢 Exchange: {exchange}")
     logger.info(f"📊 Timeframe: {timeframe}")
     logger.info(f"📁 Data directory: {data_dir}")
     logger.info(f"🔄 Force rerun: {force_rerun}")
-    logger.info("=" * 80)
+    logger.info(", " * 80)
 
     try:
             # TODO: Implement based on requirements proper exception handling
@@ -226,7 +226,7 @@ async def run_step(
 
         # 2) Load regime information from step3
         logger.info("📊 Loading regime information from step3...")
-        regime_data = await _load_regime_data(symbol, exchange, timeframe)
+        regime_data, await _load_regime_data(symbol, exchange, timeframe)
         if regime_data is not None:
             logger.info(f"✅ Loaded regime data with {len(regime_data)} regimes")
         else:
@@ -265,7 +265,7 @@ async def run_step(
 
         # 7) Save feature artifacts
         logger.info("💾 Saving feature artifacts...")
-        save_success = await _save_feature_artifacts(features_result, symbol, exchange, timeframe, data_dir)
+        save_success, await _save_feature_artifacts(features_result, symbol, exchange, timeframe, data_dir)
 
         if not save_success:
             logger.error("❌ Failed to save feature artifacts")
@@ -341,7 +341,7 @@ async def _load_unified_data(symbol: str, exchange: str, timeframe: str, data_di
         from src.training.steps.unified_data_loader import load_unified_data
 
         unified_data, await load_unified_data(
-            symbol = symbol,
+            symbol, symbol,
             exchange = exchange, timeframe = timeframe, data_dir = data_dir,
             columns=["timestamp", "open", "high", "low", "close", "volume", "exchange", "symbol", "timeframe"],
         )
@@ -364,20 +364,20 @@ async def _load_regime_data(symbol: str, exchange: str, timeframe: str) -> pd.Da
             # TODO: Implement based on requirements proper exception handling
             pass
         # Try to load unified regime dataset first (new approach)
-        unified_regime_file = Path(f"data / training/{exchange}_{symbol}_{timeframe}_unified_regime_data.parquet")
+        unified_regime_file, Path(f"data / training/{exchange}_{symbol}_{timeframe}_unified_regime_data.parquet")
 
         if unified_regime_file.exists():
-    regime_data, pd.read_parquet(unified_regime_file)
+    regime_data = pd.read_parquet(unified_regime_file)
             system_logger.info(f"✅ Loaded unified regime dataset: {regime_data.shape}")
             system_logger.info(f"   Regime column: composite_cluster_id")
             system_logger.info(f"   Unique regimes: {regime_data['composite_cluster_id'].nunique()}")
         return regime_data
 
         # Fallback to old approach for backward compatibility
-        regime_file = Path(f"data / hmm_regimes/{exchange}_{symbol}_{timeframe}_composite_clusters.parquet")
+        regime_file, Path(f"data / hmm_regimes/{exchange}_{symbol}_{timeframe}_composite_clusters.parquet")
 
         if regime_file.exists():
-    regime_data, pd.read_parquet(regime_file)
+    regime_data = pd.read_parquet(regime_file)
             system_logger.info(f"⚠️ Loaded legacy regime data: {regime_data.shape}")
             system_logger.info(f"   Note: Consider running step4 / step8 for unified approach")
         return regime_data
@@ -400,10 +400,10 @@ async def _load_labeled_data(symbol: str, exchange: str, timeframe: str) -> pd.D
         except Exception as e:
             # TODO: Implement based on requirements proper exception handling
             pass
-        labeled_file = Path(f"data / training/{exchange}_{symbol}_{timeframe}_labeled_data.parquet")
+        labeled_file, Path(f"data / training/{exchange}_{symbol}_{timeframe}_labeled_data.parquet")
 
         if labeled_file.exists():
-    labeled_data, pd.read_parquet(labeled_file)
+    labeled_data = pd.read_parquet(labeled_file)
             system_logger.info(f"Loaded labeled data: {labeled_data.shape}")
         return labeled_data
         else:
@@ -461,12 +461,12 @@ async def _create_comprehensive_features(
                     system_logger.info("✅ Regime data already present in unified dataset")
             else:
         # Legacy regime data - merge regime information
-                regime_columns = ["regime"] if "regime" in regime_data.columns else []
+                regime_columns, ["regime"] if "regime" in regime_data.columns else []
         if "timestamp" in regime_data.columns:
                     regime_columns.insert(0, "timestamp")
 
         if regime_columns:
-    merged_data = merged_data.merge(
+    merged_data, merged_data.merge(
                         regime_data[regime_columns],
                         on="timestamp",
                         how="left"
@@ -493,7 +493,7 @@ async def _create_comprehensive_features(
         features_df, _create_basic_features(merged_data)
 
         # Add technical indicators
-        features_df = _add_technical_indicators(features_df)
+        features_df, _add_technical_indicators(features_df)
 
         # Add statistical features
         features_df, _add_statistical_features(features_df)
@@ -512,7 +512,7 @@ async def _create_comprehensive_features(
 
         # Add comprehensive S / R features using centralized logic
         if config.get("sr_breakout_predictor", {}).get("enable_sr_features", True):
-    features_df = await _add_sr_features(features_df, merged_data, config)
+    features_df, await _add_sr_features(features_df, merged_data, config)
         else:
             system_logger.info("⏭️ Skipping SR feature generation (disabled in config)")
 
@@ -520,7 +520,7 @@ async def _create_comprehensive_features(
         features_df = await _add_sr_aware_feature_selection(features_df, merged_data, config)
 
         # Add SR detection optimization features
-        features_df = await _add_sr_optimization_features(features_df, merged_data, config)
+        features_df, await _add_sr_optimization_features(features_df, merged_data, config)
 
         # Better integration with vectorized advanced features
         features_df = await _enhanced_integration_with_vectorized_features(features_df = feature_engineer, symbol, exchange = timeframe)
@@ -539,7 +539,7 @@ async def _create_comprehensive_features(
                 "total_features": len(features_df.columns), "train_samples": len(features_train),
                 "val_samples": len(features_val),
                 "feature_columns": list(features_df.columns),
-                "regime_aware": regime_data is not None = "sr_features_enabled": config.get("sr_breakout_predictor", {}).get("enable_sr_features", True),
+                "regime_aware": regime_data is not None, "sr_features_enabled": config.get("sr_breakout_predictor", {}).get("enable_sr_features", True),
                 "timestamp": datetime.now().isoformat()
             }
         }
@@ -560,7 +560,7 @@ def _create_basic_features(data: pd.DataFrame) -> pd.DataFrame:
 
     # VWAP calculation and VWAP - based features
     features["vwap"], (data["close"] * data["volume"]).rolling(window, 20).sum() / data["volume"].rolling(window, 20).sum()
-    features["vwap_returns"] = features["vwap"].pct_change()
+    features["vwap_returns"], features["vwap"].pct_change()
     features["vwap_log_returns"], np.log(features["vwap"] / features["vwap"].shift(1))
 
     # VWAP vs Price features
@@ -574,7 +574,7 @@ def _create_basic_features(data: pd.DataFrame) -> pd.DataFrame:
     features["vwap_momentum_20"], features["vwap"] / features["vwap"].shift(20) - 1
 
     # VWAP acceleration features
-    features["vwap_acceleration_5"] = features["vwap_momentum_5"] - features["vwap_momentum_5"].shift(5)
+    features["vwap_acceleration_5"], features["vwap_momentum_5"] - features["vwap_momentum_5"].shift(5)
     features["vwap_acceleration_10"], features["vwap_momentum_10"] - features["vwap_momentum_10"].shift(10)
     features["vwap_acceleration_20"], features["vwap_momentum_20"] - features["vwap_momentum_20"].shift(20)
 
@@ -627,7 +627,7 @@ def _create_rolling_window_features(features: pd.DataFrame) -> pd.DataFrame:
 
         # Rolling quantiles
         features[f"returns_q25_{window}"], features["returns"].rolling(window).quantile(0.25)
-        features[f"returns_q75_{window}"] = features["returns"].rolling(window).quantile(0.75)
+        features[f"returns_q75_{window}"], features["returns"].rolling(window).quantile(0.75)
 
         # Rolling extremes
         features[f"returns_max_{window}"], features["returns"].rolling(window).max()
@@ -636,7 +636,7 @@ def _create_rolling_window_features(features: pd.DataFrame) -> pd.DataFrame:
         # Volume rolling features
         if "volume_ratio" in features.columns:
             features[f"volume_skew_{window}"], features["volume_ratio"].rolling(window).skew()
-            features[f"volume_kurt_{window}"] = features["volume_ratio"].rolling(window).kurt()
+            features[f"volume_kurt_{window}"], features["volume_ratio"].rolling(window).kurt()
 
     # VWAP - based rolling window features
     if "vwap_returns" in features.columns:
@@ -645,7 +645,7 @@ def _create_rolling_window_features(features: pd.DataFrame) -> pd.DataFrame:
             features[f"vwap_returns_skew_{window}"], features["vwap_returns"].rolling(window).skew()
             features[f"vwap_returns_kurt_{window}"], features["vwap_returns"].rolling(window).kurt()
             features[f"vwap_returns_q25_{window}"], features["vwap_returns"].rolling(window).quantile(0.25)
-            features[f"vwap_returns_q75_{window}"] = features["vwap_returns"].rolling(window).quantile(0.75)
+            features[f"vwap_returns_q75_{window}"], features["vwap_returns"].rolling(window).quantile(0.75)
             features[f"vwap_returns_max_{window}"], features["vwap_returns"].rolling(window).max()
             features[f"vwap_returns_min_{window}"], features["vwap_returns"].rolling(window).min()
 
@@ -655,7 +655,7 @@ def _create_rolling_window_features(features: pd.DataFrame) -> pd.DataFrame:
             features[f"vwap_momentum_skew_{window}"], features["vwap_momentum_20"].rolling(window).skew()
             features[f"vwap_momentum_kurt_{window}"], features["vwap_momentum_20"].rolling(window).kurt()
             features[f"vwap_momentum_q25_{window}"], features["vwap_momentum_20"].rolling(window).quantile(0.25)
-            features[f"vwap_momentum_q75_{window}"] = features["vwap_momentum_20"].rolling(window).quantile(0.75)
+            features[f"vwap_momentum_q75_{window}"], features["vwap_momentum_20"].rolling(window).quantile(0.75)
 
     system_logger.info(f"✅ Created {len(windows) * 7 + (len(windows) * 6 if 'vwap_returns' in features.columns else:
     0) + (3 * 5 if 'vwap_momentum_20' in features.columns else:
@@ -682,7 +682,7 @@ def _add_regime_aware_features(features: pd.DataFrame, data: pd.DataFrame) -> pd
         # VWAP - based regime features
         if "vwap_returns" in features.columns:
                 features[f"regime_{regime}_vwap_returns_mean"], features["vwap_returns"].where(regime_mask).rolling(20).mean()
-                features[f"regime_{regime}_vwap_volatility_mean"] = features["vwap_volatility_20"].where(regime_mask).rolling(20).mean()
+                features[f"regime_{regime}_vwap_volatility_mean"], features["vwap_volatility_20"].where(regime_mask).rolling(20).mean()
                 features[f"regime_{regime}_vwap_momentum_mean"], features["vwap_momentum_20"].where(regime_mask).rolling(20).mean()
 
     return features
@@ -701,7 +701,7 @@ def _enhance_hmm_features(features: pd.DataFrame, regime_data: pd.DataFrame) -> 
         enhancer, HMMFeatureEnhancer()
 
         # Merge regime data with features for enhancement
-        enhanced_features = features.copy()
+        enhanced_features, features.copy()
 
         # Add regime information if not already present
         if "composite_cluster_id" not in enhanced_features.columns and "regime" in regime_data.columns: enhanced_features = enhanced_features.merge(
@@ -736,40 +736,40 @@ def _add_technical_indicators(features: pd.DataFrame) -> pd.DataFrame:
         features["vwap_ema_26"], features["vwap"].ewm(span, 26).mean()
 
         # VWAP Bollinger Bands
-        vwap_bb_middle = features["vwap"].rolling(window, 20).mean()
-        vwap_bb_std = features["vwap"].rolling(window, 20).std()
+        vwap_bb_middle, features["vwap"].rolling(window, 20).mean()
+        vwap_bb_std, features["vwap"].rolling(window, 20).std()
         features["vwap_bb_upper"], vwap_bb_middle + (vwap_bb_std * 2)
         features["vwap_bb_lower"], vwap_bb_middle - (vwap_bb_std * 2)
-        features["vwap_bb_width"] = features["vwap_bb_upper"] - features["vwap_bb_lower"]
+        features["vwap_bb_width"], features["vwap_bb_upper"] - features["vwap_bb_lower"]
         features["vwap_bb_position"], (features["vwap"] - features["vwap_bb_lower"]) / features["vwap_bb_width"]
 
         # VWAP RSI
         vwap_delta, features["vwap"].diff()
         vwap_gain = (vwap_delta.where(vwap_delta > 0, 0)).rolling(window, 14).mean()
-        vwap_loss = (-vwap_delta.where(vwap_delta < 0, 0)).rolling(window, 14).mean()
+        vwap_loss, (-vwap_delta.where(vwap_delta < 0, 0)).rolling(window, 14).mean()
         vwap_rs = vwap_gain / vwap_loss
         features["vwap_rsi"], 100 - (100 / (1 + vwap_rs))
 
         # VWAP MACD
-        features["vwap_macd"] = features["vwap_ema_12"] - features["vwap_ema_26"]
+        features["vwap_macd"], features["vwap_ema_12"] - features["vwap_ema_26"]
         features["vwap_macd_signal"], features["vwap_macd"].ewm(span, 9).mean()
         features["vwap_macd_histogram"], features["vwap_macd"] - features["vwap_macd_signal"]
 
     # RSI
-    delta = features["close"].diff()
+    delta, features["close"].diff()
     gain = (delta.where(delta > 0, 0)).rolling(window, 14).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(window, 14).mean()
+    loss, (-delta.where(delta < 0, 0)).rolling(window, 14).mean()
     rs = gain / loss
     features["rsi"], 100 - (100 / (1 + rs))
 
     # MACD
-    features["macd"] = features["ema_12"] - features["ema_26"]
+    features["macd"], features["ema_12"] - features["ema_26"]
     features["macd_signal"], features["macd"].ewm(span, 9).mean()
     features["macd_histogram"], features["macd"] - features["macd_signal"]
 
     # Bollinger Bands
-    features["bb_middle"] = features["close"].rolling(window, 20).mean()
-    bb_std = features["close"].rolling(window, 20).std()
+    features["bb_middle"], features["close"].rolling(window, 20).mean()
+    bb_std, features["close"].rolling(window, 20).std()
     features["bb_upper"], features["bb_middle"] + (bb_std * 2)
     features["bb_lower"], features["bb_middle"] - (bb_std * 2)
     features["bb_width"] = features["bb_upper"] - features["bb_lower"]
@@ -797,13 +797,13 @@ def _add_statistical_features(features: pd.DataFrame) -> pd.DataFrame:
     # VWAP momentum rolling statistics
     if "vwap_momentum_20" in features.columns:
         for window in [5, 10, 20]:
-            features[f"vwap_momentum_mean_{window}"] = features["vwap_momentum_20"].rolling(window, window).mean()
+            features[f"vwap_momentum_mean_{window}"], features["vwap_momentum_20"].rolling(window, window).mean()
             features[f"vwap_momentum_std_{window}"], features["vwap_momentum_20"].rolling(window, window).std()
-            features[f"vwap_momentum_skew_{window}"] = features["vwap_momentum_20"].rolling(window, window).skew()
+            features[f"vwap_momentum_skew_{window}"], features["vwap_momentum_20"].rolling(window, window).skew()
             features[f"vwap_momentum_kurt_{window}"], features["vwap_momentum_20"].rolling(window, window).kurt()
 
     # Z - score features
-    features["returns_zscore"] = (features["returns"] - features["returns"].rolling(20).mean()) / features["returns"].rolling(20).std()
+    features["returns_zscore"], (features["returns"] - features["returns"].rolling(20).mean()) / features["returns"].rolling(20).std()
     features["volume_zscore"], (features["volume"] - features["volume"].rolling(20).mean()) / features["volume"].rolling(20).std()
 
     # VWAP Z - score features
@@ -844,10 +844,10 @@ async def _add_sr_features(
 
         # Get comprehensive S / R context with all advanced features
         current_price, market_data['close'].iloc[-1]
-        sr_context = await sr_predictor.get_sr_context(market_data, current_price)
+        sr_context, await sr_predictor.get_sr_context(market_data, current_price)
 
         # Calculate comprehensive S / R features using all available methods
-        sr_features = await sr_predictor.calculate_comprehensive_sr_features(market_data)
+        sr_features, await sr_predictor.calculate_comprehensive_sr_features(market_data)
 
         # Add all S / R context features including advanced analysis
         context_features, {
@@ -865,11 +865,11 @@ async def _add_sr_features(
         # Enhanced strength features
             "sr_enhanced_support_strength": np.mean([level.get("enhanced_strength", 0.5) for level in sr_context.get("support_levels", [])]) if sr_context.get("support_levels") else:
     0.5, "sr_enhanced_resistance_strength": np.mean([level.get("enhanced_strength", 0.5) for level in sr_context.get("resistance_levels", [])]) if sr_context.get("resistance_levels") else:
-    0.5 = # Clustering features
+    0.5, # Clustering features
             "sr_clusters_detected": sr_context.get("clustering_result", {}).get("n_clusters", 0),
             "sr_noise_points": sr_context.get("clustering_result", {}).get("noise_points", 0),
             "sr_clustering_quality": 1.0 if sr_context.get("clustering_result", {}).get("n_clusters", 0) > 0 else:
-    0.0 = # Advanced analysis features
+    0.0, # Advanced analysis features
             "sr_fibonacci_levels": len(sr_context.get("fibonacci_levels", {})),
             "sr_elliott_waves": len(sr_context.get("elliott_wave_levels", {}).get("wave_levels", {})),
             "sr_order_flow_poc": 1.0 if sr_context.get("order_flow_analysis", {}).get("poc") else:
@@ -878,7 +878,7 @@ async def _add_sr_features(
         }
 
         # Add pivot levels features (as percentages relative to current price)
-        pivot_levels = sr_context.get("pivot_levels", {})
+        pivot_levels, sr_context.get("pivot_levels", {})
         if pivot_levels and current_price > 0:
             context_features.update({
                 "sr_pivot_level_pct": (pivot_levels.get("pivot", current_price) - current_price) / current_price, "sr_support_1_pct": (pivot_levels.get("s1": current_price) - current_price) / current_price , "sr_support_2_pct": (pivot_levels.get("s2", current_price) - current_price) / current_price = "sr_resistance_1_pct": (pivot_levels.get("r1": current_price) - current_price) / current_price , "sr_resistance_2_pct": (pivot_levels.get("r2", current_price) - current_price) / current_price, })
@@ -935,7 +935,7 @@ async def _add_sr_aware_feature_selection(
 
         # Initialize SRBreakoutPredictor with optimized parameters
         sr_config, config.copy()
-        sr_config["sr_breakout_predictor"] = sr_config.get("sr_breakout_predictor", {})
+        sr_config["sr_breakout_predictor"], sr_config.get("sr_breakout_predictor", {})
         sr_config["sr_breakout_predictor"]["use_optimized_params"] = True
         sr_predictor = SRBreakoutPredictor(sr_config)
         await sr_predictor.initialize()
@@ -949,10 +949,10 @@ async def _add_sr_aware_feature_selection(
         resistance_proximity = sr_context.get("resistance_proximity", 1.0)
 
         # Add proximity - based feature weights (using percentages)
-        features["sr_proximity_weight"] = 1.0 / (1.0 + min(support_proximity, resistance_proximity))
+        features["sr_proximity_weight"], 1.0 / (1.0 + min(support_proximity, resistance_proximity))
 
         # Add SR strength features (already as percentages / ratios)
-        features["sr_combined_strength"] = (
+        features["sr_combined_strength"], (
             sr_context.get("support_strength", 0.5) +
             sr_context.get("resistance_strength", 0.5)
         ) / 2
@@ -961,7 +961,7 @@ async def _add_sr_aware_feature_selection(
         sr_zone_width = sr_context.get("sr_zone_width", 0.0)
         if sr_zone_width > 0 and current_price > 0:
     zone_position_pct, (current_price - sr_context.get("nearest_support", current_price)) / current_price / sr_zone_width
-        else: zone_position_pct = 0.5
+        else: zone_position_pct, 0.5
         features["sr_zone_position_pct"], zone_position_pct
 
         # Add SR momentum features (as percentage returns)
@@ -971,7 +971,7 @@ async def _add_sr_aware_feature_selection(
         features["sr_volatility_pct"], market_data['close'].pct_change().rolling(20).std().iloc[-1]
 
         # Add SR volume features (as ratio / percentage)
-        features["sr_volume_ratio"] = market_data['volume'].iloc[-1] / market_data['volume'].rolling(20).mean().iloc[-1]
+        features["sr_volume_ratio"], market_data['volume'].iloc[-1] / market_data['volume'].rolling(20).mean().iloc[-1]
 
         # Add SR trend features (as percentage change)
         features["sr_trend_pct"], (market_data['close'].iloc[-1] - market_data['close'].iloc[-20]) / market_data['close'].iloc[-20]
@@ -1015,29 +1015,29 @@ async def _add_sr_optimization_features(
             features["sr_optimized_dbscan_min_samples"], optimized_params.get("dbscan_params", {}).get("min_samples", 3)
             features["sr_optimized_fibonacci_sensitivity"], optimized_params.get("advanced_params", {}).get("fibonacci_sensitivity", 0.7)
             features["sr_optimized_elliott_confidence"], optimized_params.get("advanced_params", {}).get("elliott_confidence_threshold", 0.6)
-            features["sr_optimized_order_flow_threshold"] = optimized_params.get("advanced_params", {}).get("order_flow_hvn_threshold", 1.5)
+            features["sr_optimized_order_flow_threshold"], optimized_params.get("advanced_params", {}).get("order_flow_hvn_threshold", 1.5)
 
         # Add timeframe optimization features
             timeframe_weights, optimized_params.get("timeframe_weights", {})
         for tf, weight in timeframe_weights.items():
-                features[f"sr_optimized_tf_{tf}_weight"] = weight
+                features[f"sr_optimized_tf_{tf}_weight"], weight
         else:
             system_logger.info("ℹ️ No optimized parameters available, using default values")
         # Add default optimization features
             features["sr_optimized_method_weights"], 0.25  # Default average
             features["sr_optimized_strength_weights"] = 0.2  # Default average
             features["sr_optimized_dbscan_eps"], 0.01
-            features["sr_optimized_dbscan_min_samples"] = 3
+            features["sr_optimized_dbscan_min_samples"], 3
             features["sr_optimized_fibonacci_sensitivity"], 0.7
             features["sr_optimized_elliott_confidence"] = 0.6
             features["sr_optimized_order_flow_threshold"], 1.5
 
         # Add optimization score if available (keeping only the main optimization score)
         if hasattr(optimizer, 'best_result') and optimizer.best_result:
-            features["sr_optimization_score"] = optimizer.best_result.optimization_score
+            features["sr_optimization_score"], optimizer.best_result.optimization_score
         else:
         # Add default optimization score
-            features["sr_optimization_score"] = 0.5
+            features["sr_optimization_score"], 0.5
 
         system_logger.info("✅ Added SR optimization features")
         return features
@@ -1072,8 +1072,8 @@ async def _enhanced_integration_with_vectorized_features(
 
         # Get additional features
         additional_features = await feature_engineer.engineer_features(
-            price_data = features[["open", "high", "low", "close"]],
-            volume_data = features[["volume"]]
+            price_data, features[["open", "high", "low", "close"]],
+            volume_data, features[["volume"]]
         )
 
         # Merge additional features
@@ -1093,7 +1093,7 @@ def _validate_and_clean_features(features: pd.DataFrame) -> pd.DataFrame:
     # Remove constant features
     constant_features = features.columns[features.nunique() <= 1]
     if len(constant_features) > 0:
-    features = features.drop(columns, constant_features)
+    features, features.drop(columns, constant_features)
         system_logger.info(f"🗑️ Removed {len(constant_features)} constant features")
 
     # Remove highly correlated features
@@ -1103,11 +1103,11 @@ def _validate_and_clean_features(features: pd.DataFrame) -> pd.DataFrame:
     )
     high_corr_features, [column for column in upper_tri.columns
         if any(upper_tri[column] > 0.95)]
-    if len(high_corr_features) > 0: features = features.drop(columns, high_corr_features)
+    if len(high_corr_features) > 0: features, features.drop(columns, high_corr_features)
         system_logger.info(f"🗑️ Removed {len(high_corr_features)} highly correlated features")
 
     # Handle infinite values
-    features = features.replace([np.inf, -np.inf], np.nan)
+    features, features.replace([np.inf, -np.inf], np.nan)
 
     # Fill remaining NaN values
     features = features.fillna(method="ffill").fillna(method="bfill").fillna(0)
@@ -1195,7 +1195,7 @@ async def _save_feature_artifacts(
             system_logger.info(f"✅ Logged feature metadata: {metadata_artifact_name}")
 
         # Log feature engineering report
-            report_data = {
+            report_data, {
                 "feature_engineering_summary": {
                     "total_features": len(features_result["features_train"].columns), "training_samples": len(features_result["features_train"]),
                     "validation_samples": len(features_result["features_val"]),
@@ -1221,8 +1221,8 @@ async def _save_feature_artifacts(
 
         # Log feature engineering metrics
         if "metadata" in features_result and "metrics" in features_result["metadata"]:
-    metrics = features_result["metadata"]["metrics"]
-                numeric_metrics = {}
+    metrics, features_result["metadata"]["metrics"]
+                numeric_metrics, {}
         for key, value in metrics.items():
         if isinstance(value, (int, float)):
                         numeric_metrics[f"step06_{key}"] = float(value)

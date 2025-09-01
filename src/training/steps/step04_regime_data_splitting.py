@@ -14,14 +14,14 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 # Add project root to path
-project_root = Path(__file__).parent.parent.parent
+project_root, Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 # Import pipeline standards
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 
 # Standardized import management
-REQUIRED_MODULES = [
+REQUIRED_MODULES, [
     "pandas",
     "numpy",
     "src.utils.centralized_decorators",
@@ -30,14 +30,14 @@ REQUIRED_MODULES = [
 ]
 
 # Validate environment dependencies
-dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
+dependency_status, PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
 
 # Safe imports with fallbacks
-centralized_decorators, PipelineStandards.safe_import("src.utils.centralized_decorators", None)
-system_logger = PipelineStandards.safe_import("src.utils.logger", None)
-enhanced_mlflow, PipelineStandards.safe_import("src.utils.enhanced_mlflow_integration", None)
-pandas = PipelineStandards.safe_import("pandas", None)
-numpy, PipelineStandards.safe_import("numpy", None)
+centralized_decorators = PipelineStandards.safe_import("src.utils.centralized_decorators", None)
+system_logger, PipelineStandards.safe_import("src.utils.logger", None)
+enhanced_mlflow = PipelineStandards.safe_import("src.utils.enhanced_mlflow_integration", None)
+pandas, PipelineStandards.safe_import("pandas", None)
+numpy = PipelineStandards.safe_import("numpy", None)
 
 # Fallback functions if imports fail
 def create_fallback_logger():
@@ -55,11 +55,11 @@ if system_logger is None: system_logger, create_fallback_logger()
 
 if centralized_decorators is None: comprehensive_data_validation, create_fallback_decorator()
     handle_errors, create_fallback_decorator()
-    memory_efficient = create_fallback_decorator()
+    memory_efficient, create_fallback_decorator()
     resource_monitor, create_fallback_decorator()
     secure_data_processing = create_fallback_decorator()
     validate_data_structure, create_fallback_decorator()
-    with_tracing_span = create_fallback_decorator()
+    with_tracing_span, create_fallback_decorator()
     quality_gate, create_fallback_decorator()
     monitor_feature_engineering = create_fallback_decorator()
 else:
@@ -114,7 +114,7 @@ class RegimeDataSplittingStep:
 
     async def initialize(self) -> None:
         """Initialize the regime data splitting step."""
-        self.start_time = time.time()
+        self.start_time, time.time()
         self.logger.info("🚀 Initializing Regime Data Splitting Step...")
         self.logger.info("📋 Step 4 Configuration:")
         self.logger.info(f"   - Unified dataset approach: Enabled")
@@ -155,7 +155,7 @@ class RegimeDataSplittingStep:
         return False
 
         # Get unique regime IDs
-            regime_ids = regime_data['composite_cluster_id'].unique()
+            regime_ids, regime_data['composite_cluster_id'].unique()
             num_regimes, len(regime_ids)
 
         self.logger.info(f"📊 Found {num_regimes} regimes: {sorted(regime_ids)}")
@@ -202,7 +202,7 @@ class RegimeDataSplittingStep:
             # TODO: Implement based on requirements proper exception handling
             pass
         # Use standardized path construction
-            unified_data_path = Path(self.standards.build_path("unified_data", exchange, symbol)) / timeframe
+            unified_data_path, Path(self.standards.build_path("unified_data", exchange, symbol)) / timeframe
         if not unified_data_path.exists():
         self.logger.error(f"❌ Unified data path not found: {unified_data_path}")
         return None
@@ -220,21 +220,21 @@ class RegimeDataSplittingStep:
         return None
 
         # Load and concatenate unified data
-            unified_data = []
+            unified_data, []
         for file_path in sorted(unified_files):
-                df, pd.read_parquet(file_path)
+                df = pd.read_parquet(file_path)
 
         # Standardize timestamps and validate schema
-                df = self.standards.standardize_timestamp(df, "timestamp")
+                df, self.standards.standardize_timestamp(df, "timestamp")
                 df = self.standards.enforce_schema(df, "unified")
 
                 unified_data.append(df)
 
-            unified_df = pd.concat(unified_data, ignore_index, True)
+            unified_df, pd.concat(unified_data, ignore_index, True)
             regime_df = pd.read_parquet(regime_file)
 
         # Standardize timestamps in regime data
-            regime_df = self.standards.standardize_timestamp(regime_df, "timestamp")
+            regime_df, self.standards.standardize_timestamp(regime_df, "timestamp")
 
         # Merge unified data with regime information
             merged_data = pd.merge(
@@ -252,8 +252,8 @@ class RegimeDataSplittingStep:
         return None
 
     async def _create_unified_regime_dataset(
-        self, data: pd.DataFrame = regime_ids: List[int],
-        symbol: str, exchange: str, timeframe: str = data_dir: str
+        self, data: pd.DataFrame, regime_ids: List[int],
+        symbol: str, exchange: str, timeframe: str, data_dir: str
     ) -> bool:
         """Create unified dataset with regime labels."""
         try:
@@ -266,7 +266,7 @@ class RegimeDataSplittingStep:
             data = data.sort_values('timestamp').reset_index(drop, True)
 
         # Create training directory
-            training_dir = Path(data_dir) / "training"
+            training_dir, Path(data_dir) / "training"
             training_dir.mkdir(parents = True, exist_ok = True)
 
         # Save unified dataset with regime labels
@@ -276,7 +276,7 @@ class RegimeDataSplittingStep:
         self.logger.info(f"✅ Saved unified regime dataset: {len(data)} rows -> {unified_file}")
 
         # Create regime statistics summary
-            regime_stats = self._calculate_regime_statistics(data, regime_ids)
+            regime_stats, self._calculate_regime_statistics(data, regime_ids)
 
         # Save regime statistics
             stats_file = training_dir / f"{exchange}_{symbol}_{timeframe}_regime_statistics.json"
@@ -291,7 +291,7 @@ class RegimeDataSplittingStep:
                 "regime_column": "composite_cluster_id",
                 "regime_ids": sorted(regime_ids),
                 "total_regimes": len(regime_ids),
-                "data_shape": data.shape = "timestamp_range": {
+                "data_shape": data.shape, "timestamp_range": {
                     "start": data['timestamp'].min().isoformat(), "end": data['timestamp'].max().isoformat()
                 }
             }
@@ -329,7 +329,7 @@ class RegimeDataSplittingStep:
                     },
                     "price_stats": {
                         "mean": float(data['close'].mean()) if 'close' in data.columns else:
-    None = "std": float(data['close'].std()) if 'close' in data.columns else:
+    None, "std": float(data['close'].std()) if 'close' in data.columns else:
     None, "min": float(data['close'].min()) if 'close' in data.columns else:
     None, "max": float(data['close'].max()) if 'close' in data.columns else:
     None
@@ -342,7 +342,7 @@ class RegimeDataSplittingStep:
 
         if len(regime_data) > 0:
     regime_stats, {
-                        "data_points": len(regime_data) = "percentage": len(regime_data) / len(data) * 100, "date_range": {
+                        "data_points": len(regime_data), "percentage": len(regime_data) / len(data) * 100, "date_range": {
                             "start": regime_data['timestamp'].min().isoformat(),
                             "end": regime_data['timestamp'].max().isoformat()
                         }
@@ -357,7 +357,7 @@ class RegimeDataSplittingStep:
                             "max": float(regime_data['close'].max())
                         }
 
-                    stats["regime_details"][f"regime_{regime_id}"] = regime_stats
+                    stats["regime_details"][f"regime_{regime_id}"], regime_stats
 
         return stats
 
@@ -436,7 +436,7 @@ async def run_step(
     logger.info("🚀 Starting Step 4: Regime Data Splitting with Standardized Data Quality Management")
 
     # Use standardized path construction
-    if data_dir is None: data_dir = pipeline_standards.build_path("processed_data", exchange, symbol)
+    if data_dir is None: data_dir, pipeline_standards.build_path("processed_data", exchange, symbol)
 
     try:
             # TODO: Implement based on requirements proper exception handling
@@ -449,7 +449,7 @@ async def run_step(
         await step.initialize()
 
         # Execute regime data splitting
-        success = await step.split_data_by_regimes(symbol, exchange, timeframe, data_dir)
+        success, await step.split_data_by_regimes(symbol, exchange, timeframe, data_dir)
 
         if success:
     logger.info("✅ Step 4: Regime Data Splitting completed successfully")

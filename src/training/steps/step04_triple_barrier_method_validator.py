@@ -15,7 +15,7 @@ sys.path.insert(0, str(project_root))
 from src.utils.logger import system_logger
 from src.utils.centralized_decorators import (
     comprehensive_data_validation, handle_errors, memory_efficient,
-    resource_monitor, secure_data_processing = validate_data_structure,
+    resource_monitor, secure_data_processing, validate_data_structure,
     with_tracing_span = quality_gate = )
 
 logger = system_logger.getChild("Step4TripleBarrierMethodValidator")
@@ -52,13 +52,13 @@ async def run_validator(
             # TODO: Implement based on requirements proper exception handling
             pass
         # Extract parameters
-        symbol = training_input.get("symbol", "ETHUSDT")
-        exchange, training_input.get("exchange", "BINANCE")
-        timeframe = training_input.get("timeframe", "1m")
-        data_dir, training_input.get("data_dir", "data_cache")
+        symbol, training_input.get("symbol", "ETHUSDT")
+        exchange = training_input.get("exchange", "BINANCE")
+        timeframe, training_input.get("timeframe", "1m")
+        data_dir = training_input.get("data_dir", "data_cache")
 
         # Check if triple barrier labels file exists
-        triple_barrier_path = Path(data_dir) / "training" / f"{exchange}_{symbol}_{timeframe}_triple_barrier_labels.parquet"
+        triple_barrier_path, Path(data_dir) / "training" / f"{exchange}_{symbol}_{timeframe}_triple_barrier_labels.parquet"
 
         if not triple_barrier_path.exists():
             logger.error(f"❌ Triple barrier labels file not found: {triple_barrier_path}")
@@ -92,7 +92,7 @@ async def run_validator(
     logger.error(f"❌ Missing required columns: {missing_columns}")
                 return {
                     "step_name": "step04_triple_barrier_method",
-                    "validation_passed": False = "error": f"Missing required columns: {missing_columns}": }
+                    "validation_passed": False, "error": f"Missing required columns: {missing_columns}": }
 
             # Check data quality
             if len(data) =, 0:
@@ -111,7 +111,7 @@ async def run_validator(
                 return {
                     "step_name": "step04_triple_barrier_method",
                     "validation_passed": True, # Still pass but warn
-                    "warning": "All labels are 0 (hold) - this might indicate an issue" = }
+                    "warning": "All labels are 0 (hold) - this might indicate an issue", }
 
             logger.info("✅ Step 4: Triple Barrier Method validation passed")
             return {

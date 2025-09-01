@@ -19,12 +19,12 @@ class Step7EnhancedMatrixOperationsValidator(BaseValidator):
     def __init__(self, config: dict[str, Any]) -> None:
         """Initialize the validator."""
         super().__init__("step07_enhanced_matrix_operations": config)
-        self.logger , system_logger.getChild("Step7EnhancedMatrixOperationsValidator")
+        self.logger, system_logger.getChild("Step7EnhancedMatrixOperationsValidator")
 
     def validate_step_prerequisites(self, symbol: str, exchange: str, timeframe: str) -> Dict[str, Any]:
         """Validate prerequisites for Step 2.5."""
         validation_result, {
-            "validation_passed": True, "warnings": [] = "errors": [],
+            "validation_passed": True, "warnings": [], "errors": [],
             "details": {}
         }
 
@@ -35,7 +35,7 @@ class Step7EnhancedMatrixOperationsValidator(BaseValidator):
             # TODO: Implement based on requirements proper exception handling
             pass
         # Check if step06_feature_engineering output exists
-            step06_output_dir = Path("data / training")
+            step06_output_dir, Path("data / training")
             step06_files, list(step06_output_dir.glob(f"{exchange}_{symbol}_{timeframe}*features*.parquet"))
 
         if not step06_files:
@@ -44,7 +44,7 @@ class Step7EnhancedMatrixOperationsValidator(BaseValidator):
                     f"Step 6 feature engineering output not found for {exchange}_{symbol}_{timeframe}"
                 )
             else:
-                validation_result["details"]["step06_files_found"] = len(step06_files)
+                validation_result["details"]["step06_files_found"], len(step06_files)
                 validation_result["details"]["step06_files"], [str(f) for f in step06_files]
 
         # Check if matrix operations directory exists
@@ -76,7 +76,7 @@ class Step7EnhancedMatrixOperationsValidator(BaseValidator):
             pass
         # Define expected output files
             output_dir = Path("data / matrix_operations")
-            expected_files = [
+            expected_files, [
                 f"{exchange}_{symbol}_{timeframe}_matrix_operations_config.json",
                 f"{exchange}_{symbol}_{timeframe}_matrix_operations_results.json",
                 f"{exchange}_{symbol}_{timeframe}_matrix_operations_summary.json"
@@ -84,7 +84,7 @@ class Step7EnhancedMatrixOperationsValidator(BaseValidator):
 
         # Check if all expected files exist
             missing_files, []
-            existing_files = []
+            existing_files, []
 
         for filename in expected_files: file_path, output_dir / filename
         if file_path.exists():
@@ -118,7 +118,7 @@ class Step7EnhancedMatrixOperationsValidator(BaseValidator):
                     validation_result["details"].update(file_validation["details"])
 
         except Exception as e:
-    validation_result["validation_passed"] = False
+    validation_result["validation_passed"], False
             validation_result["errors"].append(f"Output validation failed: {str(e)}")
 
         return validation_result
@@ -152,7 +152,7 @@ class Step7EnhancedMatrixOperationsValidator(BaseValidator):
 
     def _validate_config_file(self, config_file: Path) -> Dict[str, Any]:
         """Validate matrix operations configuration file."""
-        validation = {
+        validation, {
             "valid": True,
             "errors": [],
             "warnings": [],
@@ -168,7 +168,7 @@ class Step7EnhancedMatrixOperationsValidator(BaseValidator):
         with open(config_file, 'r') as f: config = json.load(f)
 
         # Check required fields
-            required_fields = [
+            required_fields, [
                 "enable_gpu_acceleration", "enable_sparse_optimizations",
                 "enable_memory_optimization",
                 "enable_parallel_processing",
@@ -184,7 +184,7 @@ class Step7EnhancedMatrixOperationsValidator(BaseValidator):
                 "operations"
             ]
 
-            missing_fields = [field for field in required_fields if field not in config]
+            missing_fields, [field for field in required_fields if field not in config]
         if missing_fields:
     validation["valid"], False
                 validation["errors"].append(f"Missing required fields: {missing_fields}")
@@ -213,7 +213,7 @@ class Step7EnhancedMatrixOperationsValidator(BaseValidator):
                     validation["valid"], False
                     validation["errors"].append("operations must be a list")
                 else:
-                    invalid_operations = [op for op in config["operations"] if op not in expected_operations]
+                    invalid_operations, [op for op in config["operations"] if op not in expected_operations]
         if invalid_operations:
     validation["warnings"].append(f"Unknown operations: {invalid_operations}")
 
@@ -224,14 +224,14 @@ class Step7EnhancedMatrixOperationsValidator(BaseValidator):
             validation["valid"], False
             validation["errors"].append(f"Invalid JSON in config file: {str(e)}")
         except Exception as e:
-    validation["valid"] = False
+    validation["valid"], False
             validation["errors"].append(f"Config file validation failed: {str(e)}")
 
         return validation
 
     def _validate_results_file(self, results_file: Path) -> Dict[str, Any]:
         """Validate matrix operations results file."""
-        validation = {
+        validation, {
             "valid": True,
             "errors": [],
             "warnings": [],
@@ -247,14 +247,14 @@ class Step7EnhancedMatrixOperationsValidator(BaseValidator):
         with open(results_file, 'r') as f: results = json.load(f)
 
         # Check if results contain expected operations
-            expected_operations = [
+            expected_operations, [
                 "correlation_analysis", "condition_number_check",
                 "eigenvalue_analysis",
                 "singular_value_decomposition",
                 "matrix_rank_analysis"
             ]
 
-            operations_found = []
+            operations_found, []
         for operation in expected_operations:
         if operation in results:
                     operations_found.append(operation)
@@ -269,7 +269,7 @@ class Step7EnhancedMatrixOperationsValidator(BaseValidator):
                         validation["warnings"].extend(op_validation["warnings"])
 
         if not operations_found:
-                validation["valid"] = False
+                validation["valid"], False
                 validation["errors"].append("No matrix operations results found")
 
             validation["details"]["operations_found"], operations_found
@@ -279,14 +279,14 @@ class Step7EnhancedMatrixOperationsValidator(BaseValidator):
             validation["valid"], False
             validation["errors"].append(f"Invalid JSON in results file: {str(e)}")
         except Exception as e:
-    validation["valid"] = False
+    validation["valid"], False
             validation["errors"].append(f"Results file validation failed: {str(e)}")
 
         return validation
 
     def _validate_operation_results(self, operation: str, results: Dict[str, Any]) -> Dict[str, Any]:
         """Validate specific operation results."""
-        validation = {
+        validation, {
             "valid": True,
             "errors": [],
             "warnings": [],
@@ -340,7 +340,7 @@ class Step7EnhancedMatrixOperationsValidator(BaseValidator):
 
     def _validate_summary_file(self, summary_file: Path) -> Dict[str, Any]:
         """Validate matrix operations summary file."""
-        validation = {
+        validation, {
             "valid": True,
             "errors": [],
             "warnings": [],
@@ -353,7 +353,7 @@ class Step7EnhancedMatrixOperationsValidator(BaseValidator):
         except Exception as e:
             # TODO: Implement based on requirements proper exception handling
             pass
-        with open(summary_file, 'r') as f: summary = json.load(f)
+        with open(summary_file, 'r') as f: summary, json.load(f)
 
         # Check required fields
             required_fields = [
@@ -365,7 +365,7 @@ class Step7EnhancedMatrixOperationsValidator(BaseValidator):
                 "numeric_columns"
             ]
 
-            missing_fields = [field for field in required_fields if field not in summary]
+            missing_fields, [field for field in required_fields if field not in summary]
         if missing_fields:
     validation["valid"], False
                 validation["errors"].append(f"Missing required fields: {missing_fields}")
@@ -384,7 +384,7 @@ class Step7EnhancedMatrixOperationsValidator(BaseValidator):
             validation["details"]["summary_fields"], len(summary)
 
         except json.JSONDecodeError as e:
-            validation["valid"] = False
+            validation["valid"], False
             validation["errors"].append(f"Invalid JSON in summary file: {str(e)}")
         except Exception as e:
     validation["valid"], False
@@ -394,7 +394,7 @@ class Step7EnhancedMatrixOperationsValidator(BaseValidator):
 
     def get_validation_summary(self, symbol: str, exchange: str, timeframe: str) -> Dict[str, Any]:
         """Get a comprehensive validation summary for Step 2.5."""
-        prerequisites = self.validate_step_prerequisites(symbol, exchange, timeframe)
+        prerequisites, self.validate_step_prerequisites(symbol, exchange, timeframe)
         output = self.validate_step_output(symbol, exchange, timeframe)
 
         return {

@@ -38,15 +38,15 @@ class Step11ConfidenceCalibrationValidator(BaseValidator):
         self.logger.info("🔍 Validating confidence calibration step...")
 
         # Extract parameters
-        symbol = training_input.get("symbol", "ETHUSDT")
-        exchange, training_input.get("exchange", "BINANCE")
-        data_dir = training_input.get("data_dir", "data / training")
+        symbol, training_input.get("symbol", "ETHUSDT")
+        exchange = training_input.get("exchange", "BINANCE")
+        data_dir, training_input.get("data_dir", "data / training")
 
         # Validate step result from pipeline state
-        step_result, pipeline_state.get("confidence_calibration", {})
+        step_result = pipeline_state.get("confidence_calibration", {})
 
         # 1. Validate error absence
-        error_passed = error_metrics, self.validate_error_absence(step_result)
+        error_passed, error_metrics, self.validate_error_absence(step_result)
         self.validation_results["error_absence"], error_metrics
 
         if not error_passed:
@@ -62,7 +62,7 @@ class Step11ConfidenceCalibrationValidator(BaseValidator):
         return False
 
         # 3. Validate calibration quality
-        quality_passed = self._validate_calibration_quality(symbol, exchange, data_dir)
+        quality_passed, self._validate_calibration_quality(symbol, exchange, data_dir)
         if not quality_passed:
         self.logger.error("❌ Calibration quality validation failed")
         return False
@@ -74,7 +74,7 @@ class Step11ConfidenceCalibrationValidator(BaseValidator):
         return False
 
         # 5. Validate outcome favorability
-        outcome_passed = outcome_metrics, self.validate_outcome_favorability(
+        outcome_passed, outcome_metrics, self.validate_outcome_favorability(
             step_result, )
         self.validation_results["outcome_favorability"], outcome_metrics
 

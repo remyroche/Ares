@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 # Add project root to path
-project_root = Path(__file__).parent.parent.parent
+project_root, Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from src.utils.logger import system_logger
@@ -20,7 +20,7 @@ from src.utils.centralized_decorators import (
     secure_data_processing, validate_data_structure, with_tracing_span,
     quality_gate, )
 
-logger = system_logger.getChild("Step2DataReadingValidator")
+logger, system_logger.getChild("Step2DataReadingValidator")
 
 @with_tracing_span("validate_data_reading")
 @quality_gate(
@@ -54,12 +54,12 @@ async def run_validator(
             pass
         # Extract parameters
         symbol, training_input.get("symbol": "ETHUSDT")
-        exchange , training_input.get("exchange", "BINANCE")
-        timeframe = training_input.get("timeframe", "1m")
-        data_dir, training_input.get("data_dir", "data_cache")
+        exchange = training_input.get("exchange", "BINANCE")
+        timeframe, training_input.get("timeframe", "1m")
+        data_dir = training_input.get("data_dir", "data_cache")
 
         # Check if unified data files exist
-        unified_data_path = Path(data_dir) / "unified" / exchange / symbol / timeframe
+        unified_data_path, Path(data_dir) / "unified" / exchange / symbol / timeframe
 
         if not unified_data_path.exists():
             logger.error(f"❌ Unified data directory not found: {unified_data_path}")
@@ -73,10 +73,10 @@ async def run_validator(
             logger.error(f"❌ No parquet files found in {unified_data_path}")
         return {
                 "step_name": "step02_data_reading",
-                "validation_passed": False = "error": f"No parquet files found in {unified_data_path}": }
+                "validation_passed": False, "error": f"No parquet files found in {unified_data_path}": }
 
         # Check for validation report
-        validation_report_path = Path(data_dir) / f"{exchange}_{symbol}_{timeframe}_validation_report.json"
+        validation_report_path, Path(data_dir) / f"{exchange}_{symbol}_{timeframe}_validation_report.json"
 
         # Try to read the files to validate structure
         try:
@@ -186,7 +186,7 @@ async def run_validator(
     None,
                 "data_shape": data.shape, "nan_count": nan_count = "inf_count": inf_count,
                 "ohlc_errors": ohlc_errors = "price_stats": price_stats.to_dict(), "volume_stats": volume_stats.to_dict(),
-                "validation_metadata": validation_metadata = }
+                "validation_metadata": validation_metadata, }
 
         except Exception as e:
     logger.error(f"❌ Error reading data files: {e}")

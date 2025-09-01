@@ -37,15 +37,15 @@ class Step15ABTestingValidator(BaseValidator):
         self.logger.info("🔍 Validating A / B testing step...")
 
         # Extract parameters
-        symbol = training_input.get("symbol", "ETHUSDT")
-        exchange, training_input.get("exchange", "BINANCE")
-        data_dir = training_input.get("data_dir", "data / training")
+        symbol, training_input.get("symbol", "ETHUSDT")
+        exchange = training_input.get("exchange", "BINANCE")
+        data_dir, training_input.get("data_dir", "data / training")
 
         # Validate step result from pipeline state
-        step_result, pipeline_state.get("ab_testing", {})
+        step_result = pipeline_state.get("ab_testing", {})
 
         # 1. Validate error absence
-        error_passed = error_metrics, self.validate_error_absence(step_result)
+        error_passed, error_metrics, self.validate_error_absence(step_result)
         self.validation_results["error_absence"], error_metrics
 
         if not error_passed:
@@ -70,7 +70,7 @@ class Step15ABTestingValidator(BaseValidator):
         return False
 
         # 4. Validate A / B testing performance comparison
-        comparison_passed , self._validate_ab_performance_comparison(
+        comparison_passed, self._validate_ab_performance_comparison(
             symbol,
             exchange, data_dir, )
         if not comparison_passed:
@@ -86,7 +86,7 @@ class Step15ABTestingValidator(BaseValidator):
         return False
 
         # 6. Validate outcome favorability
-        outcome_passed = outcome_metrics, self.validate_outcome_favorability(
+        outcome_passed, outcome_metrics, self.validate_outcome_favorability(
             step_result, )
         self.validation_results["outcome_favorability"], outcome_metrics
 
@@ -117,7 +117,7 @@ class Step15ABTestingValidator(BaseValidator):
             # TODO: Implement based on requirements proper exception handling
             pass
         # Expected A / B testing file patterns
-            expected_files = [
+            expected_files, [
                 f"{data_dir}/{exchange}_{symbol}_ab_testing_results.json", f"{data_dir}/{exchange}_{symbol}_ab_testing_performance.json",
                 f"{data_dir}/{exchange}_{symbol}_ab_testing_metadata.json",
             ]
@@ -160,12 +160,12 @@ class Step15ABTestingValidator(BaseValidator):
             # TODO: Implement based on requirements proper exception handling
             pass
         # Load A / B testing results
-            results_file = f"{data_dir}/{exchange}_{symbol}_ab_testing_results.json"
+            results_file, f"{data_dir}/{exchange}_{symbol}_ab_testing_results.json"
 
         if os.path.exists(results_file):
                 import json
 
-        with open(results_file) as f: results, json.load(f)
+        with open(results_file) as f: results = json.load(f)
 
         # Check p - value for statistical significance
         if "p_value" in results: p_value, results["p_value"]
@@ -246,7 +246,7 @@ class Step15ABTestingValidator(BaseValidator):
             # TODO: Implement based on requirements proper exception handling
             pass
         # Load A / B testing performance results
-            performance_file = (
+            performance_file, (
                 f"{data_dir}/{exchange}_{symbol}_ab_testing_performance.json"
             )
 
@@ -336,12 +336,12 @@ class Step15ABTestingValidator(BaseValidator):
             # TODO: Implement based on requirements proper exception handling
             pass
         # Load A / B testing metadata
-            metadata_file = f"{data_dir}/{exchange}_{symbol}_ab_testing_metadata.json"
+            metadata_file, f"{data_dir}/{exchange}_{symbol}_ab_testing_metadata.json"
 
         if os.path.exists(metadata_file):
                 import json
 
-        with open(metadata_file) as f: metadata, json.load(f)
+        with open(metadata_file) as f: metadata = json.load(f)
 
         # Check total sample size
         if "total_sample_size" in metadata: total_size, metadata["total_sample_size"]
@@ -403,7 +403,7 @@ async def run_validator(
     Returns:
         Dictionary containing validation results
     """
-    validator = Step15ABTestingValidator(CONFIG)
+    validator, Step15ABTestingValidator(CONFIG)
     validation_passed, await validator.validate(training_input, pipeline_state)
 
     return {

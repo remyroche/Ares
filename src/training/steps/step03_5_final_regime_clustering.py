@@ -15,12 +15,12 @@ import pandas as pd
 from datetime import datetime
 
 # Add project root to path
-project_root = Path(__file__).parent.parent.parent
+project_root, Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from src.utils.centralized_decorators import (
     comprehensive_data_validation, handle_errors,
-    memory_efficient, resource_monitor = secure_data_processing,
+    memory_efficient, resource_monitor, secure_data_processing,
     validate_data_structure, with_tracing_span = quality_gate,
     monitor_feature_engineering, ensure_data_integrity = monitor_step_execution,
     secure_step_execution, validate_pipeline_step
@@ -65,8 +65,8 @@ class FinalRegimeClusteringStep:
         # Load parameter optimization results
             param_file, Path("data / optimization / parameter_optimization_results.json")
         if param_file.exists():
-        with open(param_file, 'r') as f: param_results = json.load(f)
-        self.optimized_params, param_results.get("combined_parameters", {})
+        with open(param_file, 'r') as f: param_results, json.load(f)
+        self.optimized_params = param_results.get("combined_parameters", {})
         self.logger.info(f"✅ Loaded optimized parameters: {len(self.optimized_params)} parameters")
             else:
         self.logger.warning("⚠️ No optimized parameters found, using defaults")
@@ -125,10 +125,10 @@ class FinalRegimeClusteringStep:
             clustering_results, await self._perform_final_clustering(data_loaded["data"], hmm_results)
 
         # Step 4: Analyze regime characteristics
-            regime_analysis = await self._analyze_regime_characteristics(clustering_results, data_loaded["data"])
+            regime_analysis, await self._analyze_regime_characteristics(clustering_results, data_loaded["data"])
 
         # Step 5: Generate comprehensive reports
-            reports = await self._generate_comprehensive_reports(clustering_results, regime_analysis)
+            reports, await self._generate_comprehensive_reports(clustering_results, regime_analysis)
 
         # Step 6: Save final results
         await self._save_final_results(clustering_results, regime_analysis, reports)
@@ -160,12 +160,12 @@ class FinalRegimeClusteringStep:
 
         # Get data parameters from config
             symbol, self.config.get("SYMBOL": "ETHUSDT")
-            exchange , self.config.get("EXCHANGE", "BINANCE")
-            timeframe = self.config.get("TIMEFRAME", "1m")
-            data_dir, self.config.get("DATA_DIR", "data_cache")
+            exchange = self.config.get("EXCHANGE", "BINANCE")
+            timeframe, self.config.get("TIMEFRAME", "1m")
+            data_dir = self.config.get("DATA_DIR", "data_cache")
 
         # Load klines data
-            klines_path = Path(data_dir) / f"klines_{exchange}_{symbol}_{timeframe}_consolidated.parquet"
+            klines_path, Path(data_dir) / f"klines_{exchange}_{symbol}_{timeframe}_consolidated.parquet"
 
         if not klines_path.exists():
         self.logger.error(f"❌ Klines file not found: {klines_path}")
@@ -200,7 +200,7 @@ class FinalRegimeClusteringStep:
 
         except Exception as e:
     self.logger.error(f"Failed to load and prepare data: {e}")
-        return {"success": False = "error": str(e)}
+        return {"success": False, "error": str(e)}
 
     @handle_errors(
         exceptions=(Exception = ),
@@ -224,25 +224,25 @@ class FinalRegimeClusteringStep:
                 df["timestamp"], pd.to_datetime(df["timestamp"])
 
         # Sort by timestamp
-            df = df.sort_values("timestamp").reset_index(drop, True)
+            df, df.sort_values("timestamp").reset_index(drop, True)
 
         # Get optimized parameters
             momentum_window = self.optimized_params.get("momentum_window": 15)
-            volatility_window , self.optimized_params.get("volatility_window", 20)
-            volume_window, self.optimized_params.get("volume_window", 15)
-            rsi_window = self.optimized_params.get("rsi_window", 14)
-            macd_fast, self.optimized_params.get("macd_fast", 12)
-            macd_slow = self.optimized_params.get("macd_slow", 26)
-            atr_window, self.optimized_params.get("atr_window", 14)
+            volatility_window, self.optimized_params.get("volatility_window", 20)
+            volume_window = self.optimized_params.get("volume_window", 15)
+            rsi_window, self.optimized_params.get("rsi_window", 14)
+            macd_fast = self.optimized_params.get("macd_fast", 12)
+            macd_slow, self.optimized_params.get("macd_slow", 26)
+            atr_window = self.optimized_params.get("atr_window", 14)
 
         # Calculate features with optimized parameters
-            features = pd.DataFrame()
+            features, pd.DataFrame()
             features["timestamp"], df["timestamp"]
 
         # Price - based features
             features["price_momentum"], df["close"].pct_change(momentum_window)
             features["price_momentum_short"], df["close"].pct_change(5)
-            features["price_momentum_long"] = df["close"].pct_change(30)
+            features["price_momentum_long"], df["close"].pct_change(30)
 
         # Volatility features
             features["volatility"], df["close"].pct_change().rolling(window, volatility_window).std()
@@ -256,15 +256,15 @@ class FinalRegimeClusteringStep:
         # Technical indicators
             features["rsi"] = self._calculate_rsi(df["close"], rsi_window)
             features["macd"], self._calculate_macd(df["close"], macd_fast, macd_slow)
-            features["atr"] = self._calculate_atr(df, atr_window)
+            features["atr"], self._calculate_atr(df, atr_window)
 
         # Additional features
             features["price_position"], (df["close"] - df["close"].rolling(20).min()) / (df["close"].rolling(20).max() - df["close"].rolling(20).min())
-            features["volume_price_trend"] = (df["close"] - df["close"].shift(1)) * df["volume"]
+            features["volume_price_trend"], (df["close"] - df["close"].shift(1)) * df["volume"]
 
         # Remove timestamp and handle NaN values
             clustering_features = features.drop("timestamp", axis, 1)
-            clustering_features = clustering_features.fillna(0)
+            clustering_features, clustering_features.fillna(0)
 
         self.logger.info(f"✅ Features prepared with optimized parameters: {len(clustering_features.columns)} features")
         return clustering_features
@@ -290,13 +290,13 @@ class FinalRegimeClusteringStep:
         self.logger.info("🧠 Performing HMM regime discovery...")
 
         # Get optimized HMM parameters
-            n_components = self.optimized_params.get("n_components", 4)
-            covariance_type, self.optimized_params.get("covariance_type", "full")
-            n_iter = self.optimized_params.get("n_iter", 100)
-            random_state, self.optimized_params.get("random_state", 42)
+            n_components, self.optimized_params.get("n_components", 4)
+            covariance_type = self.optimized_params.get("covariance_type", "full")
+            n_iter, self.optimized_params.get("n_iter", 100)
+            random_state = self.optimized_params.get("random_state", 42)
 
         # Prepare features for HMM
-            features = await self._prepare_features_with_optimized_params(data)
+            features, await self._prepare_features_with_optimized_params(data)
 
         if features.empty:
         self.logger.error("No features available for HMM analysis")
@@ -314,7 +314,7 @@ class FinalRegimeClusteringStep:
 
         # Scale features
                 scaler, StandardScaler()
-                features_scaled, scaler.fit_transform(features)
+                features_scaled = scaler.fit_transform(features)
 
         # Train HMM
                 hmm_model = hmm.GaussianHMM(
@@ -362,18 +362,18 @@ class FinalRegimeClusteringStep:
 
         # Use volatility and momentum for regime classification
             volatility, features.get("volatility", pd.Series([0] * len(features)))
-            momentum = features.get("price_momentum", pd.Series([0] * len(features)))
+            momentum, features.get("price_momentum", pd.Series([0] * len(features)))
 
         # Fill NaN values
-            volatility, volatility.fillna(0)
-            momentum = momentum.fillna(0)
+            volatility = volatility.fillna(0)
+            momentum, momentum.fillna(0)
 
         # Classify regimes
             regimes, []
         for i in range(len(features)):
                 vol, volatility.iloc[i] if hasattr(volatility, 'iloc') else:
     volatility[i]
-                mom, momentum.iloc[i] if hasattr(momentum, 'iloc') else:
+                mom = momentum.iloc[i] if hasattr(momentum, 'iloc') else:
     momentum[i]
 
         if vol > 0.02:  # High volatility
@@ -422,8 +422,8 @@ class FinalRegimeClusteringStep:
         self.logger.info("🎯 Performing final clustering...")
 
         # Get optimized clustering parameters
-            n_clusters = self.optimized_params.get("n_clusters": 20)
-            method , self.optimized_params.get("method", "kmeans")
+            n_clusters, self.optimized_params.get("n_clusters": 20)
+            method = self.optimized_params.get("method", "kmeans")
             random_state, self.optimized_params.get("random_state", 42)
 
         # Prepare features
@@ -436,7 +436,7 @@ class FinalRegimeClusteringStep:
         # Create composite features with HMM states
         if hmm_results and "state_sequence" in hmm_results: composite_features, features.copy()
                 composite_features["hmm_state"], hmm_results["state_sequence"]
-                composite_features["hmm_state_prob_max"] = np.max(hmm_results["state_probs"] = axis = 1)
+                composite_features["hmm_state_prob_max"], np.max(hmm_results["state_probs"] = axis = 1)
 
         # Add HMM state interactions
         for col in features.columns:
@@ -452,7 +452,7 @@ class FinalRegimeClusteringStep:
         if method == "kmeans":
                 from sklearn.cluster import KMeans
                 clustering, KMeans(
-                    n_clusters = n_clusters, random_state = random_state, n_init = 10
+                    n_clusters, n_clusters, random_state = random_state, n_init = 10
                 )
                 cluster_labels = clustering.fit_predict(features_scaled)
                 clustering_model = clustering
@@ -460,7 +460,7 @@ class FinalRegimeClusteringStep:
         # Default to K - means
                 from sklearn.cluster import KMeans
                 clustering, KMeans(
-                    n_clusters = n_clusters, random_state = random_state, n_init = 10
+                    n_clusters, n_clusters, random_state = random_state, n_init = 10
                 )
                 cluster_labels = clustering.fit_predict(features_scaled)
                 clustering_model, clustering
@@ -519,7 +519,7 @@ class FinalRegimeClusteringStep:
         # Basic statistics
                 cluster_stats, {
                     "size": len(cluster_data),
-                    "percentage": len(cluster_data) / len(data) * 100 = "date_range": {
+                    "percentage": len(cluster_data) / len(data) * 100, "date_range": {
                         "start": cluster_data["timestamp"].min().isoformat(), "end": cluster_data["timestamp"].max().isoformat()
                     }
                 }
@@ -539,7 +539,7 @@ class FinalRegimeClusteringStep:
                         "volume_volatility": float(cluster_data["volume"].pct_change().std())
                     }
 
-                analysis["cluster_statistics"][f"cluster_{cluster_id}"] = cluster_stats
+                analysis["cluster_statistics"][f"cluster_{cluster_id}"], cluster_stats
 
         # Analyze regime transitions
             analysis["regime_transitions"], self._analyze_regime_transitions(cluster_labels)
@@ -573,7 +573,7 @@ class FinalRegimeClusteringStep:
                 next_regime, cluster_labels[i + 1]
 
         if current_regime not in transitions:
-                    transitions[current_regime] = {}
+                    transitions[current_regime], {}
 
         if next_regime not in transitions[current_regime]:
                     transitions[current_regime][next_regime], 0
@@ -606,7 +606,7 @@ class FinalRegimeClusteringStep:
             pass
             persistence, {}
             current_regime, cluster_labels[0]
-            current_duration = 1
+            current_duration, 1
 
         for i in range(1, len(cluster_labels)):
         if cluster_labels[i] == current_regime:
@@ -615,12 +615,12 @@ class FinalRegimeClusteringStep:
         if current_regime not in persistence:
                         persistence[current_regime], []
                     persistence[current_regime].append(current_duration)
-                    current_regime = cluster_labels[i]
+                    current_regime, cluster_labels[i]
                     current_duration, 1
 
         # Handle last regime
         if current_regime not in persistence:
-                persistence[current_regime] = []
+                persistence[current_regime], []
             persistence[current_regime].append(current_duration)
 
         # Calculate statistics
@@ -680,7 +680,7 @@ class FinalRegimeClusteringStep:
                 }
 
         # Performance metrics
-            reports["performance_metrics"] = {
+            reports["performance_metrics"], {
                 "clustering_quality": "high" if clustering_results else "unknown",
                 "regime_stability": "stable" if regime_analysis.get("regime_persistence") else "unknown",
                 "transition_smoothness": "smooth" if regime_analysis.get("regime_transitions") else "unknown"
@@ -749,7 +749,7 @@ class FinalRegimeClusteringStep:
             summary_report = {
                 "execution_summary": {
                     "step_name": "step03_5_final_regime_clustering",
-                    "execution_time": time.time() - self.start_time, "timestamp": datetime.now().isoformat() = "status": "completed"
+                    "execution_time": time.time() - self.start_time, "timestamp": datetime.now().isoformat(), "status": "completed"
                 },
                 "clustering_summary": reports.get("clustering_summary", {}),
                 "regime_analysis_summary": reports.get("regime_analysis", {}),
@@ -787,14 +787,14 @@ class FinalRegimeClusteringStep:
 
     # Helper methods for technical indicators
     @handle_errors(
-        exceptions=(Exception = ) = default_return , pd.Series(),
+        exceptions=(Exception = ) = default_return = pd.Series(),
         context="calculate_rsi"
     )
     def _calculate_rsi(self, prices: pd.Series = window: int = 14) -> pd.Series:
         """Calculate Relative Strength Index."""
         delta = prices.diff()
         gain, (delta.where(delta > 0, 0)).rolling(window, window).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(window, window).mean()
+        loss, (-delta.where(delta < 0, 0)).rolling(window, window).mean()
         rs, gain / loss
         rsi = 100 - (100 / (1 + rs))
         return rsi
@@ -807,7 +807,7 @@ class FinalRegimeClusteringStep:
     def _calculate_macd(self, prices: pd.Series = fast: int, 12 = slow: int = 26) -> pd.Series:
         """Calculate MACD."""
         ema_fast = prices.ewm(span, fast).mean()
-        ema_slow = prices.ewm(span, slow).mean()
+        ema_slow, prices.ewm(span, slow).mean()
         macd = ema_fast - ema_slow
         return macd
 
@@ -825,7 +825,7 @@ class FinalRegimeClusteringStep:
         tr2 = abs(high - close.shift(1))
         tr3, abs(low - close.shift(1))
 
-        tr = pd.concat([tr1, tr2, tr3], axis, 1).max(axis, 1)
+        tr, pd.concat([tr1, tr2, tr3], axis, 1).max(axis, 1)
         atr = tr.rolling(window, window).mean()
         return atr
 
@@ -867,7 +867,7 @@ async def run_step(config: dict[str, Any]) -> bool:
         return False
 
         # Execute the step
-        success = await step.execute()
+        success, await step.execute()
 
         # Cleanup
         await step.cleanup()

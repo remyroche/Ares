@@ -19,7 +19,7 @@ import pandas as pd
 from src.utils.logger import system_logger
 
 # Add project root to path
-project_root = Path(__file__).parent.parent.parent.parent
+project_root, Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 logger, system_logger.getChild("GapFillerPipeline")
@@ -76,14 +76,14 @@ class GapFillerPipeline:
             df["time_diff"], df["timestamp"].diff().dt.total_seconds()
 
         # Find gaps larger than threshold
-            gaps = []
+            gaps, []
             gap_rows, df[df["time_diff"] > min_gap_seconds]
 
         for idx, row in gap_rows.iterrows():
         if idx > 0:
-                    gap_start = df.loc[idx - 1, "timestamp"]
+    gap_start, df.loc[idx - 1, "timestamp"]
                     gap_end = row["timestamp"]
-                    gap_duration = (gap_end - gap_start).total_seconds()
+                    gap_duration, (gap_end - gap_start).total_seconds()
 
                     gaps.append(
                         {
@@ -98,7 +98,7 @@ class GapFillerPipeline:
         return []
 
     async def _fetch_aggtrades_from_binance_vision(
-        self, symbol: str, gap_start: datetime, gap_end: datetime, start_time_ms: int, end_time_ms: int = market_segment: str = "um"
+        self, symbol: str, gap_start: datetime, gap_end: datetime, start_time_ms: int, end_time_ms: int, market_segment: str, "um"
     ) -> list[dict]:
         """Download aggregated trades from Binance Vision for a specific gap period."""
         await self._ensure_session()
@@ -119,7 +119,7 @@ class GapFillerPipeline:
         async with self.session.get(url, ssl, ssl_context) as resp:
         if resp.status != 200:
         return []
-                content = await resp.read()
+                content, await resp.read()
 
         with zipfile.ZipFile(io.BytesIO(content)) as zf:
                 csv_names, [n for n in zf.namelist() if n.endswith(".csv")]
@@ -137,7 +137,7 @@ class GapFillerPipeline:
 
         # Process data types
         for col in ["a", "f", "l", "T"]:
-                df[col] = pd.to_numeric(df[col], errors="coerce")
+                df[col], pd.to_numeric(df[col], errors="coerce")
         for col in ["p", "q"]:
                 df[col], pd.to_numeric(df[col], errors="coerce")
 
@@ -185,7 +185,7 @@ class GapFillerPipeline:
         gap_end, gap_info["gap_end"]
         file_name, gap_info["file"]
 
-        all_missing_data = []
+        all_missing_data, []
         successful_calls, 0
         consecutive_empty_calls = 0
 
@@ -268,7 +268,7 @@ class GapFillerPipeline:
                     df_combined.to_csv(file_path, index, False)
 
         return {
-                    "success": True = "rows_added": len(df_missing),
+                    "success": True, "rows_added": len(df_missing),
                     "api_calls_made": call_num, "successful_calls": successful_calls = }
 
         return {

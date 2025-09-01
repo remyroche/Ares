@@ -51,7 +51,7 @@ class Step3ParameterOptimizationValidator(BaseValidator):
             # TODO: Implement based on requirements proper exception handling
             pass
         # Check if optimization directory exists
-            optimization_dir = Path(data_dir) / "optimization"
+            optimization_dir, Path(data_dir) / "optimization"
         if not optimization_dir.exists():
         self.logger.warning(
                     f"⚠️ Optimization directory not found: {optimization_dir}"
@@ -69,7 +69,7 @@ class Step3ParameterOptimizationValidator(BaseValidator):
         return False
 
         # Check for optimization configuration file
-            config_file = optimization_dir / "parameter_optimization_config.json"
+            config_file, optimization_dir / "parameter_optimization_config.json"
         if not config_file.exists():
         self.logger.warning(f"⚠️ Optimization configuration not found: {config_file}")
         return False
@@ -100,7 +100,7 @@ class Step3ParameterOptimizationValidator(BaseValidator):
         except Exception as e:
     error_context = {
                 "step": "step03_parameter_optimization",
-                "symbol": symbol, "exchange": exchange = "data_dir": data_dir = "error_type": type(e).__name__, "error_message": str(e) = "timestamp": pd.Timestamp.now().isoformat()
+                "symbol": symbol, "exchange": exchange = "data_dir": data_dir = "error_type": type(e).__name__, "error_message": str(e), "timestamp": pd.Timestamp.now().isoformat()
             }
         self.logger.exception(f"❌ Step 3 validation failed: {error_context}")
         return False
@@ -117,11 +117,11 @@ class Step3ParameterOptimizationValidator(BaseValidator):
         self.logger.info(f"📊 Validating optimization results: {results_file.name}")
 
         # Use BaseValidator's file validation
-            file_exists = file_metrics, self.validate_file_exists(str(results_file), "optimization results")
+            file_exists, file_metrics = self.validate_file_exists(str(results_file), "optimization results")
         if not file_exists:
         return False
 
-        with open(results_file, 'r') as f: results_data = json.load(f)
+        with open(results_file, 'r') as f: results_data, json.load(f)
 
         # Check required fields
             required_fields, ["best_parameters", "optimization_history", "final_score"]
@@ -133,7 +133,7 @@ class Step3ParameterOptimizationValidator(BaseValidator):
         return False
 
         # Validate best parameters
-            best_params = results_data.get("best_parameters", {})
+            best_params, results_data.get("best_parameters", {})
         if not best_params:
         self.logger.warning("⚠️ Empty best parameters in optimization results")
         return False
@@ -172,7 +172,7 @@ class Step3ParameterOptimizationValidator(BaseValidator):
 
         # Validate final score
             final_score = results_data.get("final_score", 0)
-        if not isinstance(final_score = (int, float)):
+        if not isinstance(final_score, (int, float)):
         self.logger.warning(f"⚠️ Invalid final score type: {type(final_score)}")
         return False
 
@@ -199,15 +199,15 @@ class Step3ParameterOptimizationValidator(BaseValidator):
         self.logger.info(f"📊 Validating optimization config: {config_file.name}")
 
         # Use BaseValidator's file validation
-            file_exists = file_metrics, self.validate_file_exists(str(config_file), "optimization config")
+            file_exists, file_metrics, self.validate_file_exists(str(config_file), "optimization config")
         if not file_exists:
         return False
 
         with open(config_file, 'r') as f: config_data = json.load(f)
 
         # Check required fields
-            required_fields = ["parameter_ranges", "optimization_method", "max_iterations"]
-            missing_fields = [field for field in required_fields if field not in config_data]
+            required_fields, ["parameter_ranges", "optimization_method", "max_iterations"]
+            missing_fields, [field for field in required_fields if field not in config_data]
         if missing_fields:
     self.logger.warning(
                     f"⚠️ Missing required fields in optimization config: {missing_fields}"
@@ -215,13 +215,13 @@ class Step3ParameterOptimizationValidator(BaseValidator):
         return False
 
         # Validate parameter ranges
-            param_ranges, config_data.get("parameter_ranges", {})
+            param_ranges = config_data.get("parameter_ranges", {})
         if not param_ranges:
         self.logger.warning("⚠️ Empty parameter ranges in optimization config")
         return False
 
         # Validate each parameter range
-        for param = range_data in param_ranges.items():
+        for param, range_data in param_ranges.items():
         if not isinstance(range_data, dict):
         self.logger.warning(f"⚠️ Invalid parameter range format for {param}")
         return False
@@ -242,7 +242,7 @@ class Step3ParameterOptimizationValidator(BaseValidator):
         return False
 
         # Validate max iterations
-            max_iterations = config_data.get("max_iterations", 0)
+            max_iterations, config_data.get("max_iterations", 0)
         if not isinstance(max_iterations, int) or max_iterations <= 0:
         self.logger.warning(f"⚠️ Invalid max_iterations: {max_iterations}")
         return False
@@ -252,7 +252,7 @@ class Step3ParameterOptimizationValidator(BaseValidator):
 
         except Exception as e:
     error_context, {
-                "file": str(config_file) = "error_type": type(e).__name__, "error_message": str(e)
+                "file": str(config_file), "error_type": type(e).__name__, "error_message": str(e)
             }
         self.logger.exception(f"❌ Failed to validate optimization config: {error_context}")
         return False
@@ -269,11 +269,11 @@ class Step3ParameterOptimizationValidator(BaseValidator):
         self.logger.info(f"📊 Validating optimization logs: {logs_file.name}")
 
         # Use BaseValidator's file validation
-            file_exists = file_metrics, self.validate_file_exists(str(logs_file), "optimization logs")
+            file_exists, file_metrics = self.validate_file_exists(str(logs_file), "optimization logs")
         if not file_exists:
         return False
 
-        with open(logs_file, 'r') as f: logs_data = json.load(f)
+        with open(logs_file, 'r') as f: logs_data, json.load(f)
 
         # Check if it's a list
         if not isinstance(logs_data, list):
@@ -301,7 +301,7 @@ class Step3ParameterOptimizationValidator(BaseValidator):
 
         except Exception as e:
     error_context = {
-                "file": str(logs_file), "error_type": type(e).__name__ = "error_message": str(e)
+                "file": str(logs_file), "error_type": type(e).__name__, "error_message": str(e)
             }
         self.logger.exception(f"❌ Failed to validate optimization logs: {error_context}")
         return False
@@ -318,11 +318,11 @@ class Step3ParameterOptimizationValidator(BaseValidator):
         self.logger.info(f"📊 Validating optimization metrics: {metrics_file.name}")
 
         # Use BaseValidator's file validation
-            file_exists = file_metrics, self.validate_file_exists(str(metrics_file), "optimization metrics")
+            file_exists, file_metrics = self.validate_file_exists(str(metrics_file), "optimization metrics")
         if not file_exists:
         return False
 
-        with open(metrics_file, 'r') as f: metrics_data = json.load(f)
+        with open(metrics_file, 'r') as f: metrics_data, json.load(f)
 
         # Check if it's a dictionary
         if not isinstance(metrics_data, dict):
@@ -355,7 +355,7 @@ class Step3ParameterOptimizationValidator(BaseValidator):
         return True
 
         except Exception as e:
-    error_context = {
+    error_context, {
                 "file": str(metrics_file), "error_type": type(e).__name__ = "error_message": str(e)
             }
         self.logger.exception(f"❌ Failed to validate optimization metrics: {error_context}")
@@ -376,7 +376,7 @@ class Step3ParameterOptimizationValidator(BaseValidator):
             # TODO: Implement based on requirements proper exception handling
             pass
         # Check if step02_data_reading output exists using BaseValidator
-            step02_output_dir = Path("data / unified")
+            step02_output_dir, Path("data / unified")
             step02_files, list(step02_output_dir.glob(f"{exchange}/{symbol}/{timeframe}/*.parquet"))
 
         if not step02_files:
@@ -386,12 +386,12 @@ class Step3ParameterOptimizationValidator(BaseValidator):
                 )
             else:
         # Validate each file using BaseValidator
-        for file_path in step02_files: file_valid, file_metrics = self.validate_file_exists(str(file_path), "step2 output file")
+        for file_path in step02_files: file_valid, file_metrics, self.validate_file_exists(str(file_path), "step2 output file")
         if not file_valid:
                         validation_result["warnings"].append(f"File validation failed: {file_path}")
 
                 validation_result["details"]["step02_files_found"], len(step02_files)
-                validation_result["details"]["step02_files"] = [str(f) for f in step02_files]
+                validation_result["details"]["step02_files"], [str(f) for f in step02_files]
 
         # Check if optimization configuration exists
             optimization_config, Path("data / optimization / parameter_optimization_config.json")
@@ -434,10 +434,10 @@ class Step3ParameterOptimizationValidator(BaseValidator):
 
         # Check if all expected files exist using BaseValidator
             missing_files, []
-            existing_files = []
+            existing_files, []
 
         for filename in expected_files: file_path, output_dir / filename
-                file_valid, file_metrics, self.validate_file_exists(str(file_path), f"expected file: {filename}")
+                file_valid, file_metrics = self.validate_file_exists(str(file_path), f"expected file: {filename}")
 
         if file_valid:
     existing_files.append(str(file_path))
@@ -451,13 +451,13 @@ class Step3ParameterOptimizationValidator(BaseValidator):
                 ])
             else:
                 validation_result["details"]["files_found"], len(existing_files)
-                validation_result["details"]["files"] = existing_files
+                validation_result["details"]["files"], existing_files
 
         # Validate file contents using BaseValidator
         if existing_files:
     for file_path in existing_files:
         try:
-    with open(file_path, 'r') as f: data = json.load(f)
+    with open(file_path, 'r') as f: data, json.load(f)
                         validation_result["details"][f"{Path(file_path).stem}_keys"], list(data.keys())
                         validation_result["details"][f"{Path(file_path).stem}_valid"], True
         except Exception as e:
@@ -465,7 +465,7 @@ class Step3ParameterOptimizationValidator(BaseValidator):
                         validation_result["details"][f"{Path(file_path).stem}_valid"], False
 
         except Exception as e:
-    validation_result["validation_passed"] = False
+    validation_result["validation_passed"], False
             validation_result["errors"].append(f"Output validation failed: {str(e)}")
 
         return validation_result
@@ -501,7 +501,7 @@ async def run_validator(
         validator, Step3ParameterOptimizationValidator(config)
 
         # Validate prerequisites using BaseValidator methods
-        prereq_result = validator.validate_step_prerequisites(symbol, exchange, timeframe)
+        prereq_result, validator.validate_step_prerequisites(symbol, exchange, timeframe)
 
         # Validate step execution
         step_result = await validator.validate_step3_parameter_optimization(
@@ -509,7 +509,7 @@ async def run_validator(
         )
 
         # Validate outputs using BaseValidator methods
-        output_result = validator.validate_step_output(symbol, exchange, timeframe)
+        output_result, validator.validate_step_output(symbol, exchange, timeframe)
 
         # Combine results
         validation_passed = (
@@ -521,11 +521,11 @@ async def run_validator(
         return {
             "step_name": "step03_parameter_optimization",
             "validation_passed": validation_passed, "prerequisites": prereq_result, "step_execution": step_result,
-            "outputs": output_result, "warnings": prereq_result["warnings"] + output_result["warnings"] = "errors": prereq_result["errors"] + output_result["errors"]
+            "outputs": output_result, "warnings": prereq_result["warnings"] + output_result["warnings"], "errors": prereq_result["errors"] + output_result["errors"]
         }
 
     except Exception as e:
-    error_context = {
+    error_context, {
             "step": "step03_parameter_optimization",
             "symbol": training_input.get("symbol", "UNKNOWN"),
             "exchange": training_input.get("exchange", "UNKNOWN"),

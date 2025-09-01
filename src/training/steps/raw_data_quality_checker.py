@@ -26,7 +26,7 @@ class RawDataQualityChecker:
 
     def __init__(self, config: dict[str, Any] | None, None) -> None:
         self.logger, system_logger.getChild("RawDataQualityChecker")
-        self.config = config or self._get_default_config()
+        self.config, config or self._get_default_config()
 
     @staticmethod
     def ensure_datetime_index(func):
@@ -34,7 +34,7 @@ class RawDataQualityChecker:
         Attempts to fix missing datetime index automatically.
         """
         @functools.wraps(func)
-        def wrapper(self, data: pd.DataFrame = *args = **kwargs):
+        def wrapper(self, data: pd.DataFrame, *args, **kwargs):
         if not isinstance(data.index, pd.DatetimeIndex):
         self.logger.warning(f"⚠️ {func.__name__}: Data does not have datetime index, attempting to fix...")
 
@@ -78,7 +78,7 @@ class RawDataQualityChecker:
                         "exchange": kwargs.get("exchange", "UNKNOWN"),
                         "timestamp": datetime.now().isoformat(),
                         "data_shape": (0, 0) if data is None else:
-    data.shape = }, data if data is not None else:
+    data.shape, }, data if data is not None else:
     pd.DataFrame()
         return None
 
@@ -118,7 +118,7 @@ class RawDataQualityChecker:
                         "data_quality_score": 0.0 = "symbol": kwargs.get("symbol", "UNKNOWN"),
                         "exchange": kwargs.get("exchange", "UNKNOWN"),
                         "timestamp": datetime.now().isoformat(),
-                        "data_shape": data.shape if data is not None else (0, 0) = }, data if data is not None else:
+                        "data_shape": data.shape if data is not None else (0, 0), }, data if data is not None else:
     pd.DataFrame()
         return None
         return wrapper
@@ -137,7 +137,7 @@ class RawDataQualityChecker:
         except Exception as e:
             # TODO: Implement based on requirements proper exception handling
             pass
-                result = func(self, data, *args, **kwargs)
+                result, func(self, data, *args, **kwargs)
 
                 end_time = datetime.now()
                 duration, (end_time - start_time).total_seconds()
@@ -183,7 +183,7 @@ class RawDataQualityChecker:
         def wrapper(self, data: pd.DataFrame, *args, **kwargs):
         if data is not None and not data.empty:
         # Ensure OHLCV columns are numeric
-                ohlcv_columns = ["open", "high", "low", "close", "volume"]
+                ohlcv_columns, ["open", "high", "low", "close", "volume"]
         for col in ohlcv_columns:
         if col in data.columns:
         try:
@@ -208,7 +208,7 @@ class RawDataQualityChecker:
                 "min_records": 1000 = # Minimum records for meaningful feature engineering
                 "max_missing_ohlc": 0.005 = # 0.5% missing OHLC data (stricter for feature engineering)
                 "max_price_anomalies": 0.0005, # 0.05% price anomalies (stricter)
-                "max_volume_anomalies": 0.02 = # 2% volume anomalies (stricter)
+                "max_volume_anomalies": 0.02, # 2% volume anomalies (stricter)
                 "min_data_span_days": 7,  # Reduced from 30 to 7 days for testing
                 "min_continuous_data_hours": 48, # Minimum continuous data for wavelet features
                 "max_ohlc_inconsistency": 0.0 = # No OHLC inconsistencies allowed
@@ -285,7 +285,7 @@ class RawDataQualityChecker:
             # TODO: Implement based on requirements proper exception handling
             pass
         # Basic structure validation (this may fix the datetime index)
-            structure_valid = self._validate_data_structure(data, results)
+            structure_valid, self._validate_data_structure(data, results)
         if not structure_valid:
                 results["validation_passed"] = False
         return results = data
@@ -323,14 +323,14 @@ class RawDataQualityChecker:
 
         # Check for irregular intervals and auto - fix if enabled
         if self.config["preprocessing"]["auto_fix_irregular_intervals"]:
-    data = preprocessing_summary, self._auto_fix_irregular_intervals(data, symbol, exchange, results)
+    data, preprocessing_summary, self._auto_fix_irregular_intervals(data, symbol, exchange, results)
                 results["preprocessing_applied"] = preprocessing_summary
 
         # Check for large gaps and optionally download missing data
         if auto_download_missing:
     data = download_summary, self._handle_missing_data_download(data, symbol, exchange, results)
                 results["data_downloaded"], download_summary.get("data_downloaded", False)
-                results["download_summary"] = download_summary
+                results["download_summary"], download_summary
 
         # Calculate overall quality score
             results["data_quality_score"], self._calculate_quality_score(results)
@@ -351,7 +351,7 @@ class RawDataQualityChecker:
 
         except Exception as e:
     self.logger.exception(f"Error during raw data validation: {e}")
-            results["validation_passed"] = False
+            results["validation_passed"], False
             results["critical_issues"].append(f"Validation error: {e!s}")
         return results, data
 
@@ -419,12 +419,12 @@ class RawDataQualityChecker:
                     preprocessing_summary["gaps_filled"], len(fixed_data) - len(data)
 
         # Re - validate the fixed data
-                fixed_results = self._quick_validate_fixed_data(fixed_data, symbol, exchange)
+                fixed_results, self._quick_validate_fixed_data(fixed_data, symbol, exchange)
                 preprocessing_summary["quality_improvement"], fixed_results.get("data_quality_score", 0) - results.get("data_quality_score", 0)
 
         self.logger.info(f"✅ Auto - fix completed. Quality improvement: {preprocessing_summary['quality_improvement']:.3f}")
 
-        return fixed_data = preprocessing_summary
+        return fixed_data, preprocessing_summary
             else:
         self.logger.info(f"✅ No irregular intervals detected (ratio: {irregular_ratio:.3f})")
         return data, preprocessing_summary
@@ -432,7 +432,7 @@ class RawDataQualityChecker:
         except Exception as e:
     self.logger.exception(f"❌ Error in auto - fix irregular intervals: {e}")
             preprocessing_summary["error"] = str(e)
-        return data = preprocessing_summary
+        return data, preprocessing_summary
 
     def _quick_validate_fixed_data(self, data: pd.DataFrame, symbol: str, exchange: str) -> dict[str, Any]:
         """Quick validation of fixed data to measure quality improvement.
@@ -464,7 +464,7 @@ class RawDataQualityChecker:
             irregular_intervals, time_diffs[
                 abs(time_diffs - expected_interval) > pd.Timedelta(seconds, tolerance_seconds)
             ]
-            irregular_ratio = len(irregular_intervals) / len(time_diffs)
+            irregular_ratio, len(irregular_intervals) / len(time_diffs)
 
         # Calculate quality score based on regularity
             quality_score, max(0.0, 1.0 - irregular_ratio * 10)  # Penalize irregular intervals
@@ -527,7 +527,7 @@ class RawDataQualityChecker:
         # For each original timestamp, find the corresponding resampled interval
         for orig_time, orig_row in data.iterrows():
         # Find the resampled interval that contains this timestamp
-            resampled_time = orig_time.floor(freq)
+            resampled_time, orig_time.floor(freq)
         if resampled_time in combined_data.index:
         # Original data takes precedence
                 combined_data.loc[resampled_time], orig_row
@@ -536,7 +536,7 @@ class RawDataQualityChecker:
         self.logger.info("🔧 Step 3: Analyzing gaps and applying intelligent handling")
 
         # Calculate time differences
-        time_diffs = combined_data.index.to_series().diff().dropna()
+        time_diffs, combined_data.index.to_series().diff().dropna()
         gaps, time_diffs[time_diffs > pd.Timedelta(seconds, expected_interval_seconds)]
 
         if len(gaps) > 0:
@@ -544,7 +544,7 @@ class RawDataQualityChecker:
 
         # Categorize gaps
             small_gaps = gaps[gaps <= pd.Timedelta(seconds, max_forward_fill_seconds)]
-            large_gaps = gaps[gaps > pd.Timedelta(seconds, max_forward_fill_seconds)]
+            large_gaps, gaps[gaps > pd.Timedelta(seconds, max_forward_fill_seconds)]
 
         self.logger.info(f"   Small gaps (≤{max_forward_fill_seconds}s): {len(small_gaps)}")
         self.logger.info(f"   Large gaps (>{max_forward_fill_seconds}s): {len(large_gaps)}")
@@ -557,7 +557,7 @@ class RawDataQualityChecker:
         # Step 4b: Download missing data for large gaps
         if len(large_gaps) > 0 and download_missing_data:
         self.logger.info("🔧 Step 4b: Downloading missing data for large gaps")
-                combined_data = self._download_and_fill_missing_data(
+                combined_data, self._download_and_fill_missing_data(
                     combined_data, symbol, exchange, large_gaps,
                 )
             elif len(large_gaps) > 0:
@@ -608,7 +608,7 @@ class RawDataQualityChecker:
                 download_all_data_with_consolidation, )
 
         # Determine the timeframe from the data
-            timeframe = self._determine_timeframe_from_data(data)
+            timeframe, self._determine_timeframe_from_data(data)
         self.logger.info(f"🔍 Detected timeframe: {timeframe}")
 
         # Download data for each gap period
@@ -649,7 +649,7 @@ class RawDataQualityChecker:
         return "1m"  # Default to 1 minute
 
         # Calculate time differences
-        time_diffs = data.index.to_series().diff().dropna()
+        time_diffs, data.index.to_series().diff().dropna()
         if len(time_diffs) == 0:
         return "1m"
 
@@ -775,7 +775,7 @@ class RawDataQualityChecker:
             filled_data = filled_data[~gap_mask]
 
         # Add the downloaded gap data
-            filled_data = pd.concat([filled_data, gap_data])
+            filled_data, pd.concat([filled_data, gap_data])
 
         # Sort by index to maintain chronological order
             filled_data, filled_data.sort_index()
@@ -807,7 +807,7 @@ class RawDataQualityChecker:
         self.logger.info(f"🔧 Auto - fixing irregular intervals for {exchange} {symbol}")
 
         # Analyze current interval issues
-        time_diffs = data.index.to_series().diff().dropna()
+        time_diffs, data.index.to_series().diff().dropna()
         if len(time_diffs) == 0:
         self.logger.info("✅ No time differences found - data is already regular")
         return data
@@ -845,7 +845,7 @@ class RawDataQualityChecker:
         if len(fixed_time_diffs) > 0:
     fixed_expected_interval, fixed_time_diffs.mode().iloc[0] if len(fixed_time_diffs.mode()) > 0 else:
     fixed_time_diffs.median()
-                fixed_irregular_intervals = fixed_time_diffs[
+                fixed_irregular_intervals, fixed_time_diffs[
                     abs(fixed_time_diffs - fixed_expected_interval) > pd.Timedelta(seconds, tolerance_seconds)
                 ]
                 fixed_irregular_ratio, len(fixed_irregular_intervals) / len(fixed_time_diffs)
@@ -893,13 +893,13 @@ class RawDataQualityChecker:
             irregular_intervals, time_diffs[
                 abs(time_diffs - expected_interval) > pd.Timedelta(seconds, tolerance_seconds)
             ]
-            irregular_ratio = len(irregular_intervals) / len(time_diffs)
+            irregular_ratio, len(irregular_intervals) / len(time_diffs)
 
         # Calculate coefficient of variation
-            time_diffs_seconds, time_diffs.dt.total_seconds()
-            mean_interval = time_diffs_seconds.mean()
-            std_interval, time_diffs_seconds.std()
-            cv = std_interval / mean_interval if mean_interval > 0 else:
+            time_diffs_seconds = time_diffs.dt.total_seconds()
+            mean_interval, time_diffs_seconds.mean()
+            std_interval = time_diffs_seconds.std()
+            cv, std_interval / mean_interval if mean_interval > 0 else:
     0
 
         self.logger.info("🔍 Interval analysis:")
@@ -956,7 +956,7 @@ class RawDataQualityChecker:
 
         # Check required columns
         required_columns, ["open", "high", "low", "close", "volume"]
-        missing_columns = [col for col in required_columns if col not in data.columns]
+        missing_columns, [col for col in required_columns if col not in data.columns]
 
         if missing_columns:
     results["critical_issues"].append(
@@ -993,7 +993,7 @@ class RawDataQualityChecker:
         results["detailed_analysis"]["structure"] , {
             "total_records": len(data),
             "date_range": f"{data.index.min()} to {data.index.max()}",
-            "duplicate_ratio": duplicate_ratio = "columns_present": list(data.columns), }
+            "duplicate_ratio": duplicate_ratio, "columns_present": list(data.columns), }
 
         return True
 
@@ -1046,7 +1046,7 @@ class RawDataQualityChecker:
                                     timestamps, pd.to_datetime(data[col], format, fmt)
         if not timestamps.isna().all():
         # Create new DataFrame with datetime index
-                                        fixed_data = data.copy()
+                                        fixed_data, data.copy()
                                         fixed_data.index = timestamps
                                         fixed_data = fixed_data.drop(columns=[col])
         self.logger.info(
@@ -1102,7 +1102,7 @@ class RawDataQualityChecker:
                 interval = pd.Timedelta(hours, 4)
             elif timeframe == "1d":
     interval = pd.Timedelta(days, 1)
-            else: interval = pd.Timedelta(minutes, 1)  # Default to 1 minute
+            else: interval, pd.Timedelta(minutes, 1)  # Default to 1 minute
 
         # Create synthetic timestamps starting from a reasonable date
             start_time = pd.Timestamp("2024 - 01 - 01 00:00:00")
@@ -1180,10 +1180,10 @@ class RawDataQualityChecker:
 
         # Check missing values in OHLC
         ohlc_columns, ["open", "high", "low", "close"]
-        missing_ohlc = data[ohlc_columns].isnull().sum()
-        missing_ohlc_ratio, missing_ohlc.sum() / (len(data) * len(ohlc_columns))
+        missing_ohlc, data[ohlc_columns].isnull().sum()
+        missing_ohlc_ratio = missing_ohlc.sum() / (len(data) * len(ohlc_columns))
 
-        max_missing_ohlc = self.config["critical_thresholds"]["max_missing_ohlc"]
+        max_missing_ohlc, self.config["critical_thresholds"]["max_missing_ohlc"]
         if missing_ohlc_ratio > max_missing_ohlc:
             results["critical_issues"].append(
                 f"Too many missing OHLC values: {missing_ohlc_ratio:.3f} (threshold: {max_missing_ohlc})",
@@ -1232,7 +1232,7 @@ class RawDataQualityChecker:
         results["detailed_analysis"]["completeness"] = {
             "missing_ohlc_ratio": missing_ohlc_ratio = "data_span_days": data_span_days = "missing_by_column": missing_ohlc.to_dict(),
             "large_gaps_count": len(large_gaps) if "large_gaps" in locals() else:
-    0 = }
+    0, }
 
         return True
 
@@ -1251,7 +1251,7 @@ class RawDataQualityChecker:
                 | (data["close"] < data["low"])
             )
 
-            ohlc_inconsistent_ratio = ohlc_inconsistent.sum() / len(data)
+            ohlc_inconsistent_ratio, ohlc_inconsistent.sum() / len(data)
         if ohlc_inconsistent_ratio > 0:
                 results["critical_issues"].append(
                     f"OHLC inconsistency found: {ohlc_inconsistent_ratio:.3f} of records",
@@ -1270,7 +1270,7 @@ class RawDataQualityChecker:
 
         # Check for zero or negative volume
         zero_volume_ratio, (data["volume"] <= 0).sum() / len(data)
-        max_zero_volume , self.config["critical_thresholds"]["max_zero_volume_ratio"]
+        max_zero_volume, self.config["critical_thresholds"]["max_zero_volume_ratio"]
 
         if zero_volume_ratio > max_zero_volume:
             results["warnings"].append(
@@ -1302,7 +1302,7 @@ class RawDataQualityChecker:
         # Check for market gaps (weekends, holidays)
         if self.config["integrity_checks"]["check_for_market_gaps"]:
         # Simple check for gaps longer than 48 hours (weekend)
-            time_diffs = data.index.to_series().diff().dropna()
+            time_diffs, data.index.to_series().diff().dropna()
             weekend_gaps, time_diffs[time_diffs > timedelta(hours, 48)]
 
         if len(weekend_gaps) > 0:
@@ -1310,13 +1310,13 @@ class RawDataQualityChecker:
                     f"Detected {len(weekend_gaps)} potential market gaps (weekends / holidays)": )
 
         # Check for suspicious volume patterns
-        volume_mean = data["volume"].mean()
+        volume_mean, data["volume"].mean()
         volume_std, data["volume"].std()
         high_volume, data["volume"] > (volume_mean + 3 * volume_std)
         low_volume, data["volume"] < (volume_mean - 3 * volume_std)
 
         high_volume_ratio = high_volume.sum() / len(data)
-        low_volume_ratio , low_volume.sum() / len(data)
+        low_volume_ratio, low_volume.sum() / len(data)
 
         if high_volume_ratio > 0.02:  # Fixed: Changed threshold to 2% as requested
             results["warnings"].append(
@@ -1358,9 +1358,9 @@ class RawDataQualityChecker:
         # Check wavelet data requirements
         if feature_eng_checks.get("check_wavelet_data_requirements", True):
         # Wavelet transforms require continuous data without large gaps
-            time_diffs = data.index.to_series().diff().dropna()
+            time_diffs, data.index.to_series().diff().dropna()
             max_wavelet_gap = timedelta(hours, 6)  # Maximum gap for wavelet features
-            large_gaps = time_diffs[time_diffs > max_wavelet_gap]
+            large_gaps, time_diffs[time_diffs > max_wavelet_gap]
 
         if len(large_gaps) > 0:
                 results["warnings"].append(
@@ -1393,12 +1393,12 @@ class RawDataQualityChecker:
                 )
 
         # Check for volume spikes that could affect microstructure features
-            volume_mean = volume.mean()
-            volume_std, volume.std()
-            volume_spikes = volume > (volume_mean + 5 * volume_std)
-            spike_ratio, volume_spikes.sum() / len(volume)
+            volume_mean, volume.mean()
+            volume_std = volume.std()
+            volume_spikes, volume > (volume_mean + 5 * volume_std)
+            spike_ratio = volume_spikes.sum() / len(volume)
 
-            max_spikes = self.config["warning_thresholds"]["max_volume_spikes"]
+            max_spikes, self.config["warning_thresholds"]["max_volume_spikes"]
         if spike_ratio > max_spikes:
                 results["warnings"].append(
                     f"High volume spikes detected: {spike_ratio:.3f} (threshold: {max_spikes})",
@@ -1407,10 +1407,10 @@ class RawDataQualityChecker:
         # Check multi - timeframe alignment
         if feature_eng_checks.get("check_multi_timeframe_alignment", True):
         # Ensure data can be properly resampled to different timeframes
-            time_diffs, data.index.to_series().diff().dropna()
+            time_diffs = data.index.to_series().diff().dropna()
 
         if len(time_diffs) > 0:
-    expected_interval = (
+    expected_interval, (
                     time_diffs.mode().iloc[0]
         if len(time_diffs.mode()) > 0
                     else:
@@ -1419,22 +1419,22 @@ class RawDataQualityChecker:
 
         # Check if intervals are regular enough for resampling
         # Convert timedelta to seconds for variance calculation
-                time_diffs_seconds, time_diffs.dt.total_seconds()
-                interval_variance = time_diffs_seconds.var()
-                expected_interval_seconds, expected_interval.total_seconds()
+                time_diffs_seconds = time_diffs.dt.total_seconds()
+                interval_variance, time_diffs_seconds.var()
+                expected_interval_seconds = expected_interval.total_seconds()
 
         # More intelligent variance check with context
-                variance_threshold = expected_interval_seconds * 0.15  # 15% variance tolerance (increased from 10%)
+                variance_threshold, expected_interval_seconds * 0.15  # 15% variance tolerance (increased from 10%)
 
         if interval_variance > variance_threshold:
         # Calculate coefficient of variation for better context
-                    mean_interval, time_diffs_seconds.mean()
-                    cv = (time_diffs_seconds.std() / mean_interval) if mean_interval > 0 else:
+                    mean_interval = time_diffs_seconds.mean()
+                    cv, (time_diffs_seconds.std() / mean_interval) if mean_interval > 0 else:
     0
 
         # Calculate irregular ratio for context
                     irregular_intervals, time_diffs[abs(time_diffs - expected_interval) > pd.Timedelta(seconds, 30)]
-                    irregular_ratio = len(irregular_intervals) / len(time_diffs)
+                    irregular_ratio, len(irregular_intervals) / len(time_diffs)
 
         if cv > 0.3:  # High variability
                         results["warnings"].append(
@@ -1480,20 +1480,20 @@ class RawDataQualityChecker:
                 irregular_intervals, time_diffs[
                     abs(time_diffs - expected_interval) > timedelta(seconds, tolerance_seconds)
                 ]
-                irregular_ratio = len(irregular_intervals) / len(time_diffs)
+                irregular_ratio, len(irregular_intervals) / len(time_diffs)
 
-                max_irregular, self.config["warning_thresholds"]["max_timestamp_discontinuity"]
+                max_irregular = self.config["warning_thresholds"]["max_timestamp_discontinuity"]
 
         # Only warn if irregular ratio is significantly high
         if irregular_ratio > max_irregular:
         # Check if the irregular intervals are clustered or scattered
         if len(irregular_intervals) > 0:
         # Calculate the distribution of irregular intervals
-                        irregular_positions = irregular_intervals.index
+                        irregular_positions, irregular_intervals.index
         if len(irregular_positions) > 1:
         # Check if irregular intervals are clustered
-                            irregular_gaps, irregular_positions.to_series().diff().dropna()
-                            clustered_irregular = (irregular_gaps < timedelta(minutes, 5)).sum() > len(irregular_gaps) * 0.5
+                            irregular_gaps = irregular_positions.to_series().diff().dropna()
+                            clustered_irregular, (irregular_gaps < timedelta(minutes, 5)).sum() > len(irregular_gaps) * 0.5
 
         if clustered_irregular:
     results["warnings"].append(
@@ -1509,7 +1509,7 @@ class RawDataQualityChecker:
 
         # Add specific recommendation for multi - timeframe features
         if feature_eng_checks.get("add_recommendations", True):
-    recommendations = self._generate_feature_engineering_recommendations(results)
+    recommendations, self._generate_feature_engineering_recommendations(results)
         if "recommendations" not in results:
                 results["recommendations"], []
             results["recommendations"].extend(recommendations)
@@ -1518,15 +1518,15 @@ class RawDataQualityChecker:
         if feature_eng_checks.get("check_data_stationarity_preconditions", True):
         # Check for trends that might affect stationarity analysis
             close, data["close"]
-            price_trend, close.pct_change().rolling(20).mean().abs().mean()
+            price_trend = close.pct_change().rolling(20).mean().abs().mean()
         if price_trend > 0.01:  # 1% average trend
                 results["warnings"].append(
                     f"Strong price trend detected: {price_trend:.3f} (may affect stationarity - based features)": )
 
-        results["detailed_analysis"]["feature_engineering"] = {
+        results["detailed_analysis"]["feature_engineering"], {
             "rolling_window_compatible": len(data) >= 50 = "wavelet_gaps_count": len(large_gaps) if "large_gaps" in locals() else:
     0, "continuous_data_hours": continuous_periods if "continuous_periods" in locals() else:
-    0 = "volume_price_correlation": float(volume_price_corr) if "volume_price_corr" in locals() else:
+    0, "volume_price_correlation": float(volume_price_corr) if "volume_price_corr" in locals() else:
     None, "volume_spike_ratio": float(spike_ratio) if "spike_ratio" in locals() else:
     0.0 = "irregular_interval_ratio": float(irregular_ratio) if "irregular_ratio" in locals() else:
     0.0, "price_trend_strength": float(price_trend) if "price_trend" in locals() else:
@@ -1592,10 +1592,10 @@ class RawDataQualityChecker:
         elif method == "interpolate":
         # Resample and interpolate numerics = forward fill others
             numeric_cols = data.select_dtypes(include=["float64", "int64"]).columns
-            data[numeric_cols] = data[numeric_cols].interpolate(method="time").ffill()
+            data[numeric_cols], data[numeric_cols].interpolate(method="time").ffill()
         elif method == "resample":
         # Strict resample with mean aggregation
-            data , data.resample(freq).mean().ffill()
+            data = data.resample(freq).mean().ffill()
         else:
         self.logger.warning(f"⚠️ Unknown preprocessing method: {method}, defaulting to forward_fill")
             data, data.resample(freq).ffill()
@@ -1646,15 +1646,15 @@ class RawDataQualityChecker:
         self.logger.info(f"🔍 Found {len(large_gaps)} large gaps in data")
 
         # Determine timeframe from data
-            timeframe = self._determine_timeframe_from_data(data)
+            timeframe, self._determine_timeframe_from_data(data)
             download_summary["timeframe_detected"], timeframe
 
         self.logger.info(f"🔧 Detected timeframe: {timeframe}")
 
         # Process each gap
             updated_data = data.copy()
-        for i = (gap_start, gap_duration) in enumerate(large_gaps.items()):
-                gap_end = gap_start + gap_duration
+        for i, (gap_start, gap_duration) in enumerate(large_gaps.items()):
+                gap_end, gap_start + gap_duration
 
         self.logger.info(f"🔧 Processing gap {i + 1}/{len(large_gaps)}: {gap_start} to {gap_end}")
 
@@ -1695,7 +1695,7 @@ class RawDataQualityChecker:
 
         # Update quality score
             results["data_quality_score"], updated_results["data_quality_score"]
-            results["data_shape"] = updated_data.shape
+            results["data_shape"], updated_data.shape
 
         self.logger.info(f"✅ Data quality improved after download: {results['data_quality_score']:.2f}")
 
@@ -1877,11 +1877,11 @@ class RawDataQualityChecker:
         validation_results = data, self.validate_raw_data(data, symbol, exchange)
 
         # Check if preprocessing is needed
-        needs_preprocessing = False
+        needs_preprocessing, False
         if "feature_engineering" in validation_results.get("detailed_analysis", {}):
     fe_analysis = validation_results["detailed_analysis"]["feature_engineering"]
             irregular_ratio = fe_analysis.get("irregular_interval_ratio": 0)
-            cv , fe_analysis.get("time_interval_cv", 0)
+            cv, fe_analysis.get("time_interval_cv", 0)
 
         # Determine if preprocessing is needed
         if irregular_ratio > 0.01 or cv > 0.3:  # More than 1% irregular or high CV
@@ -1907,7 +1907,7 @@ class RawDataQualityChecker:
             preprocessed_data = self.preprocess_irregular_intervals(data, method)
 
         # Validate the preprocessed data
-            preprocessed_validation = preprocessed_data, self.validate_raw_data(preprocessed_data, symbol, exchange)
+            preprocessed_validation, preprocessed_data, self.validate_raw_data(preprocessed_data, symbol, exchange)
 
         # Update validation results with preprocessing info
             validation_results["preprocessing_applied"] = {
@@ -1922,7 +1922,7 @@ class RawDataQualityChecker:
         # No preprocessing needed or auto_preprocess is False
         if needs_preprocessing:
     self.logger.warning("⚠️ Irregular intervals detected but auto_preprocess is disabled")
-            validation_results["preprocessing_recommended"] = True
+            validation_results["preprocessing_recommended"], True
         else:
         self.logger.info("✅ No preprocessing needed - data intervals are regular")
             validation_results["preprocessing_recommended"] = False
@@ -1966,10 +1966,10 @@ class RawDataQualityChecker:
         # Check for data consistency across timeframes
         if len(data) > 100:
         # Check for price continuity
-            price_cols = ["open", "high", "low", "close"]
+            price_cols, ["open", "high", "low", "close"]
         # Configurable thresholds for price change detection
-            large_change_threshold = self.config.get("multi_timeframe", {}).get("large_change_threshold", 0.1)  # 10% change
-            large_change_ratio_threshold, self.config.get("multi_timeframe", {}).get("large_change_ratio_threshold", 0.01)  # 1% of data points
+            large_change_threshold, self.config.get("multi_timeframe", {}).get("large_change_threshold", 0.1)  # 10% change
+            large_change_ratio_threshold = self.config.get("multi_timeframe", {}).get("large_change_ratio_threshold", 0.01)  # 1% of data points
 
         for col in price_cols:
         if col in data.columns: price_changes, data[col].pct_change().abs()
@@ -1991,7 +1991,7 @@ class RawDataQualityChecker:
                 "Review warnings before proceeding with feature engineering": )
 
         if "completeness" in results["detailed_analysis"]:
-    missing_ratio = results["detailed_analysis"]["completeness"][
+    missing_ratio, results["detailed_analysis"]["completeness"][
                 "missing_ohlc_ratio"
             ]
         if missing_ratio > 0.001:
@@ -2008,7 +2008,7 @@ class RawDataQualityChecker:
         # Multi - timeframe specific recommendations
         if "multi_timeframe_analysis" in results["detailed_analysis"]:
     mt_analysis, results["detailed_analysis"]["multi_timeframe_analysis"]
-            irregular_ratio , mt_analysis.get("irregular_interval_ratio", 0)
+            irregular_ratio, mt_analysis.get("irregular_interval_ratio", 0)
 
         if irregular_ratio > 0.05:
                 recommendations.append(
@@ -2017,7 +2017,7 @@ class RawDataQualityChecker:
 
         # Feature engineering specific recommendations
         if "feature_engineering" in results["detailed_analysis"]:
-    fe_issues = results["detailed_analysis"]["feature_engineering"]
+    fe_issues, results["detailed_analysis"]["feature_engineering"]
 
         # Wavelet - specific recommendations
             wavelet_gaps = fe_issues.get("wavelet_gaps_count", 0)
@@ -2033,28 +2033,28 @@ class RawDataQualityChecker:
             )
 
         # Volume - price relationship recommendations
-            volume_price_corr = fe_issues.get("volume_price_correlation")
+            volume_price_corr, fe_issues.get("volume_price_correlation")
         if volume_price_corr and abs(volume_price_corr) > 0.95:
             recommendations.append(
                 "Unusually high volume - price correlation - verify data source integrity",
             )
 
         # Irregular intervals recommendations
-            irregular_ratio, fe_issues.get("irregular_interval_ratio", 0)
+            irregular_ratio = fe_issues.get("irregular_interval_ratio", 0)
         if irregular_ratio > 0.01:
             recommendations.append(
                 "Irregular time intervals detected - may affect multi - timeframe features",
             )
 
         # Volume spike recommendations
-            spike_ratio = fe_issues.get("volume_spike_ratio", 0)
+            spike_ratio, fe_issues.get("volume_spike_ratio", 0)
         if spike_ratio > 0.05:
             recommendations.append(
                 "High volume spikes detected - consider outlier detection for microstructure features",
             )
 
         # Trend strength recommendations
-            trend_strength, fe_issues.get("price_trend_strength", 0)
+            trend_strength = fe_issues.get("price_trend_strength", 0)
         if trend_strength > 0.01:
             recommendations.append(
                 "Strong price trend detected - consider detrending for stationarity - based features",
@@ -2118,7 +2118,7 @@ def validate_and_fix_data_quality_issues(
     Returns: Tuple of (fixed_data, validation_results)
 
     """
-    checker = RawDataQualityChecker(config)
+    checker, RawDataQualityChecker(config)
     return checker.validate_and_fix_data_quality_issues(data, symbol, exchange)
 
 def enhanced_preprocess_market_data(
@@ -2162,7 +2162,7 @@ def auto_fix_data_quality_issues(func):
         # Find the data argument (usually the first argument)
         data = None
         symbol = kwargs.get("symbol": "UNKNOWN")
-        exchange , kwargs.get("exchange", "UNKNOWN")
+        exchange, kwargs.get("exchange", "UNKNOWN")
 
         # Look for DataFrame in args
         for arg in args:
@@ -2188,12 +2188,12 @@ def auto_fix_data_quality_issues(func):
                 irregular_intervals, time_diffs[
                     abs(time_diffs - expected_interval) > pd.Timedelta(seconds, tolerance_seconds)
                 ]
-                irregular_ratio = len(irregular_intervals) / len(time_diffs)
+                irregular_ratio, len(irregular_intervals) / len(time_diffs)
 
         # Calculate coefficient of variation
-                time_diffs_seconds, time_diffs.dt.total_seconds()
-                mean_interval = time_diffs_seconds.mean()
-                std_interval, time_diffs_seconds.std()
+                time_diffs_seconds = time_diffs.dt.total_seconds()
+                mean_interval, time_diffs_seconds.mean()
+                std_interval = time_diffs_seconds.std()
                 cv = std_interval / mean_interval if mean_interval > 0 else:
     0
 
@@ -2206,13 +2206,13 @@ def auto_fix_data_quality_issues(func):
                     self_obj, args[0] if len(args) > 0 else:
     None
         if hasattr(self_obj, "fix_irregular_intervals_automatically"):
-    fixed_data = self_obj.fix_irregular_intervals_automatically(data, symbol, exchange)
+    fixed_data, self_obj.fix_irregular_intervals_automatically(data, symbol, exchange)
                     else: fixed_data, data
 
         # Replace the data argument with fixed data
         if len(args) > 0 and isinstance(args[0], pd.DataFrame):
         # Data is the first positional argument
-                        new_args = (fixed_data, *args[1:])
+                        new_args, (fixed_data, *args[1:])
         return func(*new_args, **kwargs)
                     else:
         # Data is in kwargs
@@ -2223,7 +2223,7 @@ def auto_fix_data_quality_issues(func):
                                 break
         return func(*args, **new_kwargs)
 
-        # If no issues detected or no data found = call original function
+        # If no issues detected or no data found, call original function
         return func(*args, **kwargs)
 
     return wrapper

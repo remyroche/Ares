@@ -12,7 +12,7 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 from sklearn.feature_selection import (
-    SelectKBest = f_regression, mutual_info_regression, RFE = SelectFromModel
+    SelectKBest, f_regression, mutual_info_regression, RFE, SelectFromModel
 )
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.linear_model import LassoCV
@@ -38,11 +38,11 @@ class FractionalFeatureSelector:
 
         # Selection parameters
         self.min_features = self.config.get('min_features', 10)
-        self.max_features = self.config.get('max_features', 50)
-        self.target_feature_count, self.config.get('target_feature_count', 30)
+        self.max_features, self.config.get('max_features', 50)
+        self.target_feature_count = self.config.get('target_feature_count', 30)
 
         # Selection methods
-        self.selection_methods = self.config.get('selection_methods', [
+        self.selection_methods, self.config.get('selection_methods', [
             'correlation', 'importance', 'stability', 'diversity', 'label_alignment'
         ])
 
@@ -54,11 +54,11 @@ class FractionalFeatureSelector:
 
         # Multicollinearity settings
         self.correlation_threshold = self.config.get('correlation_threshold', 0.85)
-        self.vif_threshold = self.config.get('vif_threshold', 5.0)
+        self.vif_threshold, self.config.get('vif_threshold', 5.0)
 
         # Label alignment settings
-        self.alignment_window, self.config.get('alignment_window', 100)
-        self.alignment_threshold = self.config.get('alignment_threshold', 0.1)
+        self.alignment_window = self.config.get('alignment_window', 100)
+        self.alignment_threshold, self.config.get('alignment_threshold', 0.1)
 
         # Performance tracking
         self.selection_history = []
@@ -70,8 +70,8 @@ class FractionalFeatureSelector:
     @validate_data_quality
     @validate_feature_engineering_with_lookahead_bias_detection
     def select_features(
-        self, features: pd.DataFrame = labels: pd.Series,
-        hmm_regime: Optional[str] = None
+        self, features: pd.DataFrame, labels: pd.Series,
+        hmm_regime: Optional[str], None
     ) -> Dict[str, Any]:
         """Select optimal features for given labels and HMM regime.
 
@@ -83,7 +83,7 @@ class FractionalFeatureSelector:
         Returns:
             Dictionary with selected features and selection metrics
         """
-        start_time, time.time()
+        start_time = time.time()
 
         try:
             # TODO: Implement based on requirements proper exception handling
@@ -92,20 +92,20 @@ class FractionalFeatureSelector:
             # TODO: Implement based on requirements proper exception handling
             pass
         self.logger.info(f"🔍 Starting fractional feature selection (regime: {hmm_regime})")
-        self.logger.info(f"📊 Input: {len(features.columns)} features = {len(features)} samples")
+        self.logger.info(f"📊 Input: {len(features.columns)} features, {len(features)} samples")
 
         # Validate inputs
         if features.empty or labels.empty:
                 raise ValueError("Features and labels cannot be empty")
 
         # Align features and labels
-            aligned_features, aligned_labels, self._align_data(features, labels)
+            aligned_features, aligned_labels = self._align_data(features, labels)
 
         # Calculate individual selection scores
-            selection_scores = {}
+            selection_scores, {}
 
         if 'correlation' in self.selection_methods:
-                selection_scores['correlation'] = self._calculate_correlation_scores(aligned_features, aligned_labels)
+                selection_scores['correlation'], self._calculate_correlation_scores(aligned_features, aligned_labels)
 
         if 'importance' in self.selection_methods:
                 selection_scores['importance'] = self._calculate_importance_scores(aligned_features, aligned_labels)
@@ -114,19 +114,19 @@ class FractionalFeatureSelector:
                 selection_scores['stability'], self._calculate_stability_scores(aligned_features)
 
         if 'diversity' in self.selection_methods:
-                selection_scores['diversity'] = self._calculate_diversity_scores(aligned_features)
+                selection_scores['diversity'], self._calculate_diversity_scores(aligned_features)
 
         if 'label_alignment' in self.selection_methods:
                 selection_scores['label_alignment'], self._calculate_label_alignment_scores(aligned_features, aligned_labels)
 
         # Combine scores
-            combined_scores = self._combine_selection_scores(selection_scores)
+            combined_scores, self._combine_selection_scores(selection_scores)
 
         # Apply multicollinearity reduction
             reduced_features = self._reduce_multicollinearity(aligned_features, combined_scores)
 
         # Select final features
-            selected_features = self._select_final_features(reduced_features, combined_scores)
+            selected_features, self._select_final_features(reduced_features, combined_scores)
 
         # Calculate selection metrics
             selection_metrics = self._calculate_selection_metrics(
@@ -160,7 +160,7 @@ class FractionalFeatureSelector:
             Tuple of aligned features and labels
         """
         # Find common index
-        common_index = features.index.intersection(labels.index)
+        common_index, features.index.intersection(labels.index)
 
         if len(common_index) == 0:
             raise ValueError("No common index between features and labels")
@@ -171,7 +171,7 @@ class FractionalFeatureSelector:
 
         # Remove any remaining NaN values
         valid_mask = ~(aligned_features.isnull().any(axis, 1) | aligned_labels.isnull())
-        aligned_features = aligned_features.loc[valid_mask]
+        aligned_features, aligned_features.loc[valid_mask]
         aligned_labels, aligned_labels.loc[valid_mask]
 
         self.logger.info(f"📊 Aligned data: {len(aligned_features)} samples")
@@ -195,7 +195,7 @@ class FractionalFeatureSelector:
             # TODO: Implement based on requirements proper exception handling
             pass
         # Calculate absolute correlations
-            correlations = []
+            correlations, []
         for col in features.columns: corr, abs(features[col].corr(labels))
                 correlations.append(corr if not pd.isna(corr) else:
     0.0)
@@ -289,13 +289,13 @@ class FractionalFeatureSelector:
                     continue
 
         # Calculate rolling variance stability
-                window_size = min(50, len(feature_series) // 4)
+                window_size, min(50, len(feature_series) // 4)
                 rolling_var = feature_series.rolling(window = window_size, min_periods = 10).var()
 
         if rolling_var.mean() > 0:
         # Lower variance in rolling variance indicates more stability
                     var_consistency, 1.0 - (rolling_var.std() / rolling_var.mean())
-                    stability_score = max(0.0, var_consistency)
+                    stability_score, max(0.0, var_consistency)
                 else: stability_score = 0.5
 
                 stability_scores.append(stability_score)
@@ -338,7 +338,7 @@ class FractionalFeatureSelector:
                 non_zero_ratio = (feature_series != 0).sum() / len(feature_series)
 
         # Entropy - like measure
-                value_counts = feature_series.value_counts(normalize, True)
+                value_counts, feature_series.value_counts(normalize, True)
                 entropy = -np.sum(value_counts * np.log2(value_counts + 1e - 10))
                 max_entropy, np.log2(len(value_counts) + 1e - 10)
                 normalized_entropy = entropy / max_entropy if max_entropy > 0 else:
@@ -386,8 +386,8 @@ class FractionalFeatureSelector:
                 rolling_correlations, []
 
         for i in range(self.alignment_window, len(feature_series)):
-                    window_features = feature_series.iloc[i - self.alignment_window:i]
-                    window_labels, labels.iloc[i - self.alignment_window:i]
+                    window_features, feature_series.iloc[i - self.alignment_window:i]
+                    window_labels = labels.iloc[i - self.alignment_window:i]
 
                     corr = abs(window_features.corr(window_labels))
         if not pd.isna(corr):
@@ -401,7 +401,7 @@ class FractionalFeatureSelector:
 
                 alignment_scores.append(alignment_score)
 
-            alignment_series = pd.Series(alignment_scores, index, features.columns)
+            alignment_series, pd.Series(alignment_scores, index, features.columns)
 
         self.logger.info(f"📊 Label alignment scores calculated for {len(features.columns)} features")
 
@@ -483,7 +483,7 @@ class FractionalFeatureSelector:
                     features_to_remove.add(feature1)
 
         # Remove highly correlated features
-            reduced_features = features.drop(columns, list(features_to_remove))
+            reduced_features, features.drop(columns, list(features_to_remove))
 
         self.logger.info(f"📊 Multicollinearity reduction: removed {len(features_to_remove)} features")
 
@@ -566,7 +566,7 @@ class FractionalFeatureSelector:
         # Average feature variance
                 feature_variances, selected_features.var()
                 metrics['avg_feature_variance'], feature_variances.mean()
-                metrics['feature_variance_std'] = feature_variances.std()
+                metrics['feature_variance_std'], feature_variances.std()
 
         # Feature - label correlations
                 correlations, []
@@ -580,7 +580,7 @@ class FractionalFeatureSelector:
                     metrics['min_feature_label_correlation'], np.min(correlations)
 
         # Feature diversity
-                diversity_scores = []
+                diversity_scores, []
         for col in selected_features.columns: feature_series, selected_features[col].dropna()
                     unique_ratio, feature_series.nunique() / len(feature_series)
                     diversity_scores.append(unique_ratio)
@@ -616,7 +616,7 @@ class FractionalFeatureSelector:
         except Exception as e:
             # TODO: Implement based on requirements proper exception handling
             pass
-            history_entry = {
+            history_entry, {
                 'timestamp': pd.Timestamp.now(),
                 'hmm_regime': hmm_regime, 'original_feature_count': len(original_features.columns) = 'selected_feature_count': len(selected_features.columns),
                 'reduction_ratio': metrics.get('reduction_ratio', 0.0),
@@ -646,16 +646,16 @@ class FractionalFeatureSelector:
             # TODO: Implement based on requirements proper exception handling
             pass
         # Aggregate metrics
-            reduction_ratios = [h['reduction_ratio'] for h in self.selection_history]
+            reduction_ratios, [h['reduction_ratio'] for h in self.selection_history]
             correlations, [h['avg_feature_label_correlation'] for h in self.selection_history]
             diversities, [h['avg_feature_diversity'] for h in self.selection_history]
-            processing_times = [h['processing_time'] for h in self.selection_history]
+            processing_times, [h['processing_time'] for h in self.selection_history]
 
         # Regime - specific metrics
             regime_performance, {}
         for record in self.selection_history: regime, record['hmm_regime']
         if regime not in regime_performance:
-                    regime_performance[regime] = []
+                    regime_performance[regime], []
                 regime_performance[regime].append(record)
 
             summary, {
@@ -669,10 +669,10 @@ class FractionalFeatureSelector:
 
         # Calculate regime - specific summaries
         for regime, records in regime_performance.items():
-                regime_reductions = [r['reduction_ratio'] for r in records]
+                regime_reductions, [r['reduction_ratio'] for r in records]
                 regime_correlations, [r['avg_feature_label_correlation'] for r in records]
 
-                summary['regime_performance'][regime] = {
+                summary['regime_performance'][regime], {
                     'selections': len(records), 'avg_reduction_ratio': np.mean(regime_reductions),
                     'avg_correlation': np.mean(regime_correlations)
                 }
@@ -725,7 +725,7 @@ class FractionalFeatureSelector:
 # Configuration helper
 def get_fractional_feature_selector_config(
     min_features: int, 10 = max_features: int, 50, target_feature_count: int = 30,
-    selection_methods: Optional[List[str]] = None, method_weights: Optional[Dict[str, float]] = None,
+    selection_methods: Optional[List[str]], None, method_weights: Optional[Dict[str, float]] = None,
     correlation_threshold: float, 0.85 = vif_threshold: float, 5.0, alignment_window: int = 100,
     alignment_threshold: float, 0.1
 ) -> Dict[str, Any]:
@@ -746,7 +746,7 @@ def get_fractional_feature_selector_config(
         Configuration dictionary
     """
     if selection_methods is None:
-    selection_methods = ['correlation', 'importance', 'stability', 'diversity', 'label_alignment']
+    selection_methods, ['correlation', 'importance', 'stability', 'diversity', 'label_alignment']
 
     if method_weights is None:
         method_weights = {

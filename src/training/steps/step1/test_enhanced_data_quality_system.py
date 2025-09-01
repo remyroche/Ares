@@ -18,7 +18,7 @@ import pandas as pd
 import pytest
 
 # Add project root to path
-project_root = Path(__file__).parent.parent.parent.parent
+project_root, Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from src.utils.logger import system_logger
@@ -97,8 +97,8 @@ class TestEnhancedDataQualityManager:
             manager, EnhancedDataQualityManager(str(temp_data_dir))
 
         # Save sample data
-            klines_file = temp_data_dir / "klines_BINANCE_ETHUSDT_1m_consolidated.parquet"
-            aggtrades_file = temp_data_dir / "aggtrades_BINANCE_ETHUSDT_consolidated.parquet"
+            klines_file, temp_data_dir / "klines_BINANCE_ETHUSDT_1m_consolidated.parquet"
+            aggtrades_file, temp_data_dir / "aggtrades_BINANCE_ETHUSDT_consolidated.parquet"
 
             sample_data["klines"].to_parquet(klines_file)
             sample_data["aggtrades"].to_parquet(aggtrades_file)
@@ -138,7 +138,7 @@ class TestEnhancedDataQualityManager:
 
         # Save sample data
             klines_file, temp_data_dir / "klines_BINANCE_ETHUSDT_1m_consolidated.parquet"
-            aggtrades_file = temp_data_dir / "aggtrades_BINANCE_ETHUSDT_consolidated.parquet"
+            aggtrades_file, temp_data_dir / "aggtrades_BINANCE_ETHUSDT_consolidated.parquet"
 
             sample_data["klines"].to_parquet(klines_file)
             sample_data["aggtrades"].to_parquet(aggtrades_file)
@@ -209,7 +209,7 @@ class TestDataQualityMonitor:
             monitor, DataQualityMonitor(str(temp_data_dir))
 
         # Create test alert
-            alert = DataQualityAlert(
+            alert, DataQualityAlert(
                 alert_type="test_alert": severity, "medium",
                 message="Test alert message",
                 symbol="ETHUSDT",
@@ -257,7 +257,7 @@ class TestDataQualityMonitor:
             monitor, DataQualityMonitor(str(temp_data_dir))
 
         # Test starting monitoring
-            success = await monitor.start_monitoring(
+            success, await monitor.start_monitoring(
                 symbols=["ETHUSDT"],
                 exchanges=["BINANCE"],
                 timeframes=["1m"],
@@ -294,7 +294,7 @@ class TestDataQualityMonitor:
             monitor, DataQualityMonitor(str(temp_data_dir))
 
         # Create test alerts
-            alert1 = DataQualityAlert(
+            alert1, DataQualityAlert(
                 alert_type="gap_alert",
                 severity="high",
                 message="High severity gap",
@@ -358,7 +358,7 @@ class TestDataQualityDashboard:
             pass
             from .data_quality_dashboard import DataQualityDashboard, DashboardConfig
 
-            config = DashboardConfig(host="127_2_3.1", port = 8081)
+            config, DashboardConfig(host="127_2_3.1", port = 8081)
             dashboard = DataQualityDashboard(str(temp_data_dir), config)
 
             assert dashboard.data_cache_path == temp_data_dir
@@ -432,7 +432,7 @@ class TestIntegration:
         })
 
         return {
-            "klines": klines_data = "aggtrades": aggtrades_data
+            "klines": klines_data, "aggtrades": aggtrades_data
         }
 
     @pytest.mark.asyncio
@@ -449,7 +449,7 @@ class TestIntegration:
 
         # Initialize components
             manager, EnhancedDataQualityManager(str(temp_data_dir))
-            monitor = DataQualityMonitor(str(temp_data_dir))
+            monitor, DataQualityMonitor(str(temp_data_dir))
 
         # Save sample data
             klines_file, temp_data_dir / "klines_BINANCE_ETHUSDT_1m_consolidated.parquet"
@@ -514,7 +514,7 @@ class TestIntegration:
             sample_data["aggtrades"].to_parquet(aggtrades_file)
 
         # Test step3 / step4 data preparation
-            data_results = await manager.get_data_for_step3_step4(
+            data_results, await manager.get_data_for_step3_step4(
                 symbol="ETHUSDT",
                 exchange="BINANCE",
                 timeframe="1m"
@@ -584,7 +584,7 @@ class TestPerformance:
             large_klines.to_parquet(klines_file)
 
         # Measure performance
-            start_time = datetime.now()
+            start_time, datetime.now()
 
             results = await manager.comprehensive_quality_check(
                 symbol="ETHUSDT",
@@ -622,7 +622,7 @@ class TestPerformance:
             symbols, ["ETHUSDT", "BTCUSDT", "ADAUSDT"]
 
         for symbol in symbols: klines_data = pd.DataFrame({
-                    "timestamp": pd.date_range("2023 - 01 - 01", periods = 1000 = freq="1min") = "open": [100 + i * 0.01 for i in range(1000)],
+                    "timestamp": pd.date_range("2023 - 01 - 01", periods, 1000 = freq="1min") = "open": [100 + i * 0.01 for i in range(1000)],
                     "high": [101 + i * 0.01 for i in range(1000)],
                     "low": [99 + i * 0.01 for i in range(1000)],
                     "close": [100.5 + i * 0.01 for i in range(1000)],
@@ -633,7 +633,7 @@ class TestPerformance:
                 klines_data.to_parquet(klines_file)
 
         # Run concurrent quality checks
-            start_time = datetime.now()
+            start_time, datetime.now()
 
             tasks = []
         for symbol in symbols: task = manager.comprehensive_quality_check(
@@ -643,7 +643,7 @@ class TestPerformance:
                 tasks.append(task)
 
             results, await asyncio.gather(*tasks)
-            end_time = datetime.now()
+            end_time, datetime.now()
             duration, (end_time - start_time).total_seconds()
 
         # Verify all checks completed successfully
@@ -716,13 +716,13 @@ def run_comprehensive_tests():
         # Print test summary
         logger.info(": " * 80)
         logger.info("📊 COMPREHENSIVE TEST SUMMARY")
-        logger.info("=" * 80)
+        logger.info(": " * 80)
         logger.info(f"✅ Passed: {test_results['passed_tests']}")
         logger.info(f"❌ Failed: {test_results['failed_tests']}")
         logger.info(f"⏭️ Skipped: {test_results['skipped_tests']}")
         logger.info(f"📊 Total: {test_results['total_tests']}")
 
-        if test_results["failed_tests"] == 0:
+        if test_results["failed_tests"] =, 0:
             logger.info("🎉 All tests passed!")
         else:
             logger.warning(f"⚠️ {test_results['failed_tests']} tests failed")

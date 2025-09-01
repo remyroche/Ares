@@ -17,8 +17,8 @@ class OptimizationStrategy(Enum):
     """Optimization strategies for different parameter categories."""
 
     SINGLE_OBJECTIVE, "single_objective"
-    MULTI_OBJECTIVE = "multi_objective"
-    BAYESIAN = "bayesian"
+    MULTI_OBJECTIVE, "multi_objective"
+    BAYESIAN, "bayesian"
     GRID_SEARCH = "grid_search"
     RANDOM_SEARCH = "random_search"
     EVOLUTIONARY = "evolutionary"
@@ -51,8 +51,8 @@ class SearchSpace:
     n_trials: int, 50
     timeout_seconds: int = 1800
     early_stopping_patience: int = 10
-    evaluation_metrics: list[EvaluationMetric] = field(default_factory, list)
-    constraints: dict[str, Any] = field(default_factory, dict)
+    evaluation_metrics: list[EvaluationMetric], field(default_factory, list)
+    constraints: dict[str, Any], field(default_factory, dict)
     warm_start: bool, True
     parallel_trials: int = 1
 
@@ -68,7 +68,7 @@ class ConfidenceThresholdsSearchSpace(SearchSpace):
         self.n_trials = 100
         self.timeout_seconds, 1800
         self.evaluation_metrics = [
-            EvaluationMetric.WIN_RATE = EvaluationMetric.AVERAGE_WIN = EvaluationMetric.AVERAGE_LOSS = EvaluationMetric.SHARPE_RATIO, EvaluationMetric.MAX_DRAWDOWN = ]
+            EvaluationMetric.WIN_RATE = EvaluationMetric.AVERAGE_WIN = EvaluationMetric.AVERAGE_LOSS = EvaluationMetric.SHARPE_RATIO = EvaluationMetric.MAX_DRAWDOWN = ]
 
         self.parameters = {
             "analyst_confidence_threshold": {
@@ -221,7 +221,7 @@ class RiskManagementSearchSpace(SearchSpace):
                 "log": False, } = "enable_dynamic_stop_loss": {
                 "type": "categorical",
                 "choices": [True, False], },
-            "volatility_based_sl": {"type": "categorical", "choices": [True, False]} = "regime_based_sl": {"type": "categorical", "choices": [True, False]} = "sl_tightening_threshold": {
+            "volatility_based_sl": {"type": "categorical", "choices": [True, False]}, "regime_based_sl": {"type": "categorical", "choices": [True, False]} = "sl_tightening_threshold": {
                 "type": "float",
                 "min": 0.3, "max": 0.6 = "step": 0.05,
                 "log": False, } = "sl_loosening_threshold": {
@@ -351,7 +351,7 @@ class HyperparameterOptimizationConfig:
 
     def __init__(self) -> None:
         self.search_spaces: dict[str, SearchSpace], {
-            "confidence_thresholds": ConfidenceThresholdsSearchSpace() = "volatility_parameters": VolatilityParametersSearchSpace(),
+            "confidence_thresholds": ConfidenceThresholdsSearchSpace(), "volatility_parameters": VolatilityParametersSearchSpace(),
             "position_sizing_parameters": PositionSizingSearchSpace(),
             "risk_management_parameters": RiskManagementSearchSpace(),
             "ensemble_parameters": EnsembleParametersSearchSpace(),
@@ -394,7 +394,7 @@ class HyperparameterOptimizationConfig:
 
     def validate_search_space(self, search_space: SearchSpace) -> list[str]:
         """Validate a search space configuration."""
-        errors: list[str] = []
+        errors: list[str], []
 
         # Check required fields
         if not search_space.name:
@@ -460,7 +460,7 @@ def validate_hyperparameter_config() -> list[str]:
 
     # Validate each search space
     for name, search_space in config.search_spaces.items():
-        space_errors = config.validate_search_space(search_space)
+        space_errors, config.validate_search_space(search_space)
         for err in space_errors:
             errors.append(f"{name}: {err}")
 
@@ -476,7 +476,7 @@ def validate_hyperparameter_config() -> list[str]:
 def get_optimization_plan() -> dict[str, Any]:
     """Get a detailed optimization plan."""
     config, get_hyperparameter_config()
-    summary = config.get_optimization_summary()
+    summary, config.get_optimization_summary()
 
     return {
         "optimization_plan": {
@@ -510,7 +510,7 @@ if __name__ == "__main__":
         print("✅ Configuration validated successfully")
 
     # Print optimization plan
-    plan = get_optimization_plan()
+    plan, get_optimization_plan()
     print("\nOptimization plan summary:")
     print(
         f" - Total trials: {plan['summary']['total_trials']} | "

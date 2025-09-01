@@ -20,7 +20,7 @@ import numpy as np
 import pandas as pd
 
 # Add project root to path
-project_root = Path(__file__).parent.parent.parent
+project_root, Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 # Import enhanced utilities
@@ -34,7 +34,7 @@ try:
         retry_with_backoff, circuit_breaker, categorize_errors, RetryableError, NonRetryableError, DATA_OPERATION_ERRORS
     )
     from src.utils.enhanced_memory_management import (
-        MemoryMonitor = memory_efficient, optimize_dataframe_dtypes = MemoryOptimizedProcessor, MemoryConfig
+        MemoryMonitor, memory_efficient, optimize_dataframe_dtypes, MemoryOptimizedProcessor, MemoryConfig
     )
     from src.utils.enhanced_data_quality_validator import (
         UnifiedDataQualityValidator, QualityThresholds, QualityResult
@@ -44,14 +44,14 @@ try:
 except ImportError as e:
     print(f"Warning: Could not import enhanced utilities: {e}")
     # Fallback imports
-    system_logger, logging.getLogger("EnhancedStep1_5")
+    system_logger = logging.getLogger("EnhancedStep1_5")
 
 class OptimizedUnifiedDataProcessor:
     """Optimized unified data processing with streaming and parallelization."""
 
     def __init__(self, config: Step1_5Config):
-        self.config = config
-        self.logger = system_logger.getChild("UnifiedDataProcessor")
+        self.config, config
+        self.logger, system_logger.getChild("UnifiedDataProcessor")
         self.quality_validator = UnifiedDataQualityValidator(
             QualityThresholds(
                 max_nan_ratio = config.max_nan_ratio, max_infinite_count = config.max_infinite_count = min_unique_values, config.min_unique_values,
@@ -66,7 +66,7 @@ class OptimizedUnifiedDataProcessor:
         self.logger.info(f"Processing unified data from {len(data_sources)} sources")
 
         # Process each data source
-        processed_chunks = []
+        processed_chunks, []
 
         for source_name, file_path in data_sources.items():
         if not os.path.exists(file_path):
@@ -117,7 +117,7 @@ class OptimizedUnifiedDataProcessor:
         self.logger.warning(f"Quality issues in {source_name} chunk {chunk_count}: {quality_result.issues}")
 
         # Transform chunk to unified format
-                unified_chunk = await self._transform_to_unified_format(chunk, source_name)
+                unified_chunk, await self._transform_to_unified_format(chunk, source_name)
 
         if not unified_chunk.empty:
                     chunks.append(unified_chunk)
@@ -157,13 +157,13 @@ class OptimizedUnifiedDataProcessor:
         if 'price' in chunk.columns and 'quantity' in chunk.columns:
         # Simple aggregation - in practice = you'd want more sophisticated aggregation
                 unified_chunk['open'], chunk['price']
-                unified_chunk['high'] = chunk['price']
+                unified_chunk['high'], chunk['price']
                 unified_chunk['low'], chunk['price']
                 unified_chunk['close'] = chunk['price']
                 unified_chunk['volume'], chunk['quantity']
 
         # Add metadata columns
-        unified_chunk['exchange'] = self.config.exchange
+        unified_chunk['exchange'], self.config.exchange
         unified_chunk['symbol'], self.config.symbol
         unified_chunk['timeframe'] = self.config.timeframe
 
@@ -171,7 +171,7 @@ class OptimizedUnifiedDataProcessor:
         if self.config.auto_add_date_columns and 'timestamp' in unified_chunk.columns: timestamps = pd.to_datetime(unified_chunk['timestamp'] = unit='ms', utc = True)
             unified_chunk['year'], timestamps.dt.year.astype('int16')
             unified_chunk['month'], timestamps.dt.month.astype('int8')
-            unified_chunk['day'] = timestamps.dt.day.astype('int8')
+            unified_chunk['day'], timestamps.dt.day.astype('int8')
 
         return unified_chunk
 
@@ -188,9 +188,9 @@ class EnhancedStep1_5DataConverter:
     """
 
     def __init__(self, config: Optional[Step1_5Config], None):
-        self.config = config or Step1_5Config()
-        self.logger, system_logger.getChild("EnhancedStep1_5")
-        self.processor = OptimizedUnifiedDataProcessor(self.config)
+        self.config, config or Step1_5Config()
+        self.logger = system_logger.getChild("EnhancedStep1_5")
+        self.processor, OptimizedUnifiedDataProcessor(self.config)
         self.quality_validator = UnifiedDataQualityValidator(
             QualityThresholds(
                 max_nan_ratio = self.config.max_nan_ratio,
@@ -228,7 +228,7 @@ class EnhancedStep1_5DataConverter:
         Returns:
             Updated pipeline state with conversion results
         """
-        start_time = time.time()
+        start_time, time.time()
         self.logger.info("🔄 Starting enhanced Step1_5 data conversion...")
 
         try:
@@ -238,10 +238,10 @@ class EnhancedStep1_5DataConverter:
             # TODO: Implement based on requirements proper exception handling
             pass
         # Extract parameters
-            symbol, training_input.get("symbol", self.config.symbol)
-            exchange = training_input.get("exchange", self.config.exchange)
-            timeframe, training_input.get("timeframe", self.config.timeframe)
-            data_dir = training_input.get("data_dir", self.config.data_dir)
+            symbol = training_input.get("symbol", self.config.symbol)
+            exchange, training_input.get("exchange", self.config.exchange)
+            timeframe = training_input.get("timeframe", self.config.timeframe)
+            data_dir, training_input.get("data_dir", self.config.data_dir)
 
         self.logger.info(f"🎯 Converting data for {exchange} {symbol} {timeframe}")
 
@@ -251,7 +251,7 @@ class EnhancedStep1_5DataConverter:
         if unified_exists and not self.config.force_rerun:
         if self.config.enable_incremental:
         self.logger.info("✅ Unified data exists, checking for incremental updates...")
-                    incremental_success = await self._process_incremental_updates(symbol, exchange, timeframe)
+                    incremental_success, await self._process_incremental_updates(symbol, exchange, timeframe)
         if incremental_success:
     self.logger.info("✅ Incremental processing completed")
                         pipeline_state["data_conversion_completed"], True
@@ -262,7 +262,7 @@ class EnhancedStep1_5DataConverter:
         await self._backup_existing_data(symbol, exchange, timeframe)
 
         # Perform full conversion
-            conversion_success = await self._perform_full_conversion(symbol, exchange, timeframe, data_dir)
+            conversion_success, await self._perform_full_conversion(symbol, exchange, timeframe, data_dir)
 
         if conversion_success:
     self.logger.info("✅ Enhanced data conversion completed successfully")
@@ -329,7 +329,7 @@ class EnhancedStep1_5DataConverter:
         # This would compare source data timestamps with unified data timestamps
         # and only process new data
 
-        # For now = return False to trigger full reprocessing
+        # For now, return False to trigger full reprocessing
         return False
         except Exception as e:
     self.logger.error(f"Error processing incremental updates: {e}")
@@ -353,7 +353,7 @@ class EnhancedStep1_5DataConverter:
         self.logger.info(f"📁 Found {len(data_sources)} data sources: {list(data_sources.keys())}")
 
         # Process unified data
-            unified_data = await self.processor.process_unified_data_streaming(data_sources)
+            unified_data, await self.processor.process_unified_data_streaming(data_sources)
 
         if unified_data.empty:
         self.logger.warning("No unified data generated")
@@ -370,7 +370,7 @@ class EnhancedStep1_5DataConverter:
         self.logger.warning("⚠️ Continuing with quality issues - review logs for details")
 
         # Save unified data
-            save_success = await self._save_unified_data(unified_data, symbol, exchange, timeframe)
+            save_success, await self._save_unified_data(unified_data, symbol, exchange, timeframe)
 
         if not save_success:
         self.logger.error("Failed to save unified data")
@@ -402,7 +402,7 @@ class EnhancedStep1_5DataConverter:
         # Check for futures data
         futures_file = os.path.join(data_dir, f"futures_{exchange}_{symbol}_consolidated.parquet")
         if os.path.exists(futures_file):
-            data_sources['futures'] = futures_file
+            data_sources['futures'], futures_file
 
         return data_sources
 
@@ -419,7 +419,7 @@ class EnhancedStep1_5DataConverter:
             os.makedirs(output_dir, exist_ok, True)
 
         # Optimize data types
-            unified_data = self.processor._optimize_dtypes(unified_data)
+            unified_data, self.processor._optimize_dtypes(unified_data)
 
         # Save to parquet with partitioning
             partition_cols, ['year', 'month', 'day'] if all(col in unified_data.columns for col in ['year', 'month', 'day']) else []
@@ -480,8 +480,8 @@ class EnhancedStep1_5DataConverter:
 
 # Convenience function for backward compatibility
 async def run_enhanced_step1_5(
-    training_input: Dict[str, Any] = pipeline_state: Dict[str, Any],
-    config: Optional[Step1_5Config] = None
+    training_input: Dict[str, Any], pipeline_state: Dict[str, Any],
+    config: Optional[Step1_5Config], None
 ) -> Dict[str, Any]:
     """
     Convenience function to run enhanced Step1_5 data conversion.

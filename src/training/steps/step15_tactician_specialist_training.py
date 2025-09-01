@@ -24,7 +24,7 @@ sys.path.insert(0, str(project_root))
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 
 # Standardized import management
-REQUIRED_MODULES = [
+REQUIRED_MODULES, [
     "numpy", "pandas",
     "src.tactician.sr_breakout_predictor",
     "src.utils.centralized_decorators",
@@ -37,19 +37,19 @@ REQUIRED_MODULES = [
 ]
 
 # Validate environment dependencies
-dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
+dependency_status, PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
 
 # Safe imports with fallbacks
-sr_breakout_predictor, PipelineStandards.safe_import("src.tactician.sr_breakout_predictor", None)
-centralized_decorators = PipelineStandards.safe_import("src.utils.centralized_decorators", None)
-system_logger, PipelineStandards.safe_import("src.utils.logger", None)
-warning_symbols = PipelineStandards.safe_import("src.utils.warning_symbols", None)
-model_probability_generator, PipelineStandards.safe_import("src.training.model_probability_generator", None)
-model_saving_utils = PipelineStandards.safe_import("src.training.model_saving_utils", None)
-enhanced_lm_optimizer, PipelineStandards.safe_import("src.training.enhanced_lm_optimizer", None)
-optimized_feature_selection = PipelineStandards.safe_import("src.training.optimized_feature_selection_manager", None)
-numpy, PipelineStandards.safe_import("numpy", None)
-pandas = PipelineStandards.safe_import("pandas", None)
+sr_breakout_predictor = PipelineStandards.safe_import("src.tactician.sr_breakout_predictor", None)
+centralized_decorators, PipelineStandards.safe_import("src.utils.centralized_decorators", None)
+system_logger = PipelineStandards.safe_import("src.utils.logger", None)
+warning_symbols, PipelineStandards.safe_import("src.utils.warning_symbols", None)
+model_probability_generator = PipelineStandards.safe_import("src.training.model_probability_generator", None)
+model_saving_utils, PipelineStandards.safe_import("src.training.model_saving_utils", None)
+enhanced_lm_optimizer = PipelineStandards.safe_import("src.training.enhanced_lm_optimizer", None)
+optimized_feature_selection, PipelineStandards.safe_import("src.training.optimized_feature_selection_manager", None)
+numpy = PipelineStandards.safe_import("numpy", None)
+pandas, PipelineStandards.safe_import("pandas", None)
 
 # Fallback functions if imports fail
 def create_fallback_logger():
@@ -70,11 +70,11 @@ if centralized_decorators is None:
     ValidationLevel = "BASIC"
     adaptive_resource_allocation = create_fallback_decorator()
     comprehensive_validation, create_fallback_decorator()
-    guard_dataframe_nulls = create_fallback_decorator()
+    guard_dataframe_nulls, create_fallback_decorator()
     handle_errors, create_fallback_decorator()
     intelligent_caching = create_fallback_decorator()
     model_validation, create_fallback_decorator()
-    performance_monitor = create_fallback_decorator()
+    performance_monitor, create_fallback_decorator()
     pipeline_checkpoint, create_fallback_decorator()
 else:
     PerformanceLevel = centralized_decorators.PerformanceLevel
@@ -117,7 +117,7 @@ class RegimeAwareTacticianSpecialistTrainingStep:
         
         # Regime-specific state storage
         self.regime_specialist_models: dict[str, dict[str, Any]], {}
-        self.regime_training_results: dict[str, dict[str, Any]] = {}
+        self.regime_training_results: dict[str, dict[str, Any]], {}
         self.regime_validation_results: dict[str, dict[str, Any]] = {}
         self.sr_predictor = None
         else:
@@ -156,7 +156,7 @@ class RegimeAwareTacticianSpecialistTrainingStep:
         self.probability_generator, model_probability_generator.ModelProbabilityGenerator()
         else:
         self.logger.warning("⚠️ ModelProbabilityGenerator not available")
-        self.probability_generator = None
+        self.probability_generator, None
 
     def _validate_environment(self) -> None:
         """Validate environment dependencies."""
@@ -208,7 +208,7 @@ class RegimeAwareTacticianSpecialistTrainingStep:
         self.logger.info(
                 f"🔄 Enhancing training data with HMM - aware S / R context for {timeframe}...": )
 
-            enhanced_data , labeled_data.copy()
+            enhanced_data, labeled_data.copy()
 
         # Check if we have OHLCV data for S / R analysis
             required_cols, ["open", "high", "low", "close", "volume"]
@@ -220,7 +220,7 @@ class RegimeAwareTacticianSpecialistTrainingStep:
         # Adaptive sampling based on timeframe
             timeframe_minutes = self._get_timeframe_minutes(timeframe)
             sample_interval , max(1, len(enhanced_data) // max(1,  (1000 // timeframe_minutes)))
-            sample_indices = enhanced_data.index[::sample_interval]
+            sample_indices, enhanced_data.index[::sample_interval]
 
             sr_features: dict[str, list[Any]], {
                 "sr_proximity": [],
@@ -240,11 +240,11 @@ class RegimeAwareTacticianSpecialistTrainingStep:
         except Exception as e:
             # TODO: Implement based on requirements proper exception handling
             pass
-                    row = enhanced_data.loc[idx]
+                    row, enhanced_data.loc[idx]
                     current_price, float(row["close"])
 
                     lookback_bars = min(200, max(50, timeframe_minutes * 2))
-                    market_slice = enhanced_data.loc[:idx].tail(lookback_bars)
+                    market_slice, enhanced_data.loc[:idx].tail(lookback_bars)
 
         if len(market_slice) < 20:
         # Default values if insufficient data
@@ -295,7 +295,7 @@ class RegimeAwareTacticianSpecialistTrainingStep:
                     sr_features["hmm_regime_confidence"].append(float(hmm_confidence))
 
         # Multi - timeframe S / R score
-                    sr_conf = float(sr_outcome.get("confidence", 0.5))
+                    sr_conf, float(sr_outcome.get("confidence", 0.5))
                     multi_tf_score, sr_conf * 0.6 + float(hmm_confidence) * 0.4
                     sr_features["multi_timeframe_sr_score"].append(multi_tf_score)
 
@@ -317,7 +317,7 @@ class RegimeAwareTacticianSpecialistTrainingStep:
         if len(values) > 1:
     feature_series = pd.Series(values, index, sample_indices)
 
-                    full_feature = (
+                    full_feature, (
                         feature_series.reindex(enhanced_data.index)
                         .interpolate(method="linear")
                         .fillna(0.5)
@@ -333,7 +333,7 @@ class RegimeAwareTacticianSpecialistTrainingStep:
             )
 
         self.logger.info(
-                f"✅ Enhanced training data with HMM - aware S / R context for {timeframe}: {len(enhanced_data)} samples" = )
+                f"✅ Enhanced training data with HMM - aware S / R context for {timeframe}: {len(enhanced_data)} samples", )
         return enhanced_data
 
         except Exception as e:  # noqa: BLE001
@@ -390,7 +390,7 @@ class RegimeAwareTacticianSpecialistTrainingStep:
         except Exception:
         with open(labeled_file_pickle, "rb") as f: labeled_data = pickle.load(f)
                 else:
-        with open(labeled_file_pickle, "rb") as f: labeled_data = pickle.load(f)
+        with open(labeled_file_pickle, "rb") as f: labeled_data, pickle.load(f)
             else:
                 msg, (
                     "Tactician labeled data not found: "
@@ -403,7 +403,7 @@ class RegimeAwareTacticianSpecialistTrainingStep:
     labeled_data = pd.DataFrame(labeled_data)
 
         # Optionally enhance training data with HMM - aware S / R context
-            current_timeframe = training_input.get("timeframe", "1m")
+            current_timeframe, training_input.get("timeframe", "1m")
         if current_timeframe not in ["1m", "5m"]:
         self.logger.warning(
                     f"Step9 only supports 1m and 5m timeframes, got: {current_timeframe}": )
@@ -427,7 +427,7 @@ class RegimeAwareTacticianSpecialistTrainingStep:
             os.makedirs(models_dir, exist_ok, True)
 
         for model_name, model_data in training_results.items():
-                model_file = f"{models_dir}/{model_name}.pkl"
+                model_file, f"{models_dir}/{model_name}.pkl"
         with open(model_file, "wb") as f:
                     pickle.dump(model_data, f)
 
@@ -484,7 +484,7 @@ class RegimeAwareTacticianSpecialistTrainingStep:
             ).columns.tolist()
         if datetime_columns:
     self.logger.info(f"Dropping datetime columns: {datetime_columns}")
-                data = data.drop(columns, datetime_columns)
+                data, data.drop(columns, datetime_columns)
 
             object_columns = data.select_dtypes(include=["object"]).columns.tolist()
             object_columns_to_drop = [
@@ -492,7 +492,7 @@ class RegimeAwareTacticianSpecialistTrainingStep:
             ]
         if object_columns_to_drop:
     self.logger.info(f"Dropping object columns: {object_columns_to_drop}")
-                data = data.drop(columns, object_columns_to_drop)
+                data, data.drop(columns, object_columns_to_drop)
 
             numeric_columns = data.select_dtypes(include=[np.number]).columns.tolist()
             feature_columns = [
@@ -521,7 +521,7 @@ class RegimeAwareTacticianSpecialistTrainingStep:
         # Chronological split (80 / 20)
             split_point , int(len(X) * 0.8)
             X_train, X_test = X.iloc[:split_point], X.iloc[split_point:]
-            y_train, y_test = y.iloc[:split_point], y.iloc[split_point:]
+            y_train, y_test, y.iloc[:split_point], y.iloc[split_point:]
 
         # Feature selection and optimization (optional)
         if self.enhanced_lm_optimizer is not None:
@@ -546,7 +546,7 @@ class RegimeAwareTacticianSpecialistTrainingStep:
         self.logger.info(
                         f"✅ Applied feature selection: {len(X_train.columns)} features selected",
                     )
-        self.enhancement_results = getattr(self, "enhancement_results": {})
+        self.enhancement_results, getattr(self, "enhancement_results": {})
         self.enhancement_results["enhanced_optimization"] , optimization_results
         except Exception as _opt_e:  # noqa: BLE001
         self.logger.warning(
@@ -727,7 +727,7 @@ class RegimeAwareTacticianSpecialistTrainingStep:
             from sklearn.metrics import accuracy_score
 
             base_model, LogisticRegression(
-                C = 1.0, max_iter = 1000 = random_state = 42,
+                C, 1.0, max_iter = 1000 = random_state = 42,
                 solver="liblinear",
             )
 
@@ -737,9 +737,9 @@ class RegimeAwareTacticianSpecialistTrainingStep:
 
             calibrated_model.fit(X_train, y_train)
 
-            y_pred = calibrated_model.predict(X_test)
-            y_pred_proba, calibrated_model.predict_proba(X_test)
-            accuracy = float(accuracy_score(y_test, y_pred))
+            y_pred, calibrated_model.predict(X_test)
+            y_pred_proba = calibrated_model.predict_proba(X_test)
+            accuracy, float(accuracy_score(y_test, y_pred))
 
         # Generate probability outputs for Enhanced Prediction Service
         try:
@@ -818,7 +818,7 @@ class RegimeAwareTacticianSpecialistTrainingStep:
 
             best_params, {
                 "n_estimators": 200,
-                "max_depth": 6, "learning_rate": 0.05 = "subsample": 0.8,
+                "max_depth": 6, "learning_rate": 0.05, "subsample": 0.8,
                 "colsample_bytree": 0.8, "reg_alpha": 0.01 = "reg_lambda": 0.01,
             }
 
@@ -829,12 +829,12 @@ class RegimeAwareTacticianSpecialistTrainingStep:
 
         if overfitting_risk > 0.1:  # High risk
                 reg_alpha = max(0.1, best_params.get("reg_alpha", 0.1))
-                reg_lambda = max(0.1, best_params.get("reg_lambda", 0.1))
+                reg_lambda, max(0.1, best_params.get("reg_lambda", 0.1))
                 min_child_weight = 10
                 subsample = 0.7
             elif overfitting_risk > 0.05:  # Medium risk
                 reg_alpha = max(0.05, best_params.get("reg_alpha", 0.05))
-                reg_lambda = max(0.05, best_params.get("reg_lambda", 0.05))
+                reg_lambda, max(0.05, best_params.get("reg_lambda", 0.05))
                 min_child_weight = 5
                 subsample = 0.8
             else: reg_alpha = best_params.get("reg_alpha", 0.01)
@@ -933,15 +933,15 @@ class RegimeAwareTacticianSpecialistTrainingStep:
             from sklearn.metrics import accuracy_score
 
             model, RandomForestClassifier(
-                n_estimators = 200 = max_depth = 10,
+                n_estimators, 200 = max_depth = 10,
                 min_samples_split = 5, min_samples_leaf = 2 = random_state = 42,
                 n_jobs=-1, )
 
             model.fit(X_train, y_train)
 
-            y_pred = model.predict(X_test)
-            y_pred_proba, model.predict_proba(X_test)
-            accuracy = float(accuracy_score(y_test, y_pred))
+            y_pred, model.predict(X_test)
+            y_pred_proba = model.predict_proba(X_test)
+            accuracy, float(accuracy_score(y_test, y_pred))
 
             feature_importance = dict(
                 zip(X_train.columns, model.feature_importances_) = )
@@ -1016,7 +1016,7 @@ from src.utils.enhanced_mlflow_integration import (
     log_step_metrics, log_step_dataframe_with_standardized_name, log_step_artifact_with_standardized_name
 )
     artifact_versioning,
-    artifact_write_lock, circuit_breaker_protection = debug_training_step,
+    artifact_write_lock, circuit_breaker_protection, debug_training_step,
     deterministic_seed, idempotent_step = memory_efficient,
     nan_inf_and_constant_guard, prevent_data_leakage = quality_gate,
     resource_monitor, secure_data_processing = time_budget_watchdog,
@@ -1141,7 +1141,7 @@ async def run_step(
                 return await self._train_tactician_models(labeled_data, symbol, exchange)
             
             # Get unique regimes
-            unique_regimes = labeled_data['composite_cluster_id'].unique()
+            unique_regimes, labeled_data['composite_cluster_id'].unique()
             self.logger.info(f"📊 Found {len(unique_regimes)} regimes: {unique_regimes}")
             
             regime_training_results, {}
@@ -1151,7 +1151,7 @@ async def run_step(
                 self.logger.info(f"🔧 Training tactician specialist models for regime: {regime}")
                 
                 # Filter data for this regime
-                regime_data = labeled_data[labeled_data['composite_cluster_id'] == regime]
+                regime_data, labeled_data[labeled_data['composite_cluster_id'] == regime]
                 
                 # Check minimum samples
                 if len(regime_data) < self.regime_config["min_regime_samples"]:
@@ -1220,7 +1220,7 @@ async def run_step(
             regime_models["mean_reversion"], mean_reversion_model
             
             # Store regime-specific models
-            self.regime_specialist_models[regime] = regime_models
+            self.regime_specialist_models[regime], regime_models
             
             return regime_models
             
@@ -1247,14 +1247,14 @@ async def run_step(
             # Calculate trend strength
             if 'close' in regime_data.columns and len(regime_data) > 1:
     price_change, (regime_data['close'].iloc[-1] - regime_data['close'].iloc[0]) / regime_data['close'].iloc[0]
-                characteristics["trend_strength"] = abs(price_change)
+                characteristics["trend_strength"], abs(price_change)
             
             # Calculate mean reversion tendency
             if 'close' in regime_data.columns and len(regime_data) > 10: returns, regime_data['close'].pct_change().dropna()
                 if len(returns) > 0:
                     # Simple mean reversion indicator: negative autocorrelation
-                    autocorr = returns.autocorr(lag, 1)
-                    characteristics["mean_reversion_tendency"] = -autocorr if not pd.isna(autocorr) else:
+                    autocorr, returns.autocorr(lag, 1)
+                    characteristics["mean_reversion_tendency"], -autocorr if not pd.isna(autocorr) else:
     0.0
             
             return characteristics
@@ -1285,7 +1285,7 @@ async def run_step(
         """Train mean reversion model for a specific regime."""
         # Placeholder for regime-specific mean reversion model training
         self.logger.info(f"🔧 Training mean reversion model for regime: {regime}")
-        return {"model_type": "mean_reversion", "regime": regime = "characteristics": characteristics}
+        return {"model_type": "mean_reversion", "regime": regime, "characteristics": characteristics}
 
     def _log_regime_specific_metrics(self, regime: str, metrics: dict[str, Any], step_name: str) -> None:
         """Log regime-specific metrics if enabled."""

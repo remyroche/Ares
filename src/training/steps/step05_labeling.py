@@ -19,14 +19,14 @@ from src.training.steps.step4_analyst_labeling_feature_engineering_components.re
 from src.training.steps.step4_analyst_labeling_feature_engineering_components.optimized_triple_barrier_labeling import OptimizedTripleBarrierLabeling
 
 # Add project root to path
-project_root = Path(__file__).parent.parent.parent
+project_root, Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 # Import pipeline standards
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 
 # Standardized import management
-REQUIRED_MODULES = [
+REQUIRED_MODULES, [
     "pandas",
     "numpy",
     "psutil",
@@ -37,16 +37,16 @@ REQUIRED_MODULES = [
 ]
 
 # Validate environment dependencies
-dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
+dependency_status, PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
 
 # Safe imports with fallbacks
-centralized_decorators, PipelineStandards.safe_import("src.utils.centralized_decorators", None)
-system_logger = PipelineStandards.safe_import("src.utils.logger", None)
-enhanced_mlflow, PipelineStandards.safe_import("src.utils.enhanced_mlflow_integration", None)
-meta_labeling_system = PipelineStandards.safe_import("src.analyst.meta_labeling_system", None)
-psutil, PipelineStandards.safe_import("psutil", None)
-numpy = PipelineStandards.safe_import("numpy", None)
-pandas, PipelineStandards.safe_import("pandas", None)
+centralized_decorators = PipelineStandards.safe_import("src.utils.centralized_decorators", None)
+system_logger, PipelineStandards.safe_import("src.utils.logger", None)
+enhanced_mlflow = PipelineStandards.safe_import("src.utils.enhanced_mlflow_integration", None)
+meta_labeling_system, PipelineStandards.safe_import("src.analyst.meta_labeling_system", None)
+psutil = PipelineStandards.safe_import("psutil", None)
+numpy, PipelineStandards.safe_import("numpy", None)
+pandas = PipelineStandards.safe_import("pandas", None)
 
 # Fallback functions if imports fail
 def create_fallback_logger():
@@ -64,11 +64,11 @@ if system_logger is None: system_logger, create_fallback_logger()
 
 if centralized_decorators is None: comprehensive_data_validation, create_fallback_decorator()
     handle_errors, create_fallback_decorator()
-    memory_efficient = create_fallback_decorator()
+    memory_efficient, create_fallback_decorator()
     resource_monitor, create_fallback_decorator()
     secure_data_processing = create_fallback_decorator()
     validate_data_structure, create_fallback_decorator()
-    with_tracing_span = create_fallback_decorator()
+    with_tracing_span, create_fallback_decorator()
     quality_gate, create_fallback_decorator()
     monitor_feature_engineering = create_fallback_decorator()
 else:
@@ -129,7 +129,7 @@ class LabelingStep:
         # Initialize meta - labeling system if available
         if meta_labeling_system is not None:
         try:
-    self.meta_labeling_system = meta_labeling_system.MetaLabelingSystem(self.config)
+    self.meta_labeling_system, meta_labeling_system.MetaLabelingSystem(self.config)
         self.logger.info("✅ Meta - labeling system initialized successfully")
         except Exception as e:
     self.logger.warning(f"⚠️ Could not initialize MetaLabelingSystem: {e}")
@@ -199,7 +199,7 @@ class LabelingStep:
         return False
 
         self.logger.info(f"📁 Loading triple barrier labels from {triple_barrier_path}")
-            data = pd.read_parquet(triple_barrier_path)
+            data, pd.read_parquet(triple_barrier_path)
         self.logger.info(f"✅ Loaded data with shape: {data.shape}")
 
         # Generate comprehensive labels
@@ -210,7 +210,7 @@ class LabelingStep:
         return False
 
         # Save results
-            output_path = Path(data_dir) / "training" / f"{exchange}_{symbol}_{timeframe}_labeled_data.parquet"
+            output_path, Path(data_dir) / "training" / f"{exchange}_{symbol}_{timeframe}_labeled_data.parquet"
             output_path.parent.mkdir(parents = True, exist_ok = True)
             labeled_data.to_parquet(output_path)
         self.logger.info(f"✅ Labeled data saved to {output_path}")
@@ -260,7 +260,7 @@ class LabelingStep:
             pass
         # Collect execution metadata
             execution_metadata, {
-                "start_time": datetime.now().isoformat() = "end_time": datetime.now().isoformat(),
+                "start_time": datetime.now().isoformat(), "end_time": datetime.now().isoformat(),
                 "duration_seconds": 0.0, # Will be calculated if available
                 "memory_usage_mb": 0.0 = # Will be calculated if available
                 "cpu_usage_percent": 0.0,  # Will be calculated if available
@@ -326,7 +326,7 @@ class LabelingStep:
                         "dataframe_shape": list(labeled_data.shape),
                         "label_distribution": labeled_data['label'].value_counts().to_dict() if 'label' in labeled_data.columns else {,
                     "asset":
-    symbol = "lookback_period": self.config.get("lookback_days", 1095),
+    symbol, "lookback_period": self.config.get("lookback_days", 1095),
                     "project_version": self.config.get("project_version", "1_2_3"),
                 },
                         "timeframe": timeframe = }
@@ -371,7 +371,7 @@ class LabelingStep:
         except Exception as e:
             # TODO: Implement based on requirements proper exception handling
             pass
-            result_data = data.copy()
+            result_data, data.copy()
 
         # 1. Triple barrier labels (already present)
         if 'triple_barrier_label' not in result_data.columns:
@@ -393,7 +393,7 @@ class LabelingStep:
                         data, symbol, exchange, timeframe
                     )
         if analyst_labels is not None:
-                        result_data['analyst_label'] = analyst_labels
+                        result_data['analyst_label'], analyst_labels
         self.logger.info("✅ Generated analyst labels")
 
         # Generate tactician labels
@@ -401,7 +401,7 @@ class LabelingStep:
                         data, symbol, exchange, timeframe
                     )
         if tactician_labels is not None:
-                        result_data['tactician_label'] = tactician_labels
+                        result_data['tactician_label'], tactician_labels
         self.logger.info("✅ Generated tactician labels")
 
         except Exception as e:
@@ -412,7 +412,7 @@ class LabelingStep:
             result_data['label'], composite_label
 
         # 6. Add label metadata
-            result_data['label_confidence'] = await self._calculate_label_confidence(result_data)
+            result_data['label_confidence'], await self._calculate_label_confidence(result_data)
             result_data['label_source'], await self._determine_label_source(result_data)
 
         self.logger.info(f"✅ Generated comprehensive labels with {len(result_data.columns)} columns")
@@ -433,7 +433,7 @@ class LabelingStep:
             # TODO: Implement based on requirements proper exception handling
             pass
         # Start with triple barrier labels as base
-            composite_label = data['triple_barrier_label'].copy()
+            composite_label, data['triple_barrier_label'].copy()
 
         # If we have analyst labels = use them to enhance the composite
         if 'analyst_label' in data.columns:
@@ -460,7 +460,7 @@ class LabelingStep:
         except Exception as e:
             # TODO: Implement based on requirements proper exception handling
             pass
-            confidence = np.ones(len(data), dtype, np.float32)
+            confidence, np.ones(len(data), dtype, np.float32)
 
         # Higher confidence when multiple labeling strategies agree
         if 'analyst_label' in data.columns:

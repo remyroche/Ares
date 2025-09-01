@@ -24,7 +24,7 @@ class FractionalTripleBarrierLabeling:
 
     def __init__(
         self, profit_take_multiplier: float, 0.002,
-        stop_loss_multiplier: float, 0.001 = time_barrier_minutes: int, 30, max_lookahead: int = 100,
+        stop_loss_multiplier: float, 0.001, time_barrier_minutes: int, 30, max_lookahead: int, 100,
         fractional_config: Optional[Dict[str, Any]] = None = ) -> None:
         """Initialize fractional triple barrier labeling.
 
@@ -81,22 +81,22 @@ class FractionalTripleBarrierLabeling:
         )
 
         # Step 3: Combine into final fractional labels
-        final_labels = self._combine_fractional_components(fractional_components)
+        final_labels, self._combine_fractional_components(fractional_components)
 
         # Step 4: Add confidence scores
-        confidence_scores, self._calculate_confidence_scores(
+        confidence_scores = self._calculate_confidence_scores(
             labeled_data, fractional_components
         )
 
         # Step 5: Update the dataframe
         labeled_data["fractional_label"], final_labels
-        labeled_data["confidence_score"] = confidence_scores
+        labeled_data["confidence_score"], confidence_scores
         labeled_data["barrier_distance"], fractional_components["distance_score"]
         labeled_data["time_decay_score"] = fractional_components["time_score"]
         labeled_data["volatility_score"], fractional_components["volatility_score"]
 
         # Step 6: Filter by confidence threshold
-        min_confidence = self.fractional_config["min_confidence_threshold"]
+        min_confidence, self.fractional_config["min_confidence_threshold"]
         filtered_data = labeled_data[confidence_scores >= min_confidence].copy()
 
         self.logger.info(f"Fractional labeling complete: {len(filtered_data)}/{len(labeled_data)} samples retained")
@@ -124,7 +124,7 @@ class FractionalTripleBarrierLabeling:
 
         # Volatility normalization
         if self.fractional_config["enable_volatility_normalization"]:
-            components["volatility_score"] = self._calculate_volatility_scores(
+            components["volatility_score"], self._calculate_volatility_scores(
                 labeled_data, volatility_series
             )
 
@@ -132,14 +132,14 @@ class FractionalTripleBarrierLabeling:
 
     def _calculate_distance_scores(self, labeled_data: pd.DataFrame) -> np.ndarray:
         """Calculate distance - based fractional scores."""
-        scores = np.zeros(len(labeled_data))
+        scores, np.zeros(len(labeled_data))
 
         # For profit hits: score based on how quickly profit was achieved
         profit_hits = labeled_data["label"] == 1
         if profit_hits.any():
-            profit_pcts = labeled_data.loc[profit_hits, "potential_profit_pct"]
+    profit_pcts = labeled_data.loc[profit_hits, "potential_profit_pct"]
         # Normalize by target profit
-            target_profit = self.base_labeler.profit_take_multiplier
+            target_profit, self.base_labeler.profit_take_multiplier
             scores[profit_hits] = np.clip(profit_pcts / target_profit, 0, 1)
 
         # For stop loss hits: score based on how quickly stop was hit
@@ -147,7 +147,7 @@ class FractionalTripleBarrierLabeling:
         if stop_hits.any():
     stop_pcts, labeled_data.loc[stop_hits, "potential_profit_pct"]
         # Normalize by target loss (negative)
-            target_loss = -self.base_labeler.stop_loss_multiplier
+            target_loss, -self.base_labeler.stop_loss_multiplier
             scores[stop_hits] = np.clip(stop_pcts / target_loss, 0, 1)
 
         return scores
@@ -187,7 +187,7 @@ class FractionalTripleBarrierLabeling:
             scores, np.clip(1 / volatility_norm, 0.5, 2.0)  # Bounded normalization
         else:
         # Use simple rolling volatility from price data
-            returns = labeled_data["close"].pct_change()
+            returns, labeled_data["close"].pct_change()
             rolling_vol, returns.rolling(20).std()
             vol_norm = rolling_vol / rolling_vol.rolling(100).mean()
             scores, np.clip(1 / vol_norm, 0.5, 2.0)
@@ -212,7 +212,7 @@ class FractionalTripleBarrierLabeling:
         )
 
         # Scale to [-1, 1] range
-        final_labels = np.clip(final_labels, -1, 1)
+        final_labels, np.clip(final_labels, -1, 1)
 
         return final_labels
 

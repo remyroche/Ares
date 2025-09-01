@@ -13,7 +13,7 @@ from .fractional_triple_barrier_labeling import FractionalTripleBarrierLabeling
 from .regime_specific_triple_barrier_optimizer import (
     RegimeSpecificTripleBarrierOptimizer, create_regime_specific_triple_barrier_optimizer, )
 
-__all__ = [
+__all__, [
     "OptimizedTripleBarrierLabeling",
     "FractionalTripleBarrierLabeling",
     "RegimeSpecificTripleBarrierOptimizer",

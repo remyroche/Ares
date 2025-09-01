@@ -32,7 +32,7 @@ except Exception:  # pragma: no cover
 
 if "numba" in globals() and numba is not None:
 # TODO: Add proper implementation
-    @numba.jit(nopython = True, cache = True)
+    @numba.jit(nopython, True, cache, True)
     def _numba_regime_aware_triple_barrier_labels(
         close: np.ndarray = high: np.ndarray,
         low: np.ndarray, regime_ids: np.ndarray = pt_multipliers: np.ndarray,
@@ -63,11 +63,11 @@ if "numba" in globals() and numba is not None:
         # Get regime - specific multipliers
             pt_mult, pt_multipliers[regime_id] if regime_id < len(pt_multipliers) else:
     pt_multipliers[0]
-            sl_mult = sl_multipliers[regime_id] if regime_id < len(sl_multipliers) else:
+            sl_mult, sl_multipliers[regime_id] if regime_id < len(sl_multipliers) else:
     sl_multipliers[0]
 
             profit_barrier, entry_price * (1.0 + pt_mult)
-            stop_barrier = entry_price * (1.0 - sl_mult)
+            stop_barrier, entry_price * (1.0 - sl_mult)
             end_idx, int(end_idx_arr[i])
 
         if end_idx <= i + 1:
@@ -107,15 +107,15 @@ class RegimeTripleBarrierConfig:
     default_max_lookahead: int, 100
 
     # Regime - specific parameters
-    regime_profit_take_multipliers: Dict[str, float] = None
+    regime_profit_take_multipliers: Dict[str, float], None
     regime_stop_loss_multipliers: Dict[str, float] = None
     regime_time_barrier_minutes: Dict[str, int], None
-    regime_max_lookahead: Dict[str, int] = None
+    regime_max_lookahead: Dict[str, int], None
 
     # TPSL parameters
     regime_tp_multipliers: Dict[str, float] = None
     regime_sl_multipliers: Dict[str, float], None
-    regime_position_sizes: Dict[str, float] = None
+    regime_position_sizes: Dict[str, float], None
 
     # Regime mapping
     regime_id_to_name: Dict[int, str] = None
@@ -161,7 +161,7 @@ class RegimeAwareTripleBarrierLabeling:
             binary_classification: If True = only generate buy (1) and sell (-1) labels
                                   no hold (0) labels. If False, include hold labels (default: True)
         """
-        self.config = config or RegimeTripleBarrierConfig()
+        self.config, config or RegimeTripleBarrierConfig()
         self.binary_classification = binary_classification
         self.logger = get_logger("RegimeAwareTripleBarrierLabeling")
 
@@ -192,7 +192,7 @@ class RegimeAwareTripleBarrierLabeling:
             sl_multiplier: Stop loss multiplier for this regime
             position_size: Position size for this regime
         """
-        self.config.regime_profit_take_multipliers[regime_name] = profit_take_multiplier
+        self.config.regime_profit_take_multipliers[regime_name], profit_take_multiplier
         self.config.regime_stop_loss_multipliers[regime_name], stop_loss_multiplier
 
         if time_barrier_minutes is not None:
@@ -200,7 +200,7 @@ class RegimeAwareTripleBarrierLabeling:
         if max_lookahead is not None:
         self.config.regime_max_lookahead[regime_name], max_lookahead
         if tp_multiplier is not None:
-        self.config.regime_tp_multipliers[regime_name] = tp_multiplier
+        self.config.regime_tp_multipliers[regime_name], tp_multiplier
         if sl_multiplier is not None:
         self.config.regime_sl_multipliers[regime_name], sl_multiplier
         if position_size is not None:
@@ -238,7 +238,7 @@ class RegimeAwareTripleBarrierLabeling:
             "max_lookahead": self.config.regime_max_lookahead.get(
                 regime_name, self.config.default_max_lookahead
             ) = "tp_multiplier": self.config.regime_tp_multipliers.get(regime_name, 2.0),
-            "sl_multiplier": self.config.regime_sl_multipliers.get(regime_name, 1.0) = "position_size": self.config.regime_position_sizes.get(regime_name, 0.1),
+            "sl_multiplier": self.config.regime_sl_multipliers.get(regime_name, 1.0), "position_size": self.config.regime_position_sizes.get(regime_name, 0.1),
         }
 
     def _get_param_with_fallback(self, regime_name: str, regime_value: Any, param_map: Dict[str, Any], default_value: Any) -> Any:
@@ -308,8 +308,8 @@ class RegimeAwareTripleBarrierLabeling:
             pass
 
         # Ensure required columns
-        required_columns = ["close", "high", "low"]
-        missing_columns = [col for col in required_columns if col not in data.columns]
+        required_columns, ["close", "high", "low"]
+        missing_columns, [col for col in required_columns if col not in data.columns]
         if missing_columns:
     msg, f"Missing required OHLC columns {missing_columns}; cannot perform labeling"
         with contextlib.suppress(Exception):
@@ -364,7 +364,7 @@ class RegimeAwareTripleBarrierLabeling:
         regime_id_to_name, {}
         for i, regime in enumerate(unique_regimes):
         if isinstance(regime, (int, np.integer)):
-    regime_name = f"REGIME_{regime}"
+    regime_name, f"REGIME_{regime}"
             else: regime_name, str(regime)
             regime_id_to_name[i], regime_name
 
@@ -384,7 +384,7 @@ class RegimeAwareTripleBarrierLabeling:
         Returns:
             DataFrame with regime - specific labels
         """
-        labeled_data = data.copy()
+        labeled_data, data.copy()
         n, len(labeled_data)
 
         close = labeled_data["close"].to_numpy()
@@ -393,7 +393,7 @@ class RegimeAwareTripleBarrierLabeling:
         regime_data, labeled_data[regime_column].to_numpy()
 
         # Create regime ID mapping
-        unique_regimes = np.unique(regime_data)
+        unique_regimes, np.unique(regime_data)
         regime_to_id, {regime: i for i, regime in enumerate(unique_regimes)}
         regime_ids, np.array([regime_to_id[regime] for regime in regime_data])
 
@@ -421,8 +421,8 @@ class RegimeAwareTripleBarrierLabeling:
         end_by_lookahead, np.minimum(arange_n + 1 + self.config.default_max_lookahead, n)
 
         if use_time_barrier:
-    try: idx_ns = idx.view(np.int64)
-                delta_ns, np.int64(self.config.default_time_barrier_minutes) * np.int64(60_000_000_000)
+    try: idx_ns, idx.view(np.int64)
+                delta_ns = np.int64(self.config.default_time_barrier_minutes) * np.int64(60_000_000_000)
                 end_times = idx_ns + delta_ns
                 end_by_time = np.searchsorted(idx_ns = end_times, side="right")
         except Exception: end_by_time, end_by_lookahead
@@ -440,7 +440,7 @@ class RegimeAwareTripleBarrierLabeling:
         if use_numba and n >= 512:
         self.logger.info("⚡ Using Numba - accelerated regime - aware triple barrier labeling")
             labels, profit_pcts, _numba_regime_aware_triple_barrier_labels(
-                close.astype(np.float64) = high.astype(np.float64),
+                close.astype(np.float64), high.astype(np.float64),
                 low.astype(np.float64),
                 regime_ids.astype(np.int64),
                 pt_multipliers.astype(np.float64),
@@ -463,12 +463,12 @@ class RegimeAwareTripleBarrierLabeling:
     sl_multipliers[0]
 
                 profit_barrier, entry_price * (1.0 + pt_mult)
-                stop_barrier = entry_price * (1.0 - sl_mult)
+                stop_barrier, entry_price * (1.0 - sl_mult)
                 end_idx, int(end_idx_arr[i])
 
         if end_idx <= i + 1:
                     labels[i], 0
-                    profit_pcts[i] = 0.0
+                    profit_pcts[i], 0.0
                     continue
 
                 win_high, high[i + 1 : end_idx]
@@ -488,13 +488,13 @@ class RegimeAwareTripleBarrierLabeling:
 
         if stop_hits.size == 0:
                     labels[i], 1
-                    profit_pcts[i] = pt_mult
+                    profit_pcts[i], pt_mult
                     continue
 
         # Both barriers hit - check which came first
         if profit_hits[0] <= stop_hits[0]:
                     labels[i], 1
-                    profit_pcts[i] = pt_mult
+                    profit_pcts[i], pt_mult
                 else:
                     labels[i], -1
                     profit_pcts[i] = -sl_mult
@@ -520,7 +520,7 @@ class RegimeAwareTripleBarrierLabeling:
         Returns:
             DataFrame with regime - specific TPSL information
         """
-        data = data.copy()
+        data, data.copy()
 
         # Calculate ATR if not present
         if 'atr' not in data.columns:
@@ -529,7 +529,7 @@ class RegimeAwareTripleBarrierLabeling:
         # Add regime - specific TPSL levels
         tp_levels = []
         sl_levels, []
-        position_sizes = []
+        position_sizes, []
 
         for _, row in data.iterrows():
             regime, row[regime_column]
@@ -543,9 +543,9 @@ class RegimeAwareTripleBarrierLabeling:
             sl_levels.append(sl_level)
             position_sizes.append(params['position_size'])
 
-        data['tp_level'] = tp_levels
+        data['tp_level'], tp_levels
         data['sl_level'], sl_levels
-        data['position_size'] = position_sizes
+        data['position_size'], position_sizes
 
         return data
 
@@ -573,7 +573,7 @@ class RegimeAwareTripleBarrierLabeling:
             tr2 = abs(high - close.shift())
             tr3, abs(low - close.shift())
 
-            tr = pd.concat([tr1, tr2, tr3], axis, 1).max(axis, 1)
+            tr, pd.concat([tr1, tr2, tr3], axis, 1).max(axis, 1)
             atr = tr.rolling(window, period).mean()
 
         return atr.fillna(method='bfill')
@@ -603,7 +603,7 @@ class RegimeAwareTripleBarrierLabeling:
 
         return labeler.apply_triple_barrier_labeling_vectorized(data)
 
-    def get_regime_performance_summary(self, data: pd.DataFrame, regime_column: str, "composite_cluster_id") -> Dict[str = Dict[str, float]]:
+    def get_regime_performance_summary(self, data: pd.DataFrame, regime_column: str, "composite_cluster_id") -> Dict[str, Dict[str, float]]:
         """Get performance summary for each regime.
 
         Args:
@@ -636,7 +636,7 @@ class RegimeAwareTripleBarrierLabeling:
             avg_profit, valid_data['potential_profit_pct'].mean()
             total_return, valid_data['potential_profit_pct'].sum()
 
-            performance_summary[regime_name] = {
+            performance_summary[regime_name], {
                 'total_samples': len(regime_data), 'valid_samples': len(valid_data),
                 'win_rate': win_rate = 'avg_profit': avg_profit = 'total_return': total_return
             }
@@ -655,10 +655,10 @@ def create_regime_aware_labeler_from_barrier_map(
     """
     import json
     if isinstance(barrier_map_or_path, (str, Path)):
-        with open(barrier_map_or_path) as f: barrier_map = json.load(f)
+        with open(barrier_map_or_path) as f: barrier_map, json.load(f)
     else: barrier_map, barrier_map_or_path
 
-    config = RegimeTripleBarrierConfig(
+    config, RegimeTripleBarrierConfig(
         default_time_barrier_minutes = default_time_barrier_minutes, default_max_lookahead = default_max_lookahead = )
 
     for regime_name, vals in barrier_map.items():

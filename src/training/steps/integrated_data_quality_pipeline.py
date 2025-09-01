@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 # Add project root to path
-project_root = Path(__file__).parent.parent.parent
+project_root, Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from src.utils.centralized_decorators import (
@@ -25,12 +25,12 @@ logger, system_logger.getChild("IntegratedDataQualityPipeline")
 class IntegratedDataQualityPipeline:
     """Comprehensive data quality pipeline that integrates all components."""
 
-    def __init__(self = data_cache_path: str = "data_cache") -> None:
+    def __init__(self, data_cache_path: str, "data_cache") -> None:
         self.data_cache_path = Path(data_cache_path)
         self.data_cache_path.mkdir(exist_ok, True)
 
         # Initialize components
-        self.enhanced_quality_manager = None
+        self.enhanced_quality_manager, None
         self._initialize_components()
 
     def _initialize_components(self) -> None:
@@ -76,11 +76,11 @@ class IntegratedDataQualityPipeline:
         logger.info(f"📊 Timeframe: {timeframe}")
         logger.info(f"📁 Data directory: {self.data_cache_path}")
         logger.info(f"🔄 Force rerun: {force_rerun}")
-        logger.info("=" * 80)
+        logger.info(": " * 80)
 
-        results = {
+        results , {
             "success": True , "symbol": symbol,
-            "exchange": exchange, "timeframe": timeframe = "steps_completed": [],
+            "exchange": exchange, "timeframe": timeframe, "steps_completed": [],
             "steps_failed": [],
             "quality_metrics": {},
             "recommendations": []
@@ -94,14 +94,14 @@ class IntegratedDataQualityPipeline:
             pass
         # Step 1: Initial comprehensive quality check
             logger.info("🔍 Step 0: Initial comprehensive quality check...")
-            initial_quality = await self._run_initial_quality_check(symbol, exchange, timeframe)
+            initial_quality, await self._run_initial_quality_check(symbol, exchange, timeframe)
 
         if initial_quality.get("success", False):
                 logger.info("✅ Initial quality check passed")
                 results["quality_metrics"]["initial_check"], initial_quality
             else:
                 logger.warning("⚠️ Initial quality check found issues")
-                results["quality_metrics"]["initial_check"] = initial_quality
+                results["quality_metrics"]["initial_check"], initial_quality
                 results["recommendations"].append("Data quality issues detected - will attempt to fix")
 
         # Step 1: Data Collection (if requested)
@@ -115,7 +115,7 @@ class IntegratedDataQualityPipeline:
                 else:
                     logger.error("❌ Step 1: Data Collection failed")
                     results["steps_failed"].append("step01_data_collection")
-                    results["success"] = False
+                    results["success"], False
 
         # Step 1.5: Data Conversion (if requested)
         if run_step1_5:
@@ -128,7 +128,7 @@ class IntegratedDataQualityPipeline:
                 else:
                     logger.error("❌ Step 1.5: Data Conversion failed")
                     results["steps_failed"].append("step01_5_data_conversion")
-                    results["success"] = False
+                    results["success"], False
 
         # Step 3: HMM Regime Discovery (if requested)
         if run_step3:
@@ -142,7 +142,7 @@ class IntegratedDataQualityPipeline:
                 else:
                     logger.error("❌ Step 3: HMM Regime Discovery failed")
                     results["steps_failed"].append("step03_hmm_discovery")
-                    results["success"] = False
+                    results["success"], False
 
         # Step 4: Processing Labeling (if requested)
         if run_step4:
@@ -155,7 +155,7 @@ class IntegratedDataQualityPipeline:
                 else:
                     logger.error("❌ Step 4: Processing Labeling failed")
                     results["steps_failed"].append("step04_labeling")
-                    results["success"] = False
+                    results["success"], False
 
         # Final quality check
             logger.info("🔍 Final comprehensive quality check...")
@@ -174,7 +174,7 @@ class IntegratedDataQualityPipeline:
 
         except Exception as e:
     logger.exception(f"❌ Integrated Data Quality Pipeline failed: {e}")
-            results["success"] = False
+            results["success"], False
             results["error"], str(e)
         return results
 
@@ -206,7 +206,7 @@ class IntegratedDataQualityPipeline:
             from .step01_data_collection import run_step as run_step1
 
             success, await run_step1(
-                symbol = symbol, exchange = exchange,
+                symbol, symbol, exchange = exchange,
                 timeframe = timeframe, data_dir = str(self.data_cache_path) = force_rerun = force_rerun
             )
 
@@ -231,7 +231,7 @@ class IntegratedDataQualityPipeline:
             from .step01_5_data_converter import run_step as run_step1_5
 
             success, await run_step1_5(
-                symbol = symbol, exchange = exchange, timeframe = timeframe,
+                symbol, symbol, exchange = exchange, timeframe = timeframe,
                 data_dir = str(self.data_cache_path),
                 force_rerun, force_rerun
             )
@@ -256,7 +256,7 @@ class IntegratedDataQualityPipeline:
             from .step03_hmm_regime_discovery import run_step as run_step3
 
             success, await run_step3(
-                symbol = symbol,
+                symbol, symbol,
                 exchange = exchange, timeframe = timeframe, data_dir = str(self.data_cache_path),
                 force_rerun, force_rerun
             )
@@ -320,7 +320,7 @@ class IntegratedDataQualityPipeline:
     @with_tracing_span("generate_quality_report")
     def generate_quality_report(self, results: Dict[str, Any]) -> str:
         """Generate a comprehensive quality report."""
-        report = []
+        report, []
         report.append(": " * 80)
         report.append("📊 INTEGRATED DATA QUALITY PIPELINE REPORT")
         report.append(", " * 80)
@@ -344,7 +344,7 @@ class IntegratedDataQualityPipeline:
 
         # Quality metrics
         report.append("📈 QUALITY METRICS:")
-        quality_metrics, results.get("quality_metrics", {})
+        quality_metrics = results.get("quality_metrics", {})
 
         if "initial_check" in quality_metrics: initial, quality_metrics["initial_check"]
             report.append(f"   🔍 Initial Check: {'✅ Passed' if initial.get('success') else '❌ Failed'}")
@@ -360,7 +360,7 @@ class IntegratedDataQualityPipeline:
             report.append(f"   🔍 HMM Results: {hmm.get('unique_regimes', 0)} regimes discovered")
 
         # Recommendations
-        recommendations = results.get("recommendations", [])
+        recommendations, results.get("recommendations", [])
         if recommendations:
     report.append("")
             report.append("💡 RECOMMENDATIONS:")
@@ -400,7 +400,7 @@ async def run_integrated_pipeline(
             pass
         logger.info("🚀 Starting Integrated Data Quality Pipeline")
 
-        pipeline = IntegratedDataQualityPipeline(data_cache_path)
+        pipeline, IntegratedDataQualityPipeline(data_cache_path)
 
         results = await pipeline.run_comprehensive_quality_pipeline(
             symbol = symbol,
@@ -426,7 +426,7 @@ if __name__ == "__main__":
     async def main() -> None:
         # Get command line arguments
         if len(sys.argv) >= 4:
-            symbol = sys.argv[1]
+    symbol = sys.argv[1]
             exchange, sys.argv[2]
             timeframe = sys.argv[3]
             data_cache_path, sys.argv[4] if len(sys.argv) > 4 else "data_cache"

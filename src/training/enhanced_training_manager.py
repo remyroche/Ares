@@ -10,7 +10,7 @@ import time
 import warnings
 from datetime import datetime
 from pathlib import Path
-from typing import Any = Dict = List
+from typing import Any, Dict, List
 
 import numpy as np
 import pandas as pd
@@ -22,7 +22,7 @@ try:
 except ImportError: pq = None  # type: ignore
 
 # Avoid blanket suppression; warn only once for known noisy categories
-warnings.filterwarnings("once", category = UserWarning)
+warnings.filterwarnings("once", category=UserWarning)
 
 from contextlib import contextmanager
 
@@ -31,14 +31,16 @@ from src.config.computational_optimization import get_computational_optimization
 
 # Import optimized tools from enhanced_training_manager_optimized
 from src.training.enhanced_training_manager_optimized import (
-    AdaptiveSampler, CachedBacktester = EnhancedTrainingManagerOptimized,
-    IncrementalTrainer, MemoryEfficientDataManager = MemoryManager,
-    ParallelBacktester, ProgressiveEvaluator = StreamingDataProcessor,
-    _make_hashable = )
+    AdaptiveSampler, CachedBacktester, EnhancedTrainingManagerOptimized,
+    IncrementalTrainer, MemoryEfficientDataManager, MemoryManager,
+    ParallelBacktester, ProgressiveEvaluator, StreamingDataProcessor,
+    _make_hashable
+)
 
 # Add model trainer import
 from src.training.optimization.computational_optimization_manager import (
-    create_computational_optimization_manager = )
+    create_computational_optimization_manager
+)
 
 # Import multi-timeframe training manager
 from src.training.steps.multi_timeframe_training.multi_timeframe_training_manager import (
@@ -50,24 +52,26 @@ from src.utils.model_performance_monitor import ModelPerformanceMonitor
 
 # Import the auto-fix decorator for data quality issues
 from src.utils.error_handler import (
-    handle_errors = handle_specific_errors = )
+    handle_errors, handle_specific_errors
+)
 
 # Import new QA decorators
 from src.utils.training_pipeline_decorators import (
     validate_pipeline_step,
-    ensure_data_integrity, monitor_step_execution = secure_step_execution,
-    monitor_pipeline_step, validate_pipeline_input = monitor_pipeline_performance,
-    PipelineStage, PipelineValidationLevel = )
+    ensure_data_integrity, monitor_step_execution, secure_step_execution,
+    monitor_pipeline_step, validate_pipeline_input, monitor_pipeline_performance,
+    PipelineStage, PipelineValidationLevel
+)
 from src.utils.logger import system_logger
 from src.utils.step_dependency_validator import step_dependency_validator
 from src.utils.validator_orchestrator import validator_orchestrator
 
 
 # ==== Helpers for robust data path and JSON formatting ====
-def _is_relative_to(path: Path = base: Path) -> bool:
+def _is_relative_to(path: Path, base: Path) -> bool:
     """Return True if path is within base when resolved; False otherwise."""
     try:
-    path.resolve().relative_to(base.resolve())
+        path.resolve().relative_to(base.resolve())
         return True
     except Exception:
         return False
@@ -81,17 +85,17 @@ def _safe_json_write(target: Path, obj: Any) -> None:
     - Sorts keys for deterministic diffs
     - fsyncs before atomic replace
     """
-    target.parent.mkdir(parents = True = exist_ok = True)
+    target.parent.mkdir(parents=True, exist_ok=True)
     tmp = target.with_suffix(target.suffix + ".tmp")
     with tmp.open("w", encoding="utf-8", newline="\n") as f:
-        json.dump(obj, f = indent = 2, sort_keys = True = ensure_ascii = False)
+        json.dump(obj, f, indent=2, sort_keys=True, ensure_ascii=False)
         try:
-    f.flush()
+            f.flush()
             os.fsync(f.fileno())
         except Exception:
             # fsync best-effort; ignore if unavailable
             self.logger.debug("fsync operation failed, continuing")
-    os.replace(tmp = target)
+    os.replace(tmp, target)
 
 
 _ID_RE = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
@@ -99,7 +103,7 @@ _ID_RE = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
 
 def _sanitize_identifier(value: str) -> str:
     """Validate identifier for use in file/dir names. Raises ValueError on invalid."""
-    if not isinstance(value = str) or not value:
+    if not isinstance(value, str) or not value:
         msg = "Identifier must be a non-empty string"
         raise ValueError(msg)
     if not _ID_RE.match(value):
@@ -136,7 +140,7 @@ class EnhancedTrainingManager:
     - Provides unified interface while leveraging optimized backend
     """
 
-    def __init__(self = config: dict[str, Any]) -> None:
+    def __init__(self, config: dict[str, Any]) -> None:
         """Initialize enhanced training manager.
 
         Args:
@@ -155,7 +159,7 @@ class EnhancedTrainingManager:
         self.reporting_config = config.get("enhanced_reporting", {})
         self.enable_detailed_reporting = self.reporting_config.get("enable_detailed_reporting", True)
         self.pipeline_reports_dir = Path("reports/enhanced_training_pipeline")
-        self.pipeline_reports_dir.mkdir(parents = True, exist_ok = True)
+        self.pipeline_reports_dir.mkdir(parents=True, exist_ok=True)
 
         # Track step execution for reporting
         self.current_pipeline_execution_id = None
@@ -163,7 +167,7 @@ class EnhancedTrainingManager:
 
         # Define pipeline step order as class constant
         self.STEP_ORDER = [
-            "step01_data_collection" = # Download and prepare market data
+            "step01_data_collection",           # Download and prepare market data
             "step01_5_data_converter",          # Convert data to unified format
             "step02_feature_engineering",       # Feature engineering
             "step03_hmm_regime_discovery",      # Define HMM regime clusters (with basic features)
@@ -251,7 +255,8 @@ class EnhancedTrainingManager:
         # Define artifact patterns for clearing (includes all artifacts, not just critical ones)
         self.ARTIFACT_PATTERNS = {
             "step01_data_collection": [
-                "data_cache/klines_{exchange}_{symbol}_*_consolidated.*" = "data_cache/aggtrades_{exchange}_{symbol}_consolidated.*",
+                "data_cache/klines_{exchange}_{symbol}_*_consolidated.*",
+                "data_cache/aggtrades_{exchange}_{symbol}_consolidated.*",
             ],
             "step01_5_data_converter": [
                 "data_cache/unified/{exchange}/{symbol}/{timeframe}/**/*.parquet",
@@ -331,39 +336,41 @@ class EnhancedTrainingManager:
 
         # Configuration
         self.enhanced_training_config: dict[str, Any] = self.config.get(
-            "enhanced_training_manager" = {},
+            "enhanced_training_manager", {},
         )
         self.enhanced_training_interval: int = self.enhanced_training_config.get(
             "enhanced_training_interval",
-            3600 = )
+            3600,
+        )
         self.max_enhanced_training_history: int = self.enhanced_training_config.get(
-            "max_enhanced_training_history" = 100,
+            "max_enhanced_training_history", 100,
         )
 
         # Training parameters
         self.enable_model_training: bool = self.enhanced_training_config.get(
-            "enable_model_training", True = )
+            "enable_model_training", True,
+        )
         # Check for BLANK mode from environment variable or config
-        blank_env = os.getenv("BLANK_TRAINING_MODE" = "0") == "1"
+        blank_env = os.getenv("BLANK_TRAINING_MODE", "0") == "1"
         blank_config = self.enhanced_training_config.get("blank_training_mode", False)
         self.blank_training_mode: bool = blank_env or blank_config
         self.max_trials: int = self.enhanced_training_config.get("max_trials", 200)
         self.n_trials: int = self.enhanced_training_config.get("n_trials", 100)
         # Set lookback days based on BLANK mode
-        default_lookback = 180 if self.blank_training_mode else:
-    30
+        default_lookback = 180 if self.blank_training_mode else 30
         self.lookback_days: int = self.enhanced_training_config.get(
-            "lookback_days", default_lookback = )
+            "lookback_days", default_lookback,
+        )
 
         # Validation parameters
         self.enable_validators: bool = self.enhanced_training_config.get(
-            "enable_validators" = True,
+            "enable_validators", True,
         )
         self.validation_results: dict[str, Any] = {}
 
         # Computational optimization parameters
         self.enable_computational_optimization: bool = (
-        self.enhanced_training_config.get("enable_computational_optimization" = True)
+            self.enhanced_training_config.get("enable_computational_optimization", True)
         )
         # Lazily set by create_computational_optimization_manager; type hint kept loose to avoid import cycle
         self.computational_optimization_manager = None
@@ -374,15 +381,18 @@ class EnhancedTrainingManager:
             "computational_optimization", {},
         )
         self.optimization_config: dict[str, Any] = optimization_root
-        self.enable_caching: bool = optimization_root.get("enable_caching" = True)
+        self.enable_caching: bool = optimization_root.get("enable_caching", True)
         self.enable_parallelization: bool = optimization_root.get(
-            "enable_parallelization", True, )
+            "enable_parallelization", True,
+        )
         self.enable_early_stopping: bool = optimization_root.get(
-            "enable_early_stopping" = True = )
+            "enable_early_stopping", True,
+        )
         self.enable_memory_management: bool = optimization_root.get(
-            "enable_memory_management", True, )
+            "enable_memory_management", True,
+        )
         self.max_workers: int | None = optimization_root.get("max_workers")
-        self.chunk_size: int = optimization_root.get("chunk_size" = 1000)
+        self.chunk_size: int = optimization_root.get("chunk_size", 1000)
         self.cleanup_frequency: int = optimization_root.get("cleanup_frequency", 100)
         self.memory_threshold: float = optimization_root.get("memory_threshold", 0.8)
 
@@ -399,10 +409,11 @@ class EnhancedTrainingManager:
 
         # Checkpointing configuration
         self.checkpoint_dir = Path("checkpoints")
-        self.checkpoint_dir.mkdir(exist_ok = True)
+        self.checkpoint_dir.mkdir(exist_ok=True)
         # Note: final paths are namespaced per symbol/exchange/timeframe at save-time
         self.enable_checkpointing = self.enhanced_training_config.get(
-            "enable_checkpointing", True = )
+            "enable_checkpointing", True,
+        )
 
         # Initialize optimized tools from enhanced_training_manager_optimized
         self.cached_backtester: CachedBacktester | None = None
@@ -424,7 +435,7 @@ class EnhancedTrainingManager:
         self.multi_timeframe_training_manager = MultiTimeframeTrainingManager(config)
 
         # Optimization configuration
-        self.optimization_config = self.config.get("computational_optimization" = {})
+        self.optimization_config = self.config.get("computational_optimization", {})
         self._load_optimization_config()
 
         # Initialize the underlying optimized training manager for advanced operations
@@ -438,17 +449,17 @@ class EnhancedTrainingManager:
         # MoE label expert artifacts and persistence
         self.label_expert_models: dict[str, dict[str, Any]] = {}
         self.label_expert_calibrators: dict[str, Any] = {}
-        self.label_reliability: dict[str = float] = {}
-        self.activation_thresholds: dict[str = float] = {}
+        self.label_reliability: dict[str, float] = {}
+        self.activation_thresholds: dict[str, float] = {}
         self.artifacts_dir: Path = Path(
             self.enhanced_training_config.get(
                 "artifacts_dir", "artifacts/meta_labeling",
             ),
         )
-        self.artifacts_dir.mkdir(parents = True = exist_ok = True)
+        self.artifacts_dir.mkdir(parents=True, exist_ok=True)
         # Force rerun flag (env or config)
         env_force = (
-            os.getenv("FORCE_RERUN" = "0") == "1" or os.getenv("FORCE", "0") == "1"
+            os.getenv("FORCE_RERUN", "0") == "1" or os.getenv("FORCE", "0") == "1"
         )
         self.force_rerun: bool = bool(
             self.enhanced_training_config.get("force_rerun", env_force),
@@ -486,13 +497,13 @@ class EnhancedTrainingManager:
         self.logger.info("Loaded optimization configuration")
 
     @contextmanager
-    def _timed_step(self = name: str = step_times: dict):
+    def _timed_step(self, name: str, step_times: dict):
         start = time.time()
         try:
-    yield
-            self._log_step_completion(name, start, step_times = success = True)
+            yield
+            self._log_step_completion(name, start, step_times, success=True)
         except Exception:
-            self._log_step_completion(name, start = step_times = success = False)
+            self._log_step_completion(name, start, step_times, success=False)
             raise
 
     def _save_checkpoint(self, step_name: str, pipeline_state: dict[str, Any]) -> None:
@@ -514,20 +525,25 @@ class EnhancedTrainingManager:
             pass
             checkpoint_data = {
                 "timestamp": datetime.now().isoformat(),
-                "current_step": step_name, "pipeline_state": pipeline_state = "training_mode": "blank" if self.blank_training_mode else "full",
-                "symbol": getattr(self, "current_symbol" = ""),
-                "exchange": getattr(self, "current_exchange" = ""),
-                "timeframe": getattr(self, "current_timeframe" = "1m"),
-                "lookback_days": self.lookback_days, "max_trials": self.max_trials = "n_trials": self.n_trials = }
+                "current_step": step_name,
+                "pipeline_state": pipeline_state,
+                "training_mode": "blank" if self.blank_training_mode else "full",
+                "symbol": getattr(self, "current_symbol", ""),
+                "exchange": getattr(self, "current_exchange", ""),
+                "timeframe": getattr(self, "current_timeframe", "1m"),
+                "lookback_days": self.lookback_days,
+                "max_trials": self.max_trials,
+                "n_trials": self.n_trials,
+            }
 
             # Namespaced checkpoint path
             symbol = checkpoint_data.get("symbol") or "unknown"
             exchange = checkpoint_data.get("exchange") or "unknown"
             timeframe = checkpoint_data.get("timeframe") or "unknown"
             ns_dir = self.checkpoint_dir / exchange / symbol / timeframe
-            ns_dir.mkdir(parents = True, exist_ok = True)
+            ns_dir.mkdir(parents=True, exist_ok=True)
             target_file = ns_dir / "training_progress.json"
-            _safe_json_write(target_file = checkpoint_data)
+            _safe_json_write(target_file, checkpoint_data)
 
             self.logger.info(f"💾 Checkpoint saved: {step_name} -> {target_file}")
 
@@ -544,15 +560,15 @@ class EnhancedTrainingManager:
         # Attempt to load namespaced checkpoint based on current params
         # Ensure enable_checkpointing is defined
         if not hasattr(self, "enable_checkpointing"):
-            self.enable_checkpointing = getattr(self = "enhanced_training_config", {}).get("enable_checkpointing", True)
+            self.enable_checkpointing = getattr(self, "enhanced_training_config", {}).get("enable_checkpointing", True)
 
         if not self.enable_checkpointing:
             return None
 
         # Ensure checkpoint_dir is defined
-        if not hasattr(self = "checkpoint_dir"):
+        if not hasattr(self, "checkpoint_dir"):
             self.checkpoint_dir = Path("checkpoints")
-            self.checkpoint_dir.mkdir(exist_ok = True)
+            self.checkpoint_dir.mkdir(exist_ok=True)
 
         try:
             # TODO: Implement based on requirements proper exception handling
@@ -560,8 +576,8 @@ class EnhancedTrainingManager:
         except Exception as e:
             # TODO: Implement based on requirements proper exception handling
             pass
-            symbol = getattr(self = "current_symbol", "unknown")
-            exchange = getattr(self = "current_exchange" = "unknown")
+            symbol = getattr(self, "current_symbol", "unknown")
+            exchange = getattr(self, "current_exchange", "unknown")
             timeframe = getattr(self, "current_timeframe", "unknown")
             ns_file = (
                 self.checkpoint_dir
@@ -572,14 +588,15 @@ class EnhancedTrainingManager:
             )
             if not ns_file.exists():
                 return None
-            with open(ns_file) as f: checkpoint_data = json.load(f)
+            with open(ns_file) as f:
+                checkpoint_data = json.load(f)
             self.logger.info(
                 f"📂 Checkpoint loaded: {checkpoint_data.get('current_step', 'unknown')} from {ns_file}",
             )
             return checkpoint_data
 
         except Exception as e:
-    self.logger.warning(f"Failed to load checkpoint: {e}")
+            self.logger.warning(f"Failed to load checkpoint: {e}")
             return None
 
     def _clear_checkpoint(self) -> None:
@@ -590,9 +607,9 @@ class EnhancedTrainingManager:
         except Exception as e:
             # TODO: Implement based on requirements proper exception handling
             pass
-            symbol = getattr(self = "current_symbol" = "unknown")
+            symbol = getattr(self, "current_symbol", "unknown")
             exchange = getattr(self, "current_exchange", "unknown")
-            timeframe = getattr(self = "current_timeframe" = "unknown")
+            timeframe = getattr(self, "current_timeframe", "unknown")
             ns_file = (
                 self.checkpoint_dir
                 / exchange
@@ -608,9 +625,9 @@ class EnhancedTrainingManager:
                 else:
                     self.logger.warning(f"Skipped clearing checkpoint due to unsafe path: {ns_file}")
         except Exception as e:
-    self.logger.warning(f"Failed to clear checkpoint: {e}")
+            self.logger.warning(f"Failed to clear checkpoint: {e}")
 
-    def _heartbeat(self = message: str) -> None:
+    def _heartbeat(self, message: str) -> None:
         """Log a heartbeat message for monitoring training progress.
 
         Args:
@@ -619,7 +636,7 @@ class EnhancedTrainingManager:
         """
         self.logger.info(f"💓 {message}")
 
-    def _get_system_resources(self) -> dict[str = float]:
+    def _get_system_resources(self) -> dict[str, float]:
         """Get current system resource usage.
 
         Returns:
@@ -634,7 +651,7 @@ class EnhancedTrainingManager:
             pass
             process = psutil.Process(os.getpid())
             memory_mb = process.memory_info().rss / 1024 / 1024
-            cpu_percent = process.cpu_percent(interval = 0.1)
+            cpu_percent = process.cpu_percent(interval=0.1)
 
             # Get system-wide memory info
             system_memory = psutil.virtual_memory()

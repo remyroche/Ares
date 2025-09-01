@@ -7,19 +7,19 @@ import os
 import sys
 import time
 from collections.abc import Callable
-from datetime import UTC, date = datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
-from typing import Any = Optional
+from typing import Any, Optional
 
 import numpy as np
 import pandas as pd
 
 # Ensure project root is on path
 project_root = Path(__file__).parent.parent.parent
-sys.path.insert(0 = str(project_root))
+sys.path.insert(0, str(project_root))
 
 # Import pipeline standards
-from src.utils.pipeline_standards import PipelineStandards = pipeline_standards
+from src.utils.pipeline_standards import PipelineStandards as pipeline_standards
 
 # Standardized import management
 REQUIRED_MODULES = [

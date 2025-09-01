@@ -1676,31 +1676,31 @@ class AutoencoderFeatureAnalyzer:
         self.config = config
         self.logger = system_logger.getChild("AutoencoderFeatureAnalyzer")
 
-# Analysis results storage
-self.importance_scores = {}
-self.correlation_analysis = {}
-self.stability_metrics = {}
-self.regime_analysis = {}
+        # Analysis results storage
+        self.importance_scores = {}
+        self.correlation_analysis = {}
+        self.stability_metrics = {}
+        self.regime_analysis = {}
 
-def analyze_feature_importance(
-self,
-encoded_features: pd.DataFrame,
-labels: np.ndarray,
-original_features: pd.DataFrame | None = None,
-regime_labels: np.ndarray | None = None,
-) -> dict[str, Any]:
+    def analyze_feature_importance(
+        self,
+        encoded_features: pd.DataFrame,
+        labels: np.ndarray,
+        original_features: pd.DataFrame | None = None,
+        regime_labels: np.ndarray | None = None,
+    ) -> dict[str, Any]:
         """
-Comprehensive analysis of autoencoder feature importance.
+        Comprehensive analysis of autoencoder feature importance.
 
-Args:
+        Args:
             encoded_features: DataFrame with autoencoder features
-labels: Target labels for prediction
-original_features: Original features for comparison (optional)
-regime_labels: Market regime labels for regime-specific analysis (optional)
+            labels: Target labels for prediction
+            original_features: Original features for comparison (optional)
+            regime_labels: Market regime labels for regime-specific analysis (optional)
 
-Returns:
+        Returns:
             Dictionary containing all analysis results
-"""
+        """
         self.logger.info(
             "🔍 Starting comprehensive autoencoder feature importance analysis..."
         )
@@ -1865,10 +1865,6 @@ Returns:
         )
 
         return results
-
-    except Exception as e:
-        self.logger.exception(f"❌ Error in correlation analysis: {e}")
-        return {"error": str(e)}
 
     def _compute_ml_importance(
         self, encoded_features: pd.DataFrame, labels: np.ndarray
@@ -2113,931 +2109,911 @@ labels: np.ndarray,
 regime_labels: np.ndarray,
 ) -> dict[str, Any]:
         """Analyze feature importance across different market regimes."""
-try:
-    # Exception handling placeholder - implement specific error handling as needed
-except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
-unique_regimes = np.unique(regime_labels)
-self.logger.info(
-f"🔄 Analyzing feature importance across {len(unique_regimes)} regimes: {unique_regimes}"
-)
+        try:
+            # Exception handling placeholder - implement specific error handling as needed
+            unique_regimes = np.unique(regime_labels)
+            self.logger.info(
+                f"🔄 Analyzing feature importance across {len(unique_regimes)} regimes: {unique_regimes}"
+            )
+        except Exception as e:
+            # Exception handling placeholder - implement specific error handling as needed
+            self.logger.exception(f"❌ Error in regime-specific analysis: {e}")
+            return {"error": str(e)}
 
-regime_importance = {}
+            regime_importance = {}
 
-for regime in unique_regimes:
+            for regime in unique_regimes:
                 regime_mask = regime_labels == regime
-regime_features = encoded_features[regime_mask]
-regime_labels_subset = labels[regime_mask]
+                regime_features = encoded_features[regime_mask]
+                regime_labels_subset = labels[regime_mask]
 
-if len(regime_features) < 50:  # Skip regimes with too few samples
-self.logger.warning(
-f"⚠️ Regime {regime} has insufficient samples ({len(regime_features)})"
-)
-continue
+                if len(regime_features) < 50:  # Skip regimes with too few samples
+                    self.logger.warning(
+                        f"⚠️ Regime {regime} has insufficient samples ({len(regime_features)})"
+                    )
+                    continue
 
-# Compute importance for this regime
-regime_importance[regime] = self._compute_ml_importance(
-regime_features, regime_labels_subset
-)
+                # Compute importance for this regime
+                regime_importance[regime] = self._compute_ml_importance(
+                    regime_features, regime_labels_subset
+                )
 
-self.logger.info(
-f"🔄 Regime {regime}: {len(regime_features)} samples analyzed"
-)
+                self.logger.info(
+                    f"🔄 Regime {regime}: {len(regime_features)} samples analyzed"
+                )
 
-# Compare importance across regimes
-if len(regime_importance) > 1:
+            # Compare importance across regimes
+            if len(regime_importance) > 1:
                 # Find common features across all regimes
-all_features = set(encoded_features.columns)
-common_features = all_features.copy()
+                all_features = set(encoded_features.columns)
+                common_features = all_features.copy()
 
-for regime, importance_data in regime_importance.items():
+                for regime, importance_data in regime_importance.items():
                     if "ensemble" in importance_data:
                         regime_features = set(
-[item["feature"] for item in importance_data["ensemble"]]
-)
-common_features &= regime_features
+                            [item["feature"] for item in importance_data["ensemble"]]
+                        )
+                        common_features &= regime_features
 
-# Compute importance consistency across regimes
-consistency_scores = {}
-for feature in common_features:
+                # Compute importance consistency across regimes
+                consistency_scores = {}
+                for feature in common_features:
                     importances = []
-for regime, importance_data in regime_importance.items():
+                    for regime, importance_data in regime_importance.items():
                         if "ensemble" in importance_data:
                             feature_importance = next(
-(
-item["ensemble_importance"]
-for item in importance_data["ensemble"]
-if item["feature"] == feature
-),
-0,
-)
-importances.append(feature_importance)
+                                (
+                                    item["ensemble_importance"]
+                                    for item in importance_data["ensemble"]
+                                    if item["feature"] == feature
+                                ),
+                                0,
+                            )
+                            importances.append(feature_importance)
 
-if importances:
+                    if importances:
                         consistency_scores[feature] = {
-"mean_importance": np.mean(importances),
-"std_importance": np.std(importances),
-"consistency": 1
-- (np.std(importances) / (np.mean(importances) + 1e-8)),
-}
+                            "mean_importance": np.mean(importances),
+                            "std_importance": np.std(importances),
+                            "consistency": 1
+                            - (np.std(importances) / (np.mean(importances) + 1e-8)),
+                        }
 
-consistency_df = pd.DataFrame.from_dict(
-consistency_scores, orient="index"
-)
-consistency_df = consistency_df.sort_values(
-"consistency", ascending=False
-)
+                consistency_df = pd.DataFrame.from_dict(
+                    consistency_scores, orient="index"
+                )
+                consistency_df = consistency_df.sort_values(
+                    "consistency", ascending=False
+                )
 
-results = {
-"regime_importance": regime_importance,
-"consistency_analysis": consistency_df.to_dict("index"),
-"consistent_features": consistency_df[
-consistency_df["consistency"] > 0.8
-].index.tolist(),
-"inconsistent_features": consistency_df[
-consistency_df["consistency"] < 0.3
-].index.tolist(),
-}
-else:
                 results = {
-"regime_importance": regime_importance,
-"consistency_analysis": {},
-"consistent_features": [],
-"inconsistent_features": [],
-}
+                    "regime_importance": regime_importance,
+                    "consistency_analysis": consistency_df.to_dict("index"),
+                    "consistent_features": consistency_df[
+                        consistency_df["consistency"] > 0.8
+                    ].index.tolist(),
+                    "inconsistent_features": consistency_df[
+                        consistency_df["consistency"] < 0.3
+                    ].index.tolist(),
+                }
+            else:
+                results = {
+                    "regime_importance": regime_importance,
+                    "consistency_analysis": {},
+                    "consistent_features": [],
+                    "inconsistent_features": [],
+                }
 
-self.logger.info("🔄 Regime analysis complete:")
-self.logger.info(f"   📊 Regimes analyzed: {len(regime_importance)}")
-self.logger.info(
-f"   📊 Consistent features: {len(results.get('consistent_features', []))}"
-)
+            self.logger.info("🔄 Regime analysis complete:")
+            self.logger.info(f"   📊 Regimes analyzed: {len(regime_importance)}")
+            self.logger.info(
+                f"   📊 Consistent features: {len(results.get('consistent_features', []))}"
+            )
 
-return results
+            return results
 
-except Exception as e:
+        except Exception as e:
             self.logger.exception(f"❌ Error in regime analysis: {e}")
-return {"error": str(e)}
+            return {"error": str(e)}
 
-def _compare_with_original_features(
-self,
-encoded_features: pd.DataFrame,
-original_features: pd.DataFrame,
-labels: np.ndarray,
-) -> dict[str, Any]:
+    def _compare_with_original_features(
+        self,
+        encoded_features: pd.DataFrame,
+        original_features: pd.DataFrame,
+        labels: np.ndarray,
+    ) -> dict[str, Any]:
         """Compare autoencoder features with original features."""
-try:
-    # Exception handling placeholder - implement specific error handling as needed
-except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
-# Compute importance for both feature sets
-encoded_importance = self._compute_ml_importance(encoded_features, labels)
-original_importance = self._compute_ml_importance(original_features, labels)
+        try:
+            # Exception handling placeholder - implement specific error handling as needed
+            # Compute importance for both feature sets
+            encoded_importance = self._compute_ml_importance(encoded_features, labels)
+            original_importance = self._compute_ml_importance(original_features, labels)
 
-# Compare performance
-comparison_results = {
-"encoded_importance": encoded_importance,
-"original_importance": original_importance,
-"comparison_metrics": {},
-}
+            # Compare performance
+            comparison_results = {
+                "encoded_importance": encoded_importance,
+                "original_importance": original_importance,
+                "comparison_metrics": {},
+            }
 
-# Extract top features for comparison
-if "ensemble" in encoded_importance and "ensemble" in original_importance:
+            # Extract top features for comparison
+            if "ensemble" in encoded_importance and "ensemble" in original_importance:
                 encoded_top = [
-item["feature"] for item in encoded_importance["ensemble"][:10]
-]
-original_top = [
-item["feature"] for item in original_importance["ensemble"][:10]
-]
+                    item["feature"] for item in encoded_importance["ensemble"][:10]
+                ]
+                original_top = [
+                    item["feature"] for item in original_importance["ensemble"][:10]
+                ]
 
-# Calculate overlap
-overlap = set(encoded_top) & set(original_top)
-overlap_ratio = len(overlap) / len(encoded_top)
+                # Calculate overlap
+                overlap = set(encoded_top) & set(original_top)
+                overlap_ratio = len(overlap) / len(encoded_top)
 
-comparison_results["comparison_metrics"] = {
-"top_feature_overlap": len(overlap),
-"overlap_ratio": overlap_ratio,
-"encoded_top_features": encoded_top,
-"original_top_features": original_top,
-}
+                comparison_results["comparison_metrics"] = {
+                    "top_feature_overlap": len(overlap),
+                    "overlap_ratio": overlap_ratio,
+                    "encoded_top_features": encoded_top,
+                    "original_top_features": original_top,
+                }
 
-self.logger.info("🔄 Feature comparison complete:")
-if "comparison_metrics" in comparison_results:
+            self.logger.info("🔄 Feature comparison complete:")
+            if "comparison_metrics" in comparison_results:
                 self.logger.info(
-f"   📊 Top feature overlap: {comparison_results['comparison_metrics']['top_feature_overlap']}"
-)
-self.logger.info(
-f"   📊 Overlap ratio: {comparison_results['comparison_metrics']['overlap_ratio']:.3f}"
-)
+                    f"   📊 Top feature overlap: {comparison_results['comparison_metrics']['top_feature_overlap']}"
+                )
+                self.logger.info(
+                    f"   📊 Overlap ratio: {comparison_results['comparison_metrics']['overlap_ratio']:.3f}"
+                )
 
-return comparison_results
+            return comparison_results
 
-except Exception as e:
+        except Exception as e:
             self.logger.exception(f"❌ Error in feature comparison: {e}")
-return {"error": str(e)}
+            return {"error": str(e)}
 
-def _generate_summary_and_recommendations(
-self, analysis_results: dict[str, Any]
+    def _generate_summary_and_recommendations(
+        self, analysis_results: dict[str, Any]
 ) -> tuple[dict[str, Any], list[str]]:
         """Generate summary statistics and actionable recommendations."""
-try:
-    # Exception handling placeholder - implement specific error handling as needed
-except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
-summary = {}
-recommendations = []
+        try:
+            # Exception handling placeholder - implement specific error handling as needed
+            summary = {}
+            recommendations = []
 
-# Extract key metrics
-if (
-"feature_importance" in analysis_results
-and "importance_summary" in analysis_results["feature_importance"]
-):
+            # Extract key metrics
+            if (
+                "feature_importance" in analysis_results
+                and "importance_summary" in analysis_results["feature_importance"]
+            ):
                 importance_summary = analysis_results["feature_importance"][
-"importance_summary"
-]
-summary["top_features"] = importance_summary.get("top_features", [])
-summary["mean_importance"] = importance_summary.get(
-"mean_importance", 0
-)
+                    "importance_summary"
+                ]
+                summary["top_features"] = importance_summary.get("top_features", [])
+                summary["mean_importance"] = importance_summary.get(
+                    "mean_importance", 0
+                )
 
-if (
-"correlation_analysis" in analysis_results
-and "correlation_summary" in analysis_results["correlation_analysis"]
-):
+            if (
+                "correlation_analysis" in analysis_results
+                and "correlation_summary" in analysis_results["correlation_analysis"]
+            ):
                 corr_summary = analysis_results["correlation_analysis"][
-"correlation_summary"
-]
-summary["mean_correlation"] = corr_summary.get("mean_correlation", 0)
-summary["high_corr_count"] = corr_summary.get("high_corr_count", 0)
+                    "correlation_summary"
+                ]
+                summary["mean_correlation"] = corr_summary.get("mean_correlation", 0)
+                summary["high_corr_count"] = corr_summary.get("high_corr_count", 0)
 
-if (
-"stability_metrics" in analysis_results
-and "stability_summary" in analysis_results["stability_metrics"]
-):
+            if (
+                "stability_metrics" in analysis_results
+                and "stability_summary" in analysis_results["stability_metrics"]
+            ):
                 stability_summary = analysis_results["stability_metrics"][
-"stability_summary"
-]
-summary["mean_stability"] = stability_summary.get("mean_stability", 0)
-summary["stable_count"] = stability_summary.get("stable_count", 0)
+                    "stability_summary"
+                ]
+                summary["mean_stability"] = stability_summary.get("mean_stability", 0)
+                summary["stable_count"] = stability_summary.get("stable_count", 0)
 
-# Generate recommendations
-if summary.get("mean_importance", 0) < 0.3:
+            # Generate recommendations
+            if summary.get("mean_importance", 0) < 0.3:
                 recommendations.append(
-"⚠️ Low feature importance detected. Consider retraining autoencoder with different parameters."
-)
+                    "⚠️ Low feature importance detected. Consider retraining autoencoder with different parameters."
+                )
 
-if summary.get("mean_correlation", 0) < 0.1:
+            if summary.get("mean_correlation", 0) < 0.1:
                 recommendations.append(
-"⚠️ Low correlation with targets. Autoencoder features may not be capturing relevant patterns."
-)
+                    "⚠️ Low correlation with targets. Autoencoder features may not be capturing relevant patterns."
+                )
 
-if summary.get("mean_stability", 0) < 0.5:
+            if summary.get("mean_stability", 0) < 0.5:
                 recommendations.append(
-"⚠️ Low feature stability. Consider using more stable features or retraining with different data."
-)
+                    "⚠️ Low feature stability. Consider using more stable features or retraining with different data."
+                )
 
-if summary.get("high_corr_count", 0) > 5:
+            if summary.get("high_corr_count", 0) > 5:
                 recommendations.append(
-"💡 High correlation features detected. Consider feature selection to reduce redundancy."
-)
+                    "💡 High correlation features detected. Consider feature selection to reduce redundancy."
+                )
 
-if summary.get("stable_count", 0) > 10:
+            if summary.get("stable_count", 0) > 10:
                 recommendations.append(
-"✅ Good feature stability detected. These features should perform well in production."
-)
+                    "✅ Good feature stability detected. These features should perform well in production."
+                )
 
-# Add positive recommendations
-if summary.get("mean_importance", 0) > 0.7:
+            # Add positive recommendations
+            if summary.get("mean_importance", 0) > 0.7:
                 recommendations.append(
-"🎉 High feature importance detected. Autoencoder is generating valuable features."
-)
+                    "🎉 High feature importance detected. Autoencoder is generating valuable features."
+                )
 
-if summary.get("mean_correlation", 0) > 0.3:
+            if summary.get("mean_correlation", 0) > 0.3:
                 recommendations.append(
-"🎉 Good correlation with targets. Autoencoder features are capturing relevant patterns."
-)
+                    "🎉 Good correlation with targets. Autoencoder features are capturing relevant patterns."
+                )
 
-return summary, recommendations
+            return summary, recommendations
 
-except Exception as e:
+        except Exception as e:
             self.logger.exception(f"❌ Error generating summary: {e}")
-return {}, [f"Error generating summary: {e}"]
+            return {}, [f"Error generating summary: {e}"]
 
-def get_feature_ranking(self, method: str = "ensemble") -> pd.DataFrame:
+    def get_feature_ranking(self, method: str = "ensemble") -> pd.DataFrame:
         """Get feature ranking based on specified method."""
-if method not in self.importance_scores:
+        if method not in self.importance_scores:
             self.logger.warning(
-f"⚠️ Method '{method}' not available. Available methods: {list(self.importance_scores.keys())}"
-)
-return pd.DataFrame()
+                f"⚠️ Method '{method}' not available. Available methods: {list(self.importance_scores.keys())}"
+            )
+            return pd.DataFrame()
 
-if "ensemble" in self.importance_scores:
+        if "ensemble" in self.importance_scores:
             return pd.DataFrame(self.importance_scores["ensemble"])
-else:
+        else:
             return pd.DataFrame(self.importance_scores[method])
 
-def get_stable_features(self, threshold: float = 0.7) -> list[str]:
+    def get_stable_features(self, threshold: float = 0.7) -> list[str]:
         """Get list of stable features above threshold."""
-if "stability_metrics" not in self.stability_metrics:
+        if "stability_metrics" not in self.stability_metrics:
             return []
 
-stable_features = []
-for feature, metrics in self.stability_metrics["stability_metrics"].items():
+        stable_features = []
+        for feature, metrics in self.stability_metrics["stability_metrics"].items():
             if metrics.get("overall_stability", 0) > threshold:
                 stable_features.append(feature)
 
-return stable_features
+        return stable_features
 
-def get_high_correlation_features(self, threshold: float = 0.5) -> list[str]:
+    def get_high_correlation_features(self, threshold: float = 0.5) -> list[str]:
         """Get list of features with high correlation to target."""
-if "correlation_analysis" not in self.correlation_analysis:
+        if "correlation_analysis" not in self.correlation_analysis:
             return []
 
-high_corr_features = []
-correlations = self.correlation_analysis["correlation_analysis"].get(
-"pearson_correlations", {}
-)
+        high_corr_features = []
+        correlations = self.correlation_analysis["correlation_analysis"].get(
+            "pearson_correlations", {}
+        )
 
-for feature, corr in correlations.items():
+        for feature, corr in correlations.items():
             if abs(corr) > threshold:
                 high_corr_features.append(feature)
 
-return high_corr_features
+        return high_corr_features
 
 
-class AutoencoderFeatureGenerator:
-    # Implementation placeholder - add specific implementation as needed
-class AutoencoderFeatureGenerator:
-    pass  # TODO: Add implementation
 class AutoencoderFeatureGenerator:
     """Main class for the complete autoencoder feature generation workflow."""
 
-def __init__(self, config: str | dict | None = None):
-    def __init__(self, config: str | dict | None = None):
-    def __init__(self, config: str | dict | None = None):
     def __init__(self, config: str | dict | None = None):
         if not DEPENDENCIES_AVAILABLE:
             msg = f"Required dependencies not available: {MISSING_DEPENDENCY}"
-raise ImportError(
-msg,
-)
+            raise ImportError(
+                msg,
+            )
 
-# Handle both string (config path) and dict (config object) inputs
-if isinstance(config, dict):
+        # Handle both string (config path) and dict (config object) inputs
+        if isinstance(config, dict):
             # Create a config object with proper initialization
-temp_config = AutoencoderConfig()
-temp_config.config = config
-# Ensure logger is properly set
-temp_config.logger = system_logger.getChild("AutoencoderConfig")
-self.config = temp_config
-else:
+            temp_config = AutoencoderConfig()
+            temp_config.config = config
+            # Ensure logger is properly set
+            temp_config.logger = system_logger.getChild("AutoencoderConfig")
+            self.config = temp_config
+        else:
             # Handle string path or None
-self.config = AutoencoderConfig(config)
+            self.config = AutoencoderConfig(config)
 
-self.logger = system_logger.getChild("AutoencoderFeatureGenerator")
+        self.logger = system_logger.getChild("AutoencoderFeatureGenerator")
 
-@comprehensive_data_validation
-@with_tracing_span("autoencoder_feature_generation")
-def generate_features(
-self,
-features_df: pd.DataFrame,
-regime_name: str,
-labels: np.ndarray,
-regime_labels: np.ndarray | None = None,
-enable_analysis: bool | None = None,
-) -> pd.DataFrame:
+    @comprehensive_data_validation
+    @with_tracing_span("autoencoder_feature_generation")
+    def generate_features(
+        self,
+        features_df: pd.DataFrame,
+        regime_name: str,
+        labels: np.ndarray,
+        regime_labels: np.ndarray | None = None,
+        enable_analysis: bool | None = None,
+    ) -> pd.DataFrame:
         """
-Generate autoencoder features from input features.
+        Generate autoencoder features from input features.
 
-CRITICAL: This method should only receive engineered features, not raw OHLCV data.
-Raw price data like 'volume', 'close', 'open', 'high', 'low' should be excluded.
-"""
-# CRITICAL: Filter out raw OHLCV data that should not be used as features
-raw_ohlcv_columns = ['open', 'high', 'low', 'close', 'volume', 'timestamp', 'time']
-raw_ohlcv_columns = [col for col in raw_ohlcv_columns if col in features_df.columns]
+        CRITICAL: This method should only receive engineered features, not raw OHLCV data.
+        Raw price data like 'volume', 'close', 'open', 'high', 'low' should be excluded.
+        """
+        # CRITICAL: Filter out raw OHLCV data that should not be used as features
+        raw_ohlcv_columns = ['open', 'high', 'low', 'close', 'volume', 'timestamp', 'time']
+        raw_ohlcv_columns = [col for col in raw_ohlcv_columns if col in features_df.columns]
 
-if raw_ohlcv_columns:
+        if raw_ohlcv_columns:
             self.logger.warning(f"🚨 CRITICAL: Found raw OHLCV columns in features: {raw_ohlcv_columns}")
-self.logger.warning("🚨 These should be excluded from autoencoder feature generation")
-self.logger.warning("🚨 Raw price data should be processed into engineered features first")
+            self.logger.warning("🚨 These should be excluded from autoencoder feature generation")
+            self.logger.warning("🚨 Raw price data should be processed into engineered features first")
 
-# Remove raw OHLCV columns
-features_df = features_df.drop(columns=raw_ohlcv_columns)
-self.logger.info(f"✅ Removed {len(raw_ohlcv_columns)} raw OHLCV columns from features")
-self.logger.info(f"📊 Features shape after removal: {features_df.shape}")
+        # Remove raw OHLCV columns
+        features_df = features_df.drop(columns=raw_ohlcv_columns)
+        self.logger.info(f"✅ Removed {len(raw_ohlcv_columns)} raw OHLCV columns from features")
+        self.logger.info(f"📊 Features shape after removal: {features_df.shape}")
 
-if features_df.empty:
-                self.logger.error("🚨 CRITICAL: No engineered features remaining after removing raw OHLCV data")
-self.logger.error("🚨 This indicates a serious data pipeline issue")
-return pd.DataFrame()
-"""Generate autoencoder-based features for a specific market regime."""
-try:
-    # Exception handling placeholder - implement specific error handling as needed
-except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
-self.logger.info(
-f"🚀 Starting autoencoder feature generation for regime: {regime_name}",
-)
+        if features_df.empty:
+            self.logger.error("🚨 CRITICAL: No engineered features remaining after removing raw OHLCV data")
+            self.logger.error("🚨 This indicates a serious data pipeline issue")
+            return pd.DataFrame()
 
-# CRITICAL DATA LEAKAGE PREVENTION: Check for label columns in features
-potential_label_columns = [
-"label",
-"target",
-"y",
-"class",
-"Label",
-"Target",
-"Y",
-"Class",
-"labels",
-"targets",
-"classes",
-"Labels",
-"Targets",
-"Classes",
-"signal",
-"prediction",
-"direction",
-"Signal",
-"Prediction",
-"Direction",
-"buy_sell",
-"position",
-"trade_signal",
-"Buy_Sell",
-"Position",
-"Trade_Signal",
-"future_return",
-"next_return",
-"price_change",
-"Future_Return",
-"Next_Return",
-"Price_Change",
-"binary_target",
-"binary_label",
-"Binary_Target",
-"Binary_Label",
-"multi_target",
-"multi_label",
-"Multi_Target",
-"Multi_Label",
-"label_encoded",
-"target_encoded",
-"Label_Encoded",
-"Target_Encoded",
-"meta_label",
-"meta_target",
-"Meta_Label",
-"Meta_Target",
-"triple_barrier_label",
-"barrier_label",
-"Triple_Barrier_Label",
-"Barrier_Label",
-]
+        """Generate autoencoder-based features for a specific market regime."""
+        try:
+            # Exception handling placeholder - implement specific error handling as needed
+            self.logger.info(
+                f"🚀 Starting autoencoder feature generation for regime: {regime_name}",
+            )
 
-actual_label_columns = [
-col for col in features_df.columns if col in potential_label_columns
-]
+            # CRITICAL DATA LEAKAGE PREVENTION: Check for label columns in features
+            potential_label_columns = [
+                "label",
+                "target",
+                "y",
+                "class",
+                "Label",
+                "Target",
+                "Y",
+                "Class",
+                "labels",
+                "targets",
+                "classes",
+                "Labels",
+                "Targets",
+                "Classes",
+                "signal",
+                "prediction",
+                "direction",
+                "Signal",
+                "Prediction",
+                "Direction",
+                "buy_sell",
+                "position",
+                "trade_signal",
+                "Buy_Sell",
+                "Position",
+                "Trade_Signal",
+                "future_return",
+                "next_return",
+                "price_change",
+                "Future_Return",
+                "Next_Return",
+                "Price_Change",
+                "binary_target",
+                "binary_label",
+                "Binary_Target",
+                "Binary_Label",
+                "multi_target",
+                "multi_label",
+                "Multi_Target",
+                "Multi_Label",
+                "label_encoded",
+                "target_encoded",
+                "Label_Encoded",
+                "Target_Encoded",
+                "meta_label",
+                "meta_target",
+                "Meta_Label",
+                "Meta_Target",
+                "triple_barrier_label",
+                "barrier_label",
+                "Triple_Barrier_Label",
+                "Barrier_Label",
+            ]
 
-if actual_label_columns:
+            actual_label_columns = [
+                col for col in features_df.columns if col in potential_label_columns
+            ]
+
+            if actual_label_columns:
                 self.logger.error("🚨 CRITICAL DATA LEAKAGE DETECTED in autoencoder!")
-self.logger.error(
-f"🚨 Found label columns in autoencoder input: {actual_label_columns}"
-)
-self.logger.error(
-"🚨 This will cause severe data leakage! Removing these columns from autoencoder analysis."
-)
+                self.logger.error(
+                    f"🚨 Found label columns in autoencoder input: {actual_label_columns}"
+                )
+                self.logger.error(
+                    "🚨 This will cause severe data leakage! Removing these columns from autoencoder analysis."
+                )
 
-# Remove the label columns
-features_df = features_df.drop(columns=actual_label_columns)
-self.logger.info(
-f"📊 Autoencoder features after leakage prevention: {features_df.shape[1]} columns"
-)
+                # Remove the label columns
+                features_df = features_df.drop(columns=actual_label_columns)
+                self.logger.info(
+                    f"📊 Autoencoder features after leakage prevention: {features_df.shape[1]} columns"
+                )
 
-# Check if we have enough data
-if len(features_df) < 10:
+            # Check if we have enough data
+            if len(features_df) < 10:
                 self.logger.warning(
-"⚠️ Insufficient data for autoencoder feature generation, returning original features",
-)
-return features_df
+                    "⚠️ Insufficient data for autoencoder feature generation, returning original features",
+                )
+                return features_df
 
-# NEW STEP: Convert price features to returns for better autoencoder training
-self.logger.info(
-"🔄 NEW STEP: Converting price features to returns for autoencoder training..."
-)
-price_converter = PriceReturnConverter(self.config)
-features_df = price_converter.convert_price_features_to_returns(features_df)
-self.logger.info(
-f"✅ Price return conversion completed. Features shape: {features_df.shape}"
-)
+            # NEW STEP: Convert price features to returns for better autoencoder training
+            self.logger.info(
+                "🔄 NEW STEP: Converting price features to returns for autoencoder training..."
+            )
+            price_converter = PriceReturnConverter(self.config)
+            features_df = price_converter.convert_price_features_to_returns(features_df)
+            self.logger.info(
+                f"✅ Price return conversion completed. Features shape: {features_df.shape}"
+            )
 
-# Step 1: Filter features using Random Forest + SHAP
-self.logger.info("🔄 Step 1/5: Feature filtering with Random Forest + SHAP")
-self.logger.info(f"📊 Starting with {features_df.shape[1]} input features")
+            # Step 1: Filter features using Random Forest + SHAP
+            self.logger.info("🔄 Step 1/5: Feature filtering with Random Forest + SHAP")
+            self.logger.info(f"📊 Starting with {features_df.shape[1]} input features")
 
-feature_filter = FeatureFilter(self.config)
-filtered_features = feature_filter.filter_features(features_df, labels)
+            feature_filter = FeatureFilter(self.config)
+            filtered_features = feature_filter.filter_features(features_df, labels)
 
-# Check if features_df has any columns to avoid division by zero
-if features_df.shape[1] == 0:
+            # Check if features_df has any columns to avoid division by zero
+            if features_df.shape[1] == 0:
                 self.logger.warning("⚠️ No features available for filtering - returning original features")
-return features_df
+                return features_df
 
-feature_reduction = features_df.shape[1] - filtered_features.shape[1]
-reduction_percentage = (feature_reduction / features_df.shape[1]) * 100
-self.logger.info("✅ Feature filtering completed successfully!")
-self.logger.info(
-f"📊 Results: {filtered_features.shape[1]} features selected from {features_df.shape[1]} input features"
-)
-self.logger.info(
-f"📉 Feature reduction: {feature_reduction} features removed ({reduction_percentage:.1f}% reduction)"
-)
+            feature_reduction = features_df.shape[1] - filtered_features.shape[1]
+            reduction_percentage = (feature_reduction / features_df.shape[1]) * 100
+            self.logger.info("✅ Feature filtering completed successfully!")
+            self.logger.info(
+                f"📊 Results: {filtered_features.shape[1]} features selected from {features_df.shape[1]} input features"
+            )
+            self.logger.info(
+                f"📉 Feature reduction: {feature_reduction} features removed ({reduction_percentage:.1f}% reduction)"
+            )
 
-# AE input health: enforce minimum feature count and per-feature std threshold
-self.logger.info(
-"🔍 Validating feature quality for autoencoder training..."
-)
+            # AE input health: enforce minimum feature count and per-feature std threshold
+            self.logger.info(
+                "🔍 Validating feature quality for autoencoder training..."
+            )
 
-min_features_for_ae = int(
-self.config.get("feature_filtering.min_features_for_ae", 15)
-)
-numeric_features = filtered_features.select_dtypes(include=[np.number])
-actual_numeric_features = numeric_features.shape[1]
+            min_features_for_ae = int(
+                self.config.get("feature_filtering.min_features_for_ae", 15)
+            )
+            numeric_features = filtered_features.select_dtypes(include=[np.number])
+            actual_numeric_features = numeric_features.shape[1]
 
-self.logger.info(
-f"📊 Numeric features available: {actual_numeric_features}"
-)
-self.logger.info(f"📊 Minimum features required: {min_features_for_ae}")
+            self.logger.info(
+                f"📊 Numeric features available: {actual_numeric_features}"
+            )
+            self.logger.info(f"📊 Minimum features required: {min_features_for_ae}")
 
-if actual_numeric_features < min_features_for_ae:
+            if actual_numeric_features < min_features_for_ae:
                 self.logger.warning("⚠️ Insufficient features for autoencoder training")
-self.logger.warning(
-f"📊 Have: {actual_numeric_features} numeric features, Need: {min_features_for_ae}+ features"
-)
-self.logger.info(
-"🔄 Returning original features without autoencoder enhancement"
-)
-return features_df
-
-# Check feature variance/standard deviation
-std_threshold = float(self.config.get("autoencoder.min_feature_std", 1e-6))
-per_feature_std = numeric_features.std(axis=0, skipna=True)
-low_std_cols = per_feature_std.index[
-per_feature_std <= std_threshold
-].tolist()
-
-if len(low_std_cols) > 0:
-                preview = ", ".join(low_std_cols[:10]) + (
-"..." if len(low_std_cols) > 10 else ""
-)
-self.logger.warning("⚠️ Low variance features detected")
-self.logger.warning(
-f"📊 {len(low_std_cols)} features have std <= {std_threshold:g}"
-)
-self.logger.warning(f"📊 Examples: {preview}")
-self.logger.info(
-"🔄 Returning original features without autoencoder enhancement"
-)
-return features_df
-
-self.logger.info(
-"✅ Feature quality validation passed - proceeding with autoencoder training"
-)
-
-# Step 2: Preprocess and create sequences
-self.logger.info("🔄 Step 2/5: Data preprocessing and sequence creation")
-
-# Data preprocessing
-self.logger.info("🔧 Initializing data preprocessor...")
-preprocessor = ImprovedAutoencoderPreprocessor(self.config)
-
-self.logger.info("🔧 Fitting preprocessor on filtered features...")
-preprocessor.fit(filtered_features)
-
-self.logger.info("🔧 Transforming features for autoencoder input...")
-X_processed = preprocessor.transform(filtered_features)
-self.logger.info("✅ Preprocessing completed successfully")
-self.logger.info(f"📊 Processed data shape: {X_processed.shape}")
-
-# Sequence creation
-timesteps = self.config.get("sequence.timesteps", 10)
-self.logger.info(f"📊 Creating sequences with {timesteps} timesteps...")
-
-X_sequences, y_targets, target_indices = create_sequences_with_index(
-X_processed,
-timesteps,
-filtered_features.index,
-)
-
-self.logger.info("✅ Sequence creation completed successfully")
-self.logger.info(
-f"📊 Sequence shapes: X_sequences={X_sequences.shape}, y_targets={y_targets.shape}"
-)
-self.logger.info(
-f"📊 Sequence configuration: timesteps={timesteps}, overlap=50%"
-)
-self.logger.info(
-f"📊 Target indices: {len(target_indices)} samples with preserved timestamps"
-)
-
-# Check if we have enough sequences
-min_sequences = 5
-if len(X_sequences) < min_sequences:
                 self.logger.warning(
-"⚠️ Insufficient sequences for autoencoder training"
-)
-self.logger.warning(
-f"📊 Have: {len(X_sequences)} sequences, Need: {min_sequences}+ sequences"
-)
-self.logger.info(
-"🔄 Returning original features without autoencoder enhancement"
-)
-return features_df
+                    f"📊 Have: {actual_numeric_features} numeric features, Need: {min_features_for_ae}+ features"
+                )
+                self.logger.info(
+                    "🔄 Returning original features without autoencoder enhancement"
+                )
+                return features_df
 
-# Step 3: Optimize hyperparameters with Optuna
-self.logger.info("🔄 Step 3/5: Hyperparameter optimization with Optuna")
+            # Check feature variance/standard deviation
+            std_threshold = float(self.config.get("autoencoder.min_feature_std", 1e-6))
+            per_feature_std = numeric_features.std(axis=0, skipna=True)
+            low_std_cols = per_feature_std.index[
+                per_feature_std <= std_threshold
+            ].tolist()
 
-# Data splitting for training/validation
-split_ratio = 0.8
-split_idx = int(split_ratio * len(X_sequences))
-X_train, y_train = X_sequences[:split_idx], y_targets[:split_idx]
-X_val, y_val = X_sequences[split_idx:], y_targets[split_idx:]
+            if len(low_std_cols) > 0:
+                preview = ", ".join(low_std_cols[:10]) + (
+                    "..." if len(low_std_cols) > 10 else ""
+                )
+                self.logger.warning("⚠️ Low variance features detected")
+                self.logger.warning(
+                    f"📊 {len(low_std_cols)} features have std <= {std_threshold:g}"
+                )
+                self.logger.warning(f"📊 Examples: {preview}")
+                self.logger.info(
+                    "🔄 Returning original features without autoencoder enhancement"
+                )
+                return features_df
 
-self.logger.info(
-f"📊 Data split configuration: {split_ratio*100:.0f}% train, {(1-split_ratio)*100:.0f}% validation"
-)
-self.logger.info(
-f"📊 Training set: {X_train.shape[0]} sequences ({X_train.shape[0]/len(X_sequences)*100:.1f}%)"
-)
-self.logger.info(
-f"📊 Validation set: {X_val.shape[0]} sequences ({X_val.shape[0]/len(X_sequences)*100:.1f}%)"
-)
+            self.logger.info(
+                "✅ Feature quality validation passed - proceeding with autoencoder training"
+            )
 
-# Optuna optimization
-n_trials = self.config.get("training.n_trials", 50)
-n_jobs = self.config.get("training.n_jobs", 1)
+            # Step 2: Preprocess and create sequences
+            self.logger.info("🔄 Step 2/5: Data preprocessing and sequence creation")
 
-self.logger.info("🔍 Starting Optuna hyperparameter optimization")
-self.logger.info(
-f"📊 Optimization parameters: n_trials={n_trials}, n_jobs={n_jobs}"
-)
-self.logger.info(
-"📊 Search space: filters=[16,32,64], kernel_size=[3-7], dropout=[0.1-0.5], lr=[1e-4-1e-2], encoding_dim=[8-64]"
-)
+            # Data preprocessing
+            self.logger.info("🔧 Initializing data preprocessor...")
+            preprocessor = ImprovedAutoencoderPreprocessor(self.config)
 
-best_params = self._run_optuna_optimization(X_train, y_train, X_val, y_val)
-self.config.config["best_params"] = (
-best_params  # Store best params for final training
-)
+            self.logger.info("🔧 Fitting preprocessor on filtered features...")
+            preprocessor.fit(filtered_features)
 
-self.logger.info("✅ Hyperparameter optimization completed successfully")
-self.logger.info("🏆 Best hyperparameters selected:")
-for param, value in best_params.items():
+            self.logger.info("🔧 Transforming features for autoencoder input...")
+            X_processed = preprocessor.transform(filtered_features)
+            self.logger.info("✅ Preprocessing completed successfully")
+            self.logger.info(f"📊 Processed data shape: {X_processed.shape}")
+
+            # Sequence creation
+            timesteps = self.config.get("sequence.timesteps", 10)
+            self.logger.info(f"📊 Creating sequences with {timesteps} timesteps...")
+
+            X_sequences, y_targets, target_indices = create_sequences_with_index(
+                X_processed,
+                timesteps,
+                filtered_features.index,
+            )
+
+            self.logger.info("✅ Sequence creation completed successfully")
+            self.logger.info(
+                f"📊 Sequence shapes: X_sequences={X_sequences.shape}, y_targets={y_targets.shape}"
+            )
+            self.logger.info(
+                f"📊 Sequence configuration: timesteps={timesteps}, overlap=50%"
+            )
+            self.logger.info(
+                f"📊 Target indices: {len(target_indices)} samples with preserved timestamps"
+            )
+
+            # Check if we have enough sequences
+            min_sequences = 5
+            if len(X_sequences) < min_sequences:
+                self.logger.warning(
+                    "⚠️ Insufficient sequences for autoencoder training"
+                )
+                self.logger.warning(
+                    f"📊 Have: {len(X_sequences)} sequences, Need: {min_sequences}+ sequences"
+                )
+                self.logger.info(
+                    "🔄 Returning original features without autoencoder enhancement"
+                )
+                return features_df
+
+            # Step 3: Optimize hyperparameters with Optuna
+            self.logger.info("🔄 Step 3/5: Hyperparameter optimization with Optuna")
+
+            # Data splitting for training/validation
+            split_ratio = 0.8
+            split_idx = int(split_ratio * len(X_sequences))
+            X_train, y_train = X_sequences[:split_idx], y_targets[:split_idx]
+            X_val, y_val = X_sequences[split_idx:], y_targets[split_idx:]
+
+            self.logger.info(
+                f"📊 Data split configuration: {split_ratio*100:.0f}% train, {(1-split_ratio)*100:.0f}% validation"
+            )
+            self.logger.info(
+                f"📊 Training set: {X_train.shape[0]} sequences ({X_train.shape[0]/len(X_sequences)*100:.1f}%)"
+            )
+            self.logger.info(
+                f"📊 Validation set: {X_val.shape[0]} sequences ({X_val.shape[0]/len(X_sequences)*100:.1f}%)"
+            )
+
+            # Optuna optimization
+            n_trials = self.config.get("training.n_trials", 50)
+            n_jobs = self.config.get("training.n_jobs", 1)
+
+            self.logger.info("🔍 Starting Optuna hyperparameter optimization")
+            self.logger.info(
+                f"📊 Optimization parameters: n_trials={n_trials}, n_jobs={n_jobs}"
+            )
+            self.logger.info(
+                "📊 Search space: filters=[16,32,64], kernel_size=[3-7], dropout=[0.1-0.5], lr=[1e-4-1e-2], encoding_dim=[8-64]"
+            )
+
+            best_params = self._run_optuna_optimization(X_train, y_train, X_val, y_val)
+            self.config.config["best_params"] = (
+                best_params  # Store best params for final training
+            )
+
+            self.logger.info("✅ Hyperparameter optimization completed successfully")
+            self.logger.info("🏆 Best hyperparameters selected:")
+            for param, value in best_params.items():
                 self.logger.info(f"   📊 {param}: {value}")
 
-# Step 4: Train final model and generate features
-self.logger.info(
-"🔄 Step 4/5: Final autoencoder training and feature generation"
-)
+            # Step 4: Train final model and generate features
+            self.logger.info(
+                "🔄 Step 4/5: Final autoencoder training and feature generation"
+            )
 
-# Build and train final model
-self.logger.info(
-"🔧 Building final autoencoder model with optimized hyperparameters..."
-)
-final_autoencoder = SequenceAwareAutoencoder(self.config)
-final_autoencoder.build_model(X_sequences.shape[1:])
+            # Build and train final model
+            self.logger.info(
+                "🔧 Building final autoencoder model with optimized hyperparameters..."
+            )
+            final_autoencoder = SequenceAwareAutoencoder(self.config)
+            final_autoencoder.build_model(X_sequences.shape[1:])
 
-self.logger.info("🔧 Training final autoencoder model...")
-training_history = final_autoencoder.fit(X_train, y_train, X_val, y_val)
+            self.logger.info("🔧 Training final autoencoder model...")
+            training_history = final_autoencoder.fit(X_train, y_train, X_val, y_val)
 
-# Extract training metrics
-if hasattr(training_history, "history"):
+            # Extract training metrics
+            if hasattr(training_history, "history"):
                 final_train_loss = training_history.history.get("loss", [0])[-1]
-final_val_loss = training_history.history.get("val_loss", [0])[-1]
-self.logger.info("✅ Final model training completed")
-self.logger.info(f"📊 Final training loss: {final_train_loss:.6f}")
-self.logger.info(f"📊 Final validation loss: {final_val_loss:.6f}")
-self.logger.info(
-f"📊 Model performance: {'Good' if final_val_loss < 0.1 else 'Acceptable' if final_val_loss < 0.5 else 'Needs improvement'}"
-)
+                final_val_loss = training_history.history.get("val_loss", [0])[-1]
+                self.logger.info("✅ Final model training completed")
+                self.logger.info(f"📊 Final training loss: {final_train_loss:.6f}")
+                self.logger.info(f"📊 Final validation loss: {final_val_loss:.6f}")
+                self.logger.info(
+                    f"📊 Model performance: {'Good' if final_val_loss < 0.1 else 'Acceptable' if final_val_loss < 0.5 else 'Needs improvement'}"
+                )
 
-# Generate encoded features and reconstructions
-self.logger.info("🔧 Generating encoded features and reconstructions...")
-self.logger.info("📊 Using encoder to extract latent representations...")
-encoded_features = final_autoencoder.encoder.predict(X_sequences, verbose=0)
+            # Generate encoded features and reconstructions
+            self.logger.info("🔧 Generating encoded features and reconstructions...")
+            self.logger.info("📊 Using encoder to extract latent representations...")
+            encoded_features = final_autoencoder.encoder.predict(X_sequences, verbose=0)
 
-self.logger.info("📊 Using full autoencoder to generate reconstructions...")
-reconstructed = final_autoencoder.autoencoder.predict(
-X_sequences, verbose=0
-)
+            self.logger.info("📊 Using full autoencoder to generate reconstructions...")
+            reconstructed = final_autoencoder.autoencoder.predict(
+                X_sequences, verbose=0
+            )
 
-self.logger.info("✅ Feature generation completed successfully")
-self.logger.info(f"📊 Encoded features shape: {encoded_features.shape}")
-self.logger.info(f"📊 Reconstructed features shape: {reconstructed.shape}")
+            self.logger.info("✅ Feature generation completed successfully")
+            self.logger.info(f"📊 Encoded features shape: {encoded_features.shape}")
+            self.logger.info(f"📊 Reconstructed features shape: {reconstructed.shape}")
 
-# Calculate reconstruction error
-self.logger.info("📊 Calculating reconstruction error...")
-recon_error = np.mean((y_targets - reconstructed) ** 2, axis=1)
-mean_recon_error = np.mean(recon_error)
-std_recon_error = np.std(recon_error)
+            # Calculate reconstruction error
+            self.logger.info("📊 Calculating reconstruction error...")
+            recon_error = np.mean((y_targets - reconstructed) ** 2, axis=1)
+            mean_recon_error = np.mean(recon_error)
+            std_recon_error = np.std(recon_error)
 
-self.logger.info("📊 Reconstruction error statistics:")
-self.logger.info(f"   📊 Mean reconstruction error: {mean_recon_error:.6f}")
-self.logger.info(f"   📊 Std reconstruction error: {std_recon_error:.6f}")
-self.logger.info(
-f"   📊 Min reconstruction error: {np.min(recon_error):.6f}"
-)
-self.logger.info(
-f"   📊 Max reconstruction error: {np.max(recon_error):.6f}"
-)
+            self.logger.info("📊 Reconstruction error statistics:")
+            self.logger.info(f"   📊 Mean reconstruction error: {mean_recon_error:.6f}")
+            self.logger.info(f"   📊 Std reconstruction error: {std_recon_error:.6f}")
+            self.logger.info(
+                f"   📊 Min reconstruction error: {np.min(recon_error):.6f}"
+            )
+            self.logger.info(
+                f"   📊 Max reconstruction error: {np.max(recon_error):.6f}"
+            )
 
-# Step 5: Create enriched DataFrame
-self.logger.info("🔄 Step 5/5: Creating enriched feature DataFrame")
+            # Step 5: Create enriched DataFrame
+            self.logger.info("🔄 Step 5/5: Creating enriched feature DataFrame")
 
-# Create encoded features DataFrame
-self.logger.info("📊 Creating encoded features DataFrame...")
-encoded_df = pd.DataFrame(
-encoded_features,
-index=target_indices,
-columns=[
-f"autoencoder_{i+1}" for i in range(encoded_features.shape[1])
-],
-)
-encoded_df["autoencoder_recon_error"] = recon_error
+            # Create encoded features DataFrame
+            self.logger.info("📊 Creating encoded features DataFrame...")
+            encoded_df = pd.DataFrame(
+                encoded_features,
+                index=target_indices,
+                columns=[
+                    f"autoencoder_{i+1}" for i in range(encoded_features.shape[1])
+                ],
+            )
+            encoded_df["autoencoder_recon_error"] = recon_error
 
-self.logger.info("✅ Encoded features DataFrame created successfully")
-self.logger.info(f"📊 Encoded DataFrame shape: {encoded_df.shape}")
-self.logger.info(
-f"📊 Encoded features: {encoded_features.shape[1]} latent dimensions + 1 reconstruction error"
-)
+            self.logger.info("✅ Encoded features DataFrame created successfully")
+            self.logger.info(f"📊 Encoded DataFrame shape: {encoded_df.shape}")
+            self.logger.info(
+                f"📊 Encoded features: {encoded_features.shape[1]} latent dimensions + 1 reconstruction error"
+            )
 
-# Merge with original features
-self.logger.info("📊 Merging encoded features with original features...")
-result_df = features_df.merge(
-encoded_df,
-left_index=True,
-right_index=True,
-how="left",
-)
+            # Merge with original features
+            self.logger.info("📊 Merging encoded features with original features...")
+            result_df = features_df.merge(
+                encoded_df,
+                left_index=True,
+                right_index=True,
+                how="left",
+            )
 
-# Identify autoencoder columns and handle missing values
-autoencoder_cols = [
-col for col in result_df.columns if "autoencoder" in col
-]
-result_df[autoencoder_cols] = result_df[autoencoder_cols].fillna(0)
+            # Identify autoencoder columns and handle missing values
+            autoencoder_cols = [
+                col for col in result_df.columns if "autoencoder" in col
+            ]
+            result_df[autoencoder_cols] = result_df[autoencoder_cols].fillna(0)
 
-self.logger.info("✅ Feature merging completed successfully")
-self.logger.info(f"📊 Original features: {features_df.shape[1]} columns")
-self.logger.info(
-f"📊 Autoencoder features added: {len(autoencoder_cols)} columns"
-)
-self.logger.info(f"📊 Final result shape: {result_df.shape}")
-self.logger.info(
-f"📊 Feature enhancement: {len(autoencoder_cols)} new features added ({len(autoencoder_cols)/features_df.shape[1]*100:.1f}% increase)"
-)
+            self.logger.info("✅ Feature merging completed successfully")
+            self.logger.info(f"📊 Original features: {features_df.shape[1]} columns")
+            self.logger.info(
+                f"📊 Autoencoder features added: {len(autoencoder_cols)} columns"
+            )
+            self.logger.info(f"📊 Final result shape: {result_df.shape}")
+            self.logger.info(
+                f"📊 Feature enhancement: {len(autoencoder_cols)} new features added ({len(autoencoder_cols)/features_df.shape[1]*100:.1f}% increase)"
+            )
 
-# Step 6: Feature Importance Analysis (if enabled)
-enable_analysis = (
-enable_analysis
-if enable_analysis is not None
-else self.config.get("feature_analysis.enable_analysis", True)
-)
+            # Step 6: Feature Importance Analysis (if enabled)
+            enable_analysis = (
+                enable_analysis
+                if enable_analysis is not None
+                else self.config.get("feature_analysis.enable_analysis", True)
+            )
 
-if enable_analysis:
+            if enable_analysis:
                 self.logger.info("🔍 Starting feature importance analysis...")
-try:
-    # Exception handling placeholder - implement specific error handling as needed
-except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
-# Initialize feature analyzer
-feature_analyzer = AutoencoderFeatureAnalyzer(self.config)
+                try:
+                    # Exception handling placeholder - implement specific error handling as needed
+                    # Initialize feature analyzer
+                    feature_analyzer = AutoencoderFeatureAnalyzer(self.config)
 
-# Extract autoencoder features for analysis
-autoencoder_features = result_df[autoencoder_cols].copy()
+                    # Extract autoencoder features for analysis
+                    autoencoder_features = result_df[autoencoder_cols].copy()
 
-# Perform comprehensive analysis
-analysis_results = feature_analyzer.analyze_feature_importance(
-encoded_features=autoencoder_features,
-labels=labels,
-original_features=features_df
-if self.config.get(
-"feature_analysis.comparison_with_original", True
-)
-else None,
-regime_labels=regime_labels
-if self.config.get(
-"feature_analysis.regime_analysis_enabled", True
-)
-else None,
-)
+                    # Perform comprehensive analysis
+                    analysis_results = feature_analyzer.analyze_feature_importance(
+                        encoded_features=autoencoder_features,
+                        labels=labels,
+                        original_features=features_df
+                        if self.config.get(
+                            "feature_analysis.comparison_with_original", True
+                        )
+                        else None,
+                        regime_labels=regime_labels
+                        if self.config.get(
+                            "feature_analysis.regime_analysis_enabled", True
+                        )
+                        else None,
+                    )
 
-# Log analysis results
-if "error" not in analysis_results:
+                    # Log analysis results
+                    if "error" not in analysis_results:
                         self.logger.info(
-"📊 Feature importance analysis completed successfully!"
-)
+                                                        "📊 Feature importance analysis completed successfully!"
+                        )
 
-# Log key findings
-if "summary_statistics" in analysis_results:
+                        # Log key findings
+                        if "summary_statistics" in analysis_results:
                             summary = analysis_results["summary_statistics"]
-self.logger.info("📈 Analysis Summary:")
-self.logger.info(
-f"   🏆 Top features: {summary.get('top_features', [])[:5]}"
-)
-self.logger.info(
-f"   📊 Mean importance: {summary.get('mean_importance', 0):.4f}"
-)
-self.logger.info(
-f"   📊 Mean correlation: {summary.get('mean_correlation', 0):.4f}"
-)
-self.logger.info(
-f"   📊 Mean stability: {summary.get('mean_stability', 0):.4f}"
-)
+                            self.logger.info("📈 Analysis Summary:")
+                            self.logger.info(
+                                f"   🏆 Top features: {summary.get('top_features', [])[:5]}"
+                            )
+                            self.logger.info(
+                                f"   📊 Mean importance: {summary.get('mean_importance', 0):.4f}"
+                            )
+                            self.logger.info(
+                                f"   📊 Mean correlation: {summary.get('mean_correlation', 0):.4f}"
+                            )
+                            self.logger.info(
+                                f"   📊 Mean stability: {summary.get('mean_stability', 0):.4f}"
+                            )
 
-# Log recommendations
-if "recommendations" in analysis_results:
+                        # Log recommendations
+                        if "recommendations" in analysis_results:
                             recommendations = analysis_results["recommendations"]
-if recommendations:
+                            if recommendations:
                                 self.logger.info("💡 Recommendations:")
-for rec in recommendations[
-:5
-]:  # Show top 5 recommendations
-self.logger.info(f"   {rec}")
+                                for rec in recommendations[
+                                    :5
+                                ]:  # Show top 5 recommendations
+                                    self.logger.info(f"   {rec}")
 
-# Store analysis results for later access
-self.last_analysis_results = analysis_results
+                        # Store analysis results for later access
+                        self.last_analysis_results = analysis_results
 
-else:
+                    else:
                         self.logger.warning(
-f"⚠️ Feature analysis failed: {analysis_results['error']}"
-)
+                            f"⚠️ Feature analysis failed: {analysis_results['error']}"
+                        )
 
-except Exception as e:
+                except Exception as e:
                     self.logger.exception(
-f"❌ Error in feature importance analysis: {e}"
-)
-self.logger.info("🔄 Continuing without feature analysis...")
+                                                f"❌ Error in feature importance analysis: {e}"
+                    )
+                    self.logger.info("🔄 Continuing without feature analysis...")
 
-# Final summary
-self.logger.info(
-"🎉 Autoencoder feature generation pipeline completed successfully!"
-)
-self.logger.info(f"📊 Summary for regime '{regime_name}':")
-self.logger.info(f"   📊 Input features: {features_df.shape[1]} columns")
-self.logger.info(f"   📊 Output features: {result_df.shape[1]} columns")
-self.logger.info(
-f"   📊 New autoencoder features: {len(autoencoder_cols)} columns"
-)
-self.logger.info(f"   📊 Data samples: {result_df.shape[0]} rows")
-self.logger.info(
-f"   📊 Autoencoder performance: {'Good' if mean_recon_error < 0.1 else 'Acceptable' if mean_recon_error < 0.5 else 'Needs improvement'}"
-)
+            # Final summary
+            self.logger.info(
+                "🎉 Autoencoder feature generation pipeline completed successfully!"
+            )
+            self.logger.info(f"📊 Summary for regime '{regime_name}':")
+            self.logger.info(f"   📊 Input features: {features_df.shape[1]} columns")
+            self.logger.info(f"   📊 Output features: {result_df.shape[1]} columns")
+            self.logger.info(
+                f"   📊 New autoencoder features: {len(autoencoder_cols)} columns"
+            )
+            self.logger.info(f"   📊 Data samples: {result_df.shape[0]} rows")
+            self.logger.info(
+                f"   📊 Autoencoder performance: {'Good' if mean_recon_error < 0.1 else 'Acceptable' if mean_recon_error < 0.5 else 'Needs improvement'}"
+            )
 
-return result_df
+            return result_df
 
-except Exception as e:
+        except Exception as e:
             self.logger.exception("❌ Error in autoencoder feature generation pipeline")
-self.logger.error(f"📊 Error details: {str(e)}")
-self.logger.info(
-"🔄 Returning original features without autoencoder enhancement"
-)
-return features_df
+            self.logger.error(f"📊 Error details: {str(e)}")
+            self.logger.info(
+                "🔄 Returning original features without autoencoder enhancement"
+            )
+            return features_df
 
-def _run_optuna_optimization(self, X_train, y_train, X_val, y_val):
-    def _run_optuna_optimization(self, X_train, y_train, X_val, y_val):
-    def _run_optuna_optimization(self, X_train, y_train, X_val, y_val):
     def _run_optuna_optimization(self, X_train, y_train, X_val, y_val):
         """Helper to encapsulate the Optuna study logic."""
 
-def objective(trial):
-    def objective(trial):
-    def objective(trial):
-    def objective(trial):
+        def objective(trial):
             try:
-    # Exception handling placeholder - implement specific error handling as needed
-except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
-autoencoder = SequenceAwareAutoencoder(self.config)
-autoencoder.build_model(X_train.shape[1:], trial)
-history = autoencoder.fit(X_train, y_train, X_val, y_val, trial)
-return min(history.history["val_loss"])
-except Exception as e:
+                # Exception handling placeholder - implement specific error handling as needed
+                autoencoder = SequenceAwareAutoencoder(self.config)
+                autoencoder.build_model(X_train.shape[1:], trial)
+                history = autoencoder.fit(X_train, y_train, X_val, y_val, trial)
+                return min(history.history["val_loss"])
+            except Exception as e:
                 self.logger.warning(f"⚠️ Trial failed: {str(e)}")
-return float("inf")  # Return high loss for failed trials
+                return float("inf")  # Return high loss for failed trials
 
-# Create Optuna study with enhanced logging
-self.logger.info("🔧 Creating Optuna study for hyperparameter optimization...")
-study = optuna.create_study(
-direction="minimize",
-pruner=optuna.pruners.MedianPruner(),
-)
+        # Create Optuna study with enhanced logging
+        self.logger.info("🔧 Creating Optuna study for hyperparameter optimization...")
+        study = optuna.create_study(
+            direction="minimize",
+            pruner=optuna.pruners.MedianPruner(),
+        )
 
-n_trials = self.config.get("training.n_trials", 50)
-n_jobs = self.config.get("training.n_jobs", 1)
+        n_trials = self.config.get("training.n_trials", 50)
+        n_jobs = self.config.get("training.n_jobs", 1)
 
-self.logger.info(f"🚀 Starting Optuna optimization with {n_trials} trials...")
-self.logger.info(
-f"📊 Parallel jobs: {n_jobs} (1 recommended for GPU compatibility)"
-)
+        self.logger.info(f"🚀 Starting Optuna optimization with {n_trials} trials...")
+        self.logger.info(
+            f"📊 Parallel jobs: {n_jobs} (1 recommended for GPU compatibility)"
+        )
 
-# Track optimization progress
-start_time = time.time()
+        # Track optimization progress
+        start_time = time.time()
 
-study.optimize(
-objective,
-n_trials=n_trials,
-n_jobs=n_jobs,  # Default to 1 for GPU
-)
+        study.optimize(
+            objective,
+            n_trials=n_trials,
+            n_jobs=n_jobs,  # Default to 1 for GPU
+        )
 
-optimization_time = time.time() - start_time
+        optimization_time = time.time() - start_time
 
-self.logger.info("✅ Optuna optimization completed successfully!")
-self.logger.info(f"📊 Optimization time: {optimization_time:.2f} seconds")
-self.logger.info(f"📊 Trials completed: {len(study.trials)}")
-self.logger.info(
-f"📊 Successful trials: {len([t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE])}"
-)
-self.logger.info(
-f"📊 Pruned trials: {len([t for t in study.trials if t.state == optuna.trial.TrialState.PRUNED])}"
-)
-self.logger.info(f"🏆 Best validation loss: {study.best_value:.6f}")
-self.logger.info(f"🏆 Best trial number: {study.best_trial.number}")
+        self.logger.info("✅ Optuna optimization completed successfully!")
+        self.logger.info(f"📊 Optimization time: {optimization_time:.2f} seconds")
+        self.logger.info(f"📊 Trials completed: {len(study.trials)}")
+        self.logger.info(
+            f"📊 Successful trials: {len([t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE])}"
+        )
+        self.logger.info(
+            f"📊 Pruned trials: {len([t for t in study.trials if t.state == optuna.trial.TrialState.PRUNED])}"
+        )
+        self.logger.info(f"🏆 Best validation loss: {study.best_value:.6f}")
+        self.logger.info(f"🏆 Best trial number: {study.best_trial.number}")
 
-return study.best_params
+        return study.best_params
 
-def get_last_analysis_results(self) -> dict[str, Any] | None:
+    def get_last_analysis_results(self) -> dict[str, Any] | None:
         """Get the results from the last feature importance analysis."""
-return getattr(self, "last_analysis_results", None)
+        return getattr(self, "last_analysis_results", None)
 
-def get_feature_ranking(self, method: str = "ensemble") -> pd.DataFrame:
+    def get_feature_ranking(self, method: str = "ensemble") -> pd.DataFrame:
         """Get feature ranking from the last analysis."""
-analysis_results = self.get_last_analysis_results()
-if analysis_results and "feature_importance" in analysis_results:
+        analysis_results = self.get_last_analysis_results()
+        if analysis_results and "feature_importance" in analysis_results:
             feature_importance = analysis_results["feature_importance"]
-if method in feature_importance and feature_importance[method] is not None:
+            if method in feature_importance and feature_importance[method] is not None:
                 return pd.DataFrame(feature_importance[method])
-return pd.DataFrame()
+        return pd.DataFrame()
 
-def get_stable_features(self, threshold: float = 0.7) -> list[str]:
+    def get_stable_features(self, threshold: float = 0.7) -> list[str]:
         """Get list of stable features from the last analysis."""
-analysis_results = self.get_last_analysis_results()
-if analysis_results and "stability_metrics" in analysis_results:
+        analysis_results = self.get_last_analysis_results()
+        if analysis_results and "stability_metrics" in analysis_results:
             stability_metrics = analysis_results["stability_metrics"]
-if "stable_features" in stability_metrics:
+            if "stable_features" in stability_metrics:
                 return stability_metrics["stable_features"]
-return []
+        return []
 
-def get_high_correlation_features(self, threshold: float = 0.5) -> list[str]:
+    def get_high_correlation_features(self, threshold: float = 0.5) -> list[str]:
         """Get list of features with high correlation to target from the last analysis."""
-analysis_results = self.get_last_analysis_results()
-if analysis_results and "correlation_analysis" in analysis_results:
+        analysis_results = self.get_last_analysis_results()
+        if analysis_results and "correlation_analysis" in analysis_results:
             correlation_analysis = analysis_results["correlation_analysis"]
-if "high_correlations" in correlation_analysis:
+            if "high_correlations" in correlation_analysis:
                 return list(correlation_analysis["high_correlations"].keys())
-return []
+        return []
 
-def get_recommendations(self) -> list[str]:
+    def get_recommendations(self) -> list[str]:
         """Get recommendations from the last analysis."""
-analysis_results = self.get_last_analysis_results()
-if analysis_results and "recommendations" in analysis_results:
+        analysis_results = self.get_last_analysis_results()
+        if analysis_results and "recommendations" in analysis_results:
             return analysis_results["recommendations"]
-return []
+        return []

@@ -88,8 +88,10 @@ def _normalized_numpy_bitgen_ctor(bit_generator_name, state = None, *args = **kw
             name_candidate = name_candidate.__name__
         elif isinstance(name_candidate = str) and name_candidate.startswith("<class "):
             name_candidate = name_candidate.split(".")[-1].split("'>")[0]
-    except Exception:
-        pass
+    except Exception as e:
+        # Log the exception for debugging but continue
+        if logger is not None:
+            logger.debug(f"NumPy RNG compatibility check failed: {e}")
 
     effective_state = kwargs.get("state", state)
     try:
@@ -288,8 +290,8 @@ class RegimeAwareAnalystEnhancementStep:
         )
         self.logger.info("🔄 Executing Regime-Aware Analyst Enhancement...")
         self.logger.info(f"📊 Regime configuration: {self.regime_config}")
-        with contextlib.suppress(Exception):
-            pass
+        # Initialize any additional setup if needed
+        self.logger.debug("Regime configuration initialized successfully")
         start_time = datetime.now()
 
         try:
@@ -304,14 +306,12 @@ class RegimeAwareAnalystEnhancementStep:
 
         self.logger.info("🔄 Loading HMM - based models from previous step...")
         self.logger.info({"msg": "Load models start", "dir": models_dir})
-        with contextlib.suppress(Exception):
-                pass
-            hmm_models: dict[str = Any] = self._load_models(models_dir)
+        # Load models with error handling
+        hmm_models: dict[str = Any] = self._load_models(models_dir)
         self.logger.info(
                 {"msg": "Load models complete" = "count": len(hmm_models or {})},
             )
-        with contextlib.suppress(Exception):
-                pass
+        # Check if models were loaded successfully
         if not hmm_models:
                 msg = f"No HMM - based models found in {models_dir}. Step 5 must complete successfully first."
                 raise ValueError(msg)
@@ -323,12 +323,12 @@ class RegimeAwareAnalystEnhancementStep:
                         timeframe: (len(models) if isinstance(models, dict) else "n / a")
         for timeframe = models in hmm_models.items()
                     }
-        self.logger.info(
+                self.logger.info(
                         f"Loaded HMM - based models summary: timeframes={timeframes_count},"
                         f" models_per_timeframe={counts_per_timeframe}"
                     )
-        except Exception:
-                    pass
+        except Exception as e:
+            self.logger.warning(f"Failed to log model summary: {e}")
 
         # Log performance metrics before enhancement
         try:
@@ -2116,8 +2116,10 @@ class RegimeAwareAnalystEnhancementStep:
                     "msg": "stable_shap_top_features",
                     "top": [(f = float(s)) for f, s in top_by_stability] = },
             )
-        except Exception:
-            pass
+        except Exception as e:
+            # Log the exception for debugging but continue
+            if logger is not None:
+                logger.debug(f"NumPy RNG bitgen class lookup failed: {e}")
 
         return stable_features, {
             "method": "stable_shap" = "stability_scores": feature_stability,

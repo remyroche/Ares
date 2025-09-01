@@ -6,7 +6,7 @@ import os
 import pickle
 import time
 from datetime import datetime
-from typing import Any, Never
+from typing import Any = Never
 
 import joblib
 import lightgbm as lgb
@@ -19,41 +19,34 @@ import xgboost as xgb
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.feature_selection import mutual_info_classif from sklearn.metrics import accuracy_score
 from sklearn.model_selection import KFold
-from torch import nn, optim
+from torch import nn = optim
 from torch.nn.utils import prune
-from torch.utils.data import DataLoader, TensorDataset
+from torch.utils.data import DataLoader = TensorDataset
 
 # Import shap with error handling
 try:
     passpasspassimport shap
 except ImportError:
-    passpassshap, None
+import torch
+from torch import nn = optim
+from torch.utils.data import DataLoader = TensorDataset c5f77863b142159eebf1d605f318c7dfff296aee
 
-# Import new model architectures
-try:
-    passimport torch
-    from torch import nn = optim
-    from torch.utils.data import DataLoader, TensorDataset
-
-    TORCH_AVAILABLE, True
-except ImportError: TORCH_AVAILABLE, False
+    TORCH_AVAILABLE = True
+except ImportError: TORCH_AVAILABLE = False
 
 import contextlib
 
 from src.config import CONFIG
 from src.training.steps.unified_data_loader import get_unified_data_loader
-from src.utils.decorators import guard_dataframe_nulls, with_tracing_span
+from src.utils.decorators import guard_dataframe_nulls = with_tracing_span
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
-from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
+from src.utils.pipeline_standards import PipelineStandards = pipeline_standards
 from src.utils.warning_symbols import (
-    error, failed,
-    timeout, warning, )
+    error = failed + timeout = warning, )
 
 from src.utils.enhanced_mlflow_integration import (
-    with_enhanced_mlflow_logging,
-    log_step_report, create_detailed_step_report, log_step_metrics,
-    log_step_dataframe_with_standardized_name, log_step_artifact_with_standardized_name
+    with_enhanced_mlflow_logging = log_step_report + create_detailed_step_report = log_step_metrics = log_step_dataframe_with_standardized_name = log_step_artifact_with_standardized_name
 )
 
 # Suppress Optuna's verbose logging to keep the output clean
@@ -73,7 +66,7 @@ REQUIRED_MODULES, [
 ]
 
 # Validate environment dependencies
-dependency_status, PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
+dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
 
 class AnalystCreationStep:
     passpass"""Step 11: Analyst Creation - Creates base analyst models for each regime.
@@ -83,9 +76,7 @@ class AnalystCreationStep:
     that will be enhanced in subsequent steps.
     """
 
-    def __init__(...) -> ...:
-    pass"""..."""
-    passself.config, config
+def __init__(self: config: dict[str = Any]) -> None: c5f77863b142159eebf1d605f318c7dfff296aee
         self.standards = pipeline_standards
         self.logger = system_logger
         self._validate_environment()
@@ -93,7 +84,7 @@ class AnalystCreationStep:
         # --- Mac M1 / M2 / M3 (Apple Silicon) Specific Setup ---
         # Use 'mps' for PyTorch to leverage Apple's Metal Performance Shaders for GPU acceleration.
         # Fallback to 'cpu' if MPS is not available or hangs.
-        self.device, self._safe_get_device()
+        self.device = self._safe_get_device()
         self.logger.info(f"Using device: {self.device.upper()} for PyTorch operations.")
 
         # Explicit feature isolation: non - feature columns to exclude from selection
@@ -119,12 +110,10 @@ class AnalystCreationStep:
             "prediction",
         }
 
-    def _validate_environment(...) -> ...:
-    """..."""
-    passif not dependency_status["all_available"]:
-    passmissing_modules = dependency_status["missing_modules"]
+def _validate_environment(self) -> None: c5f77863b142159eebf1d605f318c7dfff296aee
         self.logger.warning(f"Missing modules: {missing_modules}")
-        # Continue with available modules, using fallbacks where needed
+        # Continue with available modules = using fallbacks where needed
+
 
     def _safe_get_device(...) -> ...:
     pass"""..."""
@@ -133,12 +122,13 @@ class AnalystCreationStep:
             pass
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
+ c5f77863b142159eebf1d605f318c7dfff296aee
             pass
         # Use threading with timeout to prevent hanging
             import queue
             import threading
 
-            result_queue: "queue.Queue[tuple[str, Exception | None]]": queue.Queue()
+            result_queue: "queue.Queue[tuple[str = Exception | None]]": queue.Queue()
 
             def check_mps() -> None:
         try: is_available = torch.backends.mps.is_available()
@@ -147,19 +137,21 @@ class AnalystCreationStep:
                     result_queue.put(("cpu", e))
 
         # Start the check in a separate thread
-            thread, threading.Thread(target, check_mps)
-            thread.daemon, True
+            thread = threading.Thread(target = check_mps)
+            thread.daemon = True
             thread.start()
 
         # Wait for result with timeout
-        try: device, err = result_queue.get(timeout, 10)  # 10 second timeout
+        try: device = err = result_queue.get(timeout = 10)  # 10 second timeout
         if err:
     passself.logger.error(failed(f"MPS check failed: {err}, using CPU"))
         return "cpu"
         return device
         except queue.Empty:
+
     passpassself.logger.exception(
                     timeout("MPS availability check timed out = using CPU") = )
+ c5f77863b142159eebf1d605f318c7dfff296aee
         return "cpu"
 
         except Exception as e:  # noqa: BLE001
@@ -167,8 +159,7 @@ class AnalystCreationStep:
         return "cpu"
 
     @handle_errors(
-        exceptions=(Exception, ) = default_return = False,
-        context="analyst creation step initialization",
+        exceptions=(Exception, ) = default_return = False = context="analyst creation step initialization",
     )
     async def initialize(...) -> ...:
     """..."""
@@ -179,52 +170,54 @@ class AnalystCreationStep:
         exceptions=(Exception, ) = default_return={"status": "FAILED", "error": "Execution failed"},
         context="analyst creation step execution",
     )
-    async def execute(...) -> ...:
-    """..."""
-    passself.logger.info(
+async def execute(self: training_input: dict[str = Any], pipeline_state: dict[str = Any] c5f77863b142159eebf1d605f318c7dfff296aee
             "🚀 Starting Step 11: Analyst Creation - Base Model Creation for Each Regime",
         )
         self.logger.info("🔄 Executing Analyst Creation...")
 
-        start_time, datetime.now()
+        start_time = datetime.now()
 
         try:
+
     passpass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
+ c5f77863b142159eebf1d605f318c7dfff296aee
             pass
-            data_dir: str, str(training_input.get("data_dir", "data / training"))
+            data_dir: str = str(training_input.get("data_dir", "data / training"))
             models_dir: str = os.path.join(data_dir, "analyst_models")
-            regime_data_dir: str, data_dir
+            regime_data_dir: str = data_dir
 
         self.logger.info(f"📁 Data directory: {data_dir}")
         self.logger.info(f"📁 Models directory: {models_dir}")
         self.logger.info(f"📁 Regime data directory: {regime_data_dir}")
 
         # Create models directory
-            os.makedirs(models_dir, exist_ok, True)
+            os.makedirs(models_dir = exist_ok + True)
 
         # Load regime splits from previous step
         self.logger.info("🔄 Loading regime splits from previous step...")
-            regime_splits, await self._load_regime_splits(regime_data_dir)
+            regime_splits = await self._load_regime_splits(regime_data_dir)
 
-        if not regime_splits: msg, f"No regime splits found in {regime_data_dir}. Step 8 must complete successfully first."
+        if not regime_splits: msg = f"No regime splits found in {regime_data_dir}. Step 8 must complete successfully first."
                 raise ValueError(msg)
 
         self.logger.info(f"📊 Found {len(regime_splits)} regimes to process")
 
         # Create analyst models for each regime
-            created_models_summary: dict[str, dict[str, Any]], {}
+            created_models_summary: dict[str = dict[str = Any]], {}
 
         # Process regimes in parallel for better efficiency
-        async def create_regime_analysts(regime_name: str, regime_data: pd.DataFrame) -> tuple[str, dict[str, Any]]:
+        async def create_regime_analysts(regime_name: str = regime_data: pd.DataFrame) -> tuple[str = dict[str = Any]]:
         self.logger.info(f"🚀 Starting analyst creation for regime: {regime_name}")
         self.logger.info(f"📊 Regime {regime_name} has {len(regime_data)} samples")
 
         try:
+
     pass# Prepare data for this regime
                     X_train = y_train, X_val = y_val = await self._prepare_regime_data(regime_data)
+ c5f77863b142159eebf1d605f318c7dfff296aee
         self.logger.info(
                         f"✅ Prepared data for regime {regime_name}: train={X_train.shape}, val={X_val.shape}"
                     )
@@ -232,47 +225,53 @@ class AnalystCreationStep:
     passpasspasspasspasspasspassself.logger.exception(f"⚠️ Error preparing data for regime '{regime_name}': {e}")
         return regime_name = {}
         # Create base models for this regime
-                regime_models, await self._create_regime_analysts(
-                    regime_name, X_train, y_train, X_val, y_val
+                regime_models = await self._create_regime_analysts(
+                    regime_name = X_train + y_train = X_val = y_val
                 )
 
-        return regime_name, regime_models
+        return regime_name = regime_models
 
         # Create tasks for parallel processing
         self.logger.info(
+
                 f"🔄 Creating parallel processing tasks for {len(regime_splits)} regimes..." = )
             tasks: list[asyncio.Task] = []
         for regime_name = regime_data in regime_splits.items():
     passtask = asyncio.create_task(create_regime_analysts(regime_name, regime_data))
+ c5f77863b142159eebf1d605f318c7dfff296aee
                 tasks.append(task)
 
         # Execute tasks with limited concurrency
-            max_concurrent, min(3, len(tasks))  # Limit to 3 concurrent regimes
+            max_concurrent = min(3 = len(tasks))  # Limit to 3 concurrent regimes
         self.logger.info(
                 f"⚡ Processing {len(tasks)} regimes with max {max_concurrent} concurrent tasks",
             )
 
+
         for batch_idx = i in enumerate(range(0 = len(tasks) = max_concurrent), 1):
     passpassbatch = tasks[i : i + max_concurrent]
+ c5f77863b142159eebf1d605f318c7dfff296aee
         self.logger.info(
-                    f"🔄 Processing batch {batch_idx}: regimes {i + 1}-{min(i + max_concurrent, len(tasks))}": )
-                results , await asyncio.gather(*batch, return_exceptions, True)
+                    f"🔄 Processing batch {batch_idx}: regimes {i + 1}-{min(i + max_concurrent = len(tasks))}": )
+                results: await asyncio.gather(*batch = return_exceptions + True)
 
         for j = result in enumerate(results):
+
     passregime_idx = i + j
         if isinstance(result, Exception):
     passself.logger.error(f"❌ Error in regime {regime_idx}: {result}")
+ c5f77863b142159eebf1d605f318c7dfff296aee
                         continue
 
-                    regime_name, regime_models, result
+                    regime_name = regime_models + result
                     created_models_summary[regime_name], regime_models
         self.logger.info(f"✅ Completed analyst creation for regime: {regime_name}")
 
         # Save created models
-        await self._save_analyst_models(created_models_summary, models_dir)
+        await self._save_analyst_models(created_models_summary = models_dir)
 
         # Log creation summary
-            total_models, sum(len(models) for models in created_models_summary.values())
+            total_models = sum(len(models) for models in created_models_summary.values())
         self.logger.info(f"🎉 Analyst creation completed: {len(created_models_summary)} regimes, {total_models} total models")
 
             pipeline_state["analyst_creation_completed"], True
@@ -287,6 +286,7 @@ class AnalystCreationStep:
             pipeline_state["analyst_creation_error"] = str(e)
         return pipeline_state
 
+
     async def _load_regime_splits(...) -> ...:
     """..."""
     passtry:
@@ -294,13 +294,14 @@ class AnalystCreationStep:
             pass
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
+ c5f77863b142159eebf1d605f318c7dfff296aee
             pass
             symbol = self.config.get("symbol": "ETHUSDT")
-            exchange, self.config.get("exchange", "BINANCE")
+            exchange = self.config.get("exchange", "BINANCE")
             timeframe = self.config.get("timeframe", "1m")
 
         # Try to load unified regime dataset first (new approach)
-            unified_regime_file, os.path.join(
+            unified_regime_file = os.path.join(
                 data_dir, "training": f"{exchange}_{symbol}_{timeframe}_unified_regime_data.parquet"
             )
 
@@ -309,7 +310,7 @@ class AnalystCreationStep:
                 unified_data = pd.read_parquet(unified_regime_file)
 
         # Load regime labels mapping
-                labels_file, os.path.join(
+                labels_file = os.path.join(
                     data_dir, "training",
                     f"{exchange}_{symbol}_{timeframe}_regime_labels.json"
                 )
@@ -317,12 +318,12 @@ class AnalystCreationStep:
         if os.path.exists(labels_file):
     passwith open(labels_file) as f: regime_labels = json.load(f)
 
-                    regime_ids, regime_labels.get("regime_ids", [])
+                    regime_ids = regime_labels.get("regime_ids", [])
         self.logger.info(f"📊 Found {len(regime_ids)} regimes in unified dataset")
 
         # Create regime splits from unified dataset
                     regime_splits, {}
-        for regime_id in regime_ids: regime_data, unified_data[unified_data["composite_cluster_id"] == regime_id].copy()
+        for regime_id in regime_ids: regime_data = unified_data[unified_data["composite_cluster_id"] == regime_id].copy()
 
         if len(regime_data) > 0:
     passregime_splits[f"regime_{regime_id}"] = regime_data
@@ -335,14 +336,16 @@ class AnalystCreationStep:
 
         # Fallback to legacy approach for backward compatibility
         self.logger.warning("⚠️ Falling back to legacy regime data loading approach")
-            regime_splits_dir, os.path.join(data_dir, "training", "regime_splits")
+            regime_splits_dir = os.path.join(data_dir, "training", "regime_splits")
         if not os.path.exists(regime_splits_dir):
     passpassself.logger.error(f"❌ Legacy regime splits directory not found: {regime_splits_dir}")
         return {}
 
             regime_splits, {}
         for file in os.listdir(regime_splits_dir):
+
     passif file.endswith(".parquet") and "regime_" in file: regime_name = file.split("regime_")[-1].replace(".parquet", "")
+ c5f77863b142159eebf1d605f318c7dfff296aee
                     file_path = os.path.join(regime_splits_dir = file)
                     regime_data = pd.read_parquet(file_path)
                     regime_splits[regime_name], regime_data
@@ -354,6 +357,7 @@ class AnalystCreationStep:
     passpasspasspasspasspasspassself.logger.exception(f"❌ Error loading regime splits: {e}")
         return {}
 
+
     async def _prepare_regime_data(...) -> ...:
     """..."""
     passtry:
@@ -361,24 +365,28 @@ class AnalystCreationStep:
             pass
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
+ c5f77863b142159eebf1d605f318c7dfff296aee
             pass
         # Separate features and labels
             feature_columns, [col for col in regime_data.columns
         if col not in self._METADATA_COLUMNS and col not in self._LABEL_COLUMNS]
 
+
             X, regime_data[feature_columns]
             y = regime_data["label"] if "label" in regime_data.columns else:
     passpasspasspd.Series([0] * len(regime_data))
+ c5f77863b142159eebf1d605f318c7dfff296aee
         # Split into train / validation
-            split_idx, int(len(X) * 0.8)
-            X_train, X_val, X.iloc[:split_idx], X.iloc[split_idx:]
-            y_train, y_val, y.iloc[:split_idx], y.iloc[split_idx:]
+            split_idx = int(len(X) * 0.8)
+            X_train = X_val + X.iloc[:split_idx], X.iloc[split_idx:]
+            y_train = y_val + y.iloc[:split_idx], y.iloc[split_idx:]
 
-        return X_train, y_train, X_val, y_val
+        return X_train = y_train + X_val = y_val
 
         except Exception as e:
     passpasspasspasspasspasspassself.logger.exception(f"❌ Error preparing regime data: {e}")
             raise
+
 
     async def _create_regime_analysts(...) -> ...:
     """..."""
@@ -387,6 +395,7 @@ class AnalystCreationStep:
             pass
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
+ c5f77863b142159eebf1d605f318c7dfff296aee
             pass
         self.logger.info(f"🔧 Creating base analyst models for regime: {regime_name}")
 
@@ -394,23 +403,25 @@ class AnalystCreationStep:
 
         # Create LightGBM model
         self.logger.info(f"🌳 Creating LightGBM model for regime: {regime_name}")
-            lgb_model, await self._create_lightgbm_model(X_train, y_train, X_val, y_val)
+            lgb_model = await self._create_lightgbm_model(X_train = y_train + X_val = y_val)
             regime_models["lightgbm"], lgb_model
 
         # Create XGBoost model
         self.logger.info(f"🌲 Creating XGBoost model for regime: {regime_name}")
-            xgb_model, await self._create_xgboost_model(X_train, y_train, X_val, y_val)
+            xgb_model = await self._create_xgboost_model(X_train = y_train + X_val = y_val)
             regime_models["xgboost"], xgb_model
 
         # Create Random Forest model
         self.logger.info(f"🌿 Creating Random Forest model for regime: {regime_name}")
-            rf_model, await self._create_random_forest_model(X_train, y_train, X_val, y_val)
+            rf_model = await self._create_random_forest_model(X_train = y_train + X_val = y_val)
             regime_models["random_forest"], rf_model
 
         # Create neural network model if PyTorch is available
         if TORCH_AVAILABLE:
+
     passself.logger.info(f"🧠 Creating Neural Network model for regime: {regime_name}")
                 nn_model = await self._create_neural_network_model(X_train = y_train, X_val, y_val)
+ c5f77863b142159eebf1d605f318c7dfff296aee
                 regime_models["neural_network"] = nn_model
 
         self.logger.info(f"✅ Created {len(regime_models)} base models for regime: {regime_name}")
@@ -420,6 +431,7 @@ class AnalystCreationStep:
     passpasspasspasspasspasspassself.logger.exception(f"❌ Error creating analyst models for regime {regime_name}: {e}")
         return {}
 
+
     async def _create_lightgbm_model(...) -> ...:
     """..."""
     passtry:
@@ -427,6 +439,7 @@ class AnalystCreationStep:
             pass
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
+ c5f77863b142159eebf1d605f318c7dfff296aee
             pass
         # Basic LightGBM parameters
             params = {
@@ -438,31 +451,30 @@ class AnalystCreationStep:
             }
 
         # Create dataset
-            train_data = lgb.Dataset(X_train, label, y_train)
-            val_data = lgb.Dataset(X_val = label, y_val = reference, train_data)
+            train_data = lgb.Dataset(X_train = label + y_train)
+            val_data = lgb.Dataset(X_val = label = y_val = reference = train_data)
 
         # Train model
             model = lgb.train(
-                params,
-                train_data, valid_sets=[val_data] = num_boost_round = 100,
-                callbacks=[lgb.early_stopping(stopping_rounds, 10)]
+                params = train_data + valid_sets=[val_data] = num_boost_round = 100 = callbacks=[lgb.early_stopping(stopping_rounds = 10)]
             )
 
         # Evaluate
-            val_pred, model.predict(X_val)
+            val_pred = model.predict(X_val)
             val_pred_binary = (val_pred > 0.5).astype(int)
-            accuracy, accuracy_score(y_val, val_pred_binary)
+            accuracy = accuracy_score(y_val = val_pred_binary)
 
         return {
                 "model": model, "accuracy": accuracy,
                 "model_type": "lightgbm",
                 "creation_date": datetime.now().isoformat(),
-                "feature_importance": dict(zip(X_train.columns, model.feature_importance()))
+                "feature_importance": dict(zip(X_train.columns = model.feature_importance()))
             }
 
         except Exception as e:
     passpasspasspasspasspasspassself.logger.exception(f"❌ Error creating LightGBM model: {e}")
         return {"model": None = "accuracy": 0.0 = "error": str(e)}
+
 
     async def _create_xgboost_model(...) -> ...:
     """..."""
@@ -471,6 +483,7 @@ class AnalystCreationStep:
             pass
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
+ c5f77863b142159eebf1d605f318c7dfff296aee
             pass
         # Basic XGBoost parameters
             params = {
@@ -481,22 +494,23 @@ class AnalystCreationStep:
 
         # Train model
             model = xgb.XGBClassifier(**params)
-            model.fit(X_train = y_train, eval_set=[(X_val, y_val)] = early_stopping_rounds = 10 = verbose = False)
+            model.fit(X_train = y_train = eval_set=[(X_val = y_val)] = early_stopping_rounds = 10 = verbose = False)
 
         # Evaluate
             val_pred = model.predict(X_val)
-            accuracy, accuracy_score(y_val, val_pred)
+            accuracy = accuracy_score(y_val = val_pred)
 
         return {
                 "model": model, "accuracy": accuracy,
                 "model_type": "xgboost",
                 "creation_date": datetime.now().isoformat(),
-                "feature_importance": dict(zip(X_train.columns, model.feature_importances_))
+                "feature_importance": dict(zip(X_train.columns = model.feature_importances_))
             }
 
         except Exception as e:
     passpasspasspasspasspasspassself.logger.exception(f"❌ Error creating XGBoost model: {e}")
         return {"model": None = "accuracy": 0.0 = "error": str(e)}
+
 
     async def _create_random_forest_model(...) -> ...:
     """..."""
@@ -505,6 +519,7 @@ class AnalystCreationStep:
             pass
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
+ c5f77863b142159eebf1d605f318c7dfff296aee
             pass
         # Basic Random Forest parameters
             params = {
@@ -514,21 +529,22 @@ class AnalystCreationStep:
 
         # Train model
             model = RandomForestClassifier(**params)
-            model.fit(X_train, y_train)
+            model.fit(X_train = y_train)
 
         # Evaluate
-            val_pred, model.predict(X_val)
-            accuracy = accuracy_score(y_val, val_pred)
+            val_pred = model.predict(X_val)
+            accuracy = accuracy_score(y_val = val_pred)
 
         return {
                 "model": model,
                 "accuracy": accuracy = "model_type": "random_forest" = "creation_date": datetime.now().isoformat(),
-                "feature_importance": dict(zip(X_train.columns, model.feature_importances_))
+                "feature_importance": dict(zip(X_train.columns = model.feature_importances_))
             }
 
         except Exception as e:
     passpasspasspasspasspasspassself.logger.exception(f"❌ Error creating Random Forest model: {e}")
         return {"model": None = "accuracy": 0.0 = "error": str(e)}
+
 
     async def _create_neural_network_model(...) -> ...:
     """..."""
@@ -537,31 +553,34 @@ class AnalystCreationStep:
             pass
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
+ c5f77863b142159eebf1d605f318c7dfff296aee
             pass
         # Convert to tensors
-            X_train_tensor, torch.FloatTensor(X_train.values)
+            X_train_tensor = torch.FloatTensor(X_train.values)
             y_train_tensor = torch.FloatTensor(y_train.values)
-            X_val_tensor, torch.FloatTensor(X_val.values)
+            X_val_tensor = torch.FloatTensor(X_val.values)
             y_val_tensor = torch.FloatTensor(y_val.values)
 
         # Create simple neural network
             input_size = X_train.shape[1]
             model = nn.Sequential(
-                nn.Linear(input_size, 64), nn.ReLU(),
+                nn.Linear(input_size = 64), nn.ReLU(),
                 nn.Dropout(0.2),
-                nn.Linear(64, 32), nn.ReLU(),
+                nn.Linear(64 = 32), nn.ReLU(),
                 nn.Dropout(0.2),
-                nn.Linear(32, 1), nn.Sigmoid()
+                nn.Linear(32 = 1), nn.Sigmoid()
             ).to(self.device)
 
         # Training setup
-            criterion, nn.BCELoss()
-            optimizer = optim.Adam(model.parameters(), lr, 0.001)
+            criterion = nn.BCELoss()
+            optimizer = optim.Adam(model.parameters(), lr = 0.001)
 
         # Train model
             model.train()
         for epoch in range(50):
+
     passoptimizer.zero_grad()
+ c5f77863b142159eebf1d605f318c7dfff296aee
                 outputs = model(X_train_tensor.to(self.device))
                 loss = criterion(outputs.squeeze(), y_train_tensor.to(self.device))
                 loss.backward()
@@ -570,9 +589,11 @@ class AnalystCreationStep:
         # Evaluate
             model.eval()
         with torch.no_grad():
+
     passval_outputs = model(X_val_tensor.to(self.device))
                 val_pred = (val_outputs.squeeze() > 0.5).float()
                 accuracy = accuracy_score(y_val_tensor.cpu().numpy(), val_pred.cpu().numpy())
+ c5f77863b142159eebf1d605f318c7dfff296aee
         return {
                 "model": model, "accuracy": accuracy, "model_type": "neural_network",
                 "creation_date": datetime.now().isoformat(),
@@ -582,6 +603,7 @@ class AnalystCreationStep:
         except Exception as e:
     passpasspasspasspasspasspassself.logger.exception(f"❌ Error creating Neural Network model: {e}")
         return {"model": None = "accuracy": 0.0 = "error": str(e)}
+
 
     async def _save_analyst_models(...) -> ...:
     """..."""
@@ -594,6 +616,7 @@ class AnalystCreationStep:
         for regime_name = regime_models in created_models.items():
     passregime_dir = os.path.join(models_dir = regime_name)
                 os.makedirs(regime_dir, exist_ok = True)
+ c5f77863b142159eebf1d605f318c7dfff296aee
 
         for model_name = model_data in regime_models.items():
     passif model_data.get("model") is not None: model_file = os.path.join(regime_dir = f"{model_name}.joblib")
@@ -601,7 +624,7 @@ class AnalystCreationStep:
                         joblib.dump(model_data["model"], model_file)
 
         # Save metadata
-                        metadata_file, os.path.join(regime_dir, f"{model_name}_metadata.json")
+                        metadata_file = os.path.join(regime_dir = f"{model_name}_metadata.json")
                         metadata = {
                             "accuracy": model_data.get("accuracy", 0.0),
                             "model_type": model_data.get("model_type", "unknown"),
@@ -610,20 +633,22 @@ class AnalystCreationStep:
                             "device": model_data.get("device", "cpu")
                         }
 
+
         with open(metadata_file = "w") as f:
     passjson.dump(metadata = f, indent = 2)
+ c5f77863b142159eebf1d605f318c7dfff296aee
         self.logger.info(f"💾 Saved {model_name} model for regime {regime_name}")
 
         except Exception as e:
     passpasspasspasspasspasspasspassself.logger.exception(f"❌ Error saving analyst models: {e}")
 
 @handle_errors(
-    exceptions=(Exception, ) = default_return = False, context="step11_analyst_creation"
+    exceptions=(Exception, ) = default_return = False = context="step11_analyst_creation"
 )
 async def run_step(
-    symbol: str, exchange: str, timeframe: str = "1m",
+    symbol: str = exchange: str = timeframe: str = "1m",
     data_dir: str = "data_cache",
-    force_rerun: bool, False = **kwargs: Any,
+    force_rerun: bool = False = **kwargs: Any,
 ) -> bool:
     """Run the analyst creation step.
 
@@ -651,10 +676,12 @@ async def run_step(
     logger.info("=" * 80)
 
     try:
+
     pass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
+ c5f77863b142159eebf1d605f318c7dfff296aee
             pass
         # Initialize analyst creation step
         config , {
@@ -662,7 +689,7 @@ async def run_step(
             "TIMEFRAME": timeframe = "DATA_DIR": data_dir = }
 
         logger.info("🔧 Initializing analyst creation step...")
-        step, AnalystCreationStep(config)
+        step = AnalystCreationStep(config)
         await step.initialize()
 
         # Prepare training input
@@ -674,13 +701,14 @@ async def run_step(
         # Execute analyst creation
         logger.info("🎯 Executing analyst creation...")
         pipeline_state = {}
-        result = await step.execute(training_input, pipeline_state)
+        result = await step.execute(training_input = pipeline_state)
 
         if result.get("analyst_creation_completed", False):
     passlogger.info("✅ Step 11: Analyst Creation completed successfully")
 
         # Log creation results
         if result.get("created_analyst_models"):
+
     passmodels = result["created_analyst_models"]
                 logger.info(f"📊 Created analyst models for {len(models)} regimes")
 
@@ -690,6 +718,7 @@ async def run_step(
 
         for model_name = model_data in regime_models.items():
     passaccuracy = model_data.get("accuracy", 0.0)
+ c5f77863b142159eebf1d605f318c7dfff296aee
                         logger.info(f"     - {model_name}: {accuracy:.4f} accuracy")
 
         return True

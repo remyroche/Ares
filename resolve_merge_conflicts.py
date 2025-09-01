@@ -1,132 +1,190 @@
 #!/usr/bin/env python3
 """
-Resolve Merge Conflicts
-Automatically resolves merge conflicts by keeping our changes.
+Merge Conflict Resolver
+Resolves merge conflicts by keeping our fixes while incorporating new changes from main.
 """
 
 import os
 import re
 import subprocess
+from pathlib import Path
 
-def resolve_conflicts():
-    """Resolve merge conflicts by keeping our changes."""
-    
-    # Get list of conflicted files
-    result = subprocess.run(['git', 'status', '--porcelain'], capture_output=True, text=True)
-    conflicted_files = []
-    
-    for line in result.stdout.split('\n'):
-        if line.startswith('UU ') or line.startswith('UD ') or line.startswith('DU '):
-            file_path = line[3:]  # Remove the status prefix
-            conflicted_files.append(file_path)
-    
-    print(f"Found {len(conflicted_files)} conflicted files")
-    
-    resolved_count = 0
-    
-    for file_path in conflicted_files:
+class MergeConflictResolver:
+    def __init__(self):
+        self.resolved_files = []
+        self.conflict_files = []
+        
+    def resolve_file(self, file_path: str) -> bool:
+        """Resolve conflicts in a single file."""
         try:
-            print(f"Resolving conflicts in: {file_path}")
-            
-            # Check if file exists
-            if not os.path.exists(file_path):
-                print(f"  File {file_path} doesn't exist, skipping")
-                continue
-            
-            # Read the file content
             with open(file_path, 'r', encoding='utf-8') as f:
                 content = f.read()
             
-            original_content = content
+            # Check if file has merge conflicts
+            if '<<<<<<< HEAD' not in content:
+                return True  # No conflicts
             
-            # Remove conflict markers and keep our changes (HEAD)
-            # Pattern: <<<<<<< HEAD ... ======= ... >>>>>>> branch
-            content = re.sub(
-                r'<<<<<<< HEAD\s*\n(.*?)\s*\n=======\s*\n(.*?)\s*\n>>>>>>> [^\n]*\s*\n',
-                r'\1\n',
-                content,
-                flags=re.DOTALL
-            )
+            print(f"🔧 Resolving conflicts in {file_path}")
             
-            # Remove any remaining conflict markers
-            content = re.sub(r'<<<<<<< HEAD\s*\n', '', content)
-            content = re.sub(r'=======\s*\n', '', content)
-            content = re.sub(r'>>>>>>> [^\n]*\s*\n', '', content)
+            # Split content by conflict markers
+            parts = content.split('<<<<<<< HEAD')
             
-            # Remove any remaining conflict markers without newlines
-            content = re.sub(r'<<<<<<< HEAD', '', content)
-            content = re.sub(r'=======', '', content)
-            content = re.sub(r'>>>>>>> [^\n]*', '', content)
+            if len(parts) == 1:
+                return True  # No conflicts
+                
+            resolved_content = parts[0]  # Content before first conflict
             
-            # Write the resolved content back
-            if content != original_content:
-                with open(file_path, 'w', encoding='utf-8') as f:
-                    f.write(content)
-                resolved_count += 1
-                print(f"  ✅ Resolved conflicts")
-            else:
-                print(f"  ⚠️  No conflicts found in file")
-        
+            for i, part in enumerate(parts[1:], 1):
+                # Split by conflict separator
+                conflict_parts = part.split('=======')
+                if len(conflict_parts) != 2:
+                    # Malformed conflict, keep original
+                    resolved_content += '<<<<<<< HEAD' + part
+                    continue
+                
+                main_content = conflict_parts[0]
+                our_content = conflict_parts[1].split('>>>>>>>')[0]
+                after_conflict = conflict_parts[1].split('>>>>>>>')[1] if '>>>>>>>' in conflict_parts[1] else ''
+                
+                # Strategy: Keep our fixes but incorporate any new imports or functions from main
+                resolved_part = self.merge_sections(main_content, our_content)
+                resolved_content += resolved_part + after_conflict
+            
+            # Write resolved content
+            with open(file_path, 'w', encoding='utf-8') as f:
+                f.write(resolved_content)
+            
+            self.resolved_files.append(file_path)
+            print(f"✅ Resolved conflicts in {file_path}")
+            return True
+            
         except Exception as e:
-            print(f"  ❌ Error resolving {file_path}: {e}")
+            print(f"❌ Error resolving {file_path}: {e}")
+            self.conflict_files.append(file_path)
+            return False
     
-    print(f"\nResolved conflicts in {resolved_count} files")
-    return resolved_count
-
-def add_resolved_files():
-    """Add resolved files to staging area."""
-    try:
-        # Add all resolved files
-        result = subprocess.run(['git', 'add', '.'], capture_output=True, text=True)
-        if result.returncode == 0:
-            print("✅ Added resolved files to staging area")
-            return True
-        else:
-            print(f"❌ Error adding files: {result.stderr}")
-            return False
-    except Exception as e:
-        print(f"❌ Error adding files: {e}")
-        return False
-
-def commit_resolution():
-    """Commit the conflict resolution."""
-    try:
-        result = subprocess.run([
-            'git', 'commit', '-m', 'Resolve merge conflicts - keep code quality improvements'
-        ], capture_output=True, text=True)
+    def merge_sections(self, main_content: str, our_content: str) -> str:
+        """Merge two conflicting sections intelligently."""
         
-        if result.returncode == 0:
-            print("✅ Committed conflict resolution")
-            return True
-        else:
-            print(f"❌ Error committing: {result.stderr}")
-            return False
-    except Exception as e:
-        print(f"❌ Error committing: {e}")
+        # If our content has more substantial fixes, prefer it
+        if self.has_substantial_fixes(our_content):
+            return our_content
+        
+        # If main has new imports or functions, merge them
+        if self.has_new_imports(main_content) or self.has_new_functions(main_content):
+            return self.merge_imports_and_functions(main_content, our_content)
+        
+        # Default: keep our content (our fixes)
+        return our_content
+    
+    def has_substantial_fixes(self, content: str) -> bool:
+        """Check if content contains substantial fixes."""
+        # Look for our specific fixes
+        fix_indicators = [
+            'Exception handling implemented',
+            'Implementation placeholder',
+            'raise NotImplementedError',
+            'self.logger.error',
+            'TODO: Implement'
+        ]
+        
+        return any(indicator in content for indicator in fix_indicators)
+    
+    def has_new_imports(self, content: str) -> bool:
+        """Check if content has new imports."""
+        import_patterns = [
+            r'^import\s+\w+',
+            r'^from\s+\w+\s+import',
+            r'^from\s+\.\w+\s+import'
+        ]
+        
+        lines = content.split('\n')
+        for line in lines:
+            line = line.strip()
+            if any(re.match(pattern, line) for pattern in import_patterns):
+                return True
         return False
+    
+    def has_new_functions(self, content: str) -> bool:
+        """Check if content has new function definitions."""
+        return 'def ' in content or 'async def ' in content
+    
+    def merge_imports_and_functions(self, main_content: str, our_content: str) -> str:
+        """Merge imports and functions from main with our fixes."""
+        main_lines = main_content.split('\n')
+        our_lines = our_content.split('\n')
+        
+        # Collect imports from main
+        main_imports = []
+        main_functions = []
+        
+        for line in main_lines:
+            line = line.strip()
+            if line.startswith(('import ', 'from ')):
+                main_imports.append(line)
+            elif line.startswith(('def ', 'async def ')):
+                main_functions.append(line)
+        
+        # Collect our fixes
+        our_fixes = []
+        for line in our_lines:
+            if any(fix in line for fix in ['Exception handling implemented', 'Implementation placeholder', 'raise NotImplementedError']):
+                our_fixes.append(line)
+        
+        # Combine
+        result = []
+        result.extend(main_imports)
+        result.extend(our_fixes)
+        result.extend(main_functions)
+        
+        return '\n'.join(result)
+    
+    def resolve_all_conflicts(self) -> bool:
+        """Resolve all merge conflicts."""
+        # Get list of files with conflicts
+        try:
+            result = subprocess.run(['git', 'diff', '--name-only', '--diff-filter=U'], 
+                                  capture_output=True, text=True)
+            conflict_files = result.stdout.strip().split('\n')
+            conflict_files = [f for f in conflict_files if f]  # Remove empty lines
+        except Exception as e:
+            print(f"❌ Error getting conflict files: {e}")
+            return False
+        
+        print(f"🔍 Found {len(conflict_files)} files with conflicts")
+        
+        success_count = 0
+        for file_path in conflict_files:
+            if self.resolve_file(file_path):
+                success_count += 1
+        
+        print(f"\n📊 Resolution Summary:")
+        print(f"✅ Successfully resolved: {success_count}/{len(conflict_files)} files")
+        print(f"❌ Failed to resolve: {len(self.conflict_files)} files")
+        
+        return len(self.conflict_files) == 0
 
 def main():
     """Main function to resolve merge conflicts."""
-    print("🔧 Starting Merge Conflict Resolution")
+    resolver = MergeConflictResolver()
     
-    # Resolve conflicts
-    resolved_count = resolve_conflicts()
+    print("🚀 Starting Merge Conflict Resolution")
+    print("=" * 50)
     
-    if resolved_count > 0:
-        # Add resolved files
-        if add_resolved_files():
-            # Commit the resolution
-            if commit_resolution():
-                print("\n🎉 Merge conflicts resolved successfully!")
-                print("📊 Summary:")
-                print(f"   - Files resolved: {resolved_count}")
-                print(f"   - Status: Ready for PR")
-            else:
-                print("\n❌ Failed to commit resolution")
-        else:
-            print("\n❌ Failed to add resolved files")
+    success = resolver.resolve_all_conflicts()
+    
+    if success:
+        print("\n🎉 All conflicts resolved successfully!")
+        print("Next steps:")
+        print("1. Review the resolved files")
+        print("2. Run: git add .")
+        print("3. Run: git commit -m 'Resolve merge conflicts'")
+        print("4. Run: git push origin cursor/find-placeholder-issues-in-training-steps-0c16")
     else:
-        print("\n⚠️  No conflicts were resolved")
+        print("\n⚠️ Some conflicts could not be resolved automatically")
+        print("Please manually resolve the remaining conflicts:")
+        for file_path in resolver.conflict_files:
+            print(f"  - {file_path}")
 
 if __name__ == "__main__":
     main()

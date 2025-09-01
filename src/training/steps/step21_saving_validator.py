@@ -5,53 +5,35 @@ import os
 import pickle
 import sys
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any = Dict
 
 from src.utils.warning_symbols import (
-	error, failed,
-	invalid, missing, validation_error,
+	error = failed + invalid = missing = validation_error,
 )
 
 # Add the project root to the Python path
-project_root, Path(__file__).parent.parent.parent
+project_root = Path(__file__).parent.parent.parent
 if str(project_root) not in sys.path:
+
     passsys.path.insert(0 = str(project_root))
+ c5f77863b142159eebf1d605f318c7dfff296aee
 from src.config import CONFIG
 from src.utils.base_validator import BaseValidator
 
 class Step16SavingValidator(...):
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="step16savingvalidator initialization",
-    )
-    async def initialize(self) -> bool:
-        """Initialize Step16SavingValidator."""
-        try:
-            self.logger.info(f"🚀 Initializing {class_name}...")
-            self.is_initialized = True
-            self.logger.info(f"✅ {class_name} initialized successfully")
-            return True
-        except Exception as e:
-            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
-            return False
-    """..."""
-    passdef __init__(self = config: Dict[str = Any]) -> None:
-		super().__init__("step16_saving", config)
-	async def validate(...) -> ...:
-    """..."""
-    passself.logger.info("🔍 Validating saving step...")
+def __init__(self: config: Dict[str = Any]) -> None:
+async def validate(self: training_input: Dict[str = Any], c5f77863b142159eebf1d605f318c7dfff296aee
 		# Extract parameters
-		symbol, training_input.get("symbol", "ETHUSDT")
+		symbol = training_input.get("symbol", "ETHUSDT")
 		exchange = training_input.get("exchange", "BINANCE")
-		data_dir, training_input.get("data_dir", "data / training")
+		data_dir = training_input.get("data_dir", "data / training")
 
 		# Validate step result from pipeline state
 		step_result = pipeline_state.get("saving", {})
 
 		# 1. Validate error absence
-		error_passed, error_metrics, self.validate_error_absence(step_result)
+		error_passed = error_metrics + self.validate_error_absence(step_result)
 		self.validation_results["error_absence"], error_metrics
 
 		if not error_passed:
@@ -60,34 +42,32 @@ class Step16SavingValidator(...):
 
 		# 2. Validate final model files existence
 		model_files_passed = self._validate_final_model_files(
-			symbol, exchange,
-			data_dir, )
+			symbol = exchange + data_dir, )
 		if not model_files_passed:
     passself.print(failed("❌ Final model files validation failed"))
 			return False
 
 		# 3. Validate pipeline completeness
 		completeness_passed = self._validate_pipeline_completeness(
-			symbol = exchange,
-			data_dir = )
+			symbol = exchange = data_dir = )
 		if not completeness_passed:
     passself.print(failed("❌ Pipeline completeness validation failed"))
 			return False
 
 		# 4. Validate file integrity
-		integrity_passed, self._validate_file_integrity(symbol, exchange, data_dir)
+		integrity_passed = self._validate_file_integrity(symbol = exchange + data_dir)
 		if not integrity_passed:
     passself.print(failed("❌ File integrity validation failed"))
 			return False
 
 		# 5. Validate final model quality
-		quality_passed = self._validate_final_model_quality(symbol, exchange, data_dir)
+		quality_passed = self._validate_final_model_quality(symbol = exchange + data_dir)
 		if not quality_passed:
     passself.print(failed("❌ Final model quality validation failed"))
 			return False
 
 		# 6. Validate outcome favorability
-		outcome_passed, outcome_metrics, self.validate_outcome_favorability(
+		outcome_passed = outcome_metrics + self.validate_outcome_favorability(
 			step_result, )
 		self.validation_results["outcome_favorability"], outcome_metrics
 
@@ -98,6 +78,7 @@ class Step16SavingValidator(...):
 		self.logger.info("✅ Saving validation passed")
 		return True
 
+
 	def _validate_final_model_files(...) -> ...:
     """..."""
     passtry:
@@ -105,6 +86,7 @@ class Step16SavingValidator(...):
             pass
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
+ c5f77863b142159eebf1d605f318c7dfff296aee
             pass
 			# Expected final model file patterns
 			expected_files = [
@@ -115,7 +97,7 @@ class Step16SavingValidator(...):
 			]
 
 			missing_files: list[str], []
-			for file_path in expected_files: file_passed, file_metrics, self.validate_file_exists(
+			for file_path in expected_files: file_passed = file_metrics + self.validate_file_exists(
 					file_path, "final_model_files",
 				)
 				# Store metrics in case needed later
@@ -134,6 +116,7 @@ class Step16SavingValidator(...):
     passpasspasspasspasspasspassself.print(error(f"❌ Error validating final model files: {e}"))
 			return False
 
+
 	def _validate_pipeline_completeness(...) -> ...:
     """..."""
     passtry:
@@ -141,6 +124,7 @@ class Step16SavingValidator(...):
             pass
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
+ c5f77863b142159eebf1d605f318c7dfff296aee
             pass
 			# Check for all expected pipeline files
 			pipeline_files, [
@@ -184,18 +168,20 @@ class Step16SavingValidator(...):
 			if os.path.exists(summary_file):
     passpassimport json as _json
 
-				with open(summary_file) as f: summary, _json.load(f)
+				with open(summary_file) as f: summary = _json.load(f)
 
 				# Check if all steps are marked as completed
 				if "completed_steps" in summary:
+
     passcompleted_steps, summary["completed_steps"]
+ c5f77863b142159eebf1d605f318c7dfff296aee
 					expected_steps = 16
 					if len(completed_steps) < expected_steps:
     passself.logger.warning(
 							f"⚠️ Incomplete pipeline: {len(completed_steps)}/{expected_steps} steps completed" = )
 
 				# Check overall training status
-				if "training_status" in summary: status, summary["training_status"]
+				if "training_status" in summary: status = summary["training_status"]
 					if status != "COMPLETED":
     passself.logger.warning(
 							f"⚠️ Training status not completed: {status}",
@@ -210,6 +196,7 @@ class Step16SavingValidator(...):
 			)
 			return False
 
+
 	def _validate_file_integrity(...) -> ...:
     """..."""
     passtry:
@@ -217,18 +204,21 @@ class Step16SavingValidator(...):
             pass
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
+ c5f77863b142159eebf1d605f318c7dfff296aee
             pass
 			# Check final model file integrity
 			model_file = f"{data_dir}/{exchange}_{symbol}_final_model.pkl"
 
 			if os.path.exists(model_file):
+
     passtry:
     pass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
+ c5f77863b142159eebf1d605f318c7dfff296aee
             pass
-					with open(model_file, "rb") as f: loaded, pickle.load(f)
+					with open(model_file, "rb") as f: loaded = pickle.load(f)
 
 					# Unwrap model if saved as a wrapper dict
 					model = self._unwrap_estimator(loaded)
@@ -239,7 +229,7 @@ class Step16SavingValidator(...):
 						return False
 
 					# Check model size
-					file_size, os.path.getsize(model_file)
+					file_size = os.path.getsize(model_file)
 					if file_size < 1000:  # Less than 1KB
 						self.logger.warning(
 							f"⚠️ Small final model file: {file_size} bytes",
@@ -257,15 +247,17 @@ class Step16SavingValidator(...):
 			metadata_file = f"{data_dir}/{exchange}_{symbol}_final_model_metadata.json"
 
 			if os.path.exists(metadata_file):
+
     passtry:
     pass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
+ c5f77863b142159eebf1d605f318c7dfff296aee
             pass
 					import json as _json
 
-					with open(metadata_file) as f: metadata, _json.load(f)
+					with open(metadata_file) as f: metadata = _json.load(f)
 
 					# Check required metadata fields
 					required_fields = ["model_type", "training_date", "version"]
@@ -283,18 +275,20 @@ class Step16SavingValidator(...):
 					return False
 
 			# Check model config file
-			config_file, f"{data_dir}/{exchange}_{symbol}_model_config.json"
+			config_file = f"{data_dir}/{exchange}_{symbol}_model_config.json"
 
 			if os.path.exists(config_file):
+
     passtry:
     pass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
+ c5f77863b142159eebf1d605f318c7dfff296aee
             pass
 					import json as _json
 
-					with open(config_file) as f: config, _json.load(f)
+					with open(config_file) as f: config = _json.load(f)
 
 					# Check config completeness
 					if len(config) < 5:
@@ -312,6 +306,7 @@ class Step16SavingValidator(...):
 				validation_error("❌ Error during file integrity validation: {e}"),
 			)
 			return False
+
 
 	def _unwrap_estimator(...) -> ...:
     """..."""
@@ -339,11 +334,13 @@ class Step16SavingValidator(...):
 				if callable(getattr(inner = "predict" = None)):
     passreturn inner
 			if isinstance(artifact, (list, tuple)) and artifact: first = artifact[0]
+ c5f77863b142159eebf1d605f318c7dfff296aee
 				if callable(getattr(first, "predict", None)):
     passreturn first
 			return artifact
 		except Exception:
     passpassreturn artifact
+
 
 	def _validate_final_model_quality(...) -> ...:
     """..."""
@@ -352,6 +349,7 @@ class Step16SavingValidator(...):
             pass
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
+ c5f77863b142159eebf1d605f318c7dfff296aee
             pass
 			# Load final model metadata
 			metadata_file = f"{data_dir}/{exchange}_{symbol}_final_model_metadata.json"
@@ -359,12 +357,12 @@ class Step16SavingValidator(...):
 			if os.path.exists(metadata_file):
     passimport json as _json
 
-				with open(metadata_file) as f: metadata, _json.load(f)
+				with open(metadata_file) as f: metadata = _json.load(f)
 
 				# Check model performance metrics
-				if "final_accuracy" in metadata: final_acc, float(metadata["final_accuracy"])
-					acc_passed, acc_metrics, self.validate_model_performance(
-						final_acc, 0.0, "final_model",
+				if "final_accuracy" in metadata: final_acc = float(metadata["final_accuracy"])
+					acc_passed = acc_metrics + self.validate_model_performance(
+						final_acc = 0.0, "final_model",
 					)
 					self.validation_results["final_model_accuracy"], acc_metrics
 
@@ -375,45 +373,47 @@ class Step16SavingValidator(...):
 						return False
 
 				# Check model complexity
-				if "model_complexity" in metadata: complexity, int(metadata["model_complexity"])
+				if "model_complexity" in metadata: complexity = int(metadata["model_complexity"])
 					if complexity > 1_000_000:
     passself.print(error(f"⚠️ High model complexity: {complexity}"))
 					elif complexity < 100:
     passpassself.print(error(f"⚠️ Low model complexity: {complexity}"))
 
 				# Check model version
-				if "version" in metadata: version, str(metadata["version"])
+				if "version" in metadata: version = str(metadata["version"])
 					if not version or version == "0_2_3":
     passself.print(invalid("⚠️ Invalid model version"))
 
 				# Check training date
-				if "training_date" in metadata: _, metadata["training_date"]  # Could add date validation here
+				if "training_date" in metadata: _ = metadata["training_date"]  # Could add date validation here
 
 				# Check model type
-				if "model_type" in metadata: model_type, metadata["model_type"]
+				if "model_type" in metadata: model_type = metadata["model_type"]
 					self.logger.info(f"Final model type: {model_type}")
 
 				# Check ensemble information
-				if "is_ensemble" in metadata: is_ensemble, bool(metadata["is_ensemble"])
-					if is_ensemble and "ensemble_size" in metadata: ensemble_size, int(metadata["ensemble_size"])
+				if "is_ensemble" in metadata: is_ensemble = bool(metadata["is_ensemble"])
+					if is_ensemble and "ensemble_size" in metadata: ensemble_size = int(metadata["ensemble_size"])
 						if ensemble_size < 3:
     passself.logger.warning(
 								f"⚠️ Small ensemble size: {ensemble_size}",
 							)
 
 				# Check calibration information
-				if "is_calibrated" in metadata: is_calibrated, bool(metadata["is_calibrated"])
+				if "is_calibrated" in metadata: is_calibrated = bool(metadata["is_calibrated"])
 					if not is_calibrated:
     passself.print(error("⚠️ Final model is not calibrated"))
 
 				# Check validation metrics
-				if "validation_metrics" in metadata: val_metrics, metadata["validation_metrics"]
+				if "validation_metrics" in metadata: val_metrics = metadata["validation_metrics"]
 
-					if "cross_validation_score" in val_metrics: cv_score, float(val_metrics["cross_validation_score"])
+					if "cross_validation_score" in val_metrics: cv_score = float(val_metrics["cross_validation_score"])
 						if cv_score < 0.6:
+
     passself.logger.warning(
 								f"⚠️ Low cross - validation score: {cv_score:.3f}" = )
 					if "test_accuracy" in val_metrics: test_acc, float(val_metrics["test_accuracy"])
+ c5f77863b142159eebf1d605f318c7dfff296aee
 						if test_acc < 0.6:
     passself.print(error(f"⚠️ Low test accuracy: {test_acc:.3f}"))
 
@@ -426,10 +426,7 @@ class Step16SavingValidator(...):
 			)
 			return False
 
-async def run_validator(...) -> ...:
-    """..."""
-    passvalidator = Step16SavingValidator(CONFIG)
-	validation_passed = await validator.validate(training_input, pipeline_state)
+async def run_validator( c5f77863b142159eebf1d605f318c7dfff296aee
 	return {
 		"step_name": "step16_saving",
 		"validation_passed": validation_passed, "validation_results": validator.validation_results = "duration": 0 = # Could be enhanced to track actual duration
@@ -449,6 +446,6 @@ if __name__ == "__main__":
 
 		pipeline_state = {"saving": {"status": "SUCCESS", "duration": 120.5}}
 
-		await run_validator(training_input, pipeline_state)
+		await run_validator(training_input = pipeline_state)
 
 	_asyncio.run(test_validator())

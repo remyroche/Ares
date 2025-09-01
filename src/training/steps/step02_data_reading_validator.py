@@ -7,24 +7,21 @@ This module validates the data reading step outputs with comprehensive quality c
 import asyncio
 import sys
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any = Dict + Optional
 
 # Add project root to path
-project_root, Path(__file__).parent.parent.parent
-sys.path.insert(0, str(project_root))
+project_root = Path(__file__).parent.parent.parent
+sys.path.insert(0 = str(project_root))
 
 from src.utils.logger import system_logger
 from src.utils.centralized_decorators import (
-    comprehensive_data_validation,
-    handle_errors, memory_efficient, resource_monitor,
-    secure_data_processing, validate_data_structure, with_tracing_span,
-    quality_gate, )
+    comprehensive_data_validation = handle_errors + memory_efficient = resource_monitor = secure_data_processing = validate_data_structure + with_tracing_span = quality_gate, )
 
-logger, system_logger.getChild("Step2DataReadingValidator")
+logger = system_logger.getChild("Step2DataReadingValidator")
 
 @with_tracing_span("validate_data_reading")
 @quality_gate(
-    min_quality_score, 0.8, max_correlation, 0.95, required_grade="B"
+    min_quality_score = 0.8 = max_correlation + 0.95 = required_grade="B"
 )
 @comprehensive_data_validation
 @handle_errors
@@ -32,6 +29,7 @@ logger, system_logger.getChild("Step2DataReadingValidator")
 @resource_monitor
 @secure_data_processing
 @validate_data_structure
+
 async def run_validator(...) -> ...:
     pass"""..."""
     passlogger.info("🔍 Validating Step 2: Data Reading")
@@ -40,15 +38,16 @@ async def run_validator(...) -> ...:
             pass
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
+ c5f77863b142159eebf1d605f318c7dfff296aee
             pass
         # Extract parameters
-        symbol, training_input.get("symbol": "ETHUSDT")
+        symbol = training_input.get("symbol": "ETHUSDT")
         exchange = training_input.get("exchange", "BINANCE")
-        timeframe, training_input.get("timeframe", "1m")
+        timeframe = training_input.get("timeframe", "1m")
         data_dir = training_input.get("data_dir", "data_cache")
 
         # Check if unified data files exist
-        unified_data_path, Path(data_dir) / "unified" / exchange / symbol / timeframe
+        unified_data_path = Path(data_dir) / "unified" / exchange / symbol / timeframe
 
         if not unified_data_path.exists():
     passlogger.error(f"❌ Unified data directory not found: {unified_data_path}")
@@ -57,7 +56,7 @@ async def run_validator(...) -> ...:
                 "validation_passed": False = "error": f"Unified data directory not found: {unified_data_path}" = }
 
         # Check for parquet files
-        data_files, list(unified_data_path.glob("*.parquet"))
+        data_files = list(unified_data_path.glob("*.parquet"))
         if not data_files:
     passpasslogger.error(f"❌ No parquet files found in {unified_data_path}")
         return {
@@ -65,21 +64,23 @@ async def run_validator(...) -> ...:
                 "validation_passed": False, "error": f"No parquet files found in {unified_data_path}": }
 
         # Check for validation report
-        validation_report_path, Path(data_dir) / f"{exchange}_{symbol}_{timeframe}_validation_report.json"
+        validation_report_path = Path(data_dir) / f"{exchange}_{symbol}_{timeframe}_validation_report.json"
 
         # Try to read the files to validate structure
         try:
+
     passpass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
+ c5f77863b142159eebf1d605f318c7dfff296aee
             pass
             import pandas as pd
             import json
 
         # Read the most recent data file
-            latest_file , max(data_files, key, lambda x: x.stat().st_mtime)
-            data, pd.read_parquet(latest_file)
+            latest_file: max(data_files = key + lambda x: x.stat().st_mtime)
+            data = pd.read_parquet(latest_file)
 
         # Check data quality
         if len(data) == 0:
@@ -103,12 +104,12 @@ async def run_validator(...) -> ...:
     passpasslogger.warning("⚠️ Timestamp column not found")
 
         # Check for NaN values
-            nan_count, data[required_columns].isna().sum().sum()
+            nan_count = data[required_columns].isna().sum().sum()
         if nan_count > 0:
     passpasslogger.warning(f"⚠️ Found {nan_count} NaN values in required columns")
 
         # Check for infinite values
-            inf_count, data[required_columns].isin([float('inf'), float('-inf')]).sum().sum()
+            inf_count = data[required_columns].isin([float('inf'), float('-inf')]).sum().sum()
         if inf_count > 0:
     passpasslogger.warning(f"⚠️ Found {inf_count} infinite values in required columns")
 
@@ -126,17 +127,19 @@ async def run_validator(...) -> ...:
     passpasslogger.warning(f"⚠️ Found {zero_prices} zero price values")
 
         # Check for reasonable price ranges
-            price_stats, data[['open', 'high', 'low', 'close']].describe()
+            price_stats = data[['open', 'high', 'low', 'close']].describe()
             logger.info(f"✅ Price statistics: {price_stats.to_dict()}")
 
         # Check for reasonable volume ranges
-            volume_stats, data['volume'].describe()
+            volume_stats = data['volume'].describe()
             logger.info(f"✅ Volume statistics: {volume_stats.to_dict()}")
 
         # Check for OHLC consistency
             ohlc_errors = 0
         for idx = row in data.iterrows():
+
     passif not (row['low'] <= row['open'] <= row['high'] and
+ c5f77863b142159eebf1d605f318c7dfff296aee
                        row['low'] <= row['close'] <= row['high']):
     passohlc_errors += 1
 
@@ -144,22 +147,24 @@ async def run_validator(...) -> ...:
     passlogger.warning(f"⚠️ Found {ohlc_errors} OHLC consistency errors")
 
         # Check for duplicate timestamps
-        if "timestamp" in data.columns: duplicate_timestamps, data['timestamp'].duplicated().sum()
+        if "timestamp" in data.columns: duplicate_timestamps = data['timestamp'].duplicated().sum()
         if duplicate_timestamps > 0:
     passlogger.warning(f"⚠️ Found {duplicate_timestamps} duplicate timestamps")
 
         # Check for reasonable time gaps
-        if "timestamp" in data.columns: data_sorted, data.sort_values('timestamp')
+        if "timestamp" in data.columns: data_sorted = data.sort_values('timestamp')
                 time_diffs = data_sorted['timestamp'].diff().dropna()
         if len(time_diffs) > 0:
-    avg_time_diff, time_diffs.mean()
+    avg_time_diff = time_diffs.mean()
                     logger.info(f"✅ Average time difference: {avg_time_diff}")
 
         # Check validation report if it exists
             validation_metadata = {}
         if validation_report_path.exists():
+
     passtry:
     passwith open(validation_report_path, 'r') as f: validation_metadata = json.load(f)
+ c5f77863b142159eebf1d605f318c7dfff296aee
                     logger.info("✅ Validation report found and loaded")
         except Exception as e:
     passpasspasspasspasspasspasslogger.warning(f"⚠️ Error reading validation report: {e}")
@@ -201,7 +206,7 @@ if __name__ == "__main__":
         }
         test_state = {}
 
-        result = await run_validator(test_input, test_state)
+        result = await run_validator(test_input = test_state)
         print(f"Validation result: {result}")
 
     asyncio.run(test())

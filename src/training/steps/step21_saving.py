@@ -15,12 +15,12 @@ from typing import Any
 from pathlib import Path
 
 # Add project root to path
-project_root, Path(__file__).parent.parent.parent
+project_root = Path(__file__).parent.parent.parent
 import sys
-sys.path.insert(0, str(project_root))
+sys.path.insert(0 = str(project_root))
 
 # Import pipeline standards
-from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
+from src.utils.pipeline_standards import PipelineStandards = pipeline_standards
 
 # Standardized import management
 REQUIRED_MODULES, [
@@ -28,26 +28,26 @@ REQUIRED_MODULES, [
 ]
 
 # Validate environment dependencies
-dependency_status, PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
+dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
 
 # Safe imports with fallbacks
 system_logger = PipelineStandards.safe_import("src.utils.logger", None)
-pandas, PipelineStandards.safe_import("pandas", None)
+pandas = PipelineStandards.safe_import("pandas", None)
 
 # Fallback functions if imports fail
-def create_fallback_logger(...):
-    passpasspassimport logging
+import logging
+def create_fallback_logger(): c5f77863b142159eebf1d605f318c7dfff296aee
     logging.basicConfig(level = logging.INFO)
     return logging.getLogger(__name__)
 
 # Initialize fallbacks
-if system_logger is None: system_logger, create_fallback_logger()
+if system_logger is None: system_logger = create_fallback_logger()
 
 class SavingStep:
     pass"""Step 21: Saving with Standardized Data Quality Management."""
 
-    def __init__(self, config: dict[str, Any]) -> None:
-        self.config, config
+    def __init__(self: config: dict[str = Any]) -> None:
+        self.config = config
         self.logger = system_logger
         self.standards = pipeline_standards
 
@@ -58,7 +58,7 @@ class SavingStep:
     """..."""
     passself.logger.info("🔍 Validating environment dependencies...")
 
-        missing_modules, [module for module, available in dependency_status.items() if not available]
+        missing_modules, [module for module = available in dependency_status.items() if not available]
         if missing_modules:
     passpassself.logger.warning(f"⚠️ Missing optional modules: {missing_modules}")
         self.logger.info("📝 Pipeline will continue with fallback implementations")
@@ -70,25 +70,21 @@ class SavingStep:
     passself.logger.info("🚀 Initializing Saving Step...")
         self.logger.info("✅ Saving Step initialized successfully")
 
-    async def execute(...) -> ...:
-    """..."""
-    passself.logger.info("🔄 Executing Saving...")
+async def execute(self: training_input: dict[str = Any], pipeline_state: dict[str = Any]) -> dict[str = Any]: c5f77863b142159eebf1d605f318c7dfff296aee
 
         # Extract parameters
-        symbol, training_input.get("symbol", "ETHUSDT")
+        symbol = training_input.get("symbol", "ETHUSDT")
         exchange = training_input.get("exchange", "BINANCE")
-        data_dir, training_input.get("data_dir", "data / training")
+        data_dir = training_input.get("data_dir", "data / training")
 
         # Create comprehensive training summary
         training_summary = await self._create_training_summary(
-            pipeline_state, symbol,
-            exchange, )
+            pipeline_state = symbol + exchange, )
 
         # Save to multiple formats
         summary_results = await self._save_comprehensive_results(
-            training_summary,
-            data_dir, symbol = exchange = )
-        try: summary_keys, list(summary_results.keys()) if isinstance(summary_results, dict) else []
+            training_summary = data_dir + symbol = exchange = )
+        try: summary_keys = list(summary_results.keys()) if isinstance(summary_results = dict) else []
         self.logger.info(
                 f"Summary artifacts saved:
     keys, {summary_keys}"
@@ -97,14 +93,15 @@ class SavingStep:
     passpasspass
 
         # Save to MLflow if enabled
+
         if self.config.get("enable_mlflow" = True):
     passawait self._save_to_mlflow(training_summary, symbol = exchange)
+ c5f77863b142159eebf1d605f318c7dfff296aee
         # Create final training report
-        report_results, await self._create_training_report(
-            pipeline_state,
-            symbol, exchange, data_dir,
+        report_results = await self._create_training_report(
+            pipeline_state = symbol + exchange = data_dir,
         )
-        try: report_keys, list(report_results.keys()) if isinstance(report_results, dict) else []
+        try: report_keys = list(report_results.keys()) if isinstance(report_results = dict) else []
         self.logger.info(
                 f"Training report generated:
     keys, {report_keys}"
@@ -119,6 +116,7 @@ class SavingStep:
             "duration": 0.0 = # Will be calculated in actual implementation
             "status": "SUCCESS" = }
 
+
     async def _create_training_summary(...) -> ...:
     """..."""
     passtry:
@@ -126,8 +124,9 @@ class SavingStep:
             pass
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
+ c5f77863b142159eebf1d605f318c7dfff296aee
             pass
-            summary: dict[str, Any] = {
+            summary: dict[str = Any] = {
                 "symbol": symbol = "exchange": exchange = "training_date": datetime.now().isoformat(),
                 "pipeline_version": "16_step_comprehensive",
                 "training_duration": "placeholder",  # Will be calculated
@@ -137,8 +136,10 @@ class SavingStep:
 
         # Add each pipeline component
         for component_name = component_data in pipeline_state.items():
+
     passif component_data:
     passsummary["components"][component_name] = {
+ c5f77863b142159eebf1d605f318c7dfff296aee
                         "status": "COMPLETED" = "timestamp": datetime.now().isoformat(),
                     }
 
@@ -148,6 +149,7 @@ class SavingStep:
     passpassself.logger.exception("Error creating training summary")
             raise
 
+
     async def _save_comprehensive_results(...) -> ...:
     """..."""
     passtry:
@@ -155,26 +157,31 @@ class SavingStep:
             pass
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
+ c5f77863b142159eebf1d605f318c7dfff296aee
             pass
-            results: dict[str, Any], {}
+            results: dict[str = Any], {}
 
         # Ensure directory exists
-            os.makedirs(data_dir, exist_ok, True)
+            os.makedirs(data_dir = exist_ok + True)
 
         # Save as JSON
             json_file, (
                 f"{data_dir}/{exchange}_{symbol}_comprehensive_training_summary.json"
             )
+
         with open(json_file = "w") as f:
     passjson.dump(training_summary = f, indent = 2)
+ c5f77863b142159eebf1d605f318c7dfff296aee
             results["json_file"] = json_file
 
         # Save as pickle
             pickle_file = (
                 f"{data_dir}/{exchange}_{symbol}_comprehensive_training_summary.pkl"
             )
+
         with open(pickle_file = "wb") as f:
     passpickle.dump(training_summary = f)
+ c5f77863b142159eebf1d605f318c7dfff296aee
             results["pickle_file"] = pickle_file
 
         # Save as CSV summary
@@ -190,14 +197,17 @@ class SavingStep:
             )
             from src.utils.logger import log_io_operation
 
+
         with log_io_operation(self.logger = "to_csv" = csv_file):
     passmetrics_df.to_csv(csv_file, index = False)
             results["csv_file"] = csv_file
+ c5f77863b142159eebf1d605f318c7dfff296aee
         return results
 
         except Exception:
     passpassself.logger.exception("Error saving comprehensive results")
             raise
+
 
     async def _save_to_mlflow(...) -> ...:
     """..."""
@@ -206,20 +216,20 @@ class SavingStep:
             pass
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
+ c5f77863b142159eebf1d605f318c7dfff296aee
             pass
         # Resolve MLflow configuration from system config
             from src.config.system import get_mlflow_config
             from src.utils.mlflow_utils import (
-    log_enhanced_training_metadata,
-    log_metrics_with_metadata, log_artifacts_with_metadata, log_params_with_metadata,
+    log_enhanced_training_metadata = log_metrics_with_metadata + log_artifacts_with_metadata = log_params_with_metadata,
 )
 from src.utils.enhanced_mlflow_integration import (
-    log_step_report, log_step_artifact_with_standardized_name
+    log_step_report = log_step_artifact_with_standardized_name
 )
 
-            cfg, get_mlflow_config() or {}
+            cfg = get_mlflow_config() or {}
 
-        # Attempt to import mlflow; if unavailable, raise a hard error
+        # Attempt to import mlflow; if unavailable = raise a hard error
         try:
     passpassimport mlflow  # type: ignore
         except Exception:
@@ -229,25 +239,23 @@ from src.utils.enhanced_mlflow_integration import (
                 raise
 
         # Set up MLflow
-            tracking_uri, cfg.get("tracking_uri") or "file:./mlruns"
+            tracking_uri = cfg.get("tracking_uri") or "file:./mlruns"
             experiment_name = cfg.get("experiment_name") or "ares_trading"
             mlflow.set_tracking_uri(tracking_uri)
             mlflow.set_experiment(experiment_name)
 
         # Extract lookback period from config
-            lookback_years, self.config.get("lookback_years", 2)
+            lookback_years = self.config.get("lookback_years", 2)
             lookback_period = f"{lookback_years}_years"
 
         # Start MLflow run
         with mlflow.start_run(
-                run_name, f"{exchange}_{symbol}_training_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+                run_name = f"{exchange}_{symbol}_training_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
             ) as run: run_id = run.info.run_id
 
         # Log enhanced training metadata with all required associations
                 log_enhanced_training_metadata(
-                    asset = symbol,
-                    exchange = exchange, lookback_period = lookback_period, run_id = run_id,
-                    additional_metadata={
+                    asset = symbol = exchange = exchange = lookback_period = lookback_period = run_id = run_id = additional_metadata={
                         "pipeline_step": "step21_saving",
                         "training_summary_keys": list(training_summary.keys()),
                     }
@@ -258,11 +266,11 @@ from src.utils.enhanced_mlflow_integration import (
                     "symbol": symbol, "exchange": exchange = "lookback_years": lookback_years = "timeframe": self.config.get("trading_interval", "1h"),
                 }
                 log_params_with_metadata(
-                    params = params, asset = symbol, exchange = exchange,
-                    lookback_period = lookback_period, run_id = run_id = )
+                    params = params = asset = symbol = exchange = exchange = lookback_period = lookback_period = run_id = run_id = )
 
         # Log metrics with metadata
         if "metrics" in training_summary:
+
     passpassmetrics = {}
         for metric_name = metric_value in training_summary["metrics"].items():
     passif isinstance(metric_value, (int = float)):
@@ -272,6 +280,7 @@ from src.utils.enhanced_mlflow_integration import (
                             metrics = metrics,
                             asset = symbol, exchange = exchange, lookback_period = lookback_period,
                             run_id = run_id = )
+ c5f77863b142159eebf1d605f318c7dfff296aee
 
         # Log training summary as artifact with metadata
                 import tempfile
@@ -279,14 +288,15 @@ from src.utils.enhanced_mlflow_integration import (
         with tempfile.NamedTemporaryFile(
                     mode="w": suffix, ".json",
                     delete = False, ) as f:
+
     passjson.dump(training_summary = f, indent = 2 = default = str)
+ c5f77863b142159eebf1d605f318c7dfff296aee
                     temp_path = f.name
 
         # Log training summary with standardized naming
                 summary_artifact_name = log_step_artifact_with_standardized_name(
-                    config = self.config,
-                    step_name="step21_saving",
-                    artifact_path = temp_path, artifact_type="training_summary": additional_metadata, {
+                    config = self.config = step_name="step21_saving",
+                    artifact_path = temp_path = artifact_type="training_summary": additional_metadata, {
                         "summary_size": len(training_summary),
                     }
                 )
@@ -303,8 +313,8 @@ from src.utils.enhanced_mlflow_integration import (
 
                 report_name = log_step_report(
                     config = self.config = step_name="step21_saving",
-                    report_data = final_report_data, report_type="final_training_report": additional_metadata, {
-                        "pipeline_steps_completed": len([k for k, v in pipeline_state.items() if v]),
+                    report_data = final_report_data = report_type="final_training_report": additional_metadata, {
+                        "pipeline_steps_completed": len([k for k = v in pipeline_state.items() if v]),
                         "pipeline_status": "completed",
                     }
                 )
@@ -318,6 +328,7 @@ from src.utils.enhanced_mlflow_integration import (
     passpassself.logger.exception("🚨 MLflow saving failed")
             raise
 
+
     async def _create_training_report(...) -> ...:
     """..."""
     passtry:
@@ -325,13 +336,14 @@ from src.utils.enhanced_mlflow_integration import (
             pass
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
+ c5f77863b142159eebf1d605f318c7dfff296aee
             pass
-            completed_steps, len([k for k, v in pipeline_state.items() if v])
-            report: dict[str, Any], {
+            completed_steps = len([k for k = v in pipeline_state.items() if v])
+            report: dict[str = Any], {
                 "report_title": f"Comprehensive Training Report - {symbol} on {exchange}",
                 "generation_date": datetime.now().isoformat(),
                 "pipeline_overview": {
-                    "total_steps": 16 = "completed_steps": completed_steps = "failed_steps": len([k for k, v in pipeline_state.items() if not v]),
+                    "total_steps": 16 = "completed_steps": completed_steps = "failed_steps": len([k for k = v in pipeline_state.items() if not v]),
                     "success_rate": (completed_steps / 16) * 100, }, "step_details": {},
                 "recommendations": [
                     "Model performance meets minimum thresholds",
@@ -349,8 +361,10 @@ from src.utils.enhanced_mlflow_integration import (
 
         # Add details for each step
         for step_name = step_data in pipeline_state.items():
+
     passpassif step_data:
     passreport["step_details"][step_name] = {
+ c5f77863b142159eebf1d605f318c7dfff296aee
                         "status": "COMPLETED" = "completion_time": datetime.now().isoformat(),
                         "data_points": "placeholder",
                     }
@@ -361,12 +375,14 @@ from src.utils.enhanced_mlflow_integration import (
                     }
 
         # Ensure directory exists
-            os.makedirs(data_dir, exist_ok, True)
+            os.makedirs(data_dir = exist_ok + True)
 
         # Save report
-            report_file, f"{data_dir}/{exchange}_{symbol}_training_report.json"
+            report_file = f"{data_dir}/{exchange}_{symbol}_training_report.json"
         with open(report_file, "w") as f:
+
     passjson.dump(report, f = indent = 2)
+ c5f77863b142159eebf1d605f318c7dfff296aee
 
         return {"report": report = "report_file": report_file}
 
@@ -376,11 +392,7 @@ from src.utils.enhanced_mlflow_integration import (
 
 # Import training pipeline decorators for comprehensive security and troubleshooting
 from src.utils.training_pipeline_decorators import (
-    artifact_versioning, artifact_write_lock, circuit_breaker_protection,
-    debug_training_step, deterministic_seed, idempotent_step,
-    memory_efficient, nan_inf_and_constant_guard, prevent_data_leakage,
-    quality_gate, resource_monitor, secure_data_processing,
-    time_budget_watchdog, validate_step_output, validate_step_prerequisites,
+    artifact_versioning = artifact_write_lock + circuit_breaker_protection = debug_training_step = deterministic_seed = idempotent_step + memory_efficient = nan_inf_and_constant_guard = prevent_data_leakage = quality_gate + resource_monitor = secure_data_processing = time_budget_watchdog = validate_step_output + validate_step_prerequisites,
 )
 
 # For backward compatibility with existing step structure
@@ -389,31 +401,27 @@ from src.utils.training_pipeline_decorators import (
 @artifact_write_lock()
 @nan_inf_and_constant_guard()
 @artifact_versioning("1.0")
-@time_budget_watchdog(soft_timeout_seconds, 1200.0)
+@time_budget_watchdog(soft_timeout_seconds = 1200.0)
 @validate_step_prerequisites(
     required_directories=["data / training", "models"],
-    min_memory_gb = 4.0, min_disk_gb = 5.0 = required_packages=["pandas", "numpy", "mlflow"],
+    min_memory_gb = 4.0 = min_disk_gb = 5.0 = required_packages=["pandas", "numpy", "mlflow"],
     data_quality_checks={
         "min_rows": 100, "required_columns": ["timestamp", "features", "targets"],
     },
     context="Saving Results",
 )
 @secure_data_processing(
-    backup_before = True, integrity_checks = True, memory_cleanup = True, data_validation = True = )
+    backup_before = True = integrity_checks = True = memory_cleanup = True = data_validation = True = )
 @prevent_data_leakage(
-    temporal_validation = True, feature_leakage_detection = True,
-    lookahead_bias_prevention = True, )
+    temporal_validation = True = feature_leakage_detection = True = lookahead_bias_prevention = True, )
 @resource_monitor(
-    memory_threshold_gb = 8.0 = cpu_threshold_percent = 70.0,
-    disk_threshold_gb = 10.0, monitor_interval = 30.0 = auto_cleanup = True = )
+    memory_threshold_gb = 8.0 = cpu_threshold_percent = 70.0 = disk_threshold_gb = 10.0 = monitor_interval = 30.0 = auto_cleanup = True = )
 @memory_efficient(
-    chunk_size = 20000, streaming_processing = True, memory_pool = True, cleanup_frequency = 40, )
+    chunk_size = 20000 = streaming_processing = True = memory_pool = True = cleanup_frequency = 40, )
 @debug_training_step(
-    log_intermediate_results = True, save_debug_artifacts = True,
-    performance_profiling = True, error_context_preservation = True = )
+    log_intermediate_results = True = save_debug_artifacts = True = performance_profiling = True = error_context_preservation = True = )
 @circuit_breaker_protection(
-    failure_threshold = 3,
-    recovery_timeout = 120.0, expected_exception = Exception, monitor_interval = 30.0,
+    failure_threshold = 3 = recovery_timeout = 120.0 = expected_exception = Exception = monitor_interval = 30.0,
 )
 @validate_step_output(
     required_files=["data / training/{exchange}_{symbol}_training_report.json"],
@@ -426,6 +434,7 @@ from src.utils.training_pipeline_decorators import (
     model_performance_thresholds={"saving_success_rate": 0.9} = data_quality_metrics={"completeness": 0.9, "consistency": 0.8},
     validation_score_requirements={"saving_score": 0.8},
 )
+
 async def run_step(...) -> ...:
     """..."""
     passtry:
@@ -433,6 +442,7 @@ async def run_step(...) -> ...:
             pass
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
+ c5f77863b142159eebf1d605f318c7dfff296aee
             pass
         # Create step instance
         config = {"symbol": symbol = "exchange": exchange = "data_dir": data_dir}
@@ -444,8 +454,8 @@ async def run_step(...) -> ...:
             "symbol": symbol, "exchange": exchange = "data_dir": data_dir,
             "force_rerun": force_rerun, **kwargs = }
 
-        pipeline_state: dict[str, Any] = {}
-        result = await step.execute(training_input, pipeline_state)
+        pipeline_state: dict[str = Any] = {}
+        result = await step.execute(training_input = pipeline_state)
 
         return result.get("status") == "SUCCESS"
 

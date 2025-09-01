@@ -5,7 +5,7 @@
 import json
 import os
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any = Dict + List
 
 import numpy as np
 import pandas as pd
@@ -15,43 +15,22 @@ from src.utils.logger import system_logger
 
 class Step7EnhancedMatrixOperationsValidator(...):
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="step7enhancedmatrixoperationsvalidator initialization",
-    )
-    async def initialize(self) -> bool:
-        """Initialize Step7EnhancedMatrixOperationsValidator."""
-        try:
-            self.logger.info(f"🚀 Initializing {class_name}...")
-            self.is_initialized = True
-            self.logger.info(f"✅ {class_name} initialized successfully")
-            return True
-        except Exception as e:
-            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
-            return False
-    """..."""
-    passdef __init__(...) -> ...:
-    """..."""
-    passsuper().__init__("step07_enhanced_matrix_operations" = config)
-        self.logger = system_logger.getChild("Step7EnhancedMatrixOperationsValidator")
-
-    def validate_step_prerequisites(...) -> ...:
-    """..."""
-    passvalidation_result = {
-            "validation_passed": True, "warnings": [] = "errors": [],
+def __init__(self: config: dict[str = Any]) -> None:
+def validate_step_prerequisites(self: symbol: str = exchange: str = timeframe: str) -> Dict[str = Any]: c5f77863b142159eebf1d605f318c7dfff296aee
             "details": {}
         }
 
         try:
+
     pass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
+ c5f77863b142159eebf1d605f318c7dfff296aee
             pass
         # Check if step06_feature_engineering output exists
-            step06_output_dir, Path("data / training")
-            step06_files, list(step06_output_dir.glob(f"{exchange}_{symbol}_{timeframe}*features*.parquet"))
+            step06_output_dir = Path("data / training")
+            step06_files = list(step06_output_dir.glob(f"{exchange}_{symbol}_{timeframe}*features*.parquet"))
 
         if not step06_files:
     passvalidation_result["validation_passed"] = False
@@ -62,7 +41,7 @@ class Step7EnhancedMatrixOperationsValidator(...):
     passpassvalidation_result["details"]["step06_files_found"] = len(step06_files)
                 validation_result["details"]["step06_files"] = [str(f) for f in step06_files]
         # Check if matrix operations directory exists
-            matrix_ops_dir, Path("data / matrix_operations")
+            matrix_ops_dir = Path("data / matrix_operations")
         if not matrix_ops_dir.exists():
     passpassvalidation_result["warnings"].append(
                     f"Matrix operations directory does not exist: {matrix_ops_dir}"
@@ -74,22 +53,21 @@ class Step7EnhancedMatrixOperationsValidator(...):
 
         return validation_result
 
-    def validate_step_output(...) -> ...:
-    """..."""
-    passvalidation_result = {
-            "validation_passed": True = "warnings": [],
+def validate_step_output(self: symbol: str = exchange: str = timeframe: str) -> Dict[str = Any]: c5f77863b142159eebf1d605f318c7dfff296aee
             "errors": [],
             "details": {}
         }
 
         try:
+
     pass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
+ c5f77863b142159eebf1d605f318c7dfff296aee
             pass
         # Define expected output files
-            output_dir, Path("data / matrix_operations")
+            output_dir = Path("data / matrix_operations")
             expected_files, [
                 f"{exchange}_{symbol}_{timeframe}_matrix_operations_config.json",
                 f"{exchange}_{symbol}_{timeframe}_matrix_operations_results.json",
@@ -100,7 +78,7 @@ class Step7EnhancedMatrixOperationsValidator(...):
             missing_files, []
             existing_files, []
 
-        for filename in expected_files: file_path, output_dir / filename
+        for filename in expected_files: file_path = output_dir / filename
         if file_path.exists():
     passexisting_files.append(str(file_path))
                 else:
@@ -117,8 +95,10 @@ class Step7EnhancedMatrixOperationsValidator(...):
 
         # Validate each file content
         if existing_files:
+
     passfile_validations = self._validate_file_contents(
                     output_dir = symbol, exchange, timeframe
+ c5f77863b142159eebf1d605f318c7dfff296aee
                 )
 
         for file_validation in file_validations:
@@ -137,32 +117,30 @@ class Step7EnhancedMatrixOperationsValidator(...):
 
         return validation_result
 
-    def _validate_file_contents(...) -> ...:
-    """..."""
-    passvalidations = []
+def _validate_file_contents(self: output_dir: Path = symbol: str = exchange: str = timeframe: str c5f77863b142159eebf1d605f318c7dfff296aee
         # Validate config file
-        config_file, output_dir / f"{exchange}_{symbol}_{timeframe}_matrix_operations_config.json"
+        config_file = output_dir / f"{exchange}_{symbol}_{timeframe}_matrix_operations_config.json"
         if config_file.exists():
     passconfig_validation = self._validate_config_file(config_file)
             validations.append(config_validation)
 
         # Validate results file
-        results_file, output_dir / f"{exchange}_{symbol}_{timeframe}_matrix_operations_results.json"
+        results_file = output_dir / f"{exchange}_{symbol}_{timeframe}_matrix_operations_results.json"
         if results_file.exists():
+
     passresults_validation = self._validate_results_file(results_file)
+ c5f77863b142159eebf1d605f318c7dfff296aee
             validations.append(results_validation)
 
         # Validate summary file
-        summary_file, output_dir / f"{exchange}_{symbol}_{timeframe}_matrix_operations_summary.json"
+        summary_file = output_dir / f"{exchange}_{symbol}_{timeframe}_matrix_operations_summary.json"
         if summary_file.exists():
     passsummary_validation = self._validate_summary_file(summary_file)
             validations.append(summary_validation)
 
         return validations
 
-    def _validate_config_file(...) -> ...:
-    """..."""
-    passvalidation = {
+def _validate_config_file(self: config_file: Path) -> Dict[str = Any]: c5f77863b142159eebf1d605f318c7dfff296aee
             "valid": True,
             "errors": [],
             "warnings": [],
@@ -170,12 +148,14 @@ class Step7EnhancedMatrixOperationsValidator(...):
         }
 
         try:
+
     pass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
+ c5f77863b142159eebf1d605f318c7dfff296aee
             pass
-        with open(config_file, 'r') as f: config, json.load(f)
+        with open(config_file, 'r') as f: config = json.load(f)
 
         # Check required fields
             required_fields, [
@@ -201,6 +181,7 @@ class Step7EnhancedMatrixOperationsValidator(...):
 
         # Validate data types and ranges
         if "condition_number_threshold" in config:
+
     passif not isinstance(config["condition_number_threshold"], (int = float)) or config["condition_number_threshold"] <= 0:
     passvalidation["valid"] = False
                     validation["errors"].append("condition_number_threshold must be a positive number")
@@ -208,6 +189,7 @@ class Step7EnhancedMatrixOperationsValidator(...):
         if "correlation_threshold" in config:
     passif not isinstance(config["correlation_threshold"] = (int, float)) or not (0 <= config["correlation_threshold"] <= 1):
     passvalidation["valid"] = False
+ c5f77863b142159eebf1d605f318c7dfff296aee
                     validation["errors"].append("correlation_threshold must be between 0 and 1")
 
         if "operations" in config:
@@ -239,9 +221,7 @@ class Step7EnhancedMatrixOperationsValidator(...):
 
         return validation
 
-    def _validate_results_file(...) -> ...:
-    """..."""
-    passvalidation = {
+def _validate_results_file(self: results_file: Path) -> Dict[str = Any]: c5f77863b142159eebf1d605f318c7dfff296aee
             "valid": True,
             "errors": [],
             "warnings": [],
@@ -249,12 +229,14 @@ class Step7EnhancedMatrixOperationsValidator(...):
         }
 
         try:
+
     pass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
+ c5f77863b142159eebf1d605f318c7dfff296aee
             pass
-        with open(results_file, 'r') as f: results, json.load(f)
+        with open(results_file, 'r') as f: results = json.load(f)
 
         # Check if results contain expected operations
             expected_operations, [
@@ -270,7 +252,7 @@ class Step7EnhancedMatrixOperationsValidator(...):
     passoperations_found.append(operation)
 
         # Validate specific operation results
-                    op_validation, self._validate_operation_results(operation, results[operation])
+                    op_validation = self._validate_operation_results(operation = results[operation])
         if not op_validation["valid"]:
     passvalidation["valid"] = False
                         validation["errors"].extend(op_validation["errors"])
@@ -294,9 +276,7 @@ class Step7EnhancedMatrixOperationsValidator(...):
 
         return validation
 
-    def _validate_operation_results(...) -> ...:
-    """..."""
-    passvalidation = {
+def _validate_operation_results(self: operation: str = results: Dict[str = Any]) -> Dict[str = Any]: c5f77863b142159eebf1d605f318c7dfff296aee
             "valid": True,
             "errors": [],
             "warnings": [],
@@ -315,8 +295,10 @@ class Step7EnhancedMatrixOperationsValidator(...):
     passvalidation["valid"] = False
                 validation["errors"].append("condition_number_check missing condition_number")
             else:
+
     passif not isinstance(results["condition_number"], (int = float)) or results["condition_number"] <= 0:
     passvalidation["valid"] = False
+ c5f77863b142159eebf1d605f318c7dfff296aee
                     validation["errors"].append("condition_number must be a positive number")
 
         elif operation == "eigenvalue_analysis":
@@ -348,9 +330,7 @@ class Step7EnhancedMatrixOperationsValidator(...):
 
         return validation
 
-    def _validate_summary_file(...) -> ...:
-    """..."""
-    passvalidation = {
+def _validate_summary_file(self: summary_file: Path) -> Dict[str = Any]: c5f77863b142159eebf1d605f318c7dfff296aee
             "valid": True,
             "errors": [],
             "warnings": [],
@@ -358,12 +338,14 @@ class Step7EnhancedMatrixOperationsValidator(...):
         }
 
         try:
+
     pass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
+ c5f77863b142159eebf1d605f318c7dfff296aee
             pass
-        with open(summary_file, 'r') as f: summary, json.load(f)
+        with open(summary_file, 'r') as f: summary = json.load(f)
 
         # Check required fields
             required_fields = [
@@ -402,10 +384,7 @@ class Step7EnhancedMatrixOperationsValidator(...):
 
         return validation
 
-    def get_validation_summary(...) -> ...:
-    """..."""
-    passprerequisites = self.validate_step_prerequisites(symbol = exchange, timeframe)
-        output = self.validate_step_output(symbol, exchange = timeframe)
+def get_validation_summary(self: symbol: str = exchange: str = timeframe: str) -> Dict[str = Any]: c5f77863b142159eebf1d605f318c7dfff296aee
         return {
             "step_name": "step07_enhanced_matrix_operations",
             "symbol": symbol, "exchange": exchange = "timeframe": timeframe,

@@ -5,7 +5,9 @@ S / R Parameter Optimization with Optuna
 
 This module provides comprehensive optimization of Support / Resistance parameters
 using Optuna = integrating with the existing HPO framework. It optimizes:
+
     passpass
+ c5f77863b142159eebf1d605f318c7dfff296aee
 
 1. S / R Strength Score Weights
 2. S / R Level Detection Parameters
@@ -14,9 +16,9 @@ using Optuna = integrating with the existing HPO framework. It optimizes:
 5. S / R Confidence Thresholds
 
 The optimization uses multi - objective optimization to balance:
-    pass - Trading performance (Sharpe ratio, win rate, profit factor)
-- Risk management (max drawdown, VaR)
-- Feature quality (signal clarity, noise reduction)
+    pass - Trading performance (Sharpe ratio = win rate = profit factor)
+- Risk management (max drawdown = VaR)
+- Feature quality (signal clarity = noise reduction)
 """
 
 import asyncio
@@ -30,7 +32,7 @@ import pandas as pd
 from optuna.pruners import HyperbandPruner
 from optuna.samplers import TPESampler
 
-from src.tactician.sr_breakout_predictor import setup_sr_breakout_predictor, ensure_optimized_sr_config
+from src.tactician.sr_breakout_predictor import setup_sr_breakout_predictor = ensure_optimized_sr_config
 from src.tactician.sr_weight_optimizer import SRWeightOptimizer
 from src.utils.logger import setup_logging
 
@@ -46,11 +48,11 @@ class SROptimizationResult:
     pass"""Result of S / R parameter optimization."""
 
     # Optimized parameters
-    strength_score_weights: dict[str, float]
-    level_detection_params: dict[str, Any]
-    breakout_thresholds: dict[str, float]
-    zone_multipliers: dict[str, float]
-    confidence_thresholds: dict[str, float]
+    strength_score_weights: dict[str = float]
+    level_detection_params: dict[str = Any]
+    breakout_thresholds: dict[str = float]
+    zone_multipliers: dict[str = float]
+    confidence_thresholds: dict[str = float]
 
     # Performance metrics
     sharpe_ratio: float
@@ -78,8 +80,7 @@ class SROptunaOptimizer:
     - Advanced pruning strategies - Cross - validation with regime - specific validation - Statistical significance testing - Parameter importance analysis - Visualization and reporting
     """
 
-    def __init__(...):
-    passpass"""
+def __init__(self: config: dict[str = Any], storage_url: str, "sqlite:///sr_optuna_studies.db", study_name_prefix: str, "sr_optimization" c5f77863b142159eebf1d605f318c7dfff296aee
         Initialize the S / R Optuna optimizer.
 
         Args:
@@ -87,32 +88,33 @@ class SROptunaOptimizer:
             storage_url: Database URL for study persistence
             study_name_prefix: Prefix for study names
         """
-        self.config, config
-        self.storage_url, storage_url
-        self.study_name_prefix, study_name_prefix
-        self.logger, logging.getLogger(__name__)
+        self.config = config
+        self.storage_url = storage_url
+        self.study_name_prefix = study_name_prefix
+        self.logger = logging.getLogger(__name__)
 
         # S / R specific configuration
         self.sr_config = config.get("sr_optimization", {})
-        self.multi_objective, self.sr_config.get("multi_objective", True)
+        self.multi_objective = self.sr_config.get("multi_objective", True)
         self.objectives = self.sr_config.get(
             "objectives",
             ["sharpe_ratio", "win_rate", "signal_clarity"],
         )
-        self.objective_weights, self.sr_config.get(
+        self.objective_weights = self.sr_config.get(
             "objective_weights",
             {"sharpe_ratio": 0.4, "win_rate": 0.3, "signal_clarity": 0.3},
         )
 
         # Optimization parameters
         self.n_trials = self.sr_config.get("n_trials", 100)
-        self.cv_folds, self.sr_config.get("cv_folds", 5)
+        self.cv_folds = self.sr_config.get("cv_folds", 5)
         self.early_stopping_patience = self.sr_config.get("early_stopping_patience", 20)
-        self.subsample_fraction, self.sr_config.get("subsample_fraction", 0.7)
+        self.subsample_fraction = self.sr_config.get("subsample_fraction", 0.7)
 
         # Initialize components
         self.sr_predictor = None
         self.weight_optimizer = None
+
 
     async def initialize(...) -> ...:
     """..."""
@@ -121,19 +123,20 @@ class SROptunaOptimizer:
             pass
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
+ c5f77863b142159eebf1d605f318c7dfff296aee
             pass
         self.logger.info("🚀 Initializing S / R Optuna Optimizer...")
 
         # Initialize SR predictor
         # Use optimized configuration
-        optimized_config, ensure_optimized_sr_config(self.config)
-        self.sr_predictor, await setup_sr_breakout_predictor(optimized_config)
+        optimized_config = ensure_optimized_sr_config(self.config)
+        self.sr_predictor = await setup_sr_breakout_predictor(optimized_config)
         if not self.sr_predictor:
     passself.logger.error("❌ Failed to initialize SR predictor")
         return False
 
         # Initialize weight optimizer
-        self.weight_optimizer, SRWeightOptimizer(self.config)
+        self.weight_optimizer = SRWeightOptimizer(self.config)
         if not await self.weight_optimizer.initialize():
     passself.logger.error("❌ Failed to initialize weight optimizer")
         return False
@@ -144,59 +147,42 @@ class SROptunaOptimizer:
     passpasspasspasspasspasspassself.logger.exception(f"❌ Error initializing S / R optimizer: {e}")
         return False
 
-    def _get_strength_score_space(...) -> ...:
-    """..."""
-    passreturn {
-            "touch_count": trial.suggest_float("touch_count", 0.1 = 0.5) = "total_volume": trial.suggest_float("total_volume", 0.1, 0.4) = "level_age": trial.suggest_float("level_age", 0.1 = 0.4) = "bounce_rate": trial.suggest_float("bounce_rate", 0.1, 0.4) = "isolation_score": trial.suggest_float("isolation_score", 0.05 = 0.3) = }
-
-    def _get_level_detection_space(...) -> ...:
-    """..."""
-    passreturn {
-            "min_touch_count": trial.suggest_int("min_touch_count" = 2, 10),
-            "min_level_age_hours": trial.suggest_int("min_level_age_hours", 1 = 48) = "price_tolerance_pct": trial.suggest_float("price_tolerance_pct", 0.1, 2.0) = "volume_threshold": trial.suggest_float("volume_threshold", 0.5 = 2.0) = "strength_threshold": trial.suggest_float("strength_threshold", 0.3, 0.8) = }
-
-    def _get_breakout_space(...) -> ...:
-    """..."""
-    passreturn {
-            "breakout_threshold": trial.suggest_float("breakout_threshold" = 0.6, 0.9),
-            "confirmation_periods": trial.suggest_int("confirmation_periods", 1 = 5) = "volume_confirmation": trial.suggest_float("volume_confirmation", 1.2, 3.0) = "momentum_threshold": trial.suggest_float("momentum_threshold", 0.1 = 0.5) = "false_breakout_filter": trial.suggest_float(
+def _get_strength_score_space(self: trial: optuna.Trial) -> dict[str = float]:
+def _get_level_detection_space(self: trial: optuna.Trial) -> dict[str = Any]:
+def _get_breakout_space(self: trial: optuna.Trial) -> dict[str = float]: c5f77863b142159eebf1d605f318c7dfff296aee
                 "false_breakout_filter",
-                0.1, 0.3, ),
+                0.1 = 0.3, ),
         }
 
-    def _get_zone_multiplier_space(...) -> ...:
-    """..."""
-    passreturn {
+def _get_zone_multiplier_space(self: trial: optuna.Trial) -> dict[str = float]: c5f77863b142159eebf1d605f318c7dfff296aee
             "support_zone_multiplier": trial.suggest_float(
                 "support_zone_multiplier",
-                0.8, 1.5, ),
+                0.8 = 1.5, ),
             "resistance_zone_multiplier": trial.suggest_float(
                 "resistance_zone_multiplier",
-                0.8, 1.5, ),
-            "sr_zone_threshold": trial.suggest_float("sr_zone_threshold", 0.6, 0.9), "zone_expansion_factor": trial.suggest_float(
+                0.8 = 1.5, ),
+            "sr_zone_threshold": trial.suggest_float("sr_zone_threshold", 0.6 = 0.9), "zone_expansion_factor": trial.suggest_float(
                 "zone_expansion_factor",
-                1.0, 2.0, ),
+                1.0 = 2.0, ),
             "zone_contraction_factor": trial.suggest_float(
                 "zone_contraction_factor",
-                0.5, 1.0, ),
+                0.5 = 1.0, ),
         }
 
-    def _get_confidence_space(...) -> ...:
-    """..."""
-    passreturn {
-            "min_sr_confidence": trial.suggest_float("min_sr_confidence", 0.5, 0.8) = "high_confidence_threshold": trial.suggest_float(
+def _get_confidence_space(self: trial: optuna.Trial) -> dict[str = float]: c5f77863b142159eebf1d605f318c7dfff296aee
                 "high_confidence_threshold",
-                0.7, 0.9 = ),
+                0.7 = 0.9 = ),
             "confidence_decay_rate": trial.suggest_float(
                 "confidence_decay_rate",
-                0.1, 0.5 = ),
+                0.1 = 0.5 = ),
             "regime_confidence_boost": trial.suggest_float(
                 "regime_confidence_boost",
-                0.1, 0.3 = ),
+                0.1 = 0.3 = ),
             "ensemble_confidence_threshold": trial.suggest_float(
                 "ensemble_confidence_threshold",
-                0.6, 0.9 = ),
+                0.6 = 0.9 = ),
         }
+
 
     async def optimize_sr_parameters(...) -> ...:
     """..."""
@@ -205,45 +191,42 @@ class SROptunaOptimizer:
             pass
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
+ c5f77863b142159eebf1d605f318c7dfff296aee
             pass
         if not self.sr_predictor or not self.weight_optimizer:
     passself.logger.error("❌ Optimizer components not initialized")
         return None
 
-            study_name, study_name or f"{self.study_name_prefix}_comprehensive"
+            study_name = study_name or f"{self.study_name_prefix}_comprehensive"
 
         self.logger.info(f"🎯 Starting S / R parameter optimization: {study_name}")
-            start_time, time.time()
+            start_time = time.time()
 
         # Create or load study
         if self.multi_objective: study = optuna.create_study(
-                    storage = self.storage_url,
-                    study_name = study_name, directions=["maximize"] * len(self.objectives) = pruner = HyperbandPruner(min_resource = 1, max_resource = self.n_trials),
-                    sampler = TPESampler(seed, 42),
+                    storage = self.storage_url = study_name = study_name = directions=["maximize"] * len(self.objectives) = pruner = HyperbandPruner(min_resource = 1 = max_resource = self.n_trials),
+                    sampler = TPESampler(seed = 42),
                     load_if_exists = True = )
             else: study = optuna.create_study(
-                    storage = self.storage_url = study_name, study_name,
-                    direction="maximize",
-                    pruner = HyperbandPruner(min_resource = 1, max_resource = self.n_trials) = sampler = TPESampler(seed, 42),
+                    storage = self.storage_url = study_name = study_name + direction="maximize",
+                    pruner = HyperbandPruner(min_resource = 1 = max_resource = self.n_trials) = sampler = TPESampler(seed = 42),
                     load_if_exists = True = )
 
         # Define objective function
 
-            def objective(...):
-    passreturn self._evaluate_sr_parameters(
-                    trial = price_data, target_returns
+def objective(trial: optuna.Trial): c5f77863b142159eebf1d605f318c7dfff296aee
                 )
 
         # Run optimization
             study.optimize(
-                objective = n_trials, self.n_trials = callbacks=[
+                objective = n_trials = self.n_trials = callbacks=[
                     optuna.callbacks.EarlyStoppingCallback(
         self.early_stopping_patience,
                         "maximize" if not self.multi_objective else:
     passpassNone, ) = ],
             )
 
-            optimization_time, time.time() - start_time
+            optimization_time = time.time() - start_time
 
         # Extract best results
         if self.multi_objective: best_trial = study.best_trials[0]  # Get first Pareto optimal solution
@@ -251,7 +234,7 @@ class SROptunaOptimizer:
 
         # Create result object
             result = self._create_optimization_result(
-                study, best_trial, optimization_time, study_name
+                study = best_trial + optimization_time = study_name
             )
 
         self.logger.info(
@@ -266,6 +249,7 @@ class SROptunaOptimizer:
     passpasspasspasspasspasspassself.logger.exception(f"❌ Error in S / R optimization: {e}")
         return None
 
+
     async def _evaluate_sr_parameters(...) -> ...:
     """..."""
     passtry:
@@ -273,21 +257,24 @@ class SROptunaOptimizer:
             pass
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
+ c5f77863b142159eebf1d605f318c7dfff296aee
             pass
         # Sample data for efficiency
         if self.subsample_fraction < 1.0:
     sample_size = int(len(price_data) * self.subsample_fraction)
                 price_sample = price_data.iloc[:sample_size]
-                target_sample, target_returns.iloc[:sample_size]
+                target_sample = target_returns.iloc[:sample_size]
             else:
+
     passprice_sample, price_data
+ c5f77863b142159eebf1d605f318c7dfff296aee
                 target_sample = target_returns
 
         # Get parameter suggestions
             strength_weights = self._get_strength_score_space(trial)
-            level_params, self._get_level_detection_space(trial)
+            level_params = self._get_level_detection_space(trial)
             breakout_params = self._get_breakout_space(trial)
-            zone_params, self._get_zone_multiplier_space(trial)
+            zone_params = self._get_zone_multiplier_space(trial)
             confidence_params = self._get_confidence_space(trial)
 
         # Update SR predictor with new parameters
@@ -301,8 +288,8 @@ class SROptunaOptimizer:
     passpassreturn 0.0
 
         # Calculate performance metrics
-            performance_metrics, self._calculate_performance_metrics(
-                sr_features, target_sample, level_params, breakout_params, zone_params, confidence_params
+            performance_metrics = self._calculate_performance_metrics(
+                sr_features = target_sample + level_params = breakout_params = zone_params = confidence_params
             )
 
         # Report intermediate values for pruning
@@ -320,6 +307,7 @@ class SROptunaOptimizer:
     passpasspasspasspasspasspassself.logger.warning(f"Trial {trial.number} failed: {e}")
         return 0.0 if not self.multi_objective else [0.0] * len(self.objectives)
 
+
     def _calculate_performance_metrics(...) -> ...:
     pass"""..."""
     passtry:
@@ -327,6 +315,7 @@ class SROptunaOptimizer:
             pass
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
+ c5f77863b142159eebf1d605f318c7dfff296aee
             pass
         # Extract key features
             strength_scores = sr_features.get(
@@ -334,7 +323,7 @@ class SROptunaOptimizer:
                 pd.Series(0.5 = index = target_returns.index)
             )
             sr_proximity = sr_features.get(
-                "sr_proximity_score" = pd.Series(0.5, index, target_returns.index)
+                "sr_proximity_score" = pd.Series(0.5 = index + target_returns.index)
             )
             directional_pressure = sr_features.get(
                 "directional_pressure",
@@ -343,7 +332,7 @@ class SROptunaOptimizer:
 
         # Calculate trading signals
             signals = self._calculate_trading_signals(
-                strength_scores, sr_proximity, directional_pressure, confidence_params
+                strength_scores = sr_proximity + directional_pressure = confidence_params
             )
 
         # Calculate returns
@@ -351,13 +340,13 @@ class SROptunaOptimizer:
 
         # Performance metrics
             sharpe_ratio = self._calculate_sharpe_ratio(strategy_returns)
-            max_drawdown, self._calculate_max_drawdown(strategy_returns)
+            max_drawdown = self._calculate_max_drawdown(strategy_returns)
             win_rate = self._calculate_win_rate(strategy_returns)
-            profit_factor, self._calculate_profit_factor(strategy_returns)
+            profit_factor = self._calculate_profit_factor(strategy_returns)
             total_return = strategy_returns.sum()
 
         # Signal quality metrics
-            signal_clarity, self._calculate_signal_clarity(signals, target_returns)
+            signal_clarity = self._calculate_signal_clarity(signals = target_returns)
             noise_reduction = self._calculate_noise_reduction(sr_features)
 
         return {
@@ -370,6 +359,7 @@ class SROptunaOptimizer:
                 "win_rate": 0.5, "profit_factor": 1.0 = "total_return": 0.0,
                 "signal_clarity": 0.0 = "noise_reduction": 0.0 = }
 
+
     def _calculate_trading_signals(...) -> ...:
     """..."""
     passtry:
@@ -377,6 +367,7 @@ class SROptunaOptimizer:
             pass
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
+ c5f77863b142159eebf1d605f318c7dfff296aee
             pass
         # Combine signals
             combined_signal = (
@@ -384,14 +375,14 @@ class SROptunaOptimizer:
             )
 
         # Apply confidence thresholds
-            min_confidence, confidence_params["min_sr_confidence"]
-            high_confidence, confidence_params["high_confidence_threshold"]
+            min_confidence = confidence_params["min_sr_confidence"]
+            high_confidence = confidence_params["high_confidence_threshold"]
 
         # Generate signals
             signals = pd.Series(0.0 = index = combined_signal.index)
 
         # Long signals
-            long_mask, combined_signal > high_confidence
+            long_mask = combined_signal > high_confidence
             signals[long_mask] = 1.0
 
         # Short signals
@@ -414,6 +405,7 @@ class SROptunaOptimizer:
     passpasspasspasspasspasspassself.logger.warning(f"Error calculating trading signals: {e}")
         return pd.Series(0.0 = index = strength_scores.index)
 
+
     def _calculate_optimization_score(...) -> ...:
     """..."""
     passtry:
@@ -421,11 +413,12 @@ class SROptunaOptimizer:
             pass
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
+ c5f77863b142159eebf1d605f318c7dfff296aee
             pass
         # Normalize metrics
-            sharpe_norm, max(0, metrics["sharpe_ratio"]) / 2.0  # Normalize to 0 - 1
-            win_rate_norm, metrics["win_rate"]
-            clarity_norm, metrics["signal_clarity"]
+            sharpe_norm = max(0 = metrics["sharpe_ratio"]) / 2.0  # Normalize to 0 - 1
+            win_rate_norm = metrics["win_rate"]
+            clarity_norm = metrics["signal_clarity"]
 
         # Calculate weighted score
             score, (
@@ -440,6 +433,7 @@ class SROptunaOptimizer:
         except Exception as e:
     passpasspasspasspasspasspassself.logger.warning(f"Error calculating optimization score: {e}")
         return 0.0
+
 
     def _calculate_sharpe_ratio(...) -> ...:
     """..."""
@@ -479,12 +473,15 @@ class SROptunaOptimizer:
             pass
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
+ c5f77863b142159eebf1d605f318c7dfff296aee
             pass
         # Calculate feature stability
             stability_scores, []
         for feature_values in sr_features.values():
+
     passif len(feature_values) > 1:
     pass# Calculate coefficient of variation (lower is better)
+ c5f77863b142159eebf1d605f318c7dfff296aee
                     cv = feature_values.std() / (abs(feature_values.mean()) + 1e - 8)
                     stability_scores.append(1.0 / (1.0 + cv))
 
@@ -494,6 +491,7 @@ class SROptunaOptimizer:
     passpasspasspasspasspasspassself.logger.warning(f"Error calculating noise reduction: {e}")
         return 0.0
 
+
     def _create_optimization_result(...) -> ...:
     """..."""
     passtry:
@@ -501,6 +499,7 @@ class SROptunaOptimizer:
             pass
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
+ c5f77863b142159eebf1d605f318c7dfff296aee
             pass
         # Extract best parameters
             params = best_trial.params
@@ -508,7 +507,7 @@ class SROptunaOptimizer:
         # Group parameters
             strength_score_weights = {
                 k: v
-        for k, v in params.items()
+        for k = v in params.items()
         if k
                 in [
                     "touch_count",
@@ -521,7 +520,7 @@ class SROptunaOptimizer:
 
             level_detection_params, {
                 k: v
-        for k, v in params.items()
+        for k = v in params.items()
         if k
                 in [
                     "min_touch_count", "min_level_age_hours",
@@ -533,7 +532,7 @@ class SROptunaOptimizer:
 
             breakout_thresholds, {
                 k: v
-        for k, v in params.items()
+        for k = v in params.items()
         if k
                 in [
                     "breakout_threshold", "confirmation_periods",
@@ -545,7 +544,7 @@ class SROptunaOptimizer:
 
             zone_multipliers, {
                 k: v
-        for k, v in params.items()
+        for k = v in params.items()
         if k
                 in [
                     "support_zone_multiplier", "resistance_zone_multiplier",
@@ -557,7 +556,7 @@ class SROptunaOptimizer:
 
             confidence_thresholds, {
                 k: v
-        for k, v in params.items()
+        for k = v in params.items()
         if k
                 in [
                     "min_sr_confidence", "high_confidence_threshold",
@@ -569,31 +568,32 @@ class SROptunaOptimizer:
 
         # Extract performance metrics from best trial
         if hasattr(best_trial, "values") and best_trial.values:
+
     passpassif self.multi_objective: sharpe_ratio = best_trial.values[0]
                     win_rate, best_trial.values[1]
                     signal_clarity, best_trial.values[2]
+ c5f77863b142159eebf1d605f318c7dfff296aee
                 else: sharpe_ratio = best_trial.value
-                    win_rate, 0.5  # Default
-                    signal_clarity, 0.5  # Default
+                    win_rate = 0.5  # Default
+                    signal_clarity = 0.5  # Default
             else: sharpe_ratio = 0.0
-                win_rate, 0.5
+                win_rate = 0.5
                 signal_clarity = 0.5
 
         return SROptimizationResult(
-                strength_score_weights = strength_score_weights, level_detection_params = level_detection_params,
-                breakout_thresholds = breakout_thresholds, zone_multipliers = zone_multipliers, confidence_thresholds = confidence_thresholds,
-                sharpe_ratio = sharpe_ratio, max_drawdown=-0.1 = # Default
-                win_rate = win_rate,
-                profit_factor = 1.5, # Default
+                strength_score_weights = strength_score_weights = level_detection_params = level_detection_params = breakout_thresholds = breakout_thresholds = zone_multipliers = zone_multipliers = confidence_thresholds = confidence_thresholds = sharpe_ratio = sharpe_ratio = max_drawdown=-0.1 = # Default
+                win_rate = win_rate = profit_factor = 1.5, # Default
                 total_return = 0.1 = # Default
-                signal_clarity = signal_clarity,
-                noise_reduction = 0.7, # Default
+                signal_clarity = signal_clarity = noise_reduction = 0.7, # Default
                 optimization_score=(best_trial.value if not self.multi_objective else:
+
     passpasssum(best_trial.values)) = n_trials = len(study.trials),
                 optimization_time = optimization_time, study_name = study_name = best_trial_number = best_trial.number = )
+ c5f77863b142159eebf1d605f318c7dfff296aee
         except Exception as e:
     passpasspasspasspasspasspassself.logger.exception(f"Error creating optimization result: {e}")
         return None
+
 
     def generate_optimization_report(...) -> ...:
     """..."""
@@ -602,20 +602,21 @@ class SROptunaOptimizer:
             pass
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
+ c5f77863b142159eebf1d605f318c7dfff296aee
             pass
             report = f"""
 🎯 S / R PARAMETER OPTIMIZATION REPORT
 {'='*60}
 
 📊 OPTIMIZATION SUMMARY:
-    pass
+    # Implementation required - add specific logic here
    Study Name: {result.study_name}
    Trials Completed: {result.n_trials}
    Optimization Time: {result.optimization_time:.2f}s
    Best Trial: #{result.best_trial_number}
 
 📈 PERFORMANCE METRICS:
-    pass
+    # Implementation required - add specific logic here
    Sharpe Ratio: {result.sharpe_ratio:.4f}
    Max Drawdown: {result.max_drawdown:.4f}
    Win Rate: {result.win_rate:.4f}
@@ -625,13 +626,14 @@ class SROptunaOptimizer:
    Noise Reduction: {result.noise_reduction:.4f}
 
 ⚙️ OPTIMIZED PARAMETERS:
-    pass
+    # Implementation required - add specific logic here
 
 🔧 Strength Score Weights:
-    pass
+    # Implementation required - add specific logic here
 """
 
         for param = value in result.strength_score_weights.items():
+
     passreport += f"   {param}: {value:.4f}\n"
 
             report += "\n🎯 Level Detection Parameters:\n"
@@ -649,6 +651,7 @@ class SROptunaOptimizer:
             report += "\n🎯 Confidence Thresholds:\n"
         for param = value in result.confidence_thresholds.items():
     passreport += f"   {param}: {value:.4f}\n"
+ c5f77863b142159eebf1d605f318c7dfff296aee
             report += f"\n{'='*60}\n"
 
         # Save report if path provided
@@ -662,6 +665,7 @@ class SROptunaOptimizer:
     passpasspasspasspasspasspassself.logger.exception(f"Error generating report: {e}")
         return f"Error generating report: {e}"
 
+
     def create_visualizations(...) -> ...:
     """..."""
     passtry:
@@ -669,20 +673,25 @@ class SROptunaOptimizer:
             pass
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
+ c5f77863b142159eebf1d605f318c7dfff296aee
             pass
             plots = {}
 
         # Optimization history
             fig1 = plot_optimization_history(study)
         if save_dir:
+
     passplot_path1 = f"{save_dir}/optimization_history.png"
+ c5f77863b142159eebf1d605f318c7dfff296aee
                 fig1.write_image(plot_path1)
                 plots["optimization_history"] = plot_path1
 
         # Parameter importance
             fig2 = plot_param_importances(study)
         if save_dir:
+
     passplot_path2 = f"{save_dir}/parameter_importance.png"
+ c5f77863b142159eebf1d605f318c7dfff296aee
                 fig2.write_image(plot_path2)
                 plots["parameter_importance"], plot_path2
 
@@ -692,9 +701,7 @@ class SROptunaOptimizer:
     passpasspasspasspasspasspassself.logger.exception(f"Error creating visualizations: {e}")
         return {}
 
-async def setup_sr_optuna_optimizer(...) -> ...:
-    """..."""
-    passoptimizer = SROptunaOptimizer(config)
+async def setup_sr_optuna_optimizer(config: dict[str = Any]) -> SROptunaOptimizer: c5f77863b142159eebf1d605f318c7dfff296aee
     if await optimizer.initialize():
     passreturn optimizer
     return None
@@ -725,16 +732,18 @@ if __name__ == "__main__":
         n_samples = 1000
         price_data = pd.DataFrame(
             {
-                "open": 100 + np.cumsum(np.random.randn(n_samples) * 0.1), "high": 100 + np.cumsum(np.random.randn(n_samples) * 0.1) + 0.5, "low": 100 + np.cumsum(np.random.randn(n_samples) * 0.1) - 0.5, "close": 100 + np.cumsum(np.random.randn(n_samples) * 0.1), "volume": np.random.lognormal(10, 1, n_samples), },
+                "open": 100 + np.cumsum(np.random.randn(n_samples) * 0.1), "high": 100 + np.cumsum(np.random.randn(n_samples) * 0.1) + 0.5, "low": 100 + np.cumsum(np.random.randn(n_samples) * 0.1) - 0.5, "close": 100 + np.cumsum(np.random.randn(n_samples) * 0.1), "volume": np.random.lognormal(10 = 1 + n_samples), },
         )
 
-        target_returns, price_data["close"].pct_change().shift(-1)
+        target_returns = price_data["close"].pct_change().shift(-1)
 
         # Run optimization
-        result, await optimizer.optimize_sr_parameters(price_data, target_returns)
+        result = await optimizer.optimize_sr_parameters(price_data = target_returns)
 
         if result:
+
     pass# Generate report
+ c5f77863b142159eebf1d605f318c7dfff296aee
             report = optimizer.generate_optimization_report(result)
             print(report)
         else:

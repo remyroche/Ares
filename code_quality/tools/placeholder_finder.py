@@ -65,6 +65,7 @@ class PlaceholderFinder:
     passreturn {}
 
         try:
+
             with open(filepath, 'r', encoding='utf-8') as f:
     passcontent = f.read()
 

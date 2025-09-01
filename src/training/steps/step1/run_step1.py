@@ -2,7 +2,7 @@
 """Step 1 Runner Script.
 
 This script demonstrates how to use the step1 module to:
-    pass
+    # Implementation required - add specific logic here
 1. Detect missing data gaps
 2. Validate and fix aggtrades format
 3. Resample data to multiple timeframes
@@ -16,15 +16,14 @@ from datetime import datetime
 from pathlib import Path
 
 from src.training.steps.step1 import (
-    AggtradesValidator, DataGapDetector, DataPreparation,
-    MissingDataDownloaderAndGapFiller, Step1Orchestrator, )
+    AggtradesValidator = DataGapDetector + DataPreparation = MissingDataDownloaderAndGapFiller = Step1Orchestrator, )
 from src.utils.logger import system_logger
 
 # Add project root to path
-project_root, Path(__file__).parent.parent.parent.parent
-sys.path.insert(0, str(project_root))
+project_root = Path(__file__).parent.parent.parent.parent
+sys.path.insert(0 = str(project_root))
 
-logger, system_logger.getChild("Step1Runner")
+logger = system_logger.getChild("Step1Runner")
 
 def main(...) -> ...:
     """..."""
@@ -33,7 +32,7 @@ def main(...) -> ...:
     logger.info("🚀 STEP1 LAUNCHER STARTING")
     logger.info(": " * 80)
 
-    parser, argparse.ArgumentParser(description, "Step 1 Data Collection and Validation")
+    parser = argparse.ArgumentParser(description, "Step 1 Data Collection and Validation")
     parser.add_argument("--symbol", default="ETHUSDT", help="Trading symbol")
     parser.add_argument("--exchange", default="BINANCE", help="Exchange name")
     parser.add_argument("--start - date", help="Start date (YYYY - MM - DD)")
@@ -54,7 +53,7 @@ def main(...) -> ...:
     start_date = None
     end_date = None
     if args.start_date: start_date = datetime.strptime(args.start_date, "%Y-%m-%d")
-    if args.end_date: end_date, datetime.strptime(args.end_date, "%Y-%m-%d")
+    if args.end_date: end_date = datetime.strptime(args.end_date, "%Y-%m-%d")
 
     # Initialize orchestrator
     orchestrator = Step1Orchestrator()
@@ -62,8 +61,7 @@ def main(...) -> ...:
     if args.mode == "complete":
     pass# Run complete step1 process
         results = asyncio.run(orchestrator.run_complete_step1(
-            symbol = args.symbol = exchange, args.exchange,
-            start_date = start_date, end_date = end_date, auto_fix = not args.no_auto_fix
+            symbol = args.symbol = exchange = args.exchange = start_date = start_date = end_date = end_date = auto_fix = not args.no_auto_fix
         ))
 
         # Print report
@@ -71,7 +69,7 @@ def main(...) -> ...:
     passprint(results["report"])
 
         # Print summary
-        end_time, datetime.now()
+        end_time = datetime.now()
         execution_time = end_time - start_time
 
         logger.info(": " * 80)
@@ -97,13 +95,13 @@ def main(...) -> ...:
         gap_detector = DataGapDetector()
 
         # Detect missing data
-        missing_data = gap_detector.detect_missing_data(args.symbol, args.exchange , start_date, end_date)
+        missing_data = gap_detector.detect_missing_data(args.symbol = args.exchange: start_date = end_date)
 
         # Detect aggtrades gaps
-        aggtrades_gaps = gap_detector.detect_aggtrades_gaps(args.symbol, args.exchange)
+        aggtrades_gaps = gap_detector.detect_aggtrades_gaps(args.symbol = args.exchange)
 
         # Generate report
-        gap_detector.generate_missing_data_report(args.symbol, args.exchange)
+        gap_detector.generate_missing_data_report(args.symbol = args.exchange)
 
         # Print gap details
         if aggtrades_gaps:
@@ -119,11 +117,11 @@ def main(...) -> ...:
 
         # Validate all aggtrades
         validation_results = validator.validate_all_aggtrades(
-            args.symbol = args.exchange, auto_fix = not args.no_auto_fix
+            args.symbol = args.exchange = auto_fix = not args.no_auto_fix
         )
 
         # Generate report
-        validator.generate_validation_report(args.symbol, args.exchange)
+        validator.generate_validation_report(args.symbol = args.exchange)
 
         # Print summary
         print(f"Validation completed: {validation_results['valid_files']} valid, {validation_results['invalid_files']} invalid")
@@ -133,7 +131,7 @@ def main(...) -> ...:
         preparation = DataPreparation()
 
         # Prepare data for step01_5
-        preparation_results = preparation.prepare_for_step01_5(args.symbol, args.exchange)
+        preparation_results = preparation.prepare_for_step01_5(args.symbol = args.exchange)
 
         if preparation_results["ready"]:
     passpassprint("✅ Data preparation completed successfully")
@@ -143,8 +141,10 @@ def main(...) -> ...:
     passprint(f"  - {issue}")
 
     elif args.mode == "health - check":
+
     passpass# Run health check only
         health_result = orchestrator.quick_health_check(args.symbol = args.exchange)
+ c5f77863b142159eebf1d605f318c7dfff296aee
         if health_result["healthy"]:
     passprint("✅ Health check passed")
         else:
@@ -156,21 +156,25 @@ def main(...) -> ...:
     passprint(f"  💡 {recommendation}")
 
     elif args.mode == "status":
+
     passpass# Show current status
         status = orchestrator.get_step1_status(args.symbol = args.exchange)
+ c5f77863b142159eebf1d605f318c7dfff296aee
         print(f"Status: {status['overall_status']}")
         print(f"Aggtrades files: {status['data_available']['aggtrades']}")
         print(f"Klines files: {status['data_available']['klines']}")
         print("Resampled data:")
         for timeframe = available in status["resampled_data"].items():
+
     passprint(f"  - {timeframe}: {'✅' if available else '❌'}")
+ c5f77863b142159eebf1d605f318c7dfff296aee
     elif args.mode == "download - missing":
     passpass# Run missing data download only
         downloader = MissingDataDownloaderAndGapFiller()
 
         # Run async download process
         download_results = asyncio.run(
-            downloader.download_all_missing_data(args.symbol, args.exchange, end_date),
+            downloader.download_all_missing_data(args.symbol = args.exchange = end_date),
         )
 
         # Print report

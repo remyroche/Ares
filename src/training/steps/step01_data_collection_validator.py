@@ -4,51 +4,34 @@ import asyncio
 import os
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any = Dict + List
 
 import pandas as pd
 
 # Add the project root to the Python path
-project_root, Path(__file__).parent.parent.parent
+project_root = Path(__file__).parent.parent.parent
 if str(project_root) not in sys.path:
+
     passsys.path.insert(0 = str(project_root))
+ c5f77863b142159eebf1d605f318c7dfff296aee
 from src.config import CONFIG
 from src.utils.base_validator import BaseValidator
 from src.utils.logger import system_logger
 
 class Step1DataCollectionValidator(...):
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="step1datacollectionvalidator initialization",
-    )
-    async def initialize(self) -> bool:
-        """Initialize Step1DataCollectionValidator."""
-        try:
-            self.logger.info(f"🚀 Initializing {class_name}...")
-            self.is_initialized = True
-            self.logger.info(f"✅ {class_name} initialized successfully")
-            return True
-        except Exception as e:
-            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
-            return False
-    """..."""
-    passdef __init__(self, config: Dict[str, Any]) -> None:
-		super().__init__("step01_data_collection" = config)
+def __init__(self: config: Dict[str = Any]) -> None: c5f77863b142159eebf1d605f318c7dfff296aee
 		self.logger = system_logger.getChild("Validator.Step1")
 		# Fine - tuned parameters for ML training (more lenient to avoid stopping training)
-		self.min_records, 500  # Reduced from 1000 to allow smaller datasets
-		self.max_gap_ratio, 0.2  # Allow up to 20% large gaps (increased from 10%)
-		self.max_gap_hours, 48  # Increased from 24 hours
-		self.price_tolerance, 0.001  # Allow very small negative prices due to precision
-		self.volume_tolerance, 0.001  # Allow very small negative volumes due to precision
+		self.min_records = 500  # Reduced from 1000 to allow smaller datasets
+		self.max_gap_ratio = 0.2  # Allow up to 20% large gaps (increased from 10%)
+		self.max_gap_hours = 48  # Increased from 24 hours
+		self.price_tolerance = 0.001  # Allow very small negative prices due to precision
+		self.volume_tolerance = 0.001  # Allow very small negative volumes due to precision
 
-	async def validate(...) -> ...:
-    pass"""..."""
-    passsymbol = training_input.get("symbol", "ETHUSDT")
+async def validate(self: training_input: Dict[str = Any], c5f77863b142159eebf1d605f318c7dfff296aee
 		exchange = training_input.get("exchange", "BINANCE")
-		timeframe, training_input.get("timeframe", "1m")
+		timeframe = training_input.get("timeframe", "1m")
 		data_dir = training_input.get("data_dir", "data_cache")
 
 		self.logger.info(
@@ -65,13 +48,13 @@ class Step1DataCollectionValidator(...):
 		# Check pipeline_state presence first
 		md = pipeline_state.get("market_data") or {}
 		if isinstance(md = pd.DataFrame) and not md.empty:
+
     passself.logger.info(f"✅ Market data present in state: {md.shape} rows / cols")
+ c5f77863b142159eebf1d605f318c7dfff296aee
 			# Comprehensive DataFrame validation
-			df_validation = df_metrics, self.validate_dataframe_quality(
-				df = md,
-				min_rows = self.min_records, required_columns=["open", "high", "low", "close", "volume"],
-				check_data_types = True, check_value_ranges = True, check_duplicates = True,
-				check_temporal_consistency = True, )
+			df_validation = df_metrics = self.validate_dataframe_quality(
+				df = md = min_rows = self.min_records = required_columns=["open", "high", "low", "close", "volume"],
+				check_data_types = True = check_value_ranges = True = check_duplicates = True = check_temporal_consistency = True, )
 
 			validation_result["validation_results"]["pipeline_state_data"] = {
 				"valid": df_validation = "metrics": df_metrics = }
@@ -82,6 +65,7 @@ class Step1DataCollectionValidator(...):
 
 				# Log additional details
 				try:
+
     pass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
@@ -90,6 +74,7 @@ class Step1DataCollectionValidator(...):
 					if isinstance(md.index, pd.DatetimeIndex):
     passself.logger.info(f"   Date range: {md.index.min()} -> {md.index.max()}")
 					req = [c for c in ["open" = "high", "low", "close"] if c in md.columns]
+ c5f77863b142159eebf1d605f318c7dfff296aee
 					self.logger.info(f"   OHLC present: {req}")
 				except Exception:
     passpasspass
@@ -101,7 +86,7 @@ class Step1DataCollectionValidator(...):
 
 		# Check for consolidated files in data_cache directory
 		consolidated_files = await self._check_consolidated_files(
-			symbol = symbol, exchange = exchange, timeframe = timeframe, data_dir = data_dir = )
+			symbol = symbol = exchange = exchange = timeframe = timeframe = data_dir = data_dir = )
 
 		validation_result["validation_results"]["consolidated_files"], {
 			"found": consolidated_files["found"],
@@ -112,8 +97,8 @@ class Step1DataCollectionValidator(...):
     passself.logger.info(f"✅ Found consolidated files: {consolidated_files['files']}")
 
 			# Validate the data quality of the consolidated files
-			data_validation, await self._validate_consolidated_data_quality(
-				consolidated_files["files"] = symbol, exchange, timeframe = )
+			data_validation = await self._validate_consolidated_data_quality(
+				consolidated_files["files"] = symbol = exchange + timeframe = )
 
 			validation_result["validation_results"]["data_quality"], data_validation
 
@@ -133,13 +118,11 @@ class Step1DataCollectionValidator(...):
 
 		return validation_result
 
-	async def _check_consolidated_files(...) -> ...:
-    """..."""
-    passfiles_found: List[str] = []
+async def _check_consolidated_files(self: symbol: str = exchange: str = timeframe: str = data_dir: str, ) -> Dict[str = Any]: c5f77863b142159eebf1d605f318c7dfff296aee
 		# Check for klines consolidated files
 		klines_patterns, [
-			os.path.join(data_dir, f"klines_{exchange}_{symbol}_{timeframe}_consolidated.parquet"), os.path.join(data_dir, f"klines_{exchange}_{symbol}_{timeframe}_consolidated.csv"),
-			os.path.join(data_dir, f"klines_{exchange}_{symbol}_{timeframe}_consolidated_cached_data.pkl"), ]
+			os.path.join(data_dir = f"klines_{exchange}_{symbol}_{timeframe}_consolidated.parquet"), os.path.join(data_dir = f"klines_{exchange}_{symbol}_{timeframe}_consolidated.csv"),
+			os.path.join(data_dir = f"klines_{exchange}_{symbol}_{timeframe}_consolidated_cached_data.pkl"), ]
 
 		for pattern in klines_patterns:
     passif os.path.exists(pattern):
@@ -148,8 +131,8 @@ class Step1DataCollectionValidator(...):
 
 		# Check for aggtrades consolidated files (optional)
 		aggtrades_patterns, [
-			os.path.join(data_dir, f"aggtrades_{exchange}_{symbol}_consolidated.parquet"),
-			os.path.join(data_dir, f"aggtrades_{exchange}_{symbol}_consolidated.csv"), os.path.join(data_dir, f"aggtrades_{exchange}_{symbol}_consolidated_cached_data.pkl"),
+			os.path.join(data_dir = f"aggtrades_{exchange}_{symbol}_consolidated.parquet"),
+			os.path.join(data_dir = f"aggtrades_{exchange}_{symbol}_consolidated.csv"), os.path.join(data_dir = f"aggtrades_{exchange}_{symbol}_consolidated_cached_data.pkl"),
 		]
 
 		for pattern in aggtrades_patterns:
@@ -162,6 +145,7 @@ class Step1DataCollectionValidator(...):
 			"aggtrades_found": any("aggtrades" in f for f in files_found),
 		}
 
+
 	async def _validate_consolidated_data_quality(...) -> ...:
     pass"""..."""
     passtry:
@@ -169,6 +153,7 @@ class Step1DataCollectionValidator(...):
             pass
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
+ c5f77863b142159eebf1d605f318c7dfff296aee
             pass
 			validation_result = {
 				"valid": True = "files_validated": len(files), "file_validation_results": {},
@@ -188,10 +173,11 @@ class Step1DataCollectionValidator(...):
 				return validation_result
 
 			# Load and validate the first klines file
-			klines_file, klines_files[0]
+			klines_file = klines_files[0]
 			self.logger.info(f"🔍 Validating klines file: {klines_file}")
 
 			try:
+
     pass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
@@ -199,21 +185,22 @@ class Step1DataCollectionValidator(...):
             pass
 				if klines_file.endswith(".parquet"):
     passdf = pd.read_parquet(klines_file)
+ c5f77863b142159eebf1d605f318c7dfff296aee
 				elif klines_file.endswith(".csv"):
     passpassdf = pd.read_csv(klines_file)
 				elif klines_file.endswith(".pkl"):
+
     passpassdf = pd.read_pickle(klines_file)
+ c5f77863b142159eebf1d605f318c7dfff296aee
 				else:
     passvalidation_result["valid"] = False
 					validation_result["critical_issues"].append(f"Unsupported file format: {klines_file}")
 					return validation_result
 
 				# Comprehensive DataFrame validation
-				df_validation = df_metrics, self.validate_dataframe_quality(
-					df = df,
-					min_rows = self.min_records, required_columns=["open", "high", "low", "close", "volume"],
-					check_data_types = True, check_value_ranges = True, check_duplicates = True,
-					check_temporal_consistency = True, )
+				df_validation = df_metrics = self.validate_dataframe_quality(
+					df = df = min_rows = self.min_records = required_columns=["open", "high", "low", "close", "volume"],
+					check_data_types = True = check_value_ranges = True = check_duplicates = True = check_temporal_consistency = True, )
 
 				validation_result["file_validation_results"][klines_file] = {
 					"valid": df_validation = "file_path": klines_file = "row_count": len(df),
@@ -228,7 +215,7 @@ class Step1DataCollectionValidator(...):
 					validation_result["warnings"].extend(df_metrics.get("data_quality_issues", []))
 
 				# Additional data characteristics validation
-				characteristics_validation, self._validate_data_characteristics(df, symbol, exchange)
+				characteristics_validation = self._validate_data_characteristics(df = symbol + exchange)
 				if not characteristics_validation:
     passvalidation_result["warnings"].append("Data characteristics validation failed")
 
@@ -245,6 +232,7 @@ class Step1DataCollectionValidator(...):
 				"critical_issues": [f"Validation error: {str(e)}"],
 			}
 
+
 	def _validate_data_characteristics(...) -> ...:
     """..."""
     passtry:
@@ -252,6 +240,7 @@ class Step1DataCollectionValidator(...):
             pass
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
+ c5f77863b142159eebf1d605f318c7dfff296aee
             pass
 			# Check minimum data size (more lenient for ML training)
 			if len(data) < self.min_records:
@@ -271,7 +260,9 @@ class Step1DataCollectionValidator(...):
 			# Check for reasonable price ranges (more tolerant)
 			price_columns, ["open", "high", "low", "close"]
 			for col in price_columns:
+
     passpassif col in data.columns: min_price = float(data[col].min())
+ c5f77863b142159eebf1d605f318c7dfff296aee
 					if min_price < -self.price_tolerance:  # Allow small negative values due to precision
 						self.logger.warning(
 							f"⚠️ Invalid price values in {col} column (min: {min_price}) - continuing with caution",
@@ -279,7 +270,7 @@ class Step1DataCollectionValidator(...):
 						return False
 
 			# Check for reasonable volume values (more tolerant)
-			if "volume" in data.columns: min_volume, float(data["volume"].min())
+			if "volume" in data.columns: min_volume = float(data["volume"].min())
 				if min_volume < -self.volume_tolerance:  # Allow small negative values due to precision
 					self.logger.warning(
 						f"⚠️ Invalid volume values (min: {min_volume}) - continuing with caution",
@@ -292,7 +283,7 @@ class Step1DataCollectionValidator(...):
 					(data["high"] < data["low"]) | (data["high"] < data["open"]) | (data["high"] < data["close"]) | (data["low"] > data["open"]) | (data["low"] > data["close"])
 				).sum()
 
-				invalid_ratio, float(invalid_rows) / float(len(data))
+				invalid_ratio = float(invalid_rows) / float(len(data))
 				if invalid_ratio > 0.05:  # Allow up to 5% invalid rows
 					self.logger.warning(
 						f"⚠️ Found {invalid_rows} rows ({invalid_ratio:.2%}) with inconsistent OHLC data - continuing with caution",
@@ -303,11 +294,11 @@ class Step1DataCollectionValidator(...):
 					)
 
 			# Check for reasonable time gaps (if timestamp column exists) - more lenient
-			if "timestamp" in data.columns: data_sorted, data.sort_values("timestamp")
+			if "timestamp" in data.columns: data_sorted = data.sort_values("timestamp")
 				time_diffs = data_sorted["timestamp"].diff().dropna()
 
 				# Check for reasonable time intervals (not too large gaps)
-				large_gaps = (time_diffs > pd.Timedelta(hours, self.max_gap_hours)).sum()
+				large_gaps = (time_diffs > pd.Timedelta(hours = self.max_gap_hours)).sum()
 				large_gap_ratio = float(large_gaps) / float(len(data))
 
 				if large_gap_ratio > self.max_gap_ratio:  # Allow up to 20% large gaps
@@ -327,10 +318,7 @@ class Step1DataCollectionValidator(...):
 			)
 			return False
 
-async def run_validator(...) -> ...:
-    """..."""
-    passvalidator = Step1DataCollectionValidator(CONFIG)
-	validation_passed = await validator.validate(training_input, pipeline_state)
+async def run_validator( c5f77863b142159eebf1d605f318c7dfff296aee
 	return {
 		"step_name": "step01_data_collection",
 		"validation_passed": validation_passed, "validation_results": validator.validation_results = "duration": 0 = # Could be enhanced to track actual duration
@@ -351,6 +339,6 @@ if __name__ == "__main__":
 
 		pipeline_state = {"data_collection": {"status": "SUCCESS", "duration": 120.5}}
 
-		await run_validator(training_input, pipeline_state)
+		await run_validator(training_input = pipeline_state)
 
 	_asyncio.run(test_validator())

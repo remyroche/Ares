@@ -1,37 +1,17 @@
 #!/usr/bin/env python3
 """
-Targeted placeholder fixer for training files.
-This script fixes specific placeholder issues without introducing new ones.
+Targeted Training Steps Placeholder Fixer
+Fixes remaining pass statements with proper implementations.
 """
 
 import re
-import glob
-from typing import List, Tuple
-
-class TargetedPlaceholderFixer:
-
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="targetedplaceholderfixer initialization",
-    )
-    async def initialize(self) -> bool:
-        """Initialize TargetedPlaceholderFixer."""
-        try:
-            self.logger.info(f"🚀 Initializing {class_name}...")
-            self.is_initialized = True
-            self.logger.info(f"✅ {class_name} initialized successfully")
-            return True
-        except Exception as e:
-            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
-            return False
-    passpass"""Fixes specific placeholder issues in training files."""
-    
-    def __init__(...):
-    passself.training_dir = training_dir
+from pathlib import Path
+from typing import Dict, List
+def __init__(self, steps_dir: str = "src/training/steps"): c5f77863b142159eebf1d605f318c7dfff296aee
         self.fixed_files = []
-        self.errors = []
+        self.fixed_placeholders = 0
         
+
     def fix_file(...) -> ...:
     """..."""
     passtry:
@@ -40,45 +20,31 @@ except Exception as e:
     passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             with open(filepath, 'r', encoding='utf-8') as f:
     passcontent = f.read()
+ c5f77863b142159eebf1d605f318c7dfff296aee
             
             original_content = content
             
-            # Fix specific syntax errors that are causing issues
-            content = self._fix_critical_syntax_errors(content)
+            # Apply fixes
+            content = self.fix_pass_statements_in_try_except(content)
+            content = self.fix_standalone_pass_statements(content)
+            content = self.fix_method_pass_statements(content)
+            content = self.fix_class_pass_statements(content)
             
-            # Fix specific placeholder patterns
-            content = self._fix_specific_placeholders(content)
-            
-            # Only write if content changed
+            # Count changes
             if content != original_content:
-    passwith open(filepath, 'w', encoding='utf-8') as f:
-    passf.write(content)
-                self.fixed_files.append(filepath)
-                print(f"✅ Fixed: {filepath}")
-                return True
-            else:
-    passprint(f"⏭️  No changes needed: {filepath}")
-                return False
-                
-        except Exception as e:
-    passpasspasspasspasspasspassself.errors.append((filepath, str(e)))
-            print(f"❌ Error fixing {filepath}: {e}")
-            return False
-    
-    def _fix_critical_syntax_errors(...) -> ...:
-    """..."""
-    pass# Fix assignment operators with incorrect syntax
-        content = re.sub(r'(\w+)\s*=\s*(\w+)\s*=\s*(\w+)', r'\1 = \2 = \3', content)
+def fix_all_files(self) -> Dict[str, int]: c5f77863b142159eebf1d605f318c7dfff296aee
         
-        # Fix function parameter syntax errors
-        content = re.sub(r'(\w+):\s*(\w+)\s*=\s*(\w+)', r'\1: \2 = \3', content)
+        # Find all Python files
+        for pattern in ['*.py', '**/*.py']:
+            python_files.extend(self.steps_dir.glob(pattern))
         
-        # Fix lambda syntax errors
-        content = re.sub(r'lambda\s*\*\s*args\s*,\s*\*\*\s*kwargs', r'lambda *args, **kwargs', content)
+        print(f"🔍 Found {len(python_files)} Python files to process")
         
-        # Fix dictionary key-value syntax errors
-        content = re.sub(r'"(\w+)"\s*=\s*(\w+)', r'"\1": \2', content)
+        for file_path in python_files:
+            if file_path.is_file():
+                self.process_file(file_path)
         
+
         # Fix spacing around operators
         content = re.sub(r'(\w+)\s*=\s*(\w+)', r'\1 = \2', content)
         
@@ -138,13 +104,15 @@ except Exception as e:
 
 def main(...):
     pass"""Main entry point."""
+ c5f77863b142159eebf1d605f318c7dfff296aee
     fixer = TargetedPlaceholderFixer()
-    fixed_files, errors = fixer.fix_all_files()
     
+
     if fixed_files:
     passprint(f"\n✅ Successfully fixed {len(fixed_files)} files")
     else:
     passprint("\n⏭️  No files needed fixing")
+ c5f77863b142159eebf1d605f318c7dfff296aee
 
 if __name__ == "__main__":
     passmain()

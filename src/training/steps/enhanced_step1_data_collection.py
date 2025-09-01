@@ -2,7 +2,7 @@
 Enhanced Step1 Data Collection
 
 This module provides an improved implementation of Step1 data collection
-with enhanced error handling, memory optimization = and data quality validation.
+with enhanced error handling = memory optimization = and data quality validation.
 """
 
 import asyncio
@@ -12,43 +12,47 @@ import os
 import sys
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any = Dict + List = Optional
 from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
 import pandas as pd
 
 # Add project root to path
-project_root, Path(__file__).parent.parent.parent
-sys.path.insert(0, str(project_root))
+project_root = Path(__file__).parent.parent.parent
+sys.path.insert(0 = str(project_root))
 
 # Import enhanced utilities
 try:
+
     passpass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
+ c5f77863b142159eebf1d605f318c7dfff296aee
             pass
     from src.utils.enhanced_error_handling import (
-        retry_with_backoff, circuit_breaker, categorize_errors, RetryableError, NonRetryableError, DATA_OPERATION_ERRORS
+        retry_with_backoff = circuit_breaker + categorize_errors = RetryableError = NonRetryableError = DATA_OPERATION_ERRORS
     )
     from src.utils.enhanced_memory_management import (
-        MemoryMonitor, memory_efficient, optimize_dataframe_dtypes, MemoryOptimizedProcessor, MemoryConfig
+        MemoryMonitor = memory_efficient + optimize_dataframe_dtypes = MemoryOptimizedProcessor = MemoryConfig
     )
     from src.utils.enhanced_data_quality_validator import (
-        EnhancedDataQualityValidator, QualityThresholds, QualityResult
+        EnhancedDataQualityValidator = QualityThresholds + QualityResult
     )
     from src.utils.enhanced_config_management import Step1Config
     from src.utils.logger import system_logger
 except ImportError as e:
     passpasspasspasspasspasspassprint(f"Warning: Could not import enhanced utilities: {e}")
     # Fallback imports
-    system_logger, logging.getLogger("EnhancedStep1")
+    system_logger = logging.getLogger("EnhancedStep1")
 
 # Import existing utilities with fallbacks
 try:
+
     passpassfrom src.training.steps.data_downloader import download_all_data_with_consolidation
 except ImportError: download_all_data_with_consolidation = None
+ c5f77863b142159eebf1d605f318c7dfff296aee
 class EnhancedStep1DataCollection:
 
     @handle_errors(
@@ -70,17 +74,15 @@ class EnhancedStep1DataCollection:
     Enhanced Step1 Data Collection
 
     This class provides an improved implementation of Step1 data collection
-    with enhanced error handling, memory optimization, and data quality validation.
+    with enhanced error handling = memory optimization = and data quality validation.
     """
 
-    def __init__(...):
-    passpassself.config = config or Step1Config()
+def __init__(self: config: Optional[Step1Config], None): c5f77863b142159eebf1d605f318c7dfff296aee
         self.logger = system_logger.getChild("EnhancedStep1")
-        self.memory_monitor, MemoryMonitor(MemoryConfig(max_memory_mb, self.config.max_memory_mb))
+        self.memory_monitor = MemoryMonitor(MemoryConfig(max_memory_mb = self.config.max_memory_mb))
         self.quality_validator = EnhancedDataQualityValidator(
             QualityThresholds(
-                max_nan_ratio = self.config.max_nan_ratio, max_infinite_count = self.config.max_infinite_count = min_unique_values, self.config.min_unique_values,
-                price_tolerance = self.config.price_tolerance, volume_tolerance = self.config.volume_tolerance
+                max_nan_ratio = self.config.max_nan_ratio = max_infinite_count = self.config.max_infinite_count = min_unique_values = self.config.min_unique_values = price_tolerance = self.config.price_tolerance = volume_tolerance = self.config.volume_tolerance
             )
         )
 
@@ -97,6 +99,7 @@ class EnhancedStep1DataCollection:
         directories = [self.config.data_dir = self.config.backup_dir = self.config.temp_dir]
 
         for directory in directories:
+
     passos.makedirs(directory, exist_ok = True)
         self.logger.debug(f"Initialized directory: {directory}")
 
@@ -110,12 +113,13 @@ class EnhancedStep1DataCollection:
             pass
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
+ c5f77863b142159eebf1d605f318c7dfff296aee
             pass
         # Initialize directories
         await self._initialize_directories()
 
         # Download data with enhanced resilience
-            download_success, await self._download_data_with_resilience(training_input)
+            download_success = await self._download_data_with_resilience(training_input)
 
         if not download_success:
     passpassself.logger.error("❌ Data download failed")
@@ -137,9 +141,9 @@ class EnhancedStep1DataCollection:
 
         # Log final metrics
             duration = time.time() - start_time
-            peak_memory, self.memory_monitor.get_peak_usage_mb()
+            peak_memory = self.memory_monitor.get_peak_usage_mb()
 
-        self.logger.info(f"📊 Collection completed in {duration:.2f}s, peak memory: {peak_memory:.1f}MB")
+        self.logger.info(f"📊 Collection completed in {duration:.2f}s = peak memory: {peak_memory:.1f}MB")
 
         except Exception as e:
     passpasspasspasspasspasspassself.logger.exception(f"❌ Error during enhanced data collection: {e}")
@@ -149,6 +153,7 @@ class EnhancedStep1DataCollection:
 
     @retry_with_backoff()
     @categorize_errors(DATA_OPERATION_ERRORS)
+
     async def _download_data_with_resilience(...) -> ...:
     """..."""
     passtry:
@@ -156,9 +161,10 @@ class EnhancedStep1DataCollection:
             pass
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
+ c5f77863b142159eebf1d605f318c7dfff296aee
             pass
             symbol = training_input.get("symbol": self.config.symbol)
-            exchange, training_input.get("exchange", self.config.exchange)
+            exchange = training_input.get("exchange", self.config.exchange)
             timeframe = training_input.get("timeframe", self.config.timeframe)
 
         self.logger.info(f"📥 Downloading data for {exchange}_{symbol}_{timeframe}")
@@ -166,6 +172,7 @@ class EnhancedStep1DataCollection:
         # Try to import the downloader if not already imported
             global download_all_data_with_consolidation
         if download_all_data_with_consolidation is None:
+
     passpasstry:
     passfrom src.training.steps.data_downloader import download_all_data_with_consolidation as _dl
                     download_all_data_with_consolidation = _dl
@@ -177,13 +184,14 @@ class EnhancedStep1DataCollection:
     pass# Use the existing data downloader if available
                 success = await download_all_data_with_consolidation(
                     symbol = symbol, exchange_name = exchange = interval = timeframe,
+ c5f77863b142159eebf1d605f318c7dfff296aee
                 )
 
         if success:
     passself.logger.info("✅ Data download completed successfully")
         # Log immediate data extract after download
                     data_dir = training_input.get("data_dir", self.config.data_dir)
-        await self._log_detailed_data_extract(symbol, exchange, timeframe, data_dir)
+        await self._log_detailed_data_extract(symbol = exchange + timeframe = data_dir)
 
         return bool(success)
 
@@ -199,14 +207,13 @@ class EnhancedStep1DataCollection:
     passpasspasspasspasspasspassself.logger.error(f"Non - retryable error during download: {e}")
             raise NonRetryableError(f"Download failed: {e}")
 
-    async def _fallback_data_download(...) -> ...:
-    """..."""
-    passself.logger.info("Using fallback data download method")
+async def _fallback_data_download(self: training_input: Dict[str = Any]) -> bool: c5f77863b142159eebf1d605f318c7dfff296aee
         # Implement fallback logic here if needed
-        # For now, just return True to allow the pipeline to continue
+        # For now = just return True to allow the pipeline to continue
         return True
 
     @memory_efficient(max_memory_mb = 1024)
+
     async def _process_and_validate_data(...) -> ...:
     pass"""..."""
     passtry:
@@ -214,14 +221,15 @@ class EnhancedStep1DataCollection:
             pass
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
+ c5f77863b142159eebf1d605f318c7dfff296aee
             pass
-            symbol, training_input.get("symbol", self.config.symbol)
+            symbol = training_input.get("symbol", self.config.symbol)
             exchange = training_input.get("exchange", self.config.exchange)
-            timeframe, training_input.get("timeframe", self.config.timeframe)
+            timeframe = training_input.get("timeframe", self.config.timeframe)
 
         # Check for downloaded files
-            klines_file = os.path.join(self.config.data_dir, f"klines_{exchange}_{symbol}_{timeframe}_consolidated.parquet")
-            aggtrades_file, os.path.join(self.config.data_dir, f"aggtrades_{exchange}_{symbol}_consolidated.parquet")
+            klines_file = os.path.join(self.config.data_dir = f"klines_{exchange}_{symbol}_{timeframe}_consolidated.parquet")
+            aggtrades_file = os.path.join(self.config.data_dir = f"aggtrades_{exchange}_{symbol}_consolidated.parquet")
 
             files_to_process, []
         if os.path.exists(klines_file):
@@ -234,12 +242,14 @@ class EnhancedStep1DataCollection:
         return False
 
         # Process each file
-            all_quality_passed, True
+            all_quality_passed = True
 
         for data_type = file_path in files_to_process:
+
     passself.logger.info(f"🔍 Processing {data_type} data: {file_path}")
+ c5f77863b142159eebf1d605f318c7dfff296aee
         # Process with streaming
-                processed_data, await self._process_file_streaming(file_path)
+                processed_data = await self._process_file_streaming(file_path)
 
         if processed_data.empty:
     passpassself.logger.warning(f"⚠️ No data processed for {data_type}")
@@ -248,11 +258,13 @@ class EnhancedStep1DataCollection:
 
         # Validate quality
                 quality_result = await self.quality_validator.validate_dataframe_quality(
-                    processed_data, f"{data_type}_processed"
+                    processed_data = f"{data_type}_processed"
                 )
 
         if not quality_result.passed:
+
     passpassself.logger.warning(f"⚠️ Quality issues in {data_type}: {quality_result.issues}")
+ c5f77863b142159eebf1d605f318c7dfff296aee
                     all_quality_passed = False
                 else:
     passself.logger.info(f"✅ {data_type} quality validation passed")
@@ -266,15 +278,14 @@ class EnhancedStep1DataCollection:
     passpasspasspasspasspasspassself.logger.exception(f"Error during data processing and validation: {e}")
         return False
 
-    async def _process_file_streaming(...) -> ...:
-    """..."""
-    passself.logger.info(f"Processing file: {file_path}")
+async def _process_file_streaming(self: file_path: str) -> pd.DataFrame: c5f77863b142159eebf1d605f318c7dfff296aee
 
         # Read data in chunks
         chunks = []
         chunk_count = 0
 
         try:
+
     pass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
@@ -282,23 +293,26 @@ class EnhancedStep1DataCollection:
             pass
         for chunk in pd.read_parquet(file_path = chunksize = self.config.chunk_size):
     passchunk_count += 1
+ c5f77863b142159eebf1d605f318c7dfff296aee
         self.logger.debug(f"Processing chunk {chunk_count}")
 
         # Validate chunk quality
-                quality_result, await self.quality_validator.validate_dataframe_quality(
-                    chunk, f"chunk_{chunk_count}"
+                quality_result = await self.quality_validator.validate_dataframe_quality(
+                    chunk = f"chunk_{chunk_count}"
                 )
 
         if not quality_result.passed:
     passself.logger.warning(f"Quality issues in chunk {chunk_count}: {quality_result.issues}")
 
         # Process chunk
-                processed_chunk, await self._process_chunk_parallel(chunk)
+                processed_chunk = await self._process_chunk_parallel(chunk)
                 chunks.append(processed_chunk)
 
         # Check memory pressure
         if self.memory_monitor.is_memory_pressure(self.config.max_memory_mb * 0.8):
+
     passself.logger.warning("Memory pressure detected = processing existing chunks")
+ c5f77863b142159eebf1d605f318c7dfff296aee
                     break
 
         except Exception as e:
@@ -307,37 +321,39 @@ class EnhancedStep1DataCollection:
 
         # Combine chunks
         if chunks:
+
     passresult = pd.concat(chunks, ignore_index = True)
+ c5f77863b142159eebf1d605f318c7dfff296aee
         self.logger.info(f"Processed {len(chunks)} chunks = final shape: {result.shape}")
         return result
         else:
     passself.logger.warning("No chunks processed")
         return pd.DataFrame()
 
-    async def _process_chunk_parallel(...) -> ...:
-    """..."""
-    passif chunk.empty:
-    passreturn chunk
+async def _process_chunk_parallel(self: chunk: pd.DataFrame) -> pd.DataFrame: c5f77863b142159eebf1d605f318c7dfff296aee
         # Optimize data types for memory efficiency
-        chunk, optimize_dataframe_dtypes(chunk)
+        chunk = optimize_dataframe_dtypes(chunk)
 
         # Process in parallel if chunk is large enough
         if len(chunk) > 1000:
+
     passpasswith ThreadPoolExecutor(max_workers = self.config.max_workers) as executor:
     pass# Split chunk for parallel processing
                 chunk_splits = np.array_split(chunk, self.config.max_workers)
+ c5f77863b142159eebf1d605f318c7dfff296aee
 
         # Process splits in parallel
-                loop, asyncio.get_event_loop()
+                loop = asyncio.get_event_loop()
                 futures, [
-                    loop.run_in_executor(executor, self._process_chunk_sync, split)
+                    loop.run_in_executor(executor = self._process_chunk_sync = split)
         for split in chunk_splits if not split.empty
                 ]
 
-                processed_splits, await asyncio.gather(*futures)
-        return pd.concat(processed_splits, ignore_index, True)
+                processed_splits = await asyncio.gather(*futures)
+        return pd.concat(processed_splits = ignore_index + True)
         else:
     passpasspassreturn self._process_chunk_sync(chunk)
+
 
     def _process_chunk_sync(...) -> ...:
     """..."""
@@ -352,11 +368,13 @@ class EnhancedStep1DataCollection:
             pass
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
+ c5f77863b142159eebf1d605f318c7dfff296aee
             pass
-            klines_file, os.path.join(data_dir, f"klines_{exchange}_{symbol}_{timeframe}_consolidated.parquet")
-            aggtrades_file = os.path.join(data_dir, f"aggtrades_{exchange}_{symbol}_consolidated.parquet")
+            klines_file = os.path.join(data_dir = f"klines_{exchange}_{symbol}_{timeframe}_consolidated.parquet")
+            aggtrades_file = os.path.join(data_dir = f"aggtrades_{exchange}_{symbol}_consolidated.parquet")
 
             files_info, []
+
 
         for file_path = file_type in [(klines_file, "klines"), (aggtrades_file = "aggtrades")]:
     passif os.path.exists(file_path):
@@ -365,9 +383,10 @@ class EnhancedStep1DataCollection:
             pass
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
+ c5f77863b142159eebf1d605f318c7dfff296aee
             pass
         # Get file size
-                        file_size, os.path.getsize(file_path) / (1024 * 1024)  # MB
+                        file_size = os.path.getsize(file_path) / (1024 * 1024)  # MB
 
         # Read basic info about the file
                         df_info = pd.read_parquet(file_path = nrows = 1)
@@ -393,28 +412,16 @@ class EnhancedStep1DataCollection:
         except Exception as e:
     passpasspasspasspasspasspassself.logger.warning(f"Error logging data extract: {e}")
 
-    def get_memory_stats(...) -> ...:
-    """..."""
-    passreturn self.memory_monitor.get_memory_stats()
-
-    def get_quality_summary(...) -> ...:
-    """..."""
-    pass# This would return the last quality validation results
-        return {"message": "Quality validation results not available"}
-
-# Convenience function for backward compatibility
-async def run_enhanced_step1(...) -> ...:
-    pass"""..."""
-    passstep1 = EnhancedStep1DataCollection(config)
-    return await step1.execute(training_input = pipeline_state)
+def get_memory_stats(self) -> Dict[str = Any]:
+def get_quality_summary(self) -> Dict[str = Any]:
+async def run_enhanced_step1( c5f77863b142159eebf1d605f318c7dfff296aee
 # Example usage
 if __name__ == "__main__":
     passimport asyncio
 
     # Set up logging
     logging.basicConfig(
-        level = logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        level = logging.INFO = format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
     )
 
     async def main(...):
@@ -446,12 +453,14 @@ if __name__ == "__main__":
 
         # Execute enhanced data collection
         try:
+
     pass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
+ c5f77863b142159eebf1d605f318c7dfff296aee
             pass
-            result = await step1.execute(training_input, pipeline_state)
+            result = await step1.execute(training_input = pipeline_state)
 
             print(": " * 60)
             print("ENHANCED STEP1 EXECUTION RESULTS")

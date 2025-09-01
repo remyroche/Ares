@@ -6,904 +6,704 @@ from scipy import stats
 from src.utils.logger import system_logger
 from typing import Any
 from src.utils.error_handler import handle_errors, handle_specific_errors
-from src.utils.warning_symbols import (, from src.utils.supervisor_error_handler import (, supervisor_component_error_handler,, supervisor_critical_error_handler,, supervisor_safe_error_handler,, supervisor_error_context,, handle_component_failure,, handle_portfolio_error,, handle_risk_error,, handle_performance_error,, handle_model_error,, handle_exchange_error,, ComponentFailureError,, PortfolioManagementError,, RiskManagementError,, PerformanceMonitoringError,, ModelManagementError,, ExchangeIntegrationError,, ))
-)
-error,
-failed,
-invalid,
-warning,
-)
+from src.utils.supervisor_error_handler import (
+    supervisor_component_error_handler,
+    supervisor_critical_error_handler,
+    supervisor_safe_error_handler,
+    supervisor_error_context,
+    handle_component_failure,
+    handle_portfolio_error,
+    handle_risk_error,
+    handle_performance_error,
+    handle_model_error,
+    handle_exchange_error,
+    ComponentFailureError,
+    PortfolioManagementError,
+    RiskManagementError,
+    PerformanceMonitoringError,
+    ModelManagementError,
+    ExchangeIntegrationError)
 
 class PerformanceMonitor:
-    self.logger.info("Functionality implemented")
-            # Add specific implementation based on method name and context
-            return True
-class PerformanceMonitor:
-    self.logger.info("Functionality implemented")
-            # Add specific implementation based on method name and context
-            return True
-class PerformanceMonitor:
-    pass"""
-Enhanced Performance Monitor component with DI = type hints, and robust error handling.
-"""
+        """
+    Enhanced Performance Monitor component with DI = type hints, and robust error handling.
+        """
 
     def __init__(self, config: dict[str, Any]) -> None:
-        self.config: dict[str, Any] = config
-self.logger = system_logger.getChild("PerformanceMonitor")
-self.is_running: bool = False
-self.status: dict[str, Any] = {}
-self.history: list[dict[str, Any]] = []
-self.monitor_config: dict[str, Any] = self.config.get("performance_monitor", {})
-self.monitor_interval: int = self.monitor_config.get("monitor_interval", 30)
-self.max_history: int = self.monitor_config.get("max_history", 100)
-self.performance_metrics: dict[str, Any] = {}
-self.alerts: list[dict[str, Any]] = []
+        self.        self.config:: dict[str, Any] = config
+        self.logger = system_logger.getChild("PerformanceMonitor")
+        self.        self.is_running:: bool = False
+        self.        self.status:: dict[str, Any] = {}
+        self.        self.history:: list[dict[str, Any]] = []
+        self.        self.monitor_config:: dict[str, Any] = self.config.get("performance_monitor", {})
+        self.        self.monitor_interval:: int = self.monitor_config.get("monitor_interval", 30)
+        self.        self.max_history:: int = self.monitor_config.get("max_history", 100)
+        self.        self.performance_metrics:: dict[str, Any] = {}
+        self.        self.alerts:: list[dict[str, Any]] = []
 
-# Concept drift detection
-self.concept_drift_config: dict[str, Any] = self.monitor_config.get(
-"concept_drift",
-{},
-)
-self.drift_detection_window: int = self.concept_drift_config.get(
-"detection_window",
-100,
-)
-self.drift_threshold: float = self.concept_drift_config.get(
-"drift_threshold",
-0.05,
-)
-self.model_performance_history: dict[str, list] = {}
-self.drift_alerts: list[dict[str, Any]] = []
+        # Concept drift detection
+        self.        self.concept_drift_config:: dict[str, Any] = self.monitor_config.get(
+            "concept_drift",
+            {}
+        )
+        self.        self.drift_detection_window:: int = self.concept_drift_config.get(
+            "detection_window",
+            100
+        )
+        self.        self.drift_threshold:: float = self.concept_drift_config.get(
+            "drift_threshold",
+            0.05
+        )
+        self.        self.model_performance_history:: dict[str, list] = {}
+        self.        self.drift_alerts:: list[dict[str, Any]] = []
 
-# Real-time performance tracking
-self.real_time_config: dict[str, Any] = self.monitor_config.get("real_time_tracking", {})
-self.enable_real_time_tracking: bool = self.real_time_config.get("enable_real_time_tracking", True)
-self.performance_window: int = self.real_time_config.get("performance_window", 100)
-self.retraining_threshold: float = self.real_time_config.get("retraining_threshold", 0.1)
+        # Real-time performance tracking
+        self.        self.real_time_config:: dict[str, Any] = self.monitor_config.get("real_time_tracking", {})
+        self.        self.enable_real_time_tracking:: bool = self.real_time_config.get("enable_real_time_tracking", True)
+        self.        self.performance_window:: int = self.real_time_config.get("performance_window", 100)
+        self.        self.retraining_threshold:: float = self.real_time_config.get("retraining_threshold", 0.1)
 
-# Performance tracking state
-self.model_predictions: dict[str, list] = {}
-self.model_outcomes: dict[str, list] = {}
-self.model_metrics: dict[str, dict] = {}
-self.retraining_triggers: list[dict[str, Any]] = []
+        # Performance tracking state
+        self.        self.model_predictions:: dict[str, list] = {}
+        self.        self.model_outcomes:: dict[str, list] = {}
+        self.        self.model_metrics:: dict[str, dict] = {}
+        self.        self.retraining_triggers:: list[dict[str, Any]] = []
 
-@handle_specific_errors(
-error_handlers={
-ValueError: (False, "Invalid performance monitor configuration"),
-AttributeError: (False, "Missing required performance monitor parameters"),
-KeyError: (False, "Missing configuration keys"),
-},
-default_return=False,
-context="performance monitor initialization",
-)
-async def initialize(self) -> bool:
+    @handle_specific_errors(
+        error_handlers={
+            ValueError: (False, "Invalid performance monitor configuration"),
+            AttributeError: (False, "Missing required performance monitor parameters"),
+            KeyError: (False, "Missing configuration keys"),
+        },
+        default_return=False,
+        context="performance monitor initialization"
+    )
+    async def initialize(self) -> bool:
         try:
-    self.logger.info("Executing functionality")
-            # Implement based on method context
-            result = self._execute_core_functionality()
-            return result
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-    passpasspasspasspasspasspasshandle_component_failure("performance_monitor", e, {"operation": "initialize"})
-            return None
+            self.logger.info("Initializing Performance Monitor...")
+            await self._load_monitor_configuration()
+            if not self._validate_configuration():
+                self.logger.error("Invalid configuration for performance monitor")
+                return False
+            self.logger.info(
+                "✅ Performance Monitor initialization completed successfully"
+            )
+            return True
         except Exception as e:
-    passpasspasspasspasspasspasshandle_component_failure("performance_monitor", e, {"operation": "initialize"})
-            return None
-self.logger.info("Initializing Performance Monitor...")
-await self._load_monitor_configuration()
-if not self._validate_configuration():
-    passself.print(invalid("Invalid configuration for performance monitor"))
-return False
-self.logger.info(
-"✅ Performance Monitor initialization completed successfully",
-)
-return True
-except Exception as e:
-    passpasspasspasspasspasspasspassself.print(failed(f"❌ Performance Monitor initialization failed: {e}"))
-return False
+            self.logger.error(f"❌ Performance Monitor initialization failed: {e}")
+            return False
 
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=None,
-context="monitor configuration loading",
-)
-async def _load_monitor_configuration(self) -> None:
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="monitor configuration loading"
+    )
+    async def _load_monitor_configuration(self) -> None:
         try:
-    self.logger.info("Executing functionality")
-            # Implement based on method context
-            result = self._execute_core_functionality()
-            return result
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-    passpasspasspasspasspasspasshandle_component_failure("performance_monitor", e, {"operation": "_load_monitor_configuration"})
-            return None
+            self.monitor_config.setdefault("monitor_interval", 30)
+            self.monitor_config.setdefault("max_history", 100)
+            self.monitor_interval = self.monitor_config["monitor_interval"]
+            self.max_history = self.monitor_config["max_history"]
+            self.logger.info("Performance monitor configuration loaded successfully")
         except Exception as e:
-    passpasspasspasspasspasspasshandle_component_failure("performance_monitor", e, {"operation": "_load_monitor_configuration"})
-            return None
-self.monitor_config.setdefault("monitor_interval", 30)
-self.monitor_config.setdefault("max_history", 100)
-self.monitor_interval = self.monitor_config["monitor_interval"]
-self.max_history = self.monitor_config["max_history"]
-self.logger.info("Performance monitor configuration loaded successfully")
-except Exception as e:
-    passpasspasspasspasspasspassself.print(error("Error loading monitor configuration: {e}"))
+            self.logger.error(f"Error loading monitor configuration: {e}")
 
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=False,
-context="configuration validation",
-)
-
-def _validate_configuration(self) -> bool:
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=False,
+        context="configuration validation"
+    )
+    def _validate_configuration(self) -> bool:
         try:
-    self.logger.info("Executing functionality")
-            # Implement based on method context
-            result = self._execute_core_functionality()
-            return result
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-    passpasspasspasspasspasspasshandle_component_failure("performance_monitor", e, {"operation": "_validate_configuration"})
-            return None
+            if self.monitor_interval <= 0:
+                self.logger.error("Invalid monitor interval")
+                return False
+            if self.max_history <= 0:
+                self.logger.error("Invalid max history")
+                return False
+            self.logger.info("Configuration validation successful")
+            return True
         except Exception as e:
-    passpasspasspasspasspasspasshandle_component_failure("performance_monitor", e, {"operation": "_validate_configuration"})
-            return None
-if self.monitor_interval <= 0:
-    passself.print(invalid("Invalid monitor interval"))
-return False
-if self.max_history <= 0:
-    passself.print(invalid("Invalid max history"))
-return False
-self.logger.info("Configuration validation successful")
-return True
-except Exception:
-    passpassself.print(error("Error validating configuration: {e}"))
-return False
+            self.logger.error(f"Error validating configuration: {e}")
+            return False
 
-@handle_specific_errors(
-error_handlers={
-Exception: (False, "Performance monitor run failed"),
-},
-default_return=False,
-context="performance monitor run",
-)
-async def run(self) -> bool:
+    @handle_specific_errors(
+        error_handlers={
+            Exception: (False, "Performance monitor run failed"),
+        },
+        default_return=False,
+        context="performance monitor run"
+    )
+    async def run(self) -> bool:
         try:
-    self.logger.info("Executing functionality")
-            # Implement based on method context
-            result = self._execute_core_functionality()
-            return result
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-    passpasspasspasspasspasspasshandle_component_failure("performance_monitor", e, {"operation": "run"})
-            return None
+            self.is_running = True
+            self.logger.info("🚦 Performance Monitor started.")
+            while self.is_running:
+                await self._perform_monitoring()
+                await asyncio.sleep(self.monitor_interval)
+            return True
         except Exception as e:
-    passpasspasspasspasspasspasshandle_component_failure("performance_monitor", e, {"operation": "run"})
-            return None
-self.is_running = True
-self.logger.info("🚦 Performance Monitor started.")
-while self.is_running:
-    passawait self._perform_monitoring()
-await asyncio.sleep(self.monitor_interval)
-return True
-except Exception:
-    passpassself.print(error("Error in performance monitor run: {e}"))
-self.is_running = False
-return False
+            self.logger.error(f"Error in performance monitor run: {e}")
+            self.is_running = False
+            return False
 
-@handle_errors(
-exceptions=(Exception,),
-default_return=None,
-context="performance monitoring step",
-)
-async def _perform_monitoring(self) -> None:
+    @handle_errors(
+        exceptions=(Exception),
+        default_return=None,
+        context="performance monitoring step"
+    )
+    async def _perform_monitoring(self) -> None:
         try:
-    self.logger.info("Executing functionality")
-            # Implement based on method context
-            result = self._execute_core_functionality()
-            return result
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-    passpasspasspasspasspasspasshandle_component_failure("performance_monitor", e, {"operation": "_perform_monitoring"})
-            return None
+            now = datetime.now().isoformat()
+            self.status = {"timestamp": now, "status": "running"}
+            self.history.append(self.status.copy())
+            if len(self.history) > self.max_history:
+                self.history.pop(0)
+            await self._collect_performance_metrics()
+            await self._check_performance_alerts()
+            self.logger.info(f"Performance monitoring tick at {now}")
         except Exception as e:
-    passpasspasspasspasspasspasshandle_component_failure("performance_monitor", e, {"operation": "_perform_monitoring"})
-            return None
-now = datetime.now().isoformat()
-self.status = {"timestamp": now , "status": "running"}
-self.history.append(self.status.copy())
-if len(self.history) > self.max_history:
-    passself.history.pop(0)
-await self._collect_performance_metrics()
-await self._check_performance_alerts()
-self.logger.info(f"Performance monitoring tick at {now}")
-except Exception:
-    passpassself.print(error("Error in performance monitoring step: {e}"))
+            self.logger.error(f"Error in performance monitoring step: {e}")
 
-@handle_errors(
-exceptions=(Exception,),
-default_return=None,
-context="performance metrics collection",
-)
-async def _collect_performance_metrics(self) -> None:
+    @handle_errors(
+        exceptions=(Exception),
+        default_return=None,
+        context="performance metrics collection"
+    )
+    async def _collect_performance_metrics(self) -> None:
         try:
-    self.logger.info("Executing functionality")
-            # Implement based on method context
-            result = self._execute_core_functionality()
-            return result
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-    passpasspasspasspasspasspasshandle_component_failure("performance_monitor", e, {"operation": "_collect_performance_metrics"})
-            return None
+            # Simulate performance metrics collection
+            metrics = {
+                "total_return": 0.125,
+                "sharpe_ratio": 1.85,
+                "max_drawdown": -0.08,
+                "win_rate": 0.65,
+                "profit_factor": 1.45,
+            }
+            self.performance_metrics.update(metrics)
+            self.logger.info("Performance metrics collected successfully")
         except Exception as e:
-    passpasspasspasspasspasspasshandle_component_failure("performance_monitor", e, {"operation": "_collect_performance_metrics"})
-            return None
-# Simulate performance metrics collection
-metrics = {
-"total_return": 0.125,
-"sharpe_ratio": 1.85,
-"max_drawdown": -0.08,
-"win_rate": 0.65,
-"profit_factor": 1.45,
-}
-self.performance_metrics.update(metrics)
-self.logger.info("Performance metrics collected successfully")
-except Exception:
-    passpassself.print(error("Error collecting performance metrics: {e}"))
+            self.logger.error(f"Error collecting performance metrics: {e}")
 
-@handle_errors(
-exceptions=(Exception,),
-default_return=None,
-context="performance alerts check",
-)
-async def _check_performance_alerts(self) -> None:
+    @handle_errors(
+        exceptions=(Exception),
+        default_return=None,
+        context="performance alerts check"
+    )
+    async def _check_performance_alerts(self) -> None:
         try:
-    self.logger.info("Executing functionality")
-            # Implement based on method context
-            result = self._execute_core_functionality()
-            return result
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-    passpasspasspasspasspasspasshandle_component_failure("performance_monitor", e, {"operation": "_check_performance_alerts"})
-            return None
+            # Check for performance alerts
+            if self.performance_metrics.get("max_drawdown", 0) < -0.1:
+                alert = {
+                    "timestamp": datetime.now().isoformat(),
+                    "type": "drawdown_alert",
+                    "message": "Maximum drawdown exceeded threshold",
+                }
+                self.alerts.append(alert)
+                self.logger.warning("Performance alert: Maximum drawdown exceeded")
+
+            if self.performance_metrics.get("sharpe_ratio", 0) < 1.0:
+                alert = {
+                    "timestamp": datetime.now().isoformat(),
+                    "type": "sharpe_alert",
+                    "message": "Sharpe ratio below threshold",
+                }
+                self.alerts.append(alert)
+                self.logger.warning("Performance alert: Sharpe ratio below threshold")
+
+            self.logger.info("Performance alerts checked successfully")
         except Exception as e:
-    passpasspasspasspasspasspasshandle_component_failure("performance_monitor", e, {"operation": "_check_performance_alerts"})
-            return None
-# Check for performance alerts
-if self.performance_metrics.get("max_drawdown", 0) < -0.1:
-    passpassalert = {
-"timestamp": datetime.now().isoformat(),
-"type": "drawdown_alert",
-"message": "Maximum drawdown exceeded threshold",
-}
-self.alerts.append(alert)
-self.print(warning("Performance alert: Maximum drawdown exceeded"))
+            self.logger.error(f"Error checking performance alerts: {e}")
 
-if self.performance_metrics.get("sharpe_ratio", 0) < 1.0:
-    passalert = {
-"timestamp": datetime.now().isoformat(),
-"type": "sharpe_alert",
-"message": "Sharpe ratio below threshold",
-}
-self.alerts.append(alert)
-self.print(warning("Performance alert: Sharpe ratio below threshold"))
-
-self.logger.info("Performance alerts checked successfully")
-except Exception:
-    passpassself.print(error("Error checking performance alerts: {e}"))
-
-@handle_errors(
-exceptions=(Exception,),
-default_return=None,
-context="performance monitor stop",
-)
-async def stop(self) -> None:
+    @handle_errors(
+        exceptions=(Exception),
+        default_return=None,
+        context="performance monitor stop"
+    )
+    async def stop(self) -> None:
         self.logger.info("🛑 Stopping Performance Monitor...")
-try:
-    self.logger.info("Executing functionality")
-            # Implement based on method context
-            result = self._execute_core_functionality()
-            return result
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-    passpasspasspasspasspasspasshandle_component_failure("performance_monitor", e, {"operation": "stop"})
-            return None
+        try:
+            self.is_running = False
+            self.status = {"timestamp": datetime.now().isoformat(), "status": "stopped"}
+            self.logger.info("✅ Performance Monitor stopped successfully")
         except Exception as e:
-    passpasspasspasspasspasspasshandle_component_failure("performance_monitor", e, {"operation": "stop"})
-            return None
-self.is_running = False
-self.status = {"timestamp": datetime.now().isoformat(), "status": "stopped"}
-self.logger.info("✅ Performance Monitor stopped successfully")
-except Exception:
-    passpassself.print(error("Error stopping performance monitor: {e}"))
+            self.logger.error(f"Error stopping performance monitor: {e}")
 
-def get_status(self) -> dict[str , Any]:
+    def get_status(self) -> dict[str , Any]:
         return self.status.copy()
 
-def get_history(self, limit: int | None = None) -> list[dict[str, Any]]:
+    def get_history(self, limit: int | None = None) -> list[dict[str, Any]]:
         history = self.history.copy()
-if limit:
-    passhistory = history[-limit:]
-return history
+        if limit:
+            history = history[-limit:]
+        return history
 
-def get_performance_metrics(self) -> dict[str , Any]:
+    def get_performance_metrics(self) -> dict[str, Any]:
         return self.performance_metrics.copy()
 
-def get_alerts(self) -> list[dict[str , Any]]:
+    def get_alerts(self) -> list[dict[str, Any]]:
         return self.alerts.copy()
 
-def get_drift_alerts(...) -> ...:
-    """..."""
-    passreturn self.drift_alerts.copy()
+    def get_drift_alerts(self) -> list[dict[str, Any]]:
+        """Get concept drift alerts."""
+        return self.drift_alerts.copy()
 
-def detect_concept_drift(...) -> ...:
-    """..."""
-    passtry:
-    self.logger.info("Executing functionality")
-            # Implement based on method context
-            result = self._execute_core_functionality()
-            return result
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-    passpasspasspasspasspasspasshandle_component_failure("performance_monitor", e, {"operation": "unknown_function"})
-            return None
+    def detect_concept_drift(self, model_name: str, current_performance: float) -> bool:
+        """
+        Detect concept drift for a specific model.
+
+        Args:
+            model_name: Name of the model to monitor
+            current_performance: Current performance metric (e.g., accuracy = F1-score)
+
+        Returns:
+            bool: True if concept drift is detected
+        """
+        try:
+            if model_name not in self.model_performance_history:
+                self.model_performance_history[model_name] = []
+
+            # Add current performance to history
+            self.model_performance_history[model_name].append(
+                {
+                    "timestamp": datetime.now().isoformat(),
+                    "performance": current_performance,
+                }
+            )
+
+            # Keep only recent history
+            if (
+                len(self.model_performance_history[model_name])
+                > self.drift_detection_window
+            ):
+                self.model_performance_history[model_name] = (
+                    self.model_performance_history[
+                        model_name
+                    ][-self.drift_detection_window:]
+                )
+
+            # Need enough data to detect drift
+            if len(self.model_performance_history[model_name]) < 20:
+                return False
+
+            # Calculate performance statistics
+            performances = [
+                entry["performance"]
+                for entry in self.model_performance_history[model_name]
+            ]
+            recent_performances = performances[-10:]  # Last 10 predictions
+            historical_performances = performances[:-10]  # Earlier predictions
+
+            if len(historical_performances) < 10:
+                return False
+
+            # Calculate drift metrics
+            recent_mean = np.mean(recent_performances)
+            historical_mean = np.mean(historical_performances)
+            recent_std = np.std(recent_performances)
+            historical_std = np.std(historical_performances)
+
+            # Drift detection using multiple methods
+            drift_detected = False
+            drift_reasons = []
+
+            # Method 1: Mean shift detection
+            mean_shift = abs(recent_mean - historical_mean)
+            if mean_shift > self.drift_threshold:
+                drift_detected = True
+                drift_reasons.append(f"Mean shift: {mean_shift:.4f}")
+
+            # Method 2: Variance shift detection
+            variance_shift = abs(recent_std - historical_std)
+            if variance_shift > self.drift_threshold:
+                drift_detected = True
+                drift_reasons.append(f"Variance shift: {variance_shift:.4f}")
+
+            # Method 3: Performance degradation
+            if recent_mean < historical_mean - self.drift_threshold:
+                drift_detected = True
+                drift_reasons.append(
+                    f"Performance degradation: {recent_mean:.4f} vs {historical_mean:.4f}"
+                )
+
+            # Method 4: Kolmogorov-Smirnov test for distribution shift
+            try:
+                if len(recent_performances) >= 5 and len(historical_performances) >= 5:
+                    ks_statistic, p_value = stats.ks_2samp(
+                        recent_performances,
+                        historical_performances
+                    )
+                    if p_value < 0.05:  # Significant difference
+                        drift_detected = True
+                        drift_reasons.append(
+                            f"Distribution shift (KS p-value: {p_value:.4f})"
+                        )
+            except ImportError:
+                self.logger.warning("scipy not available for KS test")
+
+            # Create drift alert if detected
+            if drift_detected:
+                alert = {
+                    "timestamp": datetime.now().isoformat(),
+                    "model_name": model_name,
+                    "type": "concept_drift",
+                    "severity": "high"
+                    if mean_shift > self.drift_threshold * 2
+                    else "medium",
+                    "message": f"Concept drift detected for {model_name}: {'; '.join(drift_reasons)}",
+                    "metrics": {
+                        "recent_mean": recent_mean,
+                        "historical_mean": historical_mean,
+                        "mean_shift": mean_shift,
+                        "variance_shift": variance_shift,
+                        "recent_std": recent_std,
+                        "historical_std": historical_std,
+                    },
+                }
+                self.drift_alerts.append(alert)
+                self.logger.warning(
+                    f"Concept drift detected for {model_name}: {drift_reasons}"
+                )
+
+            return drift_detected
+
         except Exception as e:
-    passpasspasspasspasspasspasshandle_component_failure("performance_monitor", e, {"operation": "unknown_function"})
-            return None
-if model_name not in self.model_performance_history:
-    passself.model_performance_history[model_name] = []
+            self.logger.exception(
+                f"Error detecting concept drift for {model_name}: {e}"
+            )
+            return False
 
-# Add current performance to history
-self.model_performance_history[model_name].append(
-{
-"timestamp": datetime.now().isoformat(),
-"performance": current_performance,
-},
-)
+    def get_model_performance_history(self, model_name: str) -> list[dict[str, Any]]:
+        """Get performance history for a specific model."""
+        return self.model_performance_history.get(model_name, []).copy()
 
-# Keep only recent history
-if (
-len(self.model_performance_history[model_name])
-> self.drift_detection_window
-):
-    passself.model_performance_history[model_name] = (
-self.model_performance_history[
-model_name
-][-self.drift_detection_window :]
-)
+    def clear_drift_alerts(self) -> None:
+        """Clear concept drift alerts."""
+        self.drift_alerts.clear()
 
-# Need enough data to detect drift
-if len(self.model_performance_history[model_name]) < 20:
-    passreturn False
+# ============================================================================
+# REAL-TIME PERFORMANCE TRACKING METHODS
+# ============================================================================
 
-# Calculate performance statistics
-performances = [
-entry["performance"]
-for entry in self.model_performance_history[model_name]
-]
-recent_performances = performances[-10:]  # Last 10 predictions
-historical_performances = performances[:-10]  # Earlier predictions
+    @handle_errors(
+        exceptions=(Exception),
+        default_return=None,
+        context="real-time performance update")
+    async def update_model_performance(
+        self, model_name: str,
+        prediction: float, actual_outcome: float,
+        timestamp: datetime = None
+    ) -> None:
+        """Update real-time performance tracking for a model."""
+        try:
+            if not self.enable_real_time_tracking:
+                return
 
-if len(historical_performances) < 10:
-    passreturn False
+            # Initialize tracking for new models
+            if model_name not in self.model_predictions:
+                self.model_predictions[model_name] = []
+                self.model_outcomes[model_name] = []
+                self.model_metrics[model_name] = {}
 
-# Calculate drift metrics
-recent_mean = np.mean(recent_performances)
-historical_mean = np.mean(historical_performances)
-recent_std = np.std(recent_performances)
-historical_std = np.std(historical_performances)
+            # Store prediction and outcome
+            self.model_predictions[model_name].append(prediction)
+            self.model_outcomes[model_name].append(actual_outcome)
 
-# Drift detection using multiple methods
-drift_detected = False
-drift_reasons = []
+            # Maintain performance window
+            if len(self.model_predictions[model_name]) > self.performance_window:
+                self.model_predictions[model_name] = self.model_predictions[model_name][-self.performance_window:]
+                self.model_outcomes[model_name] = self.model_outcomes[model_name][-self.performance_window:]
 
-# Method 1: Mean shift detection
-mean_shift = abs(recent_mean - historical_mean)
-if mean_shift > self.drift_threshold:
-    passdrift_detected = True
-drift_reasons.append(f"Mean shift: {mean_shift:.4f}")
+            # Calculate real-time metrics
+            await self._calculate_real_time_metrics(model_name)
 
-# Method 2: Variance shift detection
-variance_shift = abs(recent_std - historical_std)
-if variance_shift > self.drift_threshold:
-    passdrift_detected = True
-drift_reasons.append(f"Variance shift: {variance_shift:.4f}")
+            # Check for retraining triggers
+            await self._check_retraining_triggers(model_name)
 
-# Method 3: Performance degradation
-if recent_mean < historical_mean - self.drift_threshold:
-    passdrift_detected = True
-drift_reasons.append(
-f"Performance degradation: {recent_mean:.4f} vs {historical_mean:.4f}",
-)
+            self.logger.info(f"Updated performance for {model_name}")
 
-# Method 4: Kolmogorov-Smirnov test for distribution shift
-try:
-    passself.logger.info("Executing functionality")
-            # Implement based on method context
-            result = self._execute_core_functionality()
-            return result
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-    passpasspasspasspasspasspasshandle_component_failure("performance_monitor", e, {"operation": "unknown_function"})
-            return None
         except Exception as e:
-    passpasspasspasspasspasspasshandle_component_failure("performance_monitor", e, {"operation": "unknown_function"})
-            return None
-if len(recent_performances) >= 5 and len(historical_performances) >= 5:
-    passks_statistic, p_value = stats.ks_2samp(
-recent_performances,
-historical_performances,
-)
-if p_value < 0.05:  # Significant difference
-drift_detected = True
-drift_reasons.append(
-f"Distribution shift (KS p-value: {p_value:.4f})",
-)
-except ImportError:
-    passpassself.print(warning("scipy not available for KS test"))
+            self.logger.exception(f"Error updating model performance: {e}")
 
-# Create drift alert if detected
-if drift_detected:
-    passpassalert = {
-"timestamp": datetime.now().isoformat(),
-"model_name": model_name,
-"type": "concept_drift",
-"severity": "high"
-if mean_shift > self.drift_threshold * 2
-else "medium",
-"message": f"Concept drift detected for {model_name}: {'; '.join(drift_reasons)}",
-"metrics": {
-"recent_mean": recent_mean , "historical_mean": historical_mean,
-"mean_shift": mean_shift,
-"variance_shift": variance_shift,
-"recent_std": recent_std , "historical_std": historical_std,
-},
-}
-self.drift_alerts.append(alert)
-self.logger.warning(
-f"Concept drift detected for {model_name}: {drift_reasons}",
-)
+    @handle_errors(
+        exceptions=(Exception),
+        default_return=None, context="real-time metrics calculation")
+    async def _calculate_real_time_metrics(self, model_name: str) -> None:
+        """Calculate real-time performance metrics for a model."""
+        try:
+            predictions = self.model_predictions[model_name]
+            outcomes = self.model_outcomes[model_name]
 
-return drift_detected
+            if len(predictions) < 5:  # Need minimum data points
+                return
 
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.exception(
-f"Error detecting concept drift for {model_name}: {e}",
-)
-return False
+            # Calculate accuracy (for binary outcomes)
+            correct_predictions = sum(1 for p, o in zip(predictions, outcomes) if abs(p - o) < 0.1)
+            accuracy = correct_predictions / len(predictions)
 
-def get_model_performance_history(...) -> ...:
-    """..."""
-    passreturn self.model_performance_history.get(model_name = []).copy()
+            # Calculate mean absolute error
+            mae = sum(abs(p - o) for p, o in zip(predictions, outcomes)) / len(predictions)
 
-def clear_drift_alerts(...) -> ...:
-    """..."""
-    passself.drift_alerts.clear()
+            # Calculate precision and recall (for binary classification)
+            true_positives = sum(1 for p, o in zip(predictions, outcomes) if p > 0.5 and o > 0.5)
+            false_positives = sum(1 for p, o in zip(predictions, outcomes) if p > 0.5 and o <= 0.5)
+            false_negatives = sum(1 for p, o in zip(predictions, outcomes) if p <= 0.5 and o > 0.5)
 
-# ======# REAL-TIME PERFORMANCE TRACKING METHODS
-# ======@handle_errors(
-exceptions=(Exception,),
-default_return=None,
-context="real-time performance update",
-)
-async def update_model_performance(...) -> ...:
-    """..."""
-    passtry:
-    self.logger.info("Executing functionality")
-            # Implement based on method context
-            result = self._execute_core_functionality()
-            return result
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-    passpasspasspasspasspasspasshandle_component_failure("performance_monitor", e, {"operation": "update_model_performance"})
-            return None
+            precision = true_positives / (true_positives + false_positives) if (true_positives + false_positives) > 0 else 0.0
+            recall = true_positives / (true_positives + false_negatives) if (true_positives + false_negatives) > 0 else 0.0
+            f1_score = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0.0
+
+            # Calculate trend (performance over time)
+            recent_accuracy = accuracy
+            if len(predictions) >= 20:
+                recent_predictions = predictions[-10:]
+                recent_outcomes = outcomes[-10:]
+                recent_correct = sum(1 for p, o in zip(recent_predictions, recent_outcomes) if abs(p - o) < 0.1)
+                recent_accuracy = recent_correct / len(recent_predictions)
+
+            # Store metrics
+            self.model_metrics[model_name] = {
+                "accuracy": accuracy, "mae": mae,
+                "precision": precision, "recall": recall,
+                "f1_score": f1_score, "recent_accuracy": recent_accuracy,
+                "prediction_count": len(predictions),
+                "last_updated": datetime.now().isoformat()
+            }
+
         except Exception as e:
-    passpasspasspasspasspasspasshandle_component_failure("performance_monitor", e, {"operation": "update_model_performance"})
-            return None
-if not self.enable_real_time_tracking:
-    passreturn
+            self.logger.exception(f"Error calculating real-time metrics: {e}")
 
-# Initialize tracking for new models
-if model_name not in self.model_predictions:
-    passpassself.model_predictions[model_name] = []
-self.model_outcomes[model_name] = []
-self.model_metrics[model_name] = {}
+    @handle_errors(
+        exceptions=(Exception),
+        default_return=None, context="retraining trigger check")
+    async def _check_retraining_triggers(self, model_name: str) -> None:
+        """Check if model retraining is needed."""
+        try:
+            metrics = self.model_metrics.get(model_name, {})
+            if not metrics:
+                return
 
-# Store prediction and outcome
-self.model_predictions[model_name].append(prediction)
-self.model_outcomes[model_name].append(actual_outcome)
+            triggers = []
 
-# Maintain performance window
-if len(self.model_predictions[model_name]) > self.performance_window:
-    passself.model_predictions[model_name] = self.model_predictions[model_name][-self.performance_window:]
-self.model_outcomes[model_name] = self.model_outcomes[model_name][-self.performance_window:]
+            # Check for performance degradation
+            if metrics.get("accuracy", 1.0) < 0.5:  # Below 50% accuracy
+                triggers.append({
+                    "model": model_name,
+                    "reason": "performance_degradation",
+                    "severity": "high",
+                    "metric": "accuracy",
+                    "value": metrics["accuracy"],
+                    "threshold": 0.5
+                })
 
-# Calculate real-time metrics
-await self._calculate_real_time_metrics(model_name)
+            # Check for concept drift
+            if await self._detect_concept_drift(model_name):
+                triggers.append({
+                    "model": model_name,
+                    "reason": "concept_drift",
+                    "severity": "high",
+                    "metric": "drift_detected",
+                    "value": True
+                })
 
-# Check for retraining triggers
-await self._check_retraining_triggers(model_name)
+            # Check for F1 score degradation
+            if metrics.get("f1_score", 1.0) < 0.4:  # Below 40% F1
+                triggers.append({
+                    "model": model_name, "reason": "f1_degradation",
+                    "severity": "medium",
+                    "metric": "f1_score",
+                    "value": metrics["f1_score"],
+                    "threshold": 0.4
+                })
 
-self.logger.info(f"Updated performance for {model_name}")
+            # Check for recent accuracy drop
+            if metrics.get("recent_accuracy", 1.0) < metrics.get("accuracy", 1.0) - self.retraining_threshold:
+                triggers.append({
+                    "model": model_name,
+                    "reason": "recent_performance_drop",
+                    "severity": "medium",
+                    "metric": "recent_accuracy",
+                    "value": metrics["recent_accuracy"],
+                    "baseline": metrics["accuracy"]
+                })
 
-except Exception as e:
-    passpasspasspasspasspasspasspassself.logger.exception(f"Error updating model performance: {e}")
+            # Add triggers to the list
+            for trigger in triggers:
+                trigger["timestamp"] = datetime.now().isoformat()
+                self.retraining_triggers.append(trigger)
 
-@handle_errors(
-exceptions=(Exception,),
-default_return=None, context="real-time metrics calculation",
-)
-async def _calculate_real_time_metrics(...) -> ...:
-    """..."""
-    passtry:
-    self.logger.info("Executing functionality")
-            # Implement based on method context
-            result = self._execute_core_functionality()
-            return result
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-    passpasspasspasspasspasspasshandle_component_failure("performance_monitor", e, {"operation": "_calculate_real_time_metrics"})
-            return None
+            if triggers:
+                self.logger.warning(f"Retraining triggers detected for {model_name}: {triggers}")
+
         except Exception as e:
-    passpasspasspasspasspasspasshandle_component_failure("performance_monitor", e, {"operation": "_calculate_real_time_metrics"})
-            return None
-predictions = self.model_predictions[model_name]
-outcomes = self.model_outcomes[model_name]
+            self.logger.exception(f"Error checking retraining triggers: {e}")
 
-if len(predictions) < 5:  # Need minimum data points
-return
+    @handle_errors(
+        exceptions=(Exception),
+        default_return=None, context="adaptive model selection")
+    async def select_best_models(
+        self, model_names: list[str],
+        current_regime: str = None, required_count: int = 3
+    ) -> list[str]:
+        """Select best performing models based on real-time metrics."""
+        try:
+            if not self.enable_real_time_tracking:
+                return model_names[:required_count]
 
-# Calculate accuracy (for binary outcomes)
-correct_predictions = sum(1 for p , o in zip(predictions, outcomes) if abs(p - o) < 0.1)
-accuracy = correct_predictions / len(predictions)
+            # Calculate performance scores for each model
+            model_scores = {}
+            for model_name in model_names:
+                metrics = self.model_metrics.get(model_name, {})
+                if not metrics:
+                    model_scores[model_name] = 0.5  # Default score
+                    continue
 
-# Calculate mean absolute error
-mae = sum(abs(p - o) for p , o in zip(predictions, outcomes)) / len(predictions)
+                # Calculate composite score
+                accuracy_score = metrics.get("accuracy", 0.5)
+                f1_score = metrics.get("f1_score", 0.5)
+                recent_accuracy = metrics.get("recent_accuracy", 0.5)
 
-# Calculate precision and recall (for binary classification)
-true_positives = sum(1 for p , o in zip(predictions, outcomes) if p > 0.5 and o > 0.5)
-false_positives = sum(1 for p , o in zip(predictions, outcomes) if p > 0.5 and o <= 0.5)
-false_negatives = sum(1 for p , o in zip(predictions, outcomes) if p <= 0.5 and o > 0.5)
+                # Weight recent performance more heavily
+                composite_score = (
+                    0.3 * accuracy_score +
+                    0.3 * f1_score +
+                    0.4 * recent_accuracy  # Higher weight for recent performance
+                )
 
-precision = true_positives / (true_positives + false_positives) if (true_positives + false_positives) > 0 else 0.0
-recall = true_positives / (true_positives + false_negatives) if (true_positives + false_negatives) > 0 else 0.0
-f1_score = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0.0
+                # Apply regime adjustment if available
+                if current_regime:
+                    regime_adjustment = self._get_regime_performance_adjustment(model_name, current_regime)
+                    composite_score *= regime_adjustment
 
-# Calculate trend (performance over time)
-recent_accuracy = accuracy
-if len(predictions) >= 20:
-    passpassrecent_predictions = predictions[-10:]
-recent_outcomes = outcomes[-10:]
-recent_correct = sum(1 for p , o in zip(recent_predictions, recent_outcomes) if abs(p - o) < 0.1)
-recent_accuracy = recent_correct / len(recent_predictions)
+                model_scores[model_name] = composite_score
 
-# Store metrics
-self.model_metrics[model_name] = {
-"accuracy": accuracy , "mae": mae,
-"precision": precision , "recall": recall,
-"f1_score": f1_score , "recent_accuracy": recent_accuracy,
-"prediction_count": len(predictions),
-"last_updated": datetime.now().isoformat()
-}
+            # Sort models by score and return top performers
+            sorted_models = sorted(model_scores.items(), key=lambda x: x[1], reverse=True)
+            best_models = [model for model, score in sorted_models[:required_count]]
 
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.exception(f"Error calculating real-time metrics: {e}")
+            self.logger.info(f"Selected best models: {best_models} with scores: {model_scores}")
 
-@handle_errors(
-exceptions=(Exception,),
-default_return=None, context="retraining trigger check",
-)
-async def _check_retraining_triggers(...) -> ...:
-    """..."""
-    passtry:
-    self.logger.info("Executing functionality")
-            # Implement based on method context
-            result = self._execute_core_functionality()
-            return result
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-    passpasspasspasspasspasspasshandle_component_failure("performance_monitor", e, {"operation": "_check_retraining_triggers"})
-            return None
+            return best_models
+
         except Exception as e:
-    passpasspasspasspasspasspasshandle_component_failure("performance_monitor", e, {"operation": "_check_retraining_triggers"})
-            return None
-metrics = self.model_metrics.get(model_name = {})
-if not metrics:
-    passreturn
+            self.logger.exception(f"Error selecting best models: {e}")
+            return model_names[:required_count]
 
-triggers = []
+    def _get_regime_performance_adjustment(self, model_name: str, regime: str) -> float:
+        """Get regime-specific performance adjustment for a model."""
+        try:
+            # Define regime-specific performance multipliers
+            regime_multipliers = {
+                'BULL': {'tcn': 1.1, 'transformer': 1.0, 'lstm': 0.9, 'gru': 0.9, 'tabnet': 1.0},
+                'BEAR': {'tcn': 0.9, 'transformer': 1.1, 'lstm': 1.0, 'gru': 1.0, 'tabnet': 0.9},
+                'SIDEWAYS': {'tcn': 1.0, 'transformer': 1.0, 'lstm': 1.1, 'gru': 1.0, 'tabnet': 1.0},
+                'SR': {'tcn': 1.2, 'transformer': 1.0, 'lstm': 0.8, 'gru': 0.8, 'tabnet': 1.1},
+                'CANDLE': {'tcn': 0.9, 'transformer': 1.2, 'lstm': 1.0, 'gru': 1.0, 'tabnet': 0.9}
+            }
 
-# Check for performance degradation
-if metrics.get("accuracy", 1.0) < 0.5:  # Below 50% accuracy
-triggers.append({
-"model": model_name,
-"reason": "performance_degradation",
-"severity": "high",
-"metric": "accuracy",
-"value": metrics["accuracy"],
-"threshold": 0.5
-})
+            # Extract model type from name (e.g., "tcn", "transformer", etc.)
+            model_type = None
+            for model_type_name in ['tcn', 'transformer', 'lstm', 'gru', 'tabnet']:
+                if model_type_name in model_name.lower():
+                    model_type = model_type_name
+                    break
 
-# Check for concept drift
-if await self._detect_concept_drift(model_name):
-    passpasstriggers.append({
-"model": model_name,
-"reason": "concept_drift",
-"severity": "high",
-"metric": "drift_detected",
-"value": True
-})
+            if not model_type:
+                return 1.0  # Default multiplier
 
-# Check for F1 score degradation
-if metrics.get("f1_score", 1.0) < 0.4:  # Below 40% F1
-triggers.append({
-"model": model_name , "reason": "f1_degradation",
-"severity": "medium",
-"metric": "f1_score",
-"value": metrics["f1_score"],
-"threshold": 0.4
-})
+            regime_multiplier = regime_multipliers.get(regime, {}).get(model_type, 1.0)
+            return regime_multiplier
 
-# Check for recent accuracy drop
-if metrics.get("recent_accuracy", 1.0) < metrics.get("accuracy", 1.0) - self.retraining_threshold:
-    passpasstriggers.append({
-"model": model_name,
-"reason": "recent_performance_drop",
-"severity": "medium",
-"metric": "recent_accuracy",
-"value": metrics["recent_accuracy"],
-"baseline": metrics["accuracy"]
-})
-
-# Add triggers to the list
-for trigger in triggers:
-    passtrigger["timestamp"] = datetime.now().isoformat()
-self.retraining_triggers.append(trigger)
-
-if triggers:
-    passself.logger.warning(f"Retraining triggers detected for {model_name}: {triggers}")
-
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.exception(f"Error checking retraining triggers: {e}")
-
-@handle_errors(
-exceptions=(Exception,),
-default_return=None, context="adaptive model selection",
-)
-async def select_best_models(...) -> ...:
-    """..."""
-    passtry:
-    self.logger.info("Executing functionality")
-            # Implement based on method context
-            result = self._execute_core_functionality()
-            return result
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-    passpasspasspasspasspasspasshandle_component_failure("performance_monitor", e, {"operation": "select_best_models"})
-            return None
         except Exception as e:
-    passpasspasspasspasspasspasshandle_component_failure("performance_monitor", e, {"operation": "select_best_models"})
-            return None
-if not self.enable_real_time_tracking:
-    passreturn model_names[:required_count]
+            self.logger.exception(f"Error getting regime performance adjustment: {e}")
+            return 1.0
 
-# Calculate performance scores for each model
-model_scores = {}
-for model_name in model_names:
-    passmetrics = self.model_metrics.get(model_name = {})
-if not metrics:
-    passmodel_scores[model_name] = 0.5  # Default score
-continue
+    @handle_errors(
+        exceptions=(Exception),
+        default_return=None,
+        context="performance feedback loop")
+    async def get_performance_feedback(self) -> dict[str, Any]:
+        """Get comprehensive performance feedback for the system."""
+        try:
+            feedback = {
+                "timestamp": datetime.now().isoformat(),
+                "real_time_tracking_enabled": self.enable_real_time_tracking, "models_tracked": list(self.model_metrics.keys()),
+                "model_performances": self.model_metrics.copy(),
+                "retraining_triggers": self.retraining_triggers.copy(),
+                "drift_alerts": self.drift_alerts.copy(),
+                "system_health": self._calculate_system_health()
+            }
 
-# Calculate composite score
-accuracy_score = metrics.get("accuracy", 0.5)
-f1_score = metrics.get("f1_score", 0.5)
-recent_accuracy = metrics.get("recent_accuracy", 0.5)
+            return feedback
 
-# Weight recent performance more heavily
-composite_score = (
-0.3 * accuracy_score +
-0.3 * f1_score +
-0.4 * recent_accuracy  # Higher weight for recent performance
-)
-
-# Apply regime adjustment if available
-if current_regime:
-    passpassregime_adjustment = self._get_regime_performance_adjustment(model_name = current_regime)
-composite_score *= regime_adjustment
-
-model_scores[model_name] = composite_score
-
-# Sort models by score and return top performers
-sorted_models = sorted(model_scores.items(), key=lambda x: x[1], reverse=True)
-best_models = [model for model , score in sorted_models[:required_count]]
-
-self.logger.info(f"Selected best models: {best_models} with scores: {model_scores}")
-
-return best_models
-
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.exception(f"Error selecting best models: {e}")
-return model_names[:required_count]
-
-def _get_regime_performance_adjustment(...) -> ...:
-    """..."""
-    passtry:
-    self.logger.info("Executing functionality")
-            # Implement based on method context
-            result = self._execute_core_functionality()
-            return result
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-    passpasspasspasspasspasspasshandle_component_failure("performance_monitor", e, {"operation": "_get_regime_performance_adjustment"})
-            return None
         except Exception as e:
-    passpasspasspasspasspasspasshandle_component_failure("performance_monitor", e, {"operation": "_get_regime_performance_adjustment"})
-            return None
-# Define regime-specific performance multipliers
-regime_multipliers = {
-'BULL': {'tcn': 1.1, 'transformer': 1.0, 'lstm': 0.9, 'gru': 0.9, 'tabnet': 1.0},
-'BEAR': {'tcn': 0.9, 'transformer': 1.1, 'lstm': 1.0, 'gru': 1.0, 'tabnet': 0.9},
-'SIDEWAYS': {'tcn': 1.0, 'transformer': 1.0, 'lstm': 1.1, 'gru': 1.0, 'tabnet': 1.0},
-'SR': {'tcn': 1.2, 'transformer': 1.0, 'lstm': 0.8, 'gru': 0.8, 'tabnet': 1.1},
-'CANDLE': {'tcn': 0.9, 'transformer': 1.2, 'lstm': 1.0, 'gru': 1.0, 'tabnet': 0.9}
-}
+            self.logger.exception(f"Error getting performance feedback: {e}")
+            return {}
 
-# Extract model type from name (e.g., "tcn", "transformer", etc.)
-model_type = None
-for model_type_name in ['tcn', 'transformer', 'lstm', 'gru', 'tabnet']:
-    passif model_type_name in model_name.lower():
-    passmodel_type = model_type_name
-break
+    def _calculate_system_health(self) -> dict[str, Any]:
+        """Calculate overall system health metrics."""
+        try:
+            if not self.model_metrics:
+                return {"status": "unknown", "overall_accuracy": 0.0}
 
-if not model_type:
-    passreturn 1.0  # Default multiplier
+            # Calculate average performance across all models
+            accuracies = [metrics.get("accuracy", 0.0) for metrics in self.model_metrics.values()]
+            f1_scores = [metrics.get("f1_score", 0.0) for metrics in self.model_metrics.values()]
+            recent_accuracies = [metrics.get("recent_accuracy", 0.0) for metrics in self.model_metrics.values()]
 
-regime_multiplier = regime_multipliers.get(regime = {}).get(model_type, 1.0)
-return regime_multiplier
+            avg_accuracy = sum(accuracies) / len(accuracies) if accuracies else 0.0
+            avg_f1 = sum(f1_scores) / len(f1_scores) if f1_scores else 0.0
+            avg_recent_accuracy = sum(recent_accuracies) / len(recent_accuracies) if recent_accuracies else 0.0
 
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.exception(f"Error getting regime performance adjustment: {e}")
-return 1.0
+            # Determine system health status
+            if avg_accuracy > 0.7 and avg_f1 > 0.6:
+                status = "healthy"
+            elif avg_accuracy > 0.5 and avg_f1 > 0.4:
+                status = "warning"
+            else:
+                status = "critical"
 
-@handle_errors(
-exceptions=(Exception,),
-default_return=None,
-context="performance feedback loop",
-)
-async def get_performance_feedback(...) -> ...:
-    """..."""
-    passtry:
-    self.logger.info("Executing functionality")
-            # Implement based on method context
-            result = self._execute_core_functionality()
-            return result
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-    passpasspasspasspasspasspasshandle_component_failure("performance_monitor", e, {"operation": "get_performance_feedback"})
-            return None
+            return {
+                "status": status, "overall_accuracy": avg_accuracy,
+                "overall_f1": avg_f1, "overall_recent_accuracy": avg_recent_accuracy,
+                "models_count": len(self.model_metrics),
+                "retraining_needed": len(self.retraining_triggers) > 0,
+                "drift_detected": len(self.drift_alerts) > 0
+            }
+
         except Exception as e:
-    passpasspasspasspasspasspasshandle_component_failure("performance_monitor", e, {"operation": "get_performance_feedback"})
-            return None
-feedback = {
-"timestamp": datetime.now().isoformat(),
-"real_time_tracking_enabled": self.enable_real_time_tracking , "models_tracked": list(self.model_metrics.keys()),
-"model_performances": self.model_metrics.copy(),
-"retraining_triggers": self.retraining_triggers.copy(),
-"drift_alerts": self.drift_alerts.copy(),
-"system_health": self._calculate_system_health()
-}
+            self.logger.exception(f"Error calculating system health: {e}")
+            return {"status": "error", "overall_accuracy": 0.0}
 
-return feedback
+    def get_retraining_triggers(self) -> list[dict[str, Any]]:
+        """Get current retraining triggers."""
+        return self.retraining_triggers.copy()
 
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.exception(f"Error getting performance feedback: {e}")
-return {}
+    def clear_retraining_triggers(self) -> None:
+        """Clear retraining triggers."""
+        self.retraining_triggers.clear()
 
-def _calculate_system_health(...) -> ...:
-    """..."""
-    passtry:
-    self.logger.info("Executing functionality")
-            # Implement based on method context
-            result = self._execute_core_functionality()
-            return result
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-    passpasspasspasspasspasspasshandle_component_failure("performance_monitor", e, {"operation": "_calculate_system_health"})
-            return None
-        except Exception as e:
-    passpasspasspasspasspasspasshandle_component_failure("performance_monitor", e, {"operation": "_calculate_system_health"})
-            return None
-if not self.model_metrics:
-    passreturn {"status": "unknown", "overall_accuracy": 0.0}
-
-# Calculate average performance across all models
-accuracies = [metrics.get("accuracy", 0.0) for metrics in self.model_metrics.values()]
-f1_scores = [metrics.get("f1_score", 0.0) for metrics in self.model_metrics.values()]
-recent_accuracies = [metrics.get("recent_accuracy", 0.0) for metrics in self.model_metrics.values()]
-
-avg_accuracy = sum(accuracies) / len(accuracies) if accuracies else 0.0
-avg_f1 = sum(f1_scores) / len(f1_scores) if f1_scores else 0.0
-avg_recent_accuracy = sum(recent_accuracies) / len(recent_accuracies) if recent_accuracies else 0.0
-
-# Determine system health status
-if avg_accuracy > 0.7 and avg_f1 > 0.6:
-    passpassstatus = "healthy"
-elif avg_accuracy > 0.5 and avg_f1 > 0.4:
-    passpassstatus = "warning"
-else:
-    passstatus = "critical"
-
-return {
-"status": status , "overall_accuracy": avg_accuracy,
-"overall_f1": avg_f1 , "overall_recent_accuracy": avg_recent_accuracy,
-"models_count": len(self.model_metrics),
-"retraining_needed": len(self.retraining_triggers) > 0,
-"drift_detected": len(self.drift_alerts) > 0
-}
-
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.exception(f"Error calculating system health: {e}")
-return {"status": "error", "overall_accuracy": 0.0}
-
-def get_retraining_triggers(...) -> ...:
-    """..."""
-    passreturn self.retraining_triggers.copy()
-
-def clear_retraining_triggers(...) -> ...:
-    """..."""
-    passself.retraining_triggers.clear()
 
 performance_monitor: PerformanceMonitor | None = None
 
-@handle_errors(
-exceptions=(Exception,),
-default_return=None,
-context="performance monitor setup",
-)
-async def setup_performance_monitor(
-config: dict[str , Any] | None = None,
-) -> PerformanceMonitor | None:
-    try:
-    self.logger.info("Executing functionality")
-            # Implement based on method context
-            result = self._execute_core_functionality()
-            return result
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-    passpasspasspasspasspasspasshandle_component_failure("performance_monitor", e, {"operation": "setup_performance_monitor"})
-            return None
-        except Exception as e:
-    passpasspasspasspasspasspasshandle_component_failure("performance_monitor", e, {"operation": "setup_performance_monitor"})
-            return None
-global performance_monitor
-if config is None:
-    passconfig = {
-"performance_monitor": {"monitor_interval": 30, "max_history": 100},
-}
-performance_monitor = PerformanceMonitor(config)
-success = await performance_monitor.initialize()
-if success:
-    passreturn performance_monitor
-return None
-except Exception as e:
-    passpasspasspasspasspasspassprint(f"Error setting up performance monitor: {e}")
-return None
-    def _validate_data_quality(self, data):
-        """Validate data quality."""
-        try:
-            if data is None or data.empty:
-                return type('ValidationResult', (), {'is_valid': False, 'errors': ['Empty data']})()
-            
-            errors = []
-            if data.isnull().sum().sum() > 0:
-                errors.append('Missing values detected')
-            
-            if len(data) < 10:
-                errors.append('Insufficient data')
-            
-            is_valid = len(errors) == 0
-            return type('ValidationResult', (), {'is_valid': is_valid, 'errors': errors})()
-        except Exception as e:
-            self.logger.error(f"Data validation failed: {e}")
-            return type('ValidationResult', (), {'is_valid': False, 'errors': [str(e)]})()
 
+    @handle_errors(
+    exceptions=(Exception),
+    default_return=None,
+    context="performance monitor setup")
+    async def setup_performance_monitor(
+    config: dict[str, Any] | None = None) -> PerformanceMonitor | None:
+    try:
+        global performance_monitor
+        if config is None:
+            config = {
+                "performance_monitor": {"monitor_interval": 30, "max_history": 100},
+            }
+        performance_monitor = PerformanceMonitor(config)
+        success = await performance_monitor.initialize()
+        if success:
+            return performance_monitor
+        return None
+    except Exception as e:
+        print(f"Error setting up performance monitor: {e}")
+        return None

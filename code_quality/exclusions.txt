@@ -1,0 +1,75 @@
+# Code Quality Tool Exclusions
+# Directories and files to exclude from quality scans
+
+# Logs and temporary files
+log/
+logs/
+*.log
+*.tmp
+temp/
+tmp/
+
+# Build artifacts and caches
+build/
+dist/
+*.egg-info/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+coverage.xml
+.tox/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Version control
+.git/
+.svn/
+.hg/
+
+# Package manager artifacts
+node_modules/
+package-lock.json
+yarn.lock
+.npm/
+
+# Reports and output directories
+reports/
+output/
+artifacts/
+test_results/
+test_models/
+
+# Data and model files (typically large and not code)
+data/
+data_cache/
+models/
+*.pkl
+*.joblib
+*.h5
+*.onnx
+*.parquet
+*.csv
+*.json
+
+# Documentation build artifacts
+docs/_build/
+docs/build/
+site/
+
+# State and config that may contain sensitive info
+state/
+config/local/
+.env
+.env.*
+secrets/

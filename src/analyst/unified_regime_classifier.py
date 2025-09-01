@@ -27,7 +27,7 @@ with_tracing_span,
 
 
 class UnifiedRegimeClassifier:
-    """
+"""
 Unified Market Regime Classifier with HMM-based labeling and ensemble prediction.
 
 Approach:

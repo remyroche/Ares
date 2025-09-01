@@ -13,6 +13,7 @@ from dataclasses import dataclass
 class ConfidenceThresholdsConfig:
     pass  # TODO: Add implementation
 class ConfidenceThresholdsConfig:
+    pass  # TODO: Add implementation
 class ConfidenceThresholdsConfig:
     """Optimizable confidence thresholds for different trading decisions."""
 

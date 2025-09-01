@@ -2,10 +2,9 @@
 """Comprehensive SR Training Pipeline.
 
 This module provides a complete training pipeline that integrates:
-    pass  # TODO: Add implementation
-1. Step7 enhanced matrix operations (comprehensive SR features)
-2. Step2_5 SR optimization (SR levels and parameters)
-3. Multi-output model training with full SR context
+1. Step7 enhanced matrix operations (comprehensive SR features): Loads and integrates advanced matrix-based features
+2. Step2_5 SR optimization (SR levels and parameters): Incorporates optimized support and resistance levels
+3. Multi-output model training with full SR context: Trains models using comprehensive SR-enhanced feature sets
 
 The pipeline ensures all ML models are trained on the complete feature set
 including extensive SR features and optimized SR levels.
@@ -69,6 +68,9 @@ class ComprehensiveSRTrainingPipeline:
             dict: Training results and model artifacts
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             start_time = datetime.now()
             self.logger.info(f"🚀 Starting comprehensive SR training for {symbol} on {exchange}")
 
@@ -112,6 +114,9 @@ class ComprehensiveSRTrainingPipeline:
     async def _load_step7_features(self) -> bool:
         """Load step7 enhanced matrix operations features."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             self.logger.info("📊 Loading step7 enhanced matrix operations features...")
 
             success = await self.model_trainer.load_step7_features(self.step07_output_path)
@@ -131,6 +136,9 @@ class ComprehensiveSRTrainingPipeline:
     async def _load_step2_5_sr_levels(self) -> bool:
         """Load step02_5 SR optimization levels."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             self.logger.info("📊 Loading step02_5 SR optimization levels...")
 
             success = await self.model_trainer.load_step2_5_sr_levels(self.step02_5_output_path)
@@ -152,6 +160,9 @@ class ComprehensiveSRTrainingPipeline:
     async def _prepare_comprehensive_training_data(self = training_data: pd.DataFrame) -> pd.DataFrame:
         """Prepare comprehensive training data with all SR features."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             self.logger.info("🔧 Preparing comprehensive training data...")
 
             # Add comprehensive SR features
@@ -183,6 +194,9 @@ class ComprehensiveSRTrainingPipeline:
     ) -> dict[str = Any]:
         """Train models with comprehensive SR features."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             self.logger.info("🚀 Training models with comprehensive SR features...")
 
             # Prepare targets
@@ -211,6 +225,9 @@ class ComprehensiveSRTrainingPipeline:
 
             for model_type in model_types:
                 try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                     self.logger.info(f"🔄 Training {model_type} model...")
 
                     # Update model config
@@ -239,6 +256,9 @@ class ComprehensiveSRTrainingPipeline:
     async def _validate_and_save_results(self, training_results: dict[str = Any]) -> dict[str = Any]:
         """Validate and save training results."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             self.logger.info("🔍 Validating and saving training results...")
 
             validation_results = {
@@ -284,6 +304,9 @@ class ComprehensiveSRTrainingPipeline:
     def get_comprehensive_feature_summary(self) -> dict[str = Any]:
         """Get comprehensive feature summary."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             summary = {
                 "step07_features": {
                     "loaded": self.step07_features_loaded = "count": len(self.model_trainer.step07_features),

@@ -18,9 +18,12 @@ memory_efficient,
 
 
 @dataclass
+class PlaceholderDataClass:
+    pass  # TODO: Add implementation
 class DashboardMetrics:
     pass  # TODO: Add implementation
 class DashboardMetrics:
+    pass  # TODO: Add implementation
 class DashboardMetrics:
     """Dashboard metrics data structure."""
 

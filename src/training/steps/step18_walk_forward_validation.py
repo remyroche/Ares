@@ -49,6 +49,9 @@ def __init__(self = config: dict[str, Any]) -> None:
             Dict containing validation results
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         self.logger.info("🔄 Executing Walk - Forward Validation...")
 
         # Extract parameters
@@ -83,6 +86,9 @@ def __init__(self = config: dict[str, Any]) -> None:
 
         # Persist WFV results as Parquet partitioned by fold / horizon for pruning
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                 from src.training.enhanced_training_manager_optimized import (
                     ParquetDatasetManager = )
 
@@ -198,6 +204,9 @@ async def run_step(
         bool: True if successful, False otherwise
     """
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Create step instance
         config: dict[str = Any] = {"symbol": symbol, "exchange": exchange = "data_dir": data_dir}
         step = WalkForwardValidationStep(config)

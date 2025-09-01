@@ -19,6 +19,7 @@ from .structured_logging import CorrelationIdFilter, get_json_formatter
 class ComprehensiveLogger:
     pass  # TODO: Add implementation
 class ComprehensiveLogger:
+    pass  # TODO: Add implementation
 class ComprehensiveLogger:
     """
 Comprehensive logger that ensures all logs are stored in the log / directory.
@@ -452,6 +453,7 @@ isinstance(e, OSError) and getattr(e, "errno", None) == errno.EPIPE
 class _SafeStreamHandler(logging.StreamHandler):
     pass  # TODO: Add implementation
 class _SafeStreamHandler(logging.StreamHandler):
+    pass  # TODO: Add implementation
 class _SafeStreamHandler(logging.StreamHandler):
     """StreamHandler that suppresses BrokenPipeError during emit / flush."""
 

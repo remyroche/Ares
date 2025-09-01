@@ -1,210 +1,197 @@
 #!/usr/bin/env python3
 """
-Targeted Syntax Fixer for Specific Errors
-
-This script fixes specific syntax errors that the general fixer couldn't handle:
-    pass  # TODO: Add implementation
-1. Incorrect assignment operators (= instead of ==)
-2. Missing values in function calls
-3. Incorrect exception handling syntax
-4. Missing parentheses in function calls
+Targeted Syntax Fixer for specific issues found in the codebase
 """
 
 import os
 import re
-import ast
-import logging
-
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
-logger = logging.getLogger(__name__)
+from typing import List, Dict
 
 
 class TargetedSyntaxFixer:
-    """Targeted syntax error fixer for specific issues."""
-
+    """Fixes specific syntax issues found in the codebase."""
+    
     def __init__(self):
         self.fixes_applied = 0
         self.files_fixed = 0
-
-    def fix_assignment_operators(self, content: str) -> str:
-        """Fix incorrect assignment operators in comparisons."""
-        original_content = content
-
-        # Fix common patterns where = is used instead of ==
-        patterns = [
-            # Fix p = q in comments and code
-            (r'p = q', 'p == q'),
-            # Fix other common comparison errors
-            (r'if\s+(\w+)\s*=\s*(\w+):', r'if \1 == \2:'),
-            (r'elif\s+(\w+)\s*=\s*(\w+):', r'elif \1 == \2:'),
-            (r'while\s+(\w+)\s*=\s*(\w+):', r'while \1 == \2:'),
-            # Fix assignment in function calls
-            (r'get\(([^=]+)\s*=\s*([^,)]+)', r'get(\1, \2)'),
-            # Fix assignment in return statements
-            (r'return\s+max\(\s*([^=]+)\s*=\s*([^)]+)', r'return max(\1, \2)'),
-            (r'return\s+min\(\s*([^=]+)\s*=\s*([^)]+)', r'return min(\1, \2)'),
-        ]
-
-        for pattern, replacement in patterns:
-            content = re.sub(pattern, replacement, content)
-
-        if content != original_content:
-            self.fixes_applied += 1
-            logger.info("Fixed assignment operators")
-
-        return content
-
-    def fix_missing_values(self, content: str) -> str:
-        """Fix missing values in function calls."""
-        original_content = content
-
-        # Fix missing values in function calls
-        patterns = [
-            # Fix missing values in get() calls
-            (r'\.get\(([^,)]+)\s*,\s*\)', r'.get(\1, None)'),
-            # Fix missing values in min/max calls
-            (r'(min|max)\(([^,)]+)\s*,\s*\)', r'\1(\2, None)'),
-            # Fix missing values in function calls
-            (r'\(\s*([^,)]+)\s*,\s*\)', r'(\1, None)'),
-        ]
-
-        for pattern, replacement in patterns:
-            content = re.sub(pattern, replacement, content)
-
-        if content != original_content:
-            self.fixes_applied += 1
-            logger.info("Fixed missing values")
-
-        return content
-
-    def fix_exception_syntax(self, content: str) -> str:
-        """Fix incorrect exception handling syntax."""
-        original_content = content
-
-        # Fix exception syntax errors
-        patterns = [
-            # Fix (ValueError = TypeError, KeyError) -> (ValueError, TypeError, KeyError)
-            (r'\(([^=]+)\s*=\s*([^)]+)\)', r'(\1, \2)'),
-            # Fix other similar patterns
-            (r'except\s+\(([^=]+)\s*=\s*([^)]+)\)', r'except (\1, \2)'),
-        ]
-
-        for pattern, replacement in patterns:
-            content = re.sub(pattern, replacement, content)
-
-        if content != original_content:
-            self.fixes_applied += 1
-            logger.info("Fixed exception syntax")
-
-        return content
-
-    def fix_function_call_syntax(self, content: str) -> str:
-        """Fix function call syntax errors."""
-        original_content = content
-
-        # Fix function call syntax
-        patterns = [
-            # Fix missing parentheses in function calls
-            (r'(\w+)\(([^)]*)\s*=\s*([^)]*)\)', r'\1(\2, \3)'),
-            # Fix other function call issues
-            (r'calculate_correct_kelly_position_size\(\s*([^=]+)\s*=\s*([^)]+)',
-             r'calculate_correct_kelly_position_size(\1, \2)'),
-        ]
-
-        for pattern, replacement in patterns:
-            content = re.sub(pattern, replacement, content)
-
-        if content != original_content:
-            self.fixes_applied += 1
-            logger.info("Fixed function call syntax")
-
-        return content
-
-    def fix_file(self, file_path: str) -> bool:
-        """Fix syntax errors in a single file."""
+        
+    def fix_file(self, filepath: str, dry_run: bool = True) -> bool:
+        """Fix specific syntax issues in a single file."""
         try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-            with open(file_path, 'r', encoding='utf-8') as f:
+            with open(filepath, 'r', encoding='utf-8') as f:
                 content = f.read()
-
+            
             original_content = content
-
-            # Apply targeted fixes
-            content = self.fix_assignment_operators(content)
-            content = self.fix_missing_values(content)
-            content = self.fix_exception_syntax(content)
-            content = self.fix_function_call_syntax(content)
-
-            # Verify the fix worked by trying to parse
-            try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-                ast.parse(content)
-                # If we get here, the syntax is valid
-                if content != original_content:
-                    with open(file_path, 'w', encoding='utf-8') as f:
+            content = self._fix_duplicate_classes(content)
+            content = self._fix_incomplete_code_blocks(content)
+            content = self._fix_missing_imports(content)
+            
+            if content != original_content:
+                if not dry_run:
+                    with open(filepath, 'w', encoding='utf-8') as f:
                         f.write(content)
-                    self.files_fixed += 1
-                    logger.info(f"✅ Fixed syntax errors in {file_path}")
-                    return True
+                    print(f"✅ Fixed: {filepath}")
                 else:
-                    logger.info(f"ℹ️  No fixes needed for {file_path}")
-                    return False
-            except SyntaxError as e:
-                logger.warning(f"⚠️  Could not fix all syntax errors in {file_path}: {e}")
-                return False
-
-        except Exception as e:
-            logger.error(f"❌ Error processing {file_path}: {e}")
+                    print(f"🔧 Would fix: {filepath}")
+                self.fixes_applied += 1
+                return True
+                
             return False
-
-    def scan_and_fix_directory(self, directory: str) -> Dict:
-        """Scan and fix all Python files in a directory."""
-        logger.info(f"🔧 Starting targeted syntax fixes in: {directory}")
-
-        # Find all Python files
-        python_files = []
+            
+        except Exception as e:
+            print(f"❌ Error processing {filepath}: {e}")
+            return False
+    
+    def _fix_duplicate_classes(self, content: str) -> str:
+        """Remove duplicate class definitions."""
+        lines = content.split('\n')
+        fixed_lines = []
+        i = 0
+        
+        while i < len(lines):
+            line = lines[i]
+            
+            # Check for duplicate class definitions
+            if line.strip().startswith('class ') and ':' in line:
+                class_name = line.split('class ')[1].split('(')[0].split(':')[0].strip()
+                
+                # Look ahead for duplicate class definitions
+                j = i + 1
+                while j < len(lines):
+                    next_line = lines[j]
+                    if next_line.strip().startswith('class ') and class_name in next_line:
+                        # Skip this duplicate line
+                        j += 1
+                        continue
+                    elif next_line.strip() and not next_line.startswith(' '):
+                        break
+                    j += 1
+                
+                # Add the first occurrence and skip duplicates
+                fixed_lines.append(line)
+                i += 1
+                
+                # Skip to the end of the class or next non-indented line
+                while i < len(lines):
+                    if lines[i].strip() and not lines[i].startswith(' '):
+                        break
+                    fixed_lines.append(lines[i])
+                    i += 1
+            else:
+                fixed_lines.append(line)
+                i += 1
+        
+        return '\n'.join(fixed_lines)
+    
+    def _fix_incomplete_code_blocks(self, content: str) -> str:
+        """Fix incomplete code blocks."""
+        lines = content.split('\n')
+        fixed_lines = []
+        i = 0
+        
+        while i < len(lines):
+            line = lines[i]
+            
+            # Fix incomplete dataclass definitions
+            if line.strip() == '@dataclass' and i + 1 < len(lines):
+                next_line = lines[i + 1]
+                if not next_line.strip() or next_line.strip().startswith('class'):
+                    # Add a basic dataclass
+                    fixed_lines.append(line)
+                    fixed_lines.append('class PlaceholderDataClass:')
+                    fixed_lines.append('    pass  # TODO: Add implementation')
+                    i += 1
+                    continue
+            
+            # Fix incomplete enum definitions
+            if line.strip().startswith('class ') and 'Enum' in line and line.strip().endswith(':'):
+                if i + 1 < len(lines) and lines[i + 1].strip() == 'pass  # TODO: Add implementation':
+                    # Skip the incomplete enum
+                    i += 2
+                    continue
+            
+            # Fix incomplete function definitions
+            if line.strip().startswith('def ') and line.strip().endswith(':'):
+                if i + 1 < len(lines) and lines[i + 1].strip() == 'pass  # TODO: Add implementation':
+                    # Skip the incomplete function
+                    i += 2
+                    continue
+            
+            fixed_lines.append(line)
+            i += 1
+        
+        return '\n'.join(fixed_lines)
+    
+    def _fix_missing_imports(self, content: str) -> str:
+        """Add missing imports."""
+        if '@dataclass' in content and 'from dataclasses import dataclass' not in content:
+            # Add dataclass import
+            lines = content.split('\n')
+            import_lines = []
+            other_lines = []
+            
+            for line in lines:
+                if line.strip().startswith('import ') or line.strip().startswith('from '):
+                    import_lines.append(line)
+                else:
+                    other_lines.append(line)
+            
+            if import_lines:
+                import_lines.append('from dataclasses import dataclass')
+                return '\n'.join(import_lines + [''] + other_lines)
+            else:
+                return 'from dataclasses import dataclass\n\n' + content
+        
+        return content
+    
+    def fix_directory(self, directory: str, dry_run: bool = True) -> Dict[str, int]:
+        """Fix syntax errors in all Python files in a directory."""
+        results = {'files_processed': 0, 'files_fixed': 0, 'total_fixes': 0}
+        
         for root, dirs, files in os.walk(directory):
-            # Skip certain directories
-            dirs[:] = [d for d in dirs if d not in ['.git', '__pycache__', 'node_modules', 'venv', 'env', 'backup_']]
-
             for file in files:
                 if file.endswith('.py'):
-                    python_files.append(os.path.join(root, file))
-
-        logger.info(f"📁 Found {len(python_files)} Python files")
-
-        # Fix each file
-        for file_path in python_files:
-            self.fix_file(file_path)
-
-        return {
-            'files_processed': len(python_files),
-            'files_fixed': self.files_fixed,
-            'fixes_applied': self.fixes_applied
-        }
+                    filepath = os.path.join(root, file)
+                    results['files_processed'] += 1
+                    
+                    if self.fix_file(filepath, dry_run):
+                        results['files_fixed'] += 1
+                        results['total_fixes'] += self.fixes_applied
+        
+        return results
 
 
 def main():
-    """Main function to run the targeted syntax fixer."""
-    logger.info("🚀 Starting targeted syntax fixer")
-
+    import argparse
+    
+    parser = argparse.ArgumentParser(description='Fix specific Python syntax issues')
+    parser.add_argument('directory', help='Directory to fix')
+    parser.add_argument('--no-dry-run', action='store_true', help='Actually apply fixes')
+    parser.add_argument('--output', help='Output report to file')
+    
+    args = parser.parse_args()
+    
     fixer = TargetedSyntaxFixer()
+    results = fixer.fix_directory(args.directory, dry_run=not args.no_dry_run)
+    
+    report = f"""
+Targeted Syntax Fix Report
+=========================
+Files processed: {results['files_processed']}
+Files fixed: {results['files_fixed']}
+Total fixes applied: {results['total_fixes']}
+"""
+    
+    if args.output:
+        with open(args.output, 'w') as f:
+            f.write(report)
+        print(f"Report written to {args.output}")
+    else:
+        print(report)
 
-    # Fix files in current directory
-    results = fixer.scan_and_fix_directory('.')
 
-    # Print summary
-    logger.info("📊 Fix Summary:")
-    logger.info(f"   Files processed: {results['files_processed']}")
-    logger.info(f"   Files fixed: {results['files_fixed']}")
-    logger.info(f"   Total fixes applied: {results['fixes_applied']}")
-
-    logger.info("✅ Targeted syntax fixing completed!")
-
-
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

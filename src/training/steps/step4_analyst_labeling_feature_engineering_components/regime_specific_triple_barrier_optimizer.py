@@ -89,6 +89,9 @@ class RegimeSpecificTripleBarrierOptimizer:
         """Create triple barrier labeler for integration."""
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Create regime - aware labeler with default configuration
             labeler_config = {
                 "enable_regime_specific_parameters": True,
@@ -279,6 +282,9 @@ class RegimeSpecificTripleBarrierOptimizer:
                 continue
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         self.logger.info(f"🔧 Optimizing parameters for {regime_name} regime...")
 
         # Create regime - specific study
@@ -321,6 +327,9 @@ class RegimeSpecificTripleBarrierOptimizer:
             return
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             best_params = regime_result.get("best_params", {})
 
         # Extract barrier settings
@@ -478,6 +487,9 @@ class RegimeSpecificTripleBarrierOptimizer:
         """Evaluate regime - specific parameters on regime data."""
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # This would integrate with your actual triple barrier implementation
         # For now = providing a placeholder evaluation
 
@@ -624,6 +636,9 @@ class RegimeSpecificTripleBarrierOptimizer:
         """Log regime - specific optimization results to MLflow."""
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Set experiment name
             mlflow.set_experiment(self.mlflow_experiment_name)
 
@@ -695,6 +710,9 @@ class RegimeSpecificTripleBarrierOptimizer:
         return {"error": f"No optimized model found for regime: {regime_name}"}
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             regime_model = self.regime_models[regime_name]
             optimized_params = regime_model.get("optimized_parameters", {})
 

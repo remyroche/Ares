@@ -1,0 +1,114 @@
+=== PLACEHOLDER FINDER SUMMARY REPORT ===
+
+Generated on: Mon Sep  1 01:50:25 PM UTC 2025
+
+=== training  ===
+SUMMARY STATISTICS:
+  Files analyzed: 211
+  Total placeholders found: 138
+  Pass statements: 74
+  TODO comments: 62
+  NotImplementedError raises: 0
+  Placeholder functions: 2
+
+PER DIRECTORY BREAKDOWN:
+  src/training: 23 files, 39 placeholders
+  src/training/optimization: 3 files, 3 placeholders
+
+=== analyst  ===
+SUMMARY STATISTICS:
+  Files analyzed: 32
+  Total placeholders found: 988
+  Pass statements: 5
+  TODO comments: 980
+  NotImplementedError raises: 2
+  Placeholder functions: 1
+
+PER DIRECTORY BREAKDOWN:
+  src/analyst: 23 files, 879 placeholders
+  src/analyst/predictive_ensembles: 3 files, 51 placeholders
+
+=== tactician  ===
+SUMMARY STATISTICS:
+  Files analyzed: 28
+  Total placeholders found: 993
+  Pass statements: 4
+  TODO comments: 989
+  NotImplementedError raises: 0
+  Placeholder functions: 0
+
+PER DIRECTORY BREAKDOWN:
+  src/tactician: 27 files, 993 placeholders
+
+
+=== strategist  ===
+SUMMARY STATISTICS:
+  Files analyzed: 2
+  Total placeholders found: 26
+  Pass statements: 0
+  TODO comments: 26
+  NotImplementedError raises: 0
+  Placeholder functions: 0
+
+PER DIRECTORY BREAKDOWN:
+  src/strategist: 2 files, 26 placeholders
+
+
+=== supervisor  ===
+SUMMARY STATISTICS:
+  Files analyzed: 18
+  Total placeholders found: 825
+  Pass statements: 0
+  TODO comments: 825
+  NotImplementedError raises: 0
+  Placeholder functions: 0
+
+PER DIRECTORY BREAKDOWN:
+  src/supervisor: 17 files, 825 placeholders
+
+
+=== TOP FILES WITH MOST PLACEHOLDERS ===
+
+--- training  ---
+  src/training/__init__.py: 1 placeholders
+  src/training/comprehensive_feature_optimizer.py: 1 placeholders
+  src/training/comprehensive_sr_training_pipeline.py: 1 placeholders
+
+--- analyst  ---
+  src/analyst/advanced_feature_engineering.py: 93 placeholders
+  src/analyst/analyst.py: 45 placeholders
+  src/analyst/autoencoder_feature_generator.py: 59 placeholders
+
+--- tactician  ---
+  src/tactician/async_order_executor.py: 27 placeholders
+  src/tactician/comprehensive_enhanced_scenario_predictor.py: 10 placeholders
+  src/tactician/dynamic_barrier_calculator.py: 11 placeholders
+
+--- strategist  ---
+  src/strategist/__init__.py: 1 placeholders
+  src/strategist/strategist.py: 25 placeholders
+
+--- supervisor  ---
+  src/supervisor/ab_tester.py: 17 placeholders
+  src/supervisor/dynamic_weighter.py: 115 placeholders
+  src/supervisor/enhanced_model_monitor.py: 16 placeholders
+
+=== DETAILED EXAMPLES OF MISSING CODE ===
+
+=== KEY FINDINGS SUMMARY ===
+
+Total files analyzed: 0
+Total placeholders found: 0
+
+Most problematic directories:
+1. src/tactician: 993 placeholders
+2. src/analyst: 988 placeholders
+3. src/supervisor: 825 placeholders
+4. src/training: 138 placeholders
+5. src/strategist: 26 placeholders
+
+Types of missing code found:
+- TODO comments: 0
+- Pass statements: 0
+- NotImplementedError raises: 0
+- Placeholder functions: 0

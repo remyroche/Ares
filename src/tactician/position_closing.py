@@ -18,6 +18,7 @@ invalid,
 class PositionCloser:
     pass  # TODO: Add implementation
 class PositionCloser:
+    pass  # TODO: Add implementation
 class PositionCloser:
     """
 Position Closer that handles position closure based on dual model confidence scores

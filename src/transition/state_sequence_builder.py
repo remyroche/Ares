@@ -10,9 +10,12 @@ from dataclasses import dataclass
 import pandas as pd
 
 @dataclass
+class PlaceholderDataClass:
+    pass  # TODO: Add implementation
 class StateBuilderConfig:
     pass  # TODO: Add implementation
 class StateBuilderConfig:
+    pass  # TODO: Add implementation
 class StateBuilderConfig:
     hmm_n_states: int
 use_existing_urc_models: bool
@@ -21,6 +24,7 @@ cache_dir: str | None
 class StateSequenceBuilder:
     pass  # TODO: Add implementation
 class StateSequenceBuilder:
+    pass  # TODO: Add implementation
 class StateSequenceBuilder:
     """
 Build per-timestep state sequences for pre/post windows using the existing

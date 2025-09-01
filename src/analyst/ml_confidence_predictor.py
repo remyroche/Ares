@@ -29,7 +29,7 @@ execution_error,
 
 
 class MLConfidencePredictor:
-    """
+"""
 ML Confidence Predictor that generates predictions with confidence scores
 for price increases and expected price decreases in table format.
 Integrates with enhanced training manager to use properly trained models.

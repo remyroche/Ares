@@ -25,6 +25,7 @@ from .config_regime_transitions import get_regime_transition_config, get_regime_
 class ConfigManager:
     pass  # TODO: Add implementation
 class ConfigManager:
+    pass  # TODO: Add implementation
 class ConfigManager:
     """Unified configuration manager for the Ares trading system."""
 

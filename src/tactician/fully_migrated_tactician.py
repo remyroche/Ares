@@ -40,6 +40,7 @@ return wrapper
 class FullyMigratedTactician:
     pass  # TODO: Add implementation
 class FullyMigratedTactician:
+    pass  # TODO: Add implementation
 class FullyMigratedTactician:
     """
 Fully migrated Tactician using only enhanced scenario-based predictions.

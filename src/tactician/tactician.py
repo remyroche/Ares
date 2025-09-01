@@ -10,6 +10,7 @@ from src.utils.warning_symbols import failed, invalid, missing
 class Tactician:
     pass  # TODO: Add implementation
 class Tactician:
+    pass  # TODO: Add implementation
 class Tactician:
     """
 Refactored Tactician component with modular architecture.

@@ -58,6 +58,9 @@ class CalibrationManager:
 
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             self.logger.info("Initializing Calibration Manager...")
 
             # Validate configuration
@@ -87,6 +90,9 @@ class CalibrationManager:
 
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Validate calibration manager specific settings
             if not any(
                 [
@@ -107,6 +113,9 @@ class CalibrationManager:
     async def _initialize_calibration_components(self) -> None:
         """Initialize calibration components."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Initialize ML confidence predictor for calibration
             from src.analyst.ml_confidence_predictor import MLConfidencePredictor
 
@@ -148,6 +157,9 @@ class CalibrationManager:
 
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             self.logger.info("🎯 Starting model calibration...")
             self.is_calibrating = True
 
@@ -204,6 +216,9 @@ class CalibrationManager:
 
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Validate ensemble results
             if not ensemble_results:
                 self.print(error("Ensemble results are empty"))
@@ -245,6 +260,9 @@ class CalibrationManager:
 
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             self.logger.info("🧠 Calibrating analyst models...")
 
             calibration_results = {}
@@ -285,6 +303,9 @@ class CalibrationManager:
 
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             self.logger.info("🎯 Calibrating tactician models...")
 
             calibration_results = {}
@@ -326,6 +347,9 @@ class CalibrationManager:
 
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             self.logger.info(
                 f"🎯 Calibrating {ensemble_type} ensemble: {ensemble_name}",
             )

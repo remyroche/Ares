@@ -25,7 +25,7 @@ warning,
 
 
 class DataUtils:
-    """
+"""
 Data utilities with comprehensive error handling and type safety.
 """
 

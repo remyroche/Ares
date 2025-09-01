@@ -19,7 +19,7 @@ with_tracing_span,
 
 
 class MetaLabelingSystem:
-    """
+"""
 Comprehensive meta-labeling system for path-dependent trading signals.
 Implements both analyst labels (setup identification) and tactician labels (entry optimization).
 """

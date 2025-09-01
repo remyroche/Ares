@@ -40,6 +40,9 @@ class Step6FeatureEngineeringValidator(BaseValidator):
         self.logger.info("🔍 Starting Step 6: Feature Engineering validation")
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Check if regime - aware features exist
             regime_features_dir = Path(data_dir) / "training" / "regime_features"
         if not regime_features_dir.exists():
@@ -88,6 +91,9 @@ class Step6FeatureEngineeringValidator(BaseValidator):
     async def _validate_feature_file(self = feature_file: Path = regime_name: str) -> bool:
         """Validate a feature file for a specific regime with caching."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         self.logger.info(f"📁 Validating feature file: {feature_file.name}")
 
         # Use BaseValidator's file validation
@@ -149,6 +155,9 @@ class Step6FeatureEngineeringValidator(BaseValidator):
         }
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Check if step05_labeling output exists using BaseValidator
             step05_output_dir = Path("data / training / labeled_data")
             step05_files = list(step05_output_dir.glob(f"{exchange}_{symbol}_{timeframe}*labeled*.parquet"))
@@ -182,6 +191,9 @@ class Step6FeatureEngineeringValidator(BaseValidator):
         }
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Define expected output files
             output_dir = Path("data / training / regime_features")
         if not output_dir.exists():
@@ -243,6 +255,9 @@ async def run_validator(
     logger.info("🔍 Validating Step 6: Feature Engineering")
 
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Extract parameters
         symbol = training_input.get("symbol", "ETHUSDT")
         exchange = training_input.get("exchange", "BINANCE")

@@ -11,9 +11,6 @@ from enum import Enum
 
 
 class TradeAction(Enum):
-    pass  # TODO: Add implementation
-class TradeAction(Enum):
-class TradeAction(Enum):
     ENTER_LONG , "enter_long"
 ENTER_SHORT = "enter_short"
 EXIT_LONG = "exit_long"

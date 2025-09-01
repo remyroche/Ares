@@ -1,0 +1,39 @@
+================================================================================
+PLACEHOLDER FINDER REPORT
+================================================================================
+
+SUMMARY STATISTICS:
+  Files analyzed: 2
+  Total placeholders found: 2
+  Pass statements: 0
+  TODO comments: 2
+  NotImplementedError raises: 0
+  Placeholder functions: 0
+
+PER DIRECTORY BREAKDOWN:
+  src/strategist: 1 files, 2 placeholders
+
+PER FILE BREAKDOWN:
+  src/strategist/strategist.py: 2 placeholders
+    - todo_comments: 2
+
+DETAILED FINDINGS:
+
+File: src/strategist/strategist.py
+----------------------------------
+
+  TODO_COMMENTS:
+    Line 168: pass  # TODO: Add proper exception handling
+      Context:
+        """
+        try:
+            pass  # TODO: Add proper exception handling
+        except Exception as e:
+            pass  # TODO: Add proper exception handling
+    Line 170: pass  # TODO: Add proper exception handling
+      Context:
+            pass  # TODO: Add proper exception handling
+        except Exception as e:
+            pass  # TODO: Add proper exception handling
+        if not self._validate_market_data(market_data):
+                        self.logger.error("Invalid market data for strategy generation")

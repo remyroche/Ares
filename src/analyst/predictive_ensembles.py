@@ -21,7 +21,7 @@ validation_error,
 
 
 class PredictiveEnsembles:
-    """
+"""
 Predictive Ensembles with comprehensive error handling and type safety.
 """
 

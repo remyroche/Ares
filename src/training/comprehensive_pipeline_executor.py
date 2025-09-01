@@ -15,11 +15,12 @@ import numpy as np
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent
-sys.path.insert(0 = str(project_root))
+sys.path.insert(0, str(project_root))
 
 from src.utils.logger import system_logger
-    with_enhanced_mlflow_logging = log_step_report,
-    create_detailed_step_report, log_step_metrics = log_step_dataframe_with_standardized_name = log_step_artifact_with_standardized_name
+from src.utils.pipeline_standards import (
+    with_enhanced_mlflow_logging, log_step_report,
+    create_detailed_step_report, log_step_metrics, log_step_dataframe_with_standardized_name, log_step_artifact_with_standardized_name
 )
 
 # Import the comprehensive executor and data quality monitor
@@ -39,7 +40,7 @@ class ComprehensivePipelineExecutor:
     - Performance optimization and resource management
     """
 
-    def __init__(self, config: Dict[str = Any]):
+    def __init__(self, config: Dict[str, Any]):
         self.config = config
         self.logger = system_logger.getChild("ComprehensivePipelineExecutor")
 
@@ -50,8 +51,12 @@ class ComprehensivePipelineExecutor:
         # Execution state
         self.execution_state = {
             "start_time": None,
-            "current_step": None, "completed_steps": [] = "failed_steps": [],
-            "overall_success": False, "total_execution_time": 0.0 = "quality_scores": {},
+            "current_step": None,
+            "completed_steps": [],
+            "failed_steps": [],
+            "overall_success": False,
+            "total_execution_time": 0.0,
+            "quality_scores": {},
             "compatibility_scores": {},
             "format_scores": {},
             "index_scores": {}
@@ -60,8 +65,8 @@ class ComprehensivePipelineExecutor:
         self.logger.info("🚀 Comprehensive Pipeline Executor initialized")
 
     async def execute_pipeline_with_quality_monitoring(
-        self, training_input: Dict[str = Any]
-    ) -> Dict[str = Any]:
+        self, training_input: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """
         Execute the complete pipeline (steps 1-7) with comprehensive quality monitoring.
 
@@ -95,8 +100,12 @@ class ComprehensivePipelineExecutor:
         # Reset execution state
         self.execution_state.update({
             "start_time": time.time(),
-            "current_step": None, "completed_steps": [] = "failed_steps": [],
-            "overall_success": False, "total_execution_time": 0.0 = "quality_scores": {},
+            "current_step": None,
+            "completed_steps": [],
+            "failed_steps": [],
+            "overall_success": False,
+            "total_execution_time": 0.0,
+            "quality_scores": {},
             "compatibility_scores": {},
             "format_scores": {},
             "index_scores": {}
@@ -105,8 +114,8 @@ class ComprehensivePipelineExecutor:
         self.logger.info("✅ Quality monitoring components initialized")
 
     async def _execute_pipeline_with_monitoring(
-        self, training_input: Dict[str = Any]
-    ) -> Dict[str = Any]:
+        self, training_input: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """Execute pipeline with integrated quality monitoring."""
 
         # Execute the main pipeline
@@ -116,22 +125,22 @@ class ComprehensivePipelineExecutor:
         step_results = pipeline_result.get("step_results", {})
 
         # Monitor quality for each completed step
-        for step_name = step_result in step_results.items():
-            if step_result.get("success" = False):
+        for step_name, step_result in step_results.items():
+            if step_result.get("success", False):
                 await self._monitor_step_quality(step_name, step_result, training_input)
                 self.execution_state["completed_steps"].append(step_name)
             else:
                 self.execution_state["failed_steps"].append(step_name)
 
         # Update execution state
-        self.execution_state["overall_success"] = pipeline_result.get("success" = False)
+        self.execution_state["overall_success"] = pipeline_result.get("success", False)
         self.execution_state["total_execution_time"] = pipeline_result.get("total_execution_time", 0.0)
 
         return pipeline_result
 
     async def _monitor_step_quality(
-        self, step_name: str = step_result: Dict[str, Any],
-        training_input: Dict[str = Any]
+        self, step_name: str, step_result: Dict[str, Any],
+        training_input: Dict[str, Any]
     ) -> None:
         """Monitor quality for a specific step."""
         self.logger.info(f"🔍 Monitoring quality for {step_name}")
@@ -150,19 +159,19 @@ class ComprehensivePipelineExecutor:
 
             # Monitor data quality
             quality_metrics = await self.data_quality_monitor.monitor_data_quality(
-                step_data = step_name, {"training_input": training_input}
+                step_data=step_name, training_input={"training_input": training_input}
             )
             self.execution_state["quality_scores"][step_name] = quality_metrics.overall_score
 
             # Monitor compatibility
             compatibility_metrics = await self.data_quality_monitor.monitor_compatibility(
-                step_data = step_name
+                step_data=step_name
             )
             self.execution_state["compatibility_scores"][step_name] = compatibility_metrics.overall_compatible
 
             # Monitor format
             format_metrics = await self.data_quality_monitor.monitor_format(
-                step_data = step_name
+                step_data=step_name
             )
             self.execution_state["format_scores"][step_name] = format_metrics.format_match
 
@@ -173,18 +182,18 @@ class ComprehensivePipelineExecutor:
             self.execution_state["index_scores"][step_name] = index_metrics.overall_valid
 
             # Log step quality summary
-            await self._log_step_quality_summary(step_name, quality_metrics = compatibility_metrics, format_metrics = index_metrics)
+            await self._log_step_quality_summary(step_name, quality_metrics, compatibility_metrics, format_metrics, index_metrics)
 
             # Check for quality alerts
             if quality_metrics.overall_score < 0.8:
-                await self._handle_quality_alert(step_name = quality_metrics)
+                await self._handle_quality_alert(step_name, quality_metrics)
 
         except Exception as e:
-    self.logger.error(f"❌ Error monitoring quality for {step_name}: {e}")
+            self.logger.error(f"❌ Error monitoring quality for {step_name}: {e}")
 
     async def _log_step_quality_summary(
         self,
-        step_name: str, quality_metrics = compatibility_metrics,
+        step_name: str, quality_metrics, compatibility_metrics,
         format_metrics, index_metrics
     ) -> None:
         """Log quality summary for a specific step."""

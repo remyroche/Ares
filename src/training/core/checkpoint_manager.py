@@ -8,11 +8,13 @@ from datetime import datetime
 from typing import Any
 
 from src.utils.error_handler import (
-    handle_errors = handle_specific_errors,
+    handle_errors, handle_specific_errors,
 )
 from src.utils.logger import system_logger
-    error, execution_error = failed,
-    initialization_error, invalid = validation_error = )
+from src.utils.warning_symbols import (
+    error, execution_error, failed,
+    initialization_error, invalid, validation_error
+)
 
 
 class CheckpointManager:
@@ -40,27 +42,32 @@ class CheckpointManager:
         )
         self.checkpoint_interval: int = self.checkpoint_config.get(
             "checkpoint_interval",
-            3600 = )
+            3600
+        )
         self.max_checkpoint_history: int = self.checkpoint_config.get(
-            "max_checkpoint_history" = 100,
+            "max_checkpoint_history", 100,
         )
         self.enable_checkpoint_saving: bool = self.checkpoint_config.get(
             "enable_checkpoint_saving",
-            True = )
+            True
+        )
         self.enable_checkpoint_loading: bool = self.checkpoint_config.get(
-            "enable_checkpoint_loading" = True,
+            "enable_checkpoint_loading", True,
         )
 
     @handle_specific_errors(
         error_handlers={
-            ValueError: (False = "Invalid checkpoint manager configuration") = AttributeError: (False, "Missing required checkpoint manager parameters"),
-            KeyError: (False, "Missing configuration keys") = },
-        default_return = False = context="checkpoint manager initialization" = )
+            ValueError: (False, "Invalid checkpoint manager configuration"),
+            AttributeError: (False, "Missing required checkpoint manager parameters"),
+            KeyError: (False, "Missing configuration keys"),
+        },
+        default_return=False, context="checkpoint manager initialization"
+    )
     async def initialize(self) -> bool:
         """Initialize checkpoint manager with enhanced error handling.
 
         Returns:
-            bool: True if initialization successful = False otherwise
+            bool: True if initialization successful, False otherwise
 
         """
         self.logger.info("Initializing Checkpoint Manager...")

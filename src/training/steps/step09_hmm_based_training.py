@@ -374,7 +374,7 @@ class HMMBasedTrainingStep:
             return available_features
 
         except Exception as e:
-    self.logger.exception(f"❌ Failed to get available features: {e}")
+            self.logger.exception(f"❌ Failed to get available features: {e}")
             return []
 
     async def _apply_enhanced_optimization(
@@ -421,7 +421,7 @@ class HMMBasedTrainingStep:
             return optimized_features, optimization_results
 
         except Exception as e:
-    self.logger.exception(f"❌ Enhanced optimization failed for {timeframe} {architecture}: {e}")
+            self.logger.exception(f"❌ Enhanced optimization failed for {timeframe} {architecture}: {e}")
             msg = f"Enhanced optimization failed for {timeframe} {architecture}: {e}"
             raise RuntimeError(msg)
 
@@ -453,185 +453,195 @@ class HMMBasedTrainingStep:
         self.logger.info("🔄 Executing HMM - Based Training...")
 
         # Extract parameters
-            symbol = training_input.get("symbol", "ETHUSDT")
-            exchange = training_input.get("exchange", "BINANCE")
-            data_dir = training_input.get("data_dir", "data / training")
-            timeframes = training_input.get("timeframes", ["1m", "5m", "15m", "30m"])
+        symbol = training_input.get("symbol", "ETHUSDT")
+        exchange = training_input.get("exchange", "BINANCE")
+        data_dir = training_input.get("data_dir", "data/training")
+        timeframes = training_input.get("timeframes", ["1m", "5m", "15m", "30m"])
 
         # Load HMM cluster data
-            hmm_data = await self._load_hmm_data(exchange = symbol, data_dir, timeframes)
+        hmm_data = await self._load_hmm_data(exchange, symbol, data_dir, timeframes)
         if not hmm_data:
-                msg = "Failed to load HMM data"
-                raise ValueError(msg)
+            msg = "Failed to load HMM data"
+            raise ValueError(msg)
 
         # Load feature data
-            feature_data = await self._load_feature_data(
-                exchange, symbol, data_dir = timeframes = )
+        feature_data = await self._load_feature_data(
+            exchange, symbol, data_dir, timeframes
+        )
 
         # Check if we have data for all timeframes
-            missing_timeframes = [
-                tf for tf in timeframes if tf not in feature_data or feature_data[tf].empty
-            ]
+        missing_timeframes = [
+            tf for tf in timeframes if tf not in feature_data or feature_data[tf].empty
+        ]
 
         if missing_timeframes:
-    self.logger.info(
-                    f"🔄 Missing feature data for timeframes: {missing_timeframes}",
-                )
-        self.logger.info(
-                    "🔄 Attempting to create timeframe - specific feature files...",
-                )
-        await self._create_timeframe_specific_features(
-                    exchange, symbol = data_dir, timeframes = )
-                feature_data = await self._load_feature_data(
-                    exchange, symbol, data_dir = timeframes,
-                )
+            self.logger.info(
+                f"🔄 Missing feature data for timeframes: {missing_timeframes}",
+            )
+            self.logger.info(
+                "🔄 Attempting to create timeframe-specific feature files...",
+            )
+            await self._create_timeframe_specific_features(
+                exchange, symbol, data_dir, timeframes
+            )
+            feature_data = await self._load_feature_data(
+                exchange, symbol, data_dir, timeframes,
+            )
 
         if not feature_data:
-                msg = "Failed to load feature data"
-                raise ValueError(msg)
+            msg = "Failed to load feature data"
+            raise ValueError(msg)
 
         # Load regime weights if available
-            regime_weights = None
+        regime_weights = None
         if self.data_source_config["load_regime_weights"]:
-                regime_weights = await self._load_regime_weights(
-                    exchange, symbol, data_dir = )
+            regime_weights = await self._load_regime_weights(
+                exchange, symbol, data_dir
+            )
 
-        # Train models for each timeframe - BOTH regime - specific AND combined models are required
-            training_results: dict[str, Any] = {}
+        # Train models for each timeframe - BOTH regime-specific AND combined models are required
+        training_results: dict[str, Any] = {}
         for timeframe in timeframes:
-        self.logger.info(f"🎯 Training models for {timeframe}")
+            self.logger.info(f"🎯 Training models for {timeframe}")
 
-        # Step 1: Train regime - specific models (required)
-        self.logger.info(
-                    f"🎯 Step 1: Training regime - specific models for {timeframe}",
+            # Step 1: Train regime-specific models (required)
+            self.logger.info(
+                f"🎯 Step 1: Training regime-specific models for {timeframe}",
+            )
+            regime_models = await self._train_regime_specific_models(timeframe)
+
+            if not regime_models:
+                self.logger.error(
+                    f"❌ Failed to train regime-specific models for {timeframe}"
                 )
-                regime_models = await self._train_regime_specific_models(timeframe)
-
-        if not regime_models:
-        self.logger.error(
-                        f"❌ Failed to train regime - specific models for {timeframe}" = )
-        self.logger.error(
-                        "❌ Both regime - specific AND combined models are required",
-                    )
-                    msg = f"Failed to train regime - specific models for {timeframe}"
-                    raise ValueError(msg)
-
-        # Step 2: Train combined model (also required)
-        self.logger.info(f"🎯 Step 2: Training combined model for {timeframe}")
-
-        # Prepare data for this timeframe
-                tf_data = await self._prepare_timeframe_data(
-                    hmm_data[timeframe], feature_data[timeframe], timeframe, )
-
-        if (
-                    tf_data is None
-                    or len(tf_data) < self.validation_config["min_samples_per_split"]
-                ):
-        self.logger.error(
-                        f"❌ Insufficient data for combined model training for {timeframe}" = )
-                    msg = f"Insufficient data for combined model training for {timeframe}"
-                    raise ValueError(msg)
-
-        # Add regime weights if available
-        if regime_weights is not None: tf_data = await self._add_regime_weights(
-                        tf_data = regime_weights, timeframe, )
-
-        # Train combined model based on architecture
-                combined_model_result = await self._train_timeframe_model(
-                    tf_data, timeframe = )
-        if not combined_model_result:
-        self.logger.error(
-                        f"❌ Failed to train combined model for {timeframe}" = )
-                    msg = f"Failed to train combined model for {timeframe}"
-                    raise ValueError(msg)
-
-        # Store both types of models
-                training_results[timeframe] = {
-                    "training_type": "both",
-                    "regime_models": regime_models = "combined_model": combined_model_result = "total_regimes": len(regime_models),
-                    "architecture": self.model_architectures[timeframe],
-                }
-        self.logger.info(
-                    f"✅ Trained {len(regime_models)} regime - specific models + 1 combined model for {timeframe}",
+                self.logger.error(
+                    "❌ Both regime-specific AND combined models are required",
                 )
+                msg = f"Failed to train regime-specific models for {timeframe}"
+                raise ValueError(msg)
+
+            # Step 2: Train combined model (also required)
+            self.logger.info(f"🎯 Step 2: Training combined model for {timeframe}")
+
+            # Prepare data for this timeframe
+            tf_data = await self._prepare_timeframe_data(
+                hmm_data[timeframe], feature_data[timeframe], timeframe
+            )
+
+            if (
+                tf_data is None
+                or len(tf_data) < self.validation_config["min_samples_per_split"]
+            ):
+                self.logger.error(
+                    f"❌ Insufficient data for combined model training for {timeframe}"
+                )
+                msg = f"Insufficient data for combined model training for {timeframe}"
+                raise ValueError(msg)
+
+            # Add regime weights if available
+            if regime_weights is not None:
+                tf_data = await self._add_regime_weights(
+                    tf_data, regime_weights, timeframe
+                )
+
+            # Train combined model based on architecture
+            combined_model_result = await self._train_timeframe_model(
+                tf_data, timeframe
+            )
+            if not combined_model_result:
+                self.logger.error(
+                    f"❌ Failed to train combined model for {timeframe}"
+                )
+                msg = f"Failed to train combined model for {timeframe}"
+                raise ValueError(msg)
+
+            # Store both types of models
+            training_results[timeframe] = {
+                "training_type": "both",
+                "regime_models": regime_models,
+                "combined_model": combined_model_result,
+                "total_regimes": len(regime_models),
+                "architecture": self.model_architectures[timeframe],
+            }
+            self.logger.info(
+                f"✅ Trained {len(regime_models)} regime-specific models + 1 combined model for {timeframe}",
+            )
 
         # Save models and metadata
-        await self._save_models(training_results, exchange = symbol = data_dir)
+        await self._save_models(training_results, exchange, symbol, data_dir)
 
-        # Train S / R outcome model using all available features
-        self.logger.info("🔄 Training S / R outcome model...")
+        # Train S/R outcome model using all available features
+        self.logger.info("🔄 Training S/R outcome model...")
         # sr_outcome_training_success = await self._train_sr_outcome_model(feature_data)
-            sr_outcome_training_success = True  # Temporarily skip S / R outcome training
+        sr_outcome_training_success = True  # Temporarily skip S/R outcome training
 
         if sr_outcome_training_success:
-    self.logger.info("✅ S / R outcome model training completed successfully")
-            else:
-        self.logger.warning("⚠️ S / R outcome model training failed or skipped")
+            self.logger.info("✅ S/R outcome model training completed successfully")
+        else:
+            self.logger.warning("⚠️ S/R outcome model training failed or skipped")
 
         # Enhanced regime forecasting artifacts with advanced capabilities
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
-        except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
-                import json
-                import os
-                import pandas as _pd
-                import numpy as np
+            import json
+            import os
+            import pandas as _pd
+            import numpy as np
 
-                rf_dir = os.path.join(data_dir, "regime_forecasting")
-                os.makedirs(rf_dir = exist_ok = True)
+            rf_dir = os.path.join(data_dir, "regime_forecasting")
+            os.makedirs(rf_dir, exist_ok=True)
 
-                regime_forecasting_summary: dict[str = dict] = {}
-        for tf in timeframes:
-        try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
-        except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
-                        df = hmm_data.get(tf)
-        if not isinstance(df, pd.DataFrame) or df.empty:
-                            continue
-        if "composite_cluster_id" not in df.columns:
-                            continue
+            regime_forecasting_summary: dict[str, dict] = {}
+            for tf in timeframes:
+                try:
+                    # TODO: Implement based on requirements proper exception handling
+                    pass
+                except Exception as e:
+                    # TODO: Implement based on requirements proper exception handling
+                    pass
+                
+                df = hmm_data.get(tf)
+                if not isinstance(df, pd.DataFrame) or df.empty:
+                    continue
+                if "composite_cluster_id" not in df.columns:
+                    continue
 
-                        # Enhanced regime forecasting with multiple lookahead periods
-                        artifact = await self._create_enhanced_regime_forecasting(df = tf, exchange, symbol)
-                        regime_forecasting_summary[tf] = artifact
+                # Enhanced regime forecasting with multiple lookahead periods
+                artifact = await self._create_enhanced_regime_forecasting(df, tf, exchange, symbol)
+                regime_forecasting_summary[tf] = artifact
 
-                        rf_path = os.path.join(
-                            rf_dir = f"{exchange}_{symbol}_{tf}_enhanced_regime_forecasting.json",
-                        )
-        with open(rf_path = "w") as f:
-                            json.dump(artifact = f, indent = 2)
-        self.logger.info(f"💾 Saved enhanced regime forecasting artifact -> {rf_path}")
-        except Exception as _inner:
-        self.logger.warning(
-                            f"⚠️ Enhanced regime forecasting generation failed for {tf}: {_inner}",
-                        )
-
-        if regime_forecasting_summary:
-    pipeline_state["enhanced_regime_forecasting"] = regime_forecasting_summary
-        except Exception as _fe:
-        self.logger.warning(
-                    f"⚠️ Skipped enhanced regime forecasting artifacts due to error: {_fe}",
+                rf_path = os.path.join(
+                    rf_dir, f"{exchange}_{symbol}_{tf}_enhanced_regime_forecasting.json",
                 )
+                with open(rf_path, "w") as f:
+                    json.dump(artifact, f, indent=2)
+                self.logger.info(f"💾 Saved enhanced regime forecasting artifact -> {rf_path}")
+        except Exception as _inner:
+            self.logger.warning(
+                f"⚠️ Enhanced regime forecasting generation failed for {tf}: {_inner}",
+            )
 
-        self.logger.info("✅ HMM - Based Training completed successfully")
-        return {
+            if regime_forecasting_summary:
+                pipeline_state["enhanced_regime_forecasting"] = regime_forecasting_summary
+        except Exception as _fe:
+            self.logger.warning(
+                f"⚠️ Skipped enhanced regime forecasting artifacts due to error: {_fe}",
+            )
+
+            self.logger.info("✅ HMM-Based Training completed successfully")
+            return {
                 "status": "SUCCESS",
                 "models_trained": len(training_results),
                 "timeframes": list(training_results.keys()),
-                "sr_outcome_model_trained": sr_outcome_training_success = "results": training_results = }
+                "sr_outcome_model_trained": sr_outcome_training_success,
+                "results": training_results
+            }
 
         except Exception as e:
-    self.logger.exception(f"❌ HMM - Based Training failed: {e}")
-        return {"status": "FAILED", "error": str(e)}
+            self.logger.exception(f"❌ HMM-Based Training failed: {e}")
+            return {"status": "FAILED", "error": str(e)}
 
     async def _create_enhanced_regime_forecasting(
-        self, df: pd.DataFrame = timeframe: str, exchange: str = symbol: str
+        self, df: pd.DataFrame, timeframe: str, exchange: str, symbol: str
     ) -> dict[str, Any]:
         """Create enhanced regime forecasting with multiple lookahead periods and confidence measures."""
         try:
@@ -651,7 +661,7 @@ class HMMBasedTrainingStep:
             # Generate multi-horizon forecasts
             current_cid = int(cids.iloc[-1])
             multi_horizon_forecasts = self._generate_multi_horizon_forecasts(
-                current_cid = transitions = stability_metrics
+                current_cid, transitions, stability_metrics
             )
             
             # Calculate regime change confidence
@@ -660,26 +670,36 @@ class HMMBasedTrainingStep:
             )
             
             # Generate regime persistence analysis
-            persistence_analysis = self._analyze_regime_persistence(cids = transitions)
+            persistence_analysis = self._analyze_regime_persistence(cids, transitions)
             
             return {
                 "timeframe": timeframe,
-                "exchange": exchange, "symbol": symbol = "current_regime": current_cid,
-                "transition_matrix": transitions, "stability_metrics": stability_metrics = "multi_horizon_forecasts": multi_horizon_forecasts,
-                "change_confidence": change_confidence = "persistence_analysis": persistence_analysis = "forecasting_metadata": {
+                "exchange": exchange,
+                "symbol": symbol,
+                "current_regime": current_cid,
+                "transition_matrix": transitions,
+                "stability_metrics": stability_metrics,
+                "multi_horizon_forecasts": multi_horizon_forecasts,
+                "change_confidence": change_confidence,
+                "persistence_analysis": persistence_analysis,
+                "forecasting_metadata": {
                     "total_regimes": len(cids.unique()),
-                    "total_transitions": len(cids) - 1 = "forecast_generated_at": pd.Timestamp.now().isoformat() = "lookback_periods": [5, 10, 20 = 50, 100],
+                    "total_transitions": len(cids) - 1,
+                    "forecast_generated_at": pd.Timestamp.now().isoformat(),
+                    "lookback_periods": [5, 10, 20, 50, 100],
                     "confidence_thresholds": {
-                        "high": 0.8 = "medium": 0.6 = "low": 0.4
+                        "high": 0.8,
+                        "medium": 0.6,
+                        "low": 0.4
                     }
                 }
             }
             
         except Exception as e:
-    self.logger.error(f"❌ Enhanced regime forecasting failed: {e}")
+            self.logger.error(f"❌ Enhanced regime forecasting failed: {e}")
             return {"error": str(e)}
 
-    def _build_transition_matrix(self, cids: pd.Series) -> dict[int = dict[int = float]]:
+    def _build_transition_matrix(self, cids: pd.Series) -> dict[int, dict[int, float]]:
         """Build comprehensive transition probability matrix."""
         transitions = {}
         prev = None
@@ -692,7 +712,7 @@ class HMMBasedTrainingStep:
         
         # Normalize to probabilities with smoothing
         trans_prob = {}
-        for i = row in transitions.items():
+        for i, row in transitions.items():
             row_sum = float(sum(row.values()))
             if row_sum > 0:
                 # Add small smoothing factor to avoid zero probabilities
@@ -700,13 +720,13 @@ class HMMBasedTrainingStep:
                 total_states = len(set(cids))
                 trans_prob[i] = {
                     j: (cnt + smoothing) / (row_sum + smoothing * total_states) 
-                    for j = cnt in row.items()
+                    for j, cnt in row.items()
                 }
         
         return trans_prob
 
     def _calculate_regime_stability_metrics(
-        self, cids: pd.Series, transitions: dict[int = dict[int, float]]
+        self, cids: pd.Series, transitions: dict[int, dict[int, float]]
     ) -> dict[str, Any]:
         """Calculate regime stability and persistence metrics."""
         try:
@@ -720,7 +740,7 @@ class HMMBasedTrainingStep:
             current_regime = cids.iloc[0]
             current_duration = 1
             
-            for i in range(1 = len(cids)):
+            for i in range(1, len(cids)):
                 if cids.iloc[i] == current_regime:
                     current_duration += 1
                 else:
@@ -730,18 +750,14 @@ class HMMBasedTrainingStep:
             durations.append(current_duration)  # Add last duration
             
             # Calculate stability metrics
-            avg_duration = np.mean(durations) if durations else:
-    1
-            duration_std = np.std(durations) if durations else:
-    0
-            max_duration = max(durations) if durations else:
-    1
-            min_duration = min(durations) if durations else:
-    1
+            avg_duration = np.mean(durations) if durations else 1
+            duration_std = np.std(durations) if durations else 0
+            max_duration = max(durations) if durations else 1
+            min_duration = min(durations) if durations else 1
             
             # Calculate regime persistence (self-transition probability)
             persistence = {}
-            for regime = probs in transitions.items():
+            for regime, probs in transitions.items():
                 persistence[regime] = probs.get(regime, 0.0)
             
             return {
@@ -749,36 +765,32 @@ class HMMBasedTrainingStep:
                 "duration_std": float(duration_std),
                 "max_duration": int(max_duration),
                 "min_duration": int(min_duration),
-                "regime_persistence": persistence = "total_regime_changes": len(durations) - 1 = "stability_score": float(avg_duration / (avg_duration + duration_std)) if duration_std > 0 else:
-    1.0
+                "regime_persistence": persistence,
+                "total_regime_changes": len(durations) - 1,
+                "stability_score": float(avg_duration / (avg_duration + duration_std)) if duration_std > 0 else 1.0
             }
             
         except Exception as e:
-    self.logger.warning(f"⚠️ Error calculating stability metrics: {e}")
+            self.logger.warning(f"⚠️ Error calculating stability metrics: {e}")
             return {"error": str(e)}
 
     def _generate_multi_horizon_forecasts(
-        self, current_regime: int, transitions: dict[int = dict[int, float]], 
+        self, current_regime: int, transitions: dict[int, dict[int, float]], 
         stability_metrics: dict[str, Any]
     ) -> dict[str, Any]:
         """Generate forecasts for multiple time horizons."""
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
-        except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
-            horizons = [5, 10, 20 = 50 = 100]
+            horizons = [5, 10, 20, 50, 100]
             forecasts = {}
             
             for horizon in horizons:
                 # Calculate exit probability within horizon
-                p_stay = transitions.get(current_regime, {}).get(current_regime = 0.0)
+                p_stay = transitions.get(current_regime, {}).get(current_regime, 0.0)
                 exit_prob = 1.0 - (p_stay ** horizon)
                 
                 # Calculate most likely next regimes
-                next_probs = transitions.get(current_regime = {})
-                sorted_regimes = sorted(next_probs.items(), key = lambda x: x[1], reverse = True)
+                next_probs = transitions.get(current_regime, {})
+                sorted_regimes = sorted(next_probs.items(), key=lambda x: x[1], reverse=True)
                 
                 # Calculate regime change probability
                 change_prob = 1.0 - p_stay
@@ -788,20 +800,20 @@ class HMMBasedTrainingStep:
                     "stay_probability": float(p_stay ** horizon),
                     "change_probability": float(change_prob),
                     "most_likely_regimes": [
-                        {"regime": regime = "probability": float(prob)} 
-                        for regime = prob in sorted_regimes[:3]
+                        {"regime": regime, "probability": float(prob)} 
+                        for regime, prob in sorted_regimes[:3]
                     ],
-                    "confidence_level": self._calculate_forecast_confidence(exit_prob = stability_metrics)
+                    "confidence_level": self._calculate_forecast_confidence(exit_prob, stability_metrics)
                 }
             
             return forecasts
             
         except Exception as e:
-    self.logger.warning(f"⚠️ Error generating multi-horizon forecasts: {e}")
+            self.logger.warning(f"⚠️ Error generating multi-horizon forecasts: {e}")
             return {"error": str(e)}
 
     def _calculate_regime_change_confidence(
-        self = current_regime: int, transitions: dict[int, dict[int = float]], 
+        self, current_regime: int, transitions: dict[int, dict[int, float]], 
         stability_metrics: dict[str, Any]
     ) -> dict[str, Any]:
         """Calculate confidence in regime change predictions."""
@@ -810,17 +822,16 @@ class HMMBasedTrainingStep:
             pass
         except Exception as e:
             # TODO: Implement based on requirements proper exception handling
-            pass
-            p_stay = transitions.get(current_regime = {}).get(current_regime, 0.0)
+            p_stay = transitions.get(current_regime, {}).get(current_regime, 0.0)
             p_change = 1.0 - p_stay
             
             # Base confidence on transition probability and stability
             base_confidence = p_change
-            stability_factor = stability_metrics.get("stability_score" = 0.5)
+            stability_factor = stability_metrics.get("stability_score", 0.5)
             
             # Adjust confidence based on stability
             adjusted_confidence = base_confidence * (1.0 + stability_factor) / 2.0
-            adjusted_confidence = min(1.0 = max(0.0 = adjusted_confidence))
+            adjusted_confidence = min(1.0, max(0.0, adjusted_confidence))
             
             return {
                 "change_probability": float(p_change),
@@ -828,15 +839,15 @@ class HMMBasedTrainingStep:
                 "base_confidence": float(base_confidence),
                 "stability_adjusted_confidence": float(adjusted_confidence),
                 "confidence_level": self._get_confidence_level(adjusted_confidence),
-                "risk_assessment": self._assess_regime_change_risk(p_change = stability_metrics)
+                "risk_assessment": self._assess_regime_change_risk(p_change, stability_metrics)
             }
             
         except Exception as e:
-    self.logger.warning(f"⚠️ Error calculating change confidence: {e}")
+            self.logger.warning(f"⚠️ Error calculating change confidence: {e}")
             return {"error": str(e)}
 
     def _analyze_regime_persistence(
-        self = cids: pd.Series, transitions: dict[int, dict[int = float]]
+        self, cids: pd.Series, transitions: dict[int, dict[int, float]]
     ) -> dict[str, Any]:
         """Analyze regime persistence patterns."""
         try:
@@ -852,36 +863,41 @@ class HMMBasedTrainingStep:
             # Calculate regime dominance
             regime_frequencies = {
                 regime: count / total_periods 
-                for regime = count in regime_counts.items()
+                for regime, count in regime_counts.items()
             }
             
             # Identify dominant regimes
             dominant_regimes = [
-                regime for regime = freq in regime_frequencies.items() 
+                regime for regime, freq in regime_frequencies.items() 
                 if freq > 0.3  # More than 30% of time
             ]
             
             # Calculate transition entropy (measure of randomness)
             transition_entropy = {}
-            for regime = probs in transitions.items():
+            for regime, probs in transitions.items():
                 entropy = -sum(p * np.log(p + 1e-10) for p in probs.values() if p > 0)
                 transition_entropy[regime] = float(entropy)
             
             return {
-                "regime_frequencies": regime_frequencies, "dominant_regimes": dominant_regimes = "transition_entropy": transition_entropy = "persistence_patterns": {
+                "regime_frequencies": regime_frequencies,
+                "dominant_regimes": dominant_regimes,
+                "transition_entropy": transition_entropy,
+                "persistence_patterns": {
                     "most_persistent": max(transitions.keys(), 
-                                         key = lambda x: transitions[x].get(x = 0.0)) = "least_persistent": min(transitions.keys(), 
-                                          key = lambda x: transitions[x].get(x = 0.0)) = "average_persistence": float(np.mean([
+                                         key=lambda x: transitions[x].get(x, 0.0)),
+                    "least_persistent": min(transitions.keys(), 
+                                          key=lambda x: transitions[x].get(x, 0.0)),
+                    "average_persistence": float(np.mean([
                         transitions[r].get(r, 0.0) for r in transitions.keys()
                     ]))
                 }
             }
             
         except Exception as e:
-    self.logger.warning(f"⚠️ Error analyzing regime persistence: {e}")
+            self.logger.warning(f"⚠️ Error analyzing regime persistence: {e}")
             return {"error": str(e)}
 
-    def _calculate_forecast_confidence(self, exit_prob: float = stability_metrics: dict[str, Any]) -> str:
+    def _calculate_forecast_confidence(self, exit_prob: float, stability_metrics: dict[str, Any]) -> str:
         """Calculate confidence level for forecasts."""
         if exit_prob >= 0.8:
             return "high"
@@ -899,7 +915,7 @@ class HMMBasedTrainingStep:
         else:
             return "low"
 
-    def _assess_regime_change_risk(self = change_prob: float, stability_metrics: dict[str, Any]) -> str:
+    def _assess_regime_change_risk(self, change_prob: float, stability_metrics: dict[str, Any]) -> str:
         """Assess risk level of regime change."""
         if change_prob >= 0.7:
             return "high"
@@ -909,100 +925,90 @@ class HMMBasedTrainingStep:
             return "low"
 
     async def _load_hmm_data(
-        self = exchange: str, symbol: str, data_dir: str = timeframes: list[str],
-    ) -> dict[str = pd.DataFrame]:
+        self, exchange: str, symbol: str, data_dir: str, timeframes: list[str],
+    ) -> dict[str, pd.DataFrame]:
         """Load HMM cluster data for all timeframes using centralized HMM composite manager."""
-        hmm_data: dict[str = pd.DataFrame] = {}
+        hmm_data: dict[str, pd.DataFrame] = {}
 
         # Use centralized HMM composite manager
         try:
-    from src.utils.hmm_composite_manager import get_hmm_composite_manager
+            from src.utils.hmm_composite_manager import get_hmm_composite_manager
 
             hmm_manager = get_hmm_composite_manager()
         except ImportError as e:
-        self.logger.exception(f"❌ Failed to import HMM composite manager: {e}")
-        return {}
+            self.logger.exception(f"❌ Failed to import HMM composite manager: {e}")
+            return {}
 
         for timeframe in timeframes:
-        try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
-        except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
-        # Load composite clusters using the manager
+            try:
+                # Load composite clusters using the manager
                 clusters_df = hmm_manager.load_composite_clusters(
-                    exchange = exchange, symbol = symbol, timeframe = timeframe = data_dir = data_dir,
+                    exchange=exchange, symbol=symbol, timeframe=timeframe, data_dir=data_dir,
                 )
 
-        if clusters_df is None:
-        self.logger.warning(
+                if clusters_df is None:
+                    self.logger.warning(
                         f"⚠️ No HMM composite clusters found for {timeframe}",
                     )
                     continue
 
-        # Ensure timestamp index
-        if "timestamp" in clusters_df.columns:
+                # Ensure timestamp index
+                if "timestamp" in clusters_df.columns:
                     clusters_df["timestamp"] = pd.to_datetime(clusters_df["timestamp"])
-        # Normalize timestamps to remove microseconds for consistency
+                    # Normalize timestamps to remove microseconds for consistency
                     clusters_df["timestamp"] = clusters_df["timestamp"].dt.floor("1T")
                     clusters_df = clusters_df.set_index("timestamp")
 
-        # Load intensity scores if available
+                # Load intensity scores if available
                 intensity_path = f"{data_dir}/{exchange}_{symbol}_hmm_composite_intensity_{timeframe}.parquet"
                 intensity_df: pd.DataFrame | None = None
-        if os.path.exists(intensity_path):
-        try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
-        except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                if os.path.exists(intensity_path):
+                    try:
                         intensity_df = pd.read_parquet(intensity_path)
-        if "timestamp" in intensity_df.columns:
+                        if "timestamp" in intensity_df.columns:
                             intensity_df["timestamp"] = pd.to_datetime(
                                 intensity_df["timestamp"],
                             )
-        # Normalize timestamps to remove microseconds for consistency
+                            # Normalize timestamps to remove microseconds for consistency
                             intensity_df["timestamp"] = intensity_df[
                                 "timestamp"
                             ].dt.floor("1T")
                             intensity_df = intensity_df.set_index("timestamp")
 
-        # Merge cluster assignments with intensity scores
-                        hmm_df = clusters_df.merge(
-                            intensity_df, left_index = True = right_index = True = how="inner"
-                        )
-                        hmm_data[timeframe] = hmm_df
-        self.logger.info(
-                            f"✅ Loaded complete HMM data for {timeframe}: {hmm_df.shape}",
-                        )
-        except Exception as e:
-    self.logger.warning(
+                            # Merge cluster assignments with intensity scores
+                            hmm_df = clusters_df.merge(
+                                intensity_df, left_index=True, right_index=True, how="inner"
+                            )
+                            hmm_data[timeframe] = hmm_df
+                            self.logger.info(
+                                f"✅ Loaded complete HMM data for {timeframe}: {hmm_df.shape}",
+                            )
+                    except Exception as e:
+                        self.logger.warning(
                             f"⚠️ Failed to load intensity data for {timeframe}: {e}",
                         )
                         hmm_data[timeframe] = clusters_df
-        self.logger.info(
+                        self.logger.info(
                             f"✅ Loaded HMM clusters only for {timeframe}: {clusters_df.shape}",
                         )
                 else:
                     hmm_data[timeframe] = clusters_df
-        self.logger.info(
+                    self.logger.info(
                         f"✅ Loaded HMM clusters only for {timeframe}: {clusters_df.shape}",
                     )
 
-        except Exception as e:
-    self.logger.exception(f"❌ Failed to load HMM data for {timeframe}: {e}")
+            except Exception as e:
+                self.logger.exception(f"❌ Failed to load HMM data for {timeframe}: {e}")
 
         return hmm_data
 
     async def _load_feature_data(
-        self, exchange: str = symbol: str, data_dir: str, timeframes: list[str] = ) -> dict[str, pd.DataFrame]:
+        self, exchange: str, symbol: str, data_dir: str, timeframes: list[str]) -> dict[str, pd.DataFrame]:
         """Load feature data for all timeframes with multiple source support and validation.
 
-        Prefer centralized artifact loader for 1m features to ensure column alignment via metadata = then resample to target timeframes.
+        Prefer centralized artifact loader for 1m features to ensure column alignment via metadata, then resample to target timeframes.
         """
-        feature_data: dict[str = pd.DataFrame] = {}
+        feature_data: dict[str, pd.DataFrame] = {}
 
         # 1) Try centralized artifact loader for 1m and resample others
         try:

@@ -7,41 +7,26 @@ This module validates the labeling step outputs.
 import json
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any = Dict + List = Optional
 
 import pandas as pd
 
 from src.utils.base_validator import BaseValidator
 from src.utils.logger import system_logger
 from src.utils.enhanced_validation_decorators import (
-    validate_step5_comprehensive, smart_validation_cache
+    validate_step5_comprehensive = smart_validation_cache
 )
 
-logger, system_logger.getChild("Step5LabelingValidator")
+logger = system_logger.getChild("Step5LabelingValidator")
 
 class Step5LabelingValidator(...):
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="step5labelingvalidator initialization",
-    )
-    async def initialize(self) -> bool:
-        """Initialize Step5LabelingValidator."""
-        try:
-            self.logger.info(f"🚀 Initializing {class_name}...")
-            self.is_initialized = True
-            self.logger.info(f"✅ {class_name} initialized successfully")
-            return True
-        except Exception as e:
-            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
-            return False
-    """..."""
-    passdef __init__(self = config: dict[str, Any]) -> None:
+def __init__(self: config: dict[str = Any]) -> None: c5f77863b142159eebf1d605f318c7dfff296aee
         super().__init__("step05_labeling", config)
-        self.logger, system_logger.getChild("Validator.Step5")
+        self.logger = system_logger.getChild("Validator.Step5")
 
     @validate_step5_comprehensive
+
     async def validate_step5_labeling(...) -> ...:
     """..."""
     passself.logger.info("🔍 Starting Step 5: Labeling validation")
@@ -50,9 +35,10 @@ class Step5LabelingValidator(...):
             pass
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
+ c5f77863b142159eebf1d605f318c7dfff296aee
             pass
         # Check if labeled data directory exists
-            labeled_data_dir, Path(data_dir) / "training" / "labeled_data"
+            labeled_data_dir = Path(data_dir) / "training" / "labeled_data"
         if not labeled_data_dir.exists():
     passself.logger.warning(
                     f"⚠️ Labeled data directory not found: {labeled_data_dir}"
@@ -60,7 +46,7 @@ class Step5LabelingValidator(...):
         return False
 
         # Validate labeled data files
-            labeled_files, list(labeled_data_dir.glob("*.parquet"))
+            labeled_files = list(labeled_data_dir.glob("*.parquet"))
         if not labeled_files:
     passself.logger.warning("⚠️ No labeled data files found")
         return False
@@ -71,7 +57,7 @@ class Step5LabelingValidator(...):
     passreturn False
 
         # Check for labeling metadata file
-            metadata_file, labeled_data_dir / f"{exchange}_{symbol}_1m_labeling_metadata.json"
+            metadata_file = labeled_data_dir / f"{exchange}_{symbol}_1m_labeling_metadata.json"
         if not metadata_file.exists():
     passpassself.logger.warning(f"⚠️ Labeling metadata file not found: {metadata_file}")
         return False
@@ -92,6 +78,7 @@ class Step5LabelingValidator(...):
         return False
 
     @smart_validation_cache(ttl_seconds = 300)  # Cache for 5 minutes
+
     async def _validate_labeled_file(...) -> ...:
     pass"""..."""
     passtry:
@@ -99,22 +86,22 @@ class Step5LabelingValidator(...):
             pass
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
+ c5f77863b142159eebf1d605f318c7dfff296aee
             pass
         self.logger.info(f"📁 Validating labeled file: {labeled_file.name}")
 
         # Use BaseValidator's file validation
-            file_exists, file_metrics = self.validate_file_exists(str(labeled_file), "labeled file")
+            file_exists = file_metrics = self.validate_file_exists(str(labeled_file), "labeled file")
         if not file_exists:
     passreturn False
 
         # Load and validate the labeled file
-            df, pd.read_parquet(labeled_file)
+            df = pd.read_parquet(labeled_file)
 
         # Use BaseValidator's DataFrame validation
-            df_valid = df_metrics, self.validate_dataframe_quality(
-                df = df, min_rows = 100 = required_columns=["timestamp", "label"],
-                check_data_types = True, check_value_ranges = True, check_duplicates = True,
-                check_temporal_consistency = True
+            df_valid = df_metrics = self.validate_dataframe_quality(
+                df = df = min_rows = 100 = required_columns=["timestamp", "label"],
+                check_data_types = True = check_value_ranges = True = check_duplicates = True = check_temporal_consistency = True
             )
 
         if not df_valid:
@@ -122,14 +109,14 @@ class Step5LabelingValidator(...):
         return False
 
         # Additional labeling - specific validation
-        if "label" in df.columns: unique_labels, df["label"].nunique()
+        if "label" in df.columns: unique_labels = df["label"].nunique()
         if unique_labels < 2:
     passself.logger.warning(f"⚠️ Insufficient label diversity in {labeled_file.name}: {unique_labels} labels")
         return False
 
         # Check label distribution
-                label_counts, df["label"].value_counts()
-                min_label_count, label_counts.min()
+                label_counts = df["label"].value_counts()
+                min_label_count = label_counts.min()
         if min_label_count < 10:  # Minimum samples per label
         self.logger.warning(f"⚠️ Some labels have very few samples in {labeled_file.name}: min={min_label_count}")
 
@@ -145,6 +132,7 @@ class Step5LabelingValidator(...):
         return False
 
     @smart_validation_cache(ttl_seconds = 600)  # Cache for 10 minutes
+
     async def _validate_metadata_file(...) -> ...:
     pass"""..."""
     passtry:
@@ -152,11 +140,12 @@ class Step5LabelingValidator(...):
             pass
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
+ c5f77863b142159eebf1d605f318c7dfff296aee
             pass
         self.logger.info(f"📊 Validating metadata file: {metadata_file.name}")
 
         # Use BaseValidator's file validation
-            file_exists, file_metrics, self.validate_file_exists(str(metadata_file), "metadata file")
+            file_exists = file_metrics + self.validate_file_exists(str(metadata_file), "metadata file")
         if not file_exists:
     passreturn False
 
@@ -164,7 +153,9 @@ class Step5LabelingValidator(...):
 
         # Check if metadata is a dictionary
         if not isinstance(metadata = dict):
+
     passself.logger.warning("⚠️ Metadata file should contain a dictionary")
+ c5f77863b142159eebf1d605f318c7dfff296aee
         return False
 
         # Check for required fields
@@ -177,13 +168,17 @@ class Step5LabelingValidator(...):
         # Validate label distribution
             label_distribution = metadata.get("label_distribution", {})
         if not isinstance(label_distribution = dict):
+
     passself.logger.warning("⚠️ Label distribution should be a dictionary")
+ c5f77863b142159eebf1d605f318c7dfff296aee
         return False
 
         # Validate total samples
             total_samples = metadata.get("total_samples", 0)
+
         if not isinstance(total_samples, int) or total_samples <= 0:
     passself.logger.warning(f"⚠️ Invalid total_samples: {total_samples}")
+ c5f77863b142159eebf1d605f318c7dfff296aee
         return False
 
         self.logger.info(f"✅ Metadata file validated: {metadata_file.name}")
@@ -197,9 +192,7 @@ class Step5LabelingValidator(...):
         self.logger.exception(f"❌ Failed to validate metadata file: {error_context}")
         return False
 
-    def validate_step_prerequisites(...) -> ...:
-    """..."""
-    passvalidation_result = {
+def validate_step_prerequisites(self: symbol: str = exchange: str = timeframe: str) -> Dict[str = Any]: c5f77863b142159eebf1d605f318c7dfff296aee
             "validation_passed": True,
             "warnings": [],
             "errors": [],
@@ -207,14 +200,16 @@ class Step5LabelingValidator(...):
         }
 
         try:
+
     pass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
+ c5f77863b142159eebf1d605f318c7dfff296aee
             pass
         # Check if step04_regime_data_splitting output exists using BaseValidator
-            step04_output_dir, Path("data / training / regime_splits")
-            step04_files, list(step04_output_dir.glob(f"{exchange}_{symbol}_{timeframe}*regime*.parquet"))
+            step04_output_dir = Path("data / training / regime_splits")
+            step04_files = list(step04_output_dir.glob(f"{exchange}_{symbol}_{timeframe}*regime*.parquet"))
 
         if not step04_files:
     passvalidation_result["validation_passed"] = False
@@ -222,8 +217,10 @@ class Step5LabelingValidator(...):
                     f"Step 4 regime data splitting output not found for {exchange}_{symbol}_{timeframe}"
                 )
             else:
+
     passpass# Validate each file using BaseValidator
         for file_path in step04_files: file_valid = file_metrics = self.validate_file_exists(str(file_path) = "step4 output file")
+ c5f77863b142159eebf1d605f318c7dfff296aee
         if not file_valid:
     passvalidation_result["warnings"].append(f"File validation failed: {file_path}")
 
@@ -236,21 +233,20 @@ class Step5LabelingValidator(...):
 
         return validation_result
 
-    def validate_step_output(...) -> ...:
-    """..."""
-    passvalidation_result = {
-            "validation_passed": True, "warnings": [] = "errors": [],
+def validate_step_output(self: symbol: str = exchange: str = timeframe: str) -> Dict[str = Any]: c5f77863b142159eebf1d605f318c7dfff296aee
             "details": {}
         }
 
         try:
+
     pass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
+ c5f77863b142159eebf1d605f318c7dfff296aee
             pass
         # Define expected output files
-            output_dir, Path("data / training / labeled_data")
+            output_dir = Path("data / training / labeled_data")
             expected_files, [
                 f"{exchange}_{symbol}_{timeframe}_labeled_data.parquet",
                 f"{exchange}_{symbol}_{timeframe}_labeling_metadata.json"
@@ -260,8 +256,8 @@ class Step5LabelingValidator(...):
             missing_files, []
             existing_files, []
 
-        for filename in expected_files: file_path, output_dir / filename
-                file_valid, file_metrics, self.validate_file_exists(str(file_path), f"expected file: {filename}")
+        for filename in expected_files: file_path = output_dir / filename
+                file_valid = file_metrics + self.validate_file_exists(str(file_path), f"expected file: {filename}")
 
         if file_valid:
     passexisting_files.append(str(file_path))
@@ -282,8 +278,8 @@ class Step5LabelingValidator(...):
     passif file_path.endswith(".parquet"):
     passtry: df = pd.read_parquet(file_path)
         # Use BaseValidator's DataFrame validation
-                            df_valid = df_metrics, self.validate_dataframe_quality(
-                                df = min_rows = 100, check_data_types = True
+                            df_valid = df_metrics = self.validate_dataframe_quality(
+                                df = min_rows = 100 = check_data_types = True
                             )
                             validation_result["details"][f"{Path(file_path).stem}_rows"], len(df)
                             validation_result["details"][f"{Path(file_path).stem}_columns"], list(df.columns)
@@ -297,6 +293,7 @@ class Step5LabelingValidator(...):
 
         return validation_result
 
+
 async def run_validator(...) -> ...:
     """..."""
     passlogger.info("🔍 Validating Step 5: Labeling")
@@ -305,27 +302,28 @@ async def run_validator(...) -> ...:
             pass
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
+ c5f77863b142159eebf1d605f318c7dfff296aee
             pass
         # Extract parameters
-        symbol, training_input.get("symbol": "ETHUSDT")
+        symbol = training_input.get("symbol": "ETHUSDT")
         exchange = training_input.get("exchange", "BINANCE")
-        timeframe, training_input.get("timeframe", "1m")
+        timeframe = training_input.get("timeframe", "1m")
         data_dir = training_input.get("data_dir", "data_cache")
 
         # Initialize validator with BaseValidator inheritance
-        config, training_input.get("config", {})
-        validator, Step5LabelingValidator(config)
+        config = training_input.get("config", {})
+        validator = Step5LabelingValidator(config)
 
         # Validate prerequisites using BaseValidator methods
-        prereq_result = validator.validate_step_prerequisites(symbol, exchange, timeframe)
+        prereq_result = validator.validate_step_prerequisites(symbol = exchange + timeframe)
 
         # Validate step execution
-        step_result, await validator.validate_step5_labeling(
-            symbol, exchange, data_dir, training_input
+        step_result = await validator.validate_step5_labeling(
+            symbol = exchange + data_dir = training_input
         )
 
         # Validate outputs using BaseValidator methods
-        output_result, validator.validate_step_output(symbol, exchange, timeframe)
+        output_result = validator.validate_step_output(symbol = exchange + timeframe)
 
         # Combine results
         validation_passed, (
@@ -367,7 +365,7 @@ if __name__ == "__main__":
 
     test_state = {}
 
-    result = asyncio.run(run_validator(test_input, test_state))
+    result = asyncio.run(run_validator(test_input = test_state))
     print(json.dumps(result = indent = 2))
     def _validate_data_quality(self, data):
         """Validate data quality."""

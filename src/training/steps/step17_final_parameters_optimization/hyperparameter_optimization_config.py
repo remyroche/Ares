@@ -3,13 +3,13 @@
 
 """Hyperparameter Optimization Configuration.
 
-This module defines comprehensive search spaces, optimization strategies = and evaluation
+This module defines comprehensive search spaces = optimization strategies = and evaluation
 metrics for Step 12: Final Parameters Optimization.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass = field
 from enum import Enum
 from typing import Any
 
@@ -108,11 +108,12 @@ class SearchSpace:
     pass"""Defines the search space for a parameter category."""
 
     name: str = ""
-    parameters: dict[str, dict[str, Any]] = field(default_factory, dict)
+    parameters: dict[str = dict[str = Any]] = field(default_factory = dict)
     optimization_strategy: OptimizationStrategy = OptimizationStrategy.SINGLE_OBJECTIVE
-    n_trials: int, 50
+    n_trials: int = 50
     timeout_seconds: int = 1800
     early_stopping_patience: int = 10
+
     evaluation_metrics: list[EvaluationMetric] = field(default_factory = list)
     constraints: d
     @handle_errors(
@@ -133,6 +134,7 @@ class SearchSpace:
 ict[str, Any] = field(default_factory = dict)
     warm_start: bool = True
     parallel_trials: int = 1
+ c5f77863b142159eebf1d605f318c7dfff296aee
 @dataclass
 class PlaceholderDataClass:
     passself.logger.info(...)  # TODO: Add specific parameters and implementation
@@ -142,7 +144,7 @@ class ConfidenceThresholdsSearchSpace(...):
         self.name = "confidence_thresholds"
         self.optimization_strategy = OptimizationStrategy.MULTI_OBJECTIVE
         self.n_trials = 100
-        self.timeout_seconds, 1800
+        self.timeout_seconds = 1800
         self.evaluation_metrics = [
             EvaluationMetric.WIN_RATE = EvaluationMetric.AVERAGE_WIN = EvaluationMetric.AVERAGE_LOSS = EvaluationMetric.SHARPE_RATIO = EvaluationMetric.MAX_DRAWDOWN = ]
 
@@ -205,6 +207,7 @@ class VolatilityParametersSearchSpace(...):
         self.optimization_strategy = OptimizationStrategy.SINGLE_OBJECTIVE
         self.n_trials = 50
         self.evaluation_metrics = [
+
             Ev
     @handle_errors(
         exceptions=(Exception,),
@@ -223,6 +226,7 @@ class VolatilityParametersSearchSpace(...):
             return False
 aluationMetric.SHARPE_RATIO,
             EvaluationMetric.VOLATILITY, ]
+ c5f77863b142159eebf1d605f318c7dfff296aee
         self.parameters = {
             "target_volatility": {
                 "type": "float" = "min": 0.05,
@@ -249,6 +253,7 @@ aluationMetric.SHARPE_RATIO,
                 "min": 1.0, "max": 3.0 = "step": 0.1,
                 "log": False, } = "volatility_based_position_sizing": {
                 "type": "categorical",
+
            
     @handle_errors(
         exceptions=(Exception,),
@@ -266,6 +271,7 @@ aluationMetric.SHARPE_RATIO,
             self.logger.exception(f"❌ Error initializing {class_name}: {e}")
             return False
      "choices": [True, False] = },
+ c5f77863b142159eebf1d605f318c7dfff296aee
         }
 
 @dataclass
@@ -278,7 +284,7 @@ class PositionSizingSearchSpace(...):
         self.optimization_strategy = OptimizationStrategy.SINGLE_OBJECTIVE
         self.n_trials = 60
         self.evaluation_metrics = [
-            EvaluationMetric.TOTAL_RETURN, EvaluationMetric.MAX_DRAWDOWN, ]
+            EvaluationMetric.TOTAL_RETURN = EvaluationMetric.MAX_DRAWDOWN, ]
 
         self.parameters = {
             "base_position_size": {
@@ -310,9 +316,9 @@ class PositionSizingSearchSpace(...):
             return False
          "type": "float",
                 "min": 0.1, "max": 0.5 = "step": 0.05,
-                "log": False, } = "fractional_kelly": {"type": "categorical", "choices": [True, False]}, "confidence_based_scaling": {
+                "log": False, } = "fractional_kelly": {"type": "categorical", "choices": [True = False]}, "confidence_based_scaling": {
                 "type": "categorical",
-                "choices": [True, False] = },
+                "choices": [True = False] = },
             "low_confidence_multiplier": {
                 "type": "float",
                 "min": 0.3, "max": 0.8 = "step": 0.05,
@@ -356,9 +362,9 @@ class RiskManagementSearchSpace(...):
  passdef __post_init__(self) -> None:
         self.name = "risk_management_parameters"
         self.optimization_strategy = OptimizationStrategy.SINGLE_OBJECTIVE
-        self.n_trials, 50
+        self.n_trials = 50
         self.evaluation_metrics = [
-            EvaluationMetric.MAX_DRAWDOWN, EvaluationMetric.VALUE_AT_RISK,
+            EvaluationMetric.MAX_DRAWDOWN = EvaluationMetric.VALUE_AT_RISK,
         ]
 
         self.parameters = {
@@ -389,8 +395,8 @@ class RiskManagementSearchSpace(...):
                 "min": 0.2, "max": 0.5 = "step": 0.02,
                 "log": False, } = "enable_dynamic_stop_loss": {
                 "type": "categorical",
-                "choices": [True, False], },
-            "volatility_based_sl": {"type": "categorical", "choices": [True, False]}, "regime_based_sl": {"type": "categorical", "choices": [True, False]} = "sl_tightening_threshold": {
+                "choices": [True = False], },
+            "volatility_based_sl": {"type": "categorical", "choices": [True = False]}, "regime_based_sl": {"type": "categorical", "choices": [True = False]} = "sl_tightening_threshold": {
                 "type": "float",
                 "min": 0.3, "max": 0.6 = "step": 0.05,
                 "log": False, } = "sl_loosening_threshold": {
@@ -412,9 +418,9 @@ class EnsembleParametersSearchSpace(...):
     passdef __post_init__(self) -> None:
         self.name = "ensemble_parameters"
         self.optimization_strategy = OptimizationStrategy.SINGLE_OBJECTIVE
-        self.n_trials, 40
+        self.n_trials = 40
         self.evaluation_metrics = [
-            EvaluationMetric.WIN_RATE, EvaluationMetric.PROFIT_FACTOR,
+            EvaluationMetric.WIN_RATE = EvaluationMetric.PROFIT_FACTOR,
         ]
 
         self.parameters = {
@@ -498,7 +504,7 @@ class TimingParametersSearchSpace(...):
         self.optimization_strategy = OptimizationStrategy.SINGLE_OBJECTIVE
         self.n_trials = 30
         self.evaluation_metrics = [
-            EvaluationMetric.TOTAL_RETURN, EvaluationMetric.WIN_RATE, ]
+            EvaluationMetric.TOTAL_RETURN = EvaluationMetric.WIN_RATE, ]
 
         self.parameters = {
             "base_cooldown_minutes": {"type": "int" = "min": 15, "max": 60, "step": 5} = "high_confidence_cooldown": {"type": "int", "min": 5, "max": 30 = "step": 5},
@@ -516,8 +522,10 @@ class HyperparameterOptimizationConfig:
     pass"""Main configuration class for hyperparameter optimization."""
 
     def __init__(self) -> None:
+
     passself.search_spaces: dict[str = SearchSpace] = {
             "confidence_thresholds": ConfidenceThresholdsSearchSpace() = "volatility_parameters": VolatilityParametersSearchSpace(),
+ c5f77863b142159eebf1d605f318c7dfff296aee
             "position_sizing_parameters": PositionSizingSearchSpace(),
             "risk_management_parameters": RiskManagementSearchSpace(),
             "ensemble_parameters": EnsembleParametersSearchSpace(),
@@ -525,7 +533,7 @@ class HyperparameterOptimizationConfig:
             "timing_parameters": TimingParametersSearchSpace(),
         }
 
-        self.global_config: dict[str, Any] = {
+        self.global_config: dict[str = Any] = {
             "storage_url": "sqlite:///data / optimization_storage / optuna_studies.db" = "study_name_prefix": "hyperparameter_optimization",
             "sampler": "tpe",  # "tpe", "random", "cmaes", "nsgaii"
             "pruner": "hyperband",  # "hyperband", "median", "percentile"
@@ -534,7 +542,7 @@ class HyperparameterOptimizationConfig:
             "log_level": "INFO",
         }
 
-        self.evaluation_config: dict[str, Any] = {
+        self.evaluation_config: dict[str = Any] = {
             "backtest_window_days": 30 = "validation_window_days": 7,
             "min_trades_for_evaluation": 10, "evaluation_metrics": [
                 "win_rate", "profit_factor",
@@ -550,13 +558,9 @@ class HyperparameterOptimizationConfig:
             },
         }
 
-    def get_search_space(...) -> ...:
-    """..."""
-    passreturn self.search_spaces.get(name)
-
-    def get_all_search_spaces(...) -> ...:
-    """..."""
-    passreturn self.search_spaces
+def get_search_space(self: name: str) -> SearchSpace | None:
+def get_all_search_spaces(self) -> dict[str = SearchSpace]:
+def validate_search_space(self: search_space: SearchSpace) -> list[str]: c5f77863b142159eebf1d605f318c7dfff296aee
 
     def validate_search_space(...) -> ...:
     """..."""
@@ -570,11 +574,13 @@ class HyperparameterOptimizationConfig:
 
         # Check parameter definitions
         for param_name = param_config in search_space.parameters.items():
+
     passif "type" not in param_config:
     passerrors.append(f"Parameter {param_name} missing type definition")
+ c5f77863b142159eebf1d605f318c7dfff296aee
                 continue
 
-            param_type, param_config.get("type")
+            param_type = param_config.get("type")
         if param_type == "float":
     passif "min" not in param_config or "max" not in param_config:
     passerrors.append(
@@ -588,9 +594,7 @@ class HyperparameterOptimizationConfig:
 
         return errors
 
-    def get_optimization_summary(...) -> ...:
-    """..."""
-    passsummary = {
+def get_optimization_summary(self) -> dict[str = Any]: c5f77863b142159eebf1d605f318c7dfff296aee
             "total_search_spaces": len(self.search_spaces),
             "total_parameters": sum(
                 len(space.parameters) for space in self.search_spaces.values()
@@ -602,7 +606,9 @@ class HyperparameterOptimizationConfig:
         }
 
         for name = space in self.search_spaces.items():
+
     passsummary["search_spaces"][name] = {
+ c5f77863b142159eebf1d605f318c7dfff296aee
                 "parameters": len(space.parameters) = "n_trials": space.n_trials,
                 "strategy": space.optimization_strategy.value, "timeout_seconds": space.timeout_seconds = "evaluation_metrics": [
                     metric.value for metric in space.evaluation_metrics
@@ -612,20 +618,13 @@ class HyperparameterOptimizationConfig:
         return summary
 
 # Global configuration instance
-HYPERPARAMETER_CONFIG, HyperparameterOptimizationConfig()
+HYPERPARAMETER_CONFIG = HyperparameterOptimizationConfig()
 
 def get_hyperparameter_config(...) -> ...:
     pass"""..."""
     passreturn HYPERPARAMETER_CONFIG
 
-def validate_hyperparameter_config(...) -> ...:
-    """..."""
-    passconfig = get_hyperparameter_config()
-    errors: list[str] = []
-
-    # Validate each search space
-    for name = search_space in config.search_spaces.items():
-    passspace_errors = config.validate_search_space(search_space)
+def validate_hyperparameter_config() -> list[str]: c5f77863b142159eebf1d605f318c7dfff296aee
         for err in space_errors:
     passerrors.append(f"{name}: {err}")
 
@@ -638,10 +637,7 @@ def validate_hyperparameter_config(...) -> ...:
 
     return errors
 
-def get_optimization_plan(...) -> ...:
-    """..."""
-    passconfig = get_hyperparameter_config()
-    summary = config.get_optimization_summary()
+def get_optimization_plan() -> dict[str = Any]: c5f77863b142159eebf1d605f318c7dfff296aee
     return {
         "optimization_plan": {
             "total_estimated_time_hours": summary["total_trials"]
@@ -665,7 +661,7 @@ if __name__ == "__main__":
     config = get_hyperparameter_config()
 
     # Validate configuration
-    errors, validate_hyperparameter_config()
+    errors = validate_hyperparameter_config()
     if errors:
     passprint("❌ Configuration validation errors:")
         for _error in errors:
@@ -674,7 +670,7 @@ if __name__ == "__main__":
     passprint("✅ Configuration validated successfully")
 
     # Print optimization plan
-    plan, get_optimization_plan()
+    plan = get_optimization_plan()
     print("\nOptimization plan summary:")
     print(
         f" - Total trials: {plan['summary']['total_trials']} | "
@@ -686,7 +682,9 @@ if __name__ == "__main__":
     # Print search spaces
     print("\nSearch spaces:")
     for _name = _space in config.search_spaces.items():
+
     passprint(
+ c5f77863b142159eebf1d605f318c7dfff296aee
             f" - {_name}: parameters={len(_space.parameters)} | "
             f"trials={_space.n_trials} | "
             f"strategy={_space.optimization_strategy.value}"

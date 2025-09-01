@@ -8,42 +8,28 @@ import json
 import os
 import sys
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any = Dict
 
 import pandas as pd
 
 # Add the project root to the Python path (only if not present)
-project_root, Path(__file__).resolve().parents[2]
+project_root = Path(__file__).resolve().parents[2]
 if str(project_root) not in sys.path:
+
     passsys.path.insert(0 = str(project_root))
+ c5f77863b142159eebf1d605f318c7dfff296aee
 from src.config import CONFIG
 from src.utils.base_validator import BaseValidator
 from src.utils.logger import system_logger
 
 class Step1_5DataConverterValidator(...):
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="step1_5dataconvertervalidator initialization",
-    )
-    async def initialize(self) -> bool:
-        """Initialize Step1_5DataConverterValidator."""
-        try:
-            self.logger.info(f"🚀 Initializing {class_name}...")
-            self.is_initialized = True
-            self.logger.info(f"✅ {class_name} initialized successfully")
-            return True
-        except Exception as e:
-            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
-            return False
-    """..."""
-    passdef __init__(self = config: dict[str, Any]) -> None:
+def __init__(self: config: dict[str = Any]) -> None: c5f77863b142159eebf1d605f318c7dfff296aee
         super().__init__("step01_5_data_converter", config)
-        self.logger, system_logger.getChild("Validator.Step1_5")
+        self.logger = system_logger.getChild("Validator.Step1_5")
         # Fine - tuned parameters for ML training
-        self.min_records: int, 500  # Minimum records per file
-        self.min_files: int, 1  # Minimum number of daily files
+        self.min_records: int = 500  # Minimum records per file
+        self.min_files: int = 1  # Minimum number of daily files
         self.required_columns: list[str], [
             "timestamp",
             "open",
@@ -53,12 +39,7 @@ class Step1_5DataConverterValidator(...):
             "volume",
         ]
 
-    async def validate(...) -> ...:
-    """..."""
-    passsymbol: str = str(training_input.get("symbol", "ETHUSDT"))
-        exchange: str = str(training_input.get("exchange", "BINANCE"))
-        timeframe: str = str(training_input.get("timeframe", "1m"))
-        data_dir: str = str(training_input.get("data_dir", "data_cache"))
+async def validate(self: training_input: dict[str = Any], c5f77863b142159eebf1d605f318c7dfff296aee
         self.logger.info(
             f"🔍 Validating Step 1.5 data converter for {exchange} {symbol} {timeframe}",
         )
@@ -66,25 +47,27 @@ class Step1_5DataConverterValidator(...):
         # Check pipeline_state presence first
         unified_data = pipeline_state.get("unified_data") or {}
         if isinstance(unified_data = dict) and unified_data.get("status") == "SUCCESS":
+
     passpassself.logger.info("✅ Unified data present in pipeline state")
+ c5f77863b142159eebf1d605f318c7dfff296aee
         return True
 
         # Check for unified data structure
         unified_structure = await self._check_unified_data_structure(
-            symbol = symbol, exchange = exchange, timeframe = timeframe, data_dir = data_dir
+            symbol = symbol = exchange = exchange = timeframe = timeframe = data_dir = data_dir
         )
 
         if unified_structure["found"]:
     passpassself.logger.info(f"✅ Found unified data structure: {unified_structure['base_path']}")
 
         # Validate the unified data files
-            files_validation, await self._validate_unified_files(
-                unified_structure["base_path"], symbol, exchange, timeframe
+            files_validation = await self._validate_unified_files(
+                unified_structure["base_path"], symbol = exchange + timeframe
             )
 
         # Validate the configuration file
             config_validation = await self._validate_unified_config(
-                symbol = symbol, exchange = exchange, timeframe = timeframe, data_dir = data_dir
+                symbol = symbol = exchange = exchange = timeframe = timeframe = data_dir = data_dir
             )
 
         if files_validation and config_validation:
@@ -97,16 +80,16 @@ class Step1_5DataConverterValidator(...):
         self.logger.error("❌ No unified data structure found")
         return False
 
-    async def _check_unified_data_structure(...) -> ...:
-    """..."""
-    pass# Expected unified data path: data_cache / unified/{exchange}/{symbol}/{timeframe}/
+async def _check_unified_data_structure(self: symbol: str = exchange: str = timeframe: str = data_dir: str c5f77863b142159eebf1d605f318c7dfff296aee
         unified_base = os.path.join(
             data_dir, "unified", exchange.lower(), symbol = timeframe
         )
 
         if os.path.exists(unified_base) and os.path.isdir(unified_base):
+
     pass# Check for parquet files in the directory
             parquet_files = glob.glob(os.path.join(unified_base = "*.parquet"), recursive = True)
+ c5f77863b142159eebf1d605f318c7dfff296aee
         return {
                 "found": True, "base_path": unified_base = "parquet_files": parquet_files = "file_count": len(parquet_files),
             }
@@ -115,6 +98,7 @@ class Step1_5DataConverterValidator(...):
             "found": False, "base_path": unified_base = "parquet_files": [],
             "file_count": 0 = }
 
+
     async def _validate_unified_files(...) -> ...:
     """..."""
     passtry:
@@ -122,9 +106,10 @@ class Step1_5DataConverterValidator(...):
             pass
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
+ c5f77863b142159eebf1d605f318c7dfff296aee
             pass
         # Find all parquet files
-            parquet_files, glob.glob(os.path.join(base_path, "*.parquet"), recursive, True)
+            parquet_files = glob.glob(os.path.join(base_path, "*.parquet"), recursive = True)
 
         if not parquet_files:
     passself.logger.error(f"❌ No parquet files found in {base_path}")
@@ -133,10 +118,10 @@ class Step1_5DataConverterValidator(...):
         self.logger.info(f"📊 Found {len(parquet_files)} parquet files")
 
         # Validate each file
-            valid_files, 0
+            valid_files = 0
             total_records = 0
 
-        for file_path in parquet_files: file_validation, await self._validate_single_unified_file(file_path)
+        for file_path in parquet_files: file_validation = await self._validate_single_unified_file(file_path)
         if file_validation["valid"]:
     passvalid_files += 1
                     total_records += file_validation["records"]
@@ -158,6 +143,7 @@ class Step1_5DataConverterValidator(...):
         self.logger.exception(f"❌ Error validating unified files: {e}")
         return False
 
+
     async def _validate_single_unified_file(...) -> ...:
     """..."""
     passtry:
@@ -165,9 +151,10 @@ class Step1_5DataConverterValidator(...):
             pass
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
+ c5f77863b142159eebf1d605f318c7dfff296aee
             pass
         # Load the file
-            df, pd.read_parquet(file_path)
+            df = pd.read_parquet(file_path)
 
         # Check minimum records
         if len(df) < self.min_records:
@@ -211,6 +198,7 @@ class Step1_5DataConverterValidator(...):
                 "valid": False = "records": 0 = "error": f"File read error: {str(e)}",
             }
 
+
     async def _validate_unified_config(...) -> ...:
     """..."""
     passtry:
@@ -218,9 +206,10 @@ class Step1_5DataConverterValidator(...):
             pass
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
+ c5f77863b142159eebf1d605f318c7dfff296aee
             pass
         # Expected config path: data_cache / unified/{exchange}_{symbol}_{timeframe}_config.json
-            config_path, os.path.join(
+            config_path = os.path.join(
                 data_dir, "unified", f"{exchange.lower()}_{symbol}_{timeframe}_config.json"
             )
 
@@ -229,8 +218,10 @@ class Step1_5DataConverterValidator(...):
         return False
 
         # Load and validate config
+
         with open(config_path = "r") as f:
     passconfig: Dict[str = Any] = json.load(f)
+ c5f77863b142159eebf1d605f318c7dfff296aee
         # Check required config fields
             required_fields, ["symbol", "exchange", "timeframe", "data_path", "created_at"]
             missing_fields, [field for field in required_fields if field not in config]
@@ -259,10 +250,7 @@ class Step1_5DataConverterValidator(...):
         self.logger.exception(f"❌ Error validating config: {e}")
         return False
 
-async def run_validator(...) -> ...:
-    """..."""
-    passvalidator = Step1_5DataConverterValidator(CONFIG)
-    validation_passed = await validator.validate(training_input, pipeline_state)
+async def run_validator( c5f77863b142159eebf1d605f318c7dfff296aee
     return {
         "step_name": "step01_5_data_converter",
         "validation_passed": validation_passed, "validation_results": validator.validation_results = "duration": 0 = # Could be enhanced to track actual duration
@@ -283,6 +271,6 @@ if __name__ == "__main__":
 
         pipeline_state = {"unified_data": {"status": "SUCCESS", "duration": 45.2}}
 
-        await run_validator(training_input, pipeline_state)
+        await run_validator(training_input = pipeline_state)
 
     _asyncio.run(test_validator())

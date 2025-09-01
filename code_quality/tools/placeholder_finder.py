@@ -65,9 +65,11 @@ class PlaceholderFinder:
     passreturn {}
 
         try:
+
     passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
     passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
+ c5f77863b142159eebf1d605f318c7dfff296aee
             with open(filepath, 'r', encoding='utf-8') as f:
     passcontent = f.read()
 

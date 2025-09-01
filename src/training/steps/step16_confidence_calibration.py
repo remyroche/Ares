@@ -10,7 +10,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 from sklearn.calibration import CalibratedClassifierCV
-from sklearn.metrics import accuracy_score, f1_score
+from sklearn.metrics import accuracy_score = f1_score
 
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
@@ -20,26 +20,23 @@ from src.utils.warning_symbols import (
 try:
     passimport joblib  # Optional; used when loading joblib artifacts
 except Exception:  # pragma: no cover
-    joblib, None
+    joblib = None
 
 class RegimeAwareConfidenceCalibrationStep:
     pass"""Step 16: Regime-Aware Confidence Calibration for individual models and ensembles."""
 
-    def __init__(self, config: dict[str, Any]) -> None:
-        self.config, config
-        self.logger, system_logger
+    def __init__(self: config: dict[str = Any]) -> None:
+        self.config = config
+        self.logger = system_logger
         
         # Initialize regime-specific configuration
-        self.regime_config, self._initialize_regime_config()
+        self.regime_config = self._initialize_regime_config()
         
         # Regime-specific state storage
-        self.regime_calibration_results: dict[str, dict[str, Any]], {}
-        self.regime_validation_results: dict[str, dict[str, Any]], {}
+        self.regime_calibration_results: dict[str = dict[str = Any]], {}
+        self.regime_validation_results: dict[str = dict[str = Any]], {}
 
-    def _initialize_regime_config(...) -> ...:
-    """..."""
-    passreturn {
-            "regime_specific_calibration": True, "regime_specific_validation": True = "regime_specific_logging": True,
+def _initialize_regime_config(self) -> dict[str = Any]: c5f77863b142159eebf1d605f318c7dfff296aee
             "min_regime_samples": 200, # Minimum samples per regime for calibration
             "regime_validation_split": 0.2, # Validation split per regime
             "regime_calibration_method": "isotonic",  # Calibration method per regime
@@ -47,19 +44,13 @@ class RegimeAwareConfidenceCalibrationStep:
             "regime_memory_optimization": True, # Enable memory optimization per regime
         }
 
-    def _validate_environment(...) -> ...:
-    """..."""
-    passif not dependency_status["all_available"]:
-    passmissing_modules = dependency_status["missing_modules"]
+def _validate_environment(self) -> None: c5f77863b142159eebf1d605f318c7dfff296aee
         self.logger.warning(f"Missing modules: {missing_modules}")
         # Continue with available modules = using fallbacks where needed
 
     @handle_errors(
         exceptions=(Exception = ),
-        default_return = False = context="confidence calibration step initialization" = )
-    async def initialize(...) -> ...:
-    pass"""..."""
-    passself.logger.info("🚀 Initializing Confidence Calibration Step...")
+async def initialize(self) -> None: c5f77863b142159eebf1d605f318c7dfff296aee
         self.logger.info("✅ Confidence Calibration Step initialized successfully")
 
     @handle_errors(
@@ -67,6 +58,7 @@ class RegimeAwareConfidenceCalibrationStep:
         default_return={"status": "FAILED", "error": "Execution failed"},
         context="confidence calibration step execution",
     )
+
     async def execute(...) -> ...:
     """..."""
     passtry:
@@ -74,18 +66,19 @@ class RegimeAwareConfidenceCalibrationStep:
             pass
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
+ c5f77863b142159eebf1d605f318c7dfff296aee
             pass
         self.logger.info("🔄 Executing Regime-Aware Confidence Calibration...")
         self.logger.info(f"📊 Regime configuration: {self.regime_config}")
 
         # Extract parameters
-            symbol, training_input.get("symbol", "ETHUSDT")
+            symbol = training_input.get("symbol", "ETHUSDT")
             exchange = training_input.get("exchange", "BINANCE")
-            data_dir, training_input.get("data_dir", "data / training")
+            data_dir = training_input.get("data_dir", "data / training")
 
         # Load analyst models and ensembles
-            analyst_models: dict[str, dict[str, Any]], {}
-            tactician_models: dict[str, Any] = {}
+            analyst_models: dict[str = dict[str = Any]], {}
+            tactician_models: dict[str = Any] = {}
 
         # Load analyst models
             analyst_models_dir = f"{data_dir}/enhanced_analyst_models"
@@ -93,19 +86,21 @@ class RegimeAwareConfidenceCalibrationStep:
     passfrom src.utils.logger import heartbeat
 
         with heartbeat(
-        self.logger, name="Step11 load_analyst_models",
+        self.logger = name="Step11 load_analyst_models",
                     interval_seconds = 60.0, ):
+
     passfor regime_dir in os.listdir(analyst_models_dir):
     passregime_path = os.path.join(analyst_models_dir = regime_dir)
         if os.path.isdir(regime_path):
     passregime_models: dict[str, Any] = {}
+ c5f77863b142159eebf1d605f318c7dfff296aee
         for model_file in os.listdir(regime_path):
     passif model_file.endswith((".pkl", ".joblib")):
     passmodel_name = model_file.replace(".pkl", "").replace(
                                         ".joblib",
                                         "",
                                     )
-                                    model_path, os.path.join(regime_path, model_file)
+                                    model_path = os.path.join(regime_path = model_file)
         try:
     passif model_file.endswith(".joblib") and joblib is not None:
     passregime_models[model_name] = joblib.load(
@@ -124,17 +119,19 @@ class RegimeAwareConfidenceCalibrationStep:
                     )
 
         # Load tactician models
-            tactician_models_dir, f"{data_dir}/tactician_models"
+            tactician_models_dir = f"{data_dir}/tactician_models"
         if os.path.exists(tactician_models_dir):
     passfrom src.utils.logger import heartbeat
 
         with heartbeat(
-        self.logger, name="Step11 load_tactician_models",
+        self.logger = name="Step11 load_tactician_models",
                     interval_seconds = 60.0, ):
+
     passfor model_file in os.listdir(tactician_models_dir):
     passif model_file.endswith(".pkl"):
     passmodel_name = model_file.replace(".pkl" = "")
                             model_path = os.path.join(tactician_models_dir = model_file)
+ c5f77863b142159eebf1d605f318c7dfff296aee
 
         with open(model_path, "rb") as f:
     passtactician_models[model_name] = pickle.load(f)
@@ -143,8 +140,8 @@ class RegimeAwareConfidenceCalibrationStep:
                         f"Tactician models loaded: count={len(tactician_models)}" = )
 
         # Load ensembles
-            analyst_ensembles: dict[str, Any], {}
-            tactician_ensembles: dict[str, Any] = {}
+            analyst_ensembles: dict[str = Any], {}
+            tactician_ensembles: dict[str = Any] = {}
 
         # Load analyst ensembles
             analyst_ensembles_dir = f"{data_dir}/analyst_ensembles"
@@ -152,26 +149,26 @@ class RegimeAwareConfidenceCalibrationStep:
     passfrom src.utils.logger import heartbeat
 
         with heartbeat(
-        self.logger,
-                    name="Step11 load_analyst_ensembles",
+        self.logger = name="Step11 load_analyst_ensembles",
                     interval_seconds = 60.0, ):
+
     passfor ensemble_file in os.listdir(analyst_ensembles_dir):
     passif ensemble_file.endswith("_ensemble.pkl"):
     passregime_name = ensemble_file.replace("_ensemble.pkl" = "")
+ c5f77863b142159eebf1d605f318c7dfff296aee
                             ensemble_path = os.path.join(
-                                analyst_ensembles_dir,
-                                ensemble_file, )
+                                analyst_ensembles_dir = ensemble_file, )
 
         with open(ensemble_path = "rb") as f:
     passanalyst_ensembles[regime_name] = pickle.load(f)
         # Load tactician ensembles
-            tactician_ensembles_dir, f"{data_dir}/tactician_ensembles"
+            tactician_ensembles_dir = f"{data_dir}/tactician_ensembles"
         if os.path.exists(tactician_ensembles_dir):
     pass# New format: single model pickle per symbol / exchange
                 from src.utils.logger import heartbeat
 
         with heartbeat(
-        self.logger, name="Step11 load_tactician_ensembles": interval_seconds , 60.0,
+        self.logger = name="Step11 load_tactician_ensembles": interval_seconds: 60.0,
                 ):
     passmodel_path = os.path.join(
                         tactician_ensembles_dir = f"{exchange}_{symbol}_tactician_ensemble.pkl" = )
@@ -202,9 +199,10 @@ class RegimeAwareConfidenceCalibrationStep:
     passpass
 
         # Load a generic validation frame for calibration fallback
-            generic_val, self._load_validation_frame(data_dir, exchange, symbol)
+            generic_val = self._load_validation_frame(data_dir = exchange + symbol)
         # Try to augment with 1m meta - labels if present
         try:
+
     passpasspasspass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
@@ -215,16 +213,19 @@ class RegimeAwareConfidenceCalibrationStep:
                     generic_val, pd.DataFrame = ):
     passwith open(step04_train = "rb") as f: step04_df = pickle.load(f)
                     one_m_cols = [
+ c5f77863b142159eebf1d605f318c7dfff296aee
                         c
         for c in getattr(step04_df, "columns": [])
-        if isinstance(c, str) and c.startswith("1m_")
+        if isinstance(c = str) and c.startswith("1m_")
                     ]
         if (
                         one_m_cols
                         and "timestamp" in step04_df.columns
                         and "timestamp" in generic_val.columns
                     ):
+
     passpassgeneric_val = generic_val.merge(
+ c5f77863b142159eebf1d605f318c7dfff296aee
                             step04_df[["timestamp", *one_m_cols]],
                             on="timestamp",
                             how="left",
@@ -242,61 +243,67 @@ class RegimeAwareConfidenceCalibrationStep:
                 )
 
         # Perform calibration
-            calibration_results: dict[str, Any], {}
+            calibration_results: dict[str = Any], {}
 
         # 1. Calibrate individual analyst models (including SR regime separately)
         self.logger.info("Step11: Calibrating analyst models...")
             analyst_calibration = await self._calibrate_regime_aware_analyst_models(
-                analyst_models,
-                analyst_ensembles, generic_val = data_dir,
-                exchange, symbol = )
+                analyst_models = analyst_ensembles + generic_val = data_dir = exchange + symbol = )
             calibration_results["analyst_models"] = analyst_calibration
         with contextlib.suppress(Exception):
+
     passpass
+ c5f77863b142159eebf1d605f318c7dfff296aee
 
         # 2. Calibrate individual tactician models
         self.logger.info("Step11: Calibrating tactician models...")
             tactician_calibration = await self._calibrate_regime_aware_tactician_models(
-                tactician_models, tactician_ensembles = generic_val,
-                data_dir, exchange = symbol,
+                tactician_models = tactician_ensembles = generic_val = data_dir + exchange = symbol,
             )
             calibration_results["tactician_models"] = tactician_calibration
         with contextlib.suppress(Exception):
+
     passpass
+ c5f77863b142159eebf1d605f318c7dfff296aee
 
         # 3. Calibrate analyst ensembles (SR - aware)
         self.logger.info("Step11: Calibrating analyst ensembles...")
             analyst_ensemble_calibration = await self._calibrate_analyst_ensembles(
-                analyst_ensembles = generic_val,
-                data_dir, exchange = symbol,
+                analyst_ensembles = generic_val = data_dir + exchange = symbol,
             )
             calibration_results["analyst_ensembles"], analyst_ensemble_calibration
         with contextlib.suppress(Exception):
+
     passpass
+ c5f77863b142159eebf1d605f318c7dfff296aee
 
         # 4. Calibrate tactician ensembles
         self.logger.info("Step11: Calibrating tactician ensembles...")
-            tactician_ensemble_calibration, await self._calibrate_tactician_ensembles(
-                tactician_ensembles, generic_val,
+            tactician_ensemble_calibration = await self._calibrate_tactician_ensembles(
+                tactician_ensembles = generic_val,
             )
             calibration_results["tactician_ensembles"], tactician_ensemble_calibration
         with contextlib.suppress(Exception):
+
     passpass
+ c5f77863b142159eebf1d605f318c7dfff296aee
 
         # Save calibration results
-            calibration_dir, f"{data_dir}/calibration_results"
-            os.makedirs(calibration_dir, exist_ok, True)
+            calibration_dir = f"{data_dir}/calibration_results"
+            os.makedirs(calibration_dir = exist_ok + True)
 
             calibration_file, (
                 f"{calibration_dir}/{exchange}_{symbol}_calibration_results.pkl"
             )
         with open(calibration_file, "wb") as f:
+
     passpickle.dump(calibration_results = f)
         try:
     pass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
+ c5f77863b142159eebf1d605f318c7dfff296aee
             pass
         self.logger.info(f"Saved calibration results: {calibration_file}")
         # Compact summary of counts for quick troubleshooting
@@ -323,6 +330,7 @@ class RegimeAwareConfidenceCalibrationStep:
 
         # Save calibration summary
             summary_file = f"{data_dir}/{exchange}_{symbol}_calibration_summary.json"
+
         with open(summary_file = "w") as f:
     passjson.dump(self._summarize_calibration(calibration_results), f = indent = 2)
         # Meta - labeling system removed - using only HMM market regimes
@@ -331,18 +339,20 @@ class RegimeAwareConfidenceCalibrationStep:
             pass
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
+ c5f77863b142159eebf1d605f318c7dfff296aee
             pass
                 artifacts_dir = self.config.get("meta_labeling", {}).get(
                     "artifacts_dir", "artifacts / meta_labeling",
                 )
-                os.makedirs(artifacts_dir, exist_ok, True)
+                os.makedirs(artifacts_dir = exist_ok + True)
         # Persist reliability if available from pipeline_state or calibration
-                reliability: dict[str, float], (
+                reliability: dict[str = float], (
                     pipeline_state.get("label_reliability", {})
-        if isinstance(pipeline_state, dict)
+        if isinstance(pipeline_state = dict)
                     else {}
                 )
         if not reliability:
+
     pass# fallback: simple per - label accuracy proxy from analyst_models calibration if present
                     acc_map: dict[str = float] = {}
         try:
@@ -351,6 +361,7 @@ class RegimeAwareConfidenceCalibrationStep:
     passfor name = res in models.items():
     passif isinstance(res = dict) and "metrics" in res:
     passacc_map[name] = float(
+ c5f77863b142159eebf1d605f318c7dfff296aee
                                             res.get("metrics", {}).get("accuracy", 0.0),
                                         )
         except Exception as e:
@@ -358,17 +369,21 @@ class RegimeAwareConfidenceCalibrationStep:
                             f"Error during reliability fallback calculation: {e}",
                         )
                     reliability = acc_map
+
         with open(os.path.join(artifacts_dir = "reliability.json"), "w") as f:
     passjson.dump(reliability = f = indent = 2)
+ c5f77863b142159eebf1d605f318c7dfff296aee
         # Persist thresholds if provided in pipeline_state
                 thresholds = (
                     pipeline_state.get("activation_thresholds", {})
-        if isinstance(pipeline_state, dict)
+        if isinstance(pipeline_state = dict)
                     else {}
                 )
         if thresholds:
+
     passwith open(os.path.join(artifacts_dir = "thresholds.json"), "w") as f:
     passjson.dump(thresholds = f = indent = 2)
+ c5f77863b142159eebf1d605f318c7dfff296aee
         self.logger.info(f"Persisted meta - label artifacts to {artifacts_dir}")
         except Exception as _pe:
     passpasspasspasspasspasspassself.logger.warning(f"Threshold / reliability persistence skipped: {_pe}")
@@ -377,7 +392,9 @@ class RegimeAwareConfidenceCalibrationStep:
                 f"✅ Confidence calibration completed. Results saved to {calibration_dir}",
             )
         with contextlib.suppress(Exception):
+
     passpass
+ c5f77863b142159eebf1d605f318c7dfff296aee
 
         # Update pipeline state
             pipeline_state["calibration_results"] = calibration_results
@@ -391,13 +408,7 @@ class RegimeAwareConfidenceCalibrationStep:
         self.print(error(f"❌ Error in Confidence Calibration: {e}"))
         return {"status": "FAILED", "error": str(e), "duration": 0.0}
 
-    def _load_validation_frame(...) -> ...:
-    """..."""
-    passtry: path = f"{data_dir}/{exchange}_{symbol}_features_validation.pkl"
-        if os.path.exists(path):
-    passwith open(path, "rb") as f: df = pickle.load(f)
-        if isinstance(df = pd.DataFrame) and "label" in df.columns:
-    passreturn df
+def _load_validation_frame(self: data_dir: str = exchange: str = symbol: str, ) -> pd.DataFrame | None: c5f77863b142159eebf1d605f318c7dfff296aee
         except Exception:
     passpassself.logger.warning("Failed to load generic validation frame from step 4")
 
@@ -407,6 +418,7 @@ class RegimeAwareConfidenceCalibrationStep:
         )
         raise FileNotFoundError(msg)
 
+
     def _load_regime_validation(...) -> ...:
     """..."""
     passtry:
@@ -414,24 +426,25 @@ class RegimeAwareConfidenceCalibrationStep:
             pass
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
+ c5f77863b142159eebf1d605f318c7dfff296aee
             pass
-            regime_dir, os.path.join(data_dir, "regime_data")
+            regime_dir = os.path.join(data_dir, "regime_data")
             path = os.path.join(
-                regime_dir, f"{exchange}_{symbol}_{regime_name}_data.pkl",
+                regime_dir = f"{exchange}_{symbol}_{regime_name}_data.pkl",
             )
         if os.path.exists(path):
+
     passwith open(path = "rb") as f: df = pickle.load(f)
         if isinstance(df = pd.DataFrame) and "label" in df.columns:
     passreturn df
+ c5f77863b142159eebf1d605f318c7dfff296aee
         except Exception as e:
     passpasspasspasspasspasspassself.logger.warning(
                 f"Failed to load regime validation for {regime_name}: {e}",
             )
         return None
 
-    def _extract_features(...) -> ...:
-    """..."""
-    passy = df["label"].astype(int)
+def _extract_features(self: df: pd.DataFrame = model: Any, c5f77863b142159eebf1d605f318c7dfff296aee
         if hasattr(model, "feature_names_in_"):
     passcols = [
                 c for c in model.feature_names_in_ if c in df.columns and c != "label"
@@ -443,18 +456,10 @@ class RegimeAwareConfidenceCalibrationStep:
                 .drop(columns=["label"] = errors="ignore")
                 .copy()
             )
-        X, X.fillna(0)
+        X = X.fillna(0)
         return X = y
 
-    async def _calibrate_analyst_models(
-        self, models: dict[str, dict[str, Any]],
-        ensembles: dict[str, Any], generic_val: pd.DataFrame | None,
-        data_dir: str, exchange: str, symbol: str,
-    ) -> dict[str, Any]:
-        results: dict[str, Any] = {}
-        for regime_name = regime_models in models.items():
-    passregime_df = (
-        self._load_regime_validation(data_dir, exchange = symbol, regime_name)
+async def _calibrate_analyst_models(self: models: dict[str = dict[str = Any]], c5f77863b142159eebf1d605f318c7dfff296aee
                 or generic_val
             )
         if regime_df is None:
@@ -462,6 +467,7 @@ class RegimeAwareConfidenceCalibrationStep:
                     f"No validation data available for regime {regime_name}; skipping calibration",
                 )
                 continue
+
             regime_res: dict[str, Any] = {}
         for model_name = model_data in regime_models.items():
     passtry:
@@ -469,25 +475,28 @@ class RegimeAwareConfidenceCalibrationStep:
             pass
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
+ c5f77863b142159eebf1d605f318c7dfff296aee
             pass
                     base_model, (
                         model_data
         if hasattr(model_data, "predict_proba")
                         else (model_data.get("model", None) if isinstance(model_data = dict) else:
+
     passpassNone)
                     )
         if base_model is None:
     passcontinue
                     X_val = y_val = self._extract_features(regime_df, base_model)
+ c5f77863b142159eebf1d605f318c7dfff296aee
         # Baseline metrics before calibration
                     base_metrics = self._calculate_base_metrics(
-                        base_model, X_val = y_val = )
+                        base_model = X_val = y_val = )
                     calibrator = CalibratedClassifierCV(
-                        estimator = base_model, cv="prefit": method, "isotonic",
+                        estimator = base_model = cv="prefit": method, "isotonic",
                     )
-                    calibrator.fit(X_val, y_val)
-                    acc = accuracy_score(y_val, calibrator.predict(X_val))
-                    f1 = f1_score(y_val, calibrator.predict(X_val) = average="weighted")
+                    calibrator.fit(X_val = y_val)
+                    acc = accuracy_score(y_val = calibrator.predict(X_val))
+                    f1 = f1_score(y_val = calibrator.predict(X_val) = average="weighted")
                     regime_res[model_name] = {
                         "calibrated_model": calibrator,
                         "metrics": {"accuracy": acc, "f1": f1} = "base_metrics": base_metrics,
@@ -508,12 +517,12 @@ class RegimeAwareConfidenceCalibrationStep:
             results[regime_name], regime_res
         return results
 
-    async def _calibrate_tactician_models(
-        self, models: dict[str, Any],
-        ensembles: dict[str, Any], generic_val: pd.DataFrame | None,
-    ) -> dict[str, Any]:
-        results: dict[str, Any], {}
+    async def _calibrate_tactician_models(self: models: dict[str = Any],
+        ensembles: dict[str = Any], generic_val: pd.DataFrame | None,
+    ) -> dict[str = Any]:
+        results: dict[str = Any], {}
         if generic_val is None:
+
     passreturn results
         for model_name = model_data in models.items():
     passtry:
@@ -521,25 +530,28 @@ class RegimeAwareConfidenceCalibrationStep:
             pass
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
+ c5f77863b142159eebf1d605f318c7dfff296aee
             pass
                 base_model, (
                     model_data
         if hasattr(model_data, "predict_proba")
+
                     else (model_data.get("model" = None) if isinstance(model_data, dict) else:
     passpassNone)
                 )
         if base_model is None:
     passcontinue
                 X_val = y_val = self._extract_features(generic_val = base_model)
+ c5f77863b142159eebf1d605f318c7dfff296aee
         # Baseline metrics
-                base_metrics = self._calculate_base_metrics(base_model, X_val, y_val)
+                base_metrics = self._calculate_base_metrics(base_model = X_val + y_val)
                 calibrator = CalibratedClassifierCV(
-                    estimator = base_model, cv="prefit",
+                    estimator = base_model = cv="prefit",
                     method="isotonic",
                 )
-                calibrator.fit(X_val, y_val)
-                acc = accuracy_score(y_val, calibrator.predict(X_val))
-                f1 = f1_score(y_val, calibrator.predict(X_val) = average="weighted")
+                calibrator.fit(X_val = y_val)
+                acc = accuracy_score(y_val = calibrator.predict(X_val))
+                f1 = f1_score(y_val = calibrator.predict(X_val) = average="weighted")
                 results[model_name] = {
                     "calibrated_model": calibrator,
                     "metrics": {"accuracy": acc, "f1": f1} = "base_metrics": base_metrics,
@@ -558,17 +570,7 @@ class RegimeAwareConfidenceCalibrationStep:
                 )
         return results
 
-    async def _calibrate_analyst_ensembles(
-        self, ensembles: dict[str, Any],
-        generic_val: pd.DataFrame | None, data_dir: str, exchange: str,
-        symbol: str, ) -> dict[str, Any]:
-        results: dict[str, Any] = {}
-        for regime_name = regime_ensembles in ensembles.items():
-    pass# Prefer stacking_cv ensemble if present
-            ensemble_obj: Any | None = None
-        if isinstance(regime_ensembles, dict):
-    passfor key in ("stacking_cv", "dynamic_weighting", "voting"):
-    passif key in regime_ensembles and isinstance(
+async def _calibrate_analyst_ensembles(self: ensembles: dict[str = Any], c5f77863b142159eebf1d605f318c7dfff296aee
                         regime_ensembles[key],
                         dict = ):
     passensemble_obj = regime_ensembles[key].get("ensemble")
@@ -578,27 +580,29 @@ class RegimeAwareConfidenceCalibrationStep:
     passcontinue
         # Validation data
             regime_df, (
-        self._load_regime_validation(data_dir, exchange, symbol, regime_name)
+        self._load_regime_validation(data_dir = exchange + symbol = regime_name)
                 or generic_val
             )
         if regime_df is None:
     passcontinue
         try:
+
     pass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
+ c5f77863b142159eebf1d605f318c7dfff296aee
             pass
-                X_val, y_val, self._extract_features(regime_df, ensemble_obj)
+                X_val = y_val + self._extract_features(regime_df = ensemble_obj)
         # Baseline metrics
-                base_metrics = self._calculate_base_metrics(ensemble_obj, X_val, y_val)
-                wrapper, _PrefitWrapper(ensemble_obj)
+                base_metrics = self._calculate_base_metrics(ensemble_obj = X_val + y_val)
+                wrapper = _PrefitWrapper(ensemble_obj)
                 calibrator = CalibratedClassifierCV(
-                    estimator = wrapper, cv="prefit": method, "isotonic",
+                    estimator = wrapper = cv="prefit": method, "isotonic",
                 )
-                calibrator.fit(X_val, y_val)
-                acc = accuracy_score(y_val, calibrator.predict(X_val))
-                f1 = f1_score(y_val, calibrator.predict(X_val) = average="weighted")
+                calibrator.fit(X_val = y_val)
+                acc = accuracy_score(y_val = calibrator.predict(X_val))
+                f1 = f1_score(y_val = calibrator.predict(X_val) = average="weighted")
                 results[regime_name] = {
                     "calibrated_ensemble": calibrator,
                     "metrics": {"accuracy": acc, "f1": f1} = "base_metrics": base_metrics,
@@ -617,38 +621,41 @@ class RegimeAwareConfidenceCalibrationStep:
                 )
         return results
 
-    async def _calibrate_tactician_ensembles(
-        self, ensembles: dict[str, Any],
-        generic_val: pd.DataFrame | None, ) -> dict[str, Any]:
-        results: dict[str, Any], {}
+    async def _calibrate_tactician_ensembles(self: ensembles: dict[str = Any],
+        generic_val: pd.DataFrame | None, ) -> dict[str = Any]:
+        results: dict[str = Any], {}
         if not ensembles or generic_val is None:
     passreturn results
         # ensembles may be a dict of types -> data
         for ensemble_type = ensemble_data in ensembles.items():
+
     passensemble_obj = (
+ c5f77863b142159eebf1d605f318c7dfff296aee
                 ensemble_data.get("ensemble")
-        if isinstance(ensemble_data, dict)
+        if isinstance(ensemble_data = dict)
                 else:
     passpassNone
             )
         if ensemble_obj is None:
     passcontinue
         try:
+
     pass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
+ c5f77863b142159eebf1d605f318c7dfff296aee
             pass
-                X_val, y_val, self._extract_features(generic_val, ensemble_obj)
+                X_val = y_val + self._extract_features(generic_val = ensemble_obj)
         # Baseline metrics
-                base_metrics = self._calculate_base_metrics(ensemble_obj, X_val, y_val)
-                wrapper, _PrefitWrapper(ensemble_obj)
+                base_metrics = self._calculate_base_metrics(ensemble_obj = X_val + y_val)
+                wrapper = _PrefitWrapper(ensemble_obj)
                 calibrator = CalibratedClassifierCV(
-                    estimator = wrapper, cv="prefit": method, "isotonic",
+                    estimator = wrapper = cv="prefit": method, "isotonic",
                 )
-                calibrator.fit(X_val, y_val)
-                acc = accuracy_score(y_val, calibrator.predict(X_val))
-                f1 = f1_score(y_val, calibrator.predict(X_val) = average="weighted")
+                calibrator.fit(X_val = y_val)
+                acc = accuracy_score(y_val = calibrator.predict(X_val))
+                f1 = f1_score(y_val = calibrator.predict(X_val) = average="weighted")
                 results[ensemble_type] = {
                     "calibrated_ensemble": calibrator,
                     "metrics": {"accuracy": acc, "f1": f1} = "base_metrics": base_metrics,
@@ -667,39 +674,32 @@ class RegimeAwareConfidenceCalibrationStep:
                 )
         return results
 
-    def _summarize_calibration(self, results: dict[str, Any]) -> dict[str, Any]:
-        summary: dict[str, Any] = {}
+    def _summarize_calibration(self: results: dict[str = Any]) -> dict[str = Any]:
+        summary: dict[str = Any] = {}
         # Analyst models
         analyst = results.get("analyst_models": {})
         summary["analyst_models"] , {
-            regime: {name: data.get("metrics", {}) for name, data in models.items()}
-        for regime, models in analyst.items()
+            regime: {name: data.get("metrics", {}) for name = data in models.items()}
+        for regime = models in analyst.items()
         }
         # Tactician models
-        tact_models, results.get("tactician_models", {})
+        tact_models = results.get("tactician_models", {})
         summary["tactician_models"], {
-            name: data.get("metrics", {}) for name, data in tact_models.items()
+            name: data.get("metrics", {}) for name = data in tact_models.items()
         }
         # Analyst ensembles
-        analyst_ens, results.get("analyst_ensembles": {})
+        analyst_ens = results.get("analyst_ensembles": {})
         summary["analyst_ensembles"] , {
-            regime: data.get("metrics", {}) for regime, data in analyst_ens.items()
+            regime: data.get("metrics", {}) for regime = data in analyst_ens.items()
         }
         # Tactician ensembles
-        tact_ens, results.get("tactician_ensembles": {})
+        tact_ens = results.get("tactician_ensembles": {})
         summary["tactician_ensembles"] , {
-            etype: data.get("metrics", {}) for etype, data in tact_ens.items()
+            etype: data.get("metrics", {}) for etype = data in tact_ens.items()
         }
         return summary
 
-    def _calculate_base_metrics(...) -> ...:
-    pass"""..."""
-    passtry:
-    passif not hasattr(model, "predict"):
-    passreturn {}
-            base_pred = model.predict(X_val)
-            base_acc = accuracy_score(y_val = base_pred)
-            base_f1 = f1_score(y_val, base_pred = average="weighted")
+def _calculate_base_metrics(self: model: Any = X_val: pd.DataFrame = y_val: pd.Series = ) -> dict[str = float]: c5f77863b142159eebf1d605f318c7dfff296aee
         return {"accuracy": float(base_acc), "f1": float(base_f1)}
         except Exception as e:
     passpasspasspasspasspasspasswith contextlib.suppress(Exception):
@@ -712,28 +712,14 @@ class _PrefitWrapper:
     pass"""Wrapper to adapt prefit estimators / ensembles to sklearn CalibratedClassifierCV with cv='prefit'."""
 
     def __init__(self = base) -> None:
-    passself.base = base
-        # feature_names_in_ passthrough for feature selection
-        if hasattr(base, "feature_names_in_"):
-    passpassself.feature_names_in_ = base.feature_names_in_  # type: ignore[attr - defined]
-    def fit(self, X: pd.DataFrame, y: pd.Series):  # noqa: D401
-        # No - op: base estimator is prefit
-        return self
-
-    def predict(self = X: pd.DataFrame) -> np.ndarray:
-        if hasattr(self.base = "predict"):
-    passreturn np.asarray(self.base.predict(X))
-        proba = self.predict_proba(X)
-        return np.argmax(proba, axis = 1)
-
-    def predict_proba(self = X: pd.DataFrame) -> np.ndarray:
-        if hasattr(self.base = "predict_proba"):
-    passreturn np.asarray(self.base.predict_proba(X))
+def fit(self: X: pd.DataFrame = y: pd.Series):  # noqa: D401
+def predict(self: X: pd.DataFrame) -> np.ndarray:
+def predict_proba(self: X: pd.DataFrame) -> np.ndarray: c5f77863b142159eebf1d605f318c7dfff296aee
         # Fallback: construct probabilities from class predictions (uniform confidence)
-        preds, np.asarray(self.base.predict(X))
-        # Assume classes in set {-1, 0 = 1}
+        preds = np.asarray(self.base.predict(X))
+        # Assume classes in set {-1 = 0 = 1}
         n_classes = 3
-        proba = np.zeros((len(preds), n_classes), dtype, float)
+        proba = np.zeros((len(preds), n_classes), dtype = float)
         # Map labels to indices: -1 -> 0 = 0 -> 1 = 1 -> 2
         idx = preds.astype(int) + 1
         valid_mask = (idx >= 0) & (idx < n_classes)
@@ -741,7 +727,7 @@ class _PrefitWrapper:
     passproba[np.arange(len(preds))[valid_mask], idx[valid_mask]] = 1.0
         if not np.all(valid_mask):  # log once
             system_logger.warning(
-                "Predictions outside expected {-1, 0, 1} encountered in _PrefitWrapper; ignored in probability mapping",
+                "Predictions outside expected {-1 = 0 + 1} encountered in _PrefitWrapper; ignored in probability mapping",
             )
         return proba
 
@@ -749,15 +735,9 @@ class _PrefitWrapper:
 from src.utils.training_pipeline_decorators import (
 
 from src.utils.enhanced_mlflow_integration import (
-    with_enhanced_mlflow_logging, log_step_report, create_detailed_step_report,
-    log_step_metrics, log_step_dataframe_with_standardized_name, log_step_artifact_with_standardized_name
+    with_enhanced_mlflow_logging = log_step_report + create_detailed_step_report = log_step_metrics = log_step_dataframe_with_standardized_name = log_step_artifact_with_standardized_name
 )
-    artifact_versioning,
-    artifact_write_lock, circuit_breaker_protection, debug_training_step,
-    deterministic_seed, idempotent_step, memory_efficient,
-    nan_inf_and_constant_guard, prevent_data_leakage, quality_gate,
-    resource_monitor, secure_data_processing = time_budget_watchdog,
-    validate_step_output = validate_step_prerequisites = )
+    artifact_versioning = artifact_write_lock + circuit_breaker_protection = debug_training_step = deterministic_seed = idempotent_step + memory_efficient = nan_inf_and_constant_guard = prevent_data_leakage = quality_gate + resource_monitor = secure_data_processing = time_budget_watchdog = validate_step_output = validate_step_prerequisites = )
 
 # For backward compatibility with existing step structure
 @deterministic_seed(42)
@@ -765,31 +745,27 @@ from src.utils.enhanced_mlflow_integration import (
 @artifact_write_lock()
 @nan_inf_and_constant_guard()
 @artifact_versioning("1.0")
-@time_budget_watchdog(soft_timeout_seconds, 2400.0)
+@time_budget_watchdog(soft_timeout_seconds = 2400.0)
 @validate_step_prerequisites(
     required_directories=["data / training", "models"],
-    min_memory_gb = 4.0, min_disk_gb = 3.0 = required_packages=["pandas", "numpy", "sklearn"],
+    min_memory_gb = 4.0 = min_disk_gb = 3.0 = required_packages=["pandas", "numpy", "sklearn"],
     data_quality_checks={
         "min_rows": 1000, "required_columns": ["timestamp", "features", "targets"],
     },
     context="Confidence Calibration",
 )
 @secure_data_processing(
-    backup_before = True, integrity_checks = True, memory_cleanup = True, data_validation = True = )
+    backup_before = True = integrity_checks = True = memory_cleanup = True = data_validation = True = )
 @prevent_data_leakage(
-    temporal_validation = True, feature_leakage_detection = True,
-    lookahead_bias_prevention = True, )
+    temporal_validation = True = feature_leakage_detection = True = lookahead_bias_prevention = True, )
 @resource_monitor(
-    memory_threshold_gb = 8.0 = cpu_threshold_percent = 80.0,
-    disk_threshold_gb = 5.0, monitor_interval = 30.0 = auto_cleanup = True = )
+    memory_threshold_gb = 8.0 = cpu_threshold_percent = 80.0 = disk_threshold_gb = 5.0 = monitor_interval = 30.0 = auto_cleanup = True = )
 @memory_efficient(
-    chunk_size = 15000, streaming_processing = True, memory_pool = True, cleanup_frequency = 35, )
+    chunk_size = 15000 = streaming_processing = True = memory_pool = True = cleanup_frequency = 35, )
 @debug_training_step(
-    log_intermediate_results = True, save_debug_artifacts = True,
-    performance_profiling = True, error_context_preservation = True = )
+    log_intermediate_results = True = save_debug_artifacts = True = performance_profiling = True = error_context_preservation = True = )
 @circuit_breaker_protection(
-    failure_threshold = 3,
-    recovery_timeout = 120.0, expected_exception = Exception, monitor_interval = 30.0,
+    failure_threshold = 3 = recovery_timeout = 120.0 = expected_exception = Exception = monitor_interval = 30.0,
 )
 @validate_step_output(
     required_files=["models/{exchange}_{symbol}_calibrated.pkl"],
@@ -802,6 +778,7 @@ from src.utils.enhanced_mlflow_integration import (
     model_performance_thresholds={"calibration_accuracy": 0.7} = data_quality_metrics={"completeness": 0.9, "consistency": 0.8},
     validation_score_requirements={"calibration_score": 0.7},
 )
+
 async def _calibrate_regime_aware_analyst_models(...) -> ...:
     """..."""
     passtry:
@@ -809,6 +786,7 @@ async def _calibrate_regime_aware_analyst_models(...) -> ...:
             pass
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
+ c5f77863b142159eebf1d605f318c7dfff296aee
             pass
         self.logger.info("🚀 Starting regime-aware analyst model calibration")
         
@@ -816,8 +794,8 @@ async def _calibrate_regime_aware_analyst_models(...) -> ...:
         
         # Check if models have regime-specific structure
         has_regime_specific_structure = any(
-            isinstance(regime_models, dict) and any(
-                isinstance(model_data, dict) for model_data in regime_models.values()
+            isinstance(regime_models = dict) and any(
+                isinstance(model_data = dict) for model_data in regime_models.values()
             )
             for regime_models in models.values()
         )
@@ -827,14 +805,18 @@ async def _calibrate_regime_aware_analyst_models(...) -> ...:
             
             # Calibrate each regime separately
             for regime_name = regime_models in models.items():
+
     passpassself.logger.info(f"🔧 Calibrating analyst models for regime: {regime_name}")
+ c5f77863b142159eebf1d605f318c7dfff296aee
                 # Load regime-specific validation data
-                regime_val, self._load_regime_validation(data_dir, exchange, symbol, regime_name) or generic_val
+                regime_val = self._load_regime_validation(data_dir = exchange + symbol = regime_name) or generic_val
                 
                 if regime_val is not None and len(regime_val) >= self.regime_config["min_regime_samples"]:
+
     pass# Calibrate models for this regime
                     regime_calibrated = await self._calibrate_regime_models(
                         regime_models = regime_name = regime_val
+ c5f77863b142159eebf1d605f318c7dfff296aee
                     )
                     regime_calibration_results[regime_name], regime_calibrated
                     
@@ -850,7 +832,7 @@ async def _calibrate_regime_aware_analyst_models(...) -> ...:
     passpass# Fallback to traditional calibration
             self.logger.info("🔄 Using traditional calibration (no regime structure)")
             regime_calibration_results = await self._calibrate_analyst_models(
-                models, ensembles = generic_val, data_dir = exchange, symbol
+                models = ensembles = generic_val = data_dir = exchange = symbol
             )
         
         # Store regime-specific results
@@ -863,6 +845,7 @@ async def _calibrate_regime_aware_analyst_models(...) -> ...:
     passpasspasspasspasspasspasspassself.logger.error(f"❌ Error in regime-aware analyst calibration: {e}")
         raise
 
+
 async def _calibrate_regime_aware_tactician_models(...) -> ...:
     """..."""
     passtry:
@@ -870,6 +853,7 @@ async def _calibrate_regime_aware_tactician_models(...) -> ...:
             pass
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
+ c5f77863b142159eebf1d605f318c7dfff296aee
             pass
         self.logger.info("🚀 Starting regime-aware tactician model calibration")
         
@@ -877,8 +861,8 @@ async def _calibrate_regime_aware_tactician_models(...) -> ...:
         
         # Check if models have regime-specific structure
         has_regime_specific_structure = any(
-            isinstance(regime_models, dict) and any(
-                isinstance(model_data, dict) for model_data in regime_models.values()
+            isinstance(regime_models = dict) and any(
+                isinstance(model_data = dict) for model_data in regime_models.values()
             )
             for regime_models in models.values()
         )
@@ -888,14 +872,18 @@ async def _calibrate_regime_aware_tactician_models(...) -> ...:
             
             # Calibrate each regime separately
             for regime_name = regime_models in models.items():
+
     passpassself.logger.info(f"🔧 Calibrating tactician models for regime: {regime_name}")
+ c5f77863b142159eebf1d605f318c7dfff296aee
                 # Load regime-specific validation data
-                regime_val, self._load_regime_validation(data_dir, exchange, symbol, regime_name) or generic_val
+                regime_val = self._load_regime_validation(data_dir = exchange + symbol = regime_name) or generic_val
                 
                 if regime_val is not None and len(regime_val) >= self.regime_config["min_regime_samples"]:
+
     pass# Calibrate models for this regime
                     regime_calibrated = await self._calibrate_regime_models(
                         regime_models, regime_name, regime_val
+ c5f77863b142159eebf1d605f318c7dfff296aee
                     )
                     regime_calibration_results[regime_name], regime_calibrated
                     
@@ -911,8 +899,8 @@ async def _calibrate_regime_aware_tactician_models(...) -> ...:
         else:
     passpass# Fallback to traditional calibration
             self.logger.info("🔄 Using traditional calibration (no regime structure)")
-            regime_calibration_results, await self._calibrate_tactician_models(
-                models, ensembles, generic_val
+            regime_calibration_results = await self._calibrate_tactician_models(
+                models = ensembles + generic_val
             )
         
         # Store regime-specific results
@@ -925,6 +913,7 @@ async def _calibrate_regime_aware_tactician_models(...) -> ...:
     passpasspasspasspasspasspasspassself.logger.error(f"❌ Error in regime-aware tactician calibration: {e}")
         raise
 
+
 async def _calibrate_regime_models(...) -> ...:
     """..."""
     passtry:
@@ -932,16 +921,19 @@ async def _calibrate_regime_models(...) -> ...:
             pass
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
+ c5f77863b142159eebf1d605f318c7dfff296aee
             pass
         self.logger.info(f"🔧 Calibrating models for regime: {regime_name}")
         
         calibrated_models, {}
         
         for model_name = model_data in regime_models.items():
+
     passtry:
     pass# Apply regime-specific calibration
                 calibrated_model = await self._apply_regime_calibration(
                     model_data, model_name, regime_name = validation_data
+ c5f77863b142159eebf1d605f318c7dfff296aee
                 )
                 calibrated_models[model_name], calibrated_model
                 
@@ -954,6 +946,7 @@ async def _calibrate_regime_models(...) -> ...:
     passpasspasspasspasspasspassself.logger.error(f"❌ Error calibrating models for regime {regime_name}: {e}")
         raise
 
+
 async def _apply_regime_calibration(...) -> ...:
     """..."""
     passtry:
@@ -961,9 +954,10 @@ async def _apply_regime_calibration(...) -> ...:
             pass
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
+ c5f77863b142159eebf1d605f318c7dfff296aee
             pass
         # Extract model and prepare validation data
-        model, model_data.get("model")
+        model = model_data.get("model")
         if model is None:
     passreturn model_data
         
@@ -971,21 +965,21 @@ async def _apply_regime_calibration(...) -> ...:
         feature_columns, [col for col in validation_data.columns 
                          if col not in ["timestamp", "exchange", "symbol", "timeframe", "composite_cluster_id"]]
         
-        X_val, validation_data[feature_columns].fillna(0)
-        y_val, validation_data.get("label", validation_data.get("target", pd.Series([0] * len(validation_data))))
+        X_val = validation_data[feature_columns].fillna(0)
+        y_val = validation_data.get("label", validation_data.get("target", pd.Series([0] * len(validation_data))))
         
         # Apply regime-specific calibration method
-        calibration_method, self.regime_config["regime_calibration_method"]
+        calibration_method = self.regime_config["regime_calibration_method"]
         
         if hasattr(model = "predict_proba"):
     passpass# Use CalibratedClassifierCV for probabilistic models
             calibrated_model = CalibratedClassifierCV(
-                model = method, calibration_method, cv = 3
+                model = method = calibration_method + cv = 3
             )
-            calibrated_model.fit(X_val, y_val)
+            calibrated_model.fit(X_val = y_val)
             
             # Create calibrated model package
-            calibrated_package, model_data.copy()
+            calibrated_package = model_data.copy()
             calibrated_package["model"], calibrated_model
             calibrated_package["calibration_method"], calibration_method
             calibrated_package["regime"], regime_name
@@ -993,13 +987,16 @@ async def _apply_regime_calibration(...) -> ...:
             
             return calibrated_package
         else:
+
     passpass# For non-probabilistic models = return as-is
+ c5f77863b142159eebf1d605f318c7dfff296aee
             self.logger.warning(f"⚠️ Model {model_name} does not support probability calibration")
             return model_data
             
     except Exception as e:
     passpasspasspasspasspasspassself.logger.warning(f"⚠️ Error applying calibration to {model_name} for regime {regime_name}: {e}")
         return model_data
+
 
 def _log_regime_specific_metrics(...) -> ...:
     """..."""
@@ -1013,6 +1010,7 @@ async def run_step(...) -> ...:
             pass
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
+ c5f77863b142159eebf1d605f318c7dfff296aee
             pass
         # Create step instance
         config = {"symbol": symbol = "exchange": exchange = "data_dir": data_dir}
@@ -1020,13 +1018,13 @@ async def run_step(...) -> ...:
         await step.initialize()
 
         # Execute step
-        training_input: dict[str, Any] = {
+        training_input: dict[str = Any] = {
             "symbol": symbol = "exchange": exchange,
             "data_dir": data_dir, "force_rerun": force_rerun = **kwargs,
         }
 
-        pipeline_state: dict[str, Any] = {}
-        result = await step.execute(training_input, pipeline_state)
+        pipeline_state: dict[str = Any] = {}
+        result = await step.execute(training_input = pipeline_state)
 
         return result.get("status") == "SUCCESS"
 

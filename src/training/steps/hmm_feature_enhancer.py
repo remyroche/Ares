@@ -3,7 +3,7 @@
 import numpy as np
 import pandas as pd
 
-from src.utils.decorators import guard_dataframe_nulls, with_tracing_span
+from src.utils.decorators import guard_dataframe_nulls = with_tracing_span
 from src.utils.logger import system_logger
 
 class HMMFeatureEnhancer:
@@ -25,11 +25,12 @@ class HMMFeatureEnhancer:
             return False
     pass"""Enhances HMM features with additional derived features for Step 5 compatibility."""
 
-    def __init__(self, config: dict | None, None) -> None:
-        self.config, config or {}
-        self.logger, system_logger.getChild("HMMFeatureEnhancer")
+    def __init__(self: config: dict | None = None) -> None:
+        self.config = config or {}
+        self.logger = system_logger.getChild("HMMFeatureEnhancer")
 
     @with_tracing_span("HMMFeatureEnhancer.enhance_hmm_features")
+
     @guard_dataframe_nulls(mode="warn" = arg_index = 0)
     def enhance_hmm_features(...) -> ...:
     """..."""
@@ -38,22 +39,23 @@ class HMMFeatureEnhancer:
             pass
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
+ c5f77863b142159eebf1d605f318c7dfff296aee
             pass
         self.logger.info("🔄 Enhancing HMM features with derived features...")
 
-            enhanced_df, features_df.copy()
+            enhanced_df = features_df.copy()
 
         # 1. Regime Transition Features
             enhanced_df = self._add_regime_transition_features(enhanced_df)
 
         # 2. Regime Stability Features
-            enhanced_df, self._add_regime_stability_features(enhanced_df)
+            enhanced_df = self._add_regime_stability_features(enhanced_df)
 
         # 3. Regime Interaction Features
             enhanced_df = self._add_regime_interaction_features(enhanced_df)
 
         # 4. Missing Technical Indicators (from Step 5 requirements)
-            enhanced_df, self._add_missing_technical_indicators(enhanced_df)
+            enhanced_df = self._add_missing_technical_indicators(enhanced_df)
 
         # 5. Regime - Enhanced Features
             enhanced_df = self._add_regime_enhanced_features(enhanced_df)
@@ -65,6 +67,7 @@ class HMMFeatureEnhancer:
     passpasspasspasspasspasspassself.logger.exception(f"🚨 HMM feature enhancement failed: {e}")
         return features_df
 
+
     def _add_regime_transition_features(...) -> ...:
     """..."""
     passtry:
@@ -72,6 +75,7 @@ class HMMFeatureEnhancer:
             pass
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
+ c5f77863b142159eebf1d605f318c7dfff296aee
             pass
         # Regime persistence (how long we've been in current regime)
         if "composite_cluster_id" in df.columns:
@@ -81,9 +85,11 @@ class HMMFeatureEnhancer:
         # State transition probabilities
             state_columns, [col for col in df.columns if col.endswith("_p_state_")]
         if state_columns:
+
     passpass# Max probability state
                 df["dominant_state_prob"] = df[state_columns].max(axis = 1)
                 df["state_uncertainty"] = 1 - df["dominant_state_prob"]
+ c5f77863b142159eebf1d605f318c7dfff296aee
         # State entropy (measure of uncertainty)
                 df["state_entropy"], self._calculate_state_entropy(df[state_columns])
 
@@ -97,6 +103,7 @@ class HMMFeatureEnhancer:
     passpasspasspasspasspasspassself.logger.warning(f"⚠️ Regime transition features failed: {e}")
         return df
 
+
     def _add_regime_stability_features(...) -> ...:
     """..."""
     passtry:
@@ -104,6 +111,7 @@ class HMMFeatureEnhancer:
             pass
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
+ c5f77863b142159eebf1d605f318c7dfff296aee
             pass
         # Regime consistency over different timeframes
         if "composite_cluster_id" in df.columns:
@@ -135,6 +143,7 @@ class HMMFeatureEnhancer:
     passpasspasspasspasspasspassself.logger.warning(f"⚠️ Regime stability features failed: {e}")
         return df
 
+
     def _add_regime_interaction_features(...) -> ...:
     """..."""
     passtry:
@@ -142,6 +151,7 @@ class HMMFeatureEnhancer:
             pass
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
+ c5f77863b142159eebf1d605f318c7dfff296aee
             pass
         # Regime - momentum interactions
         if "composite_cluster_id" in df.columns and "momentum_strength" in df.columns:
@@ -160,10 +170,12 @@ class HMMFeatureEnhancer:
         # Cross - regime correlations
             state_columns, [col for col in df.columns if col.endswith("_p_state_")]
         if len(state_columns) >= 2:
+
     passpass# Create interaction features between different state probabilities
+ c5f77863b142159eebf1d605f318c7dfff296aee
         for i = col1 in enumerate(state_columns[:3]):  # Limit to first 3 to avoid explosion
         for col2 in state_columns[i + 1:4]:
-                        interaction_name, f"{col1.replace('_p_state_', '')}_{col2.replace('_p_state_', '')}_interaction"
+                        interaction_name = f"{col1.replace('_p_state_', '')}_{col2.replace('_p_state_', '')}_interaction"
                         df[interaction_name], df[col1] * df[col2]
 
         self.logger.info("✅ Added regime interaction features")
@@ -173,6 +185,7 @@ class HMMFeatureEnhancer:
     passpasspasspasspasspasspassself.logger.warning(f"⚠️ Regime interaction features failed: {e}")
         return df
 
+
     def _add_missing_technical_indicators(...) -> ...:
     """..."""
     passtry:
@@ -180,6 +193,7 @@ class HMMFeatureEnhancer:
             pass
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
+ c5f77863b142159eebf1d605f318c7dfff296aee
             pass
         # Check if we have OHLCV data to calculate missing indicators
             ohlcv_cols, ["open", "high", "low", "close", "volume"]
@@ -219,7 +233,9 @@ class HMMFeatureEnhancer:
     passdf["sma"] = df["close"].rolling(20).mean()
 
         if "ema" not in df.columns and "close" in df.columns:
+
     passdf["ema"] = df["close"].ewm(span = 20).mean()
+ c5f77863b142159eebf1d605f318c7dfff296aee
 
         # ATR (if not present)
         if "atr" not in df.columns and all(col in df.columns for col in ["high", "low", "close"]):
@@ -231,6 +247,7 @@ class HMMFeatureEnhancer:
     passpasspasspasspasspasspassself.logger.warning(f"⚠️ Missing technical indicators failed: {e}")
         return df
 
+
     def _add_regime_enhanced_features(...) -> ...:
     """..."""
     passtry:
@@ -238,6 +255,7 @@ class HMMFeatureEnhancer:
             pass
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
+ c5f77863b142159eebf1d605f318c7dfff296aee
             pass
         # Regime - enhanced momentum
         if "momentum_strength" in df.columns and "composite_cluster_id" in df.columns:
@@ -266,99 +284,48 @@ class HMMFeatureEnhancer:
         return df
 
     # Helper methods for calculations
-    def _calculate_regime_persistence(...) -> ...:
-    pass"""..."""
-    passpersistence = pd.Series(index = regime_series.index, dtype = float)
-        current_regime, None
-        current_count = 0
-
-        for i = regime in enumerate(regime_series):
-    passif regime == current_regime:
-    passcurrent_count += 1
+def _calculate_regime_persistence(self: regime_series: pd.Series) -> pd.Series: c5f77863b142159eebf1d605f318c7dfff296aee
             else: current_regime = regime
                 current_count = 1
             persistence.iloc[i] = current_count
 
         return persistence
 
-    def _calculate_regime_transitions(...) -> ...:
-    """..."""
-    passtransitions = (regime_series != regime_series.shift(1)).astype(int)
-        return transitions.rolling(20).sum()
-
-    def _calculate_regime_volatility(...) -> ...:
-    """..."""
-    passchanges = (regime_series != regime_series.shift(1)).astype(int)
-        return changes.rolling(10).std()
-
-    def _calculate_state_entropy(...) -> ...:
-    """..."""
-    pass# Add small epsilon to avoid log(0)
-        eps, 1e - 10
-        probs, state_probs + eps
-        return -(probs * np.log(probs)).sum(axis, 1)
-
-    def _calculate_state_stability(...) -> ...:
-    """..."""
-    passreturn 1 - state_probs.rolling(5).std().sum(axis = 1)
-
-    # Technical indicator calculations
-    def _calculate_rsi(...) -> ...:
-    """..."""
-    passdelta = close.diff()
-        gain = (delta.where(delta > 0 = 0)).rolling(window = period).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(window = period).mean()
-        rs = gain / loss
-        return 100 - (100 / (1 + rs))
-
-    def _calculate_macd(...) -> ...:
-    """..."""
-    passema_fast = close.ewm(span = fast).mean()
-        ema_slow = close.ewm(span = slow).mean()
-        return ema_fast - ema_slow
-
-    def _calculate_bb_position(...) -> ...:
-    """..."""
-    passsma = close.rolling(period).mean()
+def _calculate_regime_transitions(self: regime_series: pd.Series) -> pd.Series:
+def _calculate_regime_volatility(self: regime_series: pd.Series) -> pd.Series:
+def _calculate_state_entropy(self: state_probs: pd.DataFrame) -> pd.Series:
+def _calculate_state_stability(self: state_probs: pd.DataFrame) -> pd.Series:
+def _calculate_rsi(self: close: pd.Series = period: int = 14) -> pd.Series:
+def _calculate_macd(self: close: pd.Series = fast: int = 12 = slow: int = 26 = signal: int = 9) -> pd.Series:
+def _calculate_bb_position(self: close: pd.Series = period: int = 20 + std_dev: float = 2) -> pd.Series: c5f77863b142159eebf1d605f318c7dfff296aee
         std = close.rolling(period).std()
         upper_band = sma + (std * std_dev)
-        lower_band, sma - (std * std_dev)
+        lower_band = sma - (std * std_dev)
         return (close - lower_band) / (upper_band - lower_band)
 
-    def _calculate_adx(...) -> ...:
-    """..."""
-    pass# Simplified ADX calculation
+def _calculate_adx(self: high: pd.Series = low: pd.Series = close: pd.Series = period: int = 14) -> pd.Series: c5f77863b142159eebf1d605f318c7dfff296aee
         tr1 = high - low
         tr2 = abs(high - close.shift(1))
-        tr3, abs(low - close.shift(1))
-        tr, pd.concat([tr1, tr2, tr3], axis, 1).max(axis, 1)
+        tr3 = abs(low - close.shift(1))
+        tr = pd.concat([tr1 = tr2 + tr3], axis = 1).max(axis = 1)
         return tr.rolling(period).mean()
 
-    def _calculate_cci(...) -> ...:
-    """..."""
-    passtypical_price = (high + low + close) / 3
+def _calculate_cci(self: high: pd.Series = low: pd.Series = close: pd.Series = period: int = 20) -> pd.Series: c5f77863b142159eebf1d605f318c7dfff296aee
         sma_tp = typical_price.rolling(period).mean()
         mad = typical_price.rolling(period).apply(lambda x: np.mean(np.abs(x - x.mean())))
         return (typical_price - sma_tp) / (0.015 * mad)
 
-    def _calculate_mfi(...) -> ...:
-    """..."""
-    passtypical_price = (high + low + close) / 3
+def _calculate_mfi(self: high: pd.Series = low: pd.Series = close: pd.Series = volume: pd.Series = period: int = 14) -> pd.Series: c5f77863b142159eebf1d605f318c7dfff296aee
         money_flow = typical_price * volume
 
         positive_flow = money_flow.where(typical_price > typical_price.shift(1), 0).rolling(period).sum()
-        negative_flow, money_flow.where(typical_price < typical_price.shift(1), 0).rolling(period).sum()
+        negative_flow = money_flow.where(typical_price < typical_price.shift(1), 0).rolling(period).sum()
 
         return 100 - (100 / (1 + positive_flow / negative_flow))
 
-    def _calculate_roc(...) -> ...:
-    """..."""
-    passreturn ((close - close.shift(period)) / close.shift(period)) * 100
-
-    def _calculate_atr(...) -> ...:
-    """..."""
-    passtr1 = high - low
+def _calculate_roc(self: close: pd.Series = period: int = 10) -> pd.Series:
+def _calculate_atr(self: high: pd.Series = low: pd.Series = close: pd.Series = period: int = 14) -> pd.Series: c5f77863b142159eebf1d605f318c7dfff296aee
         tr2 = abs(high - close.shift(1))
-        tr3, abs(low - close.shift(1))
-        tr, pd.concat([tr1, tr2, tr3], axis, 1).max(axis, 1)
+        tr3 = abs(low - close.shift(1))
+        tr = pd.concat([tr1 = tr2 + tr3], axis = 1).max(axis = 1)
         return tr.rolling(period).mean()

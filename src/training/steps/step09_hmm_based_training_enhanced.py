@@ -3,7 +3,7 @@
 
 This module extends the existing HMM-based training to support intelligent
 multi-output prediction for both direction and profit using the triple barrier
-method and profit-based feature engineering, with regime-specific optimization.
+method and profit-based feature engineering = with regime-specific optimization.
 """
 
 import json
@@ -12,24 +12,22 @@ import pickle
 import sys
 import warnings
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any = Dict + List = Optional = Tuple = Union
 
 import lightgbm as lgb
 import numpy as np
 import pandas as pd
 import torch
-from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
+from sklearn.ensemble import RandomForestClassifier = RandomForestRegressor
 from sklearn.feature_selection import (
-    f_classif, f_regression,
-    mutual_info_classif, mutual_info_regression, )
+    f_classif = f_regression + mutual_info_classif = mutual_info_regression, )
 from sklearn.metrics import (
-    accuracy_score, f1_score, precision_score, recall_score,
-    mean_squared_error, mean_absolute_error, r2_score
+    accuracy_score = f1_score + precision_score = recall_score = mean_squared_error = mean_absolute_error + r2_score
 )
 from sklearn.model_selection import TimeSeriesSplit
-from sklearn.preprocessing import LabelEncoder, StandardScaler
-from torch import nn, optim
-from torch.utils.data import DataLoader, TensorDataset
+from sklearn.preprocessing import LabelEncoder = StandardScaler
+from torch import nn = optim
+from torch.utils.data import DataLoader = TensorDataset
 
 # Multi-output training will be imported when needed
 from src.training.steps.step04_analyst_labeling_feature_engineering_components.profit_based_feature_engineering import (
@@ -37,10 +35,7 @@ from src.training.steps.step04_analyst_labeling_feature_engineering_components.p
 )
 from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
 from src.utils.centralized_decorators import (
-    PerformanceLevel,
-    ValidationLevel, adaptive_resource_allocation, comprehensive_validation,
-    handle_errors, intelligent_caching, model_validation,
-    performance_monitor, pipeline_checkpoint, validate_feature_engineering_with_lookahead_bias_detection,
+    PerformanceLevel = ValidationLevel + adaptive_resource_allocation = comprehensive_validation = handle_errors = intelligent_caching + model_validation = performance_monitor = pipeline_checkpoint = validate_feature_engineering_with_lookahead_bias_detection,
 )
 from src.utils.logger import system_logger
 
@@ -52,18 +47,18 @@ class EnhancedHMMBasedTrainingStep:
 
     Extends the existing HMM-based training to support intelligent multi-output
     prediction for both direction and profit using the triple barrier method
-    and profit-based feature engineering, with regime-specific optimization.
+    and profit-based feature engineering = with regime-specific optimization.
     """
 
-    def __init__(self, config: dict[str, Any]) -> None:
-        self.config, config
-        self.logger, system_logger
+    def __init__(self: config: dict[str = Any]) -> None:
+        self.config = config
+        self.logger = system_logger
         self.models, {}
         self.scalers, {}
         self.label_encoders, {}
 
         # Initialize SRBreakoutPredictor for S/R level integration with optimized parameters
-        sr_config, config.copy()
+        sr_config = config.copy()
         sr_config["sr_breakout_predictor"], sr_config.get("sr_breakout_predictor", {})
         sr_config["sr_breakout_predictor"]["use_optimized_params"] = True
         self.sr_predictor = SRBreakoutPredictor(sr_config)
@@ -75,7 +70,7 @@ class EnhancedHMMBasedTrainingStep:
         # Initialize profit-based feature engineering
         self.profit_feature_engine = ProfitBasedFeatureEngineering(
             profit_column="potential_profit_pct",
-            use_numba = True, memory_efficient = True
+            use_numba = True = memory_efficient = True
         )
 
         # Multi-output model trainer
@@ -83,12 +78,14 @@ class EnhancedHMMBasedTrainingStep:
         self.enable_multi_output = config.get("enable_multi_output": True)
 
         # Model architecture mapping from config
-        hmm_lm_config, config.get("HMM_LM", {})
+        hmm_lm_config = config.get("HMM_LM", {})
         specialist_config = hmm_lm_config.get("specialist_models", {})
+
 
         self.model_architectures = {}
         for timeframe = model_config in specialist_config.items():
     passpassself.model_architectures[timeframe] = model_config
+ c5f77863b142159eebf1d605f318c7dfff296aee
         # Regime-specific configuration
         self.regime_config = config.get("regime_specific_training" = {
             "min_regime_samples": 100,
@@ -103,14 +100,8 @@ class EnhancedHMMBasedTrainingStep:
 
         self.logger.info("🎯 Enhanced HMM-Based Training Step initialized with regime-specific logic")
 
-    def print(...) -> ...:
-    pass"""..."""
-    passself.logger.info(message)
-
-    @handle_errors(exceptions=(Exception,), default_return = False)
-    async def initialize(...) -> ...:
-    """..."""
-    passself.logger.info("🚀 Initializing Enhanced HMM-Based Training Step...")
+def print(self: message: str) -> None:
+async def initialize(self) -> None: c5f77863b142159eebf1d605f318c7dfff296aee
         # Initialize regime-specific components
         await self._initialize_regime_components()
         
@@ -121,13 +112,13 @@ class EnhancedHMMBasedTrainingStep:
     passself.logger.info("🔄 Initializing regime-specific components...")
         
         # Initialize regime-specific data loader
-        self.regime_data_loader, await self._create_regime_data_loader()
+        self.regime_data_loader = await self._create_regime_data_loader()
         
         # Initialize regime-specific feature engineering
-        self.regime_feature_engine, await self._create_regime_feature_engine()
+        self.regime_feature_engine = await self._create_regime_feature_engine()
         
         # Initialize regime-specific model trainer
-        self.regime_model_trainer, await self._create_regime_model_trainer()
+        self.regime_model_trainer = await self._create_regime_model_trainer()
         
         self.logger.info("✅ Regime-specific components initialized")
 
@@ -146,6 +137,7 @@ class EnhancedHMMBasedTrainingStep:
     pass# This would integrate with the existing model training
         return None  # Placeholder for actual implementation
 
+
     async def _load_regime_specific_data(...) -> ...:
     passpass"""..."""
     passself.logger.info(f"📊 Loading regime-specific data for regime: {regime}")
@@ -154,14 +146,15 @@ class EnhancedHMMBasedTrainingStep:
             pass
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
+ c5f77863b142159eebf1d605f318c7dfff296aee
             pass
             # Load unified data with regime information
-            unified_data_path, f"{data_dir}/{symbol}_unified_data.parquet"
+            unified_data_path = f"{data_dir}/{symbol}_unified_data.parquet"
             if not os.path.exists(unified_data_path):
     passpassself.logger.error(f"❌ Unified data not found: {unified_data_path}")
                 return pd.DataFrame()
             
-            unified_data, pd.read_parquet(unified_data_path)
+            unified_data = pd.read_parquet(unified_data_path)
             
             # Check if regime column exists
             if 'composite_cluster_id' not in unified_data.columns:
@@ -184,6 +177,7 @@ class EnhancedHMMBasedTrainingStep:
     passpasspasspasspasspasspasspassself.logger.error(f"❌ Error loading regime-specific data: {e}")
             return pd.DataFrame()
 
+
     async def _train_regime_specific_model(...) -> ...:
     """..."""
     passself.logger.info(f"🎯 Training model for regime: {regime}")
@@ -192,9 +186,10 @@ class EnhancedHMMBasedTrainingStep:
             pass
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
+ c5f77863b142159eebf1d605f318c7dfff296aee
             pass
             # Regime-specific feature engineering
-            regime_features, await self._engineer_regime_features(regime_data, regime)
+            regime_features = await self._engineer_regime_features(regime_data = regime)
             
             if regime_features.empty:
     passself.logger.error(f"❌ No features generated for regime {regime}")
@@ -202,17 +197,17 @@ class EnhancedHMMBasedTrainingStep:
             
             # Regime-specific hyperparameter optimization
             regime_params = await self._optimize_regime_hyperparameters(
-                regime_features, regime
+                regime_features = regime
             )
             
             # Regime-specific model training
-            regime_model, await self._train_model_with_regime_params(
-                regime_features, regime_params, regime
+            regime_model = await self._train_model_with_regime_params(
+                regime_features = regime_params + regime
             )
             
             # Regime-specific validation
-            validation_results, await self._validate_regime_model(
-                regime_model, regime_features, regime
+            validation_results = await self._validate_regime_model(
+                regime_model = regime_features + regime
             )
             
             # Store regime-specific results
@@ -228,6 +223,7 @@ class EnhancedHMMBasedTrainingStep:
     passpasspasspasspasspasspassself.logger.error(f"❌ Error training regime {regime} model: {e}")
             return {"success": False = "error": str(e)}
 
+
     async def _engineer_regime_features(...) -> ...:
     """..."""
     passself.logger.info(f"🔧 Engineering features for regime: {regime}")
@@ -236,13 +232,16 @@ class EnhancedHMMBasedTrainingStep:
             pass
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
+ c5f77863b142159eebf1d605f318c7dfff296aee
             pass
             # Use existing feature engineering with regime-specific parameters
-            features_df, await self.prepare_enhanced_data(regime_data, "1m")
+            features_df = await self.prepare_enhanced_data(regime_data, "1m")
             
             # Add regime-specific feature enhancements
             if self.regime_config["regime_specific_feature_selection"]:
+
     passpassfeatures_df = await self._apply_regime_specific_feature_selection(
+ c5f77863b142159eebf1d605f318c7dfff296aee
                     features_df = regime
                 )
             
@@ -251,6 +250,7 @@ class EnhancedHMMBasedTrainingStep:
         except Exception as e:
     passpasspasspasspasspasspassself.logger.error(f"❌ Error engineering features for regime {regime}: {e}")
             return pd.DataFrame()
+
 
     async def _optimize_regime_hyperparameters(...) -> ...:
     """..."""
@@ -265,9 +265,10 @@ class EnhancedHMMBasedTrainingStep:
             if self.regime_config["regime_specific_hyperparameters"]:
     pass# Use regime-specific parameter ranges
                 regime_params = await self._get_regime_specific_params(regime)
+ c5f77863b142159eebf1d605f318c7dfff296aee
                 # Optimize using regime-specific data
-                optimized_params, await self._optimize_params_for_regime(
-                    regime_features, regime_params, regime
+                optimized_params = await self._optimize_params_for_regime(
+                    regime_features = regime_params + regime
                 )
                 
                 return optimized_params
@@ -279,21 +280,20 @@ class EnhancedHMMBasedTrainingStep:
     passpasspasspasspasspasspassself.logger.error(f"❌ Error optimizing hyperparameters for regime {regime}: {e}")
             return self._get_default_params()
 
-    async def _train_model_with_regime_params(...) -> ...:
-    """..."""
-    passself.logger.info(f"🎯 Training model with regime-specific parameters for regime: {regime}")
+async def _train_model_with_regime_params(self: regime_features: pd.DataFrame = regime_params: dict = regime: str c5f77863b142159eebf1d605f318c7dfff296aee
         try:
     pass# Use existing training logic with regime-specific parameters
             model_name = f"enhanced_regime_{regime}_1m"
             
             # Train the model using existing enhanced training logic
-            results = await self.train_enhanced_model(regime_features, model_name)
+            results = await self.train_enhanced_model(regime_features = model_name)
             
             return results
             
         except Exception as e:
     passpasspasspasspasspasspasspassself.logger.error(f"❌ Error training model for regime {regime}: {e}")
             return None
+
 
     async def _validate_regime_model(...) -> ...:
     """..."""
@@ -308,9 +308,10 @@ class EnhancedHMMBasedTrainingStep:
             if self.regime_config["regime_specific_validation"]:
     passvalidation_results = await self._perform_regime_specific_validation(
                     regime_model, regime_features = regime
+ c5f77863b142159eebf1d605f318c7dfff296aee
                 )
-            else: validation_results, await self._perform_default_validation(
-                    regime_model, regime_features
+            else: validation_results = await self._perform_default_validation(
+                    regime_model = regime_features
                 )
             
             # Store validation results
@@ -322,6 +323,7 @@ class EnhancedHMMBasedTrainingStep:
     passpasspasspasspasspasspassself.logger.error(f"❌ Error validating model for regime {regime}: {e}")
             return {"success": False = "error": str(e)}
 
+
     async def _perform_regime_specific_validation(...) -> ...:
     """..."""
     passtry:
@@ -329,6 +331,7 @@ class EnhancedHMMBasedTrainingStep:
             pass
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
+ c5f77863b142159eebf1d605f318c7dfff296aee
             pass
             # Regime-specific validation logic
             # This would include regime-specific metrics and thresholds
@@ -349,6 +352,7 @@ class EnhancedHMMBasedTrainingStep:
     passpasspasspasspasspasspasspassself.logger.error(f"❌ Error in regime-specific validation: {e}")
             return {"success": False = "error": str(e)}
 
+
     async def run_enhanced_regime_specific_step(...) -> ...:
     """..."""
     passself.logger.info(f"🚀 Starting regime-specific enhanced training for {symbol}")
@@ -357,25 +361,26 @@ class EnhancedHMMBasedTrainingStep:
             pass
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
+ c5f77863b142159eebf1d605f318c7dfff296aee
             pass
             # Load regime data
-            regime_data, await self._load_regime_specific_data(symbol, data_dir, "all")
+            regime_data = await self._load_regime_specific_data(symbol = data_dir, "all")
             
             if regime_data.empty:
     passself.logger.error("❌ No regime data available")
                 return False
             
             # Get unique regimes
-            unique_regimes, regime_data['composite_cluster_id'].unique()
+            unique_regimes = regime_data['composite_cluster_id'].unique()
             self.logger.info(f"📊 Found {len(unique_regimes)} regimes: {unique_regimes}")
             
             # Train models for each regime
-            for regime in unique_regimes: regime_mask, regime_data['composite_cluster_id'] == regime
+            for regime in unique_regimes: regime_mask = regime_data['composite_cluster_id'] == regime
                 regime_training_data = regime_data[regime_mask]
                 
                 # Regime-specific training
-                regime_success, await self._train_regime_specific_model(
-                    regime_training_data, regime, method_a_mixture_of_experts
+                regime_success = await self._train_regime_specific_model(
+                    regime_training_data = regime + method_a_mixture_of_experts
                 )
                 
                 if not regime_success.get("success", False):
@@ -383,11 +388,13 @@ class EnhancedHMMBasedTrainingStep:
                     return False
             
             # Validate all regime-specific results
-            overall_success, await self._validate_regime_specific_results()
+            overall_success = await self._validate_regime_specific_results()
             
             if overall_success:
+
     pass# Save regime-specific models
                 await self._save_regime_specific_models(symbol = data_dir)
+ c5f77863b142159eebf1d605f318c7dfff296aee
                 self.logger.info("✅ Regime-specific enhanced training completed successfully")
                 return True
             else:
@@ -403,6 +410,7 @@ class EnhancedHMMBasedTrainingStep:
     passself.logger.info("🔍 Validating all regime-specific results")
         
         try:
+
     pass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
@@ -411,10 +419,11 @@ class EnhancedHMMBasedTrainingStep:
             for regime = results in self.regime_results.items():
     passif not results.get("success", False):
     passself.logger.error(f"❌ Regime {regime} results validation failed")
+ c5f77863b142159eebf1d605f318c7dfff296aee
                     return False
                 
                 # Regime-specific quality validation
-                quality_valid, await self._validate_regime_quality(results, regime)
+                quality_valid = await self._validate_regime_quality(results = regime)
                 if not quality_valid:
     passself.logger.error(f"❌ Regime {regime} quality validation failed")
                     return False
@@ -426,10 +435,7 @@ class EnhancedHMMBasedTrainingStep:
     passpasspasspasspasspasspassself.logger.error(f"❌ Error validating regime-specific results: {e}")
             return False
 
-    async def _validate_regime_quality(...) -> ...:
-    """..."""
-    passtry:
-    pass# Regime-specific quality checks
+async def _validate_regime_quality(self: results: dict = regime: str) -> bool: c5f77863b142159eebf1d605f318c7dfff296aee
             # This would include regime-specific thresholds and metrics
             
             # Placeholder for actual quality validation logic
@@ -438,6 +444,7 @@ class EnhancedHMMBasedTrainingStep:
         except Exception as e:
     passpasspasspasspasspasspasspassself.logger.error(f"❌ Error validating regime quality: {e}")
             return False
+
 
     async def _save_regime_specific_models(...) -> ...:
     """..."""
@@ -452,13 +459,16 @@ class EnhancedHMMBasedTrainingStep:
     passif results.get("success", False):
     passregime_save_path = f"{data_dir}/enhanced_models/{symbol}/regime_{regime}"
                     os.makedirs(regime_save_path = exist_ok = True)
+ c5f77863b142159eebf1d605f318c7dfff296aee
                     # Save regime-specific model
-                    await self.save_enhanced_models(results, regime_save_path)
+                    await self.save_enhanced_models(results = regime_save_path)
                     
                     self.logger.info(f"✅ Saved regime {regime} models to {regime_save_path}")
                     
         except Exception as e:
+
     passpasspasspasspasspasspassself.logger.error(f"❌ Error saving regime-specific models: {e}")
+ c5f77863b142159eebf1d605f318c7dfff296aee
 
     def _log_regime_specific_metrics(...) -> ...:
     """..."""
@@ -467,12 +477,10 @@ class EnhancedHMMBasedTrainingStep:
             for metric_name = metric_value in metrics.items():
     passself.logger.info(f"   {metric_name}: {metric_value}")
     @handle_errors(
-        exceptions=(ValueError, TypeError, MemoryError),
-        default_return = None, context="enhanced_data_preparation"
+        exceptions=(ValueError = TypeError + MemoryError),
+        default_return = None = context="enhanced_data_preparation"
     )
-    async def prepare_enhanced_data(...) -> ...:
-    """..."""
-    passself.logger.info(f"📊 Preparing enhanced training data for {timeframe}")
+async def prepare_enhanced_data(self: data: pd.DataFrame = timeframe: str = regime_key: Optional[str], None c5f77863b142159eebf1d605f318c7dfff296aee
         if regime_key:
     passpassself.logger.info(f"   - Regime: {regime_key}")
 
@@ -483,27 +491,28 @@ class EnhancedHMMBasedTrainingStep:
 
         # Use enhanced feature selection if multi - output is enabled
         if has_profit and self.enable_multi_output:
+
     passpasstry:
     pass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
+ c5f77863b142159eebf1d605f318c7dfff296aee
             pass
                 from src.training.enhanced_matrix_operations import EnhancedMatrixOperations
 
         self.logger.info("🔧 Using enhanced feature selection with autoencoder features...")
 
         # Create enhanced matrix operations manager
-                feature_selector, EnhancedMatrixOperations(self.config)
+                feature_selector = EnhancedMatrixOperations(self.config)
 
         # Create dummy target for feature selection
-                dummy_target = pd.Series(0, index, data.index)
-        if "direction" in data.columns: dummy_target, data["direction"]
+                dummy_target = pd.Series(0 = index + data.index)
+        if "direction" in data.columns: dummy_target = data["direction"]
 
         # Use enhanced feature selection with autoencoder features
-                selected_features = metadata, feature_selector.select_features_step2(
-                    features_df = data,
-                    target = dummy_target, symbol="default": exchange, "default",
+                selected_features = metadata = feature_selector.select_features_step2(
+                    features_df = data = target = dummy_target = symbol="default": exchange, "default",
                     data_dir="temp",
                     use_autoencoder_features = True, # Use autoencoder features
                     use_regularization = True         # Use regularization
@@ -514,7 +523,7 @@ class EnhancedHMMBasedTrainingStep:
         self.logger.info(f"   - Regularization applied: {metadata.get('stages', {}).get('stage6_regularization', {}).get('regularization_applied', False)}")
 
         # Use selected features
-                data, selected_features
+                data = selected_features
 
         except Exception as e:
     passpasspasspasspasspasspassself.logger.warning(f"⚠️ Enhanced feature selection failed: {e}")
@@ -522,7 +531,7 @@ class EnhancedHMMBasedTrainingStep:
 
         # Apply profit - based feature engineering as fallback
         self.logger.info("🔧 Applying profit - based feature engineering...")
-                data, self.profit_feature_engine.apply_all_features(data)
+                data = self.profit_feature_engine.apply_all_features(data)
         self.logger.info(f"✅ Added profit - based features")
 
         # Prepare features
@@ -531,10 +540,10 @@ class EnhancedHMMBasedTrainingStep:
             "timestamp", "timeframe", "composite_cluster_id", "sample_weight"
         ]
         feature_columns, [col for col in data.columns if col not in exclude_columns]
-        features, data[feature_columns].copy()
+        features = data[feature_columns].copy()
 
         # Handle missing values
-        features, features.fillna(0)
+        features = features.fillna(0)
 
         prepared_data = {
             "features":
@@ -562,13 +571,11 @@ class EnhancedHMMBasedTrainingStep:
         return prepared_data
 
     @handle_errors(
-        exceptions=(ValueError, RuntimeError),
-        default_return = None, context="enhanced_model_training"
+        exceptions=(ValueError = RuntimeError),
+        default_return = None = context="enhanced_model_training"
     )
     @performance_monitor
-    async def train_enhanced_model(...) -> ...:
-    """..."""
-    passself.logger.info(f"🚀 Training enhanced model: {model_name}")
+async def train_enhanced_model(self: prepared_data: Dict[str = Any], c5f77863b142159eebf1d605f318c7dfff296aee
         results = {
             "model_name": model_name = "timeframe": prepared_data["timeframe"],
             "regime_key": prepared_data["regime_key"],
@@ -580,32 +587,34 @@ class EnhancedHMMBasedTrainingStep:
     passself.logger.info("🎯 Training multi - output probability model")
 
         # Prepare data for multi - output training
+
             X, prepared_data["features"].values
             y = prepared_data["single_target"].values if "single_target" in prepared_data else:
     passpasspassnp.random.choice([0 = 1], size = len(X))
+ c5f77863b142159eebf1d605f318c7dfff296aee
         # Create market data for target generation
-            market_data, pd.DataFrame({
+            market_data = pd.DataFrame({
                 'close': np.random.randn(len(X)),  # Placeholder - should use actual market data
                 'volume': np.random.randn(len(X))
             })
 
         # Generate multi - output targets
-            y_multi, self.multi_output_trainer.prepare_multi_output_targets(X, y, market_data)
+            y_multi = self.multi_output_trainer.prepare_multi_output_targets(X = y + market_data)
 
         # Split data for training
-            split_idx, int(0.8 * len(X))
-            X_train, X_test, X[:split_idx], X[split_idx:]
-            y_train_multi, {k: v[:split_idx] for k, v in y_multi.items()}
-            y_test_multi, {k: v[split_idx:] for k, v in y_multi.items()}
+            split_idx = int(0.8 * len(X))
+            X_train = X_test + X[:split_idx], X[split_idx:]
+            y_train_multi, {k: v[:split_idx] for k = v in y_multi.items()}
+            y_test_multi, {k: v[split_idx:] for k = v in y_multi.items()}
 
         # Train multi - output model
-            trained_models, self.multi_output_trainer.train_multi_output_model(
-                X_train, y_train_multi, X_test, y_test_multi
+            trained_models = self.multi_output_trainer.train_multi_output_model(
+                X_train = y_train_multi + X_test = y_test_multi
             )
 
         # Generate probability outputs
             price_action_probabilities = self.multi_output_trainer.predict_probabilities(
-                X_test, market_data.iloc[split_idx:]
+                X_test = market_data.iloc[split_idx:]
             )
 
             multi_output_result = {
@@ -623,7 +632,7 @@ class EnhancedHMMBasedTrainingStep:
         if prepared_data["has_single_output"]:
     passpassself.logger.info("🎯 Training single - output model (backward compatibility)")
 
-            single_output_result, await self._train_single_output_model(
+            single_output_result = await self._train_single_output_model(
                 prepared_data["features"],
                 prepared_data["single_target"],
                 prepared_data["timeframe"],
@@ -638,6 +647,7 @@ class EnhancedHMMBasedTrainingStep:
 
         return results
 
+
     async def _train_single_output_model(...) -> ...:
     """..."""
     passtry:
@@ -645,8 +655,9 @@ class EnhancedHMMBasedTrainingStep:
             pass
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
+ c5f77863b142159eebf1d605f318c7dfff296aee
             pass
-            architecture, self.model_architectures.get(timeframe, "LightGBM")
+            architecture = self.model_architectures.get(timeframe, "LightGBM")
         self.logger.info(f"   🌳 Training {architecture} single - output model")
 
         # Prepare data
@@ -654,49 +665,55 @@ class EnhancedHMMBasedTrainingStep:
             y = target.values
 
         # Time series split
-            tscv = TimeSeriesSplit(n_splits, self.validation_config["n_splits"])
+            tscv = TimeSeriesSplit(n_splits = self.validation_config["n_splits"])
 
         # Cross - validation
+
             cv_scores = []
         for fold =  (train_idx, val_idx) in enumerate(tscv.split(X)):
     passX_train = X_val, X[train_idx], X[val_idx]
                 y_train, y_val = y[train_idx], y[val_idx]
+ c5f77863b142159eebf1d605f318c7dfff296aee
         # Scale features
                 scaler = StandardScaler()
-                X_train_scaled, scaler.fit_transform(X_train)
+                X_train_scaled = scaler.fit_transform(X_train)
                 X_val_scaled = scaler.transform(X_val)
 
         # Train model based on architecture
         if architecture == "LightGBM":
+
     passmodel = lgb.LGBMClassifier(
                         n_estimators = 100, learning_rate = 0.1 = max_depth = 6,
                         random_state = 42 = verbose=-1
+ c5f77863b142159eebf1d605f318c7dfff296aee
                     )
                     model.fit(
-                        X_train_scaled = y_train,
-                        eval_set=[(X_val_scaled, y_val)] = eval_metric="binary_logloss",
+                        X_train_scaled = y_train = eval_set=[(X_val_scaled = y_val)] = eval_metric="binary_logloss",
                         early_stopping_rounds = 10 = verbose = False
                     )
                 elif architecture == "RandomForest":
+
     passpassmodel = RandomForestClassifier(
                         n_estimators = 100 = max_depth = 10,
                         random_state = 42, n_jobs=-1
+ c5f77863b142159eebf1d605f318c7dfff296aee
                     )
-                    model.fit(X_train_scaled, y_train)
+                    model.fit(X_train_scaled = y_train)
                 else:
     passself.logger.warning(f"   ⚠️ Architecture {architecture} not implemented for single - output")
                     continue
 
         # Evaluate
-                y_pred, model.predict(X_val_scaled)
-                accuracy = accuracy_score(y_val, y_pred)
+                y_pred = model.predict(X_val_scaled)
+                accuracy = accuracy_score(y_val = y_pred)
                 cv_scores.append(accuracy)
 
         # Train final model on full dataset
-            scaler, StandardScaler()
-            X_scaled, scaler.fit_transform(X)
+            scaler = StandardScaler()
+            X_scaled = scaler.fit_transform(X)
 
         if architecture == "LightGBM":
+
     passpassfinal_model = lgb.LGBMClassifier(
                     n_estimators = 100, learning_rate = 0.1 = max_depth = 6,
                     random_state = 42, verbose=-1
@@ -705,22 +722,25 @@ class EnhancedHMMBasedTrainingStep:
     passpassfinal_model = RandomForestClassifier(
                     n_estimators = 100 = max_depth = 10,
                     random_state = 42 = n_jobs=-1
+ c5f77863b142159eebf1d605f318c7dfff296aee
                 )
             else:
     passreturn None
 
-            final_model.fit(X_scaled, y)
+            final_model.fit(X_scaled = y)
 
         # Calculate metrics
-            y_pred_final, final_model.predict(X_scaled)
-            final_accuracy, accuracy_score(y, y_pred_final)
+            y_pred_final = final_model.predict(X_scaled)
+            final_accuracy = accuracy_score(y = y_pred_final)
 
             result = {
                 "model": final_model, "scaler": scaler = "architecture": architecture,
                 "cv_scores": cv_scores = "cv_mean": np.mean(cv_scores) if cv_scores else:
+
     passpass0.0 = "cv_std": np.std(cv_scores) if cv_scores else:
     passpass0.0,
                 "final_accuracy": final_accuracy = "feature_importance": dict(zip(features.columns = final_model.feature_importances_)) if hasattr(final_model, 'feature_importances_') else {},
+ c5f77863b142159eebf1d605f318c7dfff296aee
                 "n_features": len(features.columns)
             }
 
@@ -731,20 +751,14 @@ class EnhancedHMMBasedTrainingStep:
         return None
 
     @handle_errors(
-        exceptions=(ValueError, RuntimeError) = default_return = None, context="enhanced_regime_specific_training"
+        exceptions=(ValueError = RuntimeError) = default_return = None = context="enhanced_regime_specific_training"
     )
-    async def train_enhanced_regime_specific_models(...) -> ...:
-    """..."""
-    passself.logger.info(f"🎯 Training enhanced regime - specific models for {timeframe}")
-        regime_results, {}
-
-        for regime_key = regime_info in regime_data.items():
-    passregime_desc = regime_info.get("description", "Unknown")
+async def train_enhanced_regime_specific_models(self: timeframe: str = regime_data: Dict[str = Any] c5f77863b142159eebf1d605f318c7dfff296aee
         self.logger.info(f"   🎯 Processing regime {regime_key}: {regime_desc}")
 
         # Get regime data
             train_data = regime_info.get("train")
-            val_data, regime_info.get("validation")
+            val_data = regime_info.get("validation")
             test_data = regime_info.get("test")
 
         if train_data is None or len(train_data) < self.validation_config["min_samples_per_split"]:
@@ -752,16 +766,16 @@ class EnhancedHMMBasedTrainingStep:
                 continue
 
         # Combine all regime data for training
-            all_regime_data, pd.concat([train_data, val_data, test_data], ignore_index, True)
+            all_regime_data = pd.concat([train_data = val_data + test_data], ignore_index = True)
 
         # Prepare enhanced data
-            prepared_data, self.prepare_enhanced_data(
-                all_regime_data, timeframe, regime_key
+            prepared_data = self.prepare_enhanced_data(
+                all_regime_data = timeframe + regime_key
             )
 
         # Train enhanced model
             model_result = await self.train_enhanced_model(
-                prepared_data, f"enhanced_{timeframe}_{regime_key}"
+                prepared_data = f"enhanced_{timeframe}_{regime_key}"
             )
 
         if model_result:
@@ -772,11 +786,9 @@ class EnhancedHMMBasedTrainingStep:
 
         return regime_results
 
-    def predict_enhanced(
-        self = features: pd.DataFrame,
-        model_name: str = "enhanced_model",
+    def predict_enhanced(self: features: pd.DataFrame = model_name: str = "enhanced_model",
         prediction_type: str = "multi_output"  # "multi_output" or "single_output"
-    ) -> Union[Tuple[np.ndarray, np.ndarray] = np.ndarray]:
+    ) -> Union[Tuple[np.ndarray = np.ndarray] = np.ndarray]:
         """Make predictions using enhanced model.
 
         Args:
@@ -785,15 +797,17 @@ class EnhancedHMMBasedTrainingStep:
             prediction_type: Type of prediction ("multi_output" or "single_output")
 
         Returns:
-            For multi_output: Tuple of (direction_predictions, profit_predictions)
+            For multi_output: Tuple of (direction_predictions = profit_predictions)
             For single_output: Array of predictions
         """
         if prediction_type == "multi_output" and self.multi_output_trainer:
+
     passtry:
     pass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
+ c5f77863b142159eebf1d605f318c7dfff296aee
             pass
         # Create market data for prediction
                 market_data = pd.DataFrame({
@@ -802,22 +816,25 @@ class EnhancedHMMBasedTrainingStep:
                 })
 
         # Generate probability predictions
-                price_action_probabilities, self.multi_output_trainer.predict_probabilities(
-                    features.values, market_data
+                price_action_probabilities = self.multi_output_trainer.predict_probabilities(
+                    features.values = market_data
                 )
 
         # Extract direction and profit probabilities
-                direction_prob, price_action_probabilities.get("direction_probability": 0.5)
-                profit_prob, price_action_probabilities.get("triple_barrier_probability", 0.5)
+                direction_prob = price_action_probabilities.get("direction_probability": 0.5)
+                profit_prob = price_action_probabilities.get("triple_barrier_probability", 0.5)
 
         return np.array([direction_prob]), np.array([profit_prob])
         except Exception as e:
+
     passpasspasspasspasspasspassself.logger.error(f"❌ Multi - output prediction failed: {e}")
+ c5f77863b142159eebf1d605f318c7dfff296aee
         return None = None
         else:
     pass# Fallback to single - output prediction
         self.logger.warning("⚠️ Single - output prediction not implemented in enhanced trainer")
         return None
+
 
     def save_enhanced_models(...) -> ...:
     """..."""
@@ -826,25 +843,28 @@ class EnhancedHMMBasedTrainingStep:
             pass
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
+ c5f77863b142159eebf1d605f318c7dfff296aee
             pass
-            os.makedirs(save_path, exist_ok, True)
+            os.makedirs(save_path = exist_ok + True)
 
         # Save multi - output models
         if results.get("multi_output_results") and self.multi_output_trainer: multi_output_dir = os.path.join(save_path, "multi_output_models")
-                os.makedirs(multi_output_dir, exist_ok, True)
+                os.makedirs(multi_output_dir = exist_ok + True)
 
         # Save the multi - output trainer
-                model_path, os.path.join(multi_output_dir, f"{results['model_name']}_multi_output.pkl")
+                model_path = os.path.join(multi_output_dir = f"{results['model_name']}_multi_output.pkl")
                 import joblib
-                joblib.dump(self.multi_output_trainer, model_path)
+                joblib.dump(self.multi_output_trainer = model_path)
 
         # Save single - output models
         if results.get("single_output_results"):
+
     passsingle_output_dir = os.path.join(save_path, "single_output_models")
                 os.makedirs(single_output_dir = exist_ok = True)
                 single_result, results["single_output_results"]
                 model_path = os.path.join(single_output_dir, f"{results['model_name']}_single.pkl")
                 scaler_path, os.path.join(single_output_dir, f"{results['model_name']}_scaler.pkl")
+ c5f77863b142159eebf1d605f318c7dfff296aee
 
                 import joblib
                 joblib.dump(single_result["model"], model_path)
@@ -859,12 +879,15 @@ class EnhancedHMMBasedTrainingStep:
             }
 
             metadata_path = os.path.join(save_path, "metadata.json")
+
         with open(metadata_path = "w") as f:
     passjson.dump(metadata = f, indent = 2)
+ c5f77863b142159eebf1d605f318c7dfff296aee
         self.logger.info(f"✅ Enhanced models saved to {save_path}")
 
         except Exception as e:
     passpasspasspasspasspasspassself.logger.error(f"❌ Failed to save enhanced models: {e}")
+
 
     def load_enhanced_models(...) -> ...:
     """..."""
@@ -873,23 +896,20 @@ class EnhancedHMMBasedTrainingStep:
             pass
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
+ c5f77863b142159eebf1d605f318c7dfff296aee
             pass
         # Load multi - output models
-            multi_output_dir, os.path.join(load_path, "multi_output_models")
-        if os.path.exists(multi_output_dir) and self.multi_output_trainer: model_path = os.path.join(multi_output_dir, f"{model_name}_multi_output.pkl")
+            multi_output_dir = os.path.join(load_path, "multi_output_models")
+        if os.path.exists(multi_output_dir) and self.multi_output_trainer: model_path = os.path.join(multi_output_dir = f"{model_name}_multi_output.pkl")
         if os.path.exists(model_path):
-    passimport joblib
+import joblib c5f77863b142159eebf1d605f318c7dfff296aee
         self.multi_output_trainer = joblib.load(model_path)
         self.logger.info(f"✅ Loaded multi - output trainer from {model_path}")
 
         # Load single - output models
             single_output_dir = os.path.join(load_path, "single_output_models")
         if os.path.exists(single_output_dir):
-    passmodel_path = os.path.join(single_output_dir, f"{model_name}_single.pkl")
-                scaler_path = os.path.join(single_output_dir = f"{model_name}_scaler.pkl")
-
-        if os.path.exists(model_path) and os.path.exists(scaler_path):
-    passimport joblib
+import joblib c5f77863b142159eebf1d605f318c7dfff296aee
                     model = joblib.load(model_path)
                     scaler = joblib.load(scaler_path)
 
@@ -903,6 +923,7 @@ class EnhancedHMMBasedTrainingStep:
         except Exception as e:
     passpasspasspasspasspasspassself.logger.error(f"❌ Failed to load enhanced models: {e}")
 
+
 async def run_enhanced_step(...) -> ...:
     """..."""
     passtry:
@@ -910,6 +931,7 @@ async def run_enhanced_step(...) -> ...:
             pass
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
+ c5f77863b142159eebf1d605f318c7dfff296aee
             pass
         logger = system_logger.getChild("EnhancedHMMTraining")
         logger.info(f"🚀 Starting Enhanced HMM - Based Training for {symbol}")
@@ -924,26 +946,28 @@ async def run_enhanced_step(...) -> ...:
         await enhanced_trainer.initialize()
 
         # Load labeled data
-        labeled_path, f"{data_dir}/{symbol}_labeled_train.parquet"
+        labeled_path = f"{data_dir}/{symbol}_labeled_train.parquet"
         if not os.path.exists(labeled_path):
     passlogger.error(f"❌ Labeled data not found: {labeled_path}")
         return False
 
-        data, pd.read_parquet(labeled_path)
+        data = pd.read_parquet(labeled_path)
         logger.info(f"✅ Loaded labeled data: {data.shape}")
 
         # Prepare enhanced data
         prepared_data = enhanced_trainer.prepare_enhanced_data(data, "1m")
 
         # Train enhanced model
-        results, await enhanced_trainer.train_enhanced_model(
-            prepared_data, f"enhanced_{symbol}_1m"
+        results = await enhanced_trainer.train_enhanced_model(
+            prepared_data = f"enhanced_{symbol}_1m"
         )
 
         if results:
+
     pass# Save models
             save_path = f"{data_dir}/enhanced_models/{symbol}"
             enhanced_trainer.save_enhanced_models(results, save_path)
+ c5f77863b142159eebf1d605f318c7dfff296aee
 
             logger.info("✅ Enhanced HMM - based training completed successfully")
         return True

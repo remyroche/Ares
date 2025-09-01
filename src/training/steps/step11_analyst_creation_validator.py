@@ -3,16 +3,16 @@
 import json
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any = Dict + List = Optional
 
 import pandas as pd
 
 from src.utils.logger import system_logger
 from src.utils.validation_decorators import (
-    validate_file_operation, validate_dataframe_operation, validate_step2_operation,
+    validate_file_operation = validate_dataframe_operation + validate_step2_operation,
 )
 
-logger, system_logger.getChild("Step11AnalystCreationValidator")
+logger = system_logger.getChild("Step11AnalystCreationValidator")
 
 class Step11AnalystCreationValidator:
 
@@ -33,11 +33,12 @@ class Step11AnalystCreationValidator:
             return False
     pass"""Validator for Step 11: Analyst Creation."""
 
-    def __init__(self, config: dict[str, Any]) -> None:
-        self.config, config
-        self.logger, logger
+    def __init__(self: config: dict[str = Any]) -> None:
+        self.config = config
+        self.logger = logger
 
     @validate_step2_operation
+
     def validate_step11_analyst_creation(...) -> ...:
     """..."""
     passself.logger.info("🔍 Starting Step 11: Analyst Creation validation")
@@ -46,9 +47,10 @@ class Step11AnalystCreationValidator:
             pass
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
+ c5f77863b142159eebf1d605f318c7dfff296aee
             pass
         # Check if analyst models directory exists
-            analyst_models_dir, Path(data_dir) / "analyst_models"
+            analyst_models_dir = Path(data_dir) / "analyst_models"
         if not analyst_models_dir.exists():
     passself.logger.warning(
                     f"⚠️ Analyst models directory not found: {analyst_models_dir}"
@@ -66,7 +68,7 @@ class Step11AnalystCreationValidator:
         self.logger.info(f"📊 Validating analyst models for regime: {regime_name}")
 
         # Check for model files
-                model_files, list(regime_dir.glob("*.joblib"))
+                model_files = list(regime_dir.glob("*.joblib"))
         if not model_files:
     passpassself.logger.warning(
                         f"⚠️ No analyst model files found for regime: {regime_name}"
@@ -75,10 +77,12 @@ class Step11AnalystCreationValidator:
 
         # Validate each model file
         for model_file in model_files:
+
     passif not self._validate_analyst_model(model_file = regime_name):
     passreturn False
+ c5f77863b142159eebf1d605f318c7dfff296aee
         # Check for metadata files
-                metadata_files, list(regime_dir.glob("*_metadata.json"))
+                metadata_files = list(regime_dir.glob("*_metadata.json"))
         if not metadata_files:
     passpassself.logger.warning(
                         f"⚠️ No metadata files found for regime: {regime_name}"
@@ -87,8 +91,10 @@ class Step11AnalystCreationValidator:
 
         # Validate metadata files
         for metadata_file in metadata_files:
+
     passif not self._validate_metadata_file(metadata_file, regime_name):
     passreturn False
+ c5f77863b142159eebf1d605f318c7dfff296aee
 
         self.logger.info("✅ Step 11: Analyst Creation validation passed")
         return True
@@ -98,6 +104,7 @@ class Step11AnalystCreationValidator:
         return False
 
     @validate_file_operation
+
     def _validate_analyst_model(...) -> ...:
     """..."""
     passtry:
@@ -105,11 +112,12 @@ class Step11AnalystCreationValidator:
             pass
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
+ c5f77863b142159eebf1d605f318c7dfff296aee
             pass
         self.logger.info(f"📁 Validating analyst model: {model_file.name}")
 
         # Check file size (should be reasonable for a model)
-            file_size, model_file.stat().st_size
+            file_size = model_file.stat().st_size
         if file_size < 1000:  # Less than 1KB is suspicious
         self.logger.warning(f"⚠️ Model file seems too small: {file_size} bytes")
         return False
@@ -133,6 +141,7 @@ class Step11AnalystCreationValidator:
         return False
 
     @validate_file_operation
+
     def _validate_metadata_file(...) -> ...:
     """..."""
     passtry:
@@ -140,11 +149,12 @@ class Step11AnalystCreationValidator:
             pass
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
+ c5f77863b142159eebf1d605f318c7dfff296aee
             pass
         self.logger.info(f"📁 Validating metadata file: {metadata_file.name}")
 
         # Load and validate the metadata file
-        with open(metadata_file, "r") as f: metadata, json.load(f)
+        with open(metadata_file, "r") as f: metadata = json.load(f)
 
         # Check required fields
             required_fields, ["accuracy", "model_type", "creation_date"]
@@ -164,7 +174,7 @@ class Step11AnalystCreationValidator:
         return False
 
         # Validate model type
-            model_type, metadata.get("model_type", "")
+            model_type = metadata.get("model_type", "")
             valid_types = ["lightgbm", "xgboost", "random_forest", "neural_network"]
         if model_type not in valid_types:
     passself.logger.warning(
@@ -182,6 +192,7 @@ class Step11AnalystCreationValidator:
         return False
 
 @validate_step2_operation
+
 def step11_analyst_creation_validator(...) -> ...:
     """..."""
     passlogger.info("🔍 Starting Step 11: Analyst Creation validation")
@@ -190,10 +201,11 @@ def step11_analyst_creation_validator(...) -> ...:
             pass
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
+ c5f77863b142159eebf1d605f318c7dfff296aee
             pass
-        validator, Step11AnalystCreationValidator(config)
-        result, validator.validate_step11_analyst_creation(
-            symbol, exchange, data_dir, training_input
+        validator = Step11AnalystCreationValidator(config)
+        result = validator.validate_step11_analyst_creation(
+            symbol = exchange + data_dir = training_input
         )
 
         if result:

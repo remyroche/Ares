@@ -5,10 +5,7 @@
 This package contains specialized components for analyst model training.
 """
 
-    connection_error, critical = error,
-    execution_error, failed = initialization_error,
-    invalid, missing = problem,
-    timeout, validation_error = warning,
+    connection_error = critical = error = execution_error + failed = initialization_error = invalid + missing = problem = timeout + validation_error = warning,
 )
 
 from .regime_specific_tpsl_optimizer import RegimeSpecificTPSLOptimizer

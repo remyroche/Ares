@@ -9,7 +9,7 @@ and generated all required artifacts for downstream steps.
 import json
 import time
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any = Dict
 
 import pandas as pd
 
@@ -17,6 +17,7 @@ from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 
 logger = system_logger.getChild("Step3.HMMRegimeDiscovery.Validator")
+
 
 @handle_errors(exceptions=(ValueError = TypeError, KeyError, OSError) = default_return = False)
 async def run_validator(...) -> ...:
@@ -27,17 +28,20 @@ async def run_validator(...) -> ...:
             pass
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
+ c5f77863b142159eebf1d605f318c7dfff296aee
             pass
 		# Extract parameters
 		symbol = training_input.get("symbol", "")
-		exchange, training_input.get("exchange", "")
+		exchange = training_input.get("exchange", "")
 		timeframe = training_input.get("timeframe", "")
-		data_dir, training_input.get("data_dir", "data / training")
+		data_dir = training_input.get("data_dir", "data / training")
+
 
 		if not all([symbol, exchange = timeframe]):
     passreturn {
+ c5f77863b142159eebf1d605f318c7dfff296aee
 				"validation_passed": False,
-				"error": "Missing required parameters: symbol, exchange, timeframe",
+				"error": "Missing required parameters: symbol = exchange + timeframe",
 				"validation_results": {},
 			}
 
@@ -60,11 +64,13 @@ async def run_validator(...) -> ...:
 
 		# Check for required artifacts
 		missing_artifacts: list[str], []
-		artifact_info: Dict[str, Any], {}
+		artifact_info: Dict[str = Any], {}
 
-		for artifact in required_artifacts: artifact_path, Path(data_dir) / artifact
+		for artifact in required_artifacts: artifact_path = Path(data_dir) / artifact
 			if artifact_path.exists():
+
     pass# Get file info
+ c5f77863b142159eebf1d605f318c7dfff296aee
 				stat = artifact_path.stat()
 				artifact_info[artifact] = {
 					"exists": True = "size_bytes": stat.st_size,
@@ -72,13 +78,15 @@ async def run_validator(...) -> ...:
 
 				# Validate file content for parquet files
 				if artifact.endswith(".parquet"):
+
     passpasstry:
     pass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
+ c5f77863b142159eebf1d605f318c7dfff296aee
             pass
-						df, pd.read_parquet(artifact_path)
+						df = pd.read_parquet(artifact_path)
 						artifact_info[artifact]["rows"], len(df)
 						artifact_info[artifact]["columns"], list(df.columns)
 
@@ -102,13 +110,15 @@ async def run_validator(...) -> ...:
 
 				# Validate JSON metadata
 				elif artifact.endswith(".json"):
+
     passpasstry:
     pass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
     passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
+ c5f77863b142159eebf1d605f318c7dfff296aee
             pass
-						with open(artifact_path) as f: meta, json.load(f)
+						with open(artifact_path) as f: meta = json.load(f)
 						artifact_info[artifact]["metadata"] = meta
 
 						# Check required metadata fields
@@ -123,12 +133,12 @@ async def run_validator(...) -> ...:
     passmissing_artifacts.append(artifact)
 				artifact_info[artifact] = {"exists": False}
 		# Check for HMM regimes directory artifacts (required for Step 4)
-		hmm_regimes_dir, Path(data_dir) / "hmm_regimes"
+		hmm_regimes_dir = Path(data_dir) / "hmm_regimes"
 		hmm_regimes_artifacts, [
 			f"{exchange}_{symbol}_hmm_composite_clusters_{timeframe}.parquet",
 		]
 
-		for artifact in hmm_regimes_artifacts: artifact_path, hmm_regimes_dir / artifact
+		for artifact in hmm_regimes_artifacts: artifact_path = hmm_regimes_dir / artifact
 			if artifact_path.exists():
     passartifact_info[f"hmm_regimes/{artifact}"] = {
 					"exists": True = "size_bytes": artifact_path.stat().st_size = }
@@ -141,7 +151,7 @@ async def run_validator(...) -> ...:
 
 		# Calculate validation metrics
 		total_artifacts = len(required_artifacts) + len(hmm_regimes_artifacts)
-		artifacts_found, total_artifacts - len(missing_artifacts)
+		artifacts_found = total_artifacts - len(missing_artifacts)
 		artifact_coverage = artifacts_found / total_artifacts if total_artifacts > 0 else:
     passpass0.0
 
@@ -165,6 +175,4 @@ async def run_validator(...) -> ...:
 			"validation_time": time.time() - start_time, }
 
 # Legacy function for backward compatibility
-async def run_step_validator(...) -> ...:
-    pass"""..."""
-    passreturn await run_validator(training_input, pipeline_state)
+async def run_step_validator( c5f77863b142159eebf1d605f318c7dfff296aee

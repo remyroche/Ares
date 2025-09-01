@@ -146,99 +146,100 @@ self.feature_analysis_interval = self.monitor_config.get(
 str,
 list[EnsemblePerformanceMetrics],
 ] = {}
-        self.        self.drift_alerts:: list[ModelDriftAlert] = []
-        self.        self.feature_drift_history:: dict[str, list[FeatureDriftMetrics]] = {}
+        self.drift_alerts: list[ModelDriftAlert] = []
+        self.feature_drift_history: dict[str, list[FeatureDriftMetrics]] = {}
 
-# Reference data for drift detection
-        self.        self.reference_distributions:: dict[str, dict[str, float]] = {}
-        self.        self.reference_performance:: dict[str, float] = {}
+        # Reference data for drift detection
+        self.reference_distributions: dict[str, dict[str, float]] = {}
+        self.reference_performance: dict[str, float] = {}
 
-# Monitoring state
-self.is_monitoring = False
-        self.        self.monitoring_tasks:: list[asyncio.Task] = []
+        # Monitoring state
+        self.is_monitoring = False
+        self.monitoring_tasks: list[asyncio.Task] = []
 
-self.logger.info("🚀 Enhanced Model Monitor initialized")
+        self.logger.info("🚀 Enhanced Model Monitor initialized")
 
     @handle_specific_errors(
-error_handlers={
-ValueError: (False, "Invalid model monitor configuration"),
-AttributeError: (False, "Missing required monitor parameters"),
-},
-default_return=False,
-context="model monitor initialization")
+        error_handlers={
+            ValueError: (False, "Invalid model monitor configuration"),
+            AttributeError: (False, "Missing required monitor parameters"),
+        },
+        default_return=False,
+        context="model monitor initialization")
     async def initialize(self) -> bool:
         """Initialize the enhanced model monitor."""
         try:
-self.logger.info("Initializing Enhanced Model Monitor...")
+            self.logger.info("Initializing Enhanced Model Monitor...")
 
-# Load reference data for drift detection
-await self._load_reference_data()
+            # Load reference data for drift detection
+            await self._load_reference_data()
 
-# Initialize monitoring components
-await self._initialize_drift_detection()
-await self._initialize_feature_tracking()
-await self._initialize_ensemble_monitoring()
+            # Initialize monitoring components
+            await self._initialize_drift_detection()
+            await self._initialize_feature_tracking()
+            await self._initialize_ensemble_monitoring()
 
-self.logger.info("✅ Enhanced Model Monitor initialization completed")
-return True
+            self.logger.info("✅ Enhanced Model Monitor initialization completed")
+            return True
 
-except Exception as e:
+        except Exception as e:
             self.logger.exception(
-f"❌ Enhanced Model Monitor initialization failed: {e}")
-return False
+                f"❌ Enhanced Model Monitor initialization failed: {e}")
+            return False
 
     @handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=None,
-context="reference data loading")
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="reference data loading")
     async def _load_reference_data(self) -> None:
         """Load reference data for drift detection."""
         try:
-# Load reference distributions and performance metrics
-# This would typically load from saved model snapshots or training data
-self.logger.info("Loading reference data for drift detection...")
+            # Load reference distributions and performance metrics
+            # This would typically load from saved model snapshots or training data
+            self.logger.info("Loading reference data for drift detection...")
 
-# Placeholder for actual reference data loading
-# In a real implementation, this would load:
+            # Placeholder for actual reference data loading
+            # In a real implementation, this would load:
             # - Reference feature distributions
-# - Historical model performance metrics
-# - Baseline drift thresholds
+            # - Historical model performance metrics
+            # - Baseline drift thresholds
 
-except Exception as e:
+        except Exception as e:
             self.logger.error(f"Error loading reference data: {e}")
 
     @handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=None,
-context="drift detection initialization")
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="drift detection initialization")
     async def _initialize_drift_detection(self) -> None:
         """Initialize drift detection components."""
         try:
-self.logger.info("Initializing drift detection components...")
-# Initialize drift detection algorithms and thresholds
-except Exception as e:
+            self.logger.info("Initializing drift detection components...")
+            # Initialize drift detection algorithms and thresholds
+        except Exception as e:
             self.logger.error(f"Error initializing drift detection: {e}")
 
     @handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=None,
-context="feature tracking initialization")
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="feature tracking initialization")
     async def _initialize_feature_tracking(self) -> None:
         """Initialize feature importance tracking."""
         try:
-self.logger.info("Initializing feature importance tracking...")
-# Initialize feature tracking components
-except Exception as e:
+            self.logger.info("Initializing feature importance tracking...")
+            # Initialize feature tracking components
+        except Exception as e:
             self.logger.error(f"Error initializing feature tracking: {e}")
 
     @handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=None,
-context="ensemble monitoring initialization")
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="ensemble monitoring initialization")
     async def _initialize_ensemble_monitoring(self) -> None:
         """Initialize ensemble performance monitoring."""
         try:
-self.logger.info("Initializing ensemble monitoring...")
-# Initialize ensemble monitoring components
-except Exception as e:
+            self.logger.info("Initializing ensemble monitoring...")
+            # Initialize ensemble monitoring components
+        except Exception as e:
             self.logger.error(f"Error initializing ensemble monitoring: {e}")
+

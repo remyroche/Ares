@@ -558,7 +558,7 @@ class RayModelTrainer:
             has_direction = "direction" in data.columns
             has_profit = "potential_profit_pct" in data.columns
 
-        # Use all columns except labels as features
+            # Use all columns except labels as features
         exclude_cols = ["label", "tactician_label", "target", "direction", "potential_profit_pct"]
         feature_cols = [col for col in data.columns if col not in exclude_cols]
 

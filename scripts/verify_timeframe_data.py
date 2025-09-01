@@ -111,7 +111,7 @@ class TimeframeDataVerifier:
             if csv_file.exists():
                 try:
     pass  # TODO: Add proper exception handling
-except Exception as e:
+        except Exception as e:
     pass  # TODO: Add proper exception handling
                     df = pd.read_csv(csv_file)
 
@@ -151,7 +151,7 @@ except Exception as e:
             if csv_file.exists():
                 try:
     pass  # TODO: Add proper exception handling
-except Exception as e:
+        except Exception as e:
     pass  # TODO: Add proper exception handling
                     df = pd.read_csv(csv_file)
 
@@ -267,7 +267,7 @@ except Exception as e:
         print("\n" + "=" * 80)
 
 
-def main() -> bool:
+    def main() -> bool:
     """Main function to run the verification."""
     parser = argparse.ArgumentParser(
         description="Verify timeframe data for multi-timeframe HMM ensemble",
@@ -282,9 +282,9 @@ def main() -> bool:
 
     args = parser.parse_args()
 
-    try:
+            try:
     pass  # TODO: Add proper exception handling
-except Exception as e:
+        except Exception as e:
     pass  # TODO: Add proper exception handling
         # Load configuration
         config: dict[str, Any] = CONFIG if hasattr(CONFIG, "get") else {}
@@ -314,11 +314,11 @@ except Exception as e:
             logger.warning("⚠️  Some timeframes need attention before training")
 
         return success
-    except Exception as e:  # noqa: BLE001
+            except Exception as e:  # noqa: BLE001
         logger.exception(f"💥 Verification failed: {e}")
         return False
 
 
-if __name__ == "__main__":
+        if __name__ == "__main__":
     success = main()
     sys.exit(0 if success else 1)

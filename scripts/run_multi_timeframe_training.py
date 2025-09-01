@@ -257,7 +257,7 @@ def list_available_timeframes() -> None:
     print("\n🎯 Individual Timeframes:")
     print("-" * 40)
 
-    for tf, info in timeframes.items():
+            for tf, info in timeframes.items():
         print(f"\n{tf}:")
         print(f"  Purpose: {info.get('purpose', 'Unknown')}")
         print(f"  Trading Style: {info.get('trading_style', 'Unknown')}")
@@ -268,7 +268,7 @@ def list_available_timeframes() -> None:
     print("\n📋 Predefined Timeframe Sets:")
     print("-" * 40)
 
-    for set_name, set_info in timeframe_sets.items():
+            for set_name, set_info in timeframe_sets.items():
         is_default = " (DEFAULT)" if set_name == default_set else ""
         print(f"\n{set_name}{is_default}:")
         print(f"  Timeframes: {', '.join(set_info.get('timeframes', []))}")
@@ -282,13 +282,13 @@ def list_available_timeframes() -> None:
     print(f"Total timeframe sets: {len(timeframe_sets)}")
 
 
-def main() -> None:
+        def main() -> None:
     """Main function with command line interface."""
     parser = argparse.ArgumentParser(
         description="Multi-Timeframe Training with Ensemble Creation",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-Examples:
+        Examples:
   # List all available timeframes and their purposes
   python scripts/run_multi_timeframe_training.py --list-timeframes
 

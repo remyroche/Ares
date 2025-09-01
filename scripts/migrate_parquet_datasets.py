@@ -58,10 +58,10 @@ def _handle_errors(default: Optional[Any] = None):
 
         return wrapper
 
-    return decorator
+            return decorator
 
 
-class EnhancedParquetManager:
+        class EnhancedParquetManager:
     """Enhanced parquet dataset manager with analysis and optimization capabilities."""
 
     def __init__(self, data_cache_path: str = "data_cache") -> None:
@@ -69,7 +69,7 @@ class EnhancedParquetManager:
         self.logger = system_logger.getChild("EnhancedParquetManager")
 
     @_handle_errors(default=None)
-    def migrate_dir(
+    def migrate_dir(:
         self,
         src_dir: Path,
         dst_base_dir: Path,
@@ -121,7 +121,7 @@ class EnhancedParquetManager:
         for dataset_path in partitioned_dirs:
             try:
     pass  # TODO: Add proper exception handling
-except Exception as e:
+        except Exception as e:
     pass  # TODO: Add proper exception handling
                 # Extract dataset info from path
                 dataset_info = self._parse_dataset_path(dataset_path)
@@ -320,7 +320,7 @@ except Exception as e:
         return analysis
 
     @_handle_errors(default="")
-    def generate_analysis_report(
+    def generate_analysis_report(:
         self, analysis_results: Dict[str, Any], output_file: Optional[str]
     ) -> str:
         """Generate a comprehensive analysis report."""
@@ -426,14 +426,14 @@ except Exception as e:
         }
 
 
-def migrate_datasets(args: argparse.Namespace) -> int:
+    def migrate_datasets(args: argparse.Namespace) -> int:
     """Migrate flat parquet directories to partitioned datasets."""
     manager = EnhancedParquetManager(args.dst_base)
 
     src_base = Path(args.src_base)
     dst_base = Path(args.dst_base)
 
-    if not src_base.exists():
+            if not src_base.exists():
         system_logger.warning(f"Source base does not exist: {src_base}")
         return 0
 
@@ -449,7 +449,7 @@ def migrate_datasets(args: argparse.Namespace) -> int:
     }
 
     migrated_any = False
-    for subdir_name, schema_name in dataset_map.items():
+            for subdir_name, schema_name in dataset_map.items():
         src_dir = src_base / subdir_name
         if not src_dir.exists() or not any(src_dir.rglob("*.parquet")):
             continue
@@ -465,16 +465,16 @@ def migrate_datasets(args: argparse.Namespace) -> int:
         )
         migrated_any = True
 
-    if not migrated_any:
+            if not migrated_any:
         system_logger.info(f"No flat Parquet directories found under {src_base}")
     else:
         system_logger.info(
             f"Migration complete. Partitioned datasets available under {dst_base}",
         )
-    return 0
+            return 0
 
 
-def analyze_partitions(args: argparse.Namespace) -> int:
+    def analyze_partitions(args: argparse.Namespace) -> int:
     """Analyze partition structures and generate report."""
     manager = EnhancedParquetManager(args.data_cache)
 
@@ -484,26 +484,26 @@ def analyze_partitions(args: argparse.Namespace) -> int:
     print("📊 Generating analysis report...")
     report = manager.generate_analysis_report(analysis_results, args.output)
 
-    if not args.output:
+            if not args.output:
         print("\n" + report)
 
     print(
         f"✅ Analysis complete! Found {analysis_results['summary']['optimization_opportunities']} optimization opportunities."
     )
-    return 0
+            return 0
 
 
-def optimize_partitions_cli(args: argparse.Namespace) -> int:
+    def optimize_partitions_cli(args: argparse.Namespace) -> int:
     """Optimize partition structures."""
     manager = EnhancedParquetManager(args.data_cache)
 
     print("🚧 Partition optimization not yet implemented")
     print("Use 'analyze' action to see recommendations first")
     _ = manager.optimize_partitions(dry_run=args.dry_run)
-    return 0
+            return 0
 
 
-def main() -> int:
+    def main() -> int:
     parser = argparse.ArgumentParser(
         description="Enhanced parquet dataset management with analysis and optimization",
     )
@@ -549,7 +549,7 @@ def main() -> int:
 
     args = parser.parse_args()
 
-    if args.action == "migrate":
+            if args.action == "migrate":
         return migrate_datasets(args)
     elif args.action == "analyze":
         return analyze_partitions(args)
@@ -560,5 +560,5 @@ def main() -> int:
         return 1
 
 
-if __name__ == "__main__":
+        if __name__ == "__main__":
     raise SystemExit(main())

@@ -130,7 +130,7 @@ class MockCombinedFractionalSystemTester:
 
         return hmm_results
 
-    def compare_results(self, individual_results: Dict[str, Any], combined_results: Dict[str, Any],
+    def compare_results(self, individual_results: Dict[str, Any], combined_results: Dict[str, Any],:
                        hmm_results: Dict[str, Any]) -> Dict[str, Any]:
         """Compare results between individual and combined systems."""
         print("📊 Comparing system performance...")
@@ -174,7 +174,7 @@ class MockCombinedFractionalSystemTester:
 
         return comparison
 
-    def export_results(self, individual_results: Dict[str, Any], combined_results: Dict[str, Any],
+    def export_results(self, individual_results: Dict[str, Any], combined_results: Dict[str, Any],:
                       hmm_results: Dict[str, Any], comparison: Dict[str, Any]):
         """Export test results to files."""
         print("💾 Exporting test results...")
@@ -313,7 +313,7 @@ class MockCombinedFractionalSystemTester:
         }
 
 
-def main():
+        def main():
     """Main function to run mock combined fractional system integration test."""
     tester = MockCombinedFractionalSystemTester()
     results = tester.run_complete_test(n_samples=1000)
@@ -323,7 +323,7 @@ def main():
     print(f"   Combined System: {'✅' if results['combined_results'].get('success', False) else '❌'}")
     print(f"   HMM Integration: {sum(1 for r in results['hmm_results'].values() if r.get('success', False))}/{len(results['hmm_results'])} regimes")
 
-    if 'improvements' in results['comparison']:
+            if 'improvements' in results['comparison']:
         print(f"   Feature Improvement: {results['comparison']['improvements']['feature_count_improvement']:+.2%}")
         print(f"   Label Improvement: {results['comparison']['improvements']['label_count_improvement']:+.2%}")
 
@@ -333,5 +333,5 @@ def main():
     print("   • Ready for parameter optimization and production deployment")
 
 
-if __name__ == "__main__":
+        if __name__ == "__main__":
     main()

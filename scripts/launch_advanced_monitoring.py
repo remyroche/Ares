@@ -236,7 +236,7 @@ class AdvancedMonitoringLauncher:
         return await self.integration_manager.generate_report(report_type)
 
 
-async def main():
+        async def main():
     """Main function for the advanced monitoring launcher."""
     import argparse
 
@@ -265,9 +265,9 @@ async def main():
     # Initialize launcher
     launcher = AdvancedMonitoringLauncher()
 
-    try:
+            try:
     pass  # TODO: Add proper exception handling
-except Exception as e:
+        except Exception as e:
     pass  # TODO: Add proper exception handling
         # Setup monitoring
         success = await launcher.setup_monitoring()
@@ -298,13 +298,13 @@ except Exception as e:
             while launcher.is_running:
                 await asyncio.sleep(1)
 
-    except KeyboardInterrupt:
+            except KeyboardInterrupt:
         print("\n🛑 Received interrupt signal")
-    except Exception as e:
+            except Exception as e:
         print(f"❌ Error: {e}")
-    finally:
+            finally:
         await launcher.stop_monitoring()
 
 
-if __name__ == "__main__":
+        if __name__ == "__main__":
     asyncio.run(main())

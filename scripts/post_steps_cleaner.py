@@ -23,22 +23,22 @@ def fix_bracket_types(text: str) -> str:
         return f"{head}[{fixed}]"
 
     pattern = re.compile(r"\b(dict|tuple|list)\[([^\]]+)\]")
-    return pattern.sub(repl, text)
+            return pattern.sub(repl, text)
 
 
-def fix_function_params(line: str) -> str:
-    if not line.lstrip().startswith("def "):
+        def fix_function_params(line: str) -> str:
+            if not line.lstrip().startswith("def "):
         return line
-    try:
+            try:
         start = line.index("(")
         end = line.rindex(")")
-    except ValueError:
+            except ValueError:
         return line
     params = line[start + 1 : end]
 
     # 1) Repair chained type corruption: name1: T1 = name2: T2 -> name1: T1, name2: T2
     patt_chain = re.compile(r"([A-Za-z_]\w*):\s*([^,=()]+)\s*=\s*([A-Za-z_]\w*):\s*([^,=()]+)")
-    for _ in range(10):
+            for _ in range(10):
         new_params = patt_chain.sub(r"\1: \2, \3: \4", params)
         if new_params == params:
             break
@@ -50,10 +50,10 @@ def fix_function_params(line: str) -> str:
     )
     params = patt_default.sub(r"\1 = \2", params)
 
-    return line[: start + 1] + params + line[end:]
+            return line[: start + 1] + params + line[end:]
 
 
-def process_file(path: Path) -> bool:
+        def process_file(path: Path) -> bool:
     text = path.read_text(encoding="utf-8")
     original = text
 
@@ -65,32 +65,32 @@ def process_file(path: Path) -> bool:
     lines = [fix_function_params(ln) for ln in lines]
     text = "\n".join(lines)
 
-    if text != original:
+            if text != original:
         path.write_text(text, encoding="utf-8")
         print(f"post-fixed {path}")
         return True
-    return False
+            return False
 
 
-def main() -> int:
-    if len(sys.argv) != 2:
+        def main() -> int:
+            if len(sys.argv) != 2:
         print("Usage: post_steps_cleaner.py <target_dir>")
         return 1
     target = Path(sys.argv[1])
-    if not target.exists():
+            if not target.exists():
         print(f"Target not found: {target}")
         return 1
     count = 0
-    for p in target.rglob("*.py"):
+            for p in target.rglob("*.py"):
         try:
             if process_file(p):
                 count += 1
         except Exception as e:
             print(f"error in {p}: {e}")
     print(f"post-updated {count} files")
-    return 0
+            return 0
 
 
-if __name__ == "__main__":
+        if __name__ == "__main__":
     raise SystemExit(main())
 

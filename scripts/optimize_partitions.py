@@ -94,7 +94,7 @@ class PartitionOptimizer:
         if unified_path.exists():
             try:
     pass  # TODO: Add proper exception handling
-except Exception as e:
+        except Exception as e:
     pass  # TODO: Add proper exception handling
                 for exchange_dir in unified_path.iterdir():
                     if exchange_dir.is_dir():
@@ -294,7 +294,7 @@ except Exception as e:
         return recommendations
 
 
-def main() -> None:
+    def main() -> None:
     parser = argparse.ArgumentParser(
         description="Analyze and optimize parquet partition structures"
     )
@@ -313,7 +313,7 @@ def main() -> None:
 
     optimizer = PartitionOptimizer(args.data_cache)
 
-    if args.action == "analyze":
+            if args.action == "analyze":
         print("🔍 Analyzing partition structures...")
         analysis_results = optimizer.analyze_all_partitions()
 
@@ -332,5 +332,5 @@ def main() -> None:
         print("Use --action analyze to see recommendations first")
 
 
-if __name__ == "__main__":
+        if __name__ == "__main__":
     main()

@@ -175,8 +175,8 @@ class MulticollinearityFixer:
         }
 
 
-@handle_errors(default_return=False, context="multicollinearity_main")
-def main() -> bool:
+        @handle_errors(default_return=False, context="multicollinearity_main")
+    def main() -> bool:
     """Main function to generate multicollinearity fixes."""
     print("MULTICOLLINEARITY FIX GENERATOR")
     print("=" * 60)
@@ -186,28 +186,28 @@ def main() -> bool:
     fixes = fixer.generate_feature_engineering_fixes()
 
     print("\nCRITICAL ISSUES IDENTIFIED:")
-    for issue in fixes.get("critical_issues", []):
+            for issue in fixes.get("critical_issues", []):
         print(f"   - {issue}")
 
     print("\nROOT CAUSE:")
-    for cause in fixes.get("root_cause", []):
+            for cause in fixes.get("root_cause", []):
         print(f"   - {cause}")
 
     print("\nIMMEDIATE FIXES:")
-    for fix in fixes.get("immediate_fixes", []):
+            for fix in fixes.get("immediate_fixes", []):
         print(f"   - {fix}")
 
     print("\nCODE CHANGES REQUIRED:")
-    for change in fixes.get("code_changes", []):
+            for change in fixes.get("code_changes", []):
         print(f"   - {change}")
 
     print("\nCONFIGURATION CHANGES:")
-    for config_change in fixes.get("configuration_changes", []):
+            for config_change in fixes.get("configuration_changes", []):
         print(f"   - {config_change}")
 
     print("\nRECOMMENDED CONFIGURATION:")
     config_template = fixer.generate_configuration_template()
-    for section, settings in config_template.items():
+            for section, settings in config_template.items():
         print(f"\n   {section}:")
         for key, value in settings.items():
             if isinstance(value, dict):
@@ -219,7 +219,7 @@ def main() -> bool:
 
     print("\nCODE FIXES:")
     code_fixes = fixer.generate_code_fixes()
-    for file_name, edits in code_fixes.items():
+            for file_name, edits in code_fixes.items():
         print(f"\n   {file_name}:")
         for edit in edits:
             print(f"     {edit}")
@@ -234,9 +234,9 @@ def main() -> bool:
     print("\n" + "=" * 60)
     print("Multicollinearity fix generation completed!")
     print("=" * 60)
-    return True
+            return True
 
 
-if __name__ == "__main__":
+        if __name__ == "__main__":
     success = main()
     raise SystemExit(0 if success else 1)

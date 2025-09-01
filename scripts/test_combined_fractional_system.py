@@ -131,7 +131,7 @@ class CombinedFractionalSystemTester:
         # Test fractional labeling only
         try:
     pass  # TODO: Add proper exception handling
-except Exception as e:
+        except Exception as e:
     pass  # TODO: Add proper exception handling
             from src.training.steps.step4_analyst_labeling_feature_engineering_components.fractional_triple_barrier_labeling import (
                 FractionalTripleBarrierLabeling
@@ -155,7 +155,7 @@ except Exception as e:
         # Test fractional differentiation only
         try:
     pass  # TODO: Add proper exception handling
-except Exception as e:
+        except Exception as e:
     pass  # TODO: Add proper exception handling
             from src.training.steps.fractional_differentiation import FractionalFeatureGenerator
 
@@ -202,7 +202,7 @@ except Exception as e:
 
         try:
     pass  # TODO: Add proper exception handling
-except Exception as e:
+        except Exception as e:
     pass  # TODO: Add proper exception handling
             from src.training.steps.combined_fractional_system import CombinedFractionalSystem, get_combined_fractional_config
 
@@ -283,7 +283,7 @@ except Exception as e:
 
         return hmm_results
 
-    def compare_results(self, individual_results: Dict[str, Any], combined_results: Dict[str, Any],
+    def compare_results(self, individual_results: Dict[str, Any], combined_results: Dict[str, Any],:
                        hmm_results: Dict[str, Any]) -> Dict[str, Any]:
         """Compare results between individual and combined systems.
 
@@ -347,7 +347,7 @@ except Exception as e:
 
         return comparison
 
-    def export_results(self, individual_results: Dict[str, Any], combined_results: Dict[str, Any],
+    def export_results(self, individual_results: Dict[str, Any], combined_results: Dict[str, Any],:
                       hmm_results: Dict[str, Any], comparison: Dict[str, Any]):
         """Export test results to files.
 

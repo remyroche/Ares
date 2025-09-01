@@ -143,7 +143,7 @@ class FractionalDifferentiationOptimizer:
         """
         try:
     pass  # TODO: Add proper exception handling
-except Exception as e:
+        except Exception as e:
     pass  # TODO: Add proper exception handling
             from src.training.steps.fractional_differentiation import FractionalFeatureGenerator
 
@@ -201,7 +201,7 @@ except Exception as e:
                 'success': False
             }
 
-    def _calculate_evaluation_metrics(self, frac_diff_features: Dict[str, pd.Series],
+    def _calculate_evaluation_metrics(self, frac_diff_features: Dict[str, pd.Series],:
                                     original_data: pd.DataFrame, execution_time: float,
                                     params: Dict[str, Any]) -> Dict[str, float]:
         """Calculate comprehensive evaluation metrics.
@@ -440,7 +440,7 @@ except Exception as e:
 
         return analysis
 
-    def _export_optimization_results(self, optimization_summary: Dict[str, Any],
+    def _export_optimization_results(self, optimization_summary: Dict[str, Any],:
                                    price_data: pd.DataFrame, volume_data: pd.DataFrame):
         """Export optimization results to files.
 
@@ -534,7 +534,7 @@ def main():
     print("\n🎯 Optimization Summary:")
     print(f"   Success Rate: {results['success_rate']:.2%}")
 
-    if 'best_parameters' in results:
+            if 'best_parameters' in results:
         print(f"   Best Score: {results['best_score']:.3f}")
         print(f"   Best d Value: {results['best_parameters']['d']}")
         print(f"   Best Window Size: {results['best_parameters']['window_size']}")
@@ -546,7 +546,7 @@ def main():
     print("   • Ready for validation with real market data")
 
 
-if __name__ == "__main__":
+        if __name__ == "__main__":
     import pandas as pd
 
     main()

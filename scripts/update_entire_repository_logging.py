@@ -32,35 +32,35 @@ def get_warning_symbol_function(message: str, log_level: str = "error") -> str:
     message_lower = message.lower()
 
     # Error patterns
-    if any(word in message_lower for word in ["failed", "failure", "fail"]):
+            if any(word in message_lower for word in ["failed", "failure", "fail"]):
         return "failed"
-    if any(word in message_lower for word in ["invalid", "invalid configuration"]):
+            if any(word in message_lower for word in ["invalid", "invalid configuration"]):
         return "invalid"
-    if any(
+            if any(
         word in message_lower for word in ["missing", "not found", "file not found"]
     ):
         return "missing"
-    if any(word in message_lower for word in ["timeout", "timed out"]):
+            if any(word in message_lower for word in ["timeout", "timed out"]):
         return "timeout"
-    if any(word in message_lower for word in ["connection", "network"]):
+            if any(word in message_lower for word in ["connection", "network"]):
         return "connection_error"
-    if any(word in message_lower for word in ["validation", "validate"]):
+            if any(word in message_lower for word in ["validation", "validate"]):
         return "validation_error"
-    if any(word in message_lower for word in ["initialization", "init", "initialize"]):
+            if any(word in message_lower for word in ["initialization", "init", "initialize"]):
         return "initialization_error"
-    if any(word in message_lower for word in ["execution", "execute", "runtime"]):
+            if any(word in message_lower for word in ["execution", "execute", "runtime"]):
         return "execution_error"
-    if any(word in message_lower for word in ["critical", "fatal"]):
+            if any(word in message_lower for word in ["critical", "fatal"]):
         return "critical"
-    if any(word in message_lower for word in ["problem", "issue"]):
+            if any(word in message_lower for word in ["problem", "issue"]):
         return "problem"
     # Default based on log level
-    if log_level in ["error", "exception", "critical"]:
+            if log_level in ["error", "exception", "critical"]:
         return "error"
-    return "warning"
+            return "warning"
 
 
-def should_skip_file(file_path: str) -> bool:
+        def should_skip_file(file_path: str) -> bool:
     """
     Check if a file should be skipped from processing.
 
@@ -173,7 +173,7 @@ def should_skip_file(file_path: str) -> bool:
     file_path_lower = file_path.lower()
 
     # Check if file matches any skip pattern
-    for pattern in skip_patterns:
+            for pattern in skip_patterns:
         if pattern.startswith("*."):
             # File extension pattern
             if file_path_lower.endswith(pattern[1:]):
@@ -181,10 +181,10 @@ def should_skip_file(file_path: str) -> bool:
         elif pattern in file_path_lower:
             return True
 
-    return False
+            return False
 
 
-def update_file_logging_messages(file_path: str) -> Tuple[int, int]:
+        def update_file_logging_messages(file_path: str) -> Tuple[int, int]:
     """
     Update logging messages in a file with warning symbols.
 
@@ -196,9 +196,9 @@ def update_file_logging_messages(file_path: str) -> Tuple[int, int]:
     """
     changes_made = 0
 
-    try:
+            try:
     pass  # TODO: Add proper exception handling
-except Exception as e:
+        except Exception as e:
     pass  # TODO: Add proper exception handling
         with open(file_path, encoding="utf-8") as f:
             content = f.read()
@@ -269,12 +269,12 @@ except Exception as e:
 
         return changes_made, len(content.splitlines())
 
-    except Exception as e:
+            except Exception as e:
         print(f"Error updating {file_path}: {e}")
         return 0, 0
 
 
-def add_warning_symbols_import(file_path: str) -> bool:
+        def add_warning_symbols_import(file_path: str) -> bool:
     """
     Add warning symbols import to a file if it doesn't already have it.
 
@@ -284,9 +284,9 @@ def add_warning_symbols_import(file_path: str) -> bool:
     Returns:
         True if import was added, False otherwise
     """
-    try:
+            try:
     pass  # TODO: Add proper exception handling
-except Exception as e:
+        except Exception as e:
     pass  # TODO: Add proper exception handling
         with open(file_path, encoding="utf-8") as f:
             content = f.read()
@@ -362,12 +362,12 @@ except Exception as e:
         print(f" Could not find suitable import location in {file_path}")
         return False
 
-    except Exception as e:
+            except Exception as e:
         print(f"Error adding import to {file_path}: {e}")
         return False
 
 
-def find_python_files(directory: Path) -> List[Path]:
+        def find_python_files(directory: Path) -> List[Path]:
     """
     Recursively find all Python files in a directory.
 
@@ -379,17 +379,17 @@ def find_python_files(directory: Path) -> List[Path]:
     """
     python_files: List[Path] = []
 
-    try:
+            try:
         for item in directory.rglob("*.py"):
             if not should_skip_file(str(item)):
                 python_files.append(item)
-    except Exception as e:
+            except Exception as e:
         print(f"Error searching directory {directory}: {e}")
 
-    return python_files
+            return python_files
 
 
-def main() -> None:
+        def main() -> None:
     """Main function to update all Python files in the repository."""
     print("🚀 Starting comprehensive repository logging update...")
     print(f"📁 Project root: {project_root}")
@@ -403,7 +403,7 @@ def main() -> None:
     total_files_processed = 0
     files_with_imports_added = 0
 
-    for file_path in python_files:
+            for file_path in python_files:
         print(f"\n📁 Processing {file_path.relative_to(project_root)}...")
 
         # Add warning symbols import if needed
@@ -423,7 +423,7 @@ def main() -> None:
     print(f"   Files processed: {total_files_processed}")
     print(f"   Files with imports added: {files_with_imports_added}")
     print(f"   Total changes made: {total_changes}")
-    if total_files_processed > 0:
+            if total_files_processed > 0:
         print(
             f"   Average changes per file: {total_changes / total_files_processed:.1f}",
         )
@@ -431,5 +431,5 @@ def main() -> None:
     print("\n🎉 Repository logging update completed successfully!")
 
 
-if __name__ == "__main__":
+        if __name__ == "__main__":
     main()

@@ -104,7 +104,7 @@ except Exception as e:
 			print(f"❌ Found {len(perfect_correlations)} perfect correlations:")
 			for feature1, feature2, corr_value in perfect_correlations:
 				print(f"   {feature1} ↔ {feature2} (r={corr_value:.6f})")
-			return False
+    			return False
 		print("✅ No perfect correlations found!")
 
 		# Check specific problematic features
@@ -138,21 +138,21 @@ except Exception as e:
 
 			if abs(correlation) >= 0.9999:
 				print("❌ 1m and 5m price changes are still perfectly correlated!")
-				return False
+    				return False
 			print("✅ 1m and 5m price changes are properly differentiated")
 
 		print("✅ Multicollinearity fix validation completed successfully!")
-		return True
+    		return True
 	except Exception as e:  # noqa: BLE001
 		print(f"❌ Error during validation: {e}")
-		return False
+    		return False
 
 
 def main() -> None:
 	"""Main function to run the validation."""
 
 	success = asyncio.run(validate_multicollinearity_fix())
-	if success:
+        	if success:
 		print("\n🎉 MULTICOLLINEARITY FIX VALIDATION PASSED!")
 		print("✅ Your feature engineering is now working correctly.")
 	else:
@@ -161,5 +161,5 @@ def main() -> None:
 		sys.exit(1)
 
 
-if __name__ == "__main__":
+        if __name__ == "__main__":
 	main()

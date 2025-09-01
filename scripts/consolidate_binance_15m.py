@@ -21,10 +21,10 @@ sys.path.append(str(project_root))
 
 def _list_source_files(pattern: str) -> List[str]:
 	"""List files matching the provided glob pattern, sorted for determinism."""
-	return sorted(glob.glob(pattern))
+            	return sorted(glob.glob(pattern))
 
 
-def consolidate_binance_15m_data() -> bool:
+        def consolidate_binance_15m_data() -> bool:
 	"""Consolidate all Binance 15m klines data files."""
 	setup_logging()
 	logger = system_logger.getChild("ConsolidateBinance15m")
@@ -38,15 +38,15 @@ def consolidate_binance_15m_data() -> bool:
 
 	logger.info(f"📁 Found {len(source_files)} 15m Binance files")
 	logger.info("📋 Source files:")
-	for i, file in enumerate(source_files[:5], 1):
+        	for i, file in enumerate(source_files[:5], 1):
 		file_size = os.path.getsize(file)
 		logger.info(f"   {i}. {os.path.basename(file)} ({file_size:,} bytes)")
-	if len(source_files) > 5:
+        	if len(source_files) > 5:
 		logger.info(f"   ... and {len(source_files) - 5} more files")
 
-	if not source_files:
+        	if not source_files:
 		print(error("❌ No 15m Binance files found"))
-		return False
+            		return False
 
 	# Output file
 	output_file = "data_cache/klines_BINANCE_ETHUSDT_15m_consolidated.csv"
@@ -56,27 +56,27 @@ def consolidate_binance_15m_data() -> bool:
 	all_data: list[pd.DataFrame] = []
 	total_records = 0
 
-	for i, file in enumerate(source_files, 1):
+        	for i, file in enumerate(source_files, 1):
 		logger.info(
 			f"📖 [{i}/{len(source_files)}] Processing {os.path.basename(file)}...",
 		)
 
-		try:
+        		try:
     pass  # TODO: Add proper exception handling
-except Exception as e:
+        except Exception as e:
     pass  # TODO: Add proper exception handling
 			# Read the CSV file
 			df = pd.read_csv(file)
 			logger.info(f"   📊 Loaded {len(df)} records")
 
 			# Validate data
-			if len(df) == 0:
+        			if len(df) == 0:
 				print(warning(f"   ⚠️ Empty file: {os.path.basename(file)}"))
 				continue
 
 			# Check columns
 			expected_columns = ["timestamp", "open", "high", "low", "close", "volume"]
-			if not all(col in df.columns for col in expected_columns):
+        			if not all(col in df.columns for col in expected_columns):
 				print(missing(f"   ⚠️ Missing columns in {os.path.basename(file)}"))
 				print(warning(f"   📋 Expected: {expected_columns}"))
 				print(warning(f"   📋 Found: {list(df.columns)}"))
@@ -91,14 +91,14 @@ except Exception as e:
 			df[numeric_cols] = df[numeric_cols].apply(pd.to_numeric, errors="coerce")
 
 			# Check for reasonable price data
-			if df["close"].isna().all():
+        			if df["close"].isna().all():
 				print(invalid(f"   ⚠️ Invalid price data in {os.path.basename(file)}"))
 				continue
 
 			# Check price range (ETH should be reasonable)
 			min_price = float(df["low"].min())
 			max_price = float(df["high"].max())
-			if min_price < 100 or max_price > 10000:
+        			if min_price < 100 or max_price > 10000:
 				logger.warning(
 					f"   ⚠️ Unreasonable price range in {os.path.basename(file)}: ${min_price:.2f} - ${max_price:.2f}",
 				)
@@ -112,13 +112,13 @@ except Exception as e:
 			all_data.append(df)
 			total_records += len(df)
 
-		except Exception as e:  # noqa: BLE001
+        		except Exception as e:  # noqa: BLE001
 			print(error(f"   ❌ Error processing {os.path.basename(file)}: {e}"))
 			continue
 
-	if not all_data:
+        	if not all_data:
 		print(error("❌ No valid data files found"))
-		return False
+            		return False
 
 	logger.info(f"📊 Consolidating {len(all_data)} dataframes...")
 
@@ -176,10 +176,10 @@ except Exception as e:
 		f"💰 Price range: ${consolidated_df['low'].min():.2f} to ${consolidated_df['high'].max():.2f}",
 	)
 
-	return True
+            	return True
 
 
-if __name__ == "__main__":
+        if __name__ == "__main__":
 	success = consolidate_binance_15m_data()
-	if not success:
+        	if not success:
 		sys.exit(1)

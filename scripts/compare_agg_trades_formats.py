@@ -20,11 +20,7 @@ sys.path.insert(0, str(project_root))
 
 logger = system_logger.getChild("AggTradesFormatComparator")
 
-@handle_errors(
-    exceptions=(Exception,),
-    default_return=False,
-    context="compare_agg_trades_formats",
-)
+@handle_errors( exceptions=(Exception,), default_return=False, context="compare_agg_trades_formats")
 async def compare_agg_trades_formats(symbol: str = "BTCUSDT", lookback_hours: int = 24) -> bool:
     """
     Compare aggregated trades formats between MEXC and Binance.
@@ -99,5 +95,5 @@ def main():
     asyncio.run(compare_agg_trades_formats(args.symbol, args.hours))
 
 
-if __name__ == "__main__":
+        if __name__ == "__main__":
     main()

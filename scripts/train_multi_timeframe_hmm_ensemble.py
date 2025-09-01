@@ -41,17 +41,17 @@ def load_timeframe_data(symbol: str, exchange: str, timeframe: str, data_dir: st
         f"{exchange}_{symbol}_hmm_composite_clusters_{timeframe}.parquet",
     )
 
-    if os.path.exists(hmm_data_path):
+            if os.path.exists(hmm_data_path):
         logger.info(f"📂 Loading HMM data from {hmm_data_path}")
         data = pd.read_parquet(hmm_data_path)
         logger.info(f"📊 Loaded {len(data)} rows for {timeframe}")
         return data
 
     logger.warning(f"⚠️ No HMM data found at {hmm_data_path}")
-    return pd.DataFrame()
+            return pd.DataFrame()
 
 
-def create_ensemble_config() -> EnsembleConfig:
+        def create_ensemble_config() -> EnsembleConfig:
     """Create ensemble configuration with specified timeframes."""
     timeframes = [
         TimeframeConfig(
@@ -84,7 +84,7 @@ def create_ensemble_config() -> EnsembleConfig:
         ),
     ]
 
-    return EnsembleConfig(
+            return EnsembleConfig(
         timeframes=timeframes,
         meta_learner_type="lgbm",
         enable_dynamic_weighting=True,
@@ -94,12 +94,12 @@ def create_ensemble_config() -> EnsembleConfig:
     )
 
 
-@handle_errors(default_return=False, context="validate_data_quality")
-def validate_data_quality(timeframe_data: Dict[str, pd.DataFrame]) -> bool:
+        @handle_errors(default_return=False, context="validate_data_quality")
+        def validate_data_quality(timeframe_data: Dict[str, pd.DataFrame]) -> bool:
     """Validate data quality across all timeframes."""
     logger.info("🔍 Validating data quality...")
 
-    for timeframe, data in timeframe_data.items():
+            for timeframe, data in timeframe_data.items():
         if data.empty:
             logger.error(f"❌ Empty data for {timeframe}")
             return False
@@ -126,11 +126,11 @@ def validate_data_quality(timeframe_data: Dict[str, pd.DataFrame]) -> bool:
             f"✅ {timeframe}: {len(data)} rows x {len(data.columns)} columns",
         )
 
-    return True
+            return True
 
 
-@handle_errors(default_return=False, context="main_training")
-def main() -> bool:
+        @handle_errors(default_return=False, context="main_training")
+        def main() -> bool:
     """Main training function."""
     parser = argparse.ArgumentParser(description="Train Multi-Timeframe HMM Ensemble")
     parser.add_argument(
@@ -193,7 +193,7 @@ def main() -> bool:
 
     # Load data for all timeframes
     timeframe_data: Dict[str, pd.DataFrame] = {}
-    for timeframe in timeframes:
+            for timeframe in timeframes:
         logger.info(f"📂 Loading data for {timeframe}...")
         data = load_timeframe_data(
             symbol=args.symbol,
@@ -206,12 +206,12 @@ def main() -> bool:
         else:
             logger.warning(f"⚠️ Skipping {timeframe} due to missing data")
 
-    if not timeframe_data:
+            if not timeframe_data:
         logger.error("❌ No valid data found for any timeframe")
         return False
 
     # Validate data quality
-    if not validate_data_quality(timeframe_data):
+            if not validate_data_quality(timeframe_data):
         logger.error("❌ Data quality validation failed")
         return False
 
@@ -225,7 +225,7 @@ def main() -> bool:
     # Update timeframe weights to match loaded data
     available_timeframes: List[str] = list(timeframe_data.keys())
     equal_weight = 1.0 / len(available_timeframes)
-    for tf_config in config.timeframes:
+            for tf_config in config.timeframes:
         if tf_config.timeframe in available_timeframes:
             tf_config.weight = equal_weight
         else:
@@ -241,7 +241,7 @@ def main() -> bool:
     logger.info("🎯 Training multi-timeframe HMM ensemble...")
     success = ensemble.train_ensemble(timeframe_data)
 
-    if success:
+            if success:
         logger.info(
             "✅ Multi-timeframe HMM ensemble training completed successfully!",
         )
@@ -276,9 +276,9 @@ def main() -> bool:
         return True
 
     logger.error("❌ Multi-timeframe HMM ensemble training failed")
-    return False
+            return False
 
 
-if __name__ == "__main__":
+        if __name__ == "__main__":
     success = main()
     sys.exit(0 if success else 1)

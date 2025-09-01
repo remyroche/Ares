@@ -26,9 +26,9 @@ def test_sr_level_fix() -> bool:
     """Test that S/R level counts are now dynamic."""
     logger = system_logger.getChild("TestSRLeverFix")
 
-    try:
+            try:
     pass  # TODO: Add proper exception handling
-except Exception as e:
+        except Exception as e:
     pass  # TODO: Add proper exception handling
         # Create sample price data with wider range to test S/R levels
         rng = np.random.default_rng(42)
@@ -70,7 +70,7 @@ except Exception as e:
         }
 
         # Test the dynamic calculation function
-        def _calculate_dynamic_level_counts(
+        def _calculate_dynamic_level_counts(:
             price_series: pd.Series,
             levels: list[float | dict[str, float]],
             level_type: str,
@@ -223,11 +223,11 @@ except Exception as e:
 
         return bool(support_fixed and resistance_fixed)
 
-    except Exception:  # noqa: BLE001
+            except Exception:  # noqa: BLE001
         logger.exception("Error testing S/R level fix")
         return False
 
 
-if __name__ == "__main__":
+        if __name__ == "__main__":
     success = test_sr_level_fix()
     sys.exit(0 if success else 1)

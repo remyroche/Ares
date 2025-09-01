@@ -334,7 +334,7 @@ class EnhancedSRPositionAnalyzer:
         print("=" * 80)
 
 
-async def load_price_data(symbol: str, exchange: str, timeframe: str) -> Optional[pd.DataFrame]:
+        async def load_price_data(symbol: str, exchange: str, timeframe: str) -> Optional[pd.DataFrame]:
     """Load price data for analysis."""
     # Try multiple data formats and locations
     possible_paths = [
@@ -344,17 +344,17 @@ async def load_price_data(symbol: str, exchange: str, timeframe: str) -> Optiona
         Path(f"data/{exchange}_{symbol}_labeled_regimes.csv"),
     ]
 
-    for path in possible_paths:
+            for path in possible_paths:
         if path.exists():
             if path.suffix == ".csv":
                 return pd.read_csv(path)
             if path.suffix == ".parquet":
                 return pd.read_parquet(path)
 
-    return None
+            return None
 
 
-async def main():
+        async def main():
     """Main function to run enhanced SR position analysis."""
     parser = argparse.ArgumentParser(
         description="Enhanced SR position analysis using centralized SRBreakoutPredictor"
@@ -376,7 +376,7 @@ async def main():
 
     # Load price data
     price_data = await load_price_data(args.symbol, args.exchange, args.timeframe)
-    if price_data is None:
+            if price_data is None:
         system_logger.error("❌ Failed to load price data")
         return
 
@@ -388,7 +388,7 @@ async def main():
     }
 
     analyzer = EnhancedSRPositionAnalyzer(config)
-    if not await analyzer.initialize():
+            if not await analyzer.initialize():
         system_logger.error("❌ Failed to initialize analyzer")
         return
 
@@ -397,7 +397,7 @@ async def main():
 
     # Get enhanced S/R context using SRBreakoutPredictor
     sr_context = await analyzer.sr_predictor.get_sr_context(price_data, current_price)
-    if not sr_context:
+            if not sr_context:
         system_logger.error("❌ Failed to generate S/R context")
         return
 
@@ -408,7 +408,7 @@ async def main():
     analyzer.print_analysis_report(analysis)
 
     # Save detailed results if requested
-    if args.output:
+            if args.output:
         output_path = Path(args.output)
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -426,5 +426,5 @@ async def main():
     system_logger.info("✅ Enhanced SR Position Analysis completed successfully")
 
 
-if __name__ == "__main__":
+        if __name__ == "__main__":
     asyncio.run(main())

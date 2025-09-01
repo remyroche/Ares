@@ -166,7 +166,7 @@ def main() -> None:
         description="Enhanced Backtesting with Paper Trading",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-Examples:
+        Examples:
   # Full enhanced backtesting with paper trading
   python scripts/run_enhanced_backtesting.py --symbol ETHUSDT --lookback 730
 

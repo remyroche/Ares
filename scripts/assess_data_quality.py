@@ -337,7 +337,7 @@ class EnhancedDataQualityAnalyzer:
         return results
 
 
-async def main():
+        async def main():
     """Main function for data quality assessment."""
     parser = argparse.ArgumentParser(
         description="Enhanced Data Quality Assessment Tool"
@@ -375,7 +375,7 @@ async def main():
 
     # Load data
     data_path = Path(args.data_path)
-    if data_path.suffix == ".csv":
+            if data_path.suffix == ".csv":
         data = pd.read_csv(data_path)
     elif data_path.suffix == ".parquet":
         data = pd.read_parquet(data_path)
@@ -410,7 +410,7 @@ async def main():
         return obj
 
     import json
-    with open(output_file, "w") as f:
+            with open(output_file, "w") as f:
         json.dump(results, f, indent=2, default=convert_numpy_types)
 
     print(f"✅ Data quality report saved to: {output_file}")
@@ -423,21 +423,21 @@ async def main():
     print(f"Critical issues: {len(summary['critical_issues'])}")
     print(f"Warnings: {len(summary['warnings'])}")
 
-    if summary["critical_issues"]:
+            if summary["critical_issues"]:
         print(f"\n🚨 Critical Issues:")
         for issue in summary["critical_issues"]:
             print(f"  - {issue}")
 
-    if summary["warnings"]:
+            if summary["warnings"]:
         print(f"\n⚠️ Warnings:")
         for warning in summary["warnings"]:
             print(f"  - {warning}")
 
-    if summary["recommendations"]:
+            if summary["recommendations"]:
         print(f"\n💡 Recommendations:")
         for rec in summary["recommendations"]:
             print(f"  - {rec}")
 
 
-if __name__ == "__main__":
+        if __name__ == "__main__":
     asyncio.run(main())

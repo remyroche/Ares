@@ -463,7 +463,7 @@ class FractionalLabelingOptimizer:
         }
 
 
-def main():
+        def main():
     """Main function to run parameter optimization."""
     optimizer = FractionalLabelingOptimizer()
     optimization_results = optimizer.run_complete_optimization()
@@ -474,9 +474,9 @@ def main():
     print(f"   Valid Combinations: {len(optimization_results['results']['results'])}")
 
     print("\n📋 Key Recommendations:")
-    for rec in optimization_results['analysis']['recommendations'][:5]:
+            for rec in optimization_results['analysis']['recommendations'][:5]:
         print(f"   • {rec}")
 
 
-if __name__ == "__main__":
+        if __name__ == "__main__":
     main()

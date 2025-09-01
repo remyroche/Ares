@@ -35,11 +35,11 @@ def _log_exceptions(logger_name: str):
 
         return wrapper
 
-    return decorator
+            return decorator
 
 
-@_log_exceptions("TestVIFFixes")
-def test_vif_fixes() -> bool:
+        @_log_exceptions("TestVIFFixes")
+        def test_vif_fixes() -> bool:
     """Test that the VIF fixes are working correctly."""
     logger = system_logger.getChild("TestVIFFixes")
 
@@ -278,7 +278,7 @@ def test_vif_fixes() -> bool:
 
     print(f"\n   Total improvement score: {total_improvement:.3f}")
 
-    if total_improvement > 1.0 and avg_corr_fixed < 0.5:
+            if total_improvement > 1.0 and avg_corr_fixed < 0.5:
         print("\n✅ VIF FIXES SUCCESSFUL!")
         print("   - Significant reduction in multicollinearity")
         print("   - Better feature diversity")
@@ -291,9 +291,9 @@ def test_vif_fixes() -> bool:
     print("   - Consider additional feature engineering")
     print("=" * 80)
 
-    return False
+            return False
 
 
-if __name__ == "__main__":
+        if __name__ == "__main__":
     success = test_vif_fixes()
     sys.exit(0 if success else 1)

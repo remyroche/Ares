@@ -45,5 +45,5 @@ def main():
     launcher.run_with_bot(bot_command, auto_gui=not args.no_gui)
 
 
-if __name__ == "__main__":
+        if __name__ == "__main__":
     main()

@@ -23,10 +23,7 @@ sys.path.insert(0, str(project_root))
 
 logger = system_logger.getChild("MEXCAggTradesDownloader")
 
-@handle_errors(
-    exceptions=(Exception,),
-    default_return=False, context="download_mexc_agg_trades",
-)
+@handle_errors( exceptions=(Exception,), default_return=False, context="download_mexc_agg_trades")
 async def download_mexc_agg_trades(symbol: str = "BTCUSDT", lookback_days: int = 30, output_dir: str = "data") -> bool:
     """
     Download aggregated trades from MEXC with Binance-compatible format.

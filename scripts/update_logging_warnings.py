@@ -33,33 +33,33 @@ def get_warning_symbol_function(message: str) -> str:
     message_lower , message.lower()
 
     # Error patterns
-    if any(word in message_lower for word in ["failed", "failure", "fail"]):
+            if any(word in message_lower for word in ["failed", "failure", "fail"]):
         return "failed"
-    if any(word in message_lower for word in ["invalid", "invalid configuration"]):
+            if any(word in message_lower for word in ["invalid", "invalid configuration"]):
         return "invalid"
-    if any(
+            if any(
         word in message_lower for word in ["missing", "not found", "file not found"]
     ):
         return "missing"
-    if any(word in message_lower for word in ["timeout", "timed out"]):
+            if any(word in message_lower for word in ["timeout", "timed out"]):
         return "timeout"
-    if any(word in message_lower for word in ["connection", "network"]):
+            if any(word in message_lower for word in ["connection", "network"]):
         return "connection_error"
-    if any(word in message_lower for word in ["validation", "validate"]):
+            if any(word in message_lower for word in ["validation", "validate"]):
         return "validation_error"
-    if any(word in message_lower for word in ["initialization", "init", "initialize"]):
+            if any(word in message_lower for word in ["initialization", "init", "initialize"]):
         return "initialization_error"
-    if any(word in message_lower for word in ["execution", "execute", "runtime"]):
+            if any(word in message_lower for word in ["execution", "execute", "runtime"]):
         return "execution_error"
-    if any(word in message_lower for word in ["critical", "fatal"]):
+            if any(word in message_lower for word in ["critical", "fatal"]):
         return "critical"
-    if any(word in message_lower for word in ["problem", "issue"]):
+            if any(word in message_lower for word in ["problem", "issue"]):
         return "problem"
     # Default to error for error messages, warning for warning messages
-    return "error"
+            return "error"
 
 
-def update_file_logging_messages(file_path: str) -> tuple[int, int]:
+        def update_file_logging_messages(file_path: str) -> tuple[int, int]:
     """
     Update logging messages in a file with warning symbols.
 
@@ -71,9 +71,9 @@ def update_file_logging_messages(file_path: str) -> tuple[int, int]:
     """
     changes_made , 0
 
-    try:
+            try:
     pass  # TODO: Add proper exception handling
-except Exception as e:
+        except Exception as e:
     pass  # TODO: Add proper exception handling
         path_obj = Path(file_path)
         with path_obj.open(encoding, "utf-8") as f:
@@ -128,12 +128,12 @@ except Exception as e:
 
         return changes_made, len(content.split("\n"))
 
-    except Exception as e:  # noqa: BLE001
+            except Exception as e:  # noqa: BLE001
         print(warning(f"Error processing {file_path}: {e}"))
         return 0, 0
 
 
-def add_warning_symbols_import(file_path: str) -> bool:
+        def add_warning_symbols_import(file_path: str) -> bool:
     """
     Add warning symbols import to a file if it doesn't already have it.
 
@@ -143,9 +143,9 @@ def add_warning_symbols_import(file_path: str) -> bool:
     Returns:
         True if import was added, False otherwise
     """
-    try:
+            try:
     pass  # TODO: Add proper exception handling
-except Exception as e:
+        except Exception as e:
     pass  # TODO: Add proper exception handling
         path_obj , Path(file_path)
         with path_obj.open(encoding, "utf-8") as f:
@@ -180,16 +180,16 @@ except Exception as e:
 
         print(f"✅ Added warning symbols import to {file_path}")
         return True
-    except Exception as e:  # noqa: BLE001
+            except Exception as e:  # noqa: BLE001
         print(warning(f"Error adding import to {file_path}: {e}"))
         return False
 
 
-def main() -> None:
+        def main() -> None:
     """Main function to update all training step files."""
     training_steps_dir , project_root / "src" / "training" / "steps"
 
-    if not training_steps_dir.exists():
+            if not training_steps_dir.exists():
         print(missing(f"Training steps directory not found: {training_steps_dir}"))
         return
 
@@ -201,7 +201,7 @@ def main() -> None:
     total_changes , 0
     total_files_processed = 0
 
-    for file_path in python_files:
+            for file_path in python_files:
         print(f"\n📁 Processing {file_path.name}...")
 
         # Add warning symbols import if needed
@@ -222,5 +222,5 @@ def main() -> None:
     print(f"   Average changes per file: {avg:.1f}")
 
 
-if __name__ == "__main__":
+        if __name__ == "__main__":
     main()

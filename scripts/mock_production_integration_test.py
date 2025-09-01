@@ -151,7 +151,7 @@ class MockProductionIntegrationTester:
 
         try:
     pass  # TODO: Add proper exception handling
-except Exception as e:
+        except Exception as e:
     pass  # TODO: Add proper exception handling
             # Step 1: Combined fractional system
             combined_results, feature_count, label_count = self.mock_combined_system_integration(hmm_regime)
@@ -233,7 +233,7 @@ except Exception as e:
         """Compile overall summary from all regime results."""
         try:
     pass  # TODO: Add proper exception handling
-except Exception as e:
+        except Exception as e:
     pass  # TODO: Add proper exception handling
             successful_results = [r for r in all_results.values() if r.get('success', False)]
 
@@ -369,7 +369,7 @@ def main():
     print(f"   Success Rate: {results['success_rate']:.2%}")
     print(f"   Successful Tests: {results['successful_tests']}/{results['total_tests']}")
 
-    if 'overall_summary' in results and 'message' not in results['overall_summary']:
+            if 'overall_summary' in results and 'message' not in results['overall_summary']:
         summary = results['overall_summary']
         print(f"   Avg Processing Time: {summary['avg_processing_time']:.3f}s")
         print(f"   Avg Final Features: {summary['avg_final_feature_count']:.1f}")
@@ -384,5 +384,5 @@ def main():
     print("   • Production ready for deployment")
 
 
-if __name__ == "__main__":
+        if __name__ == "__main__":
     main()

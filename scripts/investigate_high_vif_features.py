@@ -100,7 +100,7 @@ def analyze_high_vif_features() -> bool:
 	print("\n📊 HIGH VIF FEATURES ANALYSIS:")
 	print("-" * 60)
 
-	for feature, info in high_vif_features.items():
+        	for feature, info in high_vif_features.items():
 		print(f"   {feature}: VIF = {float(info['vif']):.2f}")
 		print(f"      Issue: {info['issue']}")
 		print(f"      Fix: {info['fix']}")
@@ -126,10 +126,10 @@ def analyze_high_vif_features() -> bool:
 	print("\n🔧 SYSTEMATIC FIXES BY FEATURE GROUP:")
 	print("-" * 60)
 
-	for group, features in feature_groups.items():
+        	for group, features in feature_groups.items():
 		print(f"\n📋 {group}:")
-		for feature in features:
-			if feature in high_vif_features:
+        		for feature in features:
+        			if feature in high_vif_features:
 				print(f"   - {feature}: {high_vif_features[feature]['fix']}")
 
 	# Proposed fixes
@@ -175,12 +175,12 @@ def analyze_high_vif_features() -> bool:
 	print("\n💡 DETAILED FIX PROPOSALS:")
 	print("-" * 60)
 
-	for group, fix_info in fixes.items():
+        	for group, fix_info in fixes.items():
 		print(f"\n🎯 {group}:")
 		print(f"   Problem: {fix_info['problem']}")
 		print(f"   Solution: {fix_info['solution']}")
 		print("   Implementation:")
-		for impl in fix_info["implementation"]:
+        		for impl in fix_info["implementation"]:
 			print(f"     - {impl}")
 
 	# Test the fixes
@@ -326,14 +326,14 @@ def analyze_high_vif_features() -> bool:
 	print("=" * 80)
 
 	total_improvement = 0.0
-	for group, results in test_results.items():
+        	for group, results in test_results.items():
 		improvement = float(results["improvement"])  # ensure numeric
 		total_improvement += improvement
 		print(f"   {group}: {improvement:.3f} correlation reduction")
 
 	print(f"\n   Total improvement: {total_improvement:.3f} correlation reduction")
 
-	if total_improvement > 0.5:
+        	if total_improvement > 0.5:
 		print("\n✅ FIXES SUCCESSFUL!")
 		print("   - Significant reduction in multicollinearity")
 		print("   - Better feature diversity")
@@ -345,9 +345,9 @@ def analyze_high_vif_features() -> bool:
 
 	print("=" * 80)
 
-	return bool(total_improvement > 0.5)
+            	return bool(total_improvement > 0.5)
 
 
-if __name__ == "__main__":
+        if __name__ == "__main__":
 	success = analyze_high_vif_features()
 	sys.exit(0 if success else 1)

@@ -408,7 +408,7 @@ class FeatureCalculationVerifier:
         return results
 
 
-def main():
+    def main():
     """Main function for feature verification."""
     import argparse
 
@@ -436,7 +436,7 @@ def main():
 
     # Load data
     data_path = Path(args.data_path)
-    if data_path.suffix == ".csv":
+            if data_path.suffix == ".csv":
         data = pd.read_csv(data_path)
     elif data_path.suffix == ".parquet":
         data = pd.read_parquet(data_path)
@@ -457,7 +457,7 @@ def main():
     output_file = output_dir / f"feature_verification_report_{timestamp}.json"
 
     import json
-    with open(output_file, "w") as f:
+            with open(output_file, "w") as f:
         json.dump(results, f, indent=2, default=str)
 
     print(f"✅ Feature verification report saved to: {output_file}")
@@ -471,14 +471,14 @@ def main():
 
     # Print category breakdown
     print(f"\n📋 Feature Categories:")
-    for category, stats in summary["feature_categories"].items():
+            for category, stats in summary["feature_categories"].items():
         print(f"  {category.title()}:")
         print(f"    Available: {stats['available']}")
         print(f"    Missing: {stats['missing']}")
         print(f"    Issues: {stats['issues']}")
 
     # Print critical issues
-    if summary["total_issues"] > 0:
+            if summary["total_issues"] > 0:
         print(f"\n🚨 Critical Issues Found:")
         for category, category_results in results.items():
             if category == "summary":
@@ -489,5 +489,5 @@ def main():
                     print(f"    - {issue}")
 
 
-if __name__ == "__main__":
+        if __name__ == "__main__":
     main()

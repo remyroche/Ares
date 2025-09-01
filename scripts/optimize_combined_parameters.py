@@ -145,7 +145,7 @@ class CombinedParameterOptimizer:
         """
         try:
     pass  # TODO: Add proper exception handling
-except Exception as e:
+        except Exception as e:
     pass  # TODO: Add proper exception handling
             from src.training.steps.combined_fractional_system import CombinedFractionalSystem, get_combined_fractional_config
 
@@ -252,7 +252,7 @@ except Exception as e:
         """
         try:
     pass  # TODO: Add proper exception handling
-except Exception as e:
+        except Exception as e:
     pass  # TODO: Add proper exception handling
             synergy_scores = []
 
@@ -296,7 +296,7 @@ except Exception as e:
         except Exception as e:
             return 0.5
 
-    def _calculate_evaluation_metrics(self, feature_quality: float, label_quality: float,
+    def _calculate_evaluation_metrics(self, feature_quality: float, label_quality: float,:
                                    processing_time: float, hmm_quality: float,
                                    synergy_score: float, params: Dict[str, Any]) -> Dict[str, float]:
         """Calculate comprehensive evaluation metrics.
@@ -492,7 +492,7 @@ except Exception as e:
 
         return analysis
 
-    def _export_optimization_results(self, optimization_summary: Dict[str, Any],
+    def _export_optimization_results(self, optimization_summary: Dict[str, Any],:
                                    price_data: pd.DataFrame, volume_data: pd.DataFrame):
         """Export optimization results to files.
 

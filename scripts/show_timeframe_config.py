@@ -42,13 +42,13 @@ def show_timeframe_config():
 
     # Group timeframes by trading style
     trading_styles = {}
-    for tf, info in timeframes.items():
+            for tf, info in timeframes.items():
         style = info.get("trading_style", "unknown")
         if style not in trading_styles:
             trading_styles[style] = []
         trading_styles[style].append((tf, info))
 
-    for style, tf_list in trading_styles.items():
+            for style, tf_list in trading_styles.items():
         print(f"\n📈 {style.upper().replace('_', ' ')}:")
         for tf, info in tf_list:
             print(
@@ -58,7 +58,7 @@ def show_timeframe_config():
     print(f"\n📋 Predefined Timeframe Sets ({len(timeframe_sets)} total):")
     print("-" * 40)
 
-    for set_name, set_info in timeframe_sets.items():
+            for set_name, set_info in timeframe_sets.items():
         is_default = " ⭐" if set_name == default_set else ""
         print(f"\n{set_name}{is_default}:")
         print(f"  Timeframes: {', '.join(set_info.get('timeframes', []))}")
@@ -74,7 +74,7 @@ def show_timeframe_config():
 
     # Show ensemble weights for default set
     default_timeframes = timeframe_sets.get(default_set, {}).get("timeframes", [])
-    if default_timeframes:
+            if default_timeframes:
         print("\n⚖️  Ensemble Weights for Default Set:")
         total_weight = 0
         for tf in default_timeframes:
@@ -104,11 +104,11 @@ def show_timeframe_config():
     print("python scripts/run_multi_timeframe_training.py --list-timeframes")
 
 
-def show_timeframe_details(timeframe: str):
+        def show_timeframe_details(timeframe: str):
     """Show detailed information about a specific timeframe."""
     timeframes, CONFIG.get("TIMEFRAMES", {})
 
-    if timeframe not in timeframes:
+            if timeframe not in timeframes:
         print(missing("Timeframe '{timeframe}' not found in configuration"))
         return
 
@@ -125,14 +125,14 @@ def show_timeframe_details(timeframe: str):
     print(f"Description: {info.get('description', 'No description')}")
 
 
-def main():
+        def main():
     """Main function."""
-    if len(sys.argv) > 1:
+            if len(sys.argv) > 1:
         timeframe = sys.argv[1]
         show_timeframe_details(timeframe)
     else:
         show_timeframe_config()
 
 
-if __name__ == "__main__":
+        if __name__ == "__main__":
     main()

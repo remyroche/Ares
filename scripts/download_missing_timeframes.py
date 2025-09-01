@@ -55,7 +55,7 @@ class MissingTimeframesDownloader:
 
         try:
     pass  # TODO: Add proper exception handling
-except Exception as e:
+        except Exception as e:
     pass  # TODO: Add proper exception handling
             success = await download_all_data_with_consolidation(
                 symbol=self.symbol,
@@ -127,7 +127,7 @@ except Exception as e:
             print(f"{timeframe}: {status}")
 
 
-def main() -> None:
+    def main() -> None:
     parser = argparse.ArgumentParser(description="Download missing timeframes")
     parser.add_argument("--symbol", default="ETHUSDT")
     parser.add_argument("--exchange", default="BINANCE")
@@ -144,5 +144,5 @@ def main() -> None:
     downloader.verify_downloads(results)
 
 
-if __name__ == "__main__":
+        if __name__ == "__main__":
     main()

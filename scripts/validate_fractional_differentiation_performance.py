@@ -248,7 +248,7 @@ class FractionalDifferentiationValidator:
 
         return performance_metrics
 
-    def test_model_performance(self, frac_diff_features: Dict[str, pd.Series],
+    def test_model_performance(self, frac_diff_features: Dict[str, pd.Series],:
                              original_data: pd.DataFrame) -> Dict[str, float]:
         """Test model performance with fractional differentiation features.
 
@@ -297,7 +297,7 @@ class FractionalDifferentiationValidator:
 
         return model_metrics
 
-    def test_robustness(self, frac_diff_features: Dict[str, pd.Series],
+    def test_robustness(self, frac_diff_features: Dict[str, pd.Series],:
                        original_data: pd.DataFrame) -> Dict[str, float]:
         """Test robustness metrics.
 
@@ -433,7 +433,7 @@ class FractionalDifferentiationValidator:
         """
         try:
     pass  # TODO: Add proper exception handling
-except Exception as e:
+        except Exception as e:
     pass  # TODO: Add proper exception handling
             from src.training.steps.fractional_differentiation import FractionalFeatureGenerator
 

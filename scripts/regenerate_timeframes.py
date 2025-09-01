@@ -141,7 +141,7 @@ class TimeframeRegenerator:
         for timeframe in timeframes:
             try:
     pass  # TODO: Add proper exception handling
-except Exception as e:
+        except Exception as e:
     pass  # TODO: Add proper exception handling
                 logger.info(f"🔄 Regenerating {timeframe} timeframe...")
 
@@ -181,7 +181,7 @@ except Exception as e:
         return results
 
 
-async def main() -> None:
+        async def main() -> None:
     """Main function."""
     parser = argparse.ArgumentParser(description="Regenerate timeframe files from 1m data")
     parser.add_argument("--symbol", required=True, help="Trading symbol (e.g., ETHUSDT)")
@@ -206,20 +206,20 @@ async def main() -> None:
     results = regenerator.regenerate_timeframes(args.symbol, args.exchange, args.timeframes)
 
     # Print results
-    if results["regenerated_files"]:
+            if results["regenerated_files"]:
         for _timeframe, _file_path in results["regenerated_files"].items():  # type: ignore[assignment]
             logger.info(f"✅ {_timeframe}: {_file_path}")
-    if results["failed_timeframes"]:
+            if results["failed_timeframes"]:
         for _timeframe in results["failed_timeframes"]:  # type: ignore[assignment]
             logger.warning(f"⚠️ Failed timeframe: {_timeframe}")
-    if results["errors"]:
+            if results["errors"]:
         for _error in results["errors"]:  # type: ignore[assignment]
             logger.error(f"❌ Error: {_error}")
-    if results["success"]:
+            if results["success"]:
         logger.info("🎉 All done!")
     else:
         sys.exit(1)
 
 
-if __name__ == "__main__":
+        if __name__ == "__main__":
     asyncio.run(main())

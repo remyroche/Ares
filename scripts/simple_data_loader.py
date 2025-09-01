@@ -114,12 +114,12 @@ def main():
 
     success = asyncio.run(load_data(args.symbol, args.exchange, args.interval))
 
-    if success:
+            if success:
         print("✅ Data loading completed successfully")
         sys.exit(0)
     else:
         print(failed("Data loading failed"))
         sys.exit(1)
 
-if __name__ == "__main__":
+        if __name__ == "__main__":
     main()

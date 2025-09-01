@@ -88,7 +88,7 @@ class BaselinePerformanceAnalyzer:
 
         try:
     pass  # TODO: Add proper exception handling
-except Exception as e:
+        except Exception as e:
     pass  # TODO: Add proper exception handling
             from src.training.steps.step4_analyst_labeling_feature_engineering_components.optimized_triple_barrier_labeling import (
                 OptimizedTripleBarrierLabeling
@@ -127,7 +127,7 @@ except Exception as e:
 
         try:
     pass  # TODO: Add proper exception handling
-except Exception as e:
+        except Exception as e:
     pass  # TODO: Add proper exception handling
             # Simple baseline features
             features = data.copy()
@@ -178,7 +178,7 @@ except Exception as e:
 
         try:
     pass  # TODO: Add proper exception handling
-except Exception as e:
+        except Exception as e:
     pass  # TODO: Add proper exception handling
             from sklearn.ensemble import RandomForestClassifier
             from sklearn.model_selection import train_test_split
@@ -240,7 +240,7 @@ except Exception as e:
         """
         try:
     pass  # TODO: Add proper exception handling
-except Exception as e:
+        except Exception as e:
     pass  # TODO: Add proper exception handling
             # Simple backtest simulation
             returns = data['close'].pct_change().dropna()
@@ -357,7 +357,7 @@ except Exception as e:
         self.logger.info(f"Baseline report exported to: {output_file}")
 
 
-def main():
+    def main():
     """Main function to run baseline performance analysis."""
     print("🔍 Establishing baseline performance metrics...")
 
@@ -385,5 +385,5 @@ def main():
     print("📁 Results saved to: data/fractional_performance/baseline/")
 
 
-if __name__ == "__main__":
+        if __name__ == "__main__":
     main()

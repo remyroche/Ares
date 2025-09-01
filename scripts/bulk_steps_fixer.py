@@ -26,7 +26,7 @@ def fix_line_assignments(line: str) -> str:
     )
 
     # typed var: name: Type, default -> name: Type = default (skip def lines)
-    if not line.lstrip().startswith("def "):
+            if not line.lstrip().startswith("def "):
         m = re.match(r"^(\s*)([A-Za-z_][\w\.]*)\s*:\s*(.+?)\s*,\s*(.+)$", line)
         if m and "=" not in line.split(":", 1)[1].split(",", 1)[0]:
             indent, var, vartype, value = m.groups()
@@ -34,7 +34,7 @@ def fix_line_assignments(line: str) -> str:
 
     # self.x, expr -> self.x = expr (skip control/def/class/import lines)
     stripped = line.lstrip()
-    if not re.match(r"^(return|for |if |elif |else:|while |with |def |class |from |import |async |await|raise|yield|try:|except|finally|@|#)", stripped):
+            if not re.match(r"^(return|for |if |elif |else:|while |with |def |class |from |import |async |await|raise|yield|try:|except|finally|@|#)", stripped):
         m2 = re.match(r"^(\s*)(self\.[A-Za-z_][\w]*)\s*,\s*(.+)$", line)
         if m2:
             indent, var, value = m2.groups()
@@ -58,22 +58,22 @@ def fix_line_assignments(line: str) -> str:
 
     # Remove trailing commas after assignments
     mtrail = re.match(r"^(\s*[^#\n=]+=[^#\n]+),\s*$", line)
-    if mtrail:
+            if mtrail:
         return mtrail.group(1)
 
-    return line
+            return line
 
 
-def fix_function_def_params(line: str) -> str:
+        def fix_function_def_params(line: str) -> str:
     """Within function definitions, replace ': T, default' to ': T = default'."""
-    if not line.lstrip().startswith("def "):
+            if not line.lstrip().startswith("def "):
         return line
 
     # Find parameter segment between first '(' and last ')'
-    try:
+            try:
         start = line.index('(')
         end = line.rindex(')')
-    except ValueError:
+            except ValueError:
         return line
 
     params = line[start + 1 : end]
@@ -82,54 +82,54 @@ def fix_function_def_params(line: str) -> str:
     prev = None
     current = params
     pattern = re.compile(r"(:\s*[^=,()]+)\s*,\s*([^,()\s]+)")
-    for _ in range(10):  # avoid infinite loops
+            for _ in range(10):  # avoid infinite loops
         new = pattern.sub(lambda m: f"{m.group(1)} = {m.group(2)}", current)
         if new == current:
             break
         current = new
 
-    if current == params:
+            if current == params:
         return line
-    return line[: start + 1] + current + line[end:]
+            return line[: start + 1] + current + line[end:]
 
 
-def process_file(path: Path) -> bool:
+        def process_file(path: Path) -> bool:
     text = path.read_text(encoding="utf-8")
     original = text
     lines = text.splitlines()
     fixed_lines = []
-    for line in lines:
+            for line in lines:
         line2 = fix_line_assignments(line)
         line3 = fix_function_def_params(line2)
         fixed_lines.append(line3)
 
     new_text = "\n".join(fixed_lines)
-    if new_text != original:
+            if new_text != original:
         path.write_text(new_text, encoding="utf-8")
         print(f"fixed {path}")
         return True
-    return False
+            return False
 
 
-def main() -> int:
-    if len(sys.argv) != 2:
+        def main() -> int:
+            if len(sys.argv) != 2:
         print("Usage: bulk_steps_fixer.py <target_dir>")
         return 1
     target = Path(sys.argv[1])
-    if not target.exists():
+            if not target.exists():
         print(f"Target not found: {target}")
         return 1
     total = 0
-    for p in target.rglob("*.py"):
+            for p in target.rglob("*.py"):
         try:
             if process_file(p):
                 total += 1
         except Exception as e:
             print(f"error fixing {p}: {e}")
     print(f"updated {total} files")
-    return 0
+            return 0
 
 
-if __name__ == "__main__":
+        if __name__ == "__main__":
     raise SystemExit(main())
 

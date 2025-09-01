@@ -160,7 +160,7 @@ class ProductionIntegrationTester:
 
         try:
     pass  # TODO: Add proper exception handling
-except Exception as e:
+        except Exception as e:
     pass  # TODO: Add proper exception handling
             from src.training.steps.combined_fractional_system import CombinedFractionalSystem, get_combined_fractional_config
 
@@ -202,7 +202,7 @@ except Exception as e:
             print(f"   ❌ Combined system failed: {e}")
             return {'success': False, 'error': str(e)}, None, None
 
-    def test_feature_selection_integration(self, features: pd.DataFrame, labels: pd.Series,
+    def test_feature_selection_integration(self, features: pd.DataFrame, labels: pd.Series,:
                                          hmm_regime: str = None) -> Dict[str, Any]:
         """Test feature selection integration.
 
@@ -218,7 +218,7 @@ except Exception as e:
 
         try:
     pass  # TODO: Add proper exception handling
-except Exception as e:
+        except Exception as e:
     pass  # TODO: Add proper exception handling
             from src.training.steps.fractional_feature_selector import FractionalFeatureSelector, get_fractional_feature_selector_config
 
@@ -259,7 +259,7 @@ except Exception as e:
             print(f"   ❌ Feature selection failed: {e}")
             return {'success': False, 'error': str(e)}, None
 
-    def test_monitoring_integration(self, features: pd.DataFrame, labels: pd.Series,
+    def test_monitoring_integration(self, features: pd.DataFrame, labels: pd.Series,:
                                   hmm_regime: str = None, processing_time: float = 0.0) -> Dict[str, Any]:
         """Test monitoring system integration.
 
@@ -276,7 +276,7 @@ except Exception as e:
 
         try:
     pass  # TODO: Add proper exception handling
-except Exception as e:
+        except Exception as e:
     pass  # TODO: Add proper exception handling
             from src.monitoring.fractional_system_monitor import FractionalSystemMonitor, get_fractional_system_monitor_config
 
@@ -340,7 +340,7 @@ except Exception as e:
 
         try:
     pass  # TODO: Add proper exception handling
-except Exception as e:
+        except Exception as e:
     pass  # TODO: Add proper exception handling
             # Step 1: Combined fractional system
             combined_results, features, labels = await self.test_combined_system_integration(
@@ -451,7 +451,7 @@ except Exception as e:
         """
         try:
     pass  # TODO: Add proper exception handling
-except Exception as e:
+        except Exception as e:
     pass  # TODO: Add proper exception handling
             successful_results = [r for r in all_results.values() if r.get('success', False)]
 

@@ -122,7 +122,7 @@ class FractionalDifferentiationIntegrationTester:
 
         try:
     pass  # TODO: Add proper exception handling
-except Exception as e:
+        except Exception as e:
     pass  # TODO: Add proper exception handling
             # Disable fractional differentiation for baseline test
             test_config = self.test_config.copy()
@@ -172,7 +172,7 @@ except Exception as e:
 
         try:
     pass  # TODO: Add proper exception handling
-except Exception as e:
+        except Exception as e:
     pass  # TODO: Add proper exception handling
             # Enable fractional differentiation
             test_config = self.test_config.copy()
@@ -230,7 +230,7 @@ except Exception as e:
 
         try:
     pass  # TODO: Add proper exception handling
-except Exception as e:
+        except Exception as e:
     pass  # TODO: Add proper exception handling
             from src.training.steps.fractional_differentiation import FractionalFeatureGenerator
 
@@ -335,7 +335,7 @@ except Exception as e:
 
         return comparison
 
-    def export_results(self, test_data: tuple, baseline_results: Dict[str, Any],
+    def export_results(self, test_data: tuple, baseline_results: Dict[str, Any],:
                       fractional_results: Dict[str, Any], standalone_results: Dict[str, Any],
                       comparison: Dict[str, Any]):
         """Export test results to files.

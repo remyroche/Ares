@@ -346,7 +346,7 @@ class SROptimizationRunner:
 
         try:
     pass  # TODO: Add proper exception handling
-except Exception as e:
+        except Exception as e:
     pass  # TODO: Add proper exception handling
             save_dir_path = Path(save_dir)
             save_dir_path.mkdir(parents=True, exist_ok=True)
@@ -577,7 +577,7 @@ except Exception as e:
         print("\n" + "=" * 80)
 
 
-async def main() -> int:
+        async def main() -> int:
     """Main function to run S/R parameter optimization."""
     parser = argparse.ArgumentParser(description="S/R Parameter Optimization")
     parser.add_argument("--symbol", default="ETHUSDT", help="Trading symbol")
@@ -618,9 +618,9 @@ async def main() -> int:
         },
     }
 
-    try:
+            try:
     pass  # TODO: Add proper exception handling
-except Exception as e:
+        except Exception as e:
     pass  # TODO: Add proper exception handling
         # Initialize runner
         runner = SROptimizationRunner(config)
@@ -656,13 +656,13 @@ except Exception as e:
 
         print("\n🎉 S/R Parameter Optimization completed successfully!")
 
-    except Exception as e:  # noqa: BLE001
+            except Exception as e:  # noqa: BLE001
         print(f"❌ Error during optimization: {e}")
         return 1
 
-    return 0
+            return 0
 
 
-if __name__ == "__main__":
+        if __name__ == "__main__":
     exit_code = asyncio.run(main())
     sys.exit(exit_code)

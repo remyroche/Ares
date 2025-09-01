@@ -183,7 +183,7 @@ def main():
     parser, argparse.ArgumentParser(
         description="Enhanced Training Runner for Large Datasets",
         formatter_class=argparse.RawDescriptionHelpFormatter, epilog = """
-Examples:
+        Examples:
   # Run training with 2 years of data
   python scripts/run_enhanced_training.py --symbol ETHUSDT --lookback 730
 

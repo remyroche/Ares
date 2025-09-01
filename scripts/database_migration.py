@@ -311,18 +311,18 @@ def print_usage() -> None:
     print("  python scripts/database_migration.py cleanup")
 
 
-async def main() -> None:
+        async def main() -> None:
     """Main function."""
     # Setup logging
     setup_logging()
 
-    if len(sys.argv) < 2:
+            if len(sys.argv) < 2:
         print_usage()
         sys.exit(1)
 
     command = sys.argv[1]
 
-    if command == "export":
+            if command == "export":
         db_path = sys.argv[2] if len(sys.argv) > 2 else "data/ares_local_db.sqlite"
         await export_database(db_path)
 
@@ -361,5 +361,5 @@ async def main() -> None:
         sys.exit(1)
 
 
-if __name__ == "__main__":
+        if __name__ == "__main__":
     asyncio.run(main())

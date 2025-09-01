@@ -83,10 +83,10 @@ def create_test_data() -> tuple[pd.DataFrame, pd.DataFrame]:
     print(f"   Price features: {list(price_data.columns)}")
     print(f"   Volume features: {list(volume_data.columns)}")
 
-    return price_data, volume_data
+            return price_data, volume_data
 
 
-async def test_critical_fixes() -> None:
+        async def test_critical_fixes() -> None:
     """Test the critical fixes in the main pipeline."""
     print("🧪 TESTING CRITICAL FIXES")
     print("=" * 60)
@@ -127,7 +127,7 @@ async def test_critical_fixes() -> None:
     orchestrator = VectorizedLabellingOrchestrator(config)
     success = await orchestrator.initialize()
 
-    if not success:
+            if not success:
         print("❌ Failed to initialize orchestrator")
         return
 
@@ -135,9 +135,9 @@ async def test_critical_fixes() -> None:
 
     # Test the pipeline
     print("\n🎯 Testing the complete pipeline...")
-    try:
+            try:
     pass  # TODO: Add proper exception handling
-except Exception as e:
+        except Exception as e:
     pass  # TODO: Add proper exception handling
         result = await orchestrator.orchestrate_labeling_and_feature_engineering(
             price_data=price_data,
@@ -222,12 +222,12 @@ except Exception as e:
         else:
             print("❌ No final data in result")
 
-    except Exception as e:  # noqa: BLE001
+            except Exception as e:  # noqa: BLE001
         print(f"❌ Pipeline test failed: {e}")
         traceback.print_exc()
 
 
-def main() -> None:
+        def main() -> None:
     """Main function to run the critical fixes test."""
     print("🧪 CRITICAL FIXES TEST")
     print("=" * 60)
@@ -244,5 +244,5 @@ def main() -> None:
     print("=" * 60)
 
 
-if __name__ == "__main__":
+        if __name__ == "__main__":
     main()

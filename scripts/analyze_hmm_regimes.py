@@ -29,7 +29,7 @@ class HMMRegimeAnalyzer:
     def __init__(self, data_dir: str = "data/training") -> None:
         self.data_dir = Path(data_dir)
 
-    def load_regime_data(self, exchange: str, symbol: str, timeframe: str, ) -> dict[str, Any]:
+    def load_regime_data(self, exchange: str, symbol: str, timeframe: str) -> dict[str, Any]:
         """Load all regime-related data files."""
         base_name = f"{exchange}_{symbol}_hmm"
 
@@ -61,7 +61,7 @@ class HMMRegimeAnalyzer:
 
         return {"meta": meta, "intensity": intensity_df, "clusters": cluster_df}
 
-    def generate_detailed_regime_summary(self, meta: dict[str, Any], cluster_df: pd.DataFrame | None, ) -> str:
+    def generate_detailed_regime_summary(self, meta: dict[str, Any], cluster_df: pd.DataFrame | None) -> str:
         """Generate a detailed regime summary in the requested format."""
         summary: list[str] = []
 
@@ -2099,7 +2099,7 @@ class HMMRegimeAnalyzer:
 
 
 
-def main():
+    def main():
     parser, argparse.ArgumentParser(description="Analyze HMM regime discovery results")
     parser.add_argument("--exchange", default="BINANCE", help="Exchange name")
     parser.add_argument("--symbol", default="ETHUSDT", help="Symbol name")
@@ -2119,5 +2119,5 @@ def main():
         args.timeframe, args.output_dir,
     )
 
-if __name__ == "__main__":
+        if __name__ == "__main__":
     main()

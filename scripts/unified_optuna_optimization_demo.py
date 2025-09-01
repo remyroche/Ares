@@ -174,7 +174,7 @@ class UnifiedOptunaDemo:
         self.logger.info(f"✅ Prepared {data_type} data: {len(X)} samples")
         return X, y
 
-    def optimize_ml_models(
+    def optimize_ml_models(:
         self, X: pd.DataFrame, y: pd.Series, n_trials: int = 50
     ) -> dict[str, Optional[dict[str, Any]]]:
         """
@@ -198,7 +198,7 @@ class UnifiedOptunaDemo:
         for model_type in models:
             try:
     pass  # TODO: Add proper exception handling
-except Exception as e:
+        except Exception as e:
     pass  # TODO: Add proper exception handling
                 self.logger.info(f"  Optimizing {model_type}...")
                 result = self.optimizer.optimize(
@@ -219,7 +219,7 @@ except Exception as e:
 
         return results
 
-    def optimize_sr_parameters(
+    def optimize_sr_parameters(:
         self, X: pd.DataFrame, y: pd.Series, n_trials: int = 100
     ) -> Optional[dict[str, Any]]:
         """
@@ -230,7 +230,7 @@ except Exception as e:
 
         try:
     pass  # TODO: Add proper exception handling
-except Exception as e:
+        except Exception as e:
     pass  # TODO: Add proper exception handling
             result = self.optimizer.optimize(
                 model_type="xgboost",
@@ -250,7 +250,7 @@ except Exception as e:
             self.logger.exception(f"❌ S/R optimization failed: {e}")
             return None
 
-    def optimize_autoencoder(
+    def optimize_autoencoder(:
         self, X: pd.DataFrame, y: pd.Series, n_trials: int = 75
     ) -> Optional[dict[str, Any]]:
         """
@@ -262,7 +262,7 @@ except Exception as e:
 
         try:
     pass  # TODO: Add proper exception handling
-except Exception as e:
+        except Exception as e:
     pass  # TODO: Add proper exception handling
             result = self.optimizer.optimize(
                 model_type="lightgbm",
@@ -282,7 +282,7 @@ except Exception as e:
             self.logger.exception(f"❌ Autoencoder optimization failed: {e}")
             return None
 
-    def optimize_order_execution(
+    def optimize_order_execution(:
         self, X: pd.DataFrame, y: pd.Series, n_trials: int = 50
     ) -> Optional[dict[str, Any]]:
         """
@@ -294,7 +294,7 @@ except Exception as e:
 
         try:
     pass  # TODO: Add proper exception handling
-except Exception as e:
+        except Exception as e:
     pass  # TODO: Add proper exception handling
             result = self.optimizer.optimize(
                 model_type="random_forest",
@@ -314,7 +314,7 @@ except Exception as e:
             self.logger.exception(f"❌ Order execution optimization failed: {e}")
             return None
 
-    def custom_optimization_example(
+    def custom_optimization_example(:
         self, X: pd.DataFrame, y: pd.Series, n_trials: int = 50
     ) -> Optional[dict[str, Any]]:
         """
@@ -323,7 +323,7 @@ except Exception as e:
         """
         self.logger.info("🔧 Running custom optimization example...")
 
-        def custom_objective(trial: optuna.Trial, X_df: pd.DataFrame, y_sr: pd.Series) -> float:
+    def custom_objective(trial: optuna.Trial, X_df: pd.DataFrame, y_sr: pd.Series) -> float:
             """Custom objective function for demonstration."""
             # Define custom hyperparameter space
             learning_rate = trial.suggest_float("learning_rate", 0.01, 0.3, log=True)
@@ -343,7 +343,7 @@ except Exception as e:
 
         try:
     pass  # TODO: Add proper exception handling
-except Exception as e:
+        except Exception as e:
     pass  # TODO: Add proper exception handling
             # Use manager's study infra with the custom objective by mapping to a supported model
             # We directly run an Optuna study here to showcase custom objective
@@ -357,7 +357,7 @@ except Exception as e:
                 load_if_exists=True,
             )
 
-            def _objective(trial: optuna.Trial) -> float:
+    def _objective(trial: optuna.Trial) -> float:
                 return custom_objective(trial, X, y)
 
             study.optimize(_objective, n_trials=n_trials, n_jobs=1)
@@ -426,13 +426,13 @@ except Exception as e:
 
         print("\n" + "=" * 80)
 
-    def create_visualizations(
+    def create_visualizations(:
         self, results: dict[str, Optional[dict[str, Any]]], save_dir: str = "optimization_results"
     ) -> None:
         """Create visualizations for optimization results."""
         try:
     pass  # TODO: Add proper exception handling
-except Exception as e:
+        except Exception as e:
     pass  # TODO: Add proper exception handling
             os.makedirs(save_dir, exist_ok=True)
             plots_created = 0
@@ -443,7 +443,7 @@ except Exception as e:
 
                 try:
     pass  # TODO: Add proper exception handling
-except Exception as e:
+        except Exception as e:
     pass  # TODO: Add proper exception handling
                     # Load study for visualization
                     study = optuna.load_study(
@@ -533,7 +533,7 @@ except Exception as e:
         return results
 
 
-async def main() -> int:
+        async def main() -> int:
     """Main function to run the unified optimization demo."""
     parser = argparse.ArgumentParser(description="Unified Optuna Optimization Demo")
     parser.add_argument(
@@ -563,9 +563,9 @@ async def main() -> int:
 
     args = parser.parse_args()
 
-    try:
+            try:
     pass  # TODO: Add proper exception handling
-except Exception as e:
+        except Exception as e:
     pass  # TODO: Add proper exception handling
         # Initialize demo
         demo = UnifiedOptunaDemo()
@@ -593,11 +593,11 @@ except Exception as e:
             )
             print(f"🏆 Best value: {best_result.get('best_value', float('nan')):.4f}")
         return 0
-    except Exception as e:
+            except Exception as e:
         print(f"❌ Error during demo: {e}")
         return 1
 
 
-if __name__ == "__main__":
+        if __name__ == "__main__":
     exit_code = asyncio.run(main())
     sys.exit(exit_code)

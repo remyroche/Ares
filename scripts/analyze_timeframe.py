@@ -38,14 +38,14 @@ def terminal_log(message: str, level: str = "INFO"):
     """Log to both terminal and logger"""
     timestamp = datetime.now().strftime("%H:%M:%S")
     print(f"[{timestamp}] {level}: {message}", flush=True)
-    if level == "INFO":
+            if level == "INFO":
         logger.info(message)
     elif level == "ERROR":
         logger.error(message)
     elif level == "WARNING":
         logger.warning(message)
 
-class PriceActionAnalyzer:
+        class PriceActionAnalyzer:
     """
     Analyzes historical aggtrades data to determine optimal timeframes and SL/TP levels.
     """
@@ -122,7 +122,7 @@ class PriceActionAnalyzer:
         for file_path in aggtrades_files:
             try:
     pass  # TODO: Add proper exception handling
-except Exception as e:
+        except Exception as e:
     pass  # TODO: Add proper exception handling
                 processed_files += 1
                 terminal_log(f"📄 Loading {os.path.basename(file_path)}...", "INFO")
@@ -458,7 +458,7 @@ except Exception as e:
 
             try:
     pass  # TODO: Add proper exception handling
-except Exception as e:
+        except Exception as e:
     pass  # TODO: Add proper exception handling
                 result = self.analyze_price_movement(df, target_pct, stop_pct)
 
@@ -717,7 +717,7 @@ except Exception as e:
                 )
         print("=" * 80)
 
-def main():
+    def main():
     """Main function to run the price action analysis."""
     parser = argparse.ArgumentParser(
         description="Analyze price action timeframes for optimal SL/TP levels",
@@ -753,9 +753,9 @@ def main():
     terminal_log(f"🕐 Started: {start_time.strftime('%Y-%m-%d %H:%M:%S')}", "INFO")
     terminal_log("=" * 60, "INFO")
 
-    try:
+            try:
     pass  # TODO: Add proper exception handling
-except Exception as e:
+        except Exception as e:
     pass  # TODO: Add proper exception handling
         # Initialize analyzer
         analyzer = PriceActionAnalyzer(args.symbol, args.timeframe)
@@ -833,13 +833,13 @@ except Exception as e:
         )
         terminal_log("=" * 60, "INFO")
 
-    except Exception as e:
+            except Exception as e:
         terminal_log(f"❌ Analysis failed: {e}", "ERROR")
         terminal_log(f"📋 Traceback: {traceback.format_exc()}", "ERROR")
         return 1
 
-    return 0
+            return 0
 
-if __name__ == "__main__":
+        if __name__ == "__main__":
     exit_code = main()
     sys.exit(exit_code)

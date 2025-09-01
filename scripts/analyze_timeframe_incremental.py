@@ -45,7 +45,7 @@ def terminal_log(message: str, level: str = "INFO") -> None:
     """Log to both terminal and logger"""
     timestamp = datetime.now().strftime("%H:%M:%S")
     print(f"[{timestamp}] {level}: {message}", flush=True)
-    if level == "INFO":
+            if level == "INFO":
         logger.info(message)
     elif level == "ERROR":
         logger.error(message)
@@ -53,7 +53,7 @@ def terminal_log(message: str, level: str = "INFO") -> None:
         logger.warning(message)
 
 
-class PriceActionAnalyzer:
+        class PriceActionAnalyzer:
     """
     Analyzes historical aggtrades data to determine optimal timeframes and SL/TP levels.
     Uses incremental processing to handle large datasets.
@@ -147,7 +147,7 @@ class PriceActionAnalyzer:
         for file_path in aggtrades_files:
             try:
     pass  # TODO: Add proper exception handling
-except Exception as e:
+        except Exception as e:
     pass  # TODO: Add proper exception handling
                 processed_files += 1
                 terminal_log(f"📄 Loading {os.path.basename(file_path)}...", "INFO")
@@ -293,19 +293,7 @@ except Exception as e:
         # Remove rows with NaN values (incomplete candles)
         return resampled.dropna()
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return={
-            "total_events": 0,
-            "successful_events": 0,
-            "success_rate": 0.0,
-            "avg_duration": 0.0,
-            "long_events": 0,
-            "short_events": 0,
-            "events": [],
-        },
-        context="analyze_price_movement",
-    )
+        @handle_errors( exceptions=(Exception,), default_return={ "total_events": 0, "successful_events": 0, "success_rate": 0.0, "avg_duration": 0.0, "long_events": 0, "short_events": 0, "events": [], }, context="analyze_price_movement")
     def analyze_price_movement(self, df: pd.DataFrame, target_pct: float, stop_pct: float) -> dict:
         """
         Analyze price movements to find successful trades.
@@ -502,11 +490,7 @@ except Exception as e:
             return 10 + (total_events - 10) / 2.25  # 10-49 points
         return total_events  # 0-9 points
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=(pd.DataFrame(), pd.DataFrame()),
-        context="run_comprehensive_analysis",
-    )
+        @handle_errors( exceptions=(Exception,), default_return=(pd.DataFrame(), pd.DataFrame()), context="run_comprehensive_analysis")
     def run_comprehensive_analysis(self, df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
         """
         Run comprehensive analysis on all valid combinations.
@@ -660,7 +644,7 @@ except Exception as e:
         }
 
     @handle_errors(exceptions=(Exception,), default_return=None, context="save_results")
-    def save_results(
+    def save_results(:
         self,
         display_df: pd.DataFrame,
         score_df: pd.DataFrame,
@@ -727,7 +711,7 @@ except Exception as e:
         terminal_log(f"💾 Summary report saved to: {summary_filename}", "INFO")
 
     @handle_errors(exceptions=(Exception,), default_return=None, context="print_summary")
-    def print_summary(
+    def print_summary(:
         self,
         display_df: pd.DataFrame,
         optimal_params: dict,
@@ -785,7 +769,7 @@ except Exception as e:
         terminal_log("=" * 60, "INFO")
 
 
-def main() -> int:
+    def main() -> int:
     """Main function to run the price action analysis."""
     parser = argparse.ArgumentParser(
         description="Analyze price action timeframes for optimal SL/TP levels (Incremental Version)",
@@ -828,9 +812,9 @@ def main() -> int:
     terminal_log(f"🕐 Started: {start_time.strftime('%Y-%m-%d %H:%M:%S')}", "INFO")
     terminal_log("=" * 60, "INFO")
 
-    try:
+            try:
     pass  # TODO: Add proper exception handling
-except Exception as e:
+        except Exception as e:
     pass  # TODO: Add proper exception handling
         # Initialize analyzer
         analyzer = PriceActionAnalyzer(args.symbol, args.timeframe)
@@ -902,14 +886,14 @@ except Exception as e:
         )
         terminal_log("=" * 60, "INFO")
 
-    except Exception as e:
+            except Exception as e:
         terminal_log(f"❌ Analysis failed: {e}", "ERROR")
         terminal_log(f"📋 Traceback: {traceback.format_exc()}", "ERROR")
         return 1
 
-    return 0
+            return 0
 
 
-if __name__ == "__main__":
+        if __name__ == "__main__":
     exit_code = main()
     sys.exit(exit_code)

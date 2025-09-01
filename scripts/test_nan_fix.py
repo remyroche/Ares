@@ -30,19 +30,19 @@ def _safe_numeric(value: Any) -> float:
 	Returns:
 		float: Safe numeric value
 	"""
-	try:
+        	try:
     pass  # TODO: Add proper exception handling
-except Exception as e:
+        except Exception as e:
     pass  # TODO: Add proper exception handling
 		arr = float(value)
-		if np.isnan(arr) or np.isinf(arr):
-			return 0.0
-		return arr
-	except Exception:
-		return 0.0
+        		if np.isnan(arr) or np.isinf(arr):
+            			return 0.0
+            		return arr
+        	except Exception:
+            		return 0.0
 
 
-def _clean_series(series: pd.Series) -> pd.Series:
+        def _clean_series(series: pd.Series) -> pd.Series:
 	"""Clean a pandas Series by replacing NaN/Inf appropriately.
 
 	Args:
@@ -55,13 +55,13 @@ def _clean_series(series: pd.Series) -> pd.Series:
 	# Replace infinities first to avoid propagation
 	cleaned = cleaned.replace([np.inf, -np.inf], np.nan)
 	# For numeric dtypes fill with 0
-	if pd.api.types.is_numeric_dtype(cleaned):
-		return cleaned.fillna(0)
+        	if pd.api.types.is_numeric_dtype(cleaned):
+            		return cleaned.fillna(0)
 	# For non-numeric, forward/backward fill then empty with empty string
-	return cleaned.fillna(method="ffill").fillna(method="bfill").fillna("")
+            	return cleaned.fillna(method="ffill").fillna(method="bfill").fillna("")
 
 
-def _clean_array(array_like: Any) -> np.ndarray:
+        def _clean_array(array_like: Any) -> np.ndarray:
 	"""Clean numpy array-like replacing NaN/Inf with 0.0.
 
 	Args:
@@ -71,10 +71,10 @@ def _clean_array(array_like: Any) -> np.ndarray:
 		np.ndarray: Cleaned array
 	"""
 	arr = np.asarray(array_like, dtype=np.float64)
-	return np.nan_to_num(arr, nan=0.0, posinf=0.0, neginf=0.0)
+            	return np.nan_to_num(arr, nan=0.0, posinf=0.0, neginf=0.0)
 
 
-def _handle_nan_values_comprehensive(features: Dict[str, Any]) -> Tuple[Dict[str, Any], int, int]:
+        def _handle_nan_values_comprehensive(features: Dict[str, Any]) -> Tuple[Dict[str, Any], int, int]:
 	"""Comprehensive NaN handling for all feature types.
 
 	Args:
@@ -87,11 +87,11 @@ def _handle_nan_values_comprehensive(features: Dict[str, Any]) -> Tuple[Dict[str
 	nan_count = 0
 	inf_count = 0
 
-	for feature_name, feature_value in features.items():
+        	for feature_name, feature_value in features.items():
 		# Scalars
-		if isinstance(feature_value, (int, float, np.integer, np.floating)):
+        		if isinstance(feature_value, (int, float, np.integer, np.floating)):
 			value = float(feature_value)
-			if np.isnan(value):
+        			if np.isnan(value):
 				nan_count += 1
 			elif np.isinf(value):
 				inf_count += 1
@@ -116,45 +116,36 @@ def _handle_nan_values_comprehensive(features: Dict[str, Any]) -> Tuple[Dict[str
 		else:
 			cleaned_features[feature_name] = 0.0
 
-	return cleaned_features, nan_count, inf_count
+            	return cleaned_features, nan_count, inf_count
 
 
-@handle_nan_issues
-def _align_time_series(series: np.ndarray, target_length: int) -> np.ndarray:
-	"""Align time series to target length with proper handling of NaN/Inf values.
-
-	- Cleans values
-	- Truncates if longer than target_length
-	- Pads with zeros if shorter than target_length
-	"""
-	if not isinstance(series, np.ndarray):
-		series = np.asarray(series, dtype=np.float64)
+        @handle_nan_issues def _align_time_series(series: np.ndarray, target_length: int) -> np.ndarray: """Align time series to target length with proper handling of NaN/Inf values.  - Cleans values - Truncates if longer than target_length - Pads with zeros if shorter than target_length """ if not isinstance(series, np.ndarray): series = np.asarray(series, dtype=np.float64)
 
 	# Clean first
 	series = np.nan_to_num(series, nan=0.0, posinf=0.0, neginf=0.0)
 
-	if target_length <= 0:
-		return np.zeros(0, dtype=np.float64)
+        	if target_length <= 0:
+            		return np.zeros(0, dtype=np.float64)
 
-	if len(series) == target_length:
-		return series.astype(np.float64, copy=False)
+        	if len(series) == target_length:
+            		return series.astype(np.float64, copy=False)
 
-	if len(series) > target_length:
-		return series[:target_length].astype(np.float64, copy=False)
+        	if len(series) > target_length:
+            		return series[:target_length].astype(np.float64, copy=False)
 
 	# Pad
 	padding = np.zeros(target_length - len(series), dtype=np.float64)
-	return np.concatenate([series, padding])
+            	return np.concatenate([series, padding])
 
 
-def test_nan_handling() -> bool:
+        def test_nan_handling() -> bool:
 	"""Test that NaN values are properly handled."""
 	setup_logging()
 	logger = system_logger.getChild("TestNaNHandling")
 
-	try:
+        	try:
     pass  # TODO: Add proper exception handling
-except Exception as e:
+        except Exception as e:
     pass  # TODO: Add proper exception handling
 		# Create sample data with NaN and Inf values
 		np.random.seed(42)
@@ -255,7 +246,7 @@ except Exception as e:
 		)
 
 		print("\n" + "=" * 60)
-		if nan_fixed and alignment_fixed:
+        		if nan_fixed and alignment_fixed:
 			print("✅ NaN FIX SUCCESSFUL!")
 			print("   - NaN values properly cleaned")
 			print("   - Inf values properly cleaned")
@@ -267,13 +258,13 @@ except Exception as e:
 			print("   - Time series alignment issues")
 
 		print("=" * 60)
-		return bool(nan_fixed and alignment_fixed)
-	except Exception as e:  # noqa: BLE001
+            		return bool(nan_fixed and alignment_fixed)
+        	except Exception as e:  # noqa: BLE001
 		logger = system_logger.getChild("TestNaNHandling")
 		logger.exception(f"Error testing NaN handling: {e}")
-		return False
+            		return False
 
 
-if __name__ == "__main__":
+        if __name__ == "__main__":
 	success = test_nan_handling()
 	sys.exit(0 if success else 1)

@@ -37,10 +37,10 @@ def create_mock_baseline_metrics() -> Dict[str, Any]:
         }
     }
 
-    return baseline_metrics
+            return baseline_metrics
 
 
-def create_mock_performance_tracker():
+        def create_mock_performance_tracker():
     """Create mock performance tracking files."""
 
     # Create output directory
@@ -59,7 +59,7 @@ def create_mock_performance_tracker():
         'last_updated': datetime.now().isoformat()
     }
 
-    with open(metrics_file, 'w') as f:
+            with open(metrics_file, 'w') as f:
         json.dump(metrics_data, f, indent=2)
 
     # Create mock baseline report
@@ -83,13 +83,13 @@ def create_mock_performance_tracker():
         }
     }
 
-    with open(report_file, 'w') as f:
+            with open(report_file, 'w') as f:
         json.dump(report_data, f, indent=2)
 
-    return baseline_metrics
+            return baseline_metrics
 
 
-def create_mock_dashboard():
+        def create_mock_dashboard():
     """Create mock performance dashboard."""
 
     output_dir = Path("data/fractional_performance/baseline")
@@ -153,11 +153,11 @@ def create_mock_dashboard():
     """
 
     dashboard_file = output_dir / "performance_dashboard.html"
-    with open(dashboard_file, 'w') as f:
+            with open(dashboard_file, 'w') as f:
         f.write(dashboard_content)
 
 
-def main():
+        def main():
     """Main function to create mock baseline analysis."""
     print("🔍 Creating mock baseline performance metrics...")
 
@@ -190,5 +190,5 @@ def main():
     print("  3. Compare performance improvements")
 
 
-if __name__ == "__main__":
+        if __name__ == "__main__":
     main()

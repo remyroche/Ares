@@ -1,0 +1,6 @@
+
+Scripts Syntax Fix Report
+========================
+Files processed: 75
+Files fixed: 71
+Total fixes applied: 2556

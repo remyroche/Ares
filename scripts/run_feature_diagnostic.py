@@ -146,7 +146,7 @@ class FeatureDiagnosticRunner:
             "dtypes": data.dtypes.value_counts().to_dict(),
         }
 
-    def _analyze_block(
+    def _analyze_block(:
         self,
         data: pd.DataFrame,
         features: list[str],
@@ -202,7 +202,7 @@ class FeatureDiagnosticRunner:
             "variances": variances.to_dict(),
         }
 
-    def _analyze_correlations(
+    def _analyze_correlations(:
         self,
         data: pd.DataFrame,
         feature_blocks: dict[str, list[str]],
@@ -246,7 +246,7 @@ class FeatureDiagnosticRunner:
             "max_correlation": max_corr,
         }
 
-    def _analyze_variance_issues(
+    def _analyze_variance_issues(:
         self,
         data: pd.DataFrame,
         feature_blocks: dict[str, list[str]],
@@ -500,13 +500,13 @@ class FeatureDiagnosticRunner:
         return "\n".join(report)
 
 
-def main() -> None:
+    def main() -> None:
     """Main diagnostic function."""
     runner = FeatureDiagnosticRunner()
 
-    try:
+            try:
     pass  # TODO: Add proper exception handling
-except Exception as e:
+        except Exception as e:
     pass  # TODO: Add proper exception handling
         # Try to find feature data
         possible_paths = [
@@ -729,10 +729,10 @@ except Exception as e:
             f.write(report)
         print("📄 Report saved to: feature_diagnostic_report.txt")
 
-    except Exception as e:  # noqa: BLE001
+            except Exception as e:  # noqa: BLE001
         print(f"❌ Error during diagnostic: {e}")
         traceback.print_exc()
 
 
-if __name__ == "__main__":
+        if __name__ == "__main__":
     main()

@@ -11,15 +11,15 @@ from src.utils.warning_symbols import missing, warning
 
 
 def _safe_read_json(path: Path) -> Dict[str, Any] | None:
-    try:
+            try:
         with open(path, "r", encoding="utf-8") as f:
             return json.load(f)
-    except Exception as e:  # noqa: BLE001
+            except Exception as e:  # noqa: BLE001
         print(warning(f"Error reading JSON {path}: {e}"))
         return None
 
 
-def check_notifications() -> None:
+        def check_notifications() -> None:
     """Check for bot notifications and display them"""
     project_root = Path(__file__).parent.parent
     notification_file = project_root / "state/ai_notification.json"
@@ -28,7 +28,7 @@ def check_notifications() -> None:
     print("🔍 Checking for ARES Bot notifications...")
 
     # Check if notification file exists
-    if notification_file.exists():
+            if notification_file.exists():
         notification = _safe_read_json(notification_file) or {}
 
         print("\n🚨 NOTIFICATION RECEIVED:")
@@ -56,7 +56,7 @@ def check_notifications() -> None:
         print("✅ No new notifications")
 
     # Check current bot status
-    if status_file.exists():
+            if status_file.exists():
         status = _safe_read_json(status_file) or {}
 
         print("\n📊 Current Bot Status:")
@@ -72,21 +72,21 @@ def check_notifications() -> None:
         print("ℹ️  Status file not found")
 
 
-def check_logs_for_errors() -> None:
+        def check_logs_for_errors() -> None:
     """Check recent log files for errors"""
     project_root = Path(__file__).parent.parent
     log_dir = project_root / "logs"
 
-    if not log_dir.exists():
+            if not log_dir.exists():
         print(missing("Logs directory not found"))
         return
 
     print("\n📋 Checking recent logs for errors...")
 
-    for log_file in log_dir.glob("*.log"):
+            for log_file in log_dir.glob("*.log"):
         try:
     pass  # TODO: Add proper exception handling
-except Exception as e:
+        except Exception as e:
     pass  # TODO: Add proper exception handling
             with open(log_file, "r", encoding="utf-8") as f:
                 lines = f.readlines()
@@ -114,6 +114,6 @@ except Exception as e:
             print(warning(f"Error reading {log_file}: {e}"))
 
 
-if __name__ == "__main__":
+        if __name__ == "__main__":
     check_notifications()
     check_logs_for_errors()

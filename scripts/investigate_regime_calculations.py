@@ -288,75 +288,75 @@ class RegimeCalculationInvestigator:
         return {
             "trend_regime": (
                 '''
-import numpy as np
-import pandas as pd
+        import numpy as np
+        import pandas as pd
 
-def calculate_trend_regime_fixed(price_data: pd.DataFrame) -> pd.Series:
+    def calculate_trend_regime_fixed(price_data: pd.DataFrame) -> pd.Series:
     """Calculate trend regime with improved logic."""
     close = pd.to_numeric(price_data["close"], errors="coerce")
     sma_short = close.rolling(window=10, min_periods=10).mean()
     sma_long = close.rolling(window=30, min_periods=30).mean()
     trend_strength = (sma_short - sma_long).fillna(0)
 
-    if trend_strength.isna().all() or float(trend_strength.std()) == 0.0:
+            if trend_strength.isna().all() or float(trend_strength.std()) == 0.0:
         return pd.Series(np.zeros(len(close), dtype=int), index=price_data.index)
 
-    try:
+            try:
         trend_bins = pd.qcut(trend_strength, q=5, labels=False, duplicates="drop")
         if int(pd.Series(trend_bins).nunique()) < 3:
             trend_bins = pd.cut(trend_strength, bins=5, labels=False, include_lowest=True)
-    except Exception:
+            except Exception:
         trend_bins = pd.cut(trend_strength, bins=5, labels=False, include_lowest=True)
 
-    return pd.Series(pd.to_numeric(trend_bins, errors="coerce").fillna(0).astype(int), index=price_data.index)
+            return pd.Series(pd.to_numeric(trend_bins, errors="coerce").fillna(0).astype(int), index=price_data.index)
                 '''
             ).strip(),
             "volatility_regime": (
                 '''
-import numpy as np
-import pandas as pd
+        import numpy as np
+        import pandas as pd
 
-def calculate_volatility_regime_fixed(price_data: pd.DataFrame) -> pd.Series:
+    def calculate_volatility_regime_fixed(price_data: pd.DataFrame) -> pd.Series:
     """Calculate volatility regime with improved logic."""
     close = pd.to_numeric(price_data["close"], errors="coerce")
     vol = close.pct_change().rolling(window=20, min_periods=20).std().fillna(0)
 
-    if vol.isna().all() or float(vol.std()) == 0.0:
+            if vol.isna().all() or float(vol.std()) == 0.0:
         return pd.Series(np.zeros(len(close), dtype=int), index=price_data.index)
 
-    try:
+            try:
         vol_bins = pd.qcut(vol, q=5, labels=False, duplicates="drop")
         if int(pd.Series(vol_bins).nunique()) < 3:
             vol_bins = pd.cut(vol, bins=5, labels=False, include_lowest=True)
-    except Exception:
+            except Exception:
         vol_bins = pd.cut(vol, bins=5, labels=False, include_lowest=True)
 
-    return pd.Series(pd.to_numeric(vol_bins, errors="coerce").fillna(0).astype(int), index=price_data.index)
+            return pd.Series(pd.to_numeric(vol_bins, errors="coerce").fillna(0).astype(int), index=price_data.index)
                 '''
             ).strip(),
             "volume_regime": (
                 '''
-import numpy as np
-import pandas as pd
+        import numpy as np
+        import pandas as pd
 
-def calculate_volume_regime_fixed(volume_data: pd.DataFrame) -> pd.Series:
+    def calculate_volume_regime_fixed(volume_data: pd.DataFrame) -> pd.Series:
     """Calculate volume regime with improved logic."""
     volume = pd.to_numeric(volume_data["volume"], errors="coerce")
     vol_ma = volume.rolling(window=20, min_periods=20).mean()
-    with np.errstate(divide="ignore", invalid="ignore"):
+            with np.errstate(divide="ignore", invalid="ignore"):
         volume_ratio = (volume / vol_ma.replace(0, np.nan)).fillna(0)
 
-    if volume_ratio.isna().all() or float(volume_ratio.std()) == 0.0:
+            if volume_ratio.isna().all() or float(volume_ratio.std()) == 0.0:
         return pd.Series(np.zeros(len(volume), dtype=int), index=volume_data.index)
 
-    try:
+            try:
         volreg_bins = pd.qcut(volume_ratio, q=5, labels=False, duplicates="drop")
         if int(pd.Series(volreg_bins).nunique()) < 3:
             volreg_bins = pd.cut(volume_ratio, bins=5, labels=False, include_lowest=True)
-    except Exception:
+            except Exception:
         volreg_bins = pd.cut(volume_ratio, bins=5, labels=False, include_lowest=True)
 
-    return pd.Series(pd.to_numeric(volreg_bins, errors="coerce").fillna(0).astype(int), index=volume_data.index)
+            return pd.Series(pd.to_numeric(volreg_bins, errors="coerce").fillna(0).astype(int), index=volume_data.index)
                 '''
             ).strip(),
         }
@@ -428,14 +428,14 @@ def calculate_volume_regime_fixed(volume_data: pd.DataFrame) -> pd.Series:
         return "\n".join(report)
 
 
-@handle_errors(default_return=None, context="investigate_regime_main")
-def main() -> None:
+        @handle_errors(default_return=None, context="investigate_regime_main")
+    def main() -> None:
     """Main investigation function."""
     investigator = RegimeCalculationInvestigator()
 
-    try:
+            try:
     pass  # TODO: Add proper exception handling
-except Exception as e:
+        except Exception as e:
     pass  # TODO: Add proper exception handling
         # Try to find feature data
         possible_paths = [
@@ -498,10 +498,10 @@ except Exception as e:
             f.write(report)
         print("Report saved to: regime_calculation_investigation_report.txt")
 
-    except Exception as e:  # noqa: BLE001 - surface full error context for debugging script
+            except Exception as e:  # noqa: BLE001 - surface full error context for debugging script
         print(f"Error during investigation: {e}")
         traceback.print_exc()
 
 
-if __name__ == "__main__":
+        if __name__ == "__main__":
     main()

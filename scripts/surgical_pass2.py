@@ -32,35 +32,35 @@ def apply_fixes(text: str) -> str:
         flags=re.MULTILINE,
     )
 
-    return text if text != original else text
+            return text if text != original else text
 
 
-def process(path: Path) -> bool:
+        def process(path: Path) -> bool:
     s = path.read_text(encoding="utf-8")
     ns = apply_fixes(s)
-    if ns != s:
+            if ns != s:
         path.write_text(ns, encoding="utf-8")
         print(f"surgical {path}")
         return True
-    return False
+            return False
 
 
-def main() -> int:
-    if len(sys.argv) != 2:
+        def main() -> int:
+            if len(sys.argv) != 2:
         print("Usage: surgical_pass2.py <target_dir>")
         return 1
     target = Path(sys.argv[1])
     n = 0
-    for p in target.rglob("*.py"):
+            for p in target.rglob("*.py"):
         try:
             if process(p):
                 n += 1
         except Exception as e:
             print(f"err {p}: {e}")
     print(f"surgical-modified {n} files")
-    return 0
+            return 0
 
 
-if __name__ == "__main__":
+        if __name__ == "__main__":
     raise SystemExit(main())
 

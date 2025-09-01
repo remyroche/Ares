@@ -40,27 +40,27 @@ def setup_challenger_model(run_id: str) -> bool:
 	setup_logging()
 	logger = system_logger.getChild("SetupChallengerModel")
 
-	try:
+        	try:
     pass  # TODO: Add proper exception handling
-except Exception as e:
+        except Exception as e:
     pass  # TODO: Add proper exception handling
 		# Initialize state manager (with default config)
 		state_manager = StateManager({})
 
 		# Verify the run ID exists in MLflow
-		if mlflow is None:
+        		if mlflow is None:
 			print(error("MLflow is not installed or not available"))
-			return False
+            			return False
 
 		client = mlflow.tracking.MlflowClient()
-		try:
+        		try:
     pass  # TODO: Add proper exception handling
-except Exception as e:
+        except Exception as e:
     pass  # TODO: Add proper exception handling
 			run = client.get_run(run_id)
-		except Exception as e:  # noqa: BLE001
+        		except Exception as e:  # noqa: BLE001
 			print(error(f"Could not find MLflow run {run_id}: {e}"))
-			return False
+            			return False
 
 		logger.info(f"Found MLflow run: {run_id}")
 		logger.info(f"Run name: {run.data.tags.get('mlflow.runName', 'N/A')}")
@@ -70,24 +70,24 @@ except Exception as e:
 		state_manager.set_state("challenger_model_run_id", run_id)
 		logger.info(f"✅ Challenger model run ID set to: {run_id}")
 
-		return True
-	except Exception as e:  # noqa: BLE001
+            		return True
+        	except Exception as e:  # noqa: BLE001
 		print(error(f"Error setting up challenger model: {e}"))
-		return False
+            		return False
 
 
-def list_available_models() -> bool:
+        def list_available_models() -> bool:
 	"""List available models from MLflow."""
 	setup_logging()
 	logger = system_logger.getChild("ListModels")
 
-	try:
+        	try:
     pass  # TODO: Add proper exception handling
-except Exception as e:
+        except Exception as e:
     pass  # TODO: Add proper exception handling
-		if mlflow is None:
+        		if mlflow is None:
 			print(error("MLflow is not installed or not available"))
-			return False
+            			return False
 
 		client = mlflow.tracking.MlflowClient()
 
@@ -96,9 +96,9 @@ except Exception as e:
 
 		# Find the experiment
 		experiment = client.get_experiment_by_name(experiment_name)
-		if not experiment:
+        		if not experiment:
 			print(missing(f"Experiment '{experiment_name}' not found"))
-			return False
+            			return False
 
 		# Search for runs
 		runs = client.search_runs(
@@ -110,7 +110,7 @@ except Exception as e:
 		logger.info(f"Available models in experiment '{experiment_name}':")
 		logger.info("=" * 80)
 
-		for run in runs:
+        		for run in runs:
 			run_id = run.info.run_id
 			run_name = run.data.tags.get("mlflow.runName", "N/A")
 			status = run.data.tags.get("model_status", run.info.status)
@@ -124,20 +124,20 @@ except Exception as e:
 			logger.info(f"Timestamp: {timestamp}")
 			logger.info("-" * 40)
 
-		return True
-	except Exception as e:  # noqa: BLE001
+            		return True
+        	except Exception as e:  # noqa: BLE001
 		print(error(f"Error listing models: {e}"))
-		return False
+            		return False
 
 
-def clear_challenger_model() -> bool:
+        def clear_challenger_model() -> bool:
 	"""Clear the challenger model run ID."""
 	setup_logging()
 	logger = system_logger.getChild("ClearChallengerModel")
 
-	try:
+        	try:
     pass  # TODO: Add proper exception handling
-except Exception as e:
+        except Exception as e:
     pass  # TODO: Add proper exception handling
 		# Initialize state manager
 		state_manager = StateManager({})
@@ -146,19 +146,19 @@ except Exception as e:
 		state_manager.set_state("challenger_model_run_id", None)
 		logger.info("✅ Challenger model run ID cleared")
 
-		return True
-	except Exception as e:  # noqa: BLE001
+            		return True
+        	except Exception as e:  # noqa: BLE001
 		print(error(f"Error clearing challenger model: {e}"))
-		return False
+            		return False
 
 
-def build_parser() -> argparse.ArgumentParser:
+        def build_parser() -> argparse.ArgumentParser:
 	"""Create and configure the argparse parser."""
 	parser = argparse.ArgumentParser(
 		description="Setup Challenger Model Utility",
 		formatter_class=argparse.RawDescriptionHelpFormatter,
 		epilog="""
-Examples:
+        Examples:
   # Set up a challenger model
   python scripts/setup_challenger_model.py --run-id abc123def456
 
@@ -180,7 +180,7 @@ Examples:
 		action="store_true",
 		help="Clear the challenger model run ID",
 	)
-	return parser
+    	return parser
 
 
 def main() -> None:
@@ -189,7 +189,7 @@ def main() -> None:
 	args = parser.parse_args()
 
 	success: Optional[bool] = None
-	if args.list_models:
+        	if args.list_models:
 		success = list_available_models()
 	elif args.clear:
 		success = clear_challenger_model()
@@ -199,9 +199,9 @@ def main() -> None:
 		parser.print_help()
 		sys.exit(1)
 
-	if not success:
+        	if not success:
 		sys.exit(1)
 
 
-if __name__ == "__main__":
+        if __name__ == "__main__":
 	main()

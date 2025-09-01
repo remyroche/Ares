@@ -307,7 +307,7 @@ class FractionalLabelingTester:
 
         return comparison
 
-    def export_results(self, test_data: Dict[str, Any], baseline_results: Dict[str, Any],
+    def export_results(self, test_data: Dict[str, Any], baseline_results: Dict[str, Any],:
                       fractional_results: Dict[str, Any], comparison: Dict[str, Any]):
         """Export test results to files.
 
@@ -415,7 +415,7 @@ class FractionalLabelingTester:
         }
 
 
-def main():
+        def main():
     """Main function to run fractional labeling test."""
     tester = FractionalLabelingTester()
     results = tester.run_complete_test(n_samples=1000)
@@ -427,5 +427,5 @@ def main():
     print("   • Ready for integration into production pipeline")
 
 
-if __name__ == "__main__":
+        if __name__ == "__main__":
     main()

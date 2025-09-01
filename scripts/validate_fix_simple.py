@@ -34,11 +34,11 @@ def handle_errors(*, default_return: bool = False) -> DecoratorFunc:
                 return default_return
         return wrapper
 
-    return decorator
+            return decorator
 
 
-@handle_errors(default_return=False)
-def validate_fix() -> bool:
+        @handle_errors(default_return=False)
+        def validate_fix() -> bool:
     """Validate that the multicollinearity fix was applied correctly."""
 
     print("🔍 Validating multicollinearity fix...")
@@ -48,12 +48,12 @@ def validate_fix() -> bool:
         "src/training/steps/vectorized_advanced_feature_engineering.py",
     )
 
-    if not feature_eng_file.exists():
+            if not feature_eng_file.exists():
         print(f"❌ Feature engineering file not found: {feature_eng_file}")
         return False
 
     # Read the file
-    with feature_eng_file.open(encoding="utf-8") as f:
+            with feature_eng_file.open(encoding="utf-8") as f:
         content = f.read()
 
     print("📖 Reading feature engineering code...")
@@ -75,7 +75,7 @@ def validate_fix() -> bool:
         indicator for indicator in fix_indicators if indicator not in content
     ]
 
-    if missing_indicators:
+            if missing_indicators:
         print("❌ Fix validation failed! Missing indicators:")
         for indicator in missing_indicators:
             print(f"   - {indicator}")
@@ -91,7 +91,7 @@ def validate_fix() -> bool:
         problem for problem in problematic_code if problem in content
     ]
 
-    if remaining_problems:
+            if remaining_problems:
         print("❌ Fix validation failed! Problematic code still present:")
         for problem in remaining_problems:
             print(f"   - {problem}")
@@ -100,22 +100,22 @@ def validate_fix() -> bool:
     print("✅ All fix indicators found!")
     print("✅ Problematic code removed!")
     print("✅ Multicollinearity fix validation passed!")
-    return True
+            return True
 
 
-@handle_errors(default_return=False)
-def check_feature_selection_config() -> bool:
+        @handle_errors(default_return=False)
+        def check_feature_selection_config() -> bool:
     """Check that the feature selection config was updated."""
 
     print("🔍 Checking feature selection configuration...")
 
     config_file = Path("src/config/feature_selection_config.yaml")
 
-    if not config_file.exists():
+            if not config_file.exists():
         print(f"❌ Feature selection config not found: {config_file}")
         return False
 
-    with config_file.open(encoding="utf-8") as f:
+            with config_file.open(encoding="utf-8") as f:
         content = f.read()
 
     # Check for updated settings
@@ -130,17 +130,17 @@ def check_feature_selection_config() -> bool:
         setting for setting in expected_settings if setting not in content
     ]
 
-    if missing_settings:
+            if missing_settings:
         print("❌ Feature selection config validation failed! Missing settings:")
         for setting in missing_settings:
             print(f"   - {setting}")
         return False
 
     print("✅ Feature selection config validation passed!")
-    return True
+            return True
 
 
-def main() -> bool:
+        def main() -> bool:
     """Main function to run the validation."""
 
     print("🚀 Starting multicollinearity fix validation...")
@@ -151,7 +151,7 @@ def main() -> bool:
     # Validate the feature selection config
     config_ok = check_feature_selection_config()
 
-    if feature_eng_ok and config_ok:
+            if feature_eng_ok and config_ok:
         print("\n🎉 MULTICOLLINEARITY FIX VALIDATION PASSED!")
         print("✅ Your feature engineering fix has been applied correctly.")
         print("✅ Your feature selection config has been updated.")
@@ -177,5 +177,5 @@ def main() -> bool:
     sys.exit(1)
 
 
-if __name__ == "__main__":
+        if __name__ == "__main__":
     main()

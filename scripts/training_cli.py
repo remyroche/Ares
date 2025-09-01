@@ -83,7 +83,7 @@ class TrainingCLI:
 
         try:
     pass  # TODO: Add proper exception handling
-except Exception as e:
+        except Exception as e:
     pass  # TODO: Add proper exception handling
             await self.initialize()  # Ensure DB is initialized
             self.logger.info("✅ Database initialization completed")
@@ -242,7 +242,7 @@ except Exception as e:
 
         try:
     pass  # TODO: Add proper exception handling
-except Exception as e:
+        except Exception as e:
     pass  # TODO: Add proper exception handling
             # Re-initialize DB connection as it was closed after training_manager.run_full_training
             self.logger.info(
@@ -497,7 +497,7 @@ except Exception as e:
         self.logger.info("✅ Training configuration display completed")
 
 
-def print_usage() -> None:
+    def print_usage() -> None:
     """Print usage information."""
     print(__doc__)
     print("\nExamples:")
@@ -538,14 +538,14 @@ def print_usage() -> None:
     print("  python src/training/regularization.py validate")
 
 
-def get_symbols_to_process(argv: List[str]) -> List[Tuple[str, str]]:
+    def get_symbols_to_process(argv: List[str]) -> List[Tuple[str, str]]:
     """
     Determines which symbols and exchanges to process based on command-line arguments.
     If a symbol is provided, it processes that one. Otherwise, it processes all
     supported tokens from the configuration.
     Returns a list of (symbol, exchange) tuples.
     """
-    if len(argv) > 2:  # A specific symbol is provided
+            if len(argv) > 2:  # A specific symbol is provided
         symbol = argv[2].upper()
         exchange = argv[3].upper() if len(argv) > 3 else "BINANCE"
         system_logger.info(f"Processing specific symbol: {symbol} on {exchange}")
@@ -556,15 +556,15 @@ def get_symbols_to_process(argv: List[str]) -> List[Tuple[str, str]]:
     )
     symbols_list: List[Tuple[str, str]] = []
     supported_tokens: Dict[str, List[str]] = CONFIG.get("SUPPORTED_TOKENS", {})
-    for exchange, tokens in supported_tokens.items():
+            for exchange, tokens in supported_tokens.items():
         for token in tokens:
             symbols_list.append((token, exchange))
-    if not symbols_list:
+            if not symbols_list:
         print(warning("No supported tokens found in configuration."))
-    return symbols_list
+            return symbols_list
 
 
-async def main() -> None:
+        async def main() -> None:
     """Main function."""
     start_time = time.time()
 
@@ -580,7 +580,7 @@ async def main() -> None:
     logger.info(f"Python version: {sys.version}")
     logger.info(f"Working directory: {Path.cwd()}")
 
-    if len(sys.argv) < 2:
+            if len(sys.argv) < 2:
         print(warning("❌ No command provided, showing usage"))
         print_usage()
         sys.exit(1)
@@ -590,9 +590,9 @@ async def main() -> None:
 
     cli = TrainingCLI()
 
-    try:
+            try:
     pass  # TODO: Add proper exception handling
-except Exception as e:
+        except Exception as e:
     pass  # TODO: Add proper exception handling
         if command in ["train", "retrain", "full-test-run"]:
             symbols_to_process = get_symbols_to_process(sys.argv)
@@ -655,7 +655,7 @@ except Exception as e:
             print_usage()
             sys.exit(1)
 
-    except Exception as e:  # noqa: BLE001
+            except Exception as e:  # noqa: BLE001
         total_duration = time.time() - start_time
         print(execution_error(f"💥 CRITICAL ERROR in main execution: {e}"))
         print(error(f"Error type: {type(e).__name__}"))
@@ -669,7 +669,7 @@ except Exception as e:
 
         print(f"\n💥 Unexpected error: {e}")
         sys.exit(1)
-    finally:
+            finally:
         total_duration = time.time() - start_time
         logger.info("=" * 80)
         logger.info("🏁 TRAINING CLI END")
@@ -680,12 +680,12 @@ except Exception as e:
         logger.info(f"Status: {'SUCCESS' if 'success' in locals() else 'ERROR'}")
 
 
-if __name__ == "__main__":
-    try:
+        if __name__ == "__main__":
+            try:
         asyncio.run(main())
-    except KeyboardInterrupt:
+            except KeyboardInterrupt:
         print("\n⚠️  Training CLI interrupted by user (Ctrl+C)")
         sys.exit(1)
-    except Exception as e:  # noqa: BLE001
+            except Exception as e:  # noqa: BLE001
         print(f"\n💥 Unexpected error in main execution: {e}")
         sys.exit(1)

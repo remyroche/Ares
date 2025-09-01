@@ -258,14 +258,14 @@ class StrengthWeightedSRPositionTester:
         return True
 
 
-@handle_errors(default_return=None, context="tester_main")
-async def main() -> None:
+        @handle_errors(default_return=None, context="tester_main")
+        async def main() -> None:
     tester = StrengthWeightedSRPositionTester()
-    if await tester.initialize():
+            if await tester.initialize():
         await tester.test_strength_weighted_position()
     else:
         print("Failed to initialize tester")
 
 
-if __name__ == "__main__":
+        if __name__ == "__main__":
     asyncio.run(main())

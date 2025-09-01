@@ -53,7 +53,7 @@ class BotMonitor:
         for proc in psutil.process_iter(["pid", "name", "cmdline"]):
             try:
     pass  # TODO: Add proper exception handling
-except Exception as e:
+        except Exception as e:
     pass  # TODO: Add proper exception handling
                 cmdline = " ".join(proc.info.get("cmdline") or [])
                 if (
@@ -86,7 +86,7 @@ except Exception as e:
         for log_file in log_dir.glob("*.log"):
             try:
     pass  # TODO: Add proper exception handling
-except Exception as e:
+        except Exception as e:
     pass  # TODO: Add proper exception handling
                 # Check if log file was modified in the last 5 minutes
                 if current_time - log_file.stat().st_mtime < 300:
@@ -133,7 +133,7 @@ except Exception as e:
         notification_file = project_root / "state/ai_notification.json"
         try:
     pass  # TODO: Add proper exception handling
-except Exception as e:
+        except Exception as e:
     pass  # TODO: Add proper exception handling
             notification_file.parent.mkdir(parents=True, exist_ok=True)
             with open(notification_file, "w", encoding="utf-8") as f:
@@ -161,7 +161,7 @@ except Exception as e:
         while True:
             try:
     pass  # TODO: Add proper exception handling
-except Exception as e:
+        except Exception as e:
     pass  # TODO: Add proper exception handling
                 current_time = datetime.now()
 
@@ -226,11 +226,11 @@ except Exception as e:
                 time.sleep(self.monitor_interval)
 
 
-def main() -> None:
+    def main() -> None:
     """Main entry point"""
     monitor = BotMonitor()
     monitor.monitor()
 
 
-if __name__ == "__main__":
+        if __name__ == "__main__":
     main()

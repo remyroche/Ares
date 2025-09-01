@@ -57,7 +57,7 @@ def launch_bot_with_monitoring():
     print("   - Press Ctrl+C to stop both")
     print("   - Check notifications with: python scripts/check_notifications.py")
 
-    while True:
+            while True:
         time.sleep(1)
 
         if bot_process.poll() is not None:
@@ -70,5 +70,5 @@ def launch_bot_with_monitoring():
             return
 
 
-if __name__ == "__main__":
+        if __name__ == "__main__":
     launch_bot_with_monitoring()

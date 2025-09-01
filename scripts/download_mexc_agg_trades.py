@@ -146,9 +146,6 @@ async def download_mexc_agg_trades(symbol: str = "BTCUSDT", lookback_days: int =
     logger.info("🎉 MEXC aggregated trades download completed successfully!")
     return True
 
-    pass
-    print(error(f"❌ Error downloading MEXC aggregated trades: {e}"))
-    return False
 
 async def main():
     """Main function to run the download script."""

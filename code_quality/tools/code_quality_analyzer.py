@@ -6,8 +6,6 @@ Analyzes Python files for unused imports, dead code, and other quality issues.
 
 import ast
 import os
-import sys
-from pathlib import Path
 from typing import Dict, List, Set, Tuple, Any
 from collections import defaultdict
 import argparse

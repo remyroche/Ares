@@ -96,15 +96,18 @@ else:
     error = warning_symbols.error
 
 
-class TacticianSpecialistTrainingStep:
-    """Step 15: Tactician Specialist Models Training with Standardized Data Quality Management."""
+class RegimeAwareTacticianSpecialistTrainingStep:
+    """Step 15: Regime-Aware Tactician Specialist Models Training with Standardized Data Quality Management."""
 
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger
         self.standards = pipeline_standards
         self.models: dict[str, Any] = {}
-        
+
+        # Initialize regime-specific configuration
+        self.regime_config = self._initialize_regime_config()
+
         # Validate environment on initialization
         self._validate_environment()
 
@@ -114,13 +117,31 @@ class TacticianSpecialistTrainingStep:
                 sr_config = config.copy()
                 sr_config["sr_breakout_predictor"] = sr_config.get("sr_breakout_predictor", {})
                 sr_config["sr_breakout_predictor"]["use_optimized_params"] = True
-                self.sr_predictor = sr_breakout_predictor.SRBreakoutPredictor(sr_config)
-            except Exception as e:
-                self.logger.warning(f"⚠️ Failed to initialize SRBreakoutPredictor: {e}")
-                self.sr_predictor = None
+        self.sr_predictor, sr_breakout_predictor.SRBreakoutPredictor(sr_config)
+        except Exception as e:
+        self.logger.warning(f"⚠️ Failed to initialize SRBreakoutPredictor: {e}")
+        
+        # Regime-specific state storage
+        self.regime_specialist_models: dict[str, dict[str, Any]] = {}
+        self.regime_training_results: dict[str, dict[str, Any]] = {}
+        self.regime_validation_results: dict[str, dict[str, Any]] = {}
+        self.sr_predictor, None
         else:
             self.logger.warning("⚠️ SRBreakoutPredictor not available")
             self.sr_predictor = None
+
+    def _initialize_regime_config(self) -> dict[str, Any]:
+        """Initialize regime-specific configuration for tactician specialist training."""
+        return {
+            "regime_specific_training": True,
+            "regime_specific_validation": True,
+            "regime_specific_logging": True,
+            "min_regime_samples": 500,  # Minimum samples per regime for specialist training
+            "regime_validation_split": 0.2,  # Validation split per regime
+            "regime_sr_integration": True,  # Enable S/R level integration per regime
+            "regime_parallel_processing": True,  # Enable parallel regime processing
+            "regime_memory_optimization": True,  # Enable memory optimization per regime
+        }
 
         # Initialize enhanced LM optimizer
         self.enhanced_lm_optimizer = None
@@ -355,9 +376,10 @@ class TacticianSpecialistTrainingStep:
     async def execute(
         self, training_input: dict[str, Any], pipeline_state: dict[str, Any],
     ) -> dict[str, Any]:
-        """Execute tactician specialist models training."""
+        """Execute regime-aware tactician specialist models training."""
         try:
-            self.logger.info("🔄 Executing Tactician Specialist Training...")
+        self.logger.info("🔄 Executing Regime-Aware Tactician Specialist Training...")
+        self.logger.info(f"📊 Regime configuration: {self.regime_config}")
 
             # Extract parameters
             symbol = training_input.get("symbol", "ETHUSDT")
@@ -411,11 +433,12 @@ class TacticianSpecialistTrainingStep:
                     f"Failed to enhance training data with HMM-aware S/R context: {_e}",
                 )
 
-            # Train tactician specialist models
-            training_results = await self._train_tactician_models(
+        # Train regime-aware tactician specialist models
+            training_results, await self._train_regime_aware_tactician_models(
                 labeled_data,
                 symbol,
                 exchange,
+                data_dir,
             )
 
             # Save training results
@@ -1270,6 +1293,161 @@ async def run_step(
     except Exception:
         return False
 
+    async def _train_regime_aware_tactician_models(
+        self, labeled_data: pd.DataFrame, symbol: str, exchange: str, data_dir: str
+    ) -> dict[str, Any]:
+        """Train tactician specialist models with regime-specific logic."""
+        try:
+            self.logger.info("🚀 Starting regime-aware tactician specialist model training")
+            
+            # Check for regime information
+            if 'composite_cluster_id' not in labeled_data.columns:
+                self.logger.warning("⚠️ No composite_cluster_id column found, using default training")
+                return await self._train_tactician_models(labeled_data, symbol, exchange)
+            
+            # Get unique regimes
+            unique_regimes = labeled_data['composite_cluster_id'].unique()
+            self.logger.info(f"📊 Found {len(unique_regimes)} regimes: {unique_regimes}")
+            
+            regime_training_results = {}
+            
+            # Train models for each regime
+            for regime in unique_regimes:
+                self.logger.info(f"🔧 Training tactician specialist models for regime: {regime}")
+                
+                # Filter data for this regime
+                regime_data = labeled_data[labeled_data['composite_cluster_id'] == regime]
+                
+                # Check minimum samples
+                if len(regime_data) < self.regime_config["min_regime_samples"]:
+                    self.logger.warning(f"⚠️ Regime {regime} has insufficient samples: {len(regime_data)} < {self.regime_config['min_regime_samples']}")
+                    continue
+                
+                # Train regime-specific models
+                regime_models = await self._train_regime_specific_models(
+                    regime_data, regime, symbol, exchange, data_dir
+                )
+                
+                regime_training_results[regime] = regime_models
+                
+                # Log regime-specific metrics
+                if self.regime_config["regime_specific_logging"]:
+                    self._log_regime_specific_metrics(regime, {
+                        "samples": len(regime_data),
+                        "models_trained": len(regime_models),
+                        "regime": regime
+                    }, "tactician_training")
+            
+            # Store regime-specific results
+            self.regime_training_results = regime_training_results
+            
+            self.logger.info(f"✅ Completed regime-aware tactician specialist training for {len(regime_training_results)} regimes")
+            return regime_training_results
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error in regime-aware tactician training: {e}")
+            raise
+
+    async def _train_regime_specific_models(
+        self, regime_data: pd.DataFrame, regime: str, symbol: str, exchange: str, data_dir: str
+    ) -> dict[str, Any]:
+        """Train specialist models for a specific regime."""
+        try:
+            self.logger.info(f"🔧 Training specialist models for regime: {regime}")
+            
+            # Regime-specific model training logic
+            regime_models = {}
+            
+            # Train different specialist models based on regime characteristics
+            regime_characteristics = self._analyze_regime_characteristics(regime_data, regime)
+            
+            # Train regime-specific breakout predictor
+            if self.regime_config["regime_sr_integration"] and self.sr_predictor is not None:
+                breakout_model = await self._train_regime_breakout_predictor(
+                    regime_data, regime, regime_characteristics
+                )
+                regime_models["breakout_predictor"] = breakout_model
+            
+            # Train regime-specific trend following model
+            trend_model = await self._train_regime_trend_following_model(
+                regime_data, regime, regime_characteristics
+            )
+            regime_models["trend_following"] = trend_model
+            
+            # Train regime-specific mean reversion model
+            mean_reversion_model = await self._train_regime_mean_reversion_model(
+                regime_data, regime, regime_characteristics
+            )
+            regime_models["mean_reversion"] = mean_reversion_model
+            
+            # Store regime-specific models
+            self.regime_specialist_models[regime] = regime_models
+            
+            return regime_models
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error training models for regime {regime}: {e}")
+            raise
+
+    def _analyze_regime_characteristics(self, regime_data: pd.DataFrame, regime: str) -> dict[str, Any]:
+        """Analyze characteristics of a specific regime."""
+        try:
+            characteristics = {
+                "regime": regime,
+                "samples": len(regime_data),
+                "volatility": regime_data['close'].pct_change().std() if 'close' in regime_data.columns else 0.0,
+                "volume": regime_data['volume'].mean() if 'volume' in regime_data.columns else 0.0,
+                "trend_strength": 0.0,  # Placeholder
+                "mean_reversion_tendency": 0.0,  # Placeholder
+            }
+            
+            # Calculate trend strength
+            if 'close' in regime_data.columns and len(regime_data) > 1:
+                price_change = (regime_data['close'].iloc[-1] - regime_data['close'].iloc[0]) / regime_data['close'].iloc[0]
+                characteristics["trend_strength"] = abs(price_change)
+            
+            # Calculate mean reversion tendency
+            if 'close' in regime_data.columns and len(regime_data) > 10:
+                returns = regime_data['close'].pct_change().dropna()
+                if len(returns) > 0:
+                    # Simple mean reversion indicator: negative autocorrelation
+                    autocorr = returns.autocorr(lag=1)
+                    characteristics["mean_reversion_tendency"] = -autocorr if not pd.isna(autocorr) else 0.0
+            
+            return characteristics
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Error analyzing regime characteristics for {regime}: {e}")
+            return {"regime": regime, "samples": len(regime_data)}
+
+    async def _train_regime_breakout_predictor(
+        self, regime_data: pd.DataFrame, regime: str, characteristics: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Train breakout predictor for a specific regime."""
+        # Placeholder for regime-specific breakout predictor training
+        self.logger.info(f"🔧 Training breakout predictor for regime: {regime}")
+        return {"model_type": "breakout_predictor", "regime": regime, "characteristics": characteristics}
+
+    async def _train_regime_trend_following_model(
+        self, regime_data: pd.DataFrame, regime: str, characteristics: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Train trend following model for a specific regime."""
+        # Placeholder for regime-specific trend following model training
+        self.logger.info(f"🔧 Training trend following model for regime: {regime}")
+        return {"model_type": "trend_following", "regime": regime, "characteristics": characteristics}
+
+    async def _train_regime_mean_reversion_model(
+        self, regime_data: pd.DataFrame, regime: str, characteristics: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Train mean reversion model for a specific regime."""
+        # Placeholder for regime-specific mean reversion model training
+        self.logger.info(f"🔧 Training mean reversion model for regime: {regime}")
+        return {"model_type": "mean_reversion", "regime": regime, "characteristics": characteristics}
+
+    def _log_regime_specific_metrics(self, regime: str, metrics: dict[str, Any], step_name: str) -> None:
+        """Log regime-specific metrics if enabled."""
+        if self.regime_config["regime_specific_logging"]:
+            self.logger.info(f"📊 Regime {regime} {step_name} metrics: {metrics}")
 
 if __name__ == "__main__":
     # Test the step

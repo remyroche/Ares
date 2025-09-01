@@ -8,96 +8,104 @@ from src.supervisor.performance_monitor import PerformanceMonitor
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from dataclasses import dataclass
 
-from src.utils.supervisor_error_handler import (supervisor_component_error_handler, supervisor_critical_error_handler, supervisor_safe_error_handler, supervisor_error_context, handle_component_failure, handle_portfolio_error, handle_risk_error, handle_performance_error, handle_model_error, handle_exchange_error, ComponentFailureError, PortfolioManagementError, RiskManagementError, PerformanceMonitoringError, ModelManagementError, ExchangeIntegrationError)
+from src.utils.supervisor_error_handler import (
+    supervisor_component_error_handler, supervisor_critical_error_handler, 
+    supervisor_safe_error_handler, supervisor_error_context, handle_component_failure, 
+    handle_portfolio_error, handle_risk_error, handle_performance_error, 
+    handle_model_error, handle_exchange_error, ComponentFailureError, 
+    PortfolioManagementError, RiskManagementError, PerformanceMonitoringError, 
+    ModelManagementError, ExchangeIntegrationError
+)
 
 #!/usr/bin/env python3
-        """
+"""
 Enhanced Model Monitor
 
 This module provides comprehensive model behavior monitoring, feature importance tracking,
 decision path analysis, and ensemble performance monitoring that integrates with the
 existing performance monitoring infrastructure.
-        """
+"""
 
 
 
 class ModelDriftType(Enum):
-        """Model drift types."""
+    """Model drift types."""
 
-CONCEPT_DRIFT = "concept_drift"
-DATA_DRIFT = "data_drift"
-LABEL_DRIFT = "label_drift"
-FEATURE_DRIFT = "feature_drift"
+    CONCEPT_DRIFT = "concept_drift"
+    DATA_DRIFT = "data_drift"
+    LABEL_DRIFT = "label_drift"
+    FEATURE_DRIFT = "feature_drift"
 
-    @dataclass_json
-    @dataclass
+
+@dataclass_json
+@dataclass
 class ModelDriftAlert:
-        """Model drift alert."""
+    """Model drift alert."""
 
-model_id: str
-model_type: str
-drift_type: ModelDriftType
-drift_score: float
-threshold: float
-timestamp: datetime
-features_affected: list[str]
-severity: str  # "low", "medium", "high", "critical"
-description: str
+    model_id: str
+    model_type: str
+    drift_type: ModelDriftType
+    drift_score: float
+    threshold: float
+    timestamp: datetime
+    features_affected: list[str]
+    severity: str  # "low", "medium", "high", "critical"
+    description: str
 
 
-    @dataclass_json
-    @dataclass
+@dataclass_json
+@dataclass
 class FeatureDriftMetrics:
-        """Feature drift metrics."""
+    """Feature drift metrics."""
 
-feature_name: str
-current_distribution: dict[str, float]
-reference_distribution: dict[str, float]
-drift_score: float
-ks_statistic: float
-p_value: float
-is_drifted: bool
+    feature_name: str
+    current_distribution: dict[str, float]
+    reference_distribution: dict[str, float]
+    drift_score: float
+    ks_statistic: float
+    p_value: float
+    is_drifted: bool
 
 
-    @dataclass_json
-    @dataclass
+@dataclass_json
+@dataclass
 class ModelPerformanceSnapshot:
-        """Model performance snapshot."""
+    """Model performance snapshot."""
 
-model_id: str
-model_type: str
-timestamp: datetime
-accuracy: float
-precision: float
-recall: float
-f1_score: float
-auc_score: float
-prediction_confidence: float
-feature_importance_stability: float
-concept_drift_score: float
-data_drift_score: float
+    model_id: str
+    model_type: str
+    timestamp: datetime
+    accuracy: float
+    precision: float
+    recall: float
+    f1_score: float
+    auc_score: float
+    prediction_confidence: float
+    feature_importance_stability: float
+    concept_drift_score: float
+    data_drift_score: float
 
 
-    @dataclass_json
-    @dataclass
+@dataclass_json
+@dataclass
 class EnsemblePerformanceMetrics:
-        """Ensemble performance metrics."""
+    """Ensemble performance metrics."""
 
-ensemble_id: str
-timestamp: datetime
-ensemble_accuracy: float
-individual_model_accuracies: dict[str, float]
-ensemble_weights: dict[str, float]
-diversity_score: float
-agreement_score: float
-meta_learner_performance: float | None = None
+    ensemble_id: str
+    timestamp: datetime
+    ensemble_accuracy: float
+    individual_model_accuracies: dict[str, float]
+    ensemble_weights: dict[str, float]
+    diversity_score: float
+    agreement_score: float
+    meta_learner_performance: float | None = None
+
 
 class EnhancedModelMonitor:
-        """
-Enhanced model monitor that integrates with existing performance monitoring
-to provide comprehensive model behavior tracking.
-        """
-        """
+    """
+    Enhanced model monitor that integrates with existing performance monitoring
+    to provide comprehensive model behavior tracking.
+    """
 Initialize enhanced model monitor.
 
 Args:

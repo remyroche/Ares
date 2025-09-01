@@ -4,166 +4,161 @@ from datetime import datetime
 from src.utils.logger import system_logger
 from typing import Any
 from src.utils.error_handler import handle_errors, handle_specific_errors
-from src.utils.warning_symbols import (, from src.utils.supervisor_error_handler import (, supervisor_component_error_handler, supervisor_critical_error_handler, supervisor_safe_error_handler, supervisor_error_context, handle_component_failure, handle_portfolio_error, handle_risk_error, handle_performance_error, handle_model_error, handle_exchange_error, ComponentFailureError, PortfolioManagementError, RiskManagementError, PerformanceMonitoringError, ModelManagementError, ExchangeIntegrationError)
-error,
-initialization_error,
-invalid)
+from src.utils.supervisor_error_handler import (
+    supervisor_component_error_handler, supervisor_critical_error_handler, 
+    supervisor_safe_error_handler, supervisor_error_context, handle_component_failure, 
+    handle_portfolio_error, handle_risk_error, handle_performance_error, 
+    handle_model_error, handle_exchange_error, ComponentFailureError, 
+    PortfolioManagementError, RiskManagementError, PerformanceMonitoringError, 
+    ModelManagementError, ExchangeIntegrationError
+)
 
 class GlobalPortfolioManager:
-        """
-Global Portfolio Manager with comprehensive error handling and type safety.
-        """
+    """
+    Global Portfolio Manager with comprehensive error handling and type safety.
+    """
 
     def __init__(self, config: dict[str, Any]) -> None:
         """
-Initialize global portfolio manager with enhanced type safety.
+        Initialize global portfolio manager with enhanced type safety.
 
-Args:
+        Args:
             config: Configuration dictionary
         """
-        self.        self.config:: dict[str, Any] = config
-self.logger = system_logger.getChild("GlobalPortfolioManager")
+        self.config: dict[str, Any] = config
+        self.logger = system_logger.getChild("GlobalPortfolioManager")
 
-# Global portfolio manager state
-        self.        self.is_managing:: bool = False
-        self.        self.management_results:: dict[str, Any] = {}
-        self.        self.management_history:: list[dict[str, Any]] = []
+        # Global portfolio manager state
+        self.is_managing: bool = False
+        self.management_results: dict[str, Any] = {}
+        self.management_history: list[dict[str, Any]] = []
 
-# Configuration
-        self.        self.portfolio_config:: dict[str, Any] = self.config.get(
-"global_portfolio_manager",
-{})
-        self.        self.management_interval:: int = self.portfolio_config.get(
-"management_interval",
-3600)
-        self.        self.max_management_history:: int = self.portfolio_config.get(
-"max_management_history",
-100)
-        self.        self.enable_portfolio_allocation:: bool = self.portfolio_config.get(
-"enable_portfolio_allocation",
-True)
-        self.        self.enable_risk_management:: bool = self.portfolio_config.get(
-"enable_risk_management",
-True)
-        self.        self.enable_rebalancing:: bool = self.portfolio_config.get(
-"enable_rebalancing",
-True)
+        # Configuration
+        self.portfolio_config: dict[str, Any] = self.config.get(
+            "global_portfolio_manager", {})
+        self.management_interval: int = self.portfolio_config.get(
+            "management_interval", 3600)
+        self.max_management_history: int = self.portfolio_config.get(
+            "max_management_history", 100)
+        self.enable_portfolio_allocation: bool = self.portfolio_config.get(
+            "enable_portfolio_allocation", True)
+        self.enable_risk_management: bool = self.portfolio_config.get(
+            "enable_risk_management", True)
+        self.enable_rebalancing: bool = self.portfolio_config.get(
+            "enable_rebalancing", True)
 
     @handle_specific_errors(
-error_handlers={
-ValueError: (False, "Invalid global portfolio manager configuration"),
-AttributeError: (
-False, "Missing required global portfolio manager parameters"),
-KeyError: (False, "Missing configuration keys"),
-},
-default_return=False,
-context="global portfolio manager initialization")
+        error_handlers={
+            ValueError: (False, "Invalid global portfolio manager configuration"),
+            AttributeError: (
+                False, "Missing required global portfolio manager parameters"),
+            KeyError: (False, "Missing configuration keys"),
+        },
+        default_return=False,
+        context="global portfolio manager initialization")
     async def initialize(self) -> bool:
         """
-Initialize global portfolio manager with enhanced error handling.
+        Initialize global portfolio manager with enhanced error handling.
 
-Returns:
+        Returns:
             bool: True if initialization successful, False otherwise
         """
         try:
             self.logger.info("Initializing Global Portfolio Manager...")
 
-# Load global portfolio manager configuration
-await self._load_portfolio_configuration()
+            # Load global portfolio manager configuration
+            await self._load_portfolio_configuration()
 
-# Validate configuration
-if not self._validate_configuration():
-                self.print(
-invalid("Invalid configuration for global portfolio manager"))
-return False
+            # Validate configuration
+            if not self._validate_configuration():
+                self.logger.error("Invalid configuration for global portfolio manager")
+                return False
 
-# Initialize global portfolio manager modules
-await self._initialize_portfolio_modules()
+            # Initialize global portfolio manager modules
+            await self._initialize_portfolio_modules()
 
-self.logger.info(
-"✅ Global Portfolio Manager initialization completed successfully")
-return True
+            self.logger.info(
+                "✅ Global Portfolio Manager initialization completed successfully")
+            return True
 
-except Exception as e:
+        except Exception as e:
             self.logger.exception(
-f"❌ Global Portfolio Manager initialization failed: {e}")
-return False
+                f"❌ Global Portfolio Manager initialization failed: {e}")
+            return False
 
     @handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=None, context="portfolio configuration loading")
+        exceptions=(ValueError, AttributeError),
+        default_return=None, context="portfolio configuration loading")
     async def _load_portfolio_configuration(self) -> None:
         """Load global portfolio manager configuration."""
         try:
             # Set default portfolio parameters
-self.portfolio_config.setdefault("management_interval", 3600)
-self.portfolio_config.setdefault("max_management_history", 100)
-self.portfolio_config.setdefault("enable_portfolio_allocation", True)
-self.portfolio_config.setdefault("enable_risk_management", True)
-self.portfolio_config.setdefault("enable_rebalancing", True)
-self.portfolio_config.setdefault("enable_performance_monitoring", True)
-self.portfolio_config.setdefault("enable_optimization", True)
+            self.portfolio_config.setdefault("management_interval", 3600)
+            self.portfolio_config.setdefault("max_management_history", 100)
+            self.portfolio_config.setdefault("enable_portfolio_allocation", True)
+            self.portfolio_config.setdefault("enable_risk_management", True)
+            self.portfolio_config.setdefault("enable_rebalancing", True)
+            self.portfolio_config.setdefault("enable_performance_monitoring", True)
+            self.portfolio_config.setdefault("enable_optimization", True)
 
-# Update configuration
-self.management_interval = self.portfolio_config["management_interval"]
-self.max_management_history = self.portfolio_config[
-"max_management_history"
-]
-self.enable_portfolio_allocation = self.portfolio_config[
-"enable_portfolio_allocation"
-]
-self.enable_risk_management = self.portfolio_config[
-"enable_risk_management"
-]
-self.enable_rebalancing = self.portfolio_config["enable_rebalancing"]
+            # Update configuration
+            self.management_interval = self.portfolio_config["management_interval"]
+            self.max_management_history = self.portfolio_config[
+                "max_management_history"
+            ]
+            self.enable_portfolio_allocation = self.portfolio_config[
+                "enable_portfolio_allocation"
+            ]
+            self.enable_risk_management = self.portfolio_config[
+                "enable_risk_management"
+            ]
+            self.enable_rebalancing = self.portfolio_config["enable_rebalancing"]
 
-self.logger.info(
-"Global portfolio manager configuration loaded successfully")
+            self.logger.info(
+                "Global portfolio manager configuration loaded successfully")
 
-except Exception:
-            self.print(error("Error loading portfolio configuration: {e}"))
+        except Exception as e:
+            self.logger.error(f"Error loading portfolio configuration: {e}")
 
     @handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=False,
-context="configuration validation")
-
+        exceptions=(ValueError, AttributeError),
+        default_return=False,
+        context="configuration validation")
     def _validate_configuration(self) -> bool:
         """
-Validate global portfolio manager configuration.
+        Validate global portfolio manager configuration.
 
-Returns:
+        Returns:
             bool: True if configuration is valid, False otherwise
         """
         try:
             # Validate management interval
-if self.management_interval <= 0:
-                self.print(invalid("Invalid management interval"))
-return False
+            if self.management_interval <= 0:
+                self.logger.error("Invalid management interval")
+                return False
 
-# Validate max management history
-if self.max_management_history <= 0:
-                self.print(invalid("Invalid max management history"))
-return False
+            # Validate max management history
+            if self.max_management_history <= 0:
+                self.logger.error("Invalid max management history")
+                return False
 
-# Validate that at least one management type is enabled
-if not any(
-[
-self.enable_portfolio_allocation,
-self.enable_risk_management,
-self.enable_rebalancing,
-self.portfolio_config.get("enable_performance_monitoring", True),
-self.portfolio_config.get("enable_optimization", True),
-]):
-                self.print(error("At least one management type must be enabled"))
-return False
+            # Validate that at least one management type is enabled
+            if not any([
+                self.enable_portfolio_allocation,
+                self.enable_risk_management,
+                self.enable_rebalancing,
+                self.portfolio_config.get("enable_performance_monitoring", True),
+                self.portfolio_config.get("enable_optimization", True),
+            ]):
+                self.logger.error("At least one management type must be enabled")
+                return False
 
-self.logger.info("Configuration validation successful")
-return True
+            self.logger.info("Configuration validation successful")
+            return True
 
-except Exception:
-            self.print(error("Error validating configuration: {e}"))
-return False
+        except Exception as e:
+            self.logger.error(f"Error validating configuration: {e}")
+            return False
 
     @handle_errors(
 exceptions=(ValueError, AttributeError),

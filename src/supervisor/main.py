@@ -16,86 +16,86 @@ from src.supervisor.risk_allocator import RiskAllocator
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.state_manager import StateManager
 
-from src.utils.supervisor_error_handler import (supervisor_component_error_handler, supervisor_critical_error_handler, supervisor_safe_error_handler, supervisor_error_context, handle_component_failure, handle_portfolio_error, handle_risk_error, handle_performance_error, handle_model_error, handle_exchange_error, ComponentFailureError, PortfolioManagementError, RiskManagementError, PerformanceMonitoringError, ModelManagementError, ExchangeIntegrationError)
+from src.utils.supervisor_error_handler import (
+    supervisor_component_error_handler, supervisor_critical_error_handler, 
+    supervisor_safe_error_handler, supervisor_error_context, handle_component_failure, 
+    handle_portfolio_error, handle_risk_error, handle_performance_error, 
+    handle_model_error, handle_exchange_error, ComponentFailureError, 
+    PortfolioManagementError, RiskManagementError, PerformanceMonitoringError, 
+    ModelManagementError, ExchangeIntegrationError
+)
 
 class Supervisor:
-        """
-The central real-time orchestrator of the Ares Trading Bot.
-It initializes, manages, and connects all the core components of the
-trading pipeline, ensuring they run concurrently and communicate efficiently.
-        """
+    """
+    The central real-time orchestrator of the Ares Trading Bot.
+    It initializes, manages, and connects all the core components of the
+    trading pipeline, ensuring they run concurrently and communicate efficiently.
+    """
 
     def __init__(
-self, symbol: str,
-exchange_name: str, exchange_client: Any,
-state_manager: StateManager, db_manager: Any):  # Accept the exchange client from main.py
-self.logger = system_logger.getChild("Supervisor")
-self.state_manager = state_manager  # Use the passed state_manager
-self.symbol = symbol
-self.exchange_name = exchange_name
-self.state = (
-self.state_manager.get_state(  # Use get_state() to load current state
-"global_trading_status")  # Use get_state() to load current state
-self.config = CONFIG  # Use the global CONFIG dictionary for general settings
-self.db_manager = db_manager  # Store the database manager
+        self, symbol: str,
+        exchange_name: str, exchange_client: Any,
+        state_manager: StateManager, db_manager: Any):  # Accept the exchange client from main.py
+        self.logger = system_logger.getChild("Supervisor")
+        self.state_manager = state_manager  # Use the passed state_manager
+        self.symbol = symbol
+        self.exchange_name = exchange_name
+        self.state = self.state_manager.get_state("global_trading_status")  # Use get_state() to load current state
+        self.config = CONFIG  # Use the global CONFIG dictionary for general settings
+        self.db_manager = db_manager  # Store the database manager
 
-# Initialize Supervisor sub-components, passing necessary dependencies
-self.risk_allocator = RiskAllocator(self.config)
-self.performance_reporter = PerformanceReporter(
-self.config, self.db_manager)  # Pass db_manager
-self.ab_tester = ABTester(self.config, self.performance_reporter)
-self.monitoring = Monitoring(self.db_manager)
+        # Initialize Supervisor sub-components, passing necessary dependencies
+        self.risk_allocator = RiskAllocator(self.config)
+        self.performance_reporter = PerformanceReporter(
+            self.config, self.db_manager)  # Pass db_manager
+        self.ab_tester = ABTester(self.config, self.performance_reporter)
+        self.monitoring = Monitoring(self.config)
 
-# Determine the actual trading client (PaperTrader or live exchange_client)
-env_settings = get_environment_settings()
-if env_settings.trading_environment == "PAPER":
+        # Determine the actual trading client (PaperTrader or live exchange_client)
+        env_settings = get_environment_settings()
+        if env_settings.trading_environment == "PAPER":
             self.trader = PaperTrader(
-symbol=self.symbol, exchange_name=self.exchange_name,
-config=self.config
-)
-self.logger.info("Paper Trader initialized for simulation.")
-elif env_settings.trading_environment == "LIVE":
-            self.trader = (
-exchange_client  # Use the live exchange client passed from main
-)
-self.logger.info(
-"Live Trader (BinanceExchange) initialized for live operations.")
-else:
+                symbol=self.symbol, exchange_name=self.exchange_name,
+                config=self.config
+            )
+            self.logger.info("Paper Trader initialized for simulation.")
+        elif env_settings.trading_environment == "LIVE":
+            self.trader = exchange_client  # Use the live exchange client passed from main
+            self.logger.info(
+                "Live Trader (BinanceExchange) initialized for live operations.")
+        else:
             self.trader = None
-self.logger.error(
-f"Unknown trading environment: '{env_settings.trading_environment}'. Trading will be disabled.")
-msg = f"Invalid TRADING_ENVIRONMENT: {env_settings.trading_environment}"
-raise ValueError(
-msg)  # Halt if invalid
+            self.logger.error(
+                f"Unknown trading environment: '{env_settings.trading_environment}'. Trading will be disabled.")
+            msg = f"Invalid TRADING_ENVIRONMENT: {env_settings.trading_environment}"
+            raise ValueError(msg)  # Halt if invalid
 
-# Initialize ModelManager first, which will load the champion models
-# Pass performance_reporter to ModelManager so it can pass it to Tactician
+        # Initialize ModelManager first, which will load the champion models
+        # Pass performance_reporter to ModelManager so it can pass it to Tactician
 
-self.model_manager = ModelManager(
-database_manager=self.db_manager,
-performance_reporter=self.performance_reporter)
+        self.model_manager = ModelManager(
+            database_manager=self.db_manager,
+            performance_reporter=self.performance_reporter)
 
-# Initialize the core real-time components, getting instances from ModelManager
-if self.trader:
+        # Initialize the core real-time components, getting instances from ModelManager
+        if self.trader:
             self.sentinel = Sentinel(
-self.trader, self.state_manager)  # Sentinel needs the real trader
-self.analyst = (
-self.model_manager.get_analyst()  # Get Analyst instance from ModelManager
-self.strategist = (
-self.model_manager.get_strategist()  # Get Strategist instance from ModelManager
-# Tactician instance is already created by ModelManager with performance_reporter
-self.tactician = self.model_manager.get_tactician()
+                self.trader, self.state_manager)  # Sentinel needs the real trader
+            self.analyst = self.model_manager.get_analyst()  # Get Analyst instance from ModelManager
+            self.strategist = self.model_manager.get_strategist()  # Get Strategist instance from ModelManager
+            # Tactician instance is already created by ModelManager with performance_reporter
+            self.tactician = self.model_manager.get_tactician()
 
-# Ensure the Analyst, Strategist, Tactician instances from ModelManager
-# have their exchange_client and state_manager set if they need it for live ops.
-# This is a critical point for dependency injection.
-# For the training pipeline, these are mostly placeholders.
-if hasattr(self.analyst, "exchange") and self.analyst.exchange is None:
+            # Ensure the Analyst, Strategist, Tactician instances from ModelManager
+            # have their exchange_client and state_manager set if they need it for live ops.
+            # This is a critical point for dependency injection.
+            # For the training pipeline, these are mostly placeholders.
+            if hasattr(self.analyst, "exchange") and self.analyst.exchange is None:
                 self.analyst.exchange = self.trader
-if (
-hasattr(self.analyst, "state_manager")
-and self.analyst.state_manager is None
-):
+            if (
+                hasattr(self.analyst, "state_manager")
+                and self.analyst.state_manager is None
+            ):
                 self.analyst.state_manager = self.state_manager
 
 if (

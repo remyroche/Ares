@@ -23,6 +23,7 @@ sys.path.insert(0, str(project_root))
 
 try:
     from src.config.constants import DEFAULT_LOOKBACK_DAYS
+    from src.config.training_modes import (
         TRAINING_MODES,
         FULL_TRAINING_LOOKBACK_DAYS,
         BLANK_TRAINING_LOOKBACK_DAYS,

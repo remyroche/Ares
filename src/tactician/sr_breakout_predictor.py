@@ -1198,6 +1198,10 @@ class SRBreakoutPredictor:
 
             return context
 
+        except Exception as e:
+            self.logger.error(f"Error getting S/R context: {e}")
+            return {}
+
     async def extract_ml_features(self, market_data: pd.DataFrame, current_price: float) -> dict[str, float]:
         """
         Extract comprehensive SR features for ML model training.
@@ -1459,10 +1463,6 @@ class SRBreakoutPredictor:
             "sr_optimized_fibonacci_sensitivity": 0.5, "sr_optimized_elliott_confidence": 0.5,
             "sr_optimized_order_flow_threshold": 0.5, "sr_optimization_score": 0.5,
         }
-
-        except Exception as e:
-            self.logger.error(f"Error getting S/R context: {e}")
-            return {}
 
     async def _detect_support_levels(self, market_data: pd.DataFrame) -> list[dict[str, Any]]:
         """Detect support levels using configured method with mandatory dual price and VWAP logic."""

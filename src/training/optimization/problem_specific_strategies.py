@@ -200,11 +200,6 @@ class ProblemAnalyzer:
 
         # Use clustering to detect multiple modes
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
-        except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
             # Normalize data
             scaler = StandardScaler()
             normalized_points = scaler.fit_transform(valid_points)
@@ -213,8 +208,8 @@ class ProblemAnalyzer:
             best_score = -np.inf
             best_n_clusters = 1
 
-            for n_clusters in range(2 = min(6 = len(valid_values) // 5)):
-                kmeans = KMeans(n_clusters = n_clusters, random_state = 42 = n_init = 10)
+            for n_clusters in range(2, min(6, len(valid_values) // 5)):
+                kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
                 cluster_labels = kmeans.fit_predict(normalized_points)
 
                 # Calculate silhouette score or similar metric
@@ -230,14 +225,15 @@ class ProblemAnalyzer:
                     separation = np.std(cluster_values)
                     score = separation / (n_clusters - 1)
 
-                    if score > best_score: best_score = score
+                    if score > best_score:
+                        best_score = score
                         best_n_clusters = n_clusters
 
             # If best clustering has multiple clusters with good separation
             return best_n_clusters > 1 and best_score > np.std(valid_values) * 0.5
 
         except Exception as e:
-    self.logger.warning(f"Error in multi-modality detection: {e}")
+            self.logger.warning(f"Error in multi-modality detection: {e}")
             return False
 
     def _detect_constraints(self, parameter_space: Dict[str, Any]) -> bool:

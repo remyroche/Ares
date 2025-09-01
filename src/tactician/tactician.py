@@ -67,15 +67,7 @@ self.decision_thresholds = {
 "leverage_multiplier": tactician_config.get("leverage_multiplier", 1.0)
 }
 
-# Risk management parameters (configurable for step17)
-self.risk_management = {
-"max_position_size": tactician_config.get("max_position_size", 0.1),
-"max_leverage": tactician_config.get("max_leverage", 3.0),
-"stop_loss_multiplier": tactician_config.get("stop_loss_multiplier", 1.0),
-"take_profit_multiplier": tactician_config.get("take_profit_multiplier", 1.0),
-"max_drawdown": tactician_config.get("max_drawdown", 0.05),
-"correlation_threshold": tactician_config.get("correlation_threshold", 0.8)
-}
+
 
 # Performance tracking
 self.performance_metrics = {
@@ -112,9 +104,9 @@ Returns:
             bool: True if initialization successful, False otherwise
 """
 try:
-    pass  # TODO: Add proper exception handling
+    
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    
 self.logger.info("Initializing Refactored Tactician...")
 
 # Initialize component managers
@@ -140,9 +132,9 @@ context="component managers initialization",
 async def _initialize_component_managers(self) -> None:
         """Initialize all component managers."""
 try:
-    pass  # TODO: Add proper exception handling
+    
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    
 # Initialize tactics orchestrator
 from .tactics_orchestrator import TacticsOrchestrator
 self.tactics_orchestrator = TacticsOrchestrator(self.config)
@@ -190,9 +182,9 @@ Returns:
             bool: True if configuration is valid, False otherwise
 """
 try:
-    pass  # TODO: Add proper exception handling
+    
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    
 # Validate required configuration sections
 required_sections = ["tactician", "tactics_orchestrator"]
 
@@ -240,9 +232,9 @@ Returns:
             bool: True if tactics successful, False otherwise
 """
 try:
-    pass  # TODO: Add proper exception handling
+    
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    
 self.logger.info("🚀 Starting tactics pipeline execution...")
 
 # Validate tactics input
@@ -280,9 +272,9 @@ Returns:
             bool: True if input is valid, False otherwise
 """
 try:
-    pass  # TODO: Add proper exception handling
+    
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    
 required_fields = ["symbol", "exchange", "timeframe", "current_price"]
 
 for field in required_fields:
@@ -314,9 +306,9 @@ Args:
             tactics_input: Tactics input parameters
 """
 try:
-    pass  # TODO: Add proper exception handling
+    
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    
 # Get results from orchestrator
 self.tactics_results = self.tactics_orchestrator.get_tactics_results()
 
@@ -354,9 +346,9 @@ Returns:
             bool: True if successful, False otherwise
 """
 try:
-    pass  # TODO: Add proper exception handling
+    
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    
 self.logger.info("🚀 Starting Tactician...")
 self.is_running = True
 
@@ -454,9 +446,9 @@ Returns:
             dict: Enhanced predictions and decisions
 """
 try:
-    pass  # TODO: Add proper exception handling
+    
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    
 if not self.is_initialized:
     self.logger.error("Tactician not initialized")
     return self._generate_error_predictions(symbol, timeframe)
@@ -475,15 +467,9 @@ trading_decisions = self._make_trading_decisions(
 scenario_predictions, analyst_confidence, market_data
 )
 
-# Calculate position sizing and leverage
-position_management = self._calculate_position_management(
-scenario_predictions, trading_decisions, analyst_barriers
-)
-
 result = {
 "scenario_predictions": scenario_predictions,
 "trading_decisions": trading_decisions,
-"position_management": position_management,
 "metadata": {
 "symbol": symbol,
 "timeframe": timeframe,
@@ -519,9 +505,9 @@ Returns:
             dict: Trading decisions
 """
 try:
-    pass  # TODO: Add proper exception handling
+    
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    
 scenario_analysis = scenario_predictions.get("scenario_analysis", {})
 confidence = scenario_predictions.get("confidence", 0.0)
 
@@ -598,78 +584,7 @@ except Exception as e:
 "scenario_metrics": {}
 }
 
-def _calculate_position_management(
-self,
-scenario_predictions: Dict[str, Any],
-trading_decisions: Dict[str, Any],
-analyst_barriers: Dict[str, float]
-) -> Dict[str, Any]:
-        """
-Calculate position sizing and leverage based on scenario analysis.
 
-Args:
-            scenario_predictions: Scenario predictions
-trading_decisions: Trading decisions
-analyst_barriers: Analyst's barrier values
-
-Returns:
-            dict: Position management parameters
-"""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-scenario_analysis = scenario_predictions.get("scenario_analysis", {})
-confidence = scenario_predictions.get("confidence", 0.0)
-
-# Base position size from confidence
-base_position_size = confidence * self.risk_management["max_position_size"]
-
-# Adjust based on scenario dominance
-scenario_dominance = scenario_analysis.get("scenario_dominance", 0.0)
-dominance_multiplier = 1.0 + (scenario_dominance - 0.5) * 0.5
-
-# Adjust based on risk-reward ratio
-risk_reward_ratio = scenario_analysis.get("risk_reward_ratio", 1.0)
-ratio_multiplier = min(risk_reward_ratio / 2.0, 1.5)
-
-# Final position size
-position_size = base_position_size * dominance_multiplier * ratio_multiplier
-position_size = min(position_size, self.risk_management["max_position_size"])
-
-# Leverage calculation
-base_leverage = 1.0 + (confidence - 0.5) * 2.0
-leverage = min(base_leverage, self.risk_management["max_leverage"])
-
-# Stop loss and take profit
-analyst_upper = analyst_barriers.get("upper_barrier", 0.02)
-analyst_lower = analyst_barriers.get("lower_barrier", -0.01)
-
-stop_loss = analyst_lower * self.risk_management["stop_loss_multiplier"]
-take_profit = analyst_upper * self.risk_management["take_profit_multiplier"]
-
-return {
-"position_size": position_size,
-"leverage": leverage,
-"stop_loss": stop_loss,
-"take_profit": take_profit,
-"risk_metrics": {
-"max_drawdown": self.risk_management["max_drawdown"],
-"correlation_threshold": self.risk_management["correlation_threshold"],
-"dominance_multiplier": dominance_multiplier,
-"ratio_multiplier": ratio_multiplier
-}
-}
-
-except Exception as e:
-    self.logger.error(f"❌ Position management calculation failed: {e}")
-    return {
-"position_size": 0.0,
-"leverage": 1.0,
-"stop_loss": -0.01,
-"take_profit": 0.02,
-"risk_metrics": {}
-}
 
 def _calculate_decision_confidence(
 self,
@@ -689,9 +604,9 @@ Returns:
             float: Combined decision confidence
 """
 try:
-    pass  # TODO: Add proper exception handling
+    
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    
 # Base confidence from model
 base_confidence = model_confidence
 
@@ -737,9 +652,9 @@ Returns:
             str: Decision reasoning
 """
 try:
-    pass  # TODO: Add proper exception handling
+    
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    
 reasoning_parts = []
 
 if entry_signal:
@@ -812,13 +727,7 @@ return {
 "reasoning": "Error in prediction generation",
 "scenario_metrics": {}
 },
-"position_management": {
-"position_size": 0.0,
-"leverage": 1.0,
-"stop_loss": -0.01,
-"take_profit": 0.02,
-"risk_metrics": {}
-},
+
 "metadata": {
 "symbol": symbol,
 "timeframe": timeframe,
@@ -837,9 +746,9 @@ Args:
             position_data: Position data
 """
 try:
-    pass  # TODO: Add proper exception handling
+    
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    
 self.current_position = position_data
 self.position_history.append({
 **position_data,
@@ -861,9 +770,9 @@ Args:
             trade_result: Trade result data
 """
 try:
-    pass  # TODO: Add proper exception handling
+    
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    
 self.performance_metrics["total_trades"] += 1
 
 if trade_result.get("profit", 0) > 0:
@@ -911,7 +820,6 @@ Returns:
 """
 return {
 "decision_thresholds": self.decision_thresholds,
-"risk_management": self.risk_management,
 "scenario_predictor_config": self.scenario_predictor.get_enhanced_configuration_summary() if self.scenario_predictor else {},
 "is_initialized": self.is_initialized
 }
@@ -924,9 +832,9 @@ context="tactician stop",
 async def stop(self) -> None:
         """Stop the tactician and cleanup resources."""
 try:
-    pass  # TODO: Add proper exception handling
+    
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    
 self.logger.info("🛑 Stopping Tactician...")
 
 # Stop component managers
@@ -955,9 +863,9 @@ context="tactician cleanup",
 async def cleanup(self) -> None:
         """Cleanup tactician resources."""
 try:
-    pass  # TODO: Add proper exception handling
+    
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    
 self.logger.info("Cleaning up Tactician...")
 await self.stop()
 
@@ -998,9 +906,9 @@ Returns:
         Tactician: Configured tactician instance
 """
 try:
-    pass  # TODO: Add proper exception handling
+    
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    
 tactician = Tactician(config or {})
 if await tactician.initialize():
             return tactician

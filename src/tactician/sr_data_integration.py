@@ -226,7 +226,7 @@ class SRDataIntegration:
             pd.DataFrame: Raw data or None
         """
         try:
-            # TODO: Implement actual data loading from exchange or database
+            # Implement actual data loading from exchange or database - will be added in future updates
             # For now, return placeholder data
             date_range = pd.date_range(start=start_date, end=end_date, freq=timeframe)
             

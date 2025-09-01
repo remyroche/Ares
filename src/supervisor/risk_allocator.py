@@ -8,23 +8,7 @@ import numpy as np
 
 from src.utils.error_handler import handle_errors, handle_specific_errors
 
-from src.utils.supervisor_error_handler import (
-    supervisor_component_error_handler,
-    supervisor_critical_error_handler,
-    supervisor_safe_error_handler,
-    supervisor_error_context,
-    handle_component_failure,
-    handle_portfolio_error,
-    handle_risk_error,
-    handle_performance_error,
-    handle_model_error,
-    handle_exchange_error,
-    ComponentFailureError,
-    PortfolioManagementError,
-    RiskManagementError,
-    PerformanceMonitoringError,
-    ModelManagementError,
-    ExchangeIntegrationError,
+from src.utils.supervisor_error_handler import (supervisor_component_error_handler,, supervisor_critical_error_handler,, supervisor_safe_error_handler,, supervisor_error_context,, handle_component_failure,, handle_portfolio_error,, handle_risk_error,, handle_performance_error,, handle_model_error,, handle_exchange_error,, ComponentFailureError,, PortfolioManagementError,, RiskManagementError,, PerformanceMonitoringError,, ModelManagementError,, ExchangeIntegrationError,, )
 )
 
 class RiskAllocator:
@@ -72,6 +56,9 @@ context="risk allocator initialization",
 )
 async def initialize(self) -> bool:
                 try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
 self.logger.info("Initializing Risk Allocator...")
 await self._load_risk_configuration()
 if not self._validate_configuration():
@@ -90,6 +77,9 @@ context="risk configuration loading",
 )
 async def _load_risk_configuration(self) -> None:
                 try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
 self.risk_config.setdefault("allocation_interval", 60)
 self.risk_config.setdefault("max_history", 100)
 self.allocation_interval = self.risk_config["allocation_interval"]
@@ -105,6 +95,9 @@ context="configuration validation",
 )
 def _validate_configuration(self) -> bool:
                 try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
 if self.allocation_interval <= 0:
                 self.logger.error("Invalid allocation interval")
 return False
@@ -126,6 +119,9 @@ context="risk allocator run",
 )
 async def run(self) -> bool:
                 try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
 self.is_running = True
 self.logger.info("🚦 Risk Allocator started.")
 while self.is_running:
@@ -144,6 +140,9 @@ context="risk allocation step",
 )
 async def _perform_risk_allocation(self) -> None:
                 try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
 now = datetime.now().isoformat()
 self.status = {"timestamp": now, "status": "running"}
 self.history.append(self.status.copy())
@@ -162,6 +161,9 @@ context="risk allocation calculation",
 )
 async def _calculate_risk_allocations(self) -> None:
                 try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
 # Simulate risk allocation calculations
 allocations = {
 "equity_allocation": 0.6,
@@ -181,6 +183,9 @@ context="risk limits update",
 )
 async def _update_risk_limits(self) -> None:
                 try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
 # Update risk limits
 limits = {
 "max_position_size": 0.1,
@@ -201,6 +206,9 @@ context="risk allocator stop",
 async def stop(self) -> None:
         self.logger.info("🛑 Stopping Risk Allocator...")
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
 self.is_running = False
 self.status = {"timestamp": datetime.now().isoformat(), "status": "stopped"}
 self.logger.info("✅ Risk Allocator stopped successfully")
@@ -234,6 +242,9 @@ Returns:
             float: VaR value
 """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
 if not returns:
                 return 0.0
 
@@ -262,6 +273,9 @@ Returns:
             float: Expected Shortfall value
 """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
 if not returns:
                 return 0.0
 
@@ -295,6 +309,9 @@ Returns:
             dict: VaR values for different timeframes
 """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
 var_results = {}
 
 # Calculate VaR for different timeframes
@@ -327,6 +344,9 @@ Returns:
             dict: Risk monitoring results and alerts
 """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
 risk_limits = self.risk_config.get("risk_limits", {})
 var_limit = risk_limits.get("max_var", 0.02)  # 2% VaR limit
 es_limit = risk_limits.get("max_es", 0.03)  # 3% ES limit
@@ -394,6 +414,9 @@ Returns:
             dict: Risk metrics for the specified timeframe
 """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
 if not self.var_history:
                 return {}
 
@@ -416,6 +439,9 @@ return {}
 def _calculate_risk_summary(self) -> dict[str, Any]:
         """Calculate summary statistics for risk metrics."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
 if not self.var_history:
                 return {}
 
@@ -455,6 +481,9 @@ async def setup_risk_allocator(
 config: dict[str, Any] | None = None,
 ) -> RiskAllocator | None:
             try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
 global risk_allocator
 if config is None:
             config = {"risk_allocator": {"allocation_interval": 60, "max_history": 100}}

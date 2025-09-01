@@ -54,28 +54,6 @@ class ImprovedPipelineExecutor:
         default_return=False,
         context="pipeline executor initialization",
     )
-    async def initialize(self) -> bool:
-        """
-        Initialize pipeline executor.
-
-        Returns:
-            bool: True if initialization successful, False otherwise
-        """
-        try:
-            self.logger.info("Initializing Improved Pipeline Executor...")
-
-            # Validate components
-            if not self._validate_components():
-                self.logger.error("Invalid pipeline components")
-                return False
-
-            self.logger.info("✅ Improved Pipeline Executor initialized successfully")
-            return True
-
-        except Exception as e:
-            self.logger.error(failed(f"❌ Pipeline executor initialization failed: {e}"))
-            return False
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=False,
@@ -110,48 +88,6 @@ class ImprovedPipelineExecutor:
         default_return=None,
         context="market data retrieval",
     )
-    async def _get_market_data(self, symbol: str = "ETHUSDT", timeframe: str = "1h", limit: int = 100) -> Optional[Dict[str, Any]]:
-        """
-        Get market data from exchange or generate mock data.
-
-        Args:
-            symbol: Trading symbol
-            timeframe: Timeframe for data
-            limit: Number of data points
-
-        Returns:
-            Dict containing market data and current price
-        """
-        try:
-            if self.exchange_client:
-                # Try to get real market data
-                try:
-                    market_data = await self.exchange_client.get_klines(
-                        symbol=symbol,
-                        interval=timeframe,
-                        limit=limit
-                    )
-                    current_price = float(market_data["close"].iloc[-1]) if not market_data.empty else 100.0
-                    self.logger.info(f"Retrieved real market data for {symbol}")
-                except Exception as e:
-                    self.logger.warning(f"Error fetching real market data: {e}, using mock data")
-                    market_data, current_price = self._generate_mock_market_data(limit)
-            else:
-                # Generate mock data
-                market_data, current_price = self._generate_mock_market_data(limit)
-
-            return {
-                "market_data": market_data,
-                "current_price": current_price,
-                "symbol": symbol,
-                "timeframe": timeframe,
-                "timestamp": datetime.now().isoformat(),
-            }
-
-        except Exception as e:
-            self.logger.error(f"Error getting market data: {e}")
-            return None
-
     def _generate_mock_market_data(self, limit: int) -> tuple[pd.DataFrame, float]:
         """Generate mock market data for testing."""
         import numpy as np
@@ -669,25 +605,3 @@ class ImprovedPipelineExecutor:
             return "error"
         else:
             return "warning"
-
-    def get_cycle_history(self, limit: Optional[int] = None) -> List[Dict[str, Any]]:
-        """Get cycle history."""
-        history = self.cycle_history.copy()
-        if limit:
-            history = history[-limit:]
-        return history
-
-    def get_pipeline_status(self) -> Dict[str, Any]:
-        """Get current pipeline status."""
-        return {
-            "cycle_count": self.cycle_count,
-            "history_size": len(self.cycle_history),
-            "components_available": {
-                "analyst": self.analyst is not None,
-                "strategist": self.strategist is not None,
-                "tactician": self.tactician is not None,
-                "dual_model_system": self.dual_model_system is not None,
-                "supervisor": self.supervisor is not None,
-                "exchange_client": self.exchange_client is not None,
-            },
-        }

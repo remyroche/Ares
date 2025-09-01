@@ -30,19 +30,10 @@ except ImportError as e:
     print(f"Could not import validation decorators: {e}")
     # Create dummy decorators for demonstration
     def validate_file_operation(*args, **kwargs):
-        def decorator(func):
-            return func
-        return decorator
 
     def validate_dataframe_operation(*args, **kwargs):
-        def decorator(func):
-            return func
-        return decorator
 
     def validate_step_operation(*args, **kwargs):
-        def decorator(func):
-            return func
-        return decorator
 
 
 # Example 1: File operation validation
@@ -130,19 +121,9 @@ async def step4_labeling(symbol: str, exchange: str, data_dir: str) -> Dict[str,
 
 # Example 5: Custom validation with specific schemas
 @validate_file_operation("custom_step", expected_schema="custom", log_level="DEBUG")
-def custom_file_operation(input_file: str, output_file: str) -> str:
-    """Custom file operation with specific validation."""
-    print(f"Custom operation: {input_file} -> {output_file}")
-    return output_file
-
 
 # Example 6: DataFrame validation with different log levels
 @validate_dataframe_operation("debug_step", validate_before=True, validate_after=True, log_level="DEBUG")
-def debug_dataframe_operation(df, operation_name: str) -> Any:
-    """DataFrame operation with debug-level validation."""
-    print(f"Debug operation '{operation_name}' on DataFrame with shape: {df.shape if hasattr(df, 'shape') else 'unknown'}")
-    return df
-
 
 # Example usage functions
 async def demonstrate_file_validation():
@@ -180,27 +161,12 @@ async def demonstrate_dataframe_validation():
             self.shape = shape
             self.empty = False
 
-        def isnull(self):
-            return MockSeries([False] * self.shape[0])
-
-        def duplicated(self):
-            return MockSeries([False] * self.shape[0])
-
-        def select_dtypes(self, include=None):
-            return MockDataFrame(self.shape)
-
     class MockSeries:
         def __init__(self, data):
             self.data = data
 
         def sum(self):
             return sum(self.data)
-
-        def __getitem__(self, key):
-            return MockSeries(self.data)
-
-        def empty(self):
-            return len(self.data) == 0
 
     # Test DataFrame validation
     mock_df = MockDataFrame((100, 5))

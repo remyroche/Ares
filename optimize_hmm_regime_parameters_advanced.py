@@ -50,12 +50,6 @@ class DataStreamer:
     def __init__(self, chunk_size: int = 10000):
         self.chunk_size = chunk_size
 
-    def stream_data(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Stream data in chunks for processing."""
-        for i in range(0, len(data), self.chunk_size):
-            chunk = data.iloc[i:i + self.chunk_size]
-            yield chunk
-
     def process_chunk(self, chunk: pd.DataFrame, processor_func) -> pd.DataFrame:
         """Process a data chunk."""
         return processor_func(chunk)
@@ -448,25 +442,6 @@ class AdvancedMetricsCalculator:
 
         return balance_score
 
-    def _calculate_target_count_penalty(self, cluster_data: pd.DataFrame,
-                                      params: Dict[str, Any]) -> float:
-        """Calculate target count penalty."""
-
-        if 'composite_cluster_id' not in cluster_data.columns:
-            return 0.0
-
-        target_regimes = params.get('target_regimes', 18)
-        actual_regimes = len(cluster_data['composite_cluster_id'].unique())
-
-        # Penalty based on distance from target
-        penalty = 1.0 - abs(actual_regimes - target_regimes) / target_regimes
-
-        # Additional penalty for being outside the 15-20 range
-        if actual_regimes < 15 or actual_regimes > 20:
-            penalty *= 0.5
-
-        return max(0.0, penalty)
-
 
 class AdvancedHMMRegimeOptimizer:
     """Advanced HMM Regime Optimizer with comprehensive features."""
@@ -481,45 +456,6 @@ class AdvancedHMMRegimeOptimizer:
         self.metrics_calculator = AdvancedMetricsCalculator()
         self.robustness_checker = RobustnessChecker()
         self.data_streamer = DataStreamer()
-
-    def _get_default_config(self) -> Dict[str, Any]:
-        """Get default configuration for advanced optimization."""
-        return {
-            "optimization_settings": {
-                "n_trials": 100,
-                "timeout": 3600,
-                "study_name": "advanced_hmm_optimization",
-                "random_state": 42,
-                "n_jobs": -1,
-                "parallel_trials": True
-            },
-            "cross_validation": {
-                "enabled": True,
-                "cv_folds": 5,
-                "time_series_split": True
-            },
-            "bayesian_optimization": {
-                "sampler": "tpe",  # "tpe", "cmaes", "nsga2"
-                "n_startup_trials": 20,
-                "n_ei_candidates": 24
-            },
-            "early_stopping": {
-                "enabled": True,
-                "patience": 10,
-                "min_delta": 0.001
-            },
-            "data_streaming": {
-                "enabled": True,
-                "chunk_size": 10000
-            },
-            "robustness_checks": {
-                "bootstrap_enabled": True,
-                "n_bootstrap": 100,
-                "sensitivity_analysis": True,
-                "outlier_detection": True,
-                "contamination": 0.1
-            }
-        }
 
     def optimize_advanced(self, data: pd.DataFrame, feature_columns: List[str],
                          market_condition_columns: List[str], n_trials: int = 100,
@@ -675,76 +611,6 @@ class AdvancedHMMRegimeOptimizer:
                                 feature_columns: List[str],
                                 market_condition_columns: List[str]) -> callable:
         """Create advanced objective function with cross-validation and early stopping."""
-
-        def objective(trial: optuna.Trial) -> float:
-            """Advanced objective function with cross-validation and early stopping."""
-
-            # Suggest parameters
-            params = self._suggest_advanced_parameters(trial)
-
-            try:
-                # Use cross-validation if enabled
-                if self.config['cross_validation']['enabled'] and processed_data['cv_splits']:
-                    cv_scores = []
-
-                    for train_idx, val_idx in processed_data['cv_splits']:
-                        # Split data
-                        train_data = processed_data['data'].iloc[train_idx]
-                        val_data = processed_data['data'].iloc[val_idx]
-
-                        # Generate clusters for training data
-                        train_clusters = self._generate_clusters_advanced(train_data, params)
-
-                        # Evaluate on validation data
-                        val_score = self._evaluate_regime_quality_advanced(
-                            val_data, train_clusters, processed_data['market_condition_columns'], params
-                        )
-                        cv_scores.append(val_score)
-
-                    # Return mean CV score
-                    final_score = np.mean(cv_scores)
-
-                    # Store CV results
-                    self.cv_results[trial.number] = {
-                        'cv_scores': cv_scores,
-                        'cv_mean': final_score,
-                        'cv_std': np.std(cv_scores)
-                    }
-
-                else:
-                    # Standard evaluation without CV
-                    cluster_data = self._generate_clusters_advanced(processed_data['data'], params)
-                    final_score = self._evaluate_regime_quality_advanced(
-                        cluster_data, None, processed_data['market_condition_columns'], params
-                    )
-
-                # Early stopping check
-                if self.config['early_stopping']['enabled']:
-                    if hasattr(self, '_best_score_history'):
-                        if len(self._best_score_history) >= self.config['early_stopping']['patience']:
-                            recent_improvement = max(self._best_score_history[-self.config['early_stopping']['patience']:]) - min(self._best_score_history[-self.config['early_stopping']['patience']:])
-                            if recent_improvement < self.config['early_stopping']['min_delta']:
-                                trial.report(-np.inf, step=0)
-                                raise optuna.TrialPruned()
-                    else:
-                        self._best_score_history = []
-
-                    self._best_score_history.append(final_score)
-
-                # Store trial information
-                trial_info = {
-                    'trial_number': trial.number,
-                    'params': params,
-                    'score': final_score,
-                    'timestamp': time.time()
-                }
-                self.optimization_history.append(trial_info)
-
-                return final_score
-
-            except Exception as e:
-                print(f"⚠️ Trial {trial.number} failed: {e}")
-                return -np.inf
 
         return objective
 

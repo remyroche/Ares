@@ -191,12 +191,6 @@ class MultiOutputNeuralNetwork(nn.Module):
             nn.Linear(prev_size // 2, profit_output_size)
         )
 
-    def forward(self, x):
-        shared_features = self.shared_layers(x)
-        direction_pred = self.direction_head(shared_features)
-        profit_pred = self.profit_head(shared_features)
-        return direction_pred, profit_pred
-
 
 class MultiOutputModelTrainer:
     """Multi-output model trainer for direction and profit prediction with comprehensive SR features."""
@@ -247,105 +241,11 @@ class MultiOutputModelTrainer:
         default_return=False,
         context="step07_features_loading"
     )
-    async def load_step7_features(self, step07_output_path: str) -> bool:
-        """
-        Load comprehensive SR features from step7 enhanced matrix operations.
-
-        Args:
-            step07_output_path: Path to step7 output directory
-
-        Returns:
-            bool: True if features loaded successfully
-        """
-        try:
-            self.logger.info(f"📊 Loading step7 SR features from: {step07_output_path}")
-
-            # Load step7 matrix operations results
-            step07_results_path = Path(step07_output_path) / "matrix_operations_results.json"
-            if not step07_results_path.exists():
-                self.logger.warning(f"⚠️ Step7 results not found at: {step07_results_path}")
-                return False
-
-            with open(step07_results_path, 'r') as f:
-                step07_results = json.load(f)
-
-            # Extract SR features from step7 results
-            sr_analysis = step07_results.get("sr_analysis", {})
-            sr_enhanced_analysis = step07_results.get("sr_enhanced_analysis", {})
-            sr_optimization_analysis = step07_results.get("sr_optimization_analysis", {})
-
-            # Collect all SR features
-            self.step07_features = []
-
-            # Basic SR features
-            basic_sr_features = sr_analysis.get("sr_features", [])
-            self.step07_features.extend(basic_sr_features)
-
-            # Enhanced SR features
-            enhanced_sr_features = sr_enhanced_analysis.get("enhanced_sr_features", [])
-            self.step07_features.extend(enhanced_sr_features)
-
-            # Optimization SR features
-            optimization_sr_features = sr_optimization_analysis.get("optimization_features", [])
-            self.step07_features.extend(optimization_sr_features)
-
-            # Remove duplicates and sort
-            self.step07_features = sorted(list(set(self.step07_features)))
-
-            self.logger.info(f"✅ Loaded {len(self.step07_features)} SR features from step7")
-            self.logger.info(f"   - Basic SR features: {len(basic_sr_features)}")
-            self.logger.info(f"   - Enhanced SR features: {len(enhanced_sr_features)}")
-            self.logger.info(f"   - Optimization SR features: {len(optimization_sr_features)}")
-
-            return True
-
-        except Exception as e:
-            self.logger.error(f"❌ Error loading step7 features: {e}")
-            return False
-
     @handle_errors(
         exceptions=(ValueError, FileNotFoundError, json.JSONDecodeError),
         default_return=False,
         context="step02_5_sr_levels_loading"
     )
-    async def load_step2_5_sr_levels(self, step02_5_output_path: str) -> bool:
-        """
-        Load SR levels from step02_5 SR optimization.
-
-        Args:
-            step02_5_output_path: Path to step02_5 output directory
-
-        Returns:
-            bool: True if SR levels loaded successfully
-        """
-        try:
-            self.logger.info(f"📊 Loading step02_5 SR levels from: {step02_5_output_path}")
-
-            # Load step02_5 SR optimization results
-            step02_5_results_path = Path(step02_5_output_path) / "sr_optimization_results.json"
-            if not step02_5_results_path.exists():
-                self.logger.warning(f"⚠️ Step2_5 results not found at: {step02_5_results_path}")
-                return False
-
-            with open(step02_5_results_path, 'r') as f:
-                step02_5_results = json.load(f)
-
-            # Extract SR levels
-            self.step02_5_sr_levels = step02_5_results.get("sr_levels_result", {})
-
-            support_levels = self.step02_5_sr_levels.get("support_levels", [])
-            resistance_levels = self.step02_5_sr_levels.get("resistance_levels", [])
-
-            self.logger.info(f"✅ Loaded SR levels from step02_5:")
-            self.logger.info(f"   - Support levels: {len(support_levels)}")
-            self.logger.info(f"   - Resistance levels: {len(resistance_levels)}")
-
-            return True
-
-        except Exception as e:
-            self.logger.error(f"❌ Error loading step02_5 SR levels: {e}")
-            return False
-
     def convert_sr_levels_to_features(self, current_price: float) -> dict[str, float]:
         """
         Convert SR levels from step02_5 to ML features.
@@ -416,17 +316,6 @@ class MultiOutputModelTrainer:
 
         distances = [abs(level.get("price", current_price) - current_price) / current_price for level in levels]
         return min(distances) if distances else 1.0
-
-    def _get_default_sr_level_features(self) -> dict[str, float]:
-        """Return default SR level features when conversion fails."""
-        return {
-            "sr_support_level_count": 0, "sr_nearest_support_distance": 1.0, "sr_support_level_strength_avg": 0.5,
-            "sr_support_level_volume_avg": 0.0, "sr_support_level_age_avg": 0.0, "sr_support_level_touches_avg": 0.0,
-            "sr_resistance_level_count": 0, "sr_nearest_resistance_distance": 1.0, "sr_resistance_level_strength_avg": 0.5,
-            "sr_resistance_level_volume_avg": 0.0, "sr_resistance_level_age_avg": 0.0, "sr_resistance_level_touches_avg": 0.0,
-            "sr_total_levels": 0, "sr_level_density": 0.0, "sr_level_strength_variance": 0.0,
-            "sr_level_volume_variance": 0.0, "sr_level_age_variance": 0.0
-        }
 
     def validate_feature_completeness(self, features_df: pd.DataFrame) -> dict[str, list[str]]:
         """
@@ -657,130 +546,6 @@ class MultiOutputModelTrainer:
         default_return=None,
         context="multi_output_data_preparation"
     )
-    async def prepare_multi_output_data(
-        self,
-        data: pd.DataFrame,
-        direction_column: str = "direction",
-        profit_column: str = "potential_profit_pct",
-        feature_columns: Optional[List[str]] = None,
-        use_enhanced_feature_selection: bool = True
-    ) -> Tuple[pd.DataFrame, pd.Series, pd.Series]:
-        """Prepare data for multi-output training with comprehensive SR features.
-
-        Args:
-            data: Input DataFrame with features and targets
-            direction_column: Column name for direction target
-            profit_column: Column name for profit target
-            feature_columns: List of feature columns to use
-            use_enhanced_feature_selection: Whether to use enhanced feature selection with autoencoder features
-
-        Returns:
-            Tuple of (features, direction_target, profit_target)
-        """
-        self.logger.info("📊 Preparing multi-output training data with comprehensive SR features...")
-
-        # Validate input data
-        if data.empty:
-            raise ValueError("Input data is empty")
-
-        required_columns = [direction_column, profit_column]
-        missing_columns = [col for col in required_columns if col not in data.columns]
-        if missing_columns:
-            raise ValueError(f"Missing required columns: {missing_columns}")
-
-        # NEW: Add comprehensive SR features
-        data_with_sr_features = await self._add_comprehensive_sr_features(data)
-
-        # Use enhanced data-driven feature selection if enabled
-        if use_enhanced_feature_selection:
-            try:
-
-                self.logger.info("🔧 Using enhanced data-driven feature selection (VIF, MI, SHAP, RF)...")
-
-                # Create step6 instance for feature selection
-                step06_config = {"symbol": "default", "exchange": "default", "data_dir": "temp"}
-                step06_instance = Step6HMMBasedTraining(step06_config)
-
-                # Use the enhanced pre-filtering method
-                selected_features = await step06_instance._pre_filter_features(
-                    X=data_with_sr_features,
-                    feature_columns=[col for col in data_with_sr_features.columns if col not in [direction_column, profit_column]]
-                )
-
-                # Add back target columns
-                selected_features.extend([direction_column, profit_column])
-                selected_features = [col for col in selected_features if col in data_with_sr_features.columns]
-
-                self.logger.info(f"✅ Enhanced data-driven feature selection completed: {len(selected_features)} features selected")
-
-                # Use selected features
-                data = data[selected_features]
-
-            except Exception as e:
-                self.logger.warning(f"⚠️ Enhanced data-driven feature selection failed: {e}")
-                self.logger.info("📊 Falling back to basic feature preparation")
-                use_enhanced_feature_selection = False
-
-        # Apply profit-based feature engineering if enabled and not using enhanced selection
-        if self.config.use_profit_features and not use_enhanced_feature_selection:
-            self.logger.info("🔧 Applying profit-based feature engineering...")
-            data = self.profit_feature_engine.apply_all_features(data)
-            self.logger.info(f"✅ Added profit-based features")
-
-        # Select features
-        if feature_columns is None:
-            # Use all columns except targets and metadata
-            exclude_columns = [
-                direction_column, profit_column, "timestamp", "timeframe",
-                "composite_cluster_id", "sample_weight"
-            ]
-            feature_columns = [col for col in data.columns if col not in exclude_columns]
-
-        # Prepare features and targets
-        features = data[feature_columns].copy()
-        direction_target = data[direction_column].copy()
-        profit_target = data[profit_column].copy()
-
-        # Handle missing values
-        features = features.fillna(0)
-        direction_target = direction_target.fillna(0)
-        profit_target = profit_target.fillna(0)
-
-        # Convert direction to binary if needed
-        if direction_target.dtype in ['object', 'string']:
-            # Assume positive direction is 1, negative is 0
-            direction_target = (direction_target > self.config.direction_threshold).astype(int)
-
-        self.logger.info(f"✅ Prepared data: {features.shape[0]} samples, {features.shape[1]} features")
-        self.logger.info(f"   - Direction target: {direction_target.value_counts().to_dict()}")
-        self.logger.info(f"   - Profit target: mean={profit_target.mean():.6f}, std={profit_target.std():.6f}")
-
-        return features, direction_target, profit_target
-
-    def get_feature_importance_summary(self) -> Dict[str, Any]:
-        """Get a summary of feature importance scores from data-driven selection.
-
-        Returns:
-            Dictionary containing feature importance summaries by method
-        """
-        if not hasattr(self, 'feature_importance') or not self.feature_importance:
-            return {}
-
-        summary = {}
-
-        for method, scores in self.feature_importance.items():
-            if isinstance(scores, dict) and len(scores) > 0:
-                scores_series = pd.Series(scores)
-                summary[method] = {
-                    "mean": float(scores_series.mean()),
-                    "std": float(scores_series.std()),
-                    "min": float(scores_series.min()),
-                    "max": float(scores_series.max()),
-                    "top_10_features": scores_series.nlargest(10).to_dict()
-                }
-
-        return summary
-
     def _train_xgboost_multi_output(
         self,
         X_train: np.ndarray,
@@ -1544,77 +1309,6 @@ class MultiOutputModelTrainer:
             'trading_signals': trading_signals,
             'final_confidence': confidence_scores['final_confidence']
         }
-
-    def save_model(
-        self,
-        model_name: str,
-        save_path: str
-    ) -> None:
-        """Save trained model to disk."""
-        if model_name not in self.models:
-            raise ValueError(f"Model '{model_name}' not found")
-
-        os.makedirs(save_path, exist_ok=True)
-
-        model = self.models[model_name]
-        scaler = self.scalers[model_name]
-
-        # Save model components
-        if model["model_type"] in ["LightGBM", "RandomForest"]:
-            joblib.dump(model["direction_model"], f"{save_path}/direction_model.pkl")
-            joblib.dump(model["profit_model"], f"{save_path}/profit_model.pkl")
-
-        # Save scaler
-        joblib.dump(scaler, f"{save_path}/scaler.pkl")
-
-        # Save metadata
-        metadata = {
-            "model_type": model["model_type"],
-            "feature_columns": self.training_history.get("feature_columns", []),
-            "config": self.config.__dict__,
-            "training_history": self.training_history
-        }
-
-        with open(f"{save_path}/metadata.json", "w") as f:
-            json.dump(metadata, f, indent=2)
-
-        self.logger.info(f"✅ Model saved to {save_path}")
-
-    def load_model(
-        self,
-        model_name: str,
-        load_path: str
-    ) -> None:
-        """Load trained model from disk."""
-        # Load model components
-        if os.path.exists(f"{load_path}/direction_model.pkl"):
-            direction_model = joblib.load(f"{load_path}/direction_model.pkl")
-            profit_model = joblib.load(f"{load_path}/profit_model.pkl")
-            scaler = joblib.load(f"{load_path}/scaler.pkl")
-
-            # Determine model type
-            if hasattr(direction_model, 'feature_importances_'):
-                model_type = "RandomForest" if hasattr(direction_model, 'estimators_') else "LightGBM"
-            else:
-                model_type = "Unknown"
-
-            # Store loaded model
-            self.models[model_name] = {
-                "direction_model": direction_model,
-                "profit_model": profit_model,
-                "model_type": model_type
-            }
-            self.scalers[model_name] = scaler
-
-            # Load metadata
-            if os.path.exists(f"{load_path}/metadata.json"):
-                with open(f"{load_path}/metadata.json", "r") as f:
-                    metadata = json.load(f)
-                    self.training_history = metadata.get("training_history", {})
-
-            self.logger.info(f"✅ Model loaded from {load_path}")
-        else:
-            raise FileNotFoundError(f"Model files not found in {load_path}")
 
     # NEW: Probability target generation methods
     @handle_errors(default_return={}, context="generate_probability_targets")

@@ -36,49 +36,6 @@ from src.utils.logger import setup_logging, system_logger  # noqa: E402
 from src.utils.warning_symbols import failed, warning  # noqa: E402
 
 
-async def export_database(db_path: str = "data/ares_local_db.sqlite") -> None:
-    """Export database for trading computer."""
-    logger = system_logger.getChild("MigrationScript")
-    db_manager: Optional[SQLiteManager] = None
-
-    try:
-        # Initialize database manager
-        db_manager = SQLiteManager(db_path)
-        await db_manager.initialize()
-
-        # Create migration utils
-        migration_utils = DatabaseMigrationUtils(db_manager)
-
-        # Export for trading
-        export_path = await migration_utils.export_for_trading()
-
-        if export_path:
-            print("✅ Database exported successfully!")
-            print(f"📁 Export file: {export_path}")
-            print(f"📊 File size: {os.path.getsize(export_path) / 1024 / 1024:.2f} MB")
-
-            # Calculate checksum
-            with open(export_path, "rb") as f:
-                checksum = hashlib.md5(f.read()).hexdigest()
-            print(f"🔍 Checksum: {checksum}")
-            print("\n📋 Next steps:")
-            print("   1. Copy the export file to your trading computer")
-            print(
-                f"   2. Run: python scripts/database_migration.py import {export_path}"
-            )
-        else:
-            print(failed("Database export failed!"))
-
-    except Exception as exc:  # pragma: no cover - defensive CLI wrapper
-        logger.error("Export failed: %s", exc, exc_info=True)
-        print(failed(f"Export failed: {exc}"))
-    finally:
-        if db_manager is not None:
-            try:
-                await db_manager.close()
-            except Exception:  # pragma: no cover - best-effort close
-                logger.warning("Error closing DB manager after export")
-
 
 async def import_database(import_path: str, db_path: str = "data/ares_local_db.sqlite") -> None:
     """Import database on trading computer."""
@@ -200,73 +157,6 @@ async def create_backup(db_path: str = "data/ares_local_db.sqlite") -> None:
                 logger.warning("Error closing DB manager after backup")
 
 
-async def list_migrations(db_path: str = "data/ares_local_db.sqlite") -> None:
-    """List all available migrations."""
-    logger = system_logger.getChild("MigrationScript")
-    db_manager: Optional[SQLiteManager] = None
-
-    try:
-        db_manager = SQLiteManager(db_path)
-        await db_manager.initialize()
-
-        migration_utils = DatabaseMigrationUtils(db_manager)
-        migrations = await migration_utils.list_migrations()
-
-        if not migrations:
-            print("📋 No migrations found.")
-            return
-
-        print("📋 Available Migrations:")
-        print("-" * 80)
-
-        for migration in migrations:
-            migration_id = migration.get("migration_id", "Unknown")
-            migration_type = migration.get("migration_type", "Unknown")
-            status = migration.get("status", "Unknown")
-            created_at = migration.get("created_at", "Unknown")
-            file_size = migration.get("file_size", 0)
-
-            print(f"🆔 ID: {migration_id}")
-            print(f"📝 Type: {migration_type}")
-            print(f"📊 Status: {status}")
-            print(f"📅 Created: {created_at}")
-            print(f"📁 Size: {file_size / 1024 / 1024:.2f} MB")
-            print("-" * 80)
-
-    except Exception as exc:  # pragma: no cover - defensive CLI wrapper
-        logger.error("Failed to list migrations: %s", exc, exc_info=True)
-        print(failed(f"Failed to list migrations: {exc}"))
-    finally:
-        if db_manager is not None:
-            try:
-                await db_manager.close()
-            except Exception:  # pragma: no cover
-                logger.warning("Error closing DB manager after listing migrations")
-
-
-async def cleanup_migrations(db_path: str = "data/ares_local_db.sqlite") -> None:
-    """Clean up old migrations."""
-    logger = system_logger.getChild("MigrationScript")
-    db_manager: Optional[SQLiteManager] = None
-
-    try:
-        db_manager = SQLiteManager(db_path)
-        await db_manager.initialize()
-
-        migration_utils = DatabaseMigrationUtils(db_manager)
-        await migration_utils.cleanup_old_migrations()
-
-        print("✅ Cleanup completed!")
-
-    except Exception as exc:  # pragma: no cover - defensive CLI wrapper
-        logger.error("Cleanup failed: %s", exc, exc_info=True)
-        print(failed(f"Cleanup failed: {exc}"))
-    finally:
-        if db_manager is not None:
-            try:
-                await db_manager.close()
-            except Exception:  # pragma: no cover
-                logger.warning("Error closing DB manager after cleanup")
 
 
 def print_usage() -> None:

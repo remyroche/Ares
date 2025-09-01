@@ -94,26 +94,6 @@ class SROutcomeModelTrainer:
         default_return=False,
         context="S/R outcome model initialization",
     )
-    async def initialize(self) -> bool:
-        """Initialize the S/R outcome model trainer."""
-        try:
-            self.logger.info("Initializing S/R Outcome Model Trainer...")
-
-            # Initialize SR predictor
-            sr_init_success = await self.sr_predictor.initialize()
-            if not sr_init_success:
-                self.logger.warning("Failed to initialize SRBreakoutPredictor")
-
-            # Initialize label encoder
-            self.label_encoder.fit(["breakout", "rebounce", "consolidation"])
-
-            self.logger.info("✅ S/R Outcome Model Trainer initialized successfully")
-            return True
-
-        except Exception as e:
-            self.logger.exception(f"Failed to initialize S/R Outcome Model Trainer: {e}")
-            return False
-
     @handle_errors(
         exceptions=(Exception,),
         default_return=False,
@@ -469,37 +449,6 @@ class SROutcomeModelTrainer:
         except Exception as e:
             self.logger.exception(f"Error creating feature vector: {e}")
             return None
-
-    def _get_feature_names(self) -> list[str]:
-        """Get list of feature names in order."""
-        base_features = [
-            "price_change_1m",
-            "price_change_5m",
-            "price_change_15m",
-            "price_volatility",
-            "volume_ratio",
-            "volume_momentum",
-            "volume_volatility",
-            "rsi",
-            "macd",
-            "bb_position",
-            "distance_to_support",
-            "distance_to_resistance",
-            "support_strength",
-            "resistance_strength",
-            "nearest_pivot_strength",
-            "pivot_touches",
-            "market_trend",
-            "momentum_strength",
-        ]
-
-        if self.use_temporal_features:
-            base_features.extend(["time_since_sr_touch", "sr_touch_frequency"])
-
-        if self.use_volatility_regime:
-            base_features.extend(["volatility_regime", "atr_ratio"])
-
-        return base_features
 
     async def _train_lightgbm_model(self, X: np.ndarray, y: np.ndarray) -> bool:
         """Train LightGBM model with hyperparameter optimization."""
@@ -881,61 +830,6 @@ class SROutcomeModelTrainer:
                 json.dump(evaluation_results, f, indent=2)
         except Exception as e:
             self.logger.exception(f"Error evaluating model: {e}")
-
-    async def _save_model_artifacts(self) -> None:
-        """Save model artifacts and metadata."""
-        try:
-            # Save individual models
-            if "lgb" in self.models:
-                lgb_path = os.path.join(self.artifacts_dir, "lightgbm_model.pkl")
-                with open(lgb_path, "wb") as f:
-                    pickle.dump(self.models["lgb"], f)
-
-            if "xgb" in self.models:
-                xgb_path = os.path.join(self.artifacts_dir, "xgboost_model.pkl")
-                with open(xgb_path, "wb") as f:
-                    pickle.dump(self.models["xgb"], f)
-
-            # Save ensemble model
-            if self.ensemble_model is not None:
-                ensemble_path = os.path.join(self.artifacts_dir, "ensemble_model.pkl")
-                with open(ensemble_path, "wb") as f:
-                    pickle.dump(self.ensemble_model, f)
-
-            # Save scaler
-            scaler_path = os.path.join(self.artifacts_dir, "sr_outcome_scaler.pkl")
-            with open(scaler_path, "wb") as f:
-                pickle.dump(self.scaler, f)
-
-            # Save label encoder
-            encoder_path = os.path.join(self.artifacts_dir, "sr_outcome_encoder.pkl")
-            with open(encoder_path, "wb") as f:
-                pickle.dump(self.label_encoder, f)
-
-            # Save feature names
-            feature_names_path = os.path.join(self.artifacts_dir, "feature_names.json")
-            with open(feature_names_path, "w") as f:
-                json.dump(self.feature_names, f)
-
-            # Save configuration
-            config_save = {
-                "model_config": self.model_config,
-                "ensemble_config": self.ensemble_config,
-                "feature_names": self.feature_names,
-                "training_timestamp": datetime.now().isoformat(),
-                "model_type": self.model_type,
-                "use_ensemble": self.use_ensemble,
-                "ensemble_weights": self.ensemble_weights,
-                "voting_method": self.voting_method,
-            }
-
-            config_path = os.path.join(self.artifacts_dir, "model_config.json")
-            with open(config_path, "w") as f:
-                json.dump(config_save, f, indent=2)
-
-            self.logger.info(f"✅ Model artifacts saved to {self.artifacts_dir}")
-        except Exception as e:
-            self.logger.exception(f"Error saving model artifacts: {e}")
 
     def predict(self, features: dict[str, float]) -> dict[str, Any]:
         """Make prediction using the trained ensemble or individual model."""

@@ -90,17 +90,6 @@ class StatisticalDataValidator:
         self.config = config or self._get_default_config()
         self.logger = system_logger.getChild("StatisticalDataValidator")
 
-    def _get_default_config(self) -> Dict[str, Any]:
-        return {
-            "distribution_tolerance": 0.1,
-            "outlier_threshold": 3.0,
-            "outlier_ratio_threshold": 0.05,
-            "correlation_threshold": 0.95,
-            "drift_psi_threshold": 0.25,
-            "class_imbalance_threshold": 0.1,
-            "target_leakage_threshold": 0.9
-        }
-
     def validate_data_distributions(
         self,
         df: pd.DataFrame,
@@ -205,13 +194,6 @@ class TimeSeriesValidator:
         self.config = config or self._get_default_config()
         self.logger = system_logger.getChild("TimeSeriesValidator")
 
-    def _get_default_config(self) -> Dict[str, Any]:
-        return {
-            "max_gap_multiplier": 2.0,
-            "max_duplicate_ratio": 0.01,
-            "future_tolerance_minutes": 5
-        }
-
     def validate_time_series_quality(
         self,
         df: pd.DataFrame,
@@ -292,13 +274,6 @@ class FinancialDataValidator:
         self.config = config or self._get_default_config()
         self.logger = system_logger.getChild("FinancialDataValidator")
 
-    def _get_default_config(self) -> Dict[str, Any]:
-        return {
-            "max_price_change_ratio": 0.5,  # 50% max price change
-            "min_volume_threshold": 0.0,
-            "zero_volume_ratio_threshold": 0.1
-        }
-
     def validate_financial_data(self, df: pd.DataFrame) -> List[str]:
         """Validate financial data quality."""
         issues = []
@@ -361,13 +336,6 @@ class FeatureCorrelationValidator:
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         self.config = config or self._get_default_config()
         self.logger = system_logger.getChild("FeatureCorrelationValidator")
-
-    def _get_default_config(self) -> Dict[str, Any]:
-        return {
-            "max_correlation": 0.95,
-            "max_multicollinearity_vif": 10.0,
-            "min_correlation_for_removal": 0.8
-        }
 
     def validate_feature_correlations(self, df: pd.DataFrame) -> List[str]:
         """Validate feature correlations for ML training."""
@@ -459,13 +427,6 @@ class TargetVariableValidator:
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         self.config = config or self._get_default_config()
         self.logger = system_logger.getChild("TargetVariableValidator")
-
-    def _get_default_config(self) -> Dict[str, Any]:
-        return {
-            "class_imbalance_threshold": 0.1,
-            "target_leakage_threshold": 0.9,
-            "min_target_variance": 1e-6
-        }
 
     def validate_target_variable(
         self,
@@ -584,13 +545,6 @@ class DataDriftDetector:
         self.config = config or self._get_default_config()
         self.reference_stats = self._compute_statistics(reference_data)
         self.logger = system_logger.getChild("DataDriftDetector")
-
-    def _get_default_config(self) -> Dict[str, Any]:
-        return {
-            "drift_psi_threshold": 0.25,
-            "drift_ks_threshold": 0.05,
-            "drift_correlation_threshold": 0.1
-        }
 
     def detect_drift(self, current_data: pd.DataFrame) -> DriftReport:
         """Detect data drift between reference and current data."""
@@ -786,14 +740,6 @@ class DataQualityScorer:
 
         return max(base_score, 0.0)
 
-    def _get_grade(self, score: float) -> str:
-        """Convert score to letter grade."""
-        if score >= 0.9: return "A"
-        elif score >= 0.8: return "B"
-        elif score >= 0.7: return "C"
-        elif score >= 0.6: return "D"
-        else: return "F"
-
 
 class AdvancedMLValidator:
     """Comprehensive ML data quality validator."""
@@ -812,26 +758,6 @@ class AdvancedMLValidator:
 
         # Drift detector will be set when reference data is provided
         self.drift_detector = None
-
-    def _get_default_config(self) -> Dict[str, Any]:
-        return {
-            "timestamp_column": "timestamp",
-            "target_column": "target",
-            "expected_interval": None,
-            "reference_data": None,
-            "validate_distributions": True,
-            "validate_outliers": True,
-            "validate_time_series": True,
-            "validate_financial": True,
-            "validate_correlations": True,
-            "validate_target": True,
-            "detect_drift": False
-        }
-
-    def set_reference_data(self, reference_data: pd.DataFrame):
-        """Set reference data for drift detection."""
-        self.drift_detector = DataDriftDetector(reference_data)
-        self.config["reference_data"] = reference_data
 
     def validate_ml_data(
         self,
@@ -925,20 +851,3 @@ def validate_ml_data_quality(
     return validator.validate_ml_data(df, target_col, timestamp_col)
 
 
-def detect_data_drift(
-    reference_data: pd.DataFrame,
-    current_data: pd.DataFrame
-) -> DriftReport:
-    """Convenience function for data drift detection."""
-    detector = DataDriftDetector(reference_data)
-    return detector.detect_drift(current_data)
-
-
-def calculate_data_quality_score(
-    df: pd.DataFrame,
-    validation_result: MLValidationResult,
-    weights: Optional[Dict[str, float]] = None
-) -> QualityScore:
-    """Convenience function for quality score calculation."""
-    scorer = DataQualityScorer(weights)
-    return scorer.calculate_quality_score(df, validation_result)

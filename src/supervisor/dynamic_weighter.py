@@ -77,36 +77,6 @@ class DynamicWeighter:
         default_return=False,
         context="dynamic weighter initialization",
     )
-    async def initialize(self) -> bool:
-        """
-        Initialize dynamic weighter with enhanced error handling.
-
-        Returns:
-            bool: True if initialization successful, False otherwise
-        """
-        try:
-            self.logger.info("Initializing Dynamic Weighter...")
-
-            # Load dynamic weighter configuration
-            await self._load_weighter_configuration()
-
-            # Validate configuration
-            if not self._validate_configuration():
-                self.logger.error("Invalid configuration for dynamic weighter")
-                return False
-
-            # Initialize dynamic weighter modules
-            await self._initialize_weighter_modules()
-
-            self.logger.info(
-                "✅ Dynamic Weighter initialization completed successfully",
-            )
-            return True
-
-        except Exception as e:
-            self.logger.error(f"❌ Dynamic Weighter initialization failed: {e}")
-            return False
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
@@ -188,134 +158,31 @@ class DynamicWeighter:
         default_return=None,
         context="weighter modules initialization",
     )
-    async def _initialize_weighter_modules(self) -> None:
-        """Initialize dynamic weighter modules."""
-        try:
-            # Initialize performance weighting module
-            if self.enable_performance_weighting:
-                await self._initialize_performance_weighting()
-
-            # Initialize risk weighting module
-            if self.enable_risk_weighting:
-                await self._initialize_risk_weighting()
-
-            # Initialize adaptive weighting module
-            if self.enable_adaptive_weighting:
-                await self._initialize_adaptive_weighting()
-
-            # Initialize momentum weighting module
-            if self.weighter_config.get("enable_momentum_weighting", True):
-                await self._initialize_momentum_weighting()
-
-            # Initialize volatility weighting module
-            if self.weighter_config.get("enable_volatility_weighting", True):
-                await self._initialize_volatility_weighting()
-
-            self.logger.info("Dynamic weighter modules initialized successfully")
-
-        except Exception as e:
-            self.logger.error(f"Error initializing weighter modules: {e}")
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="performance weighting initialization",
     )
-    async def _initialize_performance_weighting(self) -> None:
-        """Initialize performance weighting components."""
-        try:
-            self.performance_weighting_components = {
-                "return_based_weighting": True,
-                "sharpe_based_weighting": True,
-                "sortino_based_weighting": True,
-                "calmar_based_weighting": True,
-            }
-
-            self.logger.info("Performance weighting components initialized")
-
-        except Exception as e:
-            self.logger.error(f"Error initializing performance weighting: {e}")
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="risk weighting initialization",
     )
-    async def _initialize_risk_weighting(self) -> None:
-        """Initialize risk weighting components."""
-        try:
-            self.risk_weighting_components = {
-                "var_based_weighting": True,
-                "volatility_based_weighting": True,
-                "drawdown_based_weighting": True,
-                "correlation_based_weighting": True,
-            }
-
-            self.logger.info("Risk weighting components initialized")
-
-        except Exception as e:
-            self.logger.error(f"Error initializing risk weighting: {e}")
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="adaptive weighting initialization",
     )
-    async def _initialize_adaptive_weighting(self) -> None:
-        """Initialize adaptive weighting components."""
-        try:
-            self.adaptive_weighting_components = {
-                "market_regime_weighting": True,
-                "regime_detection": True,
-                "adaptive_learning": True,
-                "dynamic_adjustment": True,
-            }
-
-            self.logger.info("Adaptive weighting components initialized")
-
-        except Exception as e:
-            self.logger.error(f"Error initializing adaptive weighting: {e}")
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="momentum weighting initialization",
     )
-    async def _initialize_momentum_weighting(self) -> None:
-        """Initialize momentum weighting components."""
-        try:
-            self.momentum_weighting_components = {
-                "price_momentum_weighting": True,
-                "volume_momentum_weighting": True,
-                "momentum_breakout_weighting": True,
-                "momentum_reversal_weighting": True,
-            }
-
-            self.logger.info("Momentum weighting components initialized")
-
-        except Exception as e:
-            self.logger.error(f"Error initializing momentum weighting: {e}")
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="volatility weighting initialization",
     )
-    async def _initialize_volatility_weighting(self) -> None:
-        """Initialize volatility weighting components."""
-        try:
-            self.volatility_weighting_components = {
-                "realized_volatility_weighting": True,
-                "implied_volatility_weighting": True,
-                "volatility_regime_weighting": True,
-                "volatility_forecast_weighting": True,
-            }
-
-            self.logger.info("Volatility weighting components initialized")
-
-        except Exception as e:
-            self.logger.error(f"Error initializing volatility weighting: {e}")
-
     @handle_specific_errors(
         error_handlers={
             ValueError: (False, "Invalid weighting parameters"),
@@ -721,40 +588,6 @@ class DynamicWeighter:
             self.logger.error(f"Error performing regime detection: {e}")
             return {}
 
-    def _perform_regime_transition(
-        self, weighting_input: dict[str, Any]
-    ) -> dict[str, Any]:
-        """Perform regime transition."""
-        try:
-            # Simulate regime transition
-            return {
-                "regime_transition_completed": True,
-                "transition_probability": 0.15,
-                "transition_horizon": 5,
-                "transition_confidence": 0.70,
-                "training_time": datetime.now().isoformat(),
-            }
-        except Exception as e:
-            self.logger.error(f"Error performing regime transition: {e}")
-            return {}
-
-    def _perform_regime_optimization(
-        self, weighting_input: dict[str, Any]
-    ) -> dict[str, Any]:
-        """Perform regime optimization."""
-        try:
-            # Simulate regime optimization
-            return {
-                "regime_optimization_completed": True,
-                "optimization_method": "regime_based",
-                "optimized_weights": [0.42, 0.28, 0.18, 0.08, 0.04],
-                "optimization_score": 0.88,
-                "training_time": datetime.now().isoformat(),
-            }
-        except Exception as e:
-            self.logger.error(f"Error performing regime optimization: {e}")
-            return {}
-
     def _perform_adaptive_learning(
         self, weighting_input: dict[str, Any]
     ) -> dict[str, Any]:
@@ -790,74 +623,6 @@ class DynamicWeighter:
             return {}
 
     # Momentum weighting methods
-
-    def _perform_price_momentum(
-        self, weighting_input: dict[str, Any]
-    ) -> dict[str, Any]:
-        """Perform price momentum weighting."""
-        try:
-            # Simulate price momentum weighting
-            return {
-                "price_momentum_completed": True,
-                "weighting_method": "price_momentum",
-                "weights": [0.45, 0.25, 0.15, 0.10, 0.05],
-                "momentum_score": 0.75,
-                "training_time": datetime.now().isoformat(),
-            }
-        except Exception as e:
-            self.logger.error(f"Error performing price momentum: {e}")
-            return {}
-
-    def _perform_volume_momentum(
-        self, weighting_input: dict[str, Any]
-    ) -> dict[str, Any]:
-        """Perform volume momentum weighting."""
-        try:
-            # Simulate volume momentum weighting
-            return {
-                "volume_momentum_completed": True,
-                "weighting_method": "volume_momentum",
-                "weights": [0.40, 0.30, 0.20, 0.08, 0.02],
-                "volume_score": 0.68,
-                "training_time": datetime.now().isoformat(),
-            }
-        except Exception as e:
-            self.logger.error(f"Error performing volume momentum: {e}")
-            return {}
-
-    def _perform_momentum_regime(
-        self, weighting_input: dict[str, Any]
-    ) -> dict[str, Any]:
-        """Perform momentum regime weighting."""
-        try:
-            # Simulate momentum regime weighting
-            return {
-                "momentum_regime_completed": True,
-                "regime": "high_momentum",
-                "regime_probability": 0.80,
-                "weights": [0.50, 0.25, 0.15, 0.07, 0.03],
-                "training_time": datetime.now().isoformat(),
-            }
-        except Exception as e:
-            self.logger.error(f"Error performing momentum regime: {e}")
-            return {}
-
-    def _perform_momentum_optimization(
-        self, weighting_input: dict[str, Any]
-    ) -> dict[str, Any]:
-        """Perform momentum optimization."""
-        try:
-            # Simulate momentum optimization
-            return {
-                "momentum_optimization_completed": True,
-                "optimization_method": "momentum_based",
-                "optimized_weights": [0.48, 0.26, 0.16, 0.07, 0.03],
-                "optimization_score": 0.82,
-                "training_time": datetime.now().isoformat(),
-            }
-        except Exception as e:
-            self.logger.error(f"Error performing momentum optimization: {e}")
-            return {}
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -971,25 +736,6 @@ class DynamicWeighter:
 
     # Volatility weighting methods
 
-    def _perform_historical_volatility_weighting(
-        self, weighting_input: dict[str, Any]
-    ) -> dict[str, Any]:
-        """Perform historical volatility weighting."""
-        try:
-            # Simulate historical volatility weighting
-            return {
-                "historical_volatility_weighting_completed": True,
-                "weighting_method": "historical_volatility",
-                "weights": [0.20, 0.25, 0.30, 0.15, 0.10],
-                "volatility_score": 0.65,
-                "training_time": datetime.now().isoformat(),
-            }
-        except Exception as e:
-            self.logger.exception(
-                f"Error performing historical volatility weighting: {e}",
-            )
-            return {}
-
     def _perform_implied_volatility_weighting(
         self, weighting_input: dict[str, Any]
     ) -> dict[str, Any]:
@@ -1022,23 +768,6 @@ class DynamicWeighter:
             }
         except Exception as e:
             self.logger.error(f"Error performing volatility regime weighting: {e}")
-            return {}
-
-    def _perform_volatility_optimization(
-        self, weighting_input: dict[str, Any]
-    ) -> dict[str, Any]:
-        """Perform volatility optimization."""
-        try:
-            # Simulate volatility optimization
-            return {
-                "volatility_optimization_completed": True,
-                "optimization_method": "volatility_based",
-                "optimized_weights": [0.22, 0.28, 0.32, 0.13, 0.05],
-                "optimization_score": 0.78,
-                "training_time": datetime.now().isoformat(),
-            }
-        except Exception as e:
-            self.logger.error(f"Error performing volatility optimization: {e}")
             return {}
 
     @handle_errors(
@@ -1179,84 +908,11 @@ class DynamicWeighter:
         default_return=None,
         context="weighting results getting",
     )
-    def get_weighting_results(
-        self, weighting_type: str | None = None
-    ) -> dict[str, Any]:
-        """
-        Get weighting results.
-
-        Args:
-            weighting_type: Optional weighting type filter
-
-        Returns:
-            dict[str, Any]: Weighting results
-        """
-        try:
-            if weighting_type:
-                return self.weighting_results.get(weighting_type, {})
-            return self.weighting_results.copy()
-
-        except Exception as e:
-            self.logger.error(f"Error getting weighting results: {e}")
-            return {}
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="weighting history getting",
     )
-    def get_weighting_history(self, limit: int | None = None) -> list[dict[str, Any]]:
-        """
-        Get weighting history.
-
-        Args:
-            limit: Optional limit on number of records
-
-        Returns:
-            list[dict[str, Any]]: Weighting history
-        """
-        try:
-            history = self.weighting_history.copy()
-
-            if limit:
-                history = history[-limit:]
-
-            return history
-
-        except Exception as e:
-            self.logger.error(f"Error getting weighting history: {e}")
-            return []
-
-    def get_weighting_status(self) -> dict[str, Any]:
-        """
-        Get weighting status information.
-
-        Returns:
-            dict[str, Any]: Weighting status
-        """
-        return {
-            "is_weighting": self.is_weighting,
-            "weighting_interval": self.weighting_interval,
-            "max_weighting_history": self.max_weighting_history,
-            "enable_performance_weighting": self.enable_performance_weighting,
-            "enable_risk_weighting": self.enable_risk_weighting,
-            "enable_adaptive_weighting": self.enable_adaptive_weighting,
-            "enable_online_learning": self.enable_online_learning,
-            "enable_regime_awareness": self.enable_regime_awareness,
-            "enable_uncertainty_weighting": self.enable_uncertainty_weighting,
-            "enable_momentum_weighting": self.weighter_config.get(
-                "enable_momentum_weighting",
-                True
-            ),
-            "enable_volatility_weighting": self.weighter_config.get(
-                "enable_volatility_weighting",
-                True
-            ),
-            "weighting_history_count": len(self.weighting_history),
-            "model_weights": self.model_weights.copy(),
-            "model_performances": {k: len(v) for k, v in self.model_performances.items()},
-        }
-
     # ============================================================================
     # ENHANCED ENSEMBLE WEIGHTING METHODS
     # ============================================================================
@@ -1266,218 +922,21 @@ class DynamicWeighter:
         default_return=None,
         context="online learning weight update",
     )
-    async def update_model_weights_online(
-        self, model_predictions: dict[str, float], actual_outcomes: dict[str, float], timestamp: datetime = None
-    ) -> None:
-        """Update model weights using online learning."""
-        try:
-            if not self.enable_online_learning:
-                return
-
-            for model_name, prediction in model_predictions.items():
-                if model_name not in actual_outcomes:
-                    continue
-
-                actual_outcome = actual_outcomes[model_name]
-
-                # Calculate prediction error
-                error = abs(prediction - actual_outcome)
-
-                # Initialize weight if not exists
-                if model_name not in self.model_weights:
-                    self.model_weights[model_name] = 1.0
-
-                # Initialize performance history if not exists
-                if model_name not in self.model_performances:
-                    self.model_performances[model_name] = []
-
-                # Store performance data
-                performance_data = {
-                    "prediction": prediction,
-                    "actual": actual_outcome,
-                    "error": error,
-                    "timestamp": timestamp or datetime.now()
-                }
-                self.model_performances[model_name].append(performance_data)
-
-                # Maintain performance window
-                if len(self.model_performances[model_name]) > self.performance_window:
-                    self.model_performances[model_name] = self.model_performances[model_name][-self.performance_window:]
-
-                # Update weight using gradient descent
-                # Inverse relationship: higher error = lower weight
-                weight_gradient = -error * self.learning_rate
-                self.model_weights[model_name] += weight_gradient
-
-                # Ensure weights are positive
-                self.model_weights[model_name] = max(0.01, self.model_weights[model_name])
-
-            # Normalize weights to sum to 1
-            await self._normalize_weights()
-
-            self.logger.info(f"Updated model weights: {self.model_weights}")
-
-        except Exception as e:
-            self.logger.exception(f"Error updating model weights online: {e}")
-
     @handle_errors(
         exceptions=(Exception,),
         default_return=None,
         context="regime-aware weighting",
     )
-    async def get_regime_aware_weights(
-        self, current_regime: str, model_names: list[str]
-    ) -> dict[str, float]:
-        """Get regime-specific ensemble weights."""
-        try:
-            if not self.enable_regime_awareness:
-                # Return equal weights if regime awareness is disabled
-                return {model: 1.0 / len(model_names) for model in model_names}
-
-            # Define regime-specific base weights
-            regime_weights = {
-                'BULL': {'tcn': 0.4, 'transformer': 0.3, 'lstm': 0.3, 'gru': 0.2, 'tabnet': 0.3},
-                'BEAR': {'tcn': 0.3, 'transformer': 0.4, 'lstm': 0.3, 'gru': 0.3, 'tabnet': 0.2},
-                'SIDEWAYS': {'tcn': 0.3, 'transformer': 0.3, 'lstm': 0.4, 'gru': 0.3, 'tabnet': 0.3},
-                'SR': {'tcn': 0.5, 'transformer': 0.3, 'lstm': 0.2, 'gru': 0.2, 'tabnet': 0.4},
-                'CANDLE': {'tcn': 0.3, 'transformer': 0.5, 'lstm': 0.3, 'gru': 0.3, 'tabnet': 0.2}
-            }
-
-            base_weights = regime_weights.get(current_regime, {})
-
-            # Initialize regime performance tracking
-            if current_regime not in self.regime_performances:
-                self.regime_performances[current_regime] = {}
-
-            # Calculate regime-specific weights
-            regime_weights_result = {}
-            for model_name in model_names:
-                # Get base weight for this model in this regime
-                base_weight = base_weights.get(model_name, 0.2)
-
-                # Adjust based on recent performance in this regime
-                recent_performance = self._get_recent_regime_performance(model_name, current_regime)
-                performance_multiplier = 0.5 + recent_performance  # 0.5-1.5 range
-
-                regime_weights_result[model_name] = base_weight * performance_multiplier
-
-            # Normalize weights
-            total_weight = sum(regime_weights_result.values())
-            if total_weight > 0:
-                regime_weights_result = {k: v/total_weight for k, v in regime_weights_result.items()}
-
-            return regime_weights_result
-
-        except Exception as e:
-            self.logger.exception(f"Error calculating regime-aware weights: {e}")
-            return {model: 1.0 / len(model_names) for model in model_names}
-
     @handle_errors(
         exceptions=(Exception,),
         default_return=None,
         context="uncertainty-aware weighting",
     )
-    async def get_uncertainty_aware_weights(
-        self, model_predictions: dict[str, float], model_uncertainties: dict[str, float]
-    ) -> dict[str, float]:
-        """Get uncertainty-aware ensemble weights."""
-        try:
-            if not self.enable_uncertainty_weighting:
-                # Return equal weights if uncertainty weighting is disabled
-                return {model: 1.0 / len(model_predictions) for model in model_predictions.keys()}
-
-            weights = {}
-            total_inverse_uncertainty = 0.0
-
-            for model_name, uncertainty in model_uncertainties.items():
-                if model_name not in model_predictions:
-                    continue
-
-                # Models with lower uncertainty get higher weights
-                # Add small epsilon to avoid division by zero
-                inverse_uncertainty = 1.0 / (uncertainty + 1e-6)
-                weights[model_name] = inverse_uncertainty
-                total_inverse_uncertainty += inverse_uncertainty
-
-            # Normalize weights
-            if total_inverse_uncertainty > 0:
-                weights = {k: v/total_inverse_uncertainty for k, v in weights.items()}
-
-            return weights
-
-        except Exception as e:
-            self.logger.exception(f"Error calculating uncertainty-aware weights: {e}")
-            return {model: 1.0 / len(model_predictions) for model in model_predictions.keys()}
-
     @handle_errors(
         exceptions=(Exception,),
         default_return=None,
         context="ensemble weight calculation",
     )
-    async def calculate_enhanced_ensemble_weights(
-        self, model_predictions: dict[str, float], model_uncertainties: dict[str, float], current_regime: str = None
-    ) -> dict[str, float]:
-        """Calculate enhanced ensemble weights combining multiple factors."""
-        try:
-            model_names = list(model_predictions.keys())
-
-            # Get different types of weights
-            online_weights = self.model_weights.copy()
-            regime_weights = await self.get_regime_aware_weights(current_regime, model_names)
-            uncertainty_weights = await self.get_uncertainty_aware_weights(model_predictions, model_uncertainties)
-
-            # Combine weights with configurable importance
-            combined_weights = {}
-            for model_name in model_names:
-                online_weight = online_weights.get(model_name, 1.0 / len(model_names))
-                regime_weight = regime_weights.get(model_name, 1.0 / len(model_names))
-                uncertainty_weight = uncertainty_weights.get(model_name, 1.0 / len(model_names))
-
-                # Weight combination (can be made configurable)
-                combined_weight = (
-                    0.4 * online_weight +      # 40% online learning
-                    0.4 * regime_weight +      # 40% regime awareness
-                    0.2 * uncertainty_weight   # 20% uncertainty
-                )
-
-                combined_weights[model_name] = combined_weight
-
-            # Normalize final weights
-            total_weight = sum(combined_weights.values())
-            if total_weight > 0:
-                combined_weights = {k: v/total_weight for k, v in combined_weights.items()}
-
-            self.logger.info(f"Enhanced ensemble weights: {combined_weights}")
-            return combined_weights
-
-        except Exception as e:
-            self.logger.exception(f"Error calculating enhanced ensemble weights: {e}")
-            return {model: 1.0 / len(model_predictions) for model in model_predictions.keys()}
-
-    def _get_recent_regime_performance(self, model_name: str, regime: str) -> float:
-        """Get recent performance of a model in a specific regime."""
-        try:
-            if model_name not in self.model_performances:
-                return 0.5  # Default performance
-
-            # Get recent performance data
-            recent_data = self.model_performances[model_name][-20:]  # Last 20 predictions
-            if not recent_data:
-                return 0.5
-
-            # Calculate average accuracy (assuming lower error = better performance)
-            total_error = sum(d["error"] for d in recent_data)
-            avg_error = total_error / len(recent_data)
-
-            # Convert error to performance score (0-1, higher is better)
-            performance_score = max(0.0, 1.0 - avg_error)
-
-            return performance_score
-
-        except Exception as e:
-            self.logger.exception(f"Error getting recent regime performance: {e}")
-            return 0.5
-
     @handle_errors(
         exceptions=(Exception,),
         default_return=None,
@@ -1503,25 +962,6 @@ class DynamicWeighter:
         default_return=None,
         context="dynamic weighter cleanup",
     )
-    async def stop(self) -> None:
-        """Stop the dynamic weighter."""
-        self.logger.info("🛑 Stopping Dynamic Weighter...")
-
-        try:
-            # Stop weighting
-            self.is_weighting = False
-
-            # Clear results
-            self.weighting_results.clear()
-
-            # Clear history
-            self.weighting_history.clear()
-
-            self.logger.info("✅ Dynamic Weighter stopped successfully")
-
-        except Exception as e:
-            self.logger.error(f"Error stopping dynamic weighter: {e}")
-
 # Global dynamic weighter instance
 dynamic_weighter: DynamicWeighter | None = None
 
@@ -1530,43 +970,3 @@ dynamic_weighter: DynamicWeighter | None = None
     default_return=None,
     context="dynamic weighter setup",
 )
-async def setup_dynamic_weighter(
-    config: dict[str, Any] | None = None,
-) -> DynamicWeighter | None:
-    """
-    Setup global dynamic weighter.
-
-    Args:
-        config: Optional configuration dictionary
-
-    Returns:
-        DynamicWeighter | None: Global dynamic weighter instance
-    """
-    try:
-        global dynamic_weighter
-
-        if config is None:
-            config = {
-                "dynamic_weighter": {
-                    "weighting_interval": 3600,
-                    "max_weighting_history": 100,
-                    "enable_performance_weighting": True,
-                    "enable_risk_weighting": True,
-                    "enable_adaptive_weighting": True,
-                    "enable_momentum_weighting": True,
-                    "enable_volatility_weighting": True,
-                },
-            }
-
-        # Create dynamic weighter
-        dynamic_weighter = DynamicWeighter(config)
-
-        # Initialize dynamic weighter
-        success = await dynamic_weighter.initialize()
-        if success:
-            return dynamic_weighter
-        return None
-
-    except Exception as e:
-        print(f"Error setting up dynamic weighter: {e}")
-        return None

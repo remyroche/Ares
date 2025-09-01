@@ -47,17 +47,6 @@ from src.training.enhanced_training_manager_optimized import (  # noqa: E402
 def _handle_errors(default: Optional[Any] = None):
     """Decorator to log exceptions and return a default value."""
 
-    def decorator(func):
-        def wrapper(*args, **kwargs):
-            logger = system_logger.getChild(func.__name__)
-            try:
-                return func(*args, **kwargs)
-            except Exception as exc:  # pragma: no cover - defensive logging
-                logger.error("Error in %s: %s", func.__name__, exc, exc_info=True)
-                return default
-
-        return wrapper
-
     return decorator
 
 

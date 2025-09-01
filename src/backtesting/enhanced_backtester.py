@@ -82,40 +82,6 @@ class EnhancedBacktester:
 		default_return=False,
 		context="backtester initialization",
 	)
-	async def initialize(self) -> bool:
-		"""
-		Initialize enhanced backtester with reporting capabilities.
-
-		Returns:
-			bool: True if initialization successful = False otherwise
-		"""
-		try:
-			self.logger.info("Initializing Enhanced Backtester...")
-
-			# Load backtester configuration
-			await self._load_backtester_configuration()
-
-			# Validate configuration
-			if not self._validate_configuration():
-				self.logger.error(invalid("Invalid configuration for enhanced backtester"))
-				return False
-
-			# Initialize backtesting state
-			await self._initialize_backtesting_state()
-
-			# Initialize detailed reporting
-			if self.enable_detailed_reporting:
-				await self._initialize_detailed_reporting()
-
-			self.logger.info(
-				"✅ Enhanced Backtester initialization completed successfully",
-			)
-			return True
-
-		except Exception as e:  # pragma: no cover - safety
-			self.logger.error(failed(f"❌ Enhanced Backtester initialization failed: {e}"))
-			return False
-
 	@handle_errors(
 		exceptions=(ValueError, AttributeError),
 		default_return=None,
@@ -201,37 +167,6 @@ class EnhancedBacktester:
 		default_return=None,
 		context="detailed reporting initialization",
 	)
-	async def _initialize_detailed_reporting(self) -> None:
-		"""Initialize detailed reporting system."""
-		try:
-			# Import lazily to avoid hard dependency when reporter is not available
-			try:
-				from src.reports.paper_trading_reporter import (
-					setup_paper_trading_reporter as _setup_reporter,
-				)
-			except Exception as e:  # pragma: no cover - safety
-				self.logger.warning(
-					warning(
-						f"Detailed reporter unavailable, continuing without it: {e}",
-					),
-				)
-				self.enable_detailed_reporting = False
-				return
-
-			self.reporter = await _setup_reporter(self.config)
-			if self.reporter:
-				self.logger.info("✅ Detailed reporting initialized successfully")
-			else:
-				self.logger.warning(
-					warning("Failed to initialize detailed reporting; continuing"),
-				)
-				self.enable_detailed_reporting = False
-
-		except Exception as e:  # pragma: no cover - safety
-			self.logger.error(
-				initialization_error(f"Error initializing detailed reporting: {e}"),
-			)
-
 	@handle_errors(
 		exceptions=(Exception,),
 		default_return={},
@@ -842,11 +777,6 @@ class EnhancedBacktester:
 				self.logger.info(f"✅ Exported backtest JSON report: {filepath}")
 
 		return report_data
-
-	def stop(self) -> None:
-		"""Stop backtesting."""
-		self.is_running = False
-		self.logger.info("✅ Enhanced Backtester stopped")
 
 
 @handle_errors(

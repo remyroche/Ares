@@ -81,52 +81,11 @@ class Strategist:
         default_return=False,
         context="strategist initialization",
     )
-    async def initialize(self) -> bool:
-        """
-        Initialize strategist with enhanced error handling.
-
-        Returns:
-            bool: True if initialization successful, False otherwise
-        """
-        try:
-            self.logger.info("Initializing Strategist...")
-
-            # Validate configuration
-            if not self._validate_configuration():
-                self.logger.error(invalid("Invalid configuration for strategist"))
-                return False
-
-            # Initialize strategy components
-            await self._initialize_strategy_components()
-
-            self.logger.info("✅ Strategist initialized successfully")
-            return True
-
-        except Exception as e:
-            self.logger.error(failed(f"❌ Strategist initialization failed: {e}"))
-            return False
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="strategy components initialization",
     )
-    async def _initialize_strategy_components(self) -> None:
-        """Initialize strategy components."""
-        try:
-            # Initialize risk management
-            if self.enable_risk_management:
-                self.logger.info("Initializing risk management components...")
-
-            # Position sizing is handled by the Tactician component
-            # No position sizing initialization in Strategist
-
-            self.logger.info("✅ Strategy components initialized successfully")
-
-        except Exception as e:
-            self.logger.error(f"Error initializing strategy components: {e}")
-            raise
-
     @handle_errors(
         exceptions=(ValueError, TypeError),
         default_return=False,
@@ -163,57 +122,6 @@ class Strategist:
         default_return=None,
         context="strategy generation",
     )
-    async def generate_strategy(
-        self,
-        market_data: pd.DataFrame,
-        current_price: float,
-        analysis_results: dict[str, Any] | None = None,
-    ) -> dict[str, Any] | None:
-        """
-        Generate trading strategy based on market data and analysis results.
-
-        Args:
-            market_data: Market data for analysis
-            current_price: Current asset price
-            analysis_results: Results from market analysis (Step 1)
-
-        Returns:
-            dict[str, Any] | None: Generated strategy or None if failed
-        """
-        try:
-            if not self._validate_market_data(market_data):
-                self.logger.error("Invalid market data for strategy generation")
-                return None
-
-            self.logger.info("🎯 Generating trading strategy...")
-
-            # Extract key market indicators
-            market_indicators = self._extract_market_indicators(market_data, current_price)
-
-            # Generate base strategy
-            base_strategy = await self._generate_base_strategy(market_indicators, current_price)
-
-            # Integrate analysis results if available
-            if analysis_results:
-                base_strategy = await self._integrate_analysis_results(base_strategy, analysis_results)
-
-            # Apply risk management
-            if self.enable_risk_management:
-                base_strategy = await self._apply_risk_management(base_strategy, current_price)
-
-            # Position sizing is handled by the Tactician component
-            # No position sizing applied in Strategist
-
-            # Store strategy results
-            await self._store_strategy_results(base_strategy)
-
-            self.logger.info("✅ Strategy generation completed successfully")
-            return base_strategy
-
-        except Exception as e:
-            self.logger.error(f"Error generating strategy: {e}")
-            return None
-
     @handle_errors(
         exceptions=(ValueError, TypeError),
         default_return=False,
@@ -461,50 +369,8 @@ class Strategist:
         except Exception as e:
             self.logger.error(f"Error storing strategy results: {e}")
 
-    def get_strategy_results(self) -> dict[str, Any]:
-        """
-        Get current strategy results.
-
-        Returns:
-            dict[str, Any]: Current strategy results
-        """
-        return self.strategy_results.copy()
-
-    def get_current_strategy(self) -> dict[str, Any]:
-        """
-        Get current strategy.
-
-        Returns:
-            dict[str, Any]: Current strategy
-        """
-        return self.current_strategy.copy()
-
-    def get_strategy_history(self, limit: int | None = None) -> list[dict[str, Any]]:
-        """
-        Get strategy history.
-
-        Args:
-            limit: Maximum number of history entries to return
-
-        Returns:
-            list[dict[str, Any]]: Strategy history
-        """
-        history = self.strategy_history.copy()
-        if limit:
-            history = history[-limit:]
-        return history
-
     @handle_errors(
         exceptions=(Exception,),
         default_return=None,
         context="strategist stop",
     )
-    async def stop(self) -> None:
-        """Stop the strategist and cleanup resources."""
-        try:
-            self.logger.info("🛑 Stopping Strategist...")
-            self.is_running = False
-            self.logger.info("✅ Strategist stopped successfully")
-
-        except Exception as e:
-            self.logger.error(failed(f"❌ Failed to stop Strategist: {e}"))

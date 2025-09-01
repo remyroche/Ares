@@ -71,32 +71,6 @@ class LiquidationRiskModel:
         default_return=False,
         context="liquidation risk model initialization",
     )
-    async def initialize(self) -> bool:
-        """
-        Initialize Liquidation Risk Model with enhanced error handling.
-
-        Returns:
-            bool: True if initialization successful, False otherwise
-        """
-        try:
-            self.logger.info("Initializing Liquidation Risk Model...")
-
-            # Load risk model configuration
-            await self._load_risk_configuration()
-
-            # Validate configuration
-            if not self._validate_configuration():
-                self.logger.error("Invalid configuration for liquidation risk model")
-                return False
-
-            self.is_initialized = True
-            self.logger.info("Liquidation Risk Model initialized successfully")
-            return True
-
-        except Exception as e:
-            self.logger.error(f"Failed to initialize Liquidation Risk Model: {e}")
-            return False
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
@@ -148,58 +122,6 @@ class LiquidationRiskModel:
         default_return=None,
         context="liquidation risk calculation",
     )
-    async def calculate_liquidation_risk(
-        self, ml_predictions: dict[str, Any], current_price: float, target_direction: str = "long"
-    ) -> dict[str, Any]:
-        """
-        Calculate liquidation risk and safe leverage levels.
-
-        Args:
-            ml_predictions: ML confidence predictions
-            current_price: Current market price
-            target_direction: Target trading direction ("long" or "short")
-
-        Returns:
-            dict: Risk assessment results
-        """
-        try:
-            if not self.is_initialized:
-                self.logger.error("Liquidation Risk Model not initialized")
-                return None
-
-            if not ml_predictions or current_price <= 0:
-                self.logger.error("Invalid input data for risk calculation")
-                return None
-
-            # Extract adverse risk from ML predictions
-            adverse_risk = self._extract_adverse_risk(ml_predictions, target_direction)
-
-            # Calculate safe leverage levels
-            safe_leverage = self._calculate_safe_leverage(adverse_risk, target_direction)
-
-            # Calculate liquidation prices for different leverage levels
-            liquidation_prices = self._calculate_liquidation_prices(current_price, target_direction)
-
-            # Generate risk assessment
-            risk_assessment = {
-                "adverse_risk": adverse_risk, "safe_leverage": safe_leverage,
-                "max_safe_leverage": self._get_max_safe_leverage(adverse_risk),
-                "risk_level": self._classify_risk_level(adverse_risk),
-                "recommendation": self._generate_risk_recommendation(adverse_risk, safe_leverage),
-                "liquidation_prices": liquidation_prices, "target_direction": target_direction,
-                "current_price": current_price,
-                "timestamp": pd.Timestamp.now().isoformat(),
-            }
-
-            self.risk_assessments = risk_assessment
-            self.logger.info(f"Risk assessment completed: safe leverage = {safe_leverage}x, adverse risk = {adverse_risk:.3f}")
-
-            return risk_assessment
-
-        except Exception:
-            self.logger.error("Error calculating liquidation risk: {e}")
-            return None
-
     @validate_data_quality(validation_level="WARNING")
     @with_tracing_span("adverse_risk_extraction")
     def _extract_adverse_risk(
@@ -283,31 +205,6 @@ class LiquidationRiskModel:
 
         except Exception:
             self.logger.error("Error calculating safe leverage: {e}")
-            return self.min_leverage
-
-    def _get_max_safe_leverage(self, adverse_risk: float) -> int:
-        """
-        Get maximum safe leverage for given adverse risk.
-
-        Args:
-            adverse_risk: Adverse risk score (0-1)
-
-        Returns:
-            int: Maximum safe leverage
-        """
-        try:
-            max_leverage = self.min_leverage
-
-            for leverage, max_risk in sorted(self.leverage_risk_levels.items()):
-                if adverse_risk <= max_risk:
-                    max_leverage = leverage
-                else:
-                    break
-
-            return max_leverage
-
-        except Exception:
-            self.logger.error("Error getting max safe leverage: {e}")
             return self.min_leverage
 
     def _classify_risk_level(self, adverse_risk: float) -> str:
@@ -394,29 +291,8 @@ class LiquidationRiskModel:
             self.logger.error("Error calculating liquidation prices: {e}")
             return {}
 
-    def get_risk_assessments(self) -> dict[str, Any]:
-        """Get current risk assessments."""
-        return self.risk_assessments
-
-    def get_model_status(self) -> dict[str, Any]:
-        """Get model status."""
-        return {
-            "is_initialized": self.is_initialized, "max_leverage": self.max_leverage,
-            "min_leverage": self.min_leverage, "safe_leverage_multiplier": self.safe_leverage_multiplier,
-            "max_adverse_risk": self.max_adverse_risk,
-        }
-
     @handle_errors(
         exceptions=(Exception,),
         default_return=None,
         context="liquidation risk model cleanup",
     )
-    async def stop(self) -> None:
-        """Clean up liquidation risk model resources."""
-        try:
-            self.logger.info("Stopping Liquidation Risk Model...")
-            self.is_initialized = False
-            self.risk_assessments = {}
-            self.logger.info("Liquidation Risk Model stopped successfully")
-        except Exception:
-            self.logger.error("Error stopping Liquidation Risk Model: {e}")

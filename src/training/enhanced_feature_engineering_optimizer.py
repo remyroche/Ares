@@ -84,124 +84,7 @@ class EnhancedFeatureEngineeringOptimizer:
 
         self.logger.info("🚀 Enhanced Feature Engineering Optimizer initialized")
 
-    def _initialize_base_parameters(self) -> dict[str, Any]:
-        """Initialize base parameter ranges for all features."""
-        return {
-            "RSI": {
-                "lookback_period": list(range(5, 61, 5)),  # 5 to 60 in steps of 5
-                "overbought_threshold": list(range(65, 91, 5)),  # 65 to 90 in steps of 5
-                "oversold_threshold": list(range(10, 36, 5))  # 10 to 35 in steps of 5
-            },
-            "MACD": {
-                "fast_period": list(range(5, 26, 1)),  # 5 to 25
-                "slow_period": list(range(20, 41, 2)),  # 20 to 40 in steps of 2
-                "signal_period": list(range(5, 16, 1))  # 5 to 15
-            },
-            "Bollinger_Bands": {
-                "lookback_period": list(range(10, 61, 5)),  # 10 to 60 in steps of 5
-                "std_dev": [1.0, 1.5, 2.0, 2.5, 3.0, 3.5],
-                "squeeze_threshold": [0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4]
-            },
-            "SMA": {
-                "short_period": list(range(3, 26, 1)),  # 3 to 25
-                "long_period": list(range(20, 121, 5))  # 20 to 120 in steps of 5
-            },
-            "EMA": {
-                "short_period": list(range(3, 26, 1)),  # 3 to 25
-                "long_period": list(range(20, 121, 5))  # 20 to 120 in steps of 5
-            },
-            "ATR": {
-                "lookback_period": list(range(5, 36, 1))  # 5 to 35
-            },
-            "Stochastic": {
-                "k_period": list(range(5, 36, 1)),  # 5 to 35
-                "d_period": list(range(3, 11, 1)),  # 3 to 10
-                "overbought": list(range(70, 91, 5)),  # 70 to 90 in steps of 5
-                "oversold": list(range(10, 31, 5))  # 10 to 30 in steps of 5
-            },
-            "ADX": {
-                "lookback_period": list(range(5, 36, 1)),  # 5 to 35
-                "threshold": list(range(15, 41, 5))  # 15 to 40 in steps of 5
-            },
-            "CCI": {
-                "lookback_period": list(range(5, 36, 1)),  # 5 to 35
-                "constant": [0.01, 0.015, 0.02, 0.025, 0.03, 0.035, 0.04]
-            }
-        }
-
     @handle_errors(exceptions=(Exception,), default_return={})
-    async def optimize_feature_parameters_enhanced(
-        self,
-        data: pd.DataFrame,
-        target: pd.Series,
-        regimes: Optional[pd.Series] = None,
-        symbol: str = "UNKNOWN",
-        exchange: str = "UNKNOWN",
-        timeframe: str = "1m"
-    ) -> dict[str, Any]:
-        """
-        Enhanced feature parameter optimization with meta-optimization.
-
-        Args:
-            data: Feature data
-            target: Target variable
-            regimes: HMM regime labels (optional)
-            symbol: Trading symbol
-            exchange: Exchange name
-            timeframe: Timeframe
-
-        Returns:
-            Dictionary with enhanced optimization results
-        """
-        self.logger.info(f"🎯 Starting enhanced feature parameter optimization for {symbol} on {exchange}")
-
-        results = {
-            "optimization_timestamp": datetime.now().isoformat(),
-            "symbol": symbol,
-            "exchange": exchange,
-            "timeframe": timeframe,
-            "meta_optimization_results": {},
-            "parameter_space_optimization": {},
-            "multi_objective_results": {},
-            "enhanced_optimizations": {},
-            "performance_analysis": {}
-        }
-
-        # 1. Optimize parameter space using MI and correlation analysis
-        self.logger.info("🔍 Optimizing parameter space...")
-        optimized_param_space = await self._optimize_parameter_space(data, target)
-        results["parameter_space_optimization"] = optimized_param_space
-
-        # 2. Perform meta-optimization
-        self.logger.info("🧠 Performing meta-optimization...")
-        meta_results = await self._perform_meta_optimization(data, target, optimized_param_space)
-        results["meta_optimization_results"] = meta_results
-
-        # 3. Multi-objective optimization
-        self.logger.info("🎯 Performing multi-objective optimization...")
-        multi_obj_results = await self._perform_multi_objective_optimization(
-            data, target, optimized_param_space, regimes
-        )
-        results["multi_objective_results"] = multi_obj_results
-
-        # 4. Enhanced feature optimization with optimized parameters
-        self.logger.info("⚡ Performing enhanced feature optimization...")
-        enhanced_results = await self._perform_enhanced_feature_optimization(
-            data, target, optimized_param_space, regimes
-        )
-        results["enhanced_optimizations"] = enhanced_results
-
-        # 5. Performance analysis
-        self.logger.info("📊 Analyzing optimization performance...")
-        performance_analysis = await self._analyze_optimization_performance(results)
-        results["performance_analysis"] = performance_analysis
-
-        # 6. Save results
-        await self._save_enhanced_optimization_results(results, symbol, exchange, timeframe)
-
-        self.logger.info("✅ Enhanced feature parameter optimization completed successfully")
-        return results
-
     async def _optimize_parameter_space(
         self,
         data: pd.DataFrame,
@@ -266,21 +149,6 @@ class EnhancedFeatureEngineeringOptimizer:
             )
 
             # Define objective function
-            def objective(trial):
-                # Sample parameters from optimized space
-                params = self._sample_parameters_from_space(
-                    param_space["reduced_params"], trial
-                )
-
-                # Calculate feature with sampled parameters
-                feature_values = self._calculate_feature_with_params(data, feature_name, params)
-                if feature_values is None:
-                    return 0.0
-
-                # Calculate multi-objective score
-                score = self._calculate_multi_objective_score(feature_values, target, params)
-                return score
-
             # Optimize
             study.optimize(
                 objective,
@@ -515,22 +383,6 @@ class EnhancedFeatureEngineeringOptimizer:
                 pareto_optimal.append(solution)
 
         return pareto_optimal
-
-    def _early_stopping_callback(self, study: optuna.Study, trial: optuna.FrozenTrial) -> None:
-        """Early stopping callback for Optuna optimization."""
-
-        patience = self.meta_optimization_config["meta_optimization"]["early_stopping_patience"]
-        threshold = self.meta_optimization_config["meta_optimization"]["performance_threshold"]
-
-        # Stop if best value exceeds threshold
-        if study.best_value > threshold:
-            study.stop()
-
-        # Stop if no improvement for patience trials
-        if len(study.trials) > patience:
-            recent_trials = study.trials[-patience:]
-            if all(trial.value <= study.best_value for trial in recent_trials):
-                study.stop()
 
     def _calculate_feature_with_params(
         self,
@@ -907,27 +759,3 @@ class EnhancedFeatureEngineeringOptimizer:
             }
 
         return performance_analysis
-
-    def get_enhanced_optimized_parameters(
-        self,
-        symbol: str,
-        exchange: str,
-        timeframe: str
-    ) -> dict[str, Any]:
-        """Load enhanced optimized parameters."""
-
-        filepath = Path(f"data/enhanced_feature_engineering_optimization/{exchange}_{symbol}_{timeframe}_enhanced_feature_optimization.json")
-
-        if not filepath.exists():
-            self.logger.warning(f"⚠️ No enhanced optimization results found for {symbol} on {exchange}")
-            return {}
-
-        try:
-            with open(filepath, 'r') as f:
-                results = json.load(f)
-
-            return results.get("enhanced_optimizations", {})
-
-        except Exception as e:
-            self.logger.error(f"❌ Error loading enhanced optimization results: {e}")
-            return {}

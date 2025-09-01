@@ -55,68 +55,11 @@ class Tactician:
         default_return=False,
         context="tactician initialization",
     )
-    async def initialize(self) -> bool:
-        """
-        Initialize tactician and all component managers.
-
-        Returns:
-            bool: True if initialization successful, False otherwise
-        """
-        try:
-            self.logger.info("Initializing Refactored Tactician...")
-
-            # Initialize component managers
-            await self._initialize_component_managers()
-
-            # Validate configuration
-            if not self._validate_configuration():
-                self.logger.error(invalid("Invalid configuration for tactician"))
-                return False
-
-            self.logger.info("✅ Refactored Tactician initialized successfully")
-            return True
-
-        except Exception as e:
-            self.logger.error(failed(f"❌ Refactored Tactician initialization failed: {e}"))
-            return False
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="component managers initialization",
     )
-    async def _initialize_component_managers(self) -> None:
-        """Initialize all component managers."""
-        try:
-            # Initialize tactics orchestrator
-            from .tactics_orchestrator import TacticsOrchestrator
-            self.tactics_orchestrator = TacticsOrchestrator(self.config)
-            await self.tactics_orchestrator.initialize()
-
-            # Initialize position sizer
-            from src.tactician.position_sizer import PositionSizer
-            self.position_sizer = PositionSizer(self.config)
-            await self.position_sizer.initialize()
-
-            # Initialize leverage sizer
-            from src.tactician.leverage_sizer import LeverageSizer
-            self.leverage_sizer = LeverageSizer(self.config)
-            await self.leverage_sizer.initialize()
-
-            # Initialize position division strategy
-            from src.tactician.position_division_strategy import PositionDivisionStrategy
-            self.position_division_strategy = PositionDivisionStrategy(self.config)
-            await self.position_division_strategy.initialize()
-
-            # Enhanced predictions are now handled by the supervisor
-            # No local initialization needed
-
-            self.logger.info("✅ All component managers initialized")
-
-        except Exception as e:
-            self.logger.error(failed(f"❌ Failed to initialize component managers: {e}"))
-            raise
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=False,
@@ -298,55 +241,6 @@ class Tactician:
             self.logger.error(failed(f"❌ Tactician run failed: {e}"))
             return False
 
-    def get_status(self) -> dict[str, Any]:
-        """
-        Get tactician status.
-
-        Returns:
-            dict: Tactician status
-        """
-        return {
-            "is_running": self.is_running, "status": self.status,
-            "history_count": len(self.history),
-            "has_results": bool(self.tactics_results),
-        }
-
-    def get_history(self, limit: int | None = None) -> list[dict[str, Any]]:
-        """
-        Get tactician history.
-
-        Args:
-            limit: Maximum number of history entries to return
-
-        Returns:
-            list: Tactician history
-        """
-        history = self.history.copy()
-        if limit:
-            history = history[-limit:]
-        return history
-
-    def get_tactics_results(self) -> dict[str, Any]:
-        """
-        Get the latest tactics results.
-
-        Returns:
-            dict: Tactics results
-        """
-        return self.tactics_results.copy()
-
-    def get_tactics_modules(self) -> dict[str, Any]:
-        """
-        Get tactics modules information.
-
-        Returns:
-            dict: Tactics modules information
-        """
-        return {
-            "tactics_orchestrator": self.tactics_orchestrator is not None, "position_sizer": self.position_sizer is not None,
-            "leverage_sizer": self.leverage_sizer is not None, "position_division_strategy": self.position_division_strategy is not None,
-        }
-
     # Enhanced predictions are now handled by the supervisor
     # No local methods needed
 
@@ -355,77 +249,13 @@ class Tactician:
         default_return=None,
         context="tactician stop",
     )
-    async def stop(self) -> None:
-        """Stop the tactician and cleanup resources."""
-        try:
-            self.logger.info("🛑 Stopping Tactician...")
-
-            # Stop component managers
-            if self.tactics_orchestrator:
-                await self.tactics_orchestrator.stop()
-            if self.position_sizer:
-                await self.position_sizer.stop()
-            if self.leverage_sizer:
-                await self.leverage_sizer.stop()
-            if self.position_division_strategy:
-                await self.position_division_strategy.stop()
-
-            self.is_running = False
-            self.logger.info("✅ Tactician stopped successfully")
-
-        except Exception as e:
-            self.logger.error(failed(f"❌ Failed to stop Tactician: {e}"))
-
     @handle_errors(
         exceptions=(Exception,),
         default_return=None,
         context="tactician cleanup",
     )
-    async def cleanup(self) -> None:
-        """Cleanup tactician resources."""
-        try:
-            self.logger.info("Cleaning up Tactician...")
-            await self.stop()
-
-            # Cleanup component managers
-            if self.tactics_orchestrator:
-                await self.tactics_orchestrator.cleanup()
-            if self.position_sizer:
-                await self.position_sizer.cleanup()
-            if self.leverage_sizer:
-                await self.leverage_sizer.cleanup()
-            if self.position_division_strategy:
-                await self.position_division_strategy.cleanup()
-
-            # Clear history and results
-            self.history.clear()
-            self.tactics_results.clear()
-            self.status.clear()
-
-            self.logger.info("✅ Tactician cleanup completed")
-        except Exception as e:
-            self.logger.error(failed(f"❌ Failed to cleanup Tactician: {e}"))
-
 @handle_errors(
     exceptions=(Exception,),
     default_return=None,
     context="tactician setup",
 )
-async def setup_tactician(config: dict[str, Any] | None = None) -> Tactician | None:
-    """
-    Setup and return a configured Tactician instance.
-
-    Args:
-        config: Configuration dictionary
-
-    Returns:
-        Tactician: Configured tactician instance
-    """
-    try:
-        tactician = Tactician(config or {})
-        if await tactician.initialize():
-            return tactician
-        return None
-    except Exception as e:
-        system_logger.exception(f"Failed to setup tactician: {e}")
-        return None

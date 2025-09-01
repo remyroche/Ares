@@ -425,43 +425,6 @@ class PerformanceReporter:
         default_return=False,
         context="performance reporter initialization",
     )
-    async def initialize(self) -> bool:
-        """
-        Initialize performance reporter with enhanced error handling.
-
-        Returns:
-            bool: True if initialization successful, False otherwise
-        """
-        try:
-            self.logger.info("Initializing Performance Reporter...")
-
-            # Load reporter configuration
-            await self._load_reporter_configuration()
-
-            # Validate configuration
-            if not self._validate_configuration():
-                self.logger.error("Invalid configuration for performance reporter")
-                return False
-
-            # Setup advanced reporting engine
-            await self._setup_advanced_reporting()
-
-            # Setup real-time reporting
-            if self.enable_real_time_reporting:
-                await self._setup_real_time_reporting()
-
-            # Setup export directory
-            await self._setup_export_directory()
-
-            self.logger.info(
-                "✅ Performance Reporter initialization completed successfully",
-            )
-            return True
-
-        except Exception as e:
-            self.logger.error(f"❌ Performance Reporter initialization failed: {e}")
-            return False
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
@@ -538,53 +501,16 @@ class PerformanceReporter:
         default_return=None,
         context="advanced reporting setup",
     )
-    async def _setup_advanced_reporting(self) -> None:
-        """Setup advanced reporting engine."""
-        try:
-            # Initialize advanced reporting engine
-            self.advanced_engine = AdvancedReportingEngine(
-                self.config
-            )
-
-            self.logger.info("Advanced reporting engine setup completed")
-
-        except Exception as e:
-            self.logger.error(f"Error setting up advanced reporting: {e}")
-
     @handle_errors(
         exceptions=(Exception,),
         default_return=None,
         context="real-time reporting setup",
     )
-    async def _setup_real_time_reporting(self) -> None:
-        """Setup real-time reporting."""
-        try:
-            # Initialize real-time reporting components
-            self.real_time_metrics = {}
-            self.performance_trends = {}
-
-            self.logger.info("Real-time reporting setup completed")
-
-        except Exception as e:
-            self.logger.error(f"Error setting up real-time reporting: {e}")
-
     @handle_errors(
         exceptions=(Exception,),
         default_return=None,
         context="export directory setup",
     )
-    async def _setup_export_directory(self) -> None:
-        """Setup export directory."""
-        try:
-            # Create export directory if it doesn't exist
-            if not os.path.exists(self.export_directory):
-                os.makedirs(self.export_directory)
-
-            self.logger.info("Export directory setup completed")
-
-        except Exception as e:
-            self.logger.error(f"Error setting up export directory: {e}")
-
     @handle_specific_errors(
         error_handlers={
             Exception: (False, "Performance reporter run failed"),
@@ -644,25 +570,6 @@ class PerformanceReporter:
         default_return=None,
         context="real-time report generation",
     )
-    async def _generate_real_time_report(self) -> None:
-        """Generate a real-time performance report."""
-        try:
-            # Collect real-time performance data
-            performance_data = await self._collect_performance_data()
-
-            # Generate real-time report using advanced engine
-            real_time_report = await self.advanced_engine.generate_real_time_report(
-                performance_data,
-            )
-
-            # Store real-time report
-            self.real_time_metrics = real_time_report
-
-            self.logger.debug("Real-time report updated")
-
-        except Exception as e:
-            self.logger.error(f"Error generating real-time report: {e}")
-
     @handle_errors(
         exceptions=(Exception,),
         default_return=None,
@@ -735,61 +642,16 @@ class PerformanceReporter:
         default_return=None,
         context="report export",
     )
-    async def _export_report(self, report: dict[str, Any]) -> None:
-        """Export the generated report to various formats."""
-        try:
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-
-            for export_format in self.export_formats:
-                if export_format == "json":
-                    await self._export_json_report(report, timestamp)
-                elif export_format == "csv":
-                    await self._export_csv_report(report, timestamp)
-
-        except Exception as e:
-            self.logger.error(f"Error exporting report: {e}")
-
     @handle_errors(
         exceptions=(Exception,),
         default_return=None,
         context="JSON report export",
     )
-    async def _export_json_report(self, report: dict[str, Any], timestamp: str) -> None:
-        """Export report to JSON format."""
-        try:
-            filename = f"performance_report_{timestamp}.json"
-            filepath = os.path.join(self.export_directory, filename)
-
-            with open(filepath, "w") as f:
-                json.dump(report, f, indent=2)
-
-            self.logger.info(f"JSON report exported: {filepath}")
-
-        except Exception as e:
-            self.logger.error(f"Error exporting JSON report: {e}")
-
     @handle_errors(
         exceptions=(Exception,),
         default_return=None,
         context="CSV report export",
     )
-    async def _export_csv_report(self, report: dict[str, Any], timestamp: str) -> None:
-        """Export report to CSV format."""
-        try:
-            filename = f"performance_report_{timestamp}.csv"
-            filepath = os.path.join(self.export_directory, filename)
-
-            # Convert report to CSV format
-            csv_data = self._convert_report_to_csv(report)
-
-            with open(filepath, "w") as f:
-                f.write(csv_data)
-
-            self.logger.info(f"CSV report exported: {filepath}")
-
-        except Exception as e:
-            self.logger.error(f"Error exporting CSV report: {e}")
-
     def _convert_report_to_csv(self, report: dict[str, Any]) -> str:
         """Convert report to CSV format."""
         try:
@@ -817,48 +679,9 @@ class PerformanceReporter:
         default_return=None,
         context="performance reporter stop",
     )
-    async def stop(self) -> None:
-        """Stop the performance reporter."""
-        self.logger.info("🛑 Stopping Performance Reporter...")
-        try:
-            self.is_running = False
-            self.logger.info("✅ Performance Reporter stopped successfully")
-        except Exception as e:
-            self.logger.error(f"Error stopping performance reporter: {e}")
-
-    def get_status(self) -> dict[str, Any]:
-        """Get the current status of the performance reporter."""
-        return {
-            "is_running": self.is_running,
-            "report_interval": self.report_interval,
-            "max_history": self.max_history,
-            "enable_real_time_reporting": self.enable_real_time_reporting,
-            "real_time_interval": self.real_time_interval,
-            "export_formats": self.export_formats,
-            "export_directory": self.export_directory,
-        }
-
-    def get_history(self, limit: int | None = None) -> list[dict[str, Any]]:
-        """Get the history of generated reports."""
-        history = self.history.copy()
-        if limit:
-            history = history[-limit:]
-        return history
-
-    def get_reports(self, limit: int | None = None) -> list[dict[str, Any]]:
-        """Get the list of generated reports."""
-        reports = self.reports.copy()
-        if limit:
-            reports = reports[-limit:]
-        return reports
-
     def get_latest_report(self) -> dict[str, Any] | None:
         """Get the latest generated report."""
         return self.reports[-1] if self.reports else None
-
-    def get_real_time_metrics(self) -> dict[str, Any]:
-        """Get the latest real-time metrics."""
-        return self.real_time_metrics.copy()
 
     def analyze_performance_attribution(
         self, portfolio_data: dict[str, Any], benchmark_data: dict[str, Any] | None = None
@@ -963,39 +786,6 @@ class PerformanceReporter:
             self.logger.error(f"Error calculating risk management contribution: {e}")
             return {"contribution": 0.0, "method": "unknown", "significance": "low"}
 
-    def _calculate_leverage_contribution(self, portfolio_data: dict[str, Any]) -> dict[str, Any]:
-        """Calculate leverage contribution."""
-        try:
-            # Mock calculation - replace with actual leverage analysis
-            return {
-                "contribution": 0.05,
-                "method": "leverage_analysis",
-                "significance": "low",
-                "details": {"leverage_score": 0.45, "leverage_efficiency": 0.58},
-            }
-        except Exception as e:
-            self.logger.error(f"Error calculating leverage contribution: {e}")
-            return {"contribution": 0.0, "method": "unknown", "significance": "low"}
-
-    def _decompose_risk(self, portfolio_data: dict[str, Any]) -> dict[str, Any]:
-        """Decompose risk into various components."""
-        try:
-            returns = portfolio_data.get("returns", [])
-            if not returns:
-                return {}
-
-            return {
-                "total_risk": np.std(returns),
-                "systematic_risk": np.std(returns) * 0.7,  # Mock calculation
-                "idiosyncratic_risk": np.std(returns) * 0.3,  # Mock calculation
-                "downside_risk": self._calculate_downside_deviation(returns),
-                "tail_risk": self._calculate_tail_risk(returns),
-            }
-
-        except Exception as e:
-            self.logger.error(f"Error decomposing risk: {e}")
-            return {}
-
     def _analyze_timing(self, portfolio_data: dict[str, Any]) -> dict[str, Any]:
         """Analyze market timing effectiveness."""
         try:
@@ -1060,29 +850,3 @@ performance_reporter: PerformanceReporter | None = None
     default_return=None,
     context="performance reporter setup",
 )
-async def setup_performance_reporter(
-    config: dict[str, Any] | None = None,
-) -> PerformanceReporter | None:
-    """
-    Set up and initialize the performance reporter.
-
-    Args:
-        config: Optional configuration dictionary.
-
-    Returns:
-        PerformanceReporter instance or None if setup fails.
-    """
-    try:
-        global performance_reporter
-        if config is None:
-            config = {
-                "performance_reporter": {"report_interval": 3600, "max_history": 100},
-            }
-        performance_reporter = PerformanceReporter(config)
-        success = await performance_reporter.initialize()
-        if success:
-            return performance_reporter
-        return None
-    except Exception as e:
-        print(f"Error setting up performance reporter: {e}")
-        return None

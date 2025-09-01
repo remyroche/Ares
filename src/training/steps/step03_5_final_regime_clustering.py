@@ -51,18 +51,6 @@ class FinalRegimeClusteringStep:
         self._initialize_components()
 
     @secure_step_execution
-    def _initialize_components(self) -> None:
-        """Initialize regime clustering components."""
-        self.logger.info("🔧 Initializing final regime clustering components...")
-        try:
-            # Load optimized parameters from step3
-            self._load_optimized_parameters()
-            self.logger.info("✅ Final regime clustering components initialized successfully")
-
-        except Exception as e:
-            self.logger.error(f"❌ Failed to initialize regime clustering components: {e}")
-            raise
-
     @secure_data_processing
     def _load_optimized_parameters(self) -> None:
         """Load optimized parameters from step3."""
@@ -92,18 +80,6 @@ class FinalRegimeClusteringStep:
         context="regime_clustering_initialization"
     )
     @secure_step_execution
-    async def initialize(self) -> bool:
-        """Initialize the final regime clustering step."""
-        try:
-            self.logger.info("🚀 Initializing final regime clustering step...")
-            self.logger.info(f"📋 Optimized parameters loaded: {len(self.optimized_params)} parameters")
-            self.logger.info("✅ Final regime clustering step initialized successfully")
-            return True
-
-        except Exception as e:
-            self.logger.error(f"Failed to initialize regime clustering step: {e}")
-            return False
-
     @monitor_step_execution
     @secure_step_execution
     @validate_pipeline_step
@@ -822,17 +798,6 @@ class FinalRegimeClusteringStep:
         context="regime_clustering_cleanup"
     )
     @secure_step_execution
-    async def cleanup(self) -> bool:
-        """Clean up resources after regime clustering."""
-        try:
-            self.logger.info("🧹 Cleaning up regime clustering resources...")
-            self.logger.info("✅ Regime clustering cleanup completed")
-            return True
-
-        except Exception as e:
-            self.logger.error(f"Failed to cleanup regime clustering: {e}")
-            return False
-
 
 @handle_errors(
     exceptions=(Exception,),

@@ -30,32 +30,8 @@ def _handle_errors(default: Optional[Any] = None) -> Callable[[Callable[..., Any
     This keeps the script robust for long-running diagnostics.
     """
 
-    def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
-        def wrapper(*args: Any, **kwargs: Any) -> Any:
-            logger = system_logger.getChild(func.__name__)
-            try:
-                return func(*args, **kwargs)
-            except Exception as exc:  # pragma: no cover - defensive logging
-                logger.error("Error in %s: %s", func.__name__, exc, exc_info=True)
-                return default
-
-        return wrapper
-
     return decorator
 
-
-def _require_dataframe(func: Callable[..., Any]) -> Callable[..., Any]:
-    """Decorator to validate the first argument is a pandas DataFrame."""
-
-    def wrapper(*args: Any, **kwargs: Any) -> Any:
-        if not args:
-            raise ValueError("Function requires a DataFrame as first argument")
-        df = args[1] if hasattr(args[0], "__class__") else args[0]
-        if not isinstance(df, pd.DataFrame):
-            raise TypeError("Expected a pandas DataFrame as input")
-        return func(*args, **kwargs)
-
-    return wrapper
 
 
 class FeatureQualityDiagnostic:

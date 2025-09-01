@@ -68,19 +68,6 @@ class DataPreparation:
         self.data_cache_path.mkdir(exist_ok=True)
 
     @with_tracing_span("get_klines_files")
-    def get_klines_files(
-        self, symbol: str, exchange: str, interval: str = "1m"
-    ) -> list[Path]:
-        """Get all klines files for a symbol and exchange."""
-        pattern = f"klines_{exchange}_{symbol}_{interval}_*.csv"
-        csv_files = list(self.data_cache_path.glob(pattern))
-
-        # Also get parquet files if they exist
-        pattern_parquet = f"klines_{exchange}_{symbol}_{interval}_*.parquet"
-        parquet_files = list(self.data_cache_path.glob(pattern_parquet))
-
-        return sorted(csv_files + parquet_files)
-
     @validate_data_quality()
     @guard_dataframe_nulls(mode="warn", arg_index=0)
     @with_tracing_span("load_klines_data")
@@ -784,37 +771,6 @@ class DataPreparation:
             validation_result["valid"] = False
 
         return validation_result
-
-    def generate_resampling_report(self, symbol: str, exchange: str) -> str:
-        """Generate a comprehensive resampling report."""
-        report = f"""
-🔄 RESAMPLING REPORT FOR {exchange}_{symbol}
-{'='*60}
-
-📊 AVAILABLE TIMEFRAMES:
-    pass
-"""
-
-        for timeframe in self.SUPPORTED_TIMEFRAMES:
-            # Check if resampled file exists
-            output_dir = self.data_cache_path / "resampled" / exchange / symbol
-            filename = f"klines_{exchange}_{symbol}_{timeframe}_resampled.parquet"
-            file_path = output_dir / filename
-
-            if file_path.exists():
-                try:
-                    df = pd.read_parquet(file_path)
-                    report += f"• {timeframe}: ✅ Available ({len(df)} rows)\n"
-                except:
-                    report += f"• {timeframe}: ❌ Corrupted\n"
-            else:
-                report += f"• {timeframe}: ❌ Not available\n"
-
-        report += f"""
-{'='*60}
-"""
-
-        return report
 
     @with_tracing_span("create_1m_consolidated_data")
     @handle_errors(

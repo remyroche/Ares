@@ -263,18 +263,6 @@ class IntelligentParameterPruner:
 
         return boosted_scores
 
-    def _get_param_config_from_mapping(
-        self,
-        parameter_mapping: Dict[str, Dict[str, Any]],
-        step_name: str,
-        param_name: str
-    ) -> Any:
-        """Get parameter configuration from the mapping."""
-
-        if step_name in parameter_mapping and param_name in parameter_mapping[step_name]:
-            return parameter_mapping[step_name][param_name]
-        return None
-
     def _get_test_values(self, param_config: Any) -> List[Any]:
         """Get test values for a parameter configuration."""
 
@@ -370,33 +358,6 @@ class IntelligentParameterPruner:
             self.logger.warning(f"Detailed sensitivity test failed for {step}.{param}: {e}")
             return 0.0
 
-    def get_high_impact_parameters(
-        self,
-        sensitivity_scores: Dict[str, float]
-    ) -> List[str]:
-        """Return only parameters above sensitivity threshold."""
-
-        # Sort by sensitivity (descending)
-        sorted_params = sorted(
-            sensitivity_scores.items(),
-            key=lambda x: x[1],
-            reverse=True
-        )
-
-        # Filter by threshold
-        high_impact = [
-            param for param, sensitivity in sorted_params
-            if sensitivity > self.sensitivity_threshold
-        ]
-
-        # Limit to max_parameters
-        if len(high_impact) > self.max_parameters:
-            high_impact = high_impact[:self.max_parameters]
-            self.logger.info(f"Limited to top {self.max_parameters} parameters")
-
-        self.logger.info(f"Selected {len(high_impact)} high-impact parameters")
-        return high_impact
-
     async def _evaluate_single_parameter(
         self,
         data: pd.DataFrame,
@@ -439,38 +400,6 @@ class IntelligentParameterPruner:
         except Exception as e:
             self.logger.warning(f"Parameter evaluation failed: {e}")
             return 0.5  # Default neutral score
-
-    def get_parameter_importance_summary(self) -> Dict[str, Any]:
-        """Get summary of parameter importance analysis."""
-
-        if not self.parameter_importance:
-            return {"error": "No parameter importance data available"}
-
-        sorted_params = sorted(
-            self.parameter_importance.items(),
-            key=lambda x: x[1],
-            reverse=True
-        )
-
-        # Add interaction information
-        interaction_summary = {}
-        for param, interactions in self.parameter_interactions.items():
-            if interactions:
-                interaction_summary[param] = {
-                    "interaction_count": len(interactions),
-                    "max_interaction_strength": max(interactions.values()),
-                    "interaction_partners": list(interactions.keys())
-                }
-
-        return {
-            "total_parameters_analyzed": len(self.parameter_importance),
-            "high_impact_count": len([p for p, s in sorted_params if s > self.sensitivity_threshold]),
-            "top_10_parameters": sorted_params[:10],
-            "sensitivity_threshold": self.sensitivity_threshold,
-            "max_parameters": self.max_parameters,
-            "parameter_interactions": interaction_summary,
-            "interaction_count": len(self.parameter_interactions)
-        }
 
 
 class AdaptiveTrialAllocator:
@@ -559,16 +488,6 @@ class AdaptiveTrialAllocator:
         else:
             return current_trials  # Keep same
 
-    def get_allocation_summary(self) -> Dict[str, Any]:
-        """Get summary of trial allocation."""
-
-        return {
-            "total_trials": self.total_trials,
-            "phase_allocations": self.phase_trials,
-            "min_trials_per_phase": self.min_trials_per_phase,
-            "performance_history": self.performance_history
-        }
-
 
 class SmartParameterGrouper:
     """Group related parameters for efficient optimization."""
@@ -626,49 +545,6 @@ class SmartParameterGrouper:
                 "step15_tactician_specialist_training.learning_rate"
             ]
         }
-
-    def get_optimization_order(self) -> List[str]:
-        """Return optimal order for parameter group optimization."""
-
-        # Order by expected impact and dependencies
-        return [
-            OptimizationPhase.CORE_MODEL_ARCHITECTURE.value,      # Foundation
-            OptimizationPhase.TREE_BASED_PARAMETERS.value,        # Core performance
-            OptimizationPhase.REGULARIZATION_PARAMETERS.value,    # Fine-tuning
-            OptimizationPhase.ENSEMBLE_SETTINGS.value,            # Advanced features
-            OptimizationPhase.CONFIDENCE_CALIBRATION.value,       # Final polish
-            OptimizationPhase.FINE_TUNING.value                   # Ultimate refinement
-        ]
-
-    def get_phase_complexity(self) -> Dict[str, int]:
-        """Get complexity score for each phase (higher = more trials needed)."""
-
-        return {
-            OptimizationPhase.CORE_MODEL_ARCHITECTURE.value: 3,      # Low complexity
-            OptimizationPhase.TREE_BASED_PARAMETERS.value: 5,        # Medium complexity
-            OptimizationPhase.REGULARIZATION_PARAMETERS.value: 4,    # Medium complexity
-            OptimizationPhase.ENSEMBLE_SETTINGS.value: 6,            # High complexity
-            OptimizationPhase.CONFIDENCE_CALIBRATION.value: 4,       # Medium complexity
-            OptimizationPhase.FINE_TUNING.value: 5                   # Medium complexity
-        }
-
-    def get_parameters_for_phase(self, phase: str) -> List[str]:
-        """Get list of parameters for a specific phase."""
-
-        return self.parameter_groups.get(phase, [])
-
-    def get_parameter_group_summary(self) -> Dict[str, Any]:
-        """Get summary of parameter grouping."""
-
-        summary = {}
-        for phase, params in self.parameter_groups.items():
-            summary[phase] = {
-                "parameter_count": len(params),
-                "parameters": params,
-                "complexity": self.get_phase_complexity().get(phase, 0)
-            }
-
-        return summary
 
 
 class HierarchicalOptimizer:
@@ -863,29 +739,6 @@ class HierarchicalOptimizer:
         self.logger.info(f"🎯 Optimized parameter order: {len(non_ensemble)} base + {len(ensemble_params)} ensemble")
         return optimized_order
 
-    def _should_stop_early(self, best_value: float, phase_idx: int, total_phases: int) -> bool:
-        """Determine if optimization should stop early based on performance."""
-
-        # More lenient early stopping for later phases
-        if phase_idx >= total_phases // 2:  # After half the phases
-            threshold = self.performance_thresholds.get("good", 0.8)
-        else:
-            threshold = self.performance_thresholds.get("excellent", 0.9)
-
-        return best_value > threshold
-
-    def _get_performance_level(self, value: float) -> str:
-        """Get performance level description."""
-
-        if value >= self.performance_thresholds.get("excellent", 0.9):
-            return "🎯 EXCELLENT"
-        elif value >= self.performance_thresholds.get("good", 0.8):
-            return "✅ GOOD"
-        elif value >= self.performance_thresholds.get("acceptable", 0.7):
-            return "⚠️ ACCEPTABLE"
-        else:
-            return "❌ NEEDS IMPROVEMENT"
-
     async def _optimize_parameter_group_advanced(
         self,
         group_name: str,
@@ -993,64 +846,10 @@ class HierarchicalOptimizer:
                 self.optimizer = optimizer
                 self.trial_count = 0
 
-            def __call__(self, study, trial):
-                self.trial_count += 1
-
-                # Adjust learning rate based on phase progress
-                if self.trial_count % 20 == 0:  # Every 20 trials
-                    current_value = trial.value if hasattr(trial, 'value') else 0.5
-
-                    # Increase exploration in early phases, exploitation in later phases
-                    if self.phase_idx < 2:  # Early phases
-                        if current_value < 0.6:
-                            # Increase exploration
-                            study.sampler.n_startup_trials = min(study.sampler.n_startup_trials + 5, 50)
-                    else:  # Later phases
-                        if current_value > 0.8:
-                            # Increase exploitation
-                            study.sampler.n_startup_trials = max(study.sampler.n_startup_trials - 2, 5)
-
         return AdaptiveLearningCallback(phase_idx, self)
 
     def _create_advanced_group_objective(self, parameters: List[str], data: pd.DataFrame, phase_idx: int):
         """Create advanced objective function with phase-specific logic."""
-
-        def objective(trial):
-            # Sample parameters for this group
-            params = {}
-
-            for param_path in parameters:
-                step_name, param_name = param_path.split(".", 1)
-                param_config = self._get_parameter_config(step_name, param_name)
-
-                if param_config:
-                    if isinstance(param_config, tuple) and len(param_config) == 2:
-                        min_val, max_val = param_config
-                        if param_name in ["n_estimators", "max_depth", "calibration_cv_folds"]:
-                            params[param_path] = trial.suggest_int(param_path, min_val, max_val)
-                        else:
-                            params[param_path] = trial.suggest_float(param_path, min_val, max_val, log=True)
-                    elif isinstance(param_config, list):
-                        params[param_path] = trial.suggest_categorical(param_path, param_config)
-                    else:
-                        params[param_path] = param_config
-
-            # Evaluate the parameters with phase-specific logic
-            try:
-                if self.multi_objective_enabled and phase_idx >= 2:
-                    # Multi-objective evaluation
-                    objectives = self._evaluate_multi_objective(data, params, parameters, phase_idx)
-                    return objectives
-                else:
-                    # Single objective evaluation
-                    performance_score = self._evaluate_parameter_group_advanced(data, params, parameters, phase_idx)
-                    return performance_score
-            except Exception as e:
-                self.logger.warning(f"Trial failed for group {parameters}: {e}")
-                if self.multi_objective_enabled and phase_idx >= 2:
-                    return [float('-inf')] * 3
-                else:
-                    return float('-inf')
 
         return objective
 
@@ -1159,51 +958,6 @@ class HierarchicalOptimizer:
             metrics["phase_progress"] = best_value
 
         return metrics
-
-    def _get_parameter_config(self, step_name: str, param_name: str) -> Any:
-        """Get parameter configuration for sampling."""
-
-        # This would integrate with your actual parameter mapping
-        # For now, providing default configurations
-
-        default_configs = {
-            "model_type": ["random_forest", "xgboost", "lightgbm", "catboost"],
-            "n_estimators": (50, 2000),
-            "max_depth": (2, 50),
-            "learning_rate": (0.001, 1.0),
-            "subsample": (0.3, 1.0),
-            "colsample_bytree": (0.3, 1.0),
-            "reg_alpha": (0.0, 20.0),
-            "reg_lambda": (0.0, 20.0),
-            "ensemble_size": (1, 20),
-            "stacking_enabled": [True, False],
-            "meta_learner": ["logistic", "random_forest", "xgboost"],
-            "primary_method": ["isotonic", "sigmoid", "platt", "temperature"],
-            "estimation_method": ["ensemble", "mc_dropout", "gaussian", "conformal"],
-            "confidence_level": (0.8, 0.99),
-            "calibration_cv_folds": (3, 20)
-        }
-
-        return default_configs.get(param_name, (0.0, 1.0))
-
-    def get_optimization_summary(self) -> Dict[str, Any]:
-        """Get comprehensive optimization summary."""
-
-        return {
-            "total_phases": len(self.optimization_results),
-            "phase_results": {
-                phase: {
-                    "best_value": result.best_value,
-                    "n_trials": result.n_trials,
-                    "optimization_time": result.optimization_time,
-                    "parameter_count": result.parameter_count
-                }
-                for phase, result in self.optimization_results.items()
-            },
-            "parameter_importance": self.parameter_pruner.get_parameter_importance_summary(),
-            "trial_allocation": self.trial_allocator.get_allocation_summary(),
-            "parameter_groups": self.parameter_grouper.get_parameter_group_summary()
-        }
 
 
 # Factory function for creating hierarchical optimizer

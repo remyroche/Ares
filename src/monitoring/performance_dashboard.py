@@ -73,9 +73,3 @@ class PerformanceDashboard:
     @resource_monitor()
     @memory_efficient()
     @handle_errors(exceptions=(Exception,), default_return=False, context="performance_dashboard.initialize")
-    async def initialize(self) -> bool:
-        """Initialize performance dashboard."""
-        self.logger.info("📊 Initializing Performance Dashboard...")
-        self.is_active = True
-        self.logger.info("✅ Performance Dashboard initialized successfully")
-        return True

@@ -154,31 +154,6 @@ class DIIntegration:
         self.logger.info("Specialized services created")
         return specialized_services
 
-    async def _initialize_all_components(self, components: dict[str, Any]) -> None:
-        """Initialize all components."""
-        self.logger.info("Initializing all components")
-
-        for name, component in components.items():
-            if hasattr(component, "initialize"):
-                try:
-                    success = await component.initialize()
-                    if success:
-                        self.logger.info(f"Initialized component: {name}")
-                    else:
-                        self.logger.error(f"Failed to initialize component: {name}")
-                except Exception as e:
-                    self.logger.exception(f"Error initializing {name}: {e}")
-
-        self.logger.info("Component initialization completed")
-
-    def get_integration_status(self) -> dict[str, Any]:
-        """Get integration status."""
-        return {
-            "is_initialized": self.is_initialized,
-            "components": list(self.system_components.keys()),
-            "container_services": list(self.container.get_all_services().keys()),
-        }
-
     async def shutdown(self) -> None:
         """Shutdown the integration."""
         self.logger.info("Shutting down DI integration")
@@ -196,7 +171,3 @@ class DIIntegration:
 
 
 # Convenience function for quick integration demonstration
-async def demonstrate_di_integration(config: dict[str, Any] | None = None) -> dict[str, Any]:
-    """Quick demonstration of DI integration."""
-    integration = DIIntegration(config)
-    return await integration.demonstrate_full_di_integration()

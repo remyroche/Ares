@@ -34,10 +34,6 @@ class DataManager:
         default_return=False,
         context="data_manager.initialize",
     )
-    async def initialize(self) -> bool:
-        self.logger.info("Initializing DataManager ...")
-        return True
-
     @performance_monitor(level=PerformanceLevel.DETAILED)
     @memory_efficient()
     @validate_data_quality(required_columns=None, context="data_manager.process")

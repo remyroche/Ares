@@ -117,19 +117,6 @@ class RollingMTInference:
         except Exception:
             return float(np.clip(value, 0.0, 1.0))
 
-    def _get_threshold(
-        self,
-        head: str,
-        cls: str | None = None,
-        default: float = 0.6,
-    ) -> float:
-        try:
-            if head == "path_class" and cls is not None:
-                return float(self.thresholds.get("path_class", {}).get(cls, default))
-            return float(self.thresholds.get(head, default))
-        except Exception:
-            return float(default)
-
     def predict_latest(self, combined_df: pd.DataFrame) -> dict[str, Any]:
         X = self._build_X_last(combined_df)
         if X.empty:

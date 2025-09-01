@@ -60,9 +60,6 @@ def create_fallback_logger():
     return logging.getLogger(__name__)
 
 def create_fallback_decorator():
-    def decorator(func):
-        return func
-    return decorator
 
 # Initialize fallbacks
 if system_logger is None:

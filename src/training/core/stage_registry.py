@@ -45,34 +45,6 @@ class StageRegistry:
         default_return=False,
         context="stage registry initialization",
     )
-    async def initialize(self) -> bool:
-        """Initialize stage registry with enhanced error handling.
-
-        Returns:
-            bool: True if initialization successful, False otherwise
-
-        """
-        try:
-            self.logger.info("Initializing Stage Registry...")
-
-            # Load stage configuration
-            await self._load_stage_configuration()
-
-            # Validate configuration
-            if not self._validate_configuration():
-                self.logger.error("Invalid configuration for stage registry")
-                return False
-
-            # Initialize stage modules
-            await self._initialize_stage_modules()
-
-            self.logger.info("✅ Stage Registry initialization completed successfully")
-            return True
-
-        except Exception as e:
-            self.logger.exception(f"❌ Stage Registry initialization failed: {e}")
-            return False
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,

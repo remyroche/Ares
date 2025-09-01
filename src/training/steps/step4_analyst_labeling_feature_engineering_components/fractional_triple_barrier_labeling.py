@@ -75,55 +75,6 @@ class FractionalTripleBarrierLabeling:
     )
     @guard_dataframe_nulls(mode="warn", arg_index=1)
     @with_tracing_span("FractionalTripleBarrier.apply", log_args=False)
-    def apply_fractional_triple_barrier_labeling(
-        self,
-        data: pd.DataFrame,
-        regime_labels: Optional[np.ndarray] = None,
-        volatility_series: Optional[pd.Series] = None,
-    ) -> pd.DataFrame:
-        """Apply fractional triple barrier labeling.
-
-        Args:
-            data: OHLCV data
-            regime_labels: Optional regime labels for regime-specific scaling
-            volatility_series: Optional volatility series for normalization
-
-        Returns:
-            DataFrame with fractional labels and confidence scores
-        """
-        self.logger.info("Applying fractional triple barrier labeling")
-
-        # Step 1: Get base binary labels
-        labeled_data = self.base_labeler.apply_triple_barrier_labeling_vectorized(data)
-
-        # Step 2: Calculate fractional components
-        fractional_components = self._calculate_fractional_components(
-            labeled_data, regime_labels, volatility_series
-        )
-
-        # Step 3: Combine into final fractional labels
-        final_labels = self._combine_fractional_components(fractional_components)
-
-        # Step 4: Add confidence scores
-        confidence_scores = self._calculate_confidence_scores(
-            labeled_data, fractional_components
-        )
-
-        # Step 5: Update the dataframe
-        labeled_data["fractional_label"] = final_labels
-        labeled_data["confidence_score"] = confidence_scores
-        labeled_data["barrier_distance"] = fractional_components["distance_score"]
-        labeled_data["time_decay_score"] = fractional_components["time_score"]
-        labeled_data["volatility_score"] = fractional_components["volatility_score"]
-
-        # Step 6: Filter by confidence threshold
-        min_confidence = self.fractional_config["min_confidence_threshold"]
-        filtered_data = labeled_data[confidence_scores >= min_confidence].copy()
-
-        self.logger.info(f"Fractional labeling complete: {len(filtered_data)}/{len(labeled_data)} samples retained")
-
-        return filtered_data
-
     def _calculate_fractional_components(
         self,
         labeled_data: pd.DataFrame,
@@ -271,18 +222,3 @@ class FractionalTripleBarrierLabeling:
         final_confidence = np.clip(final_confidence, min_conf, max_conf)
 
         return final_confidence
-
-    def get_fractional_label_statistics(self, labeled_data: pd.DataFrame) -> Dict[str, Any]:
-        """Get statistics about fractional labels."""
-        stats = {
-            "total_samples": len(labeled_data),
-            "fractional_label_mean": labeled_data["fractional_label"].mean(),
-            "fractional_label_std": labeled_data["fractional_label"].std(),
-            "confidence_mean": labeled_data["confidence_score"].mean(),
-            "confidence_std": labeled_data["confidence_score"].std(),
-            "positive_labels": (labeled_data["fractional_label"] > 0).sum(),
-            "negative_labels": (labeled_data["fractional_label"] < 0).sum(),
-            "neutral_labels": (labeled_data["fractional_label"] == 0).sum(),
-        }
-
-        return stats

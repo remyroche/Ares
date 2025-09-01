@@ -62,32 +62,6 @@ class StateManager:
         default_return=False,
         context="state manager initialization",
     )
-    async def initialize(self) -> bool:
-        """Initialize state manager with enhanced error handling.
-
-        Returns:
-            bool: True if initialization successful = False otherwise
-        """
-        self.logger.info("Initializing State Manager...")
-
-        # Load state configuration
-        await self._load_state_configuration()
-
-        # Validate configuration
-        if not self._validate_configuration():
-            self.print(invalid("Invalid configuration for state manager"))
-            return False
-
-        # Load existing state
-        await self._load_existing_state()
-
-        # Start auto-save if enabled
-        if self.auto_save:
-            await self._start_auto_save()
-
-        self.logger.info("✅ State Manager initialization completed successfully")
-        return True
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
@@ -199,80 +173,21 @@ class StateManager:
         default_return=None,
         context="state getting",
     )
-    def get_state(self, key: str, default: Any = None) -> Any:
-        """Get state value.
-
-        Args:
-            key: State key
-            default: Default value if key not found
-
-        Returns:
-            Any: State value
-        """
-        try:
-            return self.state.get(key, default)
-        except Exception as e:
-            self.logger.exception(f"Error getting state: {e}")
-            return default
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="state setting",
     )
-    def set_state(self, key: str, value: Any) -> None:
-        """Set state value.
-
-        Args:
-            key: State key
-            value: State value
-        """
-        try:
-            self.state[key] = value
-            self.logger.debug(f"State updated: {key} = {value}")
-        except Exception as e:
-            self.logger.exception(f"Error setting state: {e}")
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="state clearing",
     )
-    def clear_state(self) -> None:
-        """Clear all state."""
-        try:
-            self.state.clear()
-            self.logger.info("State cleared successfully")
-        except Exception as e:
-            self.logger.exception(f"Error clearing state: {e}")
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="state manager cleanup",
     )
-    async def stop(self) -> None:
-        """Stop the state manager."""
-        self.logger.info("🛑 Stopping State Manager...")
-
-        try:
-            # Stop auto-save
-            self.is_running = False
-            if self.auto_save_task:
-                self.auto_save_task.cancel()
-            try:
-                await self.auto_save_task
-            except asyncio.CancelledError:
-                pass
-
-            # Save final state
-            await self.save_state()
-
-            self.logger.info("✅ State Manager stopped successfully")
-
-        except Exception as e:
-            self.logger.exception(f"Error stopping state manager: {e}")
-
     def print(self, message: str) -> None:
         """Print message to console."""
         print(message)
@@ -287,38 +202,3 @@ state_manager: StateManager | None = None
     default_return=None,
     context="state manager setup",
 )
-async def setup_state_manager(
-    config: dict[str, Any] | None = None,
-) -> StateManager | None:
-    """Setup global state manager.
-
-    Args:
-        config: Optional configuration dictionary
-
-    Returns:
-        Optional[StateManager]: Global state manager instance
-    """
-    try:
-        global state_manager
-
-        if config is None:
-        # Fallback implementation for config
-            config = {
-                "state_manager": {
-                    "state_file": "state/state.json",
-                    "auto_save": True,
-                    "save_interval": 60,
-                },
-            }
-
-        # Create state manager
-        state_manager = StateManager(config)
-
-        # Initialize state manager
-        success = await state_manager.initialize()
-        if success:
-            return state_manager
-        return None
-
-    except Exception:
-        return None

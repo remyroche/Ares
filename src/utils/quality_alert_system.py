@@ -302,25 +302,6 @@ Details:
             self.logger.error(f"❌ Error sending webhook alert: {e}")
             return False
 
-    def get_alert_history(self, hours: int = 24) -> List[Alert]:
-        """Get alert history for the last N hours."""
-        cutoff_time = datetime.now() - timedelta(hours=hours)
-        return [alert for alert in self.alert_history if alert.timestamp > cutoff_time]
-
-    def get_alert_summary(self, hours: int = 24) -> Dict[str, int]:
-        """Get summary of alerts in the last N hours."""
-        recent_alerts = self.get_alert_history(hours)
-
-        summary = {
-            "total": len(recent_alerts),
-            "critical": len([a for a in recent_alerts if a.level == "CRITICAL"]),
-            "error": len([a for a in recent_alerts if a.level == "ERROR"]),
-            "warning": len([a for a in recent_alerts if a.level == "WARNING"]),
-            "info": len([a for a in recent_alerts if a.level == "INFO"])
-        }
-
-        return summary
-
 
 class StreamingQualityValidator:
     """Validates streaming data in real-time."""
@@ -396,33 +377,6 @@ class QualityDashboard:
         self.alert_manager = alert_manager
         self.logger = system_logger.getChild("QualityDashboard")
 
-    def generate_quality_report(self, validation_result: MLValidationResult) -> Dict[str, Any]:
-        """Generate a comprehensive quality report."""
-        report = {
-            "timestamp": datetime.now().isoformat(),
-            "overall_quality": {
-                "score": validation_result.quality_score.overall,
-                "grade": validation_result.quality_score.grade,
-                "components": validation_result.quality_score.components
-            },
-            "issues_summary": {
-                "total_issues": validation_result.summary.get("total_issues", 0),
-                "correlation_issues": len(validation_result.correlation_issues),
-                "target_issues": len(validation_result.target_issues),
-                "distribution_issues": len(validation_result.distribution_issues),
-                "outlier_issues": len(validation_result.outlier_issues),
-                "time_series_issues": len(validation_result.time_series_issues),
-                "financial_issues": len(validation_result.financial_issues)
-            },
-            "drift_detection": {
-                "drift_detected": validation_result.drift_report is not None,
-                "drift_issues": validation_result.drift_report.issues if validation_result.drift_report else []
-            },
-            "recommendations": self._generate_recommendations(validation_result)
-        }
-
-        return report
-
     def _generate_recommendations(self, validation_result: MLValidationResult) -> List[str]:
         """Generate recommendations based on validation results."""
         recommendations = []
@@ -459,41 +413,5 @@ class QualityDashboard:
 
         return recommendations
 
-    def get_alert_summary(self, hours: int = 24) -> Dict[str, Any]:
-        """Get alert summary for dashboard."""
-        alert_summary = self.alert_manager.get_alert_summary(hours)
-
-        return {
-            "period_hours": hours,
-            "alert_counts": alert_summary,
-            "total_alerts": alert_summary["total"],
-            "critical_alerts": alert_summary["critical"],
-            "error_alerts": alert_summary["error"],
-            "warning_alerts": alert_summary["warning"]
-        }
-
 
 # Convenience functions
-def create_alert_config(
-    slack_webhook: Optional[str] = None,
-    email_config: Optional[Dict[str, Any]] = None,
-    webhook_url: Optional[str] = None
-) -> AlertConfig:
-    """Create alert configuration."""
-    return AlertConfig(
-        slack_webhook=slack_webhook,
-        email_config=email_config,
-        webhook_url=webhook_url
-    )
-
-
-def setup_quality_monitoring(
-    alert_config: AlertConfig,
-    validation_rules: Optional[List[Any]] = None
-) -> Tuple[QualityAlertManager, StreamingQualityValidator, QualityDashboard]:
-    """Set up complete quality monitoring system."""
-    alert_manager = QualityAlertManager(alert_config)
-    streaming_validator = StreamingQualityValidator(validation_rules or [], alert_manager)
-    dashboard = QualityDashboard(alert_manager)
-
-    return alert_manager, streaming_validator, dashboard

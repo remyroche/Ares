@@ -17,43 +17,6 @@ class HMMFeatureEnhancer:
 
     @with_tracing_span("HMMFeatureEnhancer.enhance_hmm_features")
     @guard_dataframe_nulls(mode="warn", arg_index=0)
-    def enhance_hmm_features(self, features_df: pd.DataFrame) -> pd.DataFrame:
-        """Enhance HMM features with additional derived features.
-
-        Args:
-            features_df: DataFrame with existing HMM features
-
-        Returns:
-            Enhanced DataFrame with additional HMM features
-
-        """
-        try:
-            self.logger.info("🔄 Enhancing HMM features with derived features...")
-
-            enhanced_df = features_df.copy()
-
-            # 1. Regime Transition Features
-            enhanced_df = self._add_regime_transition_features(enhanced_df)
-
-            # 2. Regime Stability Features
-            enhanced_df = self._add_regime_stability_features(enhanced_df)
-
-            # 3. Regime Interaction Features
-            enhanced_df = self._add_regime_interaction_features(enhanced_df)
-
-            # 4. Missing Technical Indicators (from Step 5 requirements)
-            enhanced_df = self._add_missing_technical_indicators(enhanced_df)
-
-            # 5. Regime-Enhanced Features
-            enhanced_df = self._add_regime_enhanced_features(enhanced_df)
-
-            self.logger.info(f"✅ Enhanced HMM features: {enhanced_df.shape[1]} total features")
-            return enhanced_df
-
-        except Exception as e:
-            self.logger.exception(f"🚨 HMM feature enhancement failed: {e}")
-            return features_df
-
     def _add_regime_transition_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """Add regime transition and persistence features."""
         try:

@@ -41,23 +41,6 @@ class FinalParametersOptimizationStepNew:
         default_return=False,
         context="final parameters optimization step initialization",
     )
-    async def initialize(self) -> None:
-        """Initialize the final parameters optimization step."""
-        self.logger.info("🚀 Initializing Final Parameters Optimization Step (New)...")
-
-        # Validate configuration
-        is_valid, errors = self.config_manager.validate_config()
-        if not is_valid:
-            self.logger.error(f"Configuration validation failed: {errors}")
-            raise ValueError("Configuration validation failed")
-
-        # Initialize optimization storage
-        self._setup_optimization_storage()
-
-        self.logger.info(
-            "✅ Final Parameters Optimization Step initialized successfully",
-        )
-
     @handle_errors(
         exceptions=(Exception,),
         default_return={"status": "FAILED", "error": "Execution failed"},
@@ -817,15 +800,6 @@ class FinalParametersOptimizationStepNew:
         except Exception as e:
             self.logger.error(f"Error generating optimization report: {e}")
             return {"error": str(e)}
-
-    def _setup_optimization_storage(self) -> None:
-        """Setup optimization storage."""
-        try:
-            # Ensure optimization directories exist
-            os.makedirs("data/optimization_results", exist_ok=True)
-            os.makedirs("data/calibration_results", exist_ok=True)
-        except Exception as e:
-            self.logger.error(f"Error setting up optimization storage: {e}")
 
     async def _deliver_step12_results(
         self,

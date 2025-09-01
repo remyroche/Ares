@@ -84,69 +84,9 @@ class RegimeExpertOrchestrator:
         default_return=None,
         context="regime expert initialization",
     )
-    async def initialize(self) -> bool:
-        """Initialize the regime expert orchestrator."""
-        try:
-            self.logger.info("Initializing Regime Expert Orchestrator...")
-
-            # Load regime ensembles
-            # Note: This would typically load the trained models from Step 5
-            self.logger.info("Regime Expert Orchestrator initialized successfully")
-            return True
-
-        except Exception as e:
-            self.logger.error(f"Failed to initialize Regime Expert Orchestrator: {e}")
-            return False
-
-    def get_current_regime_from_cluster(self, cluster_id: int) -> str:
-        """Map composite_cluster_id to regime name."""
-        return self.cluster_mapping.get(cluster_id, "UNKNOWN")
-
-    def get_regime_expert(self, cluster_id: int) -> Optional[Any]:
-        """Get the appropriate regime expert for the given cluster ID."""
-        regime_name = self.get_current_regime_from_cluster(cluster_id)
-        return self.regime_ensembles.get_regime_expert(cluster_id)
-
     @handle_errors(
         exceptions=(Exception,), default_return=None, context="current regime detection"
     )
-    async def get_current_regime_info(
-        self, exchange: str, symbol: str, timeframe: str
-    ) -> Optional[Dict[str, Any]]:
-        """Get comprehensive current regime information."""
-        try:
-            # Get regime info from runtime
-            regime_info = get_current_regime_info(exchange, symbol, timeframe)
-
-            if regime_info is None or regime_info.get("cluster_id", -1) == -1:
-                return None
-
-            cluster_id = regime_info["cluster_id"]
-            regime_name = self.get_current_regime_from_cluster(cluster_id)
-            expert = self.get_regime_expert(cluster_id)
-
-            # Get intensity confidence
-            intensities = regime_info.get("intensities", {})
-            confidence = intensities.get(cluster_id, 0.0)
-
-            return {
-                "cluster_id": cluster_id,
-                "regime_name": regime_name,
-                "expert": expert,
-                "confidence": confidence,
-                "intensities": intensities,
-                "p_emerge": regime_info.get("p_emerge", {}),
-                "exit_hazard": regime_info.get("exit_hazard"),
-                "timestamp": regime_info.get("timestamp"),
-                "exchange": exchange,
-                "symbol": symbol,
-                "timeframe": timeframe,
-            }
-
-        except Exception as e:
-            self.logger.error(f"Error getting current regime info: {e}")
-            return None
-
     @handle_errors(
         exceptions=(Exception,), default_return=None, context="regime expert prediction"
     )
@@ -239,16 +179,6 @@ class RegimeExpertOrchestrator:
                 "error": f"Transition prediction failed: {e}",
             }
 
-    def _get_current_intensity_scores(
-        self, regime_info: Dict[str, Any]
-    ) -> Dict[str, float]:
-        """Get current intensity scores for all regimes."""
-        intensities = regime_info.get("intensities", {})
-        return {
-            f"intensity_cluster_{cluster_id}": intensity
-            for cluster_id, intensity in intensities.items()
-        }
-
     async def _get_combined_regime_predictions(
         self, analysis: TransitionAnalysis, features: pd.DataFrame
     ) -> Dict[str, Any]:
@@ -303,13 +233,6 @@ class RegimeExpertOrchestrator:
             combined_prediction["weighted_prediction"] /= total_weight
 
         return combined_prediction
-
-    def _get_cluster_id_from_regime_name(self, regime_name: str) -> Optional[int]:
-        """Map regime name back to cluster ID."""
-        for cluster_id, name in self.cluster_mapping.items():
-            if name == regime_name:
-                return cluster_id
-        return None
 
     @handle_errors(
         exceptions=(Exception,), default_return=None, context="step09_5 integration"
@@ -407,76 +330,6 @@ class RegimeExpertOrchestrator:
     @handle_errors(
         exceptions=(Exception,), default_return=None, context="two-tier decision system"
     )
-    async def get_two_tier_decision(
-        self,
-        exchange: str,
-        symbol: str,
-        timeframe: str,
-        step09_5_prediction: Optional[Dict[str, Any]] = None,
-        step10_prediction: Optional[Dict[str, Any]] = None,
-    ) -> Optional[Dict[str, Any]]:
-        """Get two-tier decision combining regime expert with Step 9.5 and Step 10."""
-        try:
-            # Tier 1: Get current regime and expert
-            regime_info = await self.get_current_regime_info(
-                exchange, symbol, timeframe
-            )
-            if regime_info is None:
-                self.logger.warning("Could not determine current regime")
-                return None
-
-            # Tier 1: Strategic decision from regime expert
-            strategic_decision = await self.get_regime_expert_prediction(
-                pd.DataFrame(),  # Current features would be passed here
-                regime_info,
-            )
-
-            if strategic_decision is None:
-                return None
-
-            # Check if we should consider trading
-            if strategic_decision.get("confidence", 0.0) < self.min_regime_confidence:
-                return {
-                    "decision": "HOLD",
-                    "reason": "Insufficient regime confidence",
-                    "regime_info": regime_info,
-                    "strategic_decision": strategic_decision,
-                    "tactical_decision": None,
-                    "final_decision": "HOLD",
-                }
-
-            # Tier 2: Integrate Step 9.5 (regime transitions)
-            step09_5_integration = None
-            if step09_5_prediction is not None:
-                step09_5_integration = await self.integrate_step9_5_prediction(
-                    regime_info, step09_5_prediction
-                )
-
-            # Tier 2: Integrate Step 10 (event timing)
-            step10_integration = None
-            if step10_prediction is not None:
-                step10_integration = await self.integrate_step10_prediction(
-                    regime_info, step10_prediction
-                )
-
-            # Make final decision
-            final_decision = self._make_final_decision(
-                strategic_decision, step09_5_integration, step10_integration
-            )
-
-            return {
-                "regime_info": regime_info,
-                "strategic_decision": strategic_decision,
-                "step09_5_integration": step09_5_integration,
-                "step10_integration": step10_integration,
-                "final_decision": final_decision,
-                "timestamp": datetime.now().isoformat(),
-            }
-
-        except Exception as e:
-            self.logger.error(f"Error getting two-tier decision: {e}")
-            return None
-
     def _make_final_decision(
         self,
         strategic_decision: Dict[str, Any],
@@ -550,11 +403,3 @@ class RegimeExpertOrchestrator:
 
 
 # Convenience function for easy integration
-async def get_regime_expert_decision(
-    exchange: str, symbol: str, timeframe: str, config: dict[str, Any]
-) -> Optional[Dict[str, Any]]:
-    """Get regime expert decision for the given parameters."""
-    orchestrator = RegimeExpertOrchestrator(config)
-    await orchestrator.initialize()
-
-    return await orchestrator.get_two_tier_decision(exchange, symbol, timeframe)

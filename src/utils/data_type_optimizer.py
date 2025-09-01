@@ -104,51 +104,6 @@ def optimize_dataframe_dtypes(
     return optimized_df
 
 
-def get_optimal_dtypes_for_features() -> dict[str, str]:
-    """
-    Get optimal data types for common feature engineering outputs.
-
-    Returns:
-        Dictionary mapping feature patterns to optimal data types
-    """
-    return {
-        # Price-based features (typically float32 is sufficient)
-        "price_": "float32",
-        "close_": "float32",
-        "high_": "float32",
-        "low_": "float32",
-        "open_": "float32",
-        # Volume features (can often use int32)
-        "volume_": "int32",
-        "vol_": "int32",
-        # Technical indicators (float32 is sufficient)
-        "rsi_": "float32",
-        "sma_": "float32",
-        "ema_": "float32",
-        "bb_": "float32",
-        "macd_": "float32",
-        "stoch_": "float32",
-        # Cluster features (categorical or int8)
-        "cluster_": "int8",
-        "intensity_cluster_": "float32",
-        # Correlation features (float32)
-        "correlation_": "float32",
-        "corr_": "float32",
-        # Volatility features (float32)
-        "volatility_": "float32",
-        "vol_": "float32",
-        # Momentum features (float32)
-        "momentum_": "float32",
-        "mom_": "float32",
-        # Spread features (float32)
-        "spread_": "float32",
-        "bid_ask_": "float32",
-        # Impact features (float32)
-        "impact_": "float32",
-        "price_impact": "float32",
-        "volume_impact": "float32",
-    }
-
 
 def apply_feature_specific_optimization(df: pd.DataFrame) -> pd.DataFrame:
     """
@@ -199,39 +154,3 @@ def apply_feature_specific_optimization(df: pd.DataFrame) -> pd.DataFrame:
 
     return optimized_df
 
-
-def optimize_feature_engineering_pipeline(
-    df: pd.DataFrame,
-    stage: str = "input",
-) -> pd.DataFrame:
-    """
-    Optimize DataFrame for feature engineering pipeline stages.
-
-    Args:
-        df: Input DataFrame
-        stage: Pipeline stage ("input", "intermediate", "output")
-
-    Returns:
-        Optimized DataFrame
-    """
-    if stage == "input":
-        # For input data, be conservative with optimizations
-        return optimize_dataframe_dtypes(
-            df,
-            target_memory_reduction=0.3,
-            preserve_categorical=True,
-        )
-
-    if stage == "intermediate":
-        # For intermediate calculations, be more aggressive
-        return optimize_dataframe_dtypes(
-            df,
-            target_memory_reduction=0.6,
-            preserve_categorical=False,
-        )
-
-    if stage == "output":
-        # For final output, apply feature-specific optimizations
-        return apply_feature_specific_optimization(df)
-
-    return df

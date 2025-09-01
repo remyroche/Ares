@@ -46,27 +46,6 @@ class LiveWaveletDemo:
             self.logger.error(f"Error loading config: {e}")
             return {}
 
-    async def initialize(self) -> bool:
-        """Initialize the demo."""
-        try:
-            self.logger.info("🚀 Initializing Live Wavelet Demo...")
-
-            # Initialize wavelet integration
-            success = await self.wavelet_integration.initialize()
-            if not success:
-                self.logger.error("Failed to initialize wavelet integration")
-                return False
-
-            # Generate demo data
-            self._generate_demo_data()
-
-            self.logger.info("✅ Live Wavelet Demo initialized successfully")
-            return True
-
-        except Exception as e:
-            self.logger.error(f"❌ Error initializing demo: {e}")
-            return False
-
     def _generate_demo_data(self) -> None:
         """Generate realistic demo market data."""
         try:
@@ -274,11 +253,6 @@ class LiveWaveletDemo:
 
         except Exception as e:
             self.logger.error(f"Error logging final stats: {e}")
-
-    def stop_demo(self) -> None:
-        """Stop the demo."""
-        self.is_running = False
-        self.logger.info("🛑 Demo stopped by user")
 
 async def main():
     """Main demo function."""

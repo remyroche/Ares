@@ -17,57 +17,10 @@ class TestRegimeChangePrediction:
     """Test suite for regime change prediction functionality."""
 
     @pytest.fixture
-    def sample_hmm_data(self):
-        """Create sample HMM data for testing."""
-        # Create sample data with regime changes
-        dates = pd.date_range(start="2024-01-01", end="2024-01-31", freq="1H")
-
-        # Create regime changes every few hours
-        regimes = []
-        for i in range(len(dates)):
-            regime = (i // 6) % 5  # Change regime every 6 hours, 5 different regimes
-            regimes.append(regime)
-
-        # Create intensity scores
-        intensity_data = {}
-        for i in range(20):  # 20 intensity features
-            intensity_data[f"intensity_cluster_{i}"] = np.random.rand(len(dates))
-
-        # Create regime probability features
-        regime_data = {}
-        for i in range(5):  # 5 regime states
-            regime_data[f"momentum_p_state_{i}"] = np.random.rand(len(dates))
-            regime_data[f"volatility_p_state_{i}"] = np.random.rand(len(dates))
-
-        return pd.DataFrame(
-            {
-                "timestamp": dates,
-                "composite_cluster_id": regimes,
-                **intensity_data,
-                **regime_data,
-            },
-        )
-
 
     @pytest.fixture
-    def sample_feature_data(self):
-        """Create sample feature data for testing."""
-        dates = pd.date_range(start="2024-01-01", end="2024-01-31", freq="1H")
-
-        # Create sample features
-        features = {}
-        for i in range(50):  # 50 features
-            features[f"feature_{i}"] = np.random.rand(len(dates))
-
-        return pd.DataFrame({"timestamp": dates, **features})
-
 
     @pytest.fixture
-    def temp_data_dir(self):
-        """Create temporary data directory for testing."""
-        with tempfile.TemporaryDirectory() as temp_dir:
-            yield temp_dir
-
     def test_regime_change_detection(self, sample_hmm_data) -> None:
         """Test regime change detection functionality."""
         # Create step instance

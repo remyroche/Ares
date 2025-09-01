@@ -55,36 +55,6 @@ class BacktestingWithCachedFeatures:
         self.performance_stats: dict[str, Any] = {}
 
     @handle_errors(exceptions=(Exception,), default_return=False, context="backtesting.initialize")
-    async def initialize(self) -> bool:
-        """Initialize the backtesting system."""
-        try:
-            self.logger.info("🚀 Initializing backtesting with cached features...")
-
-            # Initialize feature engineering
-            self.feature_engineer = VectorizedAdvancedFeatureEngineering(self.config)
-            await self.feature_engineer.initialize()
-
-            # Initialize cache
-            self.wavelet_cache = WaveletFeatureCache(self.config)
-
-            # Initialize performance monitoring
-            self.performance_stats = {
-                "cache_hits": 0,
-                "cache_misses": 0,
-                "total_feature_load_time": 0.0,
-                "total_backtest_time": 0.0,
-                "iterations_completed": 0,
-            }
-
-            self.logger.info(
-                "✅ Backtesting with cached features initialized successfully",
-            )
-            return True
-
-        except Exception as e:  # noqa: BLE001
-            self.logger.exception(f"❌ Error initializing backtesting system: {e}")
-            return False
-
     @handle_errors(exceptions=(Exception,), default_return={"error": "run_backtest failed"}, context="backtesting.run_backtest")
     async def run_backtest(
         self,
@@ -133,87 +103,6 @@ class BacktestingWithCachedFeatures:
         return backtest_results
 
     @handle_errors(exceptions=(Exception,), default_return={}, context="backtesting.get_cached_features")
-    async def _get_cached_wavelet_features(
-        self, price_data: pd.DataFrame, volume_data: pd.DataFrame | None = None
-    ) -> dict[str, Any]:
-        """Get wavelet features with caching support.
-
-        Args:
-            price_data: Price data
-            volume_data: Volume data (optional)
-
-        Returns:
-            Dictionary containing wavelet features
-
-        """
-        if not self.feature_engineer:
-            self.logger.error("Feature engineer not initialized")
-            return {}
-
-        if not self.wavelet_cache:
-            self.logger.warning(
-                "Wavelet cache not available, using direct computation",
-            )
-            return await self.feature_engineer._get_wavelet_features_with_caching(  # noqa: SLF001
-                price_data,
-                volume_data,
-            )
-
-        # Generate cache key
-        wavelet_config = self.feature_engineer.wavelet_analyzer.wavelet_config  # type: ignore[attr-defined]
-        cache_key = self.wavelet_cache.generate_cache_key(
-            price_data,
-            wavelet_config,
-            {
-                "volume_data_shape": volume_data.shape if volume_data is not None else None,
-            },
-        )
-
-        # Check cache with timing
-        cache_start_time = time.time()
-        if self.wavelet_cache.cache_exists(cache_key):
-            self.logger.info(f"📦 Loading wavelet features from cache: {cache_key}")
-            cached_features, _metadata = self.wavelet_cache.load_from_cache(
-                cache_key,
-            )
-
-            cache_load_time = time.time() - cache_start_time
-            self.performance_stats["cache_hits"] += 1
-            self.performance_stats["total_feature_load_time"] += cache_load_time
-
-            self.logger.info(f"⚡ Cache load time: {cache_load_time:.3f}s")
-            return cached_features
-
-        # Cache miss - compute features
-        self.logger.info(f"🔧 Computing wavelet features (cache miss): {cache_key}")
-        wavelet_features = (
-            await self.feature_engineer._get_wavelet_features_with_caching(  # noqa: SLF001
-                price_data,
-                volume_data,
-            )
-        )
-
-        # Save to cache
-        metadata = {
-            "data_shape": price_data.shape,
-            "volume_data_shape": volume_data.shape if volume_data is not None else None,
-            "computation_time": time.time(),
-            "backtest_generated": True,
-        }
-
-        cache_success = self.wavelet_cache.save_to_cache(
-            cache_key,
-            wavelet_features,
-            metadata,
-        )
-        if cache_success:
-            self.logger.info(
-                f"💾 Cached wavelet features for future backtests: {cache_key}",
-            )
-
-        self.performance_stats["cache_misses"] += 1
-        return wavelet_features
-
     @handle_errors(exceptions=(Exception,), default_return={"error": "strategy failed"}, context="backtesting.run_strategy_backtest")
     async def _run_strategy_backtest(
         self,
@@ -451,33 +340,6 @@ class BacktestingWithCachedFeatures:
         except Exception as e:  # noqa: BLE001
             self.logger.exception(f"Error loading volume data: {e}")
             return None
-
-    def get_performance_stats(self) -> dict[str, Any]:
-        """Get performance statistics."""
-        try:
-            stats = self.performance_stats.copy()
-
-            if stats.get("iterations_completed", 0) > 0:
-                stats["avg_backtest_time"] = (
-                    stats["total_backtest_time"] / stats["iterations_completed"]
-                )
-                stats["avg_feature_load_time"] = (
-                    stats["total_feature_load_time"] / stats["cache_hits"]
-                    if stats["cache_hits"] > 0
-                    else 0
-                )
-                stats["cache_hit_rate"] = (
-                    stats["cache_hits"] / (stats["cache_hits"] + stats["cache_misses"])
-                    if (stats["cache_hits"] + stats["cache_misses"]) > 0
-                    else 0
-                )
-
-            stats["timestamp"] = datetime.now().isoformat()
-            return stats
-
-        except Exception as e:  # noqa: BLE001
-            self.logger.exception(f"Error getting performance stats: {e}")
-            return {"error": str(e)}
 
     def clear_cache(self) -> bool:
         """Clear wavelet cache."""

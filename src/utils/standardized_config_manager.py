@@ -91,12 +91,6 @@ class StandardizedConfigManager:
 
         return validated_config
 
-    def _get_default_config(self, config_type: str) -> Dict[str, Any]:
-        """Get default configuration for a given type."""
-        if config_type in self.schemas:
-            return self.schemas[config_type]["defaults"].copy()
-        return {}
-
     def _validate_config(self, config: Dict[str, Any], config_type: str) -> Dict[str, Any]:
         """Validate configuration against schema and apply defaults."""
         if config_type not in self.schemas:
@@ -156,62 +150,6 @@ class StandardizedConfigManager:
 
         return step_config
 
-    def save_config(self, config: Dict[str, Any], config_type: str, config_name: str) -> bool:
-        """Save configuration to file.
-
-        Args:
-            config: Configuration dictionary
-            config_type: Type of configuration
-            config_name: Name of the configuration file
-
-        Returns:
-            True if successful, False otherwise
-        """
-        try:
-            config_dir = self.base_config_path / config_type
-            config_dir.mkdir(parents=True, exist_ok=True)
-
-            config_path = config_dir / f"{config_name}.json"
-
-            # Add metadata
-            config_with_metadata = {
-                "metadata": {
-                    "created_at": datetime.now().isoformat(),
-                    "version": "1.0.0",
-                    "config_type": config_type
-                },
-                "config": config
-            }
-
-            with open(config_path, 'w') as f:
-                json.dump(config_with_metadata, f, indent=2)
-
-            self.logger.info(f"✅ Saved config: {config_path}")
-            return True
-
-        except Exception as e:
-            self.logger.error(f"❌ Error saving config: {e}")
-            return False
-
-    def get_standardized_paths(self, exchange: str, symbol: str) -> Dict[str, str]:
-        """Get standardized paths for a given exchange and symbol.
-
-        Args:
-            exchange: Exchange name
-            symbol: Trading symbol
-
-        Returns:
-            Dictionary of standardized paths
-        """
-        return {
-            "raw_data": pipeline_standards.build_path("raw_data", exchange, symbol),
-            "processed_data": pipeline_standards.build_path("processed_data", exchange, symbol),
-            "unified_data": pipeline_standards.build_path("unified_data", exchange, symbol),
-            "training_data": pipeline_standards.build_path("training_data", exchange, symbol),
-            "models": pipeline_standards.build_path("models", exchange, symbol),
-            "logs": pipeline_standards.build_path("logs", exchange, symbol)
-        }
-
     def validate_environment_config(self) -> Dict[str, bool]:
         """Validate environment configuration.
 
@@ -238,28 +176,6 @@ class StandardizedConfigManager:
 # Global instance
 config_manager = StandardizedConfigManager()
 
-
-def get_standardized_config(step_name: str, config_overrides: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    """Get standardized configuration for a step.
-
-    Args:
-        step_name: Name of the step
-        config_overrides: Optional configuration overrides
-
-    Returns:
-        Standardized configuration dictionary
-    """
-    # Load base pipeline config
-    base_config = config_manager.load_config("pipeline")
-
-    # Apply overrides
-    if config_overrides:
-        base_config.update(config_overrides)
-
-    # Create step-specific config
-    step_config = config_manager.create_step_config(step_name, base_config)
-
-    return step_config
 
 
 def validate_step_config(step_config: Dict[str, Any], step_name: str) -> bool:

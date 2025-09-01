@@ -76,11 +76,6 @@ class StepExecutionContext:
         self.status = StepStatus.RECOVERED
         self.end_time = time.time()
 
-    def get_duration(self) -> float:
-        """Get execution duration in seconds."""
-        end_time = self.end_time or time.time()
-        return end_time - self.start_time
-
 
 class TrainingStepErrorHandler:
     """Enhanced error handler specifically for training steps."""
@@ -89,12 +84,6 @@ class TrainingStepErrorHandler:
         self.logger = logger or logging.getLogger(__name__)
         self.execution_contexts: dict[str, StepExecutionContext] = {}
         self.global_start_time = time.time()
-
-    def get_context(self, step_name: str) -> StepExecutionContext:
-        """Get or create execution context for a step."""
-        if step_name not in self.execution_contexts:
-            self.execution_contexts[step_name] = StepExecutionContext(step_name)
-        return self.execution_contexts[step_name]
 
     def log_step_start(self, step_name: str, **kwargs: Any) -> None:
         """Log step start with context."""
@@ -168,77 +157,6 @@ class TrainingStepErrorHandler:
         context.add_progress(f"🔄 Recovered using: {recovery_method}")
         self.logger.info(f"🔄 Step {step_name} recovered using: {recovery_method}")
 
-    def log_step_skip(self, step_name: str, reason: str) -> None:
-        """Log step skip with context."""
-        context = self.get_context(step_name)
-        context.status = StepStatus.SKIPPED
-        context.add_progress(f"⏭️ Skipped: {reason}")
-        self.logger.info(f"⏭️ Step {step_name} skipped: {reason}")
-
-    def get_step_summary(self, step_name: str) -> dict[str, Any]:
-        """Get comprehensive summary for a step."""
-        context = self.get_context(step_name)
-        return {
-            "step_name": step_name,
-            "status": context.status.value,
-            "duration": context.get_duration(),
-            "error": str(context.error) if context.error else None,
-            "recovery_attempts": context.recovery_attempts,
-            "progress_messages": context.progress_messages,
-            "performance_metrics": context.performance_metrics,
-            "validation_results": context.validation_results,
-        }
-
-    def get_all_summaries(self) -> dict[str, dict[str, Any]]:
-        """Get summaries for all steps."""
-        return {name: self.get_step_summary(name) for name in self.execution_contexts}
-
-    def print_execution_summary(self) -> None:
-        """Print comprehensive execution summary."""
-        total_duration = time.time() - self.global_start_time
-        self.logger.info("=" * 80)
-        self.logger.info("📊 TRAINING EXECUTION SUMMARY")
-        self.logger.info("=" * 80)
-
-        successful_steps = 0
-        failed_steps = 0
-        recovered_steps = 0
-        skipped_steps = 0
-
-        for step_name, context in self.execution_contexts.items():
-            status_emoji = {
-                StepStatus.SUCCESS: "✅",
-                StepStatus.FAILED: "❌",
-                StepStatus.RECOVERED: "🔄",
-                StepStatus.SKIPPED: "⏭️",
-                StepStatus.IN_PROGRESS: "🔄",
-                StepStatus.NOT_STARTED: "⏳",
-            }.get(context.status, "❓")
-
-            duration_str = (
-                f"{context.get_duration():.2f}s" if context.end_time else "running"
-            )
-            self.logger.info(
-                f"{status_emoji} {step_name}: {context.status.value} ({duration_str})",
-            )
-
-            if context.status == StepStatus.SUCCESS:
-                successful_steps += 1
-            elif context.status == StepStatus.FAILED:
-                failed_steps += 1
-            elif context.status == StepStatus.RECOVERED:
-                recovered_steps += 1
-            elif context.status == StepStatus.SKIPPED:
-                skipped_steps += 1
-
-        self.logger.info("-" * 80)
-        self.logger.info(f"📈 Total execution time: {total_duration:.2f}s")
-        self.logger.info(f"✅ Successful: {successful_steps}")
-        self.logger.info(f"❌ Failed: {failed_steps}")
-        self.logger.info(f"🔄 Recovered: {recovered_steps}")
-        self.logger.info(f"⏭️ Skipped: {skipped_steps}")
-        self.logger.info("=" * 80)
-
 
 # Global error handler instance
 _global_handler = TrainingStepErrorHandler()
@@ -270,143 +188,6 @@ def training_step_error_handler(
         log_performance: Whether to log performance metrics
         validate_output: Whether to validate step output
     """
-
-    def decorator(func: F) -> F:
-        @functools.wraps(func)
-        async def async_wrapper(*args: Any, **kwargs: Any) -> T | None:
-            handler = get_training_error_handler()
-            context = handler.get_context(step_name)
-            context.max_recovery_attempts = max_recovery_attempts
-
-            # Extract key parameters for logging
-            key_params: dict[str, Any] = {}
-            if "symbol" in kwargs:
-                key_params["symbol"] = kwargs["symbol"]
-            if "exchange" in kwargs:
-                key_params["exchange"] = kwargs["exchange"]
-            if "timeframe" in kwargs:
-                key_params["timeframe"] = kwargs["timeframe"]
-
-            handler.log_step_start(step_name, **key_params)
-
-            try:
-                # Execute the function
-                start_time = time.time()
-                result = await cast(Awaitable[T | None], func)(*args, **kwargs)  # type: ignore[misc]
-                execution_time = time.time() - start_time
-
-                # Log performance metrics
-                if log_performance:
-                    context.performance_metrics["execution_time"] = execution_time
-                    context.performance_metrics["memory_usage"] = (
-                        "N/A"  # Could be enhanced
-                    )
-                    handler.log_step_progress(
-                        step_name,
-                        f"Performance: {execution_time:.2f}s execution time",
-                    )
-
-                # Validate output if enabled
-                if validate_output and result is not None:
-                    validation_result = _validate_step_output(step_name, result)
-                    context.validation_results = validation_result
-                    if validation_result.get("valid", True):
-                        handler.log_step_progress(step_name, "Output validation passed")
-                    else:
-                        handler.log_step_progress(
-                            step_name,
-                            f"Output validation warnings: {validation_result.get('warnings', [])}",
-                        )
-
-                handler.log_step_success(step_name, result)
-                return result
-
-            except exceptions as e:  # type: ignore[misc]
-                handler.log_step_error(step_name, e)
-
-                # Attempt recovery if enabled
-                if enable_recovery and context.recovery_attempts < max_recovery_attempts:
-                    recovery_result = await _attempt_recovery(
-                        step_name,
-                        cast(Callable[..., Awaitable[T | None]], func),
-                        args,
-                        kwargs,
-                        e,
-                    )
-                    if recovery_result is not None:
-                        handler.log_step_recovery(step_name, "automatic recovery")
-                        return recovery_result
-
-                return default_return
-
-        @functools.wraps(func)
-        def sync_wrapper(*args: Any, **kwargs: Any) -> T | None:
-            handler = get_training_error_handler()
-            context = handler.get_context(step_name)
-            context.max_recovery_attempts = max_recovery_attempts
-
-            # Extract key parameters for logging
-            key_params: dict[str, Any] = {}
-            if "symbol" in kwargs:
-                key_params["symbol"] = kwargs["symbol"]
-            if "exchange" in kwargs:
-                key_params["exchange"] = kwargs["exchange"]
-            if "timeframe" in kwargs:
-                key_params["timeframe"] = kwargs["timeframe"]
-
-            handler.log_step_start(step_name, **key_params)
-
-            try:
-                # Execute the function
-                start_time = time.time()
-                result = cast(T | None, func(*args, **kwargs))
-                execution_time = time.time() - start_time
-
-                # Log performance metrics
-                if log_performance:
-                    context.performance_metrics["execution_time"] = execution_time
-                    handler.log_step_progress(
-                        step_name,
-                        f"Performance: {execution_time:.2f}s execution time",
-                    )
-
-                # Validate output if enabled
-                if validate_output and result is not None:
-                    validation_result = _validate_step_output(step_name, result)
-                    context.validation_results = validation_result
-                    if validation_result.get("valid", True):
-                        handler.log_step_progress(step_name, "Output validation passed")
-                    else:
-                        handler.log_step_progress(
-                            step_name,
-                            f"Output validation warnings: {validation_result.get('warnings', [])}",
-                        )
-
-                handler.log_step_success(step_name, result)
-                return result
-
-            except exceptions as e:  # type: ignore[misc]
-                handler.log_step_error(step_name, e)
-
-                # Attempt recovery if enabled
-                if enable_recovery and context.recovery_attempts < max_recovery_attempts:
-                    try:
-                        recovery_result = _attempt_sync_recovery(
-                            step_name,
-                            cast(Callable[..., T | None], func),
-                            args,
-                            kwargs,
-                            e,
-                        )
-                        if recovery_result is not None:
-                            handler.log_step_recovery(step_name, "automatic recovery")
-                            return recovery_result
-                    except Exception as recovery_error:  # noqa: BLE001
-                        handler.log_step_error(step_name, recovery_error, recovery_attempt=True)
-
-                return default_return
-
-        return cast(F, async_wrapper) if asyncio.iscoroutinefunction(func) else cast(F, sync_wrapper)
 
     return decorator
 
@@ -519,31 +300,3 @@ def _attempt_sync_recovery(
 
 
 @contextmanager
-def step_progress_tracker(step_name: str):
-    """Context manager for tracking step progress."""
-    handler = get_training_error_handler()
-    try:
-        handler.log_step_progress(step_name, "Starting sub-operation")
-        yield handler
-        handler.log_step_progress(step_name, "Sub-operation completed")
-    except Exception as e:  # noqa: BLE001
-        handler.log_step_progress(step_name, f"Sub-operation failed: {e}")
-        raise
-
-
-def log_step_data_info(step_name: str, data: Any, data_name: str = "data") -> None:
-    """Log information about data being processed in a step."""
-    handler = get_training_error_handler()
-
-    if isinstance(data, pd.DataFrame):
-        info_msg = f"{data_name}: shape={data.shape}, columns={len(data.columns)}, memory={data.memory_usage(deep=True).sum() / 1024 / 1024:.2f}MB"
-        handler.log_step_progress(step_name, info_msg)
-    elif isinstance(data, dict):
-        info_msg = f"{data_name}: {len(data)} keys, types = {list(data.keys())}"
-        handler.log_step_progress(step_name, info_msg)
-    elif isinstance(data, (list, tuple)):
-        info_msg = f"{data_name}: length={len(data)}, type={type(data).__name__}"
-        handler.log_step_progress(step_name, info_msg)
-    else:
-        info_msg = f"{data_name}: type={type(data).__name__}, value={str(data)[:100]}"
-        handler.log_step_progress(step_name, info_msg)

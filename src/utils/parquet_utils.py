@@ -115,34 +115,3 @@ class ParquetUtils:
         return None
 
     @handle_file_operations(default_return=False, context="ParquetUtils.repair_parquet_file")
-    def repair_parquet_file(self, file_path: str, backup_path: str | None = None) -> bool:
-        """
-        Attempt to repair a corrupted parquet file.
-
-        Args:
-            file_path: Path to the parquet file
-            backup_path: Path to save backup (optional)
-
-        Returns:
-            True if repair was successful, False otherwise
-        """
-        # Create backup if requested
-        if backup_path:
-            shutil.copy2(file_path, backup_path)
-            self.logger.info(f"📁 Created backup: {backup_path}")
-
-        # Try to read and rewrite the file
-        df = self.safe_read_parquet(file_path)
-        if df is not None:
-            # Write back to the same file
-            df.to_parquet(file_path, index=False)
-            self.logger.info(f"✅ Successfully repaired parquet file: {file_path}")
-            return True
-
-        self.logger.error(f"❌ Could not read file for repair: {file_path}")
-        return False
-
-
-def get_parquet_utils() -> ParquetUtils:
-    """Get a fresh instance of ParquetUtils to avoid global state issues."""
-    return ParquetUtils()

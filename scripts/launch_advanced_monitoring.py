@@ -32,84 +32,6 @@ class AdvancedMonitoringLauncher:
 
         self.logger.info("🚀 Advanced Monitoring Launcher initialized")
 
-    def _signal_handler(self, signum, frame):
-        """Handle shutdown signals."""
-        self.logger.info(f"Received signal {signum}, shutting down...")
-        self.is_running = False
-
-    def _get_default_config(self) -> dict[str, Any]:
-        """Get default monitoring configuration."""
-        return {
-            "monitoring": {
-                "enabled": True,  # Metrics Dashboard Configuration
-                "metrics_dashboard": {
-                    "update_interval": 5,
-                    "max_metric_history": 1000,
-                    "enable_real_time_updates": True, "enable_websocket_broadcast": True,
-                },
-        # Advanced Tracer Configuration
-                "advanced_tracer": {
-                    "enable_tracing": True, "correlation_id_header": "X-Correlation-ID",
-                    "trace_sampling_rate": 1.0,
-                    "max_trace_history": 10000,
-                    "enable_performance_tracing": True, "enable_error_tracing": True,
-                },
-        # Correlation Manager Configuration
-                "correlation_manager": {
-                    "enable_correlation_tracking": True, "correlation_timeout": 300,
-                    "max_correlation_history": 10000,
-                    "enable_performance_analysis": True, "enable_debug_aggregation": True,
-                },
-        # ML Monitor Configuration
-                "ml_monitor": {
-                    "enable_online_learning": True,
-                    "drift_detection_enabled": True,
-                    "feature_importance_tracking": True, "auto_retraining_enabled": True,
-                    "drift_threshold": 0.1,
-                    "drift_check_interval": 300,
-                    "performance_check_interval": 60,
-                    "feature_analysis_interval": 600,
-                },
-        # Report Scheduler Configuration
-                "report_scheduler": {
-                    "enable_automated_reports": True,
-                    "default_schedule": "daily",
-                    "email_distribution": False,  # Disabled for demo
-                    "report_formats": ["json", "html"],
-                    "default_recipients": [],
-                },
-        # Tracking System Configuration
-                "tracking_system": {
-                    "enable_correlation_tracking": True, "enable_ensemble_tracking": True,
-                    "enable_regime_tracking": True, "enable_decision_path_tracking": True,
-                    "max_tracking_history": 50000,
-                },
-        # Integration Manager Configuration
-                "monitoring_integration": {
-                    "enable_unified_monitoring": True, "enable_cross_component_tracking": True,
-                    "enable_performance_correlation": True
-                },
-            },
-        }
-
-    async def setup_monitoring(self) -> bool:
-        """Setup the monitoring system."""
-        self.logger.info("Setting up advanced monitoring system...")
-
-        # Get configuration
-        config = self._get_default_config()
-
-        # Setup integration manager
-        self.integration_manager = await MonitoringIntegrationManager.setup_monitoring_integration_manager(
-                config=config)
-
-        if not self.integration_manager:
-            self.logger.error("Failed to setup monitoring integration manager")
-            return False
-
-        self.logger.info("✅ Advanced monitoring system setup completed")
-        return True
-
     async def start_monitoring(self) -> bool:
         """Start the monitoring system."""
         if not self.integration_manager:
@@ -218,16 +140,6 @@ class AdvancedMonitoringLauncher:
         # Simulate trading activity
         await self.integration_manager.record_trading_metric("portfolio_value", 12500.75)
         await self.integration_manager.record_trading_metric("daily_pnl", 125.50)
-
-    async def stop_monitoring(self) -> None:
-        """Stop the monitoring system."""
-        self.logger.info("Stopping advanced monitoring system...")
-        self.is_running = False
-
-        if self.integration_manager:
-            await self.integration_manager.stop_integration()
-
-        self.logger.info("✅ Advanced monitoring system stopped")
 
     async def generate_report(self, report_type: str = "comprehensive") -> dict[str, Any]:
         """Generate a monitoring report."""

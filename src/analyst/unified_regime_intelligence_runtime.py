@@ -82,51 +82,6 @@ class UnifiedRegimeIntelligenceRuntime:
         default_return=False,
         context="unified regime intelligence initialization",
     )
-    async def initialize(self) -> bool:
-        """Initialize the unified regime intelligence runtime."""
-        try:
-            self.logger.info("Initializing Unified Regime Intelligence Runtime...")
-
-            # Initialize SR predictor
-            sr_init_success = await self.sr_predictor.initialize()
-            if not sr_init_success:
-                self.logger.warning("Failed to initialize SRBreakoutPredictor")
-
-            # Load S/R outcome model if available
-            await self._load_sr_outcome_model()
-
-            # Initialize unified step (includes SRBreakoutPredictor)
-            if not await self.unified_step.initialize():
-                self.logger.error("Failed to initialize unified step")
-                return False
-
-            # Load model
-            if not await self._load_model():
-                self.logger.error("Failed to load unified regime intelligence model")
-                return False
-
-            # Load label encoders
-            if not await self._load_label_encoders():
-                self.logger.error("Failed to load label encoders")
-                return False
-
-            # Load configuration
-            if not await self._load_configuration():
-                self.logger.error("Failed to load configuration")
-                return False
-
-            self.is_initialized = True
-            self.logger.info(
-                "✅ Unified Regime Intelligence Runtime initialized successfully"
-            )
-            return True
-
-        except Exception as e:
-            self.logger.error(
-                f"Failed to initialize Unified Regime Intelligence Runtime: {e}"
-            )
-            return False
-
     async def _load_model(self) -> bool:
         """Load the trained unified regime intelligence model."""
         try:
@@ -386,67 +341,6 @@ class UnifiedRegimeIntelligenceRuntime:
     @handle_errors(
         exceptions=(Exception,), default_return={}, context="S/R opportunity alert"
     )
-    async def get_sr_opportunity_alert(
-        self, market_data: pd.DataFrame, current_price: float
-    ) -> dict[str, Any]:
-        """
-        Get S/R opportunity alert for the Tactician.
-
-        Args:
-            market_data: Recent market data
-            current_price: Current market price
-
-        Returns:
-            dict: S/R opportunity alert with actionable information
-        """
-        try:
-            if not self.enable_sr_monitoring:
-                return {"opportunity_detected": False}
-
-            # Get S/R context and outcome
-            sr_context = await self.sr_predictor.get_sr_context(
-                market_data=market_data, current_price=current_price
-            )
-            is_near_sr = self.sr_predictor.is_near_sr_level(
-                current_price=current_price, sr_context=sr_context
-            )
-
-            if not is_near_sr:
-                return {"opportunity_detected": False}
-
-            # Predict S/R outcome using centralized logic
-            sr_outcome = await self.sr_predictor.predict_sr_outcome(
-                market_data=market_data, current_price=current_price, sr_context=sr_context
-            )
-
-            # Check if opportunity meets confidence threshold
-            opportunity_detected = (
-                sr_outcome.get("confidence", 0) >= self.sr_alert_threshold
-            )
-
-            if not opportunity_detected:
-                return {"opportunity_detected": False}
-
-            # Generate detailed alert for Tactician
-            alert = {
-                "opportunity_detected": True,
-                "outcome": sr_outcome.get("outcome", "consolidation"),
-                "confidence": sr_outcome.get("confidence", 0),
-                "probabilities": sr_outcome.get("probabilities", {}),
-                "sr_context": sr_context,
-                "current_price": current_price,
-                "timestamp": pd.Timestamp.now().isoformat(),
-                "tactician_recommendations": self._generate_tactician_recommendations(
-                    sr_outcome, sr_context
-                ),
-            }
-
-            return alert
-
-        except Exception as e:
-            self.logger.error(f"Error getting S/R opportunity alert: {e}")
-            return {"opportunity_detected": False, "error": str(e)}
-
     def _generate_tactician_recommendations(
         self, sr_outcome: dict[str, Any], sr_context: dict[str, Any]
     ) -> dict[str, Any]:
@@ -617,38 +511,6 @@ class UnifiedRegimeIntelligenceRuntime:
 
         except Exception as e:
             self.logger.error(f"Error making prediction: {e}")
-            return None
-
-    async def _prepare_inputs(
-        self, hmm_states: Dict[str, np.ndarray], market_features: np.ndarray
-    ) -> Optional[Dict[str, Any]]:
-        """Prepare inputs for the unified model."""
-        try:
-            # Ensure we have the required sequence length
-            if market_features.shape[0] < self.sequence_length:
-                self.logger.warning(
-                    f"Insufficient features: {market_features.shape[0]} < {self.sequence_length}"
-                )
-                return None
-
-            # Take the most recent sequence
-            recent_features = market_features[-self.sequence_length :]
-
-            # Prepare HMM states for each timeframe
-            prepared_hmm_states = {}
-            for tf in self.timeframes:
-                if tf in hmm_states:
-                    tf_states = hmm_states[tf]
-                    if len(tf_states) >= self.sequence_length:
-                        prepared_hmm_states[tf] = tf_states[-self.sequence_length :]
-                    else:
-                        self.logger.warning(f"Insufficient HMM states for {tf}")
-                        return None
-
-            return {"hmm_states": prepared_hmm_states, "features": recent_features}
-
-        except Exception as e:
-            self.logger.error(f"Error preparing inputs: {e}")
             return None
 
     async def _enhance_predictions(
@@ -858,47 +720,6 @@ class UnifiedRegimeIntelligenceRuntime:
 
         except Exception as e:
             self.logger.error(f"Error updating runtime state: {e}")
-
-    def get_current_state(self) -> Dict[str, Any]:
-        """Get current runtime state."""
-        return {
-            "current_regime": self.current_regime,
-            "transition_probability": self.transition_probability,
-            "tpsl_direction": self.tpsl_direction,
-            "regime_history": self.regime_history[-10:],  # Last 10 entries
-            "is_initialized": self.is_initialized,
-        }
-
-    def get_performance_metrics(self) -> Dict[str, Any]:
-        """Get performance metrics for the unified model."""
-        try:
-            if not self.regime_history:
-                return {"error": "No regime history available"}
-
-            # Calculate regime stability
-            recent_regimes = [entry["regime"] for entry in self.regime_history[-20:]]
-            regime_changes = sum(
-                1
-                for i in range(1, len(recent_regimes))
-                if recent_regimes[i] != recent_regimes[i - 1]
-            )
-            stability_score = 1.0 - (regime_changes / max(1, len(recent_regimes) - 1))
-
-            # Calculate average confidence
-            avg_confidence = np.mean(
-                [entry["confidence"] for entry in self.regime_history[-20:]]
-            )
-
-            return {
-                "regime_stability": stability_score,
-                "average_confidence": avg_confidence,
-                "total_predictions": len(self.regime_history),
-                "current_regime_duration": self._calculate_regime_duration(),
-            }
-
-        except Exception as e:
-            self.logger.error(f"Error calculating performance metrics: {e}")
-            return {"error": str(e)}
 
     def _calculate_regime_duration(self) -> int:
         """Calculate how long the current regime has been active."""

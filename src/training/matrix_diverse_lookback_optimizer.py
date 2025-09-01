@@ -134,85 +134,6 @@ class MatrixDiverseLookbackOptimizer:
         self.logger.info(f"📁 Output directory: {self.output_dir.absolute()}")
 
     @handle_errors(exceptions=(Exception,), default_return={})
-    async def find_diverse_lookback_periods_matrix(
-        self,
-        data: pd.DataFrame,
-        target: pd.Series,
-        regimes: Optional[pd.Series] = None,
-        symbol: str = "UNKNOWN",
-        exchange: str = "UNKNOWN",
-        timeframe: str = "1m"
-    ) -> dict[str, Any]:
-        """
-        Find diverse lookback periods using matrix/vector optimization.
-
-        Args:
-            data: Feature data
-            target: Target variable
-            regimes: HMM regime labels (optional)
-            symbol: Trading symbol
-            exchange: Exchange name
-            timeframe: Timeframe
-
-        Returns:
-            Dictionary with diverse lookback periods and file paths
-        """
-        self.logger.info(f"🎯 Finding diverse lookback periods for {symbol} on {exchange}")
-
-        results = {
-            "optimization_timestamp": datetime.now().isoformat(),
-            "symbol": symbol,
-            "exchange": exchange,
-            "timeframe": timeframe,
-            "diverse_lookback_periods": {},
-            "matrix_optimization_results": {},
-            "file_paths": {},
-            "optimization_metadata": {}
-        }
-
-        # 1. Matrix-based diverse period optimization
-        self.logger.info("🔍 Performing matrix-based diverse period optimization...")
-        diverse_periods = await self._matrix_optimize_diverse_periods(data, target)
-        results["diverse_lookback_periods"] = diverse_periods
-
-        # 2. Matrix optimization analysis
-        self.logger.info("📊 Analyzing matrix optimization results...")
-        matrix_results = await self._analyze_matrix_optimization(data, target, diverse_periods)
-        results["matrix_optimization_results"] = matrix_results
-
-        # 3. Save results with detailed file logging
-        self.logger.info("💾 Saving optimization results...")
-        file_paths = await self._save_matrix_optimization_results(
-            results, symbol, exchange, timeframe
-        )
-        results["file_paths"] = file_paths
-
-        # 4. Generate optimized feature parameters for subsequent steps
-        self.logger.info("⚡ Generating optimized feature parameters...")
-        optimized_params = self._generate_optimized_feature_parameters(diverse_periods)
-        results["optimized_feature_parameters"] = optimized_params
-
-        # 5. Save optimized parameters for subsequent steps
-        self.logger.info("💾 Saving optimized parameters for subsequent steps...")
-        params_file_path = await self._save_optimized_parameters(
-            optimized_params, symbol, exchange, timeframe
-        )
-        results["file_paths"]["optimized_parameters"] = params_file_path
-
-        # 6. Regime-specific optimization (if regimes available)
-        if regimes is not None and len(regimes.unique()) > 1:
-            self.logger.info("🔄 Performing regime-specific matrix optimization...")
-            regime_results = await self._matrix_optimize_regime_specific_periods(
-                data, target, regimes, diverse_periods
-            )
-            results["regime_specific_periods"] = regime_results
-
-        # 7. Log all file paths
-        self._log_file_paths(results["file_paths"])
-
-        self.logger.info("✅ Matrix-based diverse lookback period optimization completed")
-        return results
-
     async def _matrix_optimize_diverse_periods(
         self,
         data: pd.DataFrame,
@@ -548,23 +469,6 @@ class MatrixDiverseLookbackOptimizer:
         n_periods = len(info_scores)
 
         # Define objective function for matrix optimization
-        def objective(x):
-            # x is binary vector indicating selected periods
-            if np.sum(x) != target_count:
-                return 1e6  # Penalty for wrong number of selections
-
-            selected_mask = x.astype(bool)
-
-            # Information score component
-            info_component = -np.sum(info_scores[selected_mask])
-
-            # Diversity component (penalize high correlations)
-            selected_correlations = correlation_matrix[selected_mask][:, selected_mask]
-            np.fill_diagonal(selected_correlations, 0)  # Remove self-correlations
-            diversity_penalty = np.sum(selected_correlations) * 0.5
-
-            return info_component + diversity_penalty
-
         # Constraint: exactly target_count periods
         def constraint(x):
             return np.sum(x) - target_count
@@ -595,22 +499,6 @@ class MatrixDiverseLookbackOptimizer:
         target_count: int
     ) -> List[int]:
         """Matrix optimization using Optuna."""
-
-        def objective(trial):
-            # Sample target_count periods
-            selected_indices = trial.suggest_categorical(
-                "selected_periods",
-                [list(combo) for combo in itertools.combinations(range(len(info_scores)), target_count)]
-            )
-
-            # Calculate objective value
-            info_component = -np.sum(info_scores[selected_indices])
-
-            selected_correlations = correlation_matrix[selected_indices][:, selected_indices]
-            np.fill_diagonal(selected_correlations, 0)
-            diversity_penalty = np.sum(selected_correlations) * 0.5
-
-            return info_component + diversity_penalty
 
         # Create Optuna study
         study = optuna.create_study(direction="minimize", sampler=TPESampler(seed=42))
@@ -885,38 +773,6 @@ class MatrixDiverseLookbackOptimizer:
 
         self.logger.info("=" * 50)
         self.logger.info("📋 All files are ready for review and subsequent steps!")
-
-    def get_optimized_feature_parameters(
-        self,
-        symbol: str,
-        exchange: str,
-        timeframe: str
-    ) -> dict[str, Any]:
-        """Load optimized feature parameters for subsequent steps."""
-
-        # Try step parameters directory first
-        step_params_filepath = Path(f"data/optimized_feature_parameters/{exchange}_{symbol}_{timeframe}_optimized_feature_parameters.json")
-
-        if not step_params_filepath.exists():
-            # Try main optimization directory
-            main_params_filepath = Path(f"data/matrix_diverse_lookback_optimization/{exchange}_{symbol}_{timeframe}_optimized_feature_parameters.json")
-
-            if not main_params_filepath.exists():
-                self.logger.warning(f"⚠️ No optimized parameters found for {symbol} on {exchange}")
-                return {}
-
-            step_params_filepath = main_params_filepath
-
-        try:
-            with open(step_params_filepath, 'r') as f:
-                optimized_params = json.load(f)
-
-            self.logger.info(f"📂 Loaded optimized parameters from: {step_params_filepath.absolute()}")
-            return optimized_params
-
-        except Exception as e:
-            self.logger.error(f"❌ Error loading optimized parameters: {e}")
-            return {}
 
     # Technical indicator calculation methods (same as before)
     def _calculate_feature_with_period(

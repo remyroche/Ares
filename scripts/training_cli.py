@@ -62,14 +62,6 @@ class TrainingCLI:
 
         self.logger.info("✅ TrainingCLI initialized successfully")
 
-    async def initialize(self) -> None:
-        """
-        Initializes the database manager for CLI operations.
-        """
-        self.logger.info("🔧 Initializing database manager...")
-        await self.db_manager.initialize()
-        self.logger.info("✅ Database manager initialized successfully")
-
     async def run_full_training(self, symbol: str, exchange_name: str = "BINANCE") -> bool:
         """Runs the full training pipeline and tags the resulting model as a candidate."""
         start_time = time.time()
@@ -396,61 +388,6 @@ class TrainingCLI:
 
     # Removed show_regularization_config and validate_regularization_policy from here
     # as they are now in src/training/regularization.py
-
-    def list_supported_tokens(self) -> None:
-        """List all supported tokens and exchanges."""
-        self.logger.info("📋 Listing supported tokens and exchanges...")
-        print("🪙 Supported Tokens and Exchanges (100x Leverage):")
-        print("=" * 60)
-
-        supported_tokens: Dict[str, List[str]] = CONFIG.get("SUPPORTED_TOKENS", {})
-        self.logger.info(
-            f"📊 Found {len(supported_tokens)} exchanges with supported tokens",
-        )
-
-        for exchange_name, tokens in supported_tokens.items():
-            self.logger.info(f"📈 Exchange {exchange_name}: {len(tokens)} tokens")
-            print(f"\n📈 {exchange_name}:")
-            for token in tokens:
-                print(f"   • {token}")
-
-        self.logger.info("✅ Token listing completed")
-        print("\n💡 Usage: python scripts/training_cli.py train <SYMBOL> <EXCHANGE>")
-        print("   Example: python scripts/training_cli.py train BTCUSDT BINANCE")
-        print("   All tokens support 100x leverage for high-frequency trading")
-
-    def list_model_types(self) -> None:
-        """List available model types for training."""
-        self.logger.info("📋 Listing available model types...")
-        print("🤖 Available Model Types:")
-        print("=" * 60)
-
-        model_configs: Dict[str, Dict[str, Any]] = CONFIG.get("MODEL_TRAINING", {}).get("model_types", {})
-        self.logger.info(f"📊 Found {len(model_configs)} model types in configuration")
-
-        for model_name, config in model_configs.items():
-            enabled = "✅" if config.get("enabled", False) else "❌"
-            self.logger.info(
-                f"📊 Model {model_name}: {'enabled' if config.get('enabled', False) else 'disabled'}",
-            )
-            print(f"{enabled} {model_name.upper()}")
-
-            if model_name == "lightgbm":
-                print("   - Gradient boosting with LightGBM")
-                print("   - Fast training and good performance")
-            elif model_name == "xgboost":
-                print("   - Extreme gradient boosting")
-                print("   - Excellent for structured data")
-            elif model_name == "neural_network":
-                print("   - Multi-layer perceptron")
-                print("   - Good for complex patterns")
-            elif model_name == "random_forest":
-                print("   - Ensemble of decision trees")
-                print("   - Robust and interpretable")
-
-            print()
-
-        self.logger.info("✅ Model type listing completed")
 
     def show_training_config(self) -> None:
         """Show current training configuration."""

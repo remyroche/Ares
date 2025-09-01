@@ -202,48 +202,6 @@ class FeatureEngineeringOrchestrator:
         default_return=pd.DataFrame(),
         context="legacy feature generation",
     )
-    def _generate_legacy_features(
-        self,
-        features_df: pd.DataFrame,
-        agg_trades_df: pd.DataFrame = None,
-        futures_df: pd.DataFrame = None,
-        sr_levels: list = None,
-    ) -> pd.DataFrame:
-        """Generate legacy features for backward compatibility."""
-        try:
-            # Merge klines with futures data first
-            if futures_df is not None and not futures_df.empty:
-                features_df = (
-                    pd.merge_asof(
-                        features_df.sort_index(),
-                        futures_df.sort_index(),
-                        left_index=True,
-                        right_index=True,
-                        direction="backward",
-                    )
-                    .ffill()
-                    .fillna(0)
-                )
-
-            # Standard technical indicators
-            features_df = self._calculate_standard_indicators(features_df)
-
-            # Time-based features
-            features_df = self._calculate_time_features(features_df)
-
-            # Volatility regime indicators
-            features_df = self._calculate_volatility_regime_indicators(features_df)
-
-            # Volatility targeting features
-            features_df = self._calculate_volatility_targeting_features(features_df)
-
-            # ML enhanced features
-            return self._calculate_ml_enhanced_features(features_df)
-
-        except Exception:
-            self.print(error("Error generating legacy features: {e}"))
-            return features_df
-
     @handle_errors(
         exceptions=(Exception,),
         default_return=pd.DataFrame(),
@@ -431,15 +389,6 @@ class FeatureEngineeringOrchestrator:
             df["volatility_20"] = returns.rolling(window=20).std()
 
             # Volatility regime classification
-            def classify_vol_regime(vol):
-                if vol <= 0.02:
-                    return 0  # Low volatility
-                if vol <= 0.04:
-                    return 1  # Normal volatility
-                if vol <= 0.08:
-                    return 2  # High volatility
-                return 3  # Extreme volatility
-
             df["volatility_regime_5"] = df["volatility_5"].apply(classify_vol_regime)
             df["volatility_regime_10"] = df["volatility_10"].apply(classify_vol_regime)
             df["volatility_regime_20"] = df["volatility_20"].apply(classify_vol_regime)
@@ -537,29 +486,6 @@ class FeatureEngineeringOrchestrator:
         default_return=pd.DataFrame(),
         context="feature cleanup",
     )
-    def _cleanup_features(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Clean up and validate features."""
-        try:
-            # Remove infinite values
-            df = df.replace([np.inf, -np.inf], np.nan)
-
-            # Fill remaining NaN values
-            df = df.fillna(method="ffill").fillna(method="bfill").fillna(0)
-
-            # Remove columns with all NaN values
-            df = df.dropna(axis=1, how="all")
-
-            # Ensure all features are numeric
-            numeric_cols = df.select_dtypes(include=[np.number]).columns
-            df = df[numeric_cols]
-
-            self.logger.info(f"Feature cleanup completed. Final shape: {df.shape}")
-            return df
-
-        except Exception:
-            self.print(error("Error in feature cleanup: {e}"))
-            return df
-
     @handle_errors(
         exceptions=(Exception,),
         default_return={},
@@ -570,46 +496,11 @@ class FeatureEngineeringOrchestrator:
         default_return={},
         context="orchestrator info retrieval",
     )
-    def get_orchestrator_info(self) -> dict[str, Any]:
-        """Get information about the orchestrator."""
-        try:
-            return {
-                "orchestrator_type": "FeatureEngineeringOrchestrator",
-                "enable_advanced_features": self.enable_advanced_features,
-                "enable_autoencoder_features": self.enable_autoencoder_features,
-                "enable_legacy_features": self.enable_legacy_features,
-                "advanced_feature_engineering_info": self.advanced_feature_engineering.get_feature_statistics(),
-                "autoencoder_generator_info": self.autoencoder_generator.get_generator_info(),
-                "config": self.orchestrator_config,
-            }
-        except Exception:
-            self.print(error("Error getting orchestrator info: {e}"))
-            return {}
-
     @handle_errors(
         exceptions=(Exception,),
         default_return={},
         context="feature summary retrieval",
     )
-    def get_feature_summary(self) -> dict[str, Any]:
-        """Get a summary of all available features."""
-        try:
-            return {
-                "feature_categories": [
-                    "standard_indicators",
-                    "advanced_features",
-                    "autoencoder_features",
-                    "time_features",
-                    "volatility_features",
-                    "ml_enhanced_features",
-                ],
-                "total_feature_types": 6,
-                "orchestrator_config": self.orchestrator_config,
-            }
-        except Exception:
-            self.print(error("Error getting feature summary: {e}"))
-            return {}
-
 
 # Legacy FeatureEngineeringEngine class for backward compatibility
 class FeatureEngineeringEngine:
@@ -669,14 +560,6 @@ class FeatureEngineeringEngine:
         default_return=None,
         context="wavelet transforms",
     )
-    def apply_wavelet_transforms(self, data: pd.Series, wavelet="db1", level=3):
-        """Apply wavelet transforms to data."""
-        try:
-            return pywt.wavedec(data, wavelet, level=level)
-        except Exception:
-            self.print(error("Error applying wavelet transforms: {e}"))
-            return None
-
     @handle_file_operations(default_return=False, context="train_autoencoder")
     def train_autoencoder(self, data: pd.DataFrame):
         """Train autoencoder model."""

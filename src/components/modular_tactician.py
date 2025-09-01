@@ -54,31 +54,6 @@ class ModularTactician:
         default_return=False,
         context="modular tactician initialization",
     )
-    async def initialize(self) -> bool:
-        """
-        Initialize modular tactician with enhanced error handling.
-
-        Returns:
-            bool: True if initialization successful, False otherwise
-        """
-        self.logger.info("Initializing Modular Tactician...")
-
-        # Load tactician configuration
-        await self._load_tactician_configuration()
-
-        # Validate configuration
-        if not self._validate_configuration():
-            self.logger.error(invalid("Invalid configuration for modular tactician"))
-            return False
-
-        # Initialize tactician modules
-        await self._initialize_tactician_modules()
-
-        self.logger.info(
-            "✅ Modular Tactician initialization completed successfully",
-        )
-        return True
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
@@ -153,114 +128,26 @@ class ModularTactician:
         default_return=None,
         context="tactician modules initialization",
     )
-    async def _initialize_tactician_modules(self) -> None:
-        """Initialize tactician modules."""
-        try:
-            # Initialize entry monitoring module
-            if self.enable_entry_monitoring:
-                await self._initialize_entry_monitoring()
-
-            # Initialize exit monitoring module
-            if self.enable_exit_monitoring:
-                await self._initialize_exit_monitoring()
-
-            # Initialize position monitoring module
-            if self.tactician_config.get("enable_position_monitoring", False):
-                await self._initialize_position_monitoring()
-
-            # Initialize risk monitoring module
-            if self.tactician_config.get("enable_risk_monitoring", True):
-                await self._initialize_risk_monitoring()
-
-            self.logger.info("Tactician modules initialized successfully")
-
-        except Exception as e:
-            self.logger.error(initialization_error(f"Error initializing tactician modules: {e}"))
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="entry monitoring initialization",
     )
-    async def _initialize_entry_monitoring(self) -> None:
-        """Initialize entry monitoring module."""
-        try:
-            # Initialize entry monitoring strategies
-            self.entry_monitoring_strategies = {
-                "price_action": True,
-                "volume_analysis": True,
-                "momentum_indicators": True,
-                "support_resistance": True,
-            }
-
-            self.logger.info("Entry monitoring module initialized")
-
-        except Exception as e:
-            self.logger.error(initialization_error(f"Error initializing entry monitoring: {e}"))
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="exit monitoring initialization",
     )
-    async def _initialize_exit_monitoring(self) -> None:
-        """Initialize exit monitoring module."""
-        try:
-            # Initialize exit monitoring strategies
-            self.exit_monitoring_strategies = {
-                "stop_loss_tracking": True,
-                "take_profit_tracking": True,
-                "trailing_stop": True,
-                "time_based_exit": True,
-            }
-
-            self.logger.info("Exit monitoring module initialized")
-
-        except Exception as e:
-            self.logger.error(initialization_error(f"Error initializing exit monitoring: {e}"))
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="position monitoring initialization",
     )
-    async def _initialize_position_monitoring(self) -> None:
-        """Initialize position monitoring module."""
-        try:
-            # Initialize position monitoring strategies
-            self.position_monitoring_strategies = {
-                "position_size_tracking": True,
-                "exposure_limits": True,
-                "correlation_monitoring": True,
-                "concentration_limits": True,
-            }
-
-            self.logger.info("Position monitoring module initialized")
-
-        except Exception as e:
-            self.logger.error(initialization_error(f"Error initializing position monitoring: {e}"))
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="risk monitoring initialization",
     )
-    async def _initialize_risk_monitoring(self) -> None:
-        """Initialize risk monitoring module."""
-        try:
-            # Initialize risk monitoring strategies
-            self.risk_monitoring_strategies = {
-                "var_monitoring": True,
-                "drawdown_tracking": True,
-                "volatility_monitoring": True,
-                "stress_testing": True,
-            }
-
-            self.logger.info("Risk monitoring module initialized")
-
-        except Exception as e:
-            self.logger.error(initialization_error(f"Error initializing risk monitoring: {e}"))
-
     @handle_specific_errors(
         error_handlers={
             ValueError: (False, "Invalid tactician parameters"),
@@ -691,23 +578,6 @@ class ModularTactician:
 
     # Exit monitoring tracking methods
 
-    def _track_stop_loss(
-        self,
-        market_data: dict[str, Any],
-        strategy_data: dict[str, Any],
-    ) -> dict[str, Any]:
-        """Track stop loss levels."""
-        try:
-            # Simulate stop loss tracking
-            return {
-                "stop_loss_triggered": False,
-                "stop_loss_distance": 0.02,
-                "stop_loss_level": 98.0,
-            }
-        except Exception as e:
-            self.logger.error(error(f"Error tracking stop loss: {e}"))
-            return {}
-
     def _track_take_profit(
         self,
         market_data: dict[str, Any],
@@ -723,23 +593,6 @@ class ModularTactician:
             }
         except Exception as e:
             self.logger.error(error(f"Error tracking take profit: {e}"))
-            return {}
-
-    def _track_trailing_stop(
-        self,
-        market_data: dict[str, Any],
-        strategy_data: dict[str, Any],
-    ) -> dict[str, Any]:
-        """Track trailing stop levels."""
-        try:
-            # Simulate trailing stop tracking
-            return {
-                "trailing_stop_triggered": False,
-                "trailing_stop_distance": 0.015,
-                "trailing_stop_level": 98.5,
-            }
-        except Exception as e:
-            self.logger.error(error(f"Error tracking trailing stop: {e}"))
             return {}
 
     def _track_time_based_exit(
@@ -927,103 +780,16 @@ class ModularTactician:
         default_return=None,
         context="tactician results getting",
     )
-    def get_tactician_results(
-        self,
-        tactician_type: str | None = None,
-    ) -> dict[str, Any]:
-        """
-        Get tactician results.
-
-        Args:
-            tactician_type: Optional tactician type filter
-
-        Returns:
-            Dict[str, Any]: Tactician results
-        """
-        try:
-            if tactician_type:
-                return self.tactician_results.get(tactician_type, {})
-            return self.tactician_results.copy()
-
-        except Exception as e:
-            self.logger.error(error(f"Error getting tactician results: {e}"))
-            return {}
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="tactician history getting",
     )
-    def get_tactician_history(self, limit: int | None = None) -> list[dict[str, Any]]:
-        """
-        Get tactician history.
-
-        Args:
-            limit: Optional limit on number of records
-
-        Returns:
-            List[Dict[str, Any]]: Tactician history
-        """
-        try:
-            history = self.tactician_history.copy()
-
-            if limit:
-                history = history[-limit:]
-
-            return history
-
-        except Exception as e:
-            self.logger.error(error(f"Error getting tactician history: {e}"))
-            return []
-
-    def get_tactician_status(self) -> dict[str, Any]:
-        """
-        Get tactician status information.
-
-        Returns:
-            Dict[str, Any]: Tactician status
-        """
-        return {
-            "is_tactician_active": self.is_tactician_active,
-            "tactician_interval": self.tactician_interval,
-            "max_tactician_history": self.max_tactician_history,
-            "enable_entry_monitoring": self.enable_entry_monitoring,
-            "enable_exit_monitoring": self.enable_exit_monitoring,
-            "enable_position_monitoring": self.tactician_config.get(
-                "enable_position_monitoring",
-                False,
-            ),
-            "enable_risk_monitoring": self.tactician_config.get(
-                "enable_risk_monitoring",
-                True,
-            ),
-            "tactician_history_count": len(self.tactician_history),
-        }
-
     @handle_errors(
         exceptions=(Exception,),
         default_return=None,
         context="modular tactician cleanup",
     )
-    async def stop(self) -> None:
-        """Stop the modular tactician."""
-        self.logger.info("🛑 Stopping Modular Tactician...")
-
-        try:
-            # Stop tactician
-            self.is_tactician_active = False
-
-            # Clear results
-            self.tactician_results.clear()
-
-            # Clear history
-            self.tactician_history.clear()
-
-            self.logger.info("✅ Modular Tactician stopped successfully")
-
-        except Exception as e:
-            self.logger.error(error(f"Error stopping modular tactician: {e}"))
-
 # Global modular tactician instance
 modular_tactician: ModularTactician | None = None
 
@@ -1032,42 +798,3 @@ modular_tactician: ModularTactician | None = None
     default_return=None,
     context="modular tactician setup",
 )
-async def setup_modular_tactician(
-    config: dict[str, Any] | None = None,
-) -> ModularTactician | None:
-    """
-    Setup global modular tactician.
-
-    Args:
-        config: Optional configuration dictionary
-
-    Returns:
-        Optional[ModularTactician]: Global modular tactician instance
-    """
-    try:
-        global modular_tactician
-
-        if config is None:
-            config = {
-                "modular_tactician": {
-                    "tactician_interval": 5,
-                    "max_tactician_history": 100,
-                    "enable_entry_monitoring": True,
-                    "enable_exit_monitoring": True,
-                    "enable_position_monitoring": False,
-                    "enable_risk_monitoring": True,
-                },
-            }
-
-        # Create modular tactician
-        modular_tactician = ModularTactician(config)
-
-        # Initialize modular tactician
-        success = await modular_tactician.initialize()
-        if success:
-            return modular_tactician
-        return None
-
-    except Exception as e:
-        print(f"Error setting up modular tactician: {e}")
-        return None

@@ -192,50 +192,6 @@ def demonstrate_enhanced_detector():
     return results
 
 
-def compare_with_old_detector():
-    """Compare enhanced detector with old behavior."""
-    print("\n🔄 Comparison with Old Detector Behavior")
-    print("=" * 60)
-
-    # Create data with the specific features that were causing false positives
-    data = create_sample_data()
-
-    # Focus on the features that were flagged in the original warnings
-    problematic_features = [
-        "market_depth_change",
-        "market_depth_returns",
-        "market_depth_imbalance",
-        "ema20_slope",
-        "sma50_slope",
-    ]
-
-    features_df = data[problematic_features].copy()
-    target_series = data["target"]
-
-    print("📊 Original problematic features:")
-    for feat in problematic_features:
-        print(f"   • {feat}")
-
-    print("\n🔍 Enhanced detector analysis:")
-
-    # Run enhanced detection
-    detector = LookaheadBiasDetector()
-    results = detector.detect_feature_lookahead_bias(
-        features_df = features_df, target_series=target_series,
-    )
-
-    print(f"   • Warnings generated: {len(results['warnings'])}")
-    print(
-        f"   • Legitimate features detected: {len(results.get('legitimate_features', []))}",
-    )
-
-    if results.get("legitimate_features"):
-        print("   • Legitimate features:")
-        for item in results["legitimate_features"]:
-            print(f"     - {item['feature']} ({item['lagging_type']})")
-
-    print("\n✅ Enhanced detector correctly identifies these as legitimate!")
-
 
 if __name__ == "__main__":
     # Run demonstration

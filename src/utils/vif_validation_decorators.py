@@ -24,9 +24,6 @@ class VIFValidationError(Exception):
 @contextmanager
 def timeout_context(seconds: int, operation_name: str = "operation"):
     """Context manager for timeout handling."""
-    def timeout_handler(signum, frame):
-        raise TimeoutError(f"{operation_name} timed out after {seconds} seconds")
-
     # Set up signal handler
     old_handler = signal.signal(signal.SIGALRM, timeout_handler)
     signal.alarm(seconds)
@@ -56,56 +53,6 @@ def validate_vif_inputs(
         check_duplicates: Whether to check for duplicate features
         log_level: Logging level for validation messages
     """
-    def decorator(func: Callable) -> Callable:
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            logger = system_logger.getChild("VIFValidation")
-
-            # Extract data from function arguments
-            data = _extract_data_from_args(args, kwargs)
-            if data is None:
-        # Fallback implementation for data
-        # Fallback implementation for data
-                logger.warning("⚠️ VIF Validation: Could not extract data from function arguments")
-                return func(*args, **kwargs)
-
-            validation_results = {}
-
-            # Check for NaN values
-            if check_nan:
-                nan_results = _validate_nan_values(data, logger)
-                validation_results['nan'] = nan_results
-                if nan_results['has_issues']:
-                    logger.warning(f"⚠️ VIF Validation: Found NaN values in {nan_results['nan_count']} cells")
-
-            # Check for infinite values
-            if check_infinite:
-                infinite_results = _validate_infinite_values(data, logger)
-                validation_results['infinite'] = infinite_results
-                if infinite_results['has_issues']:
-                    logger.warning(f"⚠️ VIF Validation: Found infinite values in {infinite_results['infinite_count']} cells")
-
-            # Check for zero variance features
-            if check_zero_variance:
-                zero_var_results = _validate_zero_variance_features(data, logger)
-                validation_results['zero_variance'] = zero_var_results
-                if zero_var_results['has_issues']:
-                    logger.warning(f"⚠️ VIF Validation: Found {len(zero_var_results['zero_var_features'])} zero variance features")
-
-            # Check for duplicate features
-            if check_duplicates:
-                duplicate_results = _validate_duplicate_features(data, logger)
-                validation_results['duplicates'] = duplicate_results
-                if duplicate_results['has_issues']:
-                    logger.warning(f"⚠️ VIF Validation: Found {len(duplicate_results['duplicate_features'])} duplicate features")
-
-            # Log comprehensive validation summary
-            _log_validation_summary(validation_results, logger, log_level)
-
-            return func(*args, **kwargs)
-
-        return wrapper
-    return decorator
 
 
 def validate_vif_outputs(
@@ -125,57 +72,6 @@ def validate_vif_outputs(
         max_vif_threshold: Maximum acceptable VIF value
         log_level: Logging level for validation messages
     """
-    def decorator(func: Callable) -> Callable:
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            logger = system_logger.getChild("VIFValidation")
-
-            # Execute the function
-            result = func(*args, **kwargs)
-
-            # Extract VIF values from result
-            vif_values = _extract_vif_from_result(result)
-            if vif_values is None:
-        # Fallback implementation for vif_values
-                logger.warning("⚠️ VIF Validation: Could not extract VIF values from function result")
-                return result
-
-            validation_results = {}
-
-            # Check for NaN VIF values
-            if check_nan_vif:
-                nan_vif_results = _validate_nan_vif_values(vif_values, logger)
-                validation_results['nan_vif'] = nan_vif_results
-                if nan_vif_results['has_issues']:
-                    logger.error(f"❌ VIF Validation: Found {len(nan_vif_results['nan_vif_features'])} features with NaN VIF values")
-
-            # Check for infinite VIF values
-            if check_infinite_vif:
-                infinite_vif_results = _validate_infinite_vif_values(vif_values, logger)
-                validation_results['infinite_vif'] = infinite_vif_results
-                if infinite_vif_results['has_issues']:
-                    logger.error(f"❌ VIF Validation: Found {len(infinite_vif_results['infinite_vif_features'])} features with infinite VIF values")
-
-            # Check for zero VIF values
-            if check_zero_vif:
-                zero_vif_results = _validate_zero_vif_values(vif_values, logger)
-                validation_results['zero_vif'] = zero_vif_results
-                if zero_vif_results['has_issues']:
-                    logger.warning(f"⚠️ VIF Validation: Found {len(zero_vif_results['zero_vif_features'])} features with zero VIF values")
-
-            # Check for extremely high VIF values
-            high_vif_results = _validate_high_vif_values(vif_values, max_vif_threshold, logger)
-            validation_results['high_vif'] = high_vif_results
-            if high_vif_results['has_issues']:
-                logger.warning(f"⚠️ VIF Validation: Found {len(high_vif_results['high_vif_features'])} features with VIF > {max_vif_threshold}")
-
-            # Log comprehensive VIF validation summary
-            _log_vif_validation_summary(validation_results, logger, log_level)
-
-            return result
-
-        return wrapper
-    return decorator
 
 
 def safe_vif_calculation(
@@ -191,41 +87,6 @@ def safe_vif_calculation(
         fallback_strategy: Strategy to use when VIF calculation fails ("ones", "skip", "error")
         log_level: Logging level for validation messages
     """
-    def decorator(func: Callable) -> Callable:
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            logger = system_logger.getChild("VIFValidation")
-
-            try:
-                with timeout_context(timeout_seconds, "VIF calculation"):
-                    result = func(*args, **kwargs)
-                    logger.info(f"✅ VIF Validation: VIF calculation completed successfully in {timeout_seconds}s")
-                    return result
-
-            except TimeoutError:
-                logger.error(f"❌ VIF Validation: VIF calculation timed out after {timeout_seconds} seconds")
-                if fallback_strategy == "ones":
-                    logger.info("🔄 VIF Validation: Using fallback strategy - setting all VIF values to 1.0")
-                    return _create_fallback_vif_result(args, kwargs, 1.0)
-                elif fallback_strategy == "skip":
-                    logger.info("🔄 VIF Validation: Using fallback strategy - skipping VIF calculation")
-                    return _create_fallback_vif_result(args, kwargs, None)
-                else:  # error
-                    raise VIFValidationError("VIF calculation failed and no fallback strategy specified")
-
-            except Exception as e:
-                logger.error(f"❌ VIF Validation: VIF calculation failed with error: {e}")
-                if fallback_strategy == "ones":
-                    logger.info("🔄 VIF Validation: Using fallback strategy - setting all VIF values to 1.0")
-                    return _create_fallback_vif_result(args, kwargs, 1.0)
-                elif fallback_strategy == "skip":
-                    logger.info("🔄 VIF Validation: Using fallback strategy - skipping VIF calculation")
-                    return _create_fallback_vif_result(args, kwargs, None)
-                else:  # error
-                    raise VIFValidationError(f"VIF calculation failed: {e}")
-
-        return wrapper
-    return decorator
 
 
 def _extract_data_from_args(args: tuple, kwargs: dict) -> Optional[pd.DataFrame]:
@@ -415,22 +276,3 @@ def _create_fallback_vif_result(args: tuple, kwargs: dict, fallback_value: Optio
 
 
 # Convenience decorator that combines all VIF validations
-def comprehensive_vif_validation(
-    timeout_seconds: int = 30,
-    max_vif_threshold: float = 1000.0,
-    fallback_strategy: str = "ones",
-    log_level: str = "INFO"
-):
-    """
-    Comprehensive VIF validation decorator that combines input validation,
-    safe calculation, and output validation.
-    """
-    def decorator(func: Callable) -> Callable:
-        @validate_vif_inputs(log_level=log_level)
-        @safe_vif_calculation(timeout_seconds, fallback_strategy, log_level)
-        @validate_vif_outputs(max_vif_threshold=max_vif_threshold, log_level=log_level)
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            return func(*args, **kwargs)
-        return wrapper
-    return decorator

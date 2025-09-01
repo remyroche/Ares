@@ -48,8 +48,3 @@ class MonitoringIntegrationManager:
         default_return=False,
         context="monitoring_integration_manager.initialize",
     )
-    async def initialize(self) -> bool:
-        self.logger.info("Initializing Monitoring Integration Manager ...")
-        self.is_integrated = True
-        self.logger.info("✅ Monitoring Integration Manager initialization completed")
-        return True

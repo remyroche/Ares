@@ -166,11 +166,6 @@ class EnhancedRegimePredictiveEnsembles(RegimePredictiveEnsembles):
 
         return training_stats
 
-    def _initialize_enhanced_ensembles(self):
-        """Initialize enhanced regime ensembles."""
-        self.logger.info("🔧 Initializing enhanced regime ensembles...")
-        self.enhanced_regime_ensembles = {}
-
     def predict(self, data: dict[str, pd.DataFrame]) -> dict[str, Any]:
         """
         Make predictions using all enhanced ensembles.
@@ -197,60 +192,3 @@ class EnhancedRegimePredictiveEnsembles(RegimePredictiveEnsembles):
             predictions[regime_key] = regime_predictions
 
         return predictions
-
-    def save_models(self, base_path: str):
-        """Save all trained models."""
-        self.logger.info(f"💾 Saving enhanced ensemble models to {base_path}")
-
-        for regime_key, regime_ensembles in self.enhanced_regime_ensembles.items():
-            regime_path = os.path.join(base_path, f"regime_{regime_key}")
-            os.makedirs(regime_path, exist_ok=True)
-
-            for model_type, ensemble in regime_ensembles.items():
-                try:
-                    model_path = os.path.join(regime_path, f"{model_type}_ensemble.pkl")
-                    ensemble.save(model_path)
-                    self.logger.info(f"✅ Saved {model_type} ensemble for regime {regime_key}")
-                except Exception as e:
-                    self.logger.error(f"❌ Failed to save {model_type} ensemble for regime {regime_key}: {e}")
-
-    def load_models(self, base_path: str):
-        """Load all trained models."""
-        self.logger.info(f"📂 Loading enhanced ensemble models from {base_path}")
-
-        for regime_key in self.regime_ensembles.keys():
-            regime_path = os.path.join(base_path, f"regime_{regime_key}")
-
-            if regime_key not in self.enhanced_regime_ensembles:
-                self.enhanced_regime_ensembles[regime_key] = {}
-
-            for model_type in self.model_types:
-                try:
-                    model_path = os.path.join(regime_path, f"{model_type}_ensemble.pkl")
-                    if os.path.exists(model_path):
-                        ensemble = MultiTimeframeEnsemble.load(model_path)
-                        self.enhanced_regime_ensembles[regime_key][model_type] = ensemble
-                        self.logger.info(f"✅ Loaded {model_type} ensemble for regime {regime_key}")
-                    else:
-                        self.logger.warning(f"⚠️ Model file not found: {model_path}")
-                except Exception as e:
-                    self.logger.error(f"❌ Failed to load {model_type} ensemble for regime {regime_key}: {e}")
-
-    def get_ensemble_summary(self) -> dict[str, Any]:
-        """Get a summary of all ensembles."""
-        summary = {
-            "total_regimes": len(self.enhanced_regime_ensembles),
-            "total_models": 0,
-            "regime_details": {},
-        }
-
-        for regime_key, regime_ensembles in self.enhanced_regime_ensembles.items():
-            regime_summary = {
-                "model_count": len(regime_ensembles),
-                "model_types": list(regime_ensembles.keys()),
-                "is_trained": all(ensemble.is_trained for ensemble in regime_ensembles.values()),
-            }
-            summary["regime_details"][regime_key] = regime_summary
-            summary["total_models"] += regime_summary["model_count"]
-
-        return summary

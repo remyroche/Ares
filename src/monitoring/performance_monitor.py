@@ -71,14 +71,5 @@ class PerformanceMonitor:
     @resource_monitor()
     @memory_efficient()
     @handle_errors(exceptions=(Exception,), default_return=False, context="performance_monitor.initialize")
-    async def initialize(self) -> bool:
-        self.logger.info("📈 Initializing Performance Monitor ...")
-        self.metrics_history.clear()
-        self.logger.info("✅ Performance Monitor initialized successfully")
-        return True
-
-    def record_metrics(self, metrics: PerformanceMetrics) -> None:
-        self.metrics_history.append(metrics)
-
     def latest_metrics(self) -> Optional[PerformanceMetrics]:
         return self.metrics_history[-1] if self.metrics_history else None

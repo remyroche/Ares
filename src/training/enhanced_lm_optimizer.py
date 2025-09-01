@@ -179,89 +179,6 @@ class EnhancedLMOptimizer:
                 result[key] = value
         return result
 
-    async def initialize(self) -> bool:
-        """Initialize the Enhanced LM Optimizer with all components. Fails fast if any component fails."""
-        try:
-            self.logger.info("🔄 Initializing Enhanced LM Optimizer...")
-
-            # Track initialization status for artifact saving
-            initialization_status = {
-                "feature_selector": False,
-                "regularization_manager": False,
-                "optuna_study": False,
-                "experiment_tracking": False,
-            }
-
-            # Initialize feature selector
-            feature_selection_enabled = (
-                self.optimization_config.feature_selection.enable
-                if hasattr(self.optimization_config, "feature_selection")
-                else self.optimization_config.get("feature_selection", {}).get("enable", True)
-            )
-
-            if feature_selection_enabled:
-                self.logger.info("🔄 Initializing feature selector...")
-                self.feature_selector = EnhancedFeatureSelector(self.optimization_config)
-                await self.feature_selector.initialize()
-                initialization_status["feature_selector"] = True
-                self.logger.info("✅ Feature selector initialized successfully")
-
-            # Initialize regularization manager
-            regularization_enabled = (
-                self.optimization_config.regularization.enable
-                if hasattr(self.optimization_config, "regularization")
-                else self.optimization_config.get("regularization", {}).get("enable", True)
-            )
-
-            if regularization_enabled:
-                self.logger.info("🔄 Initializing regularization manager...")
-                self.regularization_manager = EnhancedRegularizationManager(self.optimization_config)
-                await self.regularization_manager.initialize()
-                initialization_status["regularization_manager"] = True
-                self.logger.info("✅ Regularization manager initialized successfully")
-
-            # Initialize Optuna study
-            optuna_enabled = (
-                self.optimization_config.optuna.enable
-                if hasattr(self.optimization_config, "optuna")
-                else self.optimization_config.get("optuna", {}).get("enable", True)
-            )
-
-            if optuna_enabled:
-                self.logger.info("🔄 Initializing Optuna study...")
-                await self._initialize_optuna_study()
-                initialization_status["optuna_study"] = True
-                self.logger.info("✅ Optuna study initialized successfully")
-
-            # Initialize experiment tracking
-            experiment_tracking_enabled = (
-                self.optimization_config.experiment_tracking.enable
-                if hasattr(self.optimization_config, "experiment_tracking")
-                else self.optimization_config.get("experiment_tracking", {}).get("enable", True)
-            )
-
-            if experiment_tracking_enabled:
-                self.logger.info("🔄 Initializing experiment tracking...")
-                # Experiment tracking is initialized in _initialize_optuna_study
-                initialization_status["experiment_tracking"] = True
-                self.logger.info("✅ Experiment tracking initialized successfully")
-
-            # Store initialization status for potential failure handling
-            self.initialization_status = initialization_status
-
-            self.logger.info("✅ Enhanced LM Optimizer initialized successfully")
-            return True
-
-        except Exception as e:
-            self.logger.exception(f"❌ Failed to initialize Enhanced LM Optimizer: {e}")
-
-            # Save initialization artifacts before raising
-            await self._save_initialization_artifacts(initialization_status, str(e))
-
-            # Re-raise the exception - no fallback, it has to work
-            msg = f"Enhanced LM Optimizer initialization failed: {e}"
-            raise RuntimeError(msg)
-
     async def _save_initialization_artifacts(self, initialization_status: dict[str, bool], error_message: str) -> None:
         """Save artifacts of successful initialization components before failing."""
         try:
@@ -301,18 +218,6 @@ class EnhancedLMOptimizer:
 
         except Exception as artifact_error:
             self.logger.exception(f"❌ Failed to save initialization artifacts: {artifact_error}")
-
-    def _get_config_summary(self) -> dict[str, Any]:
-        """Get a summary of the current configuration."""
-        try:
-            if hasattr(self.optimization_config, "get_optimization_summary"):
-                return self.optimization_config.get_optimization_summary()
-            return {
-                "config_type": "dictionary",
-                "keys": list(self.optimization_config.keys()) if isinstance(self.optimization_config, dict) else [],
-            }
-        except Exception as e:
-            return {"error": f"Failed to get config summary: {e}"}
 
     async def _save_feature_selector_artifacts(self, artifacts_dir: str, timestamp: str) -> None:
         """Save feature selector artifacts."""
@@ -359,231 +264,6 @@ class EnhancedLMOptimizer:
                     json.dump(optuna_artifacts, f, indent=2)
         except Exception as e:
             self.logger.warning(f"⚠️ Failed to save Optuna artifacts: {e}")
-
-    async def _initialize_optuna_study(self) -> None:
-        """Initialize Optuna study for hyperparameter optimization with advanced samplers and pruners."""
-        try:
-            # Get Optuna configuration
-            if hasattr(self.optimization_config, "optuna"):
-                optuna_config = self.optimization_config.optuna
-                sampler_name = optuna_config.sampler.value if hasattr(optuna_config.sampler, "value") else str(optuna_config.sampler)
-                pruner_name = optuna_config.pruner.value if hasattr(optuna_config.pruner, "value") else str(optuna_config.pruner)
-                storage = optuna_config.storage
-            else:
-                optuna_config = self.optimization_config.get("optuna", {})
-                sampler_name = optuna_config.get("sampler", "tpe")
-                pruner_name = optuna_config.get("pruner", "median")
-                storage = optuna_config.get("storage")
-
-            # Create study
-            study_name = f"enhanced_lm_optimization_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-
-            # Configure advanced sampler
-            if sampler_name == "tpe":
-                sampler = TPESampler(seed=42, n_startup_trials=10)
-            elif sampler_name == "cmaes":
-                from optuna.samplers import CmaEsSampler
-                sampler = CmaEsSampler(seed=42)
-            elif sampler_name == "random":
-                from optuna.samplers import RandomSampler
-                sampler = RandomSampler(seed=42)
-            else:
-                sampler = TPESampler(seed=42, n_startup_trials=10)
-
-            # Configure pruner
-            if pruner_name == "median":
-                from optuna.pruners import MedianPruner
-                pruner = MedianPruner(n_startup_trials=5, n_warmup_steps=10)
-            elif pruner_name == "hyperband":
-                from optuna.pruners import HyperbandPruner
-                pruner = HyperbandPruner(min_resource=1, max_resource=100, reduction_factor=3)
-            elif pruner_name == "threshold":
-                from optuna.pruners import ThresholdPruner
-                pruner = ThresholdPruner(lower=0.1, upper=0.9)
-            else:
-                from optuna.pruners import MedianPruner
-                pruner = MedianPruner(n_startup_trials=5, n_warmup_steps=10)
-
-            # Create study with advanced configuration
-            self.optuna_study = optuna.create_study(
-                direction="maximize",
-                sampler=sampler,
-                pruner=pruner,
-                storage=storage,
-                study_name=study_name,
-                load_if_exists=True,
-            )
-
-            # Initialize experiment tracking
-            await self._initialize_experiment_tracking(study_name)
-
-            self.logger.info(f"✅ Optuna study '{study_name}' initialized with {sampler_name} sampler and {pruner_name} pruner")
-
-        except Exception as e:
-            self.logger.exception(f"❌ Failed to initialize Optuna study: {e}")
-
-    async def _initialize_experiment_tracking(self, study_name: str) -> None:
-        """Initialize experiment tracking for MLflow or similar tools."""
-        try:
-            # Try to initialize MLflow
-            try:
-                import mlflow
-                mlflow.set_tracking_uri("file:./mlruns")
-                mlflow.set_experiment(f"enhanced_lm_optimization_{study_name}")
-                self.mlflow_available = True
-                self.logger.info("✅ MLflow experiment tracking initialized")
-            except ImportError:
-                self.mlflow_available = False
-                self.logger.info("⚠️ MLflow not available, skipping experiment tracking")
-
-            # Try to initialize Weights & Biases
-            try:
-                import wandb
-                wandb.init(project="ares-enhanced-lm-optimization", name=study_name, config=self.optimization_config)
-                self.wandb_available = True
-                self.logger.info("✅ Weights & Biases experiment tracking initialized")
-            except ImportError:
-                self.wandb_available = False
-                self.logger.info("⚠️ Weights & Biases not available, skipping experiment tracking")
-
-        except Exception as e:
-            self.logger.warning(f"⚠️ Experiment tracking initialization failed: {e}")
-            self.mlflow_available = False
-            self.wandb_available = False
-
-    async def optimize_lm_model(
-        self,
-        step_name: str,
-        features_df: pd.DataFrame,
-        target: pd.Series,
-        model_type: str,
-        architecture: str,
-        **kwargs,
-    ) -> dict[str, Any]:
-        """Comprehensive optimization for LM models. No fallbacks - it has to work.
-
-        Args:
-            step_name: Step name (step6, step06_5, step9)
-            features_df: Input features DataFrame
-            target: Target variable series
-            model_type: Model type (classification, regression)
-            architecture: Model architecture (LightGBM, CNN, TCN, Transformer)
-            **kwargs: Additional parameters
-
-        Returns:
-            Dict containing optimization results
-
-        Raises:
-            RuntimeError: If any optimization step fails
-
-        """
-        start_time = time.time()
-
-        try:
-            self.logger.info(f"🔄 Starting comprehensive optimization for {step_name} {architecture}")
-
-            # Validate inputs
-            if features_df.empty or target.empty:
-                msg = "Features and target cannot be empty"
-                raise ValueError(msg)
-
-            if len(features_df) != len(target):
-                msg = "Features and target must have the same length"
-                raise ValueError(msg)
-
-            # Validate that all required components are available
-            if self.feature_selector is None:
-                msg = "Feature selector is required but not initialized"
-                raise RuntimeError(msg)
-
-            if self.regularization_manager is None:
-                msg = "Regularization manager is required but not initialized"
-                raise RuntimeError(msg)
-
-            if self.optuna_study is None:
-                msg = "Optuna study is required but not initialized"
-                raise RuntimeError(msg)
-
-            optimization_results = {
-                "step_name": step_name,
-                "architecture": architecture,
-                "model_type": model_type,
-                "optimization_timestamp": datetime.now().isoformat(),
-                "feature_selection": {},
-                "regularization": {},
-                "hyperparameter_optimization": {},
-                "performance_metrics": {},
-            }
-
-            # Step 1: Feature Selection
-            self.logger.info(f"📊 Step 1: Feature selection for {step_name}")
-            feature_selection_start = time.time()
-
-            optimized_features, feature_selection_results = await self._optimize_features(
-                features_df, target, step_name, architecture,
-            )
-
-            optimization_results["feature_selection"] = feature_selection_results
-            self.optimization_metrics["feature_selection_time"] = time.time() - feature_selection_start
-
-            self.logger.info(f"✅ Feature selection completed: {len(features_df.columns)} -> {len(optimized_features.columns)} features")
-
-            # Step 2: Regularization Tuning
-            self.logger.info(f"🔧 Step 2: Regularization tuning for {step_name}")
-            regularization_start = time.time()
-
-            regularization_params = await self._optimize_regularization(
-                optimized_features, target, step_name, architecture,
-            )
-
-            optimization_results["regularization"] = regularization_params
-            self.optimization_metrics["regularization_tuning_time"] = time.time() - regularization_start
-
-            self.logger.info("✅ Regularization tuning completed")
-
-            # Step 3: Hyperparameter Optimization with Optuna
-            self.logger.info(f"🎯 Step 3: Hyperparameter optimization for {step_name}")
-            hyperopt_start = time.time()
-
-            best_params, hyperopt_results = await self._optimize_hyperparameters(
-                optimized_features, target, step_name, architecture, model_type,
-            )
-
-            optimization_results["hyperparameter_optimization"] = hyperopt_results
-            self.optimization_metrics["hyperparameter_optimization_time"] = time.time() - hyperopt_start
-
-            self.logger.info("✅ Hyperparameter optimization completed")
-
-            # Step 4: Performance Evaluation
-            self.logger.info(f"📈 Step 4: Performance evaluation for {step_name}")
-            performance_metrics = await self._evaluate_optimized_model(
-                optimized_features, target, step_name, architecture, model_type,
-                optimization_results,
-            )
-
-            optimization_results["performance_metrics"] = performance_metrics
-
-            # Update total time
-            self.optimization_metrics["total_optimization_time"] = time.time() - start_time
-
-            # Cache results
-            cache_key = f"{step_name}_{architecture}_{model_type}"
-            self.optimization_cache[cache_key] = optimization_results
-
-            self.logger.info(f"✅ Comprehensive optimization completed for {step_name} in {self.optimization_metrics['total_optimization_time']:.2f}s")
-
-            # Return both optimization results and optimized features
-            return optimization_results, optimized_features
-
-        except Exception as e:
-            self.logger.exception(f"❌ Optimization failed for {step_name}: {e}")
-
-            # Save optimization artifacts before failing
-            await self._save_optimization_artifacts(step_name, features_df, target, model_type, architecture, str(e))
-
-            # Re-raise the exception - no fallback, it has to work
-            msg = f"LM optimization failed for {step_name}: {e}"
-            raise RuntimeError(msg)
 
     async def _save_optimization_artifacts(self, step_name: str, features_df: pd.DataFrame, target: pd.Series, model_type: str, architecture: str, error_message: str) -> None:
         """Save artifacts of optimization process before failing."""
@@ -713,11 +393,6 @@ class EnhancedLMOptimizer:
                 self.logger.info(f"🔄 Batch {batch_idx + 1}/{n_batches} for {step_name}")
 
                 # Create objective function for this batch with unified hyperparameter optimization
-                def objective(trial):
-                    return self._unified_hyperparameter_objective(
-                        trial, features_df, target, step_name, architecture, model_type,
-                    )
-
                 # Use the persistent study for all batches to maintain learning
                 self.optuna_study.optimize(
                     objective,
@@ -790,12 +465,6 @@ class EnhancedLMOptimizer:
             try:
                 # Run logging in a separate thread to avoid blocking
                 import threading
-                def log_trial() -> None:
-                    try:
-                        asyncio.create_task(self._log_experiment_trial(trial, params, final_score, cv_scores, step_name, architecture, model_type))
-                    except:
-                        pass  # Ignore logging errors in objective function
-
                 threading.Thread(target=log_trial, daemon=True).start()
             except:
                 pass  # Ignore logging errors in objective function
@@ -1225,14 +894,6 @@ class EnhancedLMOptimizer:
             self.logger.exception(f"❌ Model evaluation failed: {e}")
             return {"error": str(e)}
 
-    def get_optimization_summary(self) -> dict[str, Any]:
-        """Get summary of optimization metrics and results."""
-        return {
-            "optimization_metrics": self.optimization_metrics,
-            "cache_size": len(self.optimization_cache),
-            "cached_steps": list(self.optimization_cache.keys()),
-        }
-
 
 class EnhancedFeatureSelector:
     """Enhanced feature selector with multiple algorithms and vectorized operations."""
@@ -1241,10 +902,6 @@ class EnhancedFeatureSelector:
         self.config = config
         self.logger = system_logger.getChild("EnhancedFeatureSelector")
         self.feature_selection_config = config["feature_selection"]
-
-    async def initialize(self) -> None:
-        """Initialize the feature selector."""
-        self.logger.info("✅ Enhanced Feature Selector initialized")
 
     async def select_features_enhanced(
         self,
@@ -1547,10 +1204,6 @@ class EnhancedRegularizationManager:
         self.logger = system_logger.getChild("EnhancedRegularizationManager")
         self.regularization_config = config["regularization"]
 
-    async def initialize(self) -> None:
-        """Initialize the regularization manager."""
-        self.logger.info("✅ Enhanced Regularization Manager initialized")
-
     async def optimize_regularization(
         self,
         features_df: pd.DataFrame,
@@ -1574,21 +1227,6 @@ class EnhancedRegularizationManager:
         """Optimize LightGBM regularization parameters."""
         try:
             # Use Optuna to optimize regularization parameters
-            def objective(trial):
-                reg_alpha = trial.suggest_float("reg_alpha", 0.001, 0.1)
-                reg_lambda = trial.suggest_float("reg_lambda", 0.001, 0.1)
-
-                model = lgb.LGBMClassifier(
-                    reg_alpha=reg_alpha,
-                    reg_lambda=reg_lambda,
-                    n_estimators=100,
-                    random_state=42,
-                    verbose=-1,
-                )
-
-                scores = cross_val_score(model, features_df, target, cv=3, scoring="accuracy")
-                return scores.mean()
-
             study = optuna.create_study(direction="maximize")
             study.optimize(objective, n_trials=20)
 
@@ -1606,54 +1244,6 @@ class EnhancedRegularizationManager:
         """Optimize neural network regularization parameters."""
         try:
             # Use Optuna to optimize regularization parameters
-            def objective(trial):
-                weight_decay = trial.suggest_float("weight_decay", 1e-6, 1e-3)
-                dropout = trial.suggest_float("dropout", 0.1, 0.5)
-
-                # Create a simple neural network for testing
-                model = SimpleNNModel(
-                    input_size=features_df.shape[1],
-                    params={"dropout": dropout, "weight_decay": weight_decay},
-                    model_type="classification",
-                )
-
-                # Simplified evaluation with proper training loop
-                try:
-                    # Convert to tensors
-                    X_tensor = torch.FloatTensor(features_df.values)
-                    y_tensor = torch.LongTensor(target.values) if model_type == "classification" else torch.FloatTensor(target.values).unsqueeze(1)
-
-                    # Create data loader
-                    dataset = TensorDataset(X_tensor, y_tensor)
-                    dataloader = DataLoader(dataset, batch_size=32, shuffle=True)
-
-                    # Training loop
-                    model.train()
-                    optimizer = optim.Adam(model.parameters(), lr=0.001, weight_decay=weight_decay)
-                    criterion = nn.CrossEntropyLoss() if model_type == "classification" else nn.MSELoss()
-
-                    for _epoch in range(10):  # Short training for optimization
-                        for batch_X, batch_y in dataloader:
-                            optimizer.zero_grad()
-                            outputs = model(batch_X)
-                            loss = criterion(outputs, batch_y)
-                            loss.backward()
-                            optimizer.step()
-
-                    # Evaluation
-                    model.eval()
-                    with torch.no_grad():
-                        outputs = model(X_tensor)
-                        if model_type == "classification":
-                            _, predictions = torch.max(outputs, 1)
-                            return (predictions == y_tensor).float().mean().item()
-                        mse = criterion(outputs, y_tensor).item()
-                        return -mse  # Return negative MSE for maximization
-
-                except Exception as e:
-                    self.logger.warning(f"⚠️ Neural network evaluation failed: {e}")
-                    return 0.5  # Fallback score
-
             study = optuna.create_study(direction="maximize")
             study.optimize(objective, n_trials=20)
 
@@ -1671,14 +1261,6 @@ class EnhancedRegularizationManager:
         """Optimize general regularization parameters."""
         try:
             # Use ElasticNet for general regularization optimization
-            def objective(trial):
-                alpha = trial.suggest_float("alpha", 0.001, 0.1)
-                l1_ratio = trial.suggest_float("l1_ratio", 0.1, 0.9)
-
-                model = ElasticNet(alpha=alpha, l1_ratio=l1_ratio, random_state=42)
-                scores = cross_val_score(model, features_df, target, cv=3, scoring="neg_mean_squared_error")
-                return scores.mean()
-
             study = optuna.create_study(direction="maximize")
             study.optimize(objective, n_trials=20)
 
@@ -1712,9 +1294,6 @@ class SimpleNNModel(nn.Module):
             nn.Linear(64, 1 if model_type == "regression" else 2),
         )
 
-    def forward(self, x):
-        return self.layers(x)
-
 
 class SimpleCNNModel(nn.Module):
     def __init__(self, input_size: int, params: dict[str, Any], model_type: str) -> None:
@@ -1738,12 +1317,6 @@ class SimpleCNNModel(nn.Module):
             nn.Dropout(params.get("dropout", 0.2)),
             nn.Linear(32, 1 if model_type == "regression" else 2),
         )
-
-    def forward(self, x):
-        x = x.unsqueeze(1)  # Add channel dimension
-        x = self.conv_layers(x)
-        x = x.squeeze(-1)
-        return self.fc_layers(x)
 
 
 class SimpleTCNModel(nn.Module):
@@ -1800,32 +1373,6 @@ class SimpleTCNModel(nn.Module):
         # Global average pooling
         self.global_pool = nn.AdaptiveAvgPool1d(1)
 
-    def forward(self, x):
-        # x shape: (batch_size, features)
-        # Reshape for 1D convolution: (batch_size, channels, sequence_length)
-        x = x.unsqueeze(-1).transpose(1, 2)  # Add sequence dimension
-
-        for layer in self.tcn_layers:
-            conv, relu, dropout, residual = layer
-
-            # Apply convolution
-            out = conv(x)
-            out = relu(out)
-            out = dropout(out)
-
-            # Add residual connection
-            if x.size(1) == out.size(1):
-                # Same channel dimensions
-                out = out + residual(x)
-            else:
-                # Different channel dimensions - use projection
-                out = out + residual(x)
-
-            x = out
-
-        # Global average pooling
-        return self.global_pool(x).squeeze(-1)
-
 
 
 class SimpleTransformerModel(nn.Module):
@@ -1848,11 +1395,3 @@ class SimpleTransformerModel(nn.Module):
             num_layers=params.get("num_layers", 2),
         )
         self.output_layer = nn.Linear(params.get("hidden_size", 128), 1 if model_type == "regression" else 2)
-
-    def forward(self, x):
-        x = self.embedding(x)
-        # Add sequence dimension for transformer
-        x = x.unsqueeze(1)  # (batch_size, 1, hidden_size)
-        x = self.transformer(x)
-        x = x.mean(dim=1)  # Global average pooling
-        return self.output_layer(x)

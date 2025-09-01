@@ -47,27 +47,6 @@ class DataQualityValidator:
         self.config: dict[str, Any] = config or self._get_default_config()
         self.issues: list[ValidationIssue] = []
 
-    def _get_default_config(self) -> dict[str, Any]:
-        """Get default validation configuration."""
-        return {
-            "nan_threshold": 0.1,  # 10% NaN threshold
-            "infinite_threshold": 0.05,  # 5% infinite threshold
-            "zero_variance_threshold": 1e-8,
-            "wavelet_variance_threshold": 1e-12,  # More lenient for wavelet features
-            "correlation_threshold": 0.95,
-            "extreme_value_threshold": 1e6,
-            "constant_threshold": 0.99,  # 99% same value
-            "enable_detailed_logging": True,
-            "enable_auto_fix": False,
-            "fix_strategies": {
-                "nan": "drop",  # or "fill", "interpolate"
-                "infinite": "clip",  # or "drop", "fill"
-                "zero_variance": "drop",
-                "constant": "drop",
-                "extreme_values": "clip",
-            },
-        }
-
     def validate_dataset(
         self,
         data: pd.DataFrame,
@@ -550,32 +529,6 @@ class DataQualityValidator:
                     fixed_data[issue.feature] = series.clip(lower=q01, upper=q99)
 
         return fixed_data
-
-    def get_validation_summary(self) -> str:
-        """Get a human-readable validation summary."""
-        if not self.issues:
-            return "✅ No data quality issues found"
-
-        summary_lines: list[str] = ["🔍 Data Quality Validation Summary:"]
-
-        # Group by level
-        by_level: dict[ValidationLevel, list[ValidationIssue]] = {}
-        for issue in self.issues:
-            if issue.level not in by_level:
-                by_level[issue.level] = []
-            by_level[issue.level].append(issue)
-
-        for level in [ValidationLevel.CRITICAL, ValidationLevel.ERROR, ValidationLevel.WARNING, ValidationLevel.INFO]:
-            if level in by_level:
-                summary_lines.append(
-                    f"\n{level.value.upper()} ({len(by_level[level])}):",
-                )
-                for issue in by_level[level][:3]:  # Show first 3
-                    summary_lines.append(f"  - {issue.feature}: {issue.description}")
-                if len(by_level[level]) > 3:
-                    summary_lines.append(f"  ... and {len(by_level[level]) - 3} more")
-
-        return "\n".join(summary_lines)
 
 
 # Convenience functions for easy integration

@@ -267,98 +267,16 @@ class AdvancedHyperparameterOptimizer:
         default_return=None,
         context="objective function evaluation",
     )
-    def feature_engineering_objective(self, trial: optuna.trial.Trial) -> Number:
-        """Objective function for feature engineering optimization."""
-        # Suggest feature engineering parameters
-        params = self.suggest_feature_engineering_params(trial)
-
-        # Run evaluation with fixed model and trading parameters
-        score = self._evaluate_feature_engineering(params)
-
-        # Report intermediate results for pruning
-        trial.report(score, step=0)
-
-        # Store trial history
-        self.trial_history.append(
-            {
-                "trial_number": trial.number,
-                "params": params,
-                "score": score,
-                "timestamp": pd.Timestamp.now(),
-                "stage": "feature_engineering",
-            },
-        )
-
-        return score
-
     @handle_errors(
         exceptions=(Exception,),
         default_return=None,
         context="objective function evaluation",
     )
-    def model_optimization_objective(self, trial: optuna.trial.Trial) -> Number:
-        """Objective function for model optimization."""
-        # Suggest model parameters
-        params = self.suggest_model_params(trial)
-
-        # Combine with best feature engineering results
-        if self.feature_engineering_results:
-            params.update(self.feature_engineering_results["best_params"])
-
-        # Run evaluation with fixed trading parameters
-        score = self._evaluate_model_optimization(params)
-
-        # Report intermediate results for pruning
-        trial.report(score, step=0)
-
-        # Store trial history
-        self.trial_history.append(
-            {
-                "trial_number": trial.number,
-                "params": params,
-                "score": score,
-                "timestamp": pd.Timestamp.now(),
-                "stage": "model_optimization",
-            },
-        )
-
-        return score
-
     @handle_errors(
         exceptions=(Exception,),
         default_return=None,
         context="objective function evaluation",
     )
-    def trading_strategy_objective(self, trial: optuna.trial.Trial) -> Number:
-        """Objective function for trading strategy optimization."""
-        # Suggest trading parameters
-        params = self.suggest_trading_params(trial)
-
-        # Combine with best results from previous stages
-        if self.feature_engineering_results:
-            params.update(self.feature_engineering_results["best_params"])
-        if self.model_optimization_results:
-            params.update(self.model_optimization_results["best_params"])
-
-        # Run evaluation
-        score = self._evaluate_trading_strategy(params)
-
-        # Report intermediate results for pruning
-        trial.report(score, step=0)
-
-        # Store trial history
-        self.trial_history.append(
-            {
-                "trial_number": trial.number,
-                "params": params,
-                "score": score,
-                "timestamp": pd.Timestamp.now(),
-                "stage": "trading_strategy",
-            },
-        )
-
-        return score
-
     def _evaluate_feature_engineering(self, params: dict[str, Any]) -> Number:
         """Evaluate feature engineering parameters."""
         # Mock evaluation - replace with actual feature engineering evaluation
@@ -476,20 +394,6 @@ class AdvancedHyperparameterOptimizer:
 
         return final_results
 
-    def _optimization_callback(
-        self,
-        study: optuna.Study,
-        trial: optuna.trial.FrozenTrial,
-    ) -> None:
-        """Callback function for optimization monitoring."""
-        if trial.state == optuna.trial.TrialState.COMPLETE:
-            self.logger.info(f"Trial {trial.number}: Score = {trial.value:.4f}")
-
-            # Log best parameters periodically
-            if trial.number % 10 == 0:
-                best_trial = study.best_trial
-                self.logger.info(f"Best trial so far: {best_trial.value:.4f}")
-
     def _analyze_optimization_results(self, study: optuna.Study) -> dict[str, Any]:
         """Analyze and summarize optimization results."""
         # Get best trial
@@ -584,40 +488,4 @@ class AdvancedHyperparameterOptimizer:
             "total_improvement": scores[-1] - scores[0],
             "final_score": scores[-1],
             "num_trials": len(trials),
-        }
-
-    def suggest_hyperparameter_ranges(self, param_name: str) -> dict[str, Any]:
-        """Suggest optimal hyperparameter ranges based on optimization history."""
-        if not self.trial_history:
-            return {}
-
-        # Analyze parameter distribution for best trials
-        best_trials = sorted(
-            self.trial_history,
-            key=lambda x: x["score"],
-            reverse=True,
-        )[:10]
-
-        param_values = [
-            trial["params"].get(param_name)
-            for trial in best_trials
-            if param_name in trial["params"]
-        ]
-
-        if not param_values:
-            return {}
-
-        # Calculate statistics
-        mean_val = np.mean(param_values)
-        std_val = np.std(param_values)
-        min_val = np.min(param_values)
-        max_val = np.max(param_values)
-
-        return {
-            "mean": mean_val,
-            "std": std_val,
-            "min": min_val,
-            "max": max_val,
-            "range": max_val - min_val,
-            "confidence_interval": (mean_val - 2 * std_val, mean_val + 2 * std_val),
         }

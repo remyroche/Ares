@@ -55,75 +55,11 @@ class AdaptiveOptimizer:
         # Initialize regime templates
         self._initialize_regime_templates()
 
-    def _initialize_regime_templates(self) -> None:
-        """Initialize predefined regime templates."""
-        self.regime_templates = {
-            "bull": MarketRegime(
-                "bull",
-                0.015,
-                0.8,
-                "trending",
-                {"tp_multiplier": 3.0, "sl_multiplier": 1.5, "position_size": 0.15},
-            ),
-            "bear": MarketRegime(
-                "bear",
-                0.020,
-                0.7,
-                "trending",
-                {"tp_multiplier": 2.5, "sl_multiplier": 1.2, "position_size": 0.12},
-            ),
-            "sideways": MarketRegime(
-                "sideways",
-                0.010,
-                0.2,
-                "ranging",
-                {"tp_multiplier": 1.8, "sl_multiplier": 1.0, "position_size": 0.08},
-            ),
-            "sr": MarketRegime(
-                "sr",
-                0.012,
-                0.3,
-                "support_resistance",
-                {"tp_multiplier": 2.2, "sl_multiplier": 1.1, "position_size": 0.10},
-            ),
-            "candle": MarketRegime(
-                "candle",
-                0.008,
-                0.1,
-                "pattern_based",
-                {"tp_multiplier": 1.5, "sl_multiplier": 0.8, "position_size": 0.06},
-            ),
-        }
-
     @handle_errors(
         exceptions=(Exception,),
         default_return=None,
         context="market regime detection",
     )
-    def detect_market_regime(self, market_data: pd.DataFrame) -> MarketRegime:
-        """Detect current market regime using multiple indicators."""
-        # Calculate regime features
-        features = self._calculate_regime_features(market_data)
-
-        # Classify regime
-        regime_type = self._classify_regime(features)
-
-        # Get optimal parameters for detected regime
-        optimal_params = self._get_regime_optimal_params(regime_type, features)
-
-        # Create regime object
-        regime = MarketRegime(
-            name=regime_type,
-            volatility=features["volatility"],
-            trend_strength=features["trend_strength"],
-            regime_type=regime_type,
-            optimal_params=optimal_params,
-        )
-
-        regime.confidence = self._calculate_regime_confidence(features, regime_type)
-
-        return regime
-
     def _calculate_regime_features(self, market_data: pd.DataFrame) -> dict[str, float]:
         """Calculate features for regime detection."""
         # Calculate volatility (rolling standard deviation of returns)
@@ -167,39 +103,6 @@ class AdaptiveOptimizer:
             return "sr"
         return "sideways"
 
-    def _get_regime_optimal_params(
-        self,
-        regime_type: str,
-        features: dict[str, float],
-    ) -> dict[str, Any]:
-        """Get optimal parameters for detected regime."""
-        base_params = self.regime_templates[regime_type].optimal_params.copy()
-
-        # Adapt parameters based on feature values
-        volatility = features["volatility"]
-        trend_strength = features["trend_strength"]
-
-        # Adjust TP/SL based on volatility
-        if volatility > 0.03:  # High volatility
-            base_params["tp_multiplier"] *= 1.2
-            base_params["sl_multiplier"] *= 1.3
-        elif volatility < 0.01:  # Low volatility
-            base_params["tp_multiplier"] *= 0.8
-            base_params["sl_multiplier"] *= 0.7
-
-        # Adjust position size based on trend strength
-        if trend_strength > 0.8:  # Strong trend
-            base_params["position_size"] *= 1.2
-        elif trend_strength < 0.3:  # Weak trend
-            base_params["position_size"] *= 0.7
-
-        # Ensure reasonable bounds
-        base_params["tp_multiplier"] = max(1.2, min(5.0, base_params["tp_multiplier"]))
-        base_params["sl_multiplier"] = max(0.8, min(3.0, base_params["sl_multiplier"]))
-        base_params["position_size"] = max(0.02, min(0.3, base_params["position_size"]))
-
-        return base_params
-
     def _calculate_regime_confidence(
         self,
         features: dict[str, float],
@@ -225,23 +128,6 @@ class AdaptiveOptimizer:
         default_return=None,
         context="adaptive optimization",
     )
-    def optimize_for_regime(
-        self,
-        regime: MarketRegime,
-        market_data: pd.DataFrame,
-    ) -> dict[str, Any]:
-        """Optimize hyperparameters for specific market regime."""
-        # Create regime-specific optimizer
-        optimizer = RegimeSpecificOptimizer(regime, self.config)
-
-        # Run optimization
-        results = optimizer.run_optimization(market_data)
-
-        # Update regime performance tracking
-        self._update_regime_performance(regime.name, results)
-
-        return results
-
     def _update_regime_performance(self, regime_name: str, results: dict[str, Any]) -> None:
         """Update performance tracking for regime."""
         if regime_name not in self.regime_performance:
@@ -254,30 +140,6 @@ class AdaptiveOptimizer:
                 "params": results.get("best_params", {}),
             },
         )
-
-    def get_regime_insights(self) -> dict[str, Any]:
-        """Get insights about regime performance."""
-        insights = {
-            "current_regime": self.current_regime.name if self.current_regime else None,
-            "regime_performance": {},
-            "optimal_regime_params": {},
-        }
-
-        # Analyze performance per regime
-        for regime_name, performance_history in self.regime_performance.items():
-            if performance_history:
-                scores = [p["score"] for p in performance_history]
-                insights["regime_performance"][regime_name] = {
-                    "avg_score": np.mean(scores),
-                    "best_score": np.max(scores),
-                    "num_optimizations": len(performance_history),
-                }
-
-        # Get optimal parameters per regime
-        for regime_name, regime in self.regime_templates.items():
-            insights["optimal_regime_params"][regime_name] = regime.optimal_params
-
-        return insights
 
 
 class RegimeSpecificOptimizer:
@@ -321,9 +183,6 @@ class RegimeSpecificOptimizer:
         """Run optimization for specific regime."""
         # Create study
         study = optuna.create_study(direction="maximize")
-
-        def objective(trial):
-            return self._regime_objective(trial, market_data)
 
         # Run optimization
         study.optimize(objective, n_trials=50, show_progress_bar=False)

@@ -59,12 +59,6 @@ class StrengthWeightedSRPositionTester:
         self.feature_engine = VectorizedAdvancedFeatureEngineering(self.config)
 
     @handle_errors(default_return=False, context="tester_initialize")
-    async def initialize(self) -> bool:
-        await self.sr_predictor.initialize()
-        await self.feature_engine.initialize()
-        self.logger.info("Tester initialized successfully")
-        return True
-
     def create_sample_price_data(self, periods: int = 1000) -> pd.DataFrame:
         """Create sample OHLCV price data for testing."""
         # Create realistic price data with trends and volatility

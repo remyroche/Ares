@@ -72,21 +72,6 @@ class ExchangeABTester:
         default_return=False,
         context="exchange A/B test initialization",
     )
-    async def initialize(self) -> bool:
-        """Initialize the A/B tester."""
-        try:
-            self.logger.info("Initializing Exchange A/B Tester...")
-
-            # Create result storage directory
-            os.makedirs(self.result_storage_path, exist_ok=True)
-
-            self.logger.info("✅ Exchange A/B Tester initialization completed")
-            return True
-
-        except Exception as e:
-            self.logger.error(f"❌ Exchange A/B Tester initialization failed: {e}")
-            return False
-
     @handle_specific_errors(
         error_handlers={
             ValueError: (False, "Failed to start exchange A/B test"),
@@ -406,19 +391,6 @@ class ExchangeABTester:
         default_return=None,
         context="A/B tester cleanup",
     )
-    async def cleanup(self) -> None:
-        """Cleanup resources."""
-        try:
-            if self.is_running:
-                await self.stop_ab_test()
-
-            self.test_results.clear()
-            self.performance_metrics.clear()
-            self.logger.info("✅ Exchange A/B Tester cleanup completed")
-
-        except Exception as e:
-            self.logger.error(f"Error during cleanup: {e}")
-
 @handle_errors(
     exceptions=(Exception,),
     default_return=None,

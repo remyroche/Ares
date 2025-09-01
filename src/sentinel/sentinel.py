@@ -48,21 +48,6 @@ class Sentinel:
         },
         default_return=False, context="sentinel initialization",
     )
-    async def initialize(self) -> bool:
-        """Load config, validate, and build monitoring rules."""
-        self.logger.info("Initializing Sentinel...")
-
-        await self._load_sentinel_configuration()
-
-        if not self._validate_configuration():
-            self.logger.error(invalid("Invalid configuration for sentinel"))
-            return False
-
-        await self._initialize_monitoring_rules()
-
-        self.logger.info("✅ Sentinel initialization completed successfully")
-        return True
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None, context="sentinel configuration loading",
@@ -108,36 +93,6 @@ class Sentinel:
         exceptions=(ValueError, AttributeError),
         default_return=None, context="monitoring rules initialization",
     )
-    async def _initialize_monitoring_rules(self) -> None:
-        """Initialize monitoring rules based on configuration flags."""
-        self.monitoring_rules.clear()
-
-        if self.sentinel_config.get("enable_performance_monitoring", True):
-            self.monitoring_rules["performance"] = {
-                "cpu_threshold": 0.8,
-                "memory_threshold": 0.8,
-                "disk_threshold": 0.9,
-                "response_time_threshold": 1000,  # ms
-            }
-
-        if self.sentinel_config.get("enable_error_monitoring", True):
-            self.monitoring_rules["errors"] = {
-                "error_rate_threshold": 0.1,
-                "consecutive_errors_threshold": 5,
-                "critical_error_threshold": 1,
-            }
-
-        if self.sentinel_config.get("enable_system_monitoring", True):
-            self.monitoring_rules["system"] = {
-                "uptime_threshold": 0.99,
-                "connection_threshold": 0.95,
-                "data_quality_threshold": 0.9,
-            }
-
-        self.logger.info(
-            f"Initialized {len(self.monitoring_rules)} monitoring rule sets",
-        )
-
     @handle_specific_errors(
         error_handlers={
             ValueError: (False, "Invalid monitoring parameters"),
@@ -354,71 +309,16 @@ class Sentinel:
         default_return=None,
         context="alert callback registration",
     )
-    def register_alert_callback(self, callback: Callable) -> None:
-        """
-        Register an alert callback.
-
-        Args:
-            callback: Callback function to execute when alerts are created
-        """
-        if callback not in self.alert_callbacks:
-            self.alert_callbacks.append(callback)
-            self.logger.info("Alert callback registered")
-        else:
-            self.logger.warning(warning("Alert callback already registered"))
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="alert callback removal",
     )
-    def unregister_alert_callback(self, callback: Callable) -> None:
-        """
-        Unregister an alert callback.
-
-        Args:
-            callback: Callback function to remove
-        """
-        if callback in self.alert_callbacks:
-            self.alert_callbacks.remove(callback)
-            self.logger.info("Alert callback unregistered")
-        else:
-            self.logger.warning(missing("Alert callback not found"))
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=[],
         context="alerts getting",
     )
-    def get_alerts(
-        self,
-        alert_type: str | None = None,
-        severity: str | None = None,
-    ) -> list[dict[str, Any]]:
-        """
-        Get alerts with optional filtering.
-
-        Args:
-            alert_type: Optional alert type filter
-            severity: Optional severity filter
-
-        Returns:
-            List[Dict[str, Any]]: Filtered alerts
-        """
-        filtered_alerts = self.alerts.copy()
-
-        if alert_type:
-            filtered_alerts = [
-                a for a in filtered_alerts if a.get("type") == alert_type
-            ]
-
-        if severity:
-            filtered_alerts = [
-                a for a in filtered_alerts if a.get("severity") == severity
-            ]
-
-        return filtered_alerts
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
@@ -430,40 +330,11 @@ class Sentinel:
         self.alerts.clear()
         self.logger.info(f"Cleared {alert_count} alerts")
 
-    def get_sentinel_status(self) -> dict[str, Any]:
-        """
-        Get sentinel status information.
-
-        Returns:
-            Dict[str, Any]: Sentinel status
-        """
-        return {
-            "is_monitoring": self.is_monitoring,
-            "monitoring_interval": self.monitoring_interval,
-            "alert_threshold": self.alert_threshold,
-            "max_alerts": self.max_alerts,
-            "current_alerts": len(self.alerts),
-            "monitoring_rules_count": len(self.monitoring_rules),
-            "alert_callbacks_count": len(self.alert_callbacks),
-        }
-
     @handle_errors(
         exceptions=(Exception,),
         default_return=None,
         context="sentinel cleanup",
     )
-    async def stop(self) -> None:
-        """Stop the sentinel."""
-        self.logger.info("🛑 Stopping Sentinel...")
-        # Stop monitoring
-        self.is_monitoring = False
-
-        # Clear alerts and callbacks
-        self.clear_alerts()
-        self.alert_callbacks.clear()
-
-        self.logger.info("✅ Sentinel stopped successfully")
-
 # Global sentinel instance
 sentinel: Sentinel | None = None
 
@@ -472,32 +343,3 @@ sentinel: Sentinel | None = None
     default_return=None,
     context="sentinel setup",
 )
-async def setup_sentinel(config: dict[str, Any] | None = None) -> Sentinel | None:
-    """
-    Setup global sentinel.
-
-    Args:
-        config: Optional configuration dictionary
-
-    Returns:
-        Optional[Sentinel]: Global sentinel instance
-    """
-    global sentinel
-
-    if config is None:
-        config = {
-            "sentinel": {
-                "monitoring_interval": 60,
-                "alert_threshold": 0.8,
-                "max_alerts": 100,
-                "enable_performance_monitoring": True,
-                "enable_error_monitoring": True,
-                "enable_system_monitoring": True,
-            }
-        }
-
-    sentinel = Sentinel(config)
-    success = await sentinel.initialize()
-    if success:
-        return sentinel
-    return None

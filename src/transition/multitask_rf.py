@@ -69,21 +69,6 @@ class MultiTaskRandomForest:
             ]
         return X, y
 
-    def _best_f1_threshold(self, y_true: np.ndarray, y_score: np.ndarray) -> float:
-        if y_true.size == 0 or y_score.size == 0:
-            return 0.5
-        candidates = np.linspace(0.05, 0.95, 19)
-        best_thr, best_f1 = 0.5, -1.0
-        for thr in candidates:
-            y_pred = (y_score >= thr).astype(int)
-            try:
-                f1 = f1_score(y_true, y_pred)
-            except Exception:
-                f1 = 0.0
-            if f1 > best_f1:
-                best_f1, best_thr = f1, thr
-        return float(best_thr)
-
     def fit(self, samples: list[dict[str, Any]]) -> dict[str, Any]:
         if not self.cfg.enabled or not samples:
             return {"trained": False}
@@ -311,48 +296,6 @@ class MultiTaskRandomForest:
         self.thresholds_ = thresholds
         self.reliability_ = reliability
         return results
-
-    def save(self, models_dir: str, prefix: str = "rolling_mtrf") -> dict[str, Any]:
-        os.makedirs(models_dir, exist_ok=True)
-        saved: dict[str, str] = {}
-        # Save each model
-        for name, model in self.models.items():
-            path = os.path.join(models_dir, f"{prefix}_{name}.pkl")
-            try:
-                with open(path, "wb") as f:
-                    pickle.dump(model, f)
-                saved[name] = path
-            except Exception as e:
-                self.logger.warning(f"Failed to save model {name}: {e}")
-        # Save metadata
-        meta = {
-            "feature_names": self.feature_names_,
-            "heads": list(self.models.keys()),
-        }
-        try:
-            meta_path = os.path.join(models_dir, f"{prefix}_meta.json")
-            with open(meta_path, "w", encoding="utf-8") as f:
-                json.dump(meta, f, indent=2)
-        except Exception as e:
-            self.logger.warning(f"Failed to save meta: {e}")
-            meta_path = os.path.join(models_dir, f"{prefix}_meta.json")
-        # Save thresholds and reliability for inference
-        try:
-            thr_path = os.path.join(models_dir, "thresholds.json")
-            with open(thr_path, "w", encoding="utf-8") as f:
-                json.dump(self.thresholds_, f, indent=2)
-        except Exception as e:
-            self.logger.warning(f"Failed to save thresholds: {e}")
-        try:
-            rel_path = os.path.join(models_dir, "reliability.json")
-            with open(rel_path, "w", encoding="utf-8") as f:
-                json.dump(self.reliability_, f, indent=2)
-        except Exception as e:
-            self.logger.warning(f"Failed to save reliability: {e}")
-        return {
-            "models": saved,
-            "meta_path": os.path.join(models_dir, f"{prefix}_meta.json"),
-        }
 
     @staticmethod
     def load(models_dir: str, prefix: str = "rolling_mtrf") -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], list[str]]:

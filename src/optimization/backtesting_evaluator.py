@@ -441,53 +441,6 @@ class BacktestingEvaluator:
             self.logger.error(f"Weighted score calculation error: {e}")
             return 0.0
 
-    def get_detailed_analysis(self, backtest_results: Dict[str, Any]) -> Dict[str, Any]:
-        """Get detailed analysis of backtest results."""
-        try:
-            trades = backtest_results['trades']
-            equity_curve = backtest_results['equity_curve']
-
-            if not trades:
-                return {"error": "No trades executed"}
-
-            # Basic statistics
-            total_trades = len(trades)
-            winning_trades = len([t for t in trades if t.get('pnl', 0) > 0])
-            losing_trades = len([t for t in trades if t.get('pnl', 0) < 0])
-
-            # Trade analysis
-            pnls = [t.get('pnl', 0) for t in trades]
-            returns = [t.get('return', 0) for t in trades]
-
-            analysis = {
-                "summary": {
-                    "total_trades": total_trades,
-                    "winning_trades": winning_trades,
-                    "losing_trades": losing_trades,
-                    "win_rate": winning_trades / total_trades if total_trades > 0 else 0,
-                    "avg_trade_pnl": np.mean(pnls) if pnls else 0,
-                    "avg_trade_return": np.mean(returns) if returns else 0,
-                    "best_trade": max(pnls) if pnls else 0,
-                    "worst_trade": min(pnls) if pnls else 0
-                },
-                "risk_metrics": {
-                    "volatility": np.std(returns) if returns else 0,
-                    "var_95": np.percentile(returns, 5) if returns else 0,
-                    "max_consecutive_losses": self._calculate_max_consecutive_losses(trades)
-                },
-                "equity_analysis": {
-                    "final_equity": equity_curve[-1]['equity'] if equity_curve else self.initial_capital,
-                    "peak_equity": max(e['equity'] for e in equity_curve) if equity_curve else self.initial_capital,
-                    "equity_volatility": np.std([e['equity'] for e in equity_curve]) if equity_curve else 0
-                }
-            }
-
-            return analysis
-
-        except Exception as e:
-            self.logger.error(f"Detailed analysis error: {e}")
-            return {"error": str(e)}
-
     def _calculate_max_consecutive_losses(self, trades: List[Dict[str, Any]]) -> int:
         """Calculate maximum consecutive losing trades."""
         try:

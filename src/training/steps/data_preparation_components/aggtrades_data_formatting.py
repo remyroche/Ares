@@ -267,84 +267,7 @@ def auto_reformat_aggtrades_files() -> None:
 
 
 
-def auto_reformat_aggtrades_files_for_exchange(exchange: str, symbol: str) -> None:
-    """Automatically detect and reformat aggtrades CSV files for a specific exchange and symbol.
-    This is a targeted version that only processes files for the specified exchange/symbol.
-    """
-    # Define paths
-    data_cache_dir = "data_cache"
-    backup_dir = "data_cache/backup_before_reformat"
 
-    # Create backup directory
-    os.makedirs(backup_dir, exist_ok=True)
-
-    # Find aggtrades files for the specific exchange and symbol
-    pattern = os.path.join(data_cache_dir, f"aggtrades_{exchange}_{symbol}_*.csv")
-    files = glob.glob(pattern)
-
-    files_to_reformat = []
-    files_checked = 0
-
-    for file_path in files:
-        files_checked += 1
-
-        # Check if file is correctly formatted
-        if not check_file_format(file_path):
-            format_type = detect_file_format(file_path)
-            if format_type != "correct":
-                files_to_reformat.append((file_path, format_type))
-
-    if not files_to_reformat:
-        return
-
-    # Reformat files without asking for confirmation (for automated use)
-    for file_path, format_type in files_to_reformat:
-        # Create backup
-        backup_path = os.path.join(backup_dir, os.path.basename(file_path))
-        shutil.copy2(file_path, backup_path)
-
-        # Create temporary output file
-        temp_output = file_path + ".tmp"
-
-        # Reformat the file
-        reformatter = DataFileReformatter(file_path, temp_output)
-        if reformatter.reformat_file(format_type):
-            # Replace original with reformatted version
-            shutil.move(temp_output, file_path)
-        else:
-            # Restore from backup if reformatting failed
-            shutil.copy2(backup_path, file_path)
-
-
-
-def create_dummy_files(input_dir) -> None:
-    """Creates a set of dummy CSV files for demonstration purposes.
-    This function simulates the two different formats you provided.
-    """
-    if os.path.exists(input_dir):
-        shutil.rmtree(input_dir)
-    os.makedirs(input_dir)
-
-    # --- Create File 1: Semicolon-delimited format ---
-    file1_path = os.path.join(input_dir, "aggtrades_format1_2025-07-13.csv")
-    with open(file1_path, "w", newline="", encoding="utf-8") as f:
-        f.write("timestamp;price;quantity;is_buyer_maker\n")
-        f.write("2025-07-12 22:00:00.604;2939.2;0.3152;False\n")
-        f.write("2025-07-12 22:00:00.614;2939.21;0.1917;False\n")
-        f.write("2025-07-12 22:00:00.614;2939.22;0.1702;False\n")
-
-    # --- Create File 2: Mixed-delimiter format ---
-    file2_path = os.path.join(input_dir, "aggtrades_format2_2025-07-30.csv")
-    with open(file2_path, "w", newline="", encoding="utf-8") as f:
-        # Note the malformed "p;rice" in the header, as in your example
-        f.write("timestamp,p;rice,quantity,is_buyer_maker,agg_trade_id\n")
-        f.write("2025-07-30;00:00:02.623,3791.56,0.065,False,2338842426\n")
-        f.write("2025-07-30;00:00:04.240,3791.55,0.022,True,2338842427\n")
-        f.write("2025-07-30;00:00:04.865,3791.55,0.018,True,2338842428\n")
-
-    # --- Create an empty file to test edge cases ---
-    file3_path = os.path.join(input_dir, "empty_file.csv")
-    open(file3_path, "w").close()
 
 
 class CSVNormalizer:
@@ -367,29 +290,6 @@ class CSVNormalizer:
             "format1": self._process_format1_file,
             "format2": self._process_format2_file,
         }
-
-    def normalize_trade_csvs(self) -> None:
-        """Main entry point - processes all CSV files in the input directory."""
-        self._setup_output_directory()
-        files_to_process = self._get_csv_files()
-
-        if not files_to_process:
-            return
-
-        for filename in files_to_process:
-            self._process_single_file(filename)
-
-    def _setup_output_directory(self) -> None:
-        """Create output directory if it doesn't exist."""
-        if not os.path.exists(self.output_directory):
-            os.makedirs(self.output_directory)
-
-    def _get_csv_files(self) -> list[str]:
-        """Get list of CSV files to process."""
-        try:
-            return [f for f in os.listdir(self.input_directory) if f.endswith(".csv")]
-        except FileNotFoundError:
-            return []
 
     def _process_single_file(self, filename: str) -> None:
         """Process a single CSV file."""

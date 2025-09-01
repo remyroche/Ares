@@ -30,18 +30,6 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def safe_call(func):
-    """Decorator to catch and log exceptions for demo methods."""
-
-    def wrapper(*args, **kwargs):
-        try:
-            return func(*args, **kwargs)
-        except Exception as exc:  # pragma: no cover - demonstration guard
-            logger.error("Error in %s: %s", func.__name__, exc, exc_info=True)
-            return None
-
-    return wrapper
-
 
 class ConfigurationUsageExample:
     """Example class demonstrating configuration usage"""

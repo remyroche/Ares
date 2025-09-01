@@ -112,35 +112,6 @@ class MLTacticsManager:
         default_return=False,
         context="ML tactics manager initialization",
     )
-    async def initialize(self) -> bool:
-        """
-        Initialize ML tactics manager.
-
-        Returns:
-            bool: True if initialization successful, False otherwise
-        """
-        try:
-            self.logger.info("Initializing ML Tactics Manager...")
-
-            # Validate configuration
-            if not self._validate_configuration():
-                self.logger.error(invalid("Invalid configuration for ML tactics manager"))
-                return False
-
-            # Initialize ML models
-            await self._initialize_ml_models()
-
-            # Initialize scenario-based predictor
-            await self._initialize_scenario_predictor()
-
-            self.is_initialized = True
-            self.logger.info("✅ ML Tactics Manager initialized successfully")
-            return True
-
-        except Exception as e:
-            self.logger.error(failed(f"❌ ML Tactics Manager initialization failed: {e}"))
-            return False
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=False,
@@ -204,75 +175,6 @@ class MLTacticsManager:
             self.logger.error(failed(f"Configuration validation failed: {e}"))
             return False
 
-    def refresh_step17_configuration(self, step17_results: dict[str, Any]) -> None:
-        """
-        Refresh configuration from step17 optimization results.
-        This method is called automatically when step17 completes.
-
-        Args:
-            step17_results: Step17 optimization results
-        """
-        try:
-            if "ml_tactics" in step17_results:
-                ml_tactics_optimization = step17_results["ml_tactics"]
-
-                # Update ML tactics parameters
-                self.enable_ml_tactics = ml_tactics_optimization.get("enable_ml_tactics", self.enable_ml_tactics)
-                self.confidence_threshold = ml_tactics_optimization.get("confidence_threshold", self.confidence_threshold)
-                self.regime_threshold = ml_tactics_optimization.get("regime_threshold", self.regime_threshold)
-
-                # Update additional parameters
-                self.ml_weight = ml_tactics_optimization.get("ml_weight", self.ml_weight)
-                self.regime_weight = ml_tactics_optimization.get("regime_weight", self.regime_weight)
-                self.confidence_boost_factor = ml_tactics_optimization.get("confidence_boost_factor", self.confidence_boost_factor)
-                self.risk_adjustment_factor = ml_tactics_optimization.get("risk_adjustment_factor", self.risk_adjustment_factor)
-
-                # Update barrier and threshold configurations
-                self.barrier_config = {
-                    "fifty_percent": {
-                        "profit_target_multiplier": ml_tactics_optimization.get("fifty_percent_profit_target_multiplier", 0.5),
-                        "stop_loss_multiplier": ml_tactics_optimization.get("fifty_percent_stop_loss_multiplier", 0.5),
-                        "timeframe": ml_tactics_optimization.get("fifty_percent_timeframe", "1m")
-                    },
-                    "twenty_five_percent": {
-                        "profit_target_multiplier": ml_tactics_optimization.get("twenty_five_percent_profit_target_multiplier", 0.25),
-                        "stop_loss_multiplier": ml_tactics_optimization.get("twenty_five_percent_stop_loss_multiplier", 0.25),
-                        "timeframe": ml_tactics_optimization.get("twenty_five_percent_timeframe", "1m")
-                    },
-                    "fifty_percent_5m": {
-                        "profit_target_multiplier": ml_tactics_optimization.get("fifty_percent_5m_profit_target_multiplier", 0.5),
-                        "stop_loss_multiplier": ml_tactics_optimization.get("fifty_percent_5m_stop_loss_multiplier", 0.5),
-                        "timeframe": ml_tactics_optimization.get("fifty_percent_5m_timeframe", "5m")
-                    },
-                    "twenty_five_percent_5m": {
-                        "profit_target_multiplier": ml_tactics_optimization.get("twenty_five_percent_5m_profit_target_multiplier", 0.25),
-                        "stop_loss_multiplier": ml_tactics_optimization.get("twenty_five_percent_5m_stop_loss_multiplier", 0.25),
-                        "timeframe": ml_tactics_optimization.get("twenty_five_percent_5m_timeframe", "5m")
-                    }
-                }
-                self.green_light_thresholds = {
-                    "fifty_percent": ml_tactics_optimization.get("fifty_percent_threshold", 0.75),
-                    "twenty_five_percent": ml_tactics_optimization.get("twenty_five_percent_threshold", 0.8),
-                    "combined_threshold": ml_tactics_optimization.get("combined_threshold", 0.7)
-                }
-                self.exit_thresholds = {
-                    "fifty_percent": ml_tactics_optimization.get("exit_fifty_percent_threshold", 0.4),
-                    "twenty_five_percent": ml_tactics_optimization.get("exit_twenty_five_percent_threshold", 0.35),
-                    "combined_exit_threshold": ml_tactics_optimization.get("combined_exit_threshold", 0.45)
-                }
-                self.confidence_weights = {
-                    "analyst_weight": ml_tactics_optimization.get("analyst_confidence_weight", 0.3),
-                    "fifty_percent_1m_weight": ml_tactics_optimization.get("fifty_percent_1m_weight", 0.25),
-                    "twenty_five_percent_1m_weight": ml_tactics_optimization.get("twenty_five_percent_1m_weight", 0.15),
-                    "fifty_percent_5m_weight": ml_tactics_optimization.get("fifty_percent_5m_weight", 0.2),
-                    "twenty_five_percent_5m_weight": ml_tactics_optimization.get("twenty_five_percent_5m_weight", 0.1)
-                }
-
-                self.logger.info("✅ ML tactics manager configuration refreshed from step17 results")
-
-        except Exception as e:
-            self.logger.error(f"Error refreshing step17 configuration: {e}")
-
     async def _initialize_scenario_predictor(self) -> None:
         """Initialize scenario-based predictor."""
         try:
@@ -289,41 +191,6 @@ class MLTacticsManager:
         default_return=False,
         context="ML models initialization",
     )
-    async def _initialize_ml_models(self) -> bool:
-        """
-        Initialize multi-output prediction models.
-
-        Returns:
-            bool: True if initialization successful, False otherwise
-        """
-        try:
-            self.logger.info("Initializing multi-output prediction models...")
-
-            # Initialize models for each barrier type
-            for barrier_type in ["fifty_percent", "twenty_five_percent", "fifty_percent_5m", "twenty_five_percent_5m"]:
-                self.multi_output_models[barrier_type] = {
-                    "model": None,
-                    "calibrator": None,
-                    "is_trained": False,
-                    "feature_importance": {},
-                    "performance_metrics": {}
-                }
-
-            # Load pre-trained models if available
-            await self._load_pretrained_models()
-
-            # If no pre-trained models, use fallback models
-            if not self.is_trained:
-                self.logger.warning("No pre-trained models found, using fallback models")
-                await self._initialize_fallback_models()
-
-            self.logger.info("✅ Multi-output prediction models initialized")
-            return True
-
-        except Exception as e:
-            self.logger.error(failed(f"❌ ML models initialization failed: {e}"))
-            return False
-
     @handle_errors(
         exceptions=(Exception,),
         default_return=False,
@@ -351,29 +218,6 @@ class MLTacticsManager:
         default_return=False,
         context="fallback models initialization",
     )
-    async def _initialize_fallback_models(self) -> bool:
-        """
-        Initialize fallback models for testing.
-
-        Returns:
-            bool: True if initialization successful, False otherwise
-        """
-        try:
-            self.logger.info("Initializing fallback models...")
-
-            # Create simple fallback models for each barrier type
-            for barrier_type in ["fifty_percent", "twenty_five_percent", "fifty_percent_5m", "twenty_five_percent_5m"]:
-                self.multi_output_models[barrier_type]["is_trained"] = True
-                self.multi_output_models[barrier_type]["model"] = "fallback"
-
-            self.is_trained = True
-            self.logger.info("✅ Fallback models initialized")
-            return True
-
-        except Exception as e:
-            self.logger.error(failed(f"❌ Fallback models initialization failed: {e}"))
-            return False
-
     @handle_specific_errors(
         error_handlers={
             ValueError: (False, "Invalid ML tactics parameters"),
@@ -948,29 +792,6 @@ class MLTacticsManager:
 
     # Helper methods for regime and location tactics
 
-    def _get_regime_tactics(self, regime: str, confidence: float) -> dict[str, Any]:
-        """Get tactics for a specific regime."""
-        tactics = {
-            "BULL_TREND": {"position_multiplier": 1.2, "risk_tolerance": "HIGH"},
-            "BEAR_TREND": {"position_multiplier": 0.8, "risk_tolerance": "LOW"},
-            "SIDEWAYS_RANGE": {"position_multiplier": 1.0, "risk_tolerance": "MEDIUM"},
-        }
-        return tactics.get(
-            regime, {"position_multiplier": 1.0, "risk_tolerance": "MEDIUM"},
-        )
-
-    def _get_location_tactics(self, location: str, confidence: float) -> dict[str, Any]:
-        """Get tactics for a specific location."""
-        tactics = {
-            "NEAR_SUPPORT": {"entry_aggression": "HIGH", "stop_distance": "TIGHT"},
-            "NEAR_RESISTANCE": {"entry_aggression": "LOW", "stop_distance": "WIDE"},
-            "MIDDLE": {"entry_aggression": "MEDIUM", "stop_distance": "MEDIUM"},
-        }
-        return tactics.get(
-            location,
-            {"entry_aggression": "MEDIUM", "stop_distance": "MEDIUM"},
-        )
-
     def _combine_regime_location_tactics(
         self, regime_tactics: dict[str, Any],
         location_tactics: dict[str, Any],
@@ -983,45 +804,16 @@ class MLTacticsManager:
             "stop_distance": location_tactics.get("stop_distance", "MEDIUM"),
         }
 
-    def get_ml_decisions(self) -> dict[str, Any]:
-        """
-        Get the latest ML decisions.
-
-        Returns:
-            dict: ML decisions
-        """
-        return self.ml_decisions.copy()
-
     @handle_errors(
         exceptions=(Exception,),
         default_return=None,
         context="ML tactics manager cleanup",
     )
-    async def stop(self) -> None:
-        """Stop the ML tactics manager and cleanup resources."""
-        try:
-            self.logger.info("🛑 Stopping ML Tactics Manager...")
-            self.is_initialized = False
-            self.logger.info("✅ ML Tactics Manager stopped successfully")
-
-        except Exception as e:
-            self.logger.error(failed(f"❌ Failed to stop ML Tactics Manager: {e}"))
-
     @handle_errors(
         exceptions=(Exception,),
         default_return=None,
         context="ML tactics manager cleanup",
     )
-    async def cleanup(self) -> None:
-        """Cleanup ML tactics manager resources."""
-        try:
-            self.logger.info("Cleaning up ML Tactics Manager...")
-            await self.stop()
-            self.ml_decisions.clear()
-            self.logger.info("✅ ML Tactics Manager cleanup completed")
-        except Exception as e:
-            self.logger.error(f"Error cleaning up ML Tactics Manager: {e}")
-
     @handle_errors(
         exceptions=(Exception,),
         default_return=None,
@@ -1766,105 +1558,8 @@ class MLTacticsManager:
         default_return=None,
         context="exit signal evaluation",
     )
-    async def evaluate_exit_signal(
-        self,
-        current_predictions: dict[str, Any],
-        position_context: dict[str, Any]
-    ) -> dict[str, Any]:
-        """
-        Evaluate exit signal based on current predictions and position context.
-
-        Args:
-            current_predictions: Current multi-output predictions
-            position_context: Current position context
-
-        Returns:
-            dict: Exit signal evaluation
-        """
-        try:
-            combined_confidence = current_predictions.get("combined_confidence", 0.5)
-
-            # Check exit thresholds (MTF unified)
-            fifty_percent_exit = False
-            twenty_five_percent_exit = False
-
-            # Check 50% barriers (both 1m and 5m)
-            fifty_percent_confidences = []
-            if "fifty_percent" in current_predictions and current_predictions["fifty_percent"]:
-                fifty_percent_confidences.append(current_predictions["fifty_percent"]["confidence"])
-            if "fifty_percent_5m" in current_predictions and current_predictions["fifty_percent_5m"]:
-                fifty_percent_confidences.append(current_predictions["fifty_percent_5m"]["confidence"])
-
-            if fifty_percent_confidences:
-                fifty_percent_exit = min(fifty_percent_confidences) <= self.exit_thresholds["fifty_percent"]
-
-            # Check 25% barriers (both 1m and 5m)
-            twenty_five_percent_confidences = []
-            if "twenty_five_percent" in current_predictions and current_predictions["twenty_five_percent"]:
-                twenty_five_percent_confidences.append(current_predictions["twenty_five_percent"]["confidence"])
-            if "twenty_five_percent_5m" in current_predictions and current_predictions["twenty_five_percent_5m"]:
-                twenty_five_percent_confidences.append(current_predictions["twenty_five_percent_5m"]["confidence"])
-
-            if twenty_five_percent_confidences:
-                twenty_five_percent_exit = min(twenty_five_percent_confidences) <= self.exit_thresholds["twenty_five_percent"]
-
-            combined_exit = combined_confidence <= self.exit_thresholds["combined_exit_threshold"]
-
-            # Determine exit signal
-            if combined_exit or (fifty_percent_exit and twenty_five_percent_exit):
-                exit_signal = "EXIT"
-                reason = "Confidence below exit thresholds"
-            elif fifty_percent_exit or twenty_five_percent_exit:
-                exit_signal = "PARTIAL_EXIT"
-                reason = "Partial confidence below exit thresholds"
-            else:
-                exit_signal = "HOLD"
-                reason = "Confidence above exit thresholds"
-
-            return {
-                "exit_signal": exit_signal,
-                "reason": reason,
-                "fifty_percent_exit": fifty_percent_exit,
-                "twenty_five_percent_exit": twenty_five_percent_exit,
-                "combined_exit": combined_exit,
-                "combined_confidence": combined_confidence,
-                "exit_thresholds": self.exit_thresholds
-            }
-
-        except Exception as e:
-            self.logger.error(failed(f"❌ Exit signal evaluation failed: {e}"))
-            return {
-                "exit_signal": "HOLD",
-                "reason": "Evaluation failed",
-                "fifty_percent_exit": False,
-                "twenty_five_percent_exit": False,
-                "combined_exit": False,
-                "combined_confidence": 0.5,
-                "exit_thresholds": self.exit_thresholds
-            }
-
 @handle_errors(
     exceptions=(Exception,),
     default_return=None,
     context="ML tactics manager setup",
 )
-async def setup_ml_tactics_manager(
-    config: dict[str, Any] | None = None,
-) -> MLTacticsManager | None:
-    """
-    Setup and return a configured MLTacticsManager instance.
-
-    Args:
-        config: Configuration dictionary
-
-    Returns:
-        MLTacticsManager: Configured ML tactics manager instance
-    """
-    try:
-        manager = MLTacticsManager(config or {})
-        if await manager.initialize():
-            return manager
-        return None
-    except Exception as e:
-        system_logger.exception(failed(f"Failed to setup ML Tactics Manager: {e}"))
-        return None

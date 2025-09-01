@@ -179,28 +179,9 @@ class RegimeSpecificOptimizationConfig:
     storage_url: str = "sqlite:///regime_triple_barrier_optuna_studies.db"
     study_name_prefix: str = "regime_triple_barrier_optimization"
 
-    def __post_init__(self):
-        """Initialize regime mapping."""
-        if not self.regime_id_to_name:
-            self._initialize_regime_mapping()
-
-    def _initialize_regime_mapping(self):
-        """Initialize regime ID to name mapping."""
-        for i, regime_name in enumerate(self.regime_constraints.keys()):
-            self.regime_id_to_name[i] = regime_name
-            self.regime_name_to_id[regime_name] = i
-
     def get_regime_constraints(self, regime_name: str) -> Optional[RegimeSpecificConstraints]:
         """Get constraints for a specific regime."""
         return self.regime_constraints.get(regime_name)
-
-    def get_regime_id(self, regime_name: str) -> Optional[int]:
-        """Get regime ID for a regime name."""
-        return self.regime_name_to_id.get(regime_name)
-
-    def get_regime_name(self, regime_id: int) -> Optional[str]:
-        """Get regime name for a regime ID."""
-        return self.regime_id_to_name.get(regime_id)
 
     def add_regime_constraints(self, regime_name: str, constraints: RegimeSpecificConstraints):
         """Add constraints for a new regime."""
@@ -261,138 +242,11 @@ REGIME_SPECIFIC_PARAMETER_SEARCH_SPACES = {
 DEFAULT_REGIME_SPECIFIC_OPTIMIZATION_CONFIG = RegimeSpecificOptimizationConfig()
 
 
-def get_regime_specific_optimization_config() -> RegimeSpecificOptimizationConfig:
-    """Get default regime-specific optimization configuration."""
-    return DEFAULT_REGIME_SPECIFIC_OPTIMIZATION_CONFIG
 
 
-def create_regime_specific_config_from_dict(config_dict: Dict[str, Any]) -> RegimeSpecificOptimizationConfig:
-    """Create regime-specific optimization configuration from dictionary."""
-
-    config = RegimeSpecificOptimizationConfig()
-
-    # Update basic settings
-    for key, value in config_dict.items():
-        if hasattr(config, key) and key != "regime_constraints":
-            setattr(config, key, value)
-
-    # Update regime constraints
-    if "regime_constraints" in config_dict:
-        for regime_name, constraints_dict in config_dict["regime_constraints"].items():
-            constraints = RegimeSpecificConstraints(**constraints_dict)
-            config.regime_constraints[regime_name] = constraints
-
-    # Reinitialize regime mapping
-    config._initialize_regime_mapping()
-
-    return config
-
-
-def get_regime_specific_parameter_search_space(param_category: str) -> Dict[str, Dict[str, Any]]:
-    """Get parameter search space for regime-specific optimization."""
-    return REGIME_SPECIFIC_PARAMETER_SEARCH_SPACES.get(param_category, {})
-
-
-def merge_optuna_configs(
-    base_config: HyperparameterOptimizationConfig,
-    regime_config: RegimeSpecificOptimizationConfig
-) -> Dict[str, Any]:
-    """Merge base Optuna config with regime-specific config."""
-
-    merged_config = {
-        # Base optimization settings
-        "enable_optimization": base_config.enable_optimization,
-        "optimization_method": base_config.optimization_method,
-        "max_trials": base_config.max_trials,
-        "timeout_minutes": base_config.timeout_minutes,
-        "cv_folds": base_config.cv_folds,
-        "cv_strategy": base_config.cv_strategy,
-        "early_stopping_patience": base_config.early_stopping_patience,
-        "early_stopping_delta": base_config.early_stopping_delta,
-        "enable_pruning": base_config.enable_pruning,
-        "pruning_method": base_config.pruning_method,
-        "enable_multi_objective": base_config.enable_multi_objective,
-        "objectives": base_config.objectives,
-        "objective_weights": base_config.objective_weights,
-
-        # Regime-specific settings
-        "regime_specific_optimization": {
-            "enable_regime_optimization": regime_config.enable_regime_optimization,
-            "multi_objective": regime_config.multi_objective,
-            "n_trials_per_regime": regime_config.n_trials_per_regime,
-            "timeout_minutes_per_regime": regime_config.timeout_minutes_per_regime,
-            "cv_folds": regime_config.cv_folds,
-            "objectives": regime_config.objectives,
-            "objective_weights": regime_config.objective_weights,
-            "early_stopping_patience": regime_config.early_stopping_patience,
-            "early_stopping_delta": regime_config.early_stopping_delta,
-            "enable_pruning": regime_config.enable_pruning,
-            "pruning_method": regime_config.pruning_method,
-            "enable_statistical_testing": regime_config.enable_statistical_testing,
-            "confidence_level": regime_config.confidence_level,
-            "min_sample_size": regime_config.min_sample_size,
-            "storage_url": regime_config.storage_url,
-            "study_name_prefix": regime_config.study_name_prefix,
-        }
-    }
-
-    # Add regime constraints
-    regime_constraints_dict = {}
-    for regime_name, constraints in regime_config.regime_constraints.items():
-        regime_constraints_dict[regime_name] = {
-            "tp_multiplier_range": constraints.tp_multiplier_range,
-            "sl_multiplier_range": constraints.sl_multiplier_range,
-            "position_size_range": constraints.position_size_range,
-            "profit_take_multiplier_range": constraints.profit_take_multiplier_range,
-            "stop_loss_multiplier_range": constraints.stop_loss_multiplier_range,
-            "time_barrier_minutes_range": constraints.time_barrier_minutes_range,
-            "max_lookahead_range": constraints.max_lookahead_range,
-            "volatility_multiplier_range": constraints.volatility_multiplier_range,
-            "trend_multiplier_range": constraints.trend_multiplier_range,
-            "volume_multiplier_range": constraints.volume_multiplier_range,
-            "tp_atr_multiplier_range": constraints.tp_atr_multiplier_range,
-            "sl_atr_multiplier_range": constraints.sl_atr_multiplier_range,
-            "trailing_stop_range": constraints.trailing_stop_range,
-            "break_even_threshold_range": constraints.break_even_threshold_range,
-        }
-
-    merged_config["regime_specific_optimization"]["regime_constraints"] = regime_constraints_dict
-
-    return merged_config
 
 
 # Utility functions for regime-specific optimization
-def get_regime_optimization_config_for_regime(
-    regime_name: str,
-    base_config: Optional[RegimeSpecificOptimizationConfig] = None
-) -> Dict[str, Any]:
-    """Get optimization configuration for a specific regime."""
-
-    if base_config is None:
-        base_config = DEFAULT_REGIME_SPECIFIC_OPTIMIZATION_CONFIG
-
-    regime_constraints = base_config.get_regime_constraints(regime_name)
-    if regime_constraints is None:
-        # Use default constraints if regime not found
-        regime_constraints = RegimeSpecificConstraints()
-
-    return {
-        "regime_name": regime_name,
-        "regime_id": base_config.get_regime_id(regime_name),
-        "constraints": regime_constraints,
-        "optimization_settings": {
-            "n_trials": base_config.n_trials_per_regime,
-            "timeout_minutes": base_config.timeout_minutes_per_regime,
-            "cv_folds": base_config.cv_folds,
-            "objectives": base_config.objectives,
-            "objective_weights": base_config.objective_weights,
-            "early_stopping_patience": base_config.early_stopping_patience,
-            "early_stopping_delta": base_config.early_stopping_delta,
-            "enable_pruning": base_config.enable_pruning,
-            "pruning_method": base_config.pruning_method,
-        }
-    }
-
 
 def validate_regime_optimization_config(config: RegimeSpecificOptimizationConfig) -> bool:
     """Validate regime-specific optimization configuration."""

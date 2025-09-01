@@ -39,34 +39,6 @@ class TestEnhancedDataQualityManager:
             yield Path(temp_dir)
 
     @pytest.fixture
-    def sample_data(self):
-        """Create sample data for testing."""
-        # Create sample klines data
-        klines_data = pd.DataFrame({
-            "timestamp": pd.date_range("2023-01-01", periods=1000, freq="1min"),
-            "open": [100 + i * 0.01 for i in range(1000)],
-            "high": [101 + i * 0.01 for i in range(1000)],
-            "low": [99 + i * 0.01 for i in range(1000)],
-            "close": [100.5 + i * 0.01 for i in range(1000)],
-            "volume": [1000 + i for i in range(1000)]
-        })
-
-        # Create sample aggtrades data
-        aggtrades_data = pd.DataFrame({
-            "agg_trade_id": range(1000),
-            "price": [100 + i * 0.01 for i in range(1000)],
-            "quantity": [1.0 + i * 0.001 for i in range(1000)],
-            "first_trade_id": range(1000),
-            "last_trade_id": range(1000),
-            "timestamp": pd.date_range("2023-01-01", periods=1000, freq="1min"),
-            "is_buyer_maker": [True if i % 2 == 0 else False for i in range(1000)]
-        })
-
-        return {
-            "klines": klines_data,
-            "aggtrades": aggtrades_data
-        }
-
     @pytest.mark.asyncio
     async def test_enhanced_data_quality_manager_initialization(self, temp_data_dir):
         """Test Enhanced Data Quality Manager initialization."""
@@ -376,34 +348,6 @@ class TestIntegration:
             yield Path(temp_dir)
 
     @pytest.fixture
-    def sample_data(self):
-        """Create sample data for testing."""
-        # Create sample klines data
-        klines_data = pd.DataFrame({
-            "timestamp": pd.date_range("2023-01-01", periods=1000, freq="1min"),
-            "open": [100 + i * 0.01 for i in range(1000)],
-            "high": [101 + i * 0.01 for i in range(1000)],
-            "low": [99 + i * 0.01 for i in range(1000)],
-            "close": [100.5 + i * 0.01 for i in range(1000)],
-            "volume": [1000 + i for i in range(1000)]
-        })
-
-        # Create sample aggtrades data
-        aggtrades_data = pd.DataFrame({
-            "agg_trade_id": range(1000),
-            "price": [100 + i * 0.01 for i in range(1000)],
-            "quantity": [1.0 + i * 0.001 for i in range(1000)],
-            "first_trade_id": range(1000),
-            "last_trade_id": range(1000),
-            "timestamp": pd.date_range("2023-01-01", periods=1000, freq="1min"),
-            "is_buyer_maker": [True if i % 2 == 0 else False for i in range(1000)]
-        })
-
-        return {
-            "klines": klines_data,
-            "aggtrades": aggtrades_data
-        }
-
     @pytest.mark.asyncio
     async def test_end_to_end_quality_pipeline(self, temp_data_dir, sample_data):
         """Test end-to-end data quality pipeline."""

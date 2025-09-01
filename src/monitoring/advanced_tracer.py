@@ -126,20 +126,6 @@ class AdvancedTracer:
         default_return=False,
         context="advanced_tracer.initialize",
     )
-    async def initialize(self) -> bool:
-        """Initialize the advanced tracer."""
-        self.logger.info("Initializing AdvancedTracer ...")
-        # Minimal sanity checks
-        if not 0.0 <= self.trace_sampling_rate <= 1.0:
-            self.logger.error("Invalid trace_sampling_rate; must be within [0, 1]")
-            return False
-        self.logger.info("✅ AdvancedTracer initialization completed")
-        return True
-
-    def create_correlation_id(self) -> str:
-        """Create a new correlation ID."""
-        return str(uuid.uuid4())
-
     @handle_errors(default_return=None, context="advanced_tracer.start_span")
     def start_span(
         self,
@@ -161,26 +147,4 @@ class AdvancedTracer:
         return span
 
     @handle_errors(default_return=None, context="advanced_tracer.finish_span")
-    def finish_span(self, span: TraceSpan, status: str = "completed", error_message: Optional[str] = None) -> TraceSpan | None:
-        span.end_time = datetime.now()
-        if span.end_time and span.start_time:
-            span.duration_ms = (span.end_time - span.start_time).total_seconds() * 1000.0
-        span.status = status
-        span.error_message = error_message
-        return span
-
     @handle_errors(default_return=None, context="advanced_tracer.record_trace")
-    def record_trace(self, trace: TraceRequest) -> None:
-        """Record a completed trace request."""
-        self._traces[trace.correlation_id] = trace
-        # Keep history bounded
-        if len(self._traces) > self.max_trace_history:
-            # Remove oldest by insertion order
-            oldest_key = next(iter(self._traces.keys()))
-            self._traces.pop(oldest_key, None)
-
-    def get_trace(self, correlation_id: str) -> Optional[TraceRequest]:
-        return self._traces.get(correlation_id)
-
-    def get_traces_count(self) -> int:
-        return len(self._traces)

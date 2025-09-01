@@ -166,121 +166,12 @@ class EnhancedExecutionManager:
                 "should_execute": False
             }
 
-    def _determine_tactician_direction(self, confidence: float) -> str:
-        """Determine Tactician direction based on confidence."""
-        # This would be based on the specific Tactician model outputs
-        # For now, use a simple threshold-based approach
-        if confidence > 0.7:
-            return "long"
-        elif confidence < 0.3:
-            return "short"
-        else:
-            return "neutral"
-
-    def _directions_agree(self, analyst_direction: str, tactician_direction: str) -> bool:
-        """Check if Analyst and Tactician agree on trade direction."""
-        if analyst_direction == "neutral" or tactician_direction == "neutral":
-            return False
-        return analyst_direction == tactician_direction
-
     @handle_errors(
         exceptions=(Exception,),
         default_return={"should_execute": False, "reason": "error"},
         context="enhanced_execution_manager.calculate_execution_parameters"
     )
     @with_tracing_span("EnhancedExecution.calculateParameters")
-    def calculate_execution_parameters(
-        self,
-        market_data: pd.DataFrame,
-        analyst_predictions: Dict[str, Any],
-        tactician_predictions: Dict[str, Any],
-        current_price: float
-    ) -> Dict[str, Any]:
-        """Calculate execution parameters with high precision triple barrier strategy based on multi-outcome predictions."""
-        try:
-            # Validate predictions first
-            validation = self.validate_analyst_predictions(analyst_predictions, tactician_predictions)
-            if not validation["should_execute"]:
-                return {
-                    "should_execute": False,
-                    "reason": validation["reason"],
-                    "validation_details": validation
-                }
-
-            # Get dynamic barriers for the primary timeframe
-            # No dynamic adaptation - ML model handles market conditions
-            timeframe = self.primary_timeframe
-
-            # Get dynamic barriers for this timeframe
-            barrier_combinations = self.barrier_calculator.calculate_dynamic_barriers(
-                timeframe=timeframe
-            )
-
-            # Use the first barrier combination (ML model will select optimal one)
-            barrier_name = list(barrier_combinations.keys())[0]
-            dynamic_upper, dynamic_lower = barrier_combinations[barrier_name]
-
-            # No adaptive barriers - ML model handles market conditions
-            adaptive_upper = current_price * (1 + dynamic_upper)
-            adaptive_lower = current_price * (1 - dynamic_lower)
-
-            # Calculate position sizing with precision multiplier
-            base_position_size = analyst_signal.get("position_size", 0.1)
-            precision_position_size = base_position_size * self.position_size_multiplier
-
-            # Calculate leverage with precision multiplier
-            base_leverage = analyst_signal.get("leverage", 1.0)
-            precision_leverage = base_leverage * self.leverage_multiplier
-
-            # Calculate risk-adjusted parameters
-            risk_adjusted_size = self._calculate_risk_adjusted_size(
-                precision_position_size, adaptive_lower, current_price
-            )
-
-            # Calculate execution timing
-            entry_timing = self._calculate_entry_timing(market_data, tactician_confidence)
-
-            # Calculate precision score (no volatility adjustment - ML model handles it)
-            precision_score = self._calculate_precision_score(
-                validation["combined_confidence"], 0.01, market_data  # Default volatility
-            )
-
-            execution_params = {
-                "should_execute": True,
-                "trade_direction": validation["trade_direction"],
-                "entry_price": current_price,
-                "upper_barrier_price": adaptive_upper,
-                "lower_barrier_price": adaptive_lower,
-                "position_size": risk_adjusted_size,
-                "leverage": precision_leverage,
-                "entry_timing": entry_timing,
-                "precision_score": precision_score,
-                "volatility": 0.01,  # Default volatility - ML model handles market conditions
-                "analyst_confidence": validation["analyst_confidence"],
-                "tactician_confidence": validation["tactician_confidence"],
-                "combined_confidence": validation["combined_confidence"],
-                "execution_reason": "high_precision_completion"
-            }
-
-            # Log execution parameters
-            self.logger.info(f"🎯 High Precision Execution Parameters:")
-            self.logger.info(f"   Direction: {execution_params['trade_direction']}")
-            self.logger.info(f"   Entry Price: {execution_params['entry_price']:.4f}")
-            self.logger.info(f"   Upper Barrier: {execution_params['upper_barrier_price']:.4f}")
-            self.logger.info(f"   Lower Barrier: {execution_params['lower_barrier_price']:.4f}")
-            self.logger.info(f"   Position Size: {execution_params['position_size']:.4f}")
-            self.logger.info(f"   Precision Score: {execution_params['precision_score']:.3f}")
-
-            return execution_params
-
-        except Exception as e:
-            self.logger.error(f"❌ Error calculating execution parameters: {e}")
-            return {
-                "should_execute": False,
-                "reason": "calculation_error",
-                "error": str(e)
-            }
-
     # Removed dynamic adaptation methods - ML model handles market conditions
 
     def _calculate_risk_adjusted_size(
@@ -439,39 +330,3 @@ class EnhancedExecutionManager:
 
         except Exception as e:
             self.logger.warning(f"⚠️ Error updating precision metrics: {e}")
-
-    def get_performance_summary(self) -> Dict[str, Any]:
-        """Get performance summary for the enhanced execution manager."""
-        try:
-            if not self.execution_history:
-                return {
-                    "total_executions": 0,
-                    "success_rate": 0.0,
-                    "avg_precision": 0.0,
-                    "max_precision": 0.0
-                }
-
-            total_executions = len(self.execution_history)
-            successful_executions = sum(
-                1 for record in self.execution_history
-                if record.get("execution_params", {}).get("should_execute", False)
-            )
-
-            return {
-                "total_executions": total_executions,
-                "successful_executions": successful_executions,
-                "success_rate": successful_executions / total_executions if total_executions > 0 else 0.0,
-                "avg_precision": self.precision_metrics.get("avg_precision", 0.0),
-                "max_precision": self.precision_metrics.get("max_precision", 0.0),
-                "execution_count": self.precision_metrics.get("execution_count", 0)
-            }
-
-        except Exception as e:
-            self.logger.error(f"❌ Error getting performance summary: {e}")
-            return {
-                "total_executions": 0,
-                "success_rate": 0.0,
-                "avg_precision": 0.0,
-                "max_precision": 0.0,
-                "error": str(e)
-            }

@@ -572,25 +572,3 @@ class BaseValidator(ABC):
 
         if metrics:
             self.logger.debug(f"📊 {validation_name} metrics: {metrics}")
-
-    def add_validation_result(
-        self,
-        validation_name: str,
-        passed: bool,
-        metrics: Optional[dict[str, Any]] = None,
-    ) -> None:
-        """
-        Add validation result to the results dictionary.
-
-        Args:
-            validation_name: Name of the validation
-            passed: Whether validation passed
-            metrics: Validation metrics
-        """
-        self.validation_results[validation_name] = {
-            "passed": passed,
-            "metrics": metrics or {},
-        }
-
-        # Also log the result
-        self.log_validation_result(validation_name, passed, metrics)

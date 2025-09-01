@@ -228,27 +228,10 @@ def test_enhanced_old_decorators():
             return df.shape
 
         @vectorize()
-        def legacy_vectorize_function(x):
-            return x * 2
-
         @guard_nan_inf(mode="warn")
-        def legacy_guard_function(data):
-            return data.sum()
-
         @guard_nulls(mode="warn")
-        def legacy_null_function(df):
-            return df.shape
-
         @error_handler(reraise=False)
-        def legacy_error_function(x):
-            if x < 0:
-                raise ValueError("Negative")
-            return x
-
         @tracing("legacy_test")
-        def legacy_tracing_function(x):
-            return x * 3
-
         # Test all legacy functions
         test_df = pd.DataFrame({'A': [1, 2, 3]})
         test_array = np.array([1, 2, 3, 4, 5])

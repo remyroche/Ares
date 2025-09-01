@@ -32,10 +32,6 @@ class PositionSizer:
         self.logger = system_logger.getChild("PositionSizer")
         # Backward-compatibility shim for legacy self.print calls
         if not hasattr(self, "print"):
-            def _shim_print(message: str) -> None:
-                with contextlib.suppress(Exception):
-                    self.logger.error(str(message))
-
             self.print = _shim_print  # type: ignore[attr-defined]
 
         # Load configuration from step17 optimization results
@@ -78,18 +74,6 @@ class PositionSizer:
         default_return=False,
         context="position sizer initialization",
     )
-    async def initialize(self) -> bool:
-        """Initialize the position sizer."""
-        self.logger.info("Initializing position sizer...")
-
-        # Validate configuration
-        if not self._validate_configuration():
-            return False
-
-        self.is_initialized = True
-        self.logger.info("✅ Position sizer initialized successfully")
-        return True
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
@@ -125,35 +109,6 @@ class PositionSizer:
             self.print(error(f"Error validating configuration: {e}"))
             return False
 
-    def refresh_step17_configuration(self, step17_results: dict[str, Any]) -> None:
-        """
-        Refresh configuration from step17 optimization results.
-        This method is called automatically when step17 completes.
-
-        Args:
-            step17_results: Step17 optimization results
-        """
-        try:
-            if "position_sizing" in step17_results:
-                position_sizing_optimization = step17_results["position_sizing"]
-
-                # Update position sizing parameters
-                self.kelly_multiplier = position_sizing_optimization.get("kelly_multiplier", self.kelly_multiplier)
-                self.max_position_size = position_sizing_optimization.get("max_position_size", self.max_position_size)
-                self.min_position_size = position_sizing_optimization.get("min_position_size", self.min_position_size)
-                self.confidence_threshold = position_sizing_optimization.get("confidence_threshold", self.confidence_threshold)
-
-                # Update component weights
-                # Removed: no longer updating ml_weight/kelly_weight from config
-
-                # Update additional parameters
-                # Removed: deprecated parameters no longer refreshed
-
-                self.logger.info("✅ Position sizer configuration refreshed from step17 results")
-
-        except Exception as e:
-            self.logger.error(f"Error refreshing step17 configuration: {e}")
-
     @validate_data_quality(
         required_columns=None,  # This method validates dict input, not DataFrame
         min_rows=1,
@@ -170,115 +125,6 @@ class PositionSizer:
         default_return=None,
         context="position sizing calculation",
     )
-    async def calculate_position_size(
-        self,
-        ml_predictions: dict[str, Any],
-        current_price: float = 0.0,
-        account_balance: float = 1000.0,
-        analyst_confidence: float = 0.5,
-        tactician_confidence: float = 0.5,
-        market_health_analysis: dict[str, Any] | None = None,
-        strategist_risk_parameters: dict[str, Any] | None = None,
-    ) -> dict[str, Any] | None:
-        """
-        Calculate position size using ML confidence scores and Kelly criterion.
-
-        Args:
-            ml_predictions: ML confidence predictions from ml_confidence_predictor
-            current_price: Current market price
-            account_balance: Account balance for position sizing
-            market_health_analysis: Aggregated indicators from Analyst's MarketHealthAnalyzer
-            strategist_risk_parameters: Risk parameters produced by Strategist (fed via Analyst)
-
-        Returns:
-            dict[str, Any]: Position sizing analysis
-        """
-        if not self.is_initialized:
-            self.print(initialization_error("Position sizer not initialized"))
-            return None
-
-        self.logger.info("Calculating position size using ML intelligence...")
-
-        try:
-            # NEW: Extract combined confidence from Tactician multi-output predictions
-            combined_confidence = ml_predictions.get("combined_confidence", 0.5)
-
-            # Extract ML confidence scores (for backward compatibility)
-            price_target_confidences = ml_predictions.get(
-                "price_target_confidences",
-                {},
-            )
-            adversarial_confidences = ml_predictions.get("adversarial_confidences", {})
-            directional_confidence = ml_predictions.get("directional_confidence", {})
-
-            # NEW: Use combined confidence for position sizing if available
-            if combined_confidence >= self.positionsize_combined_threshold:
-                # Calculate base Kelly criterion position size
-                kelly_position_size = self._calculate_kelly_position_size(
-                    price_target_confidences, adversarial_confidences,
-                )
-
-                # Calculate ML-based position size
-                ml_position_size = self._calculate_ml_position_size(
-                    price_target_confidences, adversarial_confidences,
-                )
-
-                # Calculate weighted position size
-                final_position_size = self._calculate_weighted_position_size(
-                    kelly_position_size, ml_position_size,
-                )
-
-                # Apply market-health and strategist risk modifiers (volatility/liquidity/stress aware)
-                final_position_size = self._apply_position_size_modifiers(
-                    final_position_size,
-                    market_health_analysis=market_health_analysis,
-                    strategist_risk_parameters=strategist_risk_parameters,
-                    analyst_confidence=analyst_confidence,
-                    tactician_confidence=tactician_confidence,
-                )
-            else:
-                # If combined confidence is below threshold, use minimum position size
-                final_position_size = self.min_position_size
-                kelly_position_size = self.min_position_size
-                ml_position_size = self.min_position_size
-
-            # Create position sizing analysis
-            sizing_analysis = {
-                "timestamp": datetime.now(),
-                "current_price": current_price,
-                "account_balance": account_balance,
-                "kelly_position_size": kelly_position_size,
-                "ml_position_size": ml_position_size,
-                "final_position_size": final_position_size,
-                "combined_confidence": combined_confidence,
-                "positionsize_combined_threshold": self.positionsize_combined_threshold,
-                "price_target_confidences": price_target_confidences,
-                "adversarial_confidences": adversarial_confidences,
-                "directional_confidence": directional_confidence,
-                "market_health_modifiers": (market_health_analysis or {}),
-                "strategist_risk_parameters": (strategist_risk_parameters or {}),
-                "sizing_reason": self._generate_sizing_reason(
-                    final_position_size,
-                    kelly_position_size,
-                    ml_position_size,
-                    price_target_confidences,
-                    adversarial_confidences,
-                    combined_confidence,
-                ),
-            }
-
-            # Store in history
-            self.position_sizing_history.append(sizing_analysis)
-            if len(self.position_sizing_history) > 100:  # Keep last 100 entries
-                self.position_sizing_history = self.position_sizing_history[-100:]
-
-            self.logger.info(f"✅ Position size calculated: {final_position_size:.4f}")
-            return sizing_analysis
-
-        except Exception as e:
-            self.print(error(f"Error calculating position size: {e}"))
-            return None
-
     def _calculate_kelly_position_size(
         self,
         price_target_confidences: dict[str, float],
@@ -510,134 +356,19 @@ class PositionSizer:
             self.print(error(f"Error generating sizing reason: {e}"))
             return "Position size calculated using ML intelligence and Kelly criterion"
 
-    def _generate_dual_confidence_sizing_reason(
-        self,
-        final_position_size: float,
-        final_confidence: float,
-        normalized_confidence: float,
-        analyst_confidence: float,
-        tactician_confidence: float,
-        p_avg: float,
-        b_avg: float,
-        fractional_kelly_pct: float,
-    ) -> str:
-        """Generate sizing reason for dual confidence system."""
-        try:
-            return (
-                f"Position size: {final_position_size:.4f} "
-                f"(Final confidence: {final_confidence:.3f}, Normalized: {normalized_confidence:.3f}) "
-                f"Analyst: {analyst_confidence:.2f}, Tactician: {tactician_confidence:.2f} "
-                f"Kelly: p_avg={p_avg:.2f}, b_avg={b_avg:.2f}, frac_kelly={fractional_kelly_pct:.3f}"
-            )
-
-        except Exception as e:
-            self.logger.exception(
-                f"Error generating dual confidence sizing reason: {e}",
-            )
-            return f"Position size: {final_position_size:.4f} (Error generating reason)"
-
-    def _get_historical_performance(self) -> tuple[float, float]:
-        """Get historical performance data for Kelly criterion calculation."""
-        try:
-            # Use local sizing history as a proxy when available
-            # Expect entries with keys: {"pnl": float}
-            history = self.position_sizing_history[-500:]  # recent window
-            if not history:
-                return 0.5, 1.5
-
-            pnls = [float(h.get("pnl", 0.0)) for h in history if "pnl" in h]
-            if not pnls:
-                return 0.5, 1.5
-
-            wins = [p for p in pnls if p > 0]
-            losses = [-p for p in pnls if p < 0]
-
-            num_trades = len(pnls)
-            win_rate = (len(wins) / num_trades) if num_trades > 0 else 0.5
-            avg_win = (sum(wins) / len(wins)) if wins else 1.0
-            avg_loss = (sum(losses) / len(losses)) if losses else 1.0
-            payoff = (avg_win / max(avg_loss, 1e-9)) if avg_loss else 1.5
-
-            # Conservative shrinkage towards priors
-            alpha = min(1.0, num_trades / 200.0)  # confidence weight up to 200 trades
-            p_avg = (1 - alpha) * 0.5 + alpha * win_rate
-            b_avg = (1 - alpha) * 1.5 + alpha * payoff
-
-            # Clamp to reasonable bounds
-            p_avg = max(0.3, min(0.7, p_avg))
-            b_avg = max(0.8, min(2.5, b_avg))
-
-            return p_avg, b_avg
-        except Exception as e:
-            self.print(error(f"Error getting historical performance: {e}"))
-            return 0.5, 1.5  # Default fallback values
-
-    def get_position_sizing_history(
-        self,
-        limit: int | None = None,
-    ) -> list[dict[str, Any]]:
-        """Get position sizing history."""
-        if limit:
-            return self.position_sizing_history[-limit:]
-        return self.position_sizing_history.copy()
-
     @handle_errors(
         exceptions=(Exception,),
         default_return=None,
         context="position sizer cleanup",
     )
-    async def stop(self) -> None:
-        """Stop the position sizer."""
-        try:
-            self.logger.info("Stopping position sizer...")
-            self.is_initialized = False
-            self.logger.info("✅ Position sizer stopped successfully")
-        except Exception as e:
-            self.print(error(f"Error stopping position sizer: {e}"))
-
     @handle_errors(
         exceptions=(Exception,),
         default_return=None,
         context="position sizer cleanup",
     )
-    async def cleanup(self) -> None:
-        """Cleanup position sizer resources."""
-        try:
-            self.logger.info("Cleaning up position sizer...")
-            await self.stop()
-            self.position_sizing_history.clear()
-            self.logger.info("✅ Position sizer cleanup completed")
-        except Exception as e:
-            self.logger.error(f"Error cleaning up position sizer: {e}")
-
 
 @handle_errors(
     exceptions=(Exception,),
     default_return=None,
     context="position sizer setup",
 )
-async def setup_position_sizer(
-    config: dict[str, Any] | None = None,
-) -> PositionSizer | None:
-    """
-    Setup position sizer.
-
-    Args:
-        config: Configuration dictionary
-
-    Returns:
-        Optional[PositionSizer]: Initialized position sizer or None
-    """
-    try:
-        if config is None:
-            config = {}
-
-        position_sizer = PositionSizer(config)
-
-        if await position_sizer.initialize():
-            return position_sizer
-        return None
-
-    except Exception as e:
-        system_logger.exception(error(f"Error setting up position sizer: {e}"))
-        return None

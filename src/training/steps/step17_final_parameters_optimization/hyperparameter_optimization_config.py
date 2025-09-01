@@ -62,476 +62,35 @@ class SearchSpace:
 class ConfidenceThresholdsSearchSpace(SearchSpace):
     """Search space for confidence thresholds optimization."""
 
-    def __post_init__(self) -> None:
-        self.name = "confidence_thresholds"
-        self.optimization_strategy = OptimizationStrategy.MULTI_OBJECTIVE
-        self.n_trials = 100
-        self.timeout_seconds = 1800
-        self.evaluation_metrics = [
-            EvaluationMetric.WIN_RATE,
-            EvaluationMetric.AVERAGE_WIN,
-            EvaluationMetric.AVERAGE_LOSS,
-            EvaluationMetric.SHARPE_RATIO,
-            EvaluationMetric.MAX_DRAWDOWN,
-        ]
-
-        self.parameters = {
-            "analyst_confidence_threshold": {
-                "type": "float",
-                "min": 0.5,
-                "max": 0.95,
-                "step": 0.02,
-                "log": False,
-            },
-            "tactician_confidence_threshold": {
-                "type": "float",
-                "min": 0.5,
-                "max": 0.95,
-                "step": 0.02,
-                "log": False,
-            },
-            "ensemble_confidence_threshold": {
-                "type": "float",
-                "min": 0.5,
-                "max": 0.95,
-                "step": 0.02,
-                "log": False,
-            },
-            "position_scale_up_threshold": {
-                "type": "float",
-                "min": 0.7,
-                "max": 0.95,
-                "step": 0.02,
-                "log": False,
-            },
-            "position_scale_down_threshold": {
-                "type": "float",
-                "min": 0.4,
-                "max": 0.7,
-                "step": 0.02,
-                "log": False,
-            },
-            "position_close_threshold": {
-                "type": "float",
-                "min": 0.2,
-                "max": 0.5,
-                "step": 0.02,
-                "log": False,
-            },
-            "ml_target_update_threshold": {
-                "type": "float",
-                "min": 0.3,
-                "max": 0.7,
-                "step": 0.05,
-                "log": False,
-            },
-            "emergency_update_threshold": {
-                "type": "float",
-                "min": 0.01,
-                "max": 0.05,
-                "step": 0.005,
-                "log": False,
-            },
-        }
-
-        # Constraints
-        self.constraints = {
-            "analyst_confidence_threshold": {"min": 0.6, "max": 0.9},
-            "tactician_confidence_threshold": {"min": 0.55, "max": 0.85},
-            "ensemble_confidence_threshold": {"min": 0.65, "max": 0.9},
-        }
-
 
 @dataclass
 class VolatilityParametersSearchSpace(SearchSpace):
     """Search space for volatility parameters optimization."""
-
-    def __post_init__(self) -> None:
-        self.name = "volatility_parameters"
-        self.optimization_strategy = OptimizationStrategy.SINGLE_OBJECTIVE
-        self.n_trials = 50
-        self.evaluation_metrics = [
-            EvaluationMetric.SHARPE_RATIO,
-            EvaluationMetric.VOLATILITY,
-        ]
-
-        self.parameters = {
-            "target_volatility": {
-                "type": "float",
-                "min": 0.05,
-                "max": 0.25,
-                "step": 0.01,
-                "log": False,
-            },
-            "volatility_lookback_period": {
-                "type": "int",
-                "min": 10,
-                "max": 50,
-                "step": 5,
-            },
-            "volatility_multiplier": {
-                "type": "float",
-                "min": 0.5,
-                "max": 2.0,
-                "step": 0.1,
-                "log": False,
-            },
-            "low_volatility_threshold": {
-                "type": "float",
-                "min": 0.01,
-                "max": 0.05,
-                "step": 0.005,
-                "log": False,
-            },
-            "medium_volatility_threshold": {
-                "type": "float",
-                "min": 0.03,
-                "max": 0.08,
-                "step": 0.005,
-                "log": False,
-            },
-            "high_volatility_threshold": {
-                "type": "float",
-                "min": 0.08,
-                "max": 0.15,
-                "step": 0.01,
-                "log": False,
-            },
-            "volatility_stop_loss_multiplier": {
-                "type": "float",
-                "min": 1.0,
-                "max": 3.0,
-                "step": 0.1,
-                "log": False,
-            },
-            "volatility_based_position_sizing": {
-                "type": "categorical",
-                "choices": [True, False],
-            },
-        }
 
 
 @dataclass
 class PositionSizingSearchSpace(SearchSpace):
     """Search space for position sizing parameters optimization."""
 
-    def __post_init__(self) -> None:
-        self.name = "position_sizing_parameters"
-        self.optimization_strategy = OptimizationStrategy.SINGLE_OBJECTIVE
-        self.n_trials = 60
-        self.evaluation_metrics = [
-            EvaluationMetric.TOTAL_RETURN,
-            EvaluationMetric.MAX_DRAWDOWN,
-        ]
-
-        self.parameters = {
-            "base_position_size": {
-                "type": "float",
-                "min": 0.01,
-                "max": 0.2,
-                "step": 0.01,
-                "log": False,
-            },
-            "max_position_size": {
-                "type": "float",
-                "min": 0.1,
-                "max": 0.5,
-                "step": 0.05,
-                "log": False,
-            },
-            "min_position_size": {
-                "type": "float",
-                "min": 0.005,
-                "max": 0.05,
-                "step": 0.005,
-                "log": False,
-            },
-            "kelly_multiplier": {
-                "type": "float",
-                "min": 0.1,
-                "max": 0.5,
-                "step": 0.05,
-                "log": False,
-            },
-            "fractional_kelly": {"type": "categorical", "choices": [True, False]},
-            "confidence_based_scaling": {
-                "type": "categorical",
-                "choices": [True, False],
-            },
-            "low_confidence_multiplier": {
-                "type": "float",
-                "min": 0.3,
-                "max": 0.8,
-                "step": 0.05,
-                "log": False,
-            },
-            "medium_confidence_multiplier": {
-                "type": "float",
-                "min": 0.8,
-                "max": 1.2,
-                "step": 0.05,
-                "log": False,
-            },
-            "high_confidence_multiplier": {
-                "type": "float",
-                "min": 1.2,
-                "max": 2.5,
-                "step": 0.1,
-                "log": False,
-            },
-            "very_high_confidence_multiplier": {
-                "type": "float",
-                "min": 1.5,
-                "max": 3.0,
-                "step": 0.1,
-                "log": False,
-            },
-        }
-
-        # Constraints
-        self.constraints = {
-            "max_position_size": {"min": 0.05, "max": 0.3},
-            "kelly_multiplier": {"min": 0.15, "max": 0.4},
-        }
-
 
 @dataclass
 class RiskManagementSearchSpace(SearchSpace):
     """Search space for risk management parameters optimization."""
-
-    def __post_init__(self) -> None:
-        self.name = "risk_management_parameters"
-        self.optimization_strategy = OptimizationStrategy.SINGLE_OBJECTIVE
-        self.n_trials = 50
-        self.evaluation_metrics = [
-            EvaluationMetric.MAX_DRAWDOWN,
-            EvaluationMetric.VALUE_AT_RISK,
-        ]
-
-        self.parameters = {
-            "stop_loss_atr_multiplier": {
-                "type": "float",
-                "min": 1.0,
-                "max": 4.0,
-                "step": 0.1,
-                "log": False,
-            },
-            "trailing_stop_atr_multiplier": {
-                "type": "float",
-                "min": 0.8,
-                "max": 3.0,
-                "step": 0.1,
-                "log": False,
-            },
-            "stop_loss_confidence_threshold": {
-                "type": "float",
-                "min": 0.2,
-                "max": 0.5,
-                "step": 0.02,
-                "log": False,
-            },
-            "enable_dynamic_stop_loss": {
-                "type": "categorical",
-                "choices": [True, False],
-            },
-            "volatility_based_sl": {"type": "categorical", "choices": [True, False]},
-            "regime_based_sl": {"type": "categorical", "choices": [True, False]},
-            "sl_tightening_threshold": {
-                "type": "float",
-                "min": 0.3,
-                "max": 0.6,
-                "step": 0.05,
-                "log": False,
-            },
-            "sl_loosening_threshold": {
-                "type": "float",
-                "min": 0.7,
-                "max": 0.9,
-                "step": 0.05,
-                "log": False,
-            },
-            "max_drawdown_threshold": {
-                "type": "float",
-                "min": 0.1,
-                "max": 0.3,
-                "step": 0.02,
-                "log": False,
-            },
-            "max_daily_loss": {
-                "type": "float",
-                "min": 0.05,
-                "max": 0.15,
-                "step": 0.01,
-                "log": False,
-            },
-        }
 
 
 @dataclass
 class EnsembleParametersSearchSpace(SearchSpace):
     """Search space for ensemble parameters optimization."""
 
-    def __post_init__(self) -> None:
-        self.name = "ensemble_parameters"
-        self.optimization_strategy = OptimizationStrategy.SINGLE_OBJECTIVE
-        self.n_trials = 40
-        self.evaluation_metrics = [
-            EvaluationMetric.WIN_RATE,
-            EvaluationMetric.PROFIT_FACTOR,
-        ]
-
-        self.parameters = {
-            "ensemble_method": {
-                "type": "categorical",
-                "choices": [
-                    "confidence_weighted",
-                    "weighted_average",
-                    "meta_learner",
-                    "majority_vote",
-                ],
-            },
-            "analyst_weight": {
-                "type": "float",
-                "min": 0.2,
-                "max": 0.6,
-                "step": 0.05,
-                "log": False,
-            },
-            "tactician_weight": {
-                "type": "float",
-                "min": 0.2,
-                "max": 0.6,
-                "step": 0.05,
-                "log": False,
-            },
-            "strategist_weight": {
-                "type": "float",
-                "min": 0.1,
-                "max": 0.4,
-                "step": 0.05,
-                "log": False,
-            },
-            "min_ensemble_agreement": {
-                "type": "float",
-                "min": 0.5,
-                "max": 0.8,
-                "step": 0.05,
-                "log": False,
-            },
-            "max_ensemble_disagreement": {
-                "type": "float",
-                "min": 0.2,
-                "max": 0.5,
-                "step": 0.05,
-                "log": False,
-            },
-            "ensemble_minimum_models": {"type": "int", "min": 2, "max": 5, "step": 1},
-        }
-
 
 @dataclass
 class RegimeSpecificSearchSpace(SearchSpace):
     """Search space for regime-specific parameters optimization."""
 
-    def __post_init__(self) -> None:
-        self.name = "regime_specific_parameters"
-        self.optimization_strategy = OptimizationStrategy.SINGLE_OBJECTIVE
-        self.n_trials = 30
-        self.evaluation_metrics = [
-            EvaluationMetric.SHARPE_RATIO,
-            EvaluationMetric.TOTAL_RETURN,
-        ]
-        # Meta-label mixture defaults for downstream use
-        # (can be tuned via study-specific configs)
-        self.meta_label_mixture_defaults = {
-            "alpha": 1.0,
-            "beta": 1.0,
-            "gamma": 1.0,
-            "top_k": 2,
-            "w_min": 0.05,
-            "w_max": 0.85,
-            "normalize": False,
-        }
-
-        self.parameters = {
-            "bull_trend_multiplier": {
-                "type": "float",
-                "min": 0.8,
-                "max": 1.5,
-                "step": 0.05,
-                "log": False,
-            },
-            "bear_trend_multiplier": {
-                "type": "float",
-                "min": 0.5,
-                "max": 1.2,
-                "step": 0.05,
-                "log": False,
-            },
-            "sideways_multiplier": {
-                "type": "float",
-                "min": 0.7,
-                "max": 1.3,
-                "step": 0.05,
-                "log": False,
-            },
-            "high_impact_multiplier": {
-                "type": "float",
-                "min": 0.4,
-                "max": 1.0,
-                "step": 0.05,
-                "log": False,
-            },
-            "sr_zone_multiplier": {
-                "type": "float",
-                "min": 0.8,
-                "max": 1.4,
-                "step": 0.05,
-                "log": False,
-            },
-            "regime_transition_threshold": {
-                "type": "float",
-                "min": 0.4,
-                "max": 0.8,
-                "step": 0.05,
-                "log": False,
-            },
-            "regime_confirmation_periods": {
-                "type": "int",
-                "min": 2,
-                "max": 5,
-                "step": 1,
-            },
-        }
-
 
 @dataclass
 class TimingParametersSearchSpace(SearchSpace):
     """Search space for timing parameters optimization."""
-
-    def __post_init__(self) -> None:
-        self.name = "timing_parameters"
-        self.optimization_strategy = OptimizationStrategy.SINGLE_OBJECTIVE
-        self.n_trials = 30
-        self.evaluation_metrics = [
-            EvaluationMetric.TOTAL_RETURN,
-            EvaluationMetric.WIN_RATE,
-        ]
-
-        self.parameters = {
-            "base_cooldown_minutes": {"type": "int", "min": 15, "max": 60, "step": 5},
-            "high_confidence_cooldown": {"type": "int", "min": 5, "max": 30, "step": 5},
-            "low_confidence_cooldown": {
-                "type": "int",
-                "min": 30,
-                "max": 120,
-                "step": 10,
-            },
-            "bull_trend_cooldown": {"type": "int", "min": 10, "max": 40, "step": 5},
-            "bear_trend_cooldown": {"type": "int", "min": 20, "max": 60, "step": 5},
-            "sideways_cooldown": {"type": "int", "min": 30, "max": 90, "step": 10},
-            "high_impact_cooldown": {"type": "int", "min": 60, "max": 180, "step": 15},
-        }
 
 
 class HyperparameterOptimizationConfig:
@@ -578,14 +137,6 @@ class HyperparameterOptimizationConfig:
             },
         }
 
-    def get_search_space(self, name: str) -> SearchSpace | None:
-        """Get a specific search space by name."""
-        return self.search_spaces.get(name)
-
-    def get_all_search_spaces(self) -> dict[str, SearchSpace]:
-        """Get all search spaces."""
-        return self.search_spaces
-
     def validate_search_space(self, search_space: SearchSpace) -> list[str]:
         """Validate a search space configuration."""
         errors: list[str] = []
@@ -618,40 +169,10 @@ class HyperparameterOptimizationConfig:
 
         return errors
 
-    def get_optimization_summary(self) -> dict[str, Any]:
-        """Get a summary of all optimization configurations."""
-        summary = {
-            "total_search_spaces": len(self.search_spaces),
-            "total_parameters": sum(
-                len(space.parameters) for space in self.search_spaces.values()
-            ),
-            "total_trials": sum(
-                space.n_trials for space in self.search_spaces.values()
-            ),
-            "search_spaces": {},
-        }
-
-        for name, space in self.search_spaces.items():
-            summary["search_spaces"][name] = {
-                "parameters": len(space.parameters),
-                "n_trials": space.n_trials,
-                "strategy": space.optimization_strategy.value,
-                "timeout_seconds": space.timeout_seconds,
-                "evaluation_metrics": [
-                    metric.value for metric in space.evaluation_metrics
-                ],
-            }
-
-        return summary
-
 
 # Global configuration instance
 HYPERPARAMETER_CONFIG = HyperparameterOptimizationConfig()
 
-
-def get_hyperparameter_config() -> HyperparameterOptimizationConfig:
-    """Get the global hyperparameter optimization configuration."""
-    return HYPERPARAMETER_CONFIG
 
 
 def validate_hyperparameter_config() -> list[str]:
@@ -674,31 +195,6 @@ def validate_hyperparameter_config() -> list[str]:
 
     return errors
 
-
-def get_optimization_plan() -> dict[str, Any]:
-    """Get a detailed optimization plan."""
-    config = get_hyperparameter_config()
-    summary = config.get_optimization_summary()
-
-    return {
-        "optimization_plan": {
-            "total_estimated_time_hours": summary["total_trials"]
-            * 0.5,  # 30 min (0.5 hours) per trial
-            "total_estimated_cost": summary["total_trials"] * 0.1,  # $0.10 per trial
-            "parallel_execution": config.global_config["n_jobs"] > 1,
-            "search_spaces_order": list(config.search_spaces.keys()),
-            "dependencies": {
-                "confidence_thresholds": [],
-                "volatility_parameters": ["confidence_thresholds"],
-                "position_sizing_parameters": ["confidence_thresholds"],
-                "risk_management_parameters": ["confidence_thresholds"],
-                "ensemble_parameters": ["confidence_thresholds"],
-                "regime_specific_parameters": ["confidence_thresholds"],
-                "timing_parameters": ["confidence_thresholds"],
-            },
-        },
-        "summary": summary,
-    }
 
 
 if __name__ == "__main__":

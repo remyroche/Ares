@@ -69,36 +69,6 @@ class TrainingManager:
         default_return=False,
         context="training manager initialization",
     )
-    async def initialize(self) -> bool:
-        """Initialize training manager with enhanced error handling.
-
-        Returns:
-            bool: True if initialization successful, False otherwise
-
-        """
-        try:
-            self.logger.info("Initializing Training Manager...")
-
-            # Load training configuration
-            await self._load_training_configuration()
-
-            # Validate configuration
-            if not self._validate_configuration():
-                self.print(invalid("Invalid configuration for training manager"))
-                return False
-
-            # Initialize training modules
-            await self._initialize_training_modules()
-
-            self.logger.info(
-                "✅ Training Manager initialization completed successfully",
-            )
-            return True
-
-        except Exception:
-            self.print(failed("❌ Training Manager initialization failed: {e}"))
-            return False
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
@@ -208,19 +178,6 @@ class TrainingManager:
             self.logger.exception(error_msg)
             self.print(initialization_error(error_msg))
 
-    async def _initialize_feature_integration(self) -> None:
-        """Initialize feature integration manager."""
-        try:
-            from src.training.feature_integration import FeatureIntegrationManager
-
-            self.feature_integration_manager = FeatureIntegrationManager(self.config)
-            await self.feature_integration_manager.initialize()
-            self.logger.info("Feature integration manager initialized successfully")
-        except Exception as e:
-            self.logger.exception(
-                f"Error initializing feature integration manager: {e}",
-            )
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
@@ -249,70 +206,16 @@ class TrainingManager:
         default_return=None,
         context="hyperparameter optimization initialization",
     )
-    async def _initialize_hyperparameter_optimization(self) -> None:
-        """Initialize hyperparameter optimization module."""
-        try:
-            # Initialize hyperparameter optimization components
-            self.hyperparameter_optimization_components = {
-                "parameter_search": True,
-                "cross_validation": True,
-                "model_selection": True,
-                "optimization_tracking": True,
-            }
-
-            self.logger.info("Hyperparameter optimization module initialized")
-
-        except Exception as e:
-            self.logger.exception(
-                f"Error initializing hyperparameter optimization: {e}",
-            )
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="model evaluation initialization",
     )
-    async def _initialize_model_evaluation(self) -> None:
-        """Initialize model evaluation module."""
-        try:
-            # Initialize model evaluation components
-            self.model_evaluation_components = {
-                "performance_metrics": True,
-                "model_comparison": True,
-                "validation_testing": True,
-                "evaluation_reporting": True,
-            }
-
-            self.logger.info("Model evaluation module initialized")
-
-        except Exception as e:
-            error_msg = f"Error initializing model evaluation: {e}"
-            self.logger.exception(error_msg)
-            self.print(initialization_error(error_msg))
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="model persistence initialization",
     )
-    async def _initialize_model_persistence(self) -> None:
-        """Initialize model persistence module."""
-        try:
-            # Initialize model persistence components
-            self.model_persistence_components = {
-                "model_saving": True,
-                "model_loading": True,
-                "model_versioning": True,
-                "model_backup": True,
-            }
-
-            self.logger.info("Model persistence module initialized")
-
-        except Exception:
-            self.print(
-                initialization_error("Error initializing model persistence: {e}"),
-            )
-
     @handle_specific_errors(
         error_handlers={
             ValueError: (False, "Invalid training parameters"),
@@ -1077,27 +980,6 @@ class TrainingManager:
         default_return=None,
         context="training manager cleanup",
     )
-    async def stop(self) -> None:
-        """Stop the training manager."""
-        self.logger.info("🛑 Stopping Training Manager...")
-
-        try:
-            # Stop training
-            self.is_training = False
-
-            # Clear results
-            self.training_results.clear()
-
-            # Clear history
-            self.training_history.clear()
-
-            self.logger.info("✅ Training Manager stopped successfully")
-
-        except Exception as e:
-            error_msg = f"Error stopping training manager: {e}"
-            self.logger.exception(error_msg)
-            self.print(error(error_msg))
-
 
 # Global training manager instance
 training_manager: TrainingManager | None = None

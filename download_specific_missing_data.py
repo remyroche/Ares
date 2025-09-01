@@ -34,12 +34,6 @@ logger = logging.getLogger(__name__)
 shutdown_requested = False
 
 
-def signal_handler(signum, frame):
-    """Handle interrupt signals gracefully"""
-    global shutdown_requested
-    print(f"\n⚠️ Received signal {signum}. Gracefully shutting down...")
-    shutdown_requested = True
-
 
 # Register signal handlers
 signal.signal(signal.SIGINT, signal_handler)

@@ -40,9 +40,6 @@ class GapInfo:
         self.fill_method = None
         self.downloaded_data = None
 
-    def __str__(self):
-        return f"Gap({self.start_time} -> {self.end_time}, size={self.gap_size}s, type={self.gap_type.value})"
-
 
 class EnhancedMissingValueHandler:
     """Enhanced missing value handler with intelligent gap filling."""
@@ -80,66 +77,6 @@ class EnhancedMissingValueHandler:
         default_return=None,
         context="missing value handling"
     )
-    def handle_missing_values_intelligently(self, data: pd.DataFrame, timestamp_column: str = "timestamp",
-                                          symbol: str = None, exchange: str = None,
-                                          timeframe: str = "1m") -> pd.DataFrame:
-        """Handle missing values intelligently based on gap size.
-
-        Args:
-            data: Data with missing values
-            timestamp_column: Name of timestamp column
-            symbol: Trading symbol for data download
-            exchange: Exchange name for data download
-            timeframe: Timeframe for data download
-
-        Returns:
-            Data with intelligently filled missing values
-        """
-        if timestamp_column not in data.columns:
-            self.logger.error(f"Timestamp column '{timestamp_column}' not found")
-            return data
-
-        # Sort data by timestamp
-        data = data.sort_values(timestamp_column).reset_index(drop=True)
-
-        # Analyze gaps
-        gaps = self._analyze_gaps(data, timestamp_column)
-
-        if not gaps:
-            self.logger.info("No gaps detected in data")
-            return data
-
-        # Log gap analysis
-        self._log_gap_analysis(gaps)
-
-        # Handle gaps based on type
-        filled_data = data.copy()
-
-        for gap in gaps:
-            if gap.gap_type == GapType.SMALL:
-                filled_data = self._handle_small_gap(filled_data, gap, timestamp_column)
-            elif gap.gap_type in [GapType.MEDIUM, GapType.LARGE]:
-                if symbol and exchange:
-                    filled_data = self._handle_large_gap_with_download(
-                        filled_data, gap, timestamp_column, symbol, exchange, timeframe
-                    )
-                else:
-                    self.logger.warning(f"Cannot download data for gap {gap}: missing symbol/exchange")
-                    filled_data = self._handle_large_gap_with_fallback(filled_data, gap, timestamp_column)
-            elif gap.gap_type == GapType.CRITICAL:
-                self.logger.error(f"Critical gap detected: {gap}. Manual intervention required.")
-                # For critical gaps, we could raise an exception or use a fallback strategy
-                filled_data = self._handle_critical_gap(filled_data, gap, timestamp_column)
-
-        # Final validation
-        final_gaps = self._analyze_gaps(filled_data, timestamp_column)
-        if final_gaps:
-            self.logger.warning(f"Remaining gaps after filling: {len(final_gaps)}")
-        else:
-            self.logger.info("All gaps successfully filled")
-
-        return filled_data
-
     def _analyze_gaps(self, data: pd.DataFrame, timestamp_column: str) -> List[GapInfo]:
         """Analyze gaps in the data.
 
@@ -439,47 +376,6 @@ class EnhancedMissingValueHandler:
         # For now, use the same fallback as large gaps
         # In a production system, this might raise an exception or trigger alerts
         return self._handle_large_gap_with_fallback(data, gap, timestamp_column)
-
-    def get_gap_report(self, data: pd.DataFrame, timestamp_column: str = "timestamp") -> Dict[str, Any]:
-        """Generate gap analysis report.
-
-        Args:
-            data: Data to analyze
-            timestamp_column: Name of timestamp column
-
-        Returns:
-            Gap analysis report
-        """
-        gaps = self._analyze_gaps(data, timestamp_column)
-
-        report = {
-            "timestamp": datetime.now().isoformat(),
-            "total_gaps": len(gaps),
-            "gap_summary": {},
-            "gap_details": []
-        }
-
-        # Summarize gaps by type
-        for gap_type in GapType:
-            gap_type_gaps = [g for g in gaps if g.gap_type == gap_type]
-            report["gap_summary"][gap_type.value] = {
-                "count": len(gap_type_gaps),
-                "total_size": sum(g.gap_size for g in gap_type_gaps),
-                "avg_size": np.mean([g.gap_size for g in gap_type_gaps]) if gap_type_gaps else 0
-            }
-
-        # Detailed gap information
-        for gap in gaps:
-            report["gap_details"].append({
-                "start_time": gap.start_time,
-                "end_time": gap.end_time,
-                "gap_size": gap.gap_size,
-                "gap_type": gap.gap_type.value,
-                "filled": gap.filled,
-                "fill_method": gap.fill_method
-            })
-
-        return report
 
     def validate_data_continuity(self, data: pd.DataFrame, timestamp_column: str = "timestamp",
                                expected_interval: int = 60) -> Dict[str, Any]:

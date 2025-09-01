@@ -137,42 +137,6 @@ class WaveletFeatureSelectionWorkflow:
         default_return=False,
         context="wavelet feature selection workflow initialization",
     )
-    async def initialize(self) -> bool:
-        """Initialize the wavelet feature selection workflow."""
-        try:
-            self.logger.info("🚀 Initializing Wavelet Feature Selection Workflow...")
-
-            # Create output directories
-            self.output_dir.mkdir(parents=True, exist_ok=True)
-            self.model_dir.mkdir(exist_ok=True)
-            self.results_dir.mkdir(exist_ok=True)
-            self.configs_dir.mkdir(exist_ok=True)
-
-            # Initialize feature engineering with full configuration
-            self.feature_engineer = VectorizedAdvancedFeatureEngineering(self.config)
-            success = await self.feature_engineer.initialize()
-            if not success:
-                self.print(failed("Failed to initialize feature engineer"))
-                return False
-
-            # Initialize feature precomputer
-            self.feature_precomputer = WaveletFeaturePrecomputer(self.config)
-            success = await self.feature_precomputer.initialize()
-            if not success:
-                self.print(failed("Failed to initialize feature precomputer"))
-                return False
-
-            self.logger.info(
-                "✅ Wavelet Feature Selection Workflow initialized successfully",
-            )
-            return True
-
-        except Exception as e:
-            error_msg = f"Error initializing wavelet feature selection workflow: {e}"
-            self.logger.exception(error_msg)
-            self.print(initialization_error(error_msg))
-            return False
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,

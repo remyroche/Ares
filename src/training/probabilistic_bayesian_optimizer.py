@@ -50,10 +50,6 @@ class ProbabilisticOptimizationConfig:
     # Sampling strategy
     sampler_type: str = "tpe"  # 'tpe', 'cmaes', 'random'
 
-    def __post_init__(self):
-        if self.objectives is None:
-            self.objectives = ['calibration', 'sharpness', 'discrimination']
-
 
 class ProbabilisticBayesianOptimizer:
     """
@@ -104,92 +100,6 @@ class ProbabilisticBayesianOptimizer:
         )
 
         return study
-
-    def _get_model_configurations(self) -> Dict[str, Dict[str, Any]]:
-        """Get model-specific hyperparameter search spaces with expanded ranges."""
-
-        if self.model_type == "tactician":
-            return {
-                "base_model": {
-                    "n_estimators": (50, 3000),  # Expanded from (100, 1000)
-                    "max_depth": (2, 50),  # Expanded from (3, 15)
-                    "learning_rate": (0.001, 1.0),  # Expanded from (0.01, 0.3)
-                    "subsample": (0.3, 1.0),  # Expanded from (0.6, 1.0)
-                    "colsample_bytree": (0.3, 1.0),  # Expanded from (0.6, 1.0)
-                    "reg_alpha": (0.0, 10.0),  # Expanded from (0.0, 1.0)
-                    "reg_lambda": (0.0, 10.0),  # Expanded from (0.0, 1.0)
-                    "min_child_weight": (1, 100),  # New parameter
-                    "gamma": (0.0, 5.0),  # New parameter
-                    "scale_pos_weight": (0.1, 10.0)  # New parameter
-                },
-                "probabilistic_calibration": {
-                    "calibration_method": ["isotonic", "sigmoid", "platt", "temperature", "beta"],
-                    "calibration_cv_folds": (2, 20),  # Expanded from (3, 10)
-                    "uncertainty_estimation": ["mc_dropout", "ensemble", "gaussian", "conformal", "bootstrap"]
-                },
-                "barrier_system": {
-                    "upper_barrier_multiplier": (0.1, 2.0),  # Expanded from (0.3, 0.8)
-                    "lower_barrier_multiplier": (0.05, 1.0),  # Expanded from (0.1, 0.5)
-                    "confidence_threshold": (0.3, 0.99),  # Expanded from (0.6, 0.9)
-                    "precision_threshold": (0.5, 0.99),  # Expanded from (0.7, 0.95)
-                    "barrier_timeout_minutes": (1, 120),  # New parameter
-                    "dynamic_barrier_adjustment": (0.1, 2.0),  # New parameter
-                    "barrier_smoothing_factor": (0.01, 1.0)  # New parameter
-                },
-                "position_management": {
-                    "position_size_multiplier": (0.1, 5.0),  # New parameter
-                    "max_position_size": (0.1, 2.0),  # New parameter
-                    "position_scaling_factor": (0.5, 3.0),  # New parameter
-                    "stop_loss_multiplier": (0.5, 5.0),  # New parameter
-                    "take_profit_multiplier": (1.0, 10.0)  # New parameter
-                },
-                "risk_management": {
-                    "max_drawdown_threshold": (0.05, 0.5),  # New parameter
-                    "volatility_target": (0.05, 0.5),  # New parameter
-                    "correlation_threshold": (0.1, 0.9),  # New parameter
-                    "var_confidence_level": (0.8, 0.99)  # New parameter
-                }
-            }
-        else:  # analyst
-            return {
-                "base_model": {
-                    "n_estimators": (100, 5000),  # Expanded from (200, 2000)
-                    "max_depth": (3, 100),  # Expanded from (5, 20)
-                    "learning_rate": (0.0001, 1.0),  # Expanded from (0.005, 0.2)
-                    "subsample": (0.5, 1.0),  # Expanded from (0.7, 1.0)
-                    "colsample_bytree": (0.5, 1.0),  # Expanded from (0.7, 1.0)
-                    "reg_alpha": (0.0, 20.0),  # Expanded from (0.0, 2.0)
-                    "reg_lambda": (0.0, 20.0),  # Expanded from (0.0, 2.0)
-                    "min_child_weight": (1, 200),  # New parameter
-                    "gamma": (0.0, 10.0),  # New parameter
-                    "scale_pos_weight": (0.1, 20.0)  # New parameter
-                },
-                "probabilistic_calibration": {
-                    "calibration_method": ["isotonic", "sigmoid", "platt", "temperature", "beta", "dirichlet"],
-                    "calibration_cv_folds": (3, 30),  # Expanded from (5, 15)
-                    "uncertainty_estimation": ["ensemble", "gaussian", "conformal", "mc_dropout", "bootstrap", "variational"]
-                },
-                "regime_detection": {
-                    "regime_threshold": (0.3, 0.9),  # Expanded from (0.5, 0.8)
-                    "regime_confidence_threshold": (0.4, 0.99),  # Expanded from (0.6, 0.9)
-                    "regime_transition_smoothing": (0.01, 1.0),  # Expanded from (0.1, 0.5)
-                    "regime_lookback_period": (5, 200),  # New parameter
-                    "regime_min_samples": (50, 1000),  # New parameter
-                    "regime_clustering_method": ["kmeans", "hmm", "gaussian_mixture", "dbscan"]  # New parameter
-                },
-                "ensemble_methods": {
-                    "ensemble_size": (3, 20),  # New parameter
-                    "ensemble_weighting": ["equal", "performance", "uncertainty", "regime_specific"],  # New parameter
-                    "meta_learner_type": ["logistic", "random_forest", "xgboost", "neural_network"],  # New parameter
-                    "stacking_cv_folds": (3, 15)  # New parameter
-                },
-                "feature_selection": {
-                    "feature_selection_method": ["none", "variance", "mutual_info", "lasso", "recursive"],  # New parameter
-                    "max_features": (10, 500),  # New parameter
-                    "feature_importance_threshold": (0.001, 0.1),  # New parameter
-                    "correlation_threshold": (0.5, 0.99)  # New parameter
-                }
-            }
 
     def suggest_hyperparameters(self, trial: optuna.Trial) -> Dict[str, Any]:
         """Suggest hyperparameters for the current trial."""
@@ -351,50 +261,6 @@ class ProbabilisticBayesianOptimizer:
     ) -> Callable:
         """Create the objective function for optimization."""
 
-        def objective(trial: optuna.Trial) -> Tuple[float, ...]:
-            """Objective function for multi-objective optimization."""
-
-            try:
-                # Get hyperparameters for this trial
-                params = self.suggest_hyperparameters(trial)
-
-                # Split data for validation
-                n_val = int(len(X) * validation_split)
-                X_train, X_val = X[:-n_val], X[-n_val:]
-                y_train, y_val = y[:-n_val], y[-n_val:]
-
-                # Create and train model
-                model = model_factory(params)
-                model.fit(X_train, y_train)
-
-                # Get probabilistic predictions
-                y_pred_proba = model.predict_proba(X_val)[:, 1]
-
-                # Get confidence intervals if available
-                confidence_intervals = None
-                if hasattr(model, 'predict_proba_with_confidence'):
-                    confidence_intervals = model.predict_proba_with_confidence(X_val)
-
-                # Calculate metrics
-                metrics = self.evaluate_probabilistic_metrics(
-                    y_val, y_pred_proba, confidence_intervals
-                )
-
-                # Return objectives in the order specified
-                objectives = []
-                for obj_name in self.config.objectives:
-                    if obj_name in metrics:
-                        objectives.append(metrics[obj_name])
-                    else:
-                        objectives.append(0.0)  # Default value
-
-                return tuple(objectives)
-
-            except Exception as e:
-                self.logger.warning(f"Trial {trial.number} failed: {e}")
-                # Return worst possible scores
-                return tuple([0.0] * len(self.config.objectives))
-
         return objective
 
     def optimize(
@@ -494,42 +360,6 @@ class ProbabilisticBayesianOptimizer:
             "config": self.config
         }
 
-    def get_recommended_hyperparameters(self, objective_weights: Optional[Dict[str, float]] = None) -> Dict[str, Any]:
-        """Get recommended hyperparameters based on objective weights."""
-
-        if objective_weights is None:
-            # Default weights: 50% total_profit, 25% win_rate, 25% sharpe_ratio
-            objective_weights = {
-                'total_profit': 0.5,
-                'win_rate': 0.25,
-                'sharpe_ratio': 0.25
-            }
-
-        # Calculate weighted score for each trial
-        best_trial = None
-        best_weighted_score = float('-inf')
-
-        for trial in self.study.best_trials:
-            if trial.state == optuna.trial.TrialState.COMPLETE:
-                weighted_score = sum(
-                    objective_weights[obj] * trial.values[i]
-                    for i, obj in enumerate(self.config.objectives)
-                )
-
-                if weighted_score > best_weighted_score:
-                    best_weighted_score = weighted_score
-                    best_trial = trial
-
-        if best_trial:
-            return {
-                "hyperparameters": best_trial.params,
-                "objective_values": dict(zip(self.config.objectives, best_trial.values)),
-                "weighted_score": best_weighted_score,
-                "trial_number": best_trial.number
-            }
-        else:
-            return {}
-
     def _log_mlflow_experiment(self, study_name: str, best_params: Dict[str, Any], best_values: List[float]):
         """Log optimization results to MLflow."""
 
@@ -562,73 +392,8 @@ class ProbabilisticBayesianOptimizer:
         except Exception as e:
             self.logger.error(f"Failed to log MLflow experiment: {e}")
 
-    def plot_optimization_results(self, save_path: Optional[str] = None):
-        """Plot optimization results using Optuna's visualization tools."""
-
-        try:
-            import matplotlib.pyplot as plt
-
-            # Create subplots for each objective
-            fig, axes = plt.subplots(1, len(self.config.objectives), figsize=(5*len(self.config.objectives), 5))
-            if len(self.config.objectives) == 1:
-                axes = [axes]
-
-            for i, objective in enumerate(self.config.objectives):
-                # Plot optimization history for this objective
-                values = [trial.values[i] for trial in self.study.trials if trial.state == optuna.trial.TrialState.COMPLETE]
-                trial_numbers = [trial.number for trial in self.study.trials if trial.state == optuna.trial.TrialState.COMPLETE]
-
-                axes[i].plot(trial_numbers, values, 'b-', alpha=0.6)
-                axes[i].set_title(f'{objective.capitalize()} Optimization History')
-                axes[i].set_xlabel('Trial Number')
-                axes[i].set_ylabel(objective.capitalize())
-                axes[i].grid(True, alpha=0.3)
-
-            plt.tight_layout()
-
-            if save_path:
-                plt.savefig(save_path, dpi=300, bbox_inches='tight')
-                self.logger.info(f"Optimization plots saved to {save_path}")
-
-            plt.show()
-
-        except ImportError:
-            self.logger.warning("Matplotlib not available for plotting")
-        except Exception as e:
-            self.logger.error(f"Error plotting optimization results: {e}")
-
 
 # Example usage and model factories
-def create_tactician_model(params: Dict[str, Any]):
-    """Factory function for creating Tactician models."""
-    # This would integrate with your existing Tactician model creation
-    # For now, returning a placeholder
-    from sklearn.ensemble import RandomForestClassifier
-
-    model = RandomForestClassifier(
-        n_estimators=params.get('n_estimators', 100),
-        max_depth=params.get('max_depth', 10),
-        random_state=42,
-        n_jobs=1
-    )
-
-    return model
-
-
-def create_analyst_model(params: Dict[str, Any]):
-    """Factory function for creating Analyst models."""
-    # This would integrate with your existing Analyst model creation
-    # For now, returning a placeholder
-    from sklearn.ensemble import RandomForestClassifier
-
-    model = RandomForestClassifier(
-        n_estimators=params.get('n_estimators', 200),
-        max_depth=params.get('max_depth', 15),
-        random_state=42,
-        n_jobs=1
-    )
-
-    return model
 
 
 if __name__ == "__main__":

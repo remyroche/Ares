@@ -112,24 +112,6 @@ class ComputationalOptimizationConfig:
     max_memory_usage_mb: int = 8000
     enable_garbage_collection: bool = True
 
-    def __post_init__(self):
-        """Post-initialization processing to handle nested configurations."""
-        # Convert evaluation_stages from list of tuples to proper format if needed
-        if self.evaluation_stages is None:
-            self.evaluation_stages = [
-                (0.1, 0.3),  # 10% data, 30% weight
-                (0.3, 0.5),  # 30% data, 50% weight
-                (1.0, 1.0),  # 100% data, 100% weight
-            ]
-
-        # Set default complexity levels if None
-        if self.complexity_levels is None:
-            self.complexity_levels = {
-                "light": {"n_estimators": 50, "max_depth": 3},
-                "medium": {"n_estimators": 100, "max_depth": 6},
-                "heavy": {"n_estimators": 200, "max_depth": 10},
-            }
-
 
 class CachedBacktester:
     """Cached backtesting to avoid redundant calculations."""
@@ -276,14 +258,6 @@ class CachedBacktester:
         # Calculate Sharpe ratio
         return np.mean(strategy_returns) / (np.std(strategy_returns) + 1e-8)
 
-    def _cleanup_cache(self) -> None:
-        """Clean up old cache entries."""
-        if len(self.cache) > self.config.max_cache_size:
-            # Remove oldest entries
-            oldest_keys = sorted(self.cache.keys())[: len(self.cache) // 2]
-            for key in oldest_keys:
-                del self.cache[key]
-
 
 class ProgressiveEvaluator:
     """Progressive evaluation to stop unpromising trials early."""
@@ -305,28 +279,6 @@ class ProgressiveEvaluator:
             ]
         else:
             self.evaluation_stages = config.evaluation_stages
-
-    def evaluate_progressively(self, params: dict[str, Any]) -> float:
-        """Evaluate parameters progressively across data subsets."""
-        total_score = 0
-        total_weight = 0
-
-        for data_ratio, weight in self.evaluation_stages:
-            subset_size = int(len(self.full_data) * data_ratio)
-            subset_data = self.full_data.iloc[:subset_size]
-
-            score = self._evaluate_subset(subset_data, params)
-            total_score += score * weight
-            total_weight += weight
-
-            # Early stopping if performance is poor
-            if data_ratio < 1.0 and score < -0.5:
-                self.logger.debug(
-                    f"Early stopping at {data_ratio*100}% data due to poor performance",
-                )
-                return -1.0  # Stop evaluation
-
-        return total_score / total_weight
 
     def _evaluate_subset(
         self,
@@ -384,60 +336,7 @@ class ParallelBacktester:
             f"Initialized parallel backtester with {self.n_workers} workers",
         )
 
-    def _get_executor(self):
-        """Get or create ProcessPoolExecutor with proper cleanup."""
-        if self.executor is None:
-            self.executor = ProcessPoolExecutor(max_workers=self.n_workers)
-        return self.executor
-
-    def cleanup(self) -> None:
-        """Clean up resources properly."""
-        if self.executor is not None:
-            self.executor.shutdown(wait=True)
-            self.executor = None
-            self.logger.info("ProcessPoolExecutor cleaned up")
-
-    def evaluate_batch(
-        self,
-        param_batch: list[dict[str, Any]],
-        market_data: pd.DataFrame,
-    ) -> list[float]:
-        """Evaluate multiple parameter sets in parallel."""
-        # Prepare data for parallel processing
-        data_pickle = pickle.dumps(market_data)
-
-        # Submit batch for parallel evaluation
-        executor = self._get_executor()
-        futures = []
-        for params in param_batch:
-            future = executor.submit(
-                self._evaluate_single_params,
-                data_pickle,
-                params,
-            )
-            futures.append(future)
-
-        # Collect results
-        results = []
-        for future in futures:
-            try:
-                result = future.result(timeout=300)  # 5 minute timeout
-                results.append(result)
-            except Exception:
-                self.print(error("Error in parallel evaluation: {e}"))
-                results.append(-1.0)  # Default to poor performance
-
-        return results
-
     @staticmethod
-    def _evaluate_single_params(data_pickle: bytes, params: dict[str, Any]) -> float:
-        """Evaluate single parameter set (runs in separate process)."""
-        try:
-            market_data = pickle.loads(data_pickle)
-            return ParallelBacktester._run_simplified_backtest(market_data, params)
-        except Exception:
-            return -1.0
-
     @staticmethod
     def _run_simplified_backtest(
         market_data: pd.DataFrame,
@@ -553,21 +452,6 @@ class AdaptiveModelComplexity:
         else:
             self.complexity_levels = config.complexity_levels
 
-    def get_adaptive_params(
-        self,
-        data_size: int,
-        previous_performance: float,
-    ) -> dict[str, Any]:
-        """Get adaptive model parameters based on context."""
-        if data_size < 1000 or previous_performance < 0.3:
-            self.logger.debug("Using light complexity model")
-            return self.complexity_levels["light"]
-        if data_size < 5000 or previous_performance < 0.6:
-            self.logger.debug("Using medium complexity model")
-            return self.complexity_levels["medium"]
-        self.logger.debug("Using heavy complexity model")
-        return self.complexity_levels["heavy"]
-
 
 class PrecomputedFeatureEngine:
     """Precompute all possible features once."""
@@ -644,15 +528,6 @@ class PrecomputedFeatureEngine:
     @enforce_ndarray(arg_index=1, forbid_lists=True, require_vector=True)
     @guard_array_nan_inf(mode="warn", arg_indices=(1,))
     @with_tracing_span("FeatureCache.get_features", log_args=False)
-    def get_features(self, feature_selection: list[str]) -> np.ndarray:
-        """Get selected features from cache."""
-        selected_features = []
-        for feature_name in feature_selection:
-            if feature_name in self.feature_cache:
-                selected_features.append(self.feature_cache[feature_name].values)
-
-        return np.column_stack(selected_features)
-
 
 class FeatureSelectionCache:
     """Cache feature selection results."""
@@ -661,24 +536,6 @@ class FeatureSelectionCache:
         self.config = config
         self.selection_cache = {}
         self.logger = system_logger.getChild("FeatureSelectionCache")
-
-    def get_cached_selection(
-        self,
-        feature_list: list[str],
-        threshold: float,
-    ) -> np.ndarray:
-        """Get cached feature selection result."""
-        cache_key = (tuple(sorted(feature_list)), threshold)
-
-        if cache_key in self.selection_cache:
-            self.logger.debug("Using cached feature selection")
-            return self.selection_cache[cache_key]
-
-        # Perform feature selection
-        selected_features = self._select_features(feature_list, threshold)
-        self.selection_cache[cache_key] = selected_features
-
-        return selected_features
 
     def _select_features(self, feature_list: list[str], threshold: float) -> np.ndarray:
         """Perform feature selection."""
@@ -1451,28 +1308,6 @@ class SurrogateOptimizer:
 
         return combined_score
 
-    def _get_default_parameter_space(self) -> dict[str, Any]:
-        """Get default parameter space for optimization."""
-        return {
-            'sma_short': {'type': 'int', 'min': 5, 'max': 50},
-            'sma_long': {'type': 'int', 'min': 20, 'max': 200},
-            'rsi_threshold': {'type': 'float', 'min': 20, 'max': 80},
-            'volatility_window': {'type': 'int', 'min': 10, 'max': 100},
-            'momentum_period': {'type': 'int', 'min': 5, 'max': 50}
-        }
-
-    def get_surrogate_statistics(self) -> dict[str, Any]:
-        """Get comprehensive surrogate optimization statistics."""
-        return {
-            'model_type': self.surrogate_model_type,
-            'expensive_evaluations': len(self.expensive_evaluations),
-            'model_performance': self.model_performance_history[-1] if self.model_performance_history else {},
-            'ensemble_models': list(self.model_ensemble.keys()),
-            'acquisition_function': self.acquisition_function,
-            'exploration_exploitation_balance': self.exploration_exploitation_balance,
-            'uncertainty_threshold': self.uncertainty_threshold
-        }
-
 
 class AdaptiveSampler:
     """Adaptive sampling to focus on promising regions."""
@@ -1552,10 +1387,6 @@ class MemoryEfficientData:
             self.logger.debug(f"Optimized DataFrame memory usage: shape={df.shape}")
         return df
 
-    def get_subset(self, start_idx: int, end_idx: int) -> np.ndarray:
-        """Get numpy array subset for efficient computation."""
-        return self.data.iloc[start_idx:end_idx].values
-
 
 class MemoryManager:
     """Manage memory usage during optimization."""
@@ -1579,11 +1410,6 @@ class MemoryManager:
                     f"High memory usage ({memory_percent:.1%}), cleaning up...",
                 )
                 self._cleanup_memory()
-
-    def _cleanup_memory(self) -> None:
-        """Clean up memory by forcing garbage collection."""
-        gc.collect()
-        self.logger.info("Memory cleanup completed")
 
 
 class ComputationalOptimizationManager:
@@ -1613,81 +1439,11 @@ class ComputationalOptimizationManager:
         default_return=False,
         context="computational optimization manager initialization",
     )
-    async def initialize(
-        self,
-        market_data: pd.DataFrame,
-        model_config: dict[str, Any],
-    ) -> bool:
-        """Initialize all optimization components."""
-        try:
-            self.logger.info("Initializing computational optimization components...")
-
-            # Initialize memory manager first
-            self.memory_manager = MemoryManager(self.config)
-
-            # Initialize data components
-            self.memory_efficient_data = MemoryEfficientData(market_data, self.config)
-            self.precomputed_features = PrecomputedFeatureEngine(
-                market_data,
-                self.config,
-            )
-            self.feature_cache = FeatureSelectionCache(self.config)
-
-            # Initialize backtesting components
-            self.cached_backtester = CachedBacktester(market_data, self.config)
-            self.progressive_evaluator = ProgressiveEvaluator(market_data, self.config)
-            self.parallel_backtester = ParallelBacktester(self.config)
-
-            # Initialize training components
-            self.incremental_trainer = IncrementalTrainer(model_config, self.config)
-            self.adaptive_complexity = AdaptiveModelComplexity(self.config)
-
-            # Initialize optimization components
-            self.surrogate_optimizer = SurrogateOptimizer(self.config)
-            self.adaptive_sampler = AdaptiveSampler(self.config)
-
-            self.logger.info(
-                "All computational optimization components initialized successfully",
-            )
-            return True
-
-        except Exception as e:
-            self.logger.exception(
-                f"Failed to initialize computational optimization manager: {e}",
-            )
-            return False
-
     @handle_errors(
         exceptions=(Exception,),
         default_return={},
         context="optimized parameter optimization",
     )
-    async def optimize_parameters(
-        self,
-        objective_function: callable,
-        n_trials: int = 100,
-        use_surrogates: bool = True,
-    ) -> dict[str, Any]:
-        """Run optimized parameter optimization."""
-        try:
-            self.logger.info(
-                f"Starting optimized parameter optimization with {n_trials} trials",
-            )
-
-            if use_surrogates and self.config.enable_surrogate_models:
-                return self.surrogate_optimizer.optimize_with_surrogates(
-                    objective_function,
-                    n_trials,
-                )
-            return await self._run_standard_optimization(
-                objective_function,
-                n_trials,
-            )
-
-        except Exception:
-            self.print(failed("Parameter optimization failed: {e}"))
-            return {}
-
     async def _run_standard_optimization(
         self,
         objective_function: callable,
@@ -1695,18 +1451,6 @@ class ComputationalOptimizationManager:
     ) -> dict[str, Any]:
         """Run standard optimization with caching and early stopping."""
         study = optuna.create_study(direction="maximize")
-
-        def objective(trial):
-            # Check memory usage
-            self.memory_manager.check_memory_usage()
-
-            # Suggest parameters using adaptive sampling
-            params = self.adaptive_sampler.suggest_parameters(study.trials)
-
-            # Use cached backtesting if available
-            if self.cached_backtester:
-                return self.cached_backtester.run_cached_backtest(params)
-            return objective_function(params)
 
         study.optimize(objective, n_trials=n_trials)
 
@@ -1716,93 +1460,6 @@ class ComputationalOptimizationManager:
             "total_trials": len(study.trials),
         }
 
-    def get_optimization_statistics(self) -> dict[str, Any]:
-        """Get statistics from all optimization components."""
-        return {
-            "cache_hits": len(self.cached_backtester.cache)
-            if self.cached_backtester
-            else 0,
-            "memory_usage": psutil.virtual_memory().percent,
-            "surrogate_evaluations": len(self.surrogate_optimizer.expensive_evaluations)
-            if self.surrogate_optimizer
-            else 0,
-        }
-
-    async def cleanup(self) -> None:
-        """Cleanup resources."""
-        try:
-            if self.parallel_backtester:
-                self.parallel_backtester.executor.shutdown()
-
-            if self.memory_manager:
-                self.memory_manager._cleanup_memory()
-
-            self.logger.info("Computational optimization manager cleanup completed")
-
-        except Exception:
-            self.print(failed("Cleanup failed: {e}"))
-
 
 # Factory function for easy integration
-async def create_computational_optimization_manager(
-    config: dict[str, Any],
-    market_data: pd.DataFrame,
-    model_config: dict[str, Any],
-) -> ComputationalOptimizationManager:
-    """Create and initialize a computational optimization manager."""
-    # Extract the computational_optimization config and flatten nested structures
-    optimization_config_raw = config.get("computational_optimization", {})
-
-    # Get the valid field names for ComputationalOptimizationConfig
-    from dataclasses import fields
-
-    valid_fields = {field.name for field in fields(ComputationalOptimizationConfig)}
-
-    # Flatten the nested configuration structure
-    flattened_config = {}
-
-    # Copy top-level parameters that match valid fields
-    for key, value in optimization_config_raw.items():
-        if key in valid_fields:
-            flattened_config[key] = value
-
-    # Extract nested configurations and flatten them
-    if "backtesting" in optimization_config_raw:
-        backtesting_config = optimization_config_raw["backtesting"]
-        for key, value in backtesting_config.items():
-            field_name = f"enable_{key}" if key.startswith("enable_") else key
-            if field_name in valid_fields:
-                flattened_config[field_name] = value
-
-    if "model_training" in optimization_config_raw:
-        training_config = optimization_config_raw["model_training"]
-        for key, value in training_config.items():
-            field_name = f"enable_{key}" if key.startswith("enable_") else key
-            if field_name in valid_fields:
-                flattened_config[field_name] = value
-
-    if "feature_engineering" in optimization_config_raw:
-        feature_config = optimization_config_raw["feature_engineering"]
-        for key, value in feature_config.items():
-            field_name = f"enable_{key}" if key.startswith("enable_") else key
-            if field_name in valid_fields:
-                flattened_config[field_name] = value
-
-    if "multi_objective" in optimization_config_raw:
-        multi_config = optimization_config_raw["multi_objective"]
-        for key, value in multi_config.items():
-            field_name = f"enable_{key}_multi" if key.startswith("enable_") else key
-            if field_name in valid_fields:
-                flattened_config[field_name] = value
-
-    if "memory_management" in optimization_config_raw:
-        memory_config = optimization_config_raw["memory_management"]
-        for key, value in memory_config.items():
-            if key in valid_fields:
-                flattened_config[key] = value
-
-    # Create the configuration object
-    optimization_config = ComputationalOptimizationConfig(**flattened_config)
-    return ComputationalOptimizationManager(optimization_config)
-
     # Defer initialization until real market data is available

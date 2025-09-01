@@ -53,17 +53,6 @@ class FractionalDifferentiation:
         self.weights = self._get_fractional_weights(window)
         self.logger = get_logger("FractionalDifferentiation")
 
-    def _get_fractional_weights(self, window: int) -> np.ndarray:
-        """Generate fractional differentiation weights using binomial expansion.
-
-        The weights follow the expansion of (1-L)^d where L is the lag operator.
-        """
-        weights = np.zeros(window)
-        weights[0] = -self.d
-        for k in range(1, window):
-            weights[k] = weights[k-1] * (k - 1 - self.d) / k
-        return weights
-
     def fractional_diff(
         self,
         series: pd.Series,
@@ -245,66 +234,3 @@ class FractionalFeatureGenerator:
         context="fractional_feature_generator.generate_features"
     )
     @with_tracing_span("FractionalFeatureGenerator.generate_features", log_args=False)
-    def generate_features(
-        self,
-        data: pd.DataFrame
-    ) -> pd.DataFrame:
-        """
-        Generate fractional differentiation features.
-
-        Args:
-            data: Input DataFrame with OHLCV data
-
-        Returns:
-            DataFrame with additional fractional differentiation features
-        """
-        if not self.config["enable_fractional_diff"]:
-            return data
-
-        self.logger.info("Generating fractional differentiation features")
-
-        # Apply to price columns
-        price_columns = [col for col in self.config["price_columns"] if col in data.columns]
-        if price_columns:
-            result_data, price_results = self.fractional_diff.batch_fractional_diff(
-                data, columns=price_columns
-            )
-        else:
-            result_data = data.copy()
-            price_results = {}
-
-        # Apply to volume columns
-        volume_columns = [col for col in self.config["volume_columns"] if col in data.columns]
-        if volume_columns:
-            result_data, volume_results = self.fractional_diff.batch_fractional_diff(
-                result_data, columns=volume_columns
-            )
-        else:
-            volume_results = {}
-
-        # Log results
-        total_features = len(price_results) + len(volume_results)
-        self.logger.info(f"Generated {total_features} fractional differentiation features")
-
-        return result_data
-
-    def get_feature_statistics(self, data: pd.DataFrame) -> Dict[str, Any]:
-        """Get statistics about fractional differentiation features."""
-        frac_diff_columns = [col for col in data.columns if "frac_diff" in col]
-
-        stats = {
-            "total_frac_diff_features": len(frac_diff_columns),
-            "frac_diff_columns": frac_diff_columns,
-            "feature_statistics": {}
-        }
-
-        for col in frac_diff_columns:
-            stats["feature_statistics"][col] = {
-                "mean": data[col].mean(),
-                "std": data[col].std(),
-                "min": data[col].min(),
-                "max": data[col].max(),
-                "null_count": data[col].isnull().sum(),
-            }
-
-        return stats

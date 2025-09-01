@@ -16,16 +16,6 @@ from .comprehensive_enhanced_scenario_predictor import ComprehensiveEnhancedScen
 logger = logging.getLogger(__name__)
 
 # Simple error handling decorator
-def handle_errors(func):
-    """Simple error handling decorator."""
-    def wrapper(*args, **kwargs):
-        try:
-            return func(*args, **kwargs)
-        except Exception as e:
-            logger.error(f"Error in {func.__name__}: {e}")
-            return None
-    return wrapper
-
 
 class Step17OptimizedTactician:
     """
@@ -153,37 +143,6 @@ class Step17OptimizedTactician:
         self.is_initialized = False
         self.current_position = None
         self.position_history = []
-
-    async def initialize(self) -> bool:
-        """
-        Initialize step17 optimized Tactician.
-
-        Returns:
-            bool: True if initialization successful, False otherwise
-        """
-        try:
-            self.logger.info("Initializing Step17 Optimized Tactician...")
-
-            # Initialize comprehensive scenario predictor
-            self.scenario_predictor = ComprehensiveEnhancedScenarioPredictor(self.config)
-            success = await self.scenario_predictor.initialize()
-
-            if not success:
-                self.logger.error("Failed to initialize comprehensive scenario predictor")
-                return False
-
-            # Validate configuration
-            if not self._validate_configuration():
-                self.logger.error("Invalid configuration for step17 optimized Tactician")
-                return False
-
-            self.is_initialized = True
-            self.logger.info("✅ Step17 Optimized Tactician initialized successfully")
-            return True
-
-        except Exception as e:
-            self.logger.error(f"❌ Step17 Optimized Tactician initialization failed: {e}")
-            return False
 
     def _validate_configuration(self) -> bool:
         """
@@ -744,72 +703,4 @@ class Step17OptimizedTactician:
                 "n_scenarios": 17,
                 "n_features": 350
             }
-        }
-
-    def update_position(self, position_data: Dict[str, Any]) -> None:
-        """Update current position information."""
-        try:
-            self.current_position = position_data
-            self.position_history.append({
-                **position_data,
-                "timestamp": datetime.now().isoformat()
-            })
-
-            # Keep only last 100 positions
-            if len(self.position_history) > 100:
-                self.position_history = self.position_history[-100:]
-
-        except Exception as e:
-            self.logger.error(f"❌ Position update failed: {e}")
-
-    def update_performance_metrics(self, trade_result: Dict[str, Any]) -> None:
-        """Update performance metrics with trade result."""
-        try:
-            self.performance_metrics["total_trades"] += 1
-
-            if trade_result.get("profit", 0) > 0:
-                self.performance_metrics["winning_trades"] += 1
-                self.performance_metrics["total_profit"] += trade_result["profit"]
-            else:
-                self.performance_metrics["losing_trades"] += 1
-                self.performance_metrics["total_loss"] += abs(trade_result.get("profit", 0))
-
-            # Calculate derived metrics
-            total_trades = self.performance_metrics["total_trades"]
-            if total_trades > 0:
-                self.performance_metrics["win_rate"] = self.performance_metrics["winning_trades"] / total_trades
-                self.performance_metrics["avg_profit_per_trade"] = self.performance_metrics["total_profit"] / self.performance_metrics["winning_trades"] if self.performance_metrics["winning_trades"] > 0 else 0.0
-                self.performance_metrics["avg_loss_per_trade"] = self.performance_metrics["total_loss"] / self.performance_metrics["losing_trades"] if self.performance_metrics["losing_trades"] > 0 else 0.0
-                self.performance_metrics["profit_factor"] = self.performance_metrics["total_profit"] / max(self.performance_metrics["total_loss"], 0.001)
-
-        except Exception as e:
-            self.logger.error(f"❌ Performance metrics update failed: {e}")
-
-    def get_performance_summary(self) -> Dict[str, Any]:
-        """Get performance summary."""
-        return {
-            "performance_metrics": self.performance_metrics,
-            "current_position": self.current_position,
-            "position_history_count": len(self.position_history),
-            "is_initialized": self.is_initialized,
-            "scenario_predictor_status": {
-                "is_trained": self.scenario_predictor.is_trained if self.scenario_predictor else False,
-                "n_scenarios": len(self.scenario_predictor.scenarios) if self.scenario_predictor else 0,
-                "last_training_time": self.scenario_predictor.last_training_time.isoformat() if self.scenario_predictor and self.scenario_predictor.last_training_time else None
-            }
-        }
-
-    def get_step17_configuration_summary(self) -> Dict[str, Any]:
-        """
-        Get step17 configuration summary with ALL parameters.
-
-        Returns:
-            dict: Complete step17 configuration summary
-        """
-        return {
-            "decision_thresholds": self.decision_thresholds,
-            "risk_management": self.risk_management,
-            "scenario_predictor_config": self.scenario_predictor.get_comprehensive_configuration_summary() if self.scenario_predictor else {},
-            "is_initialized": self.is_initialized,
-            "total_configurable_parameters": len(self.decision_thresholds) + len(self.risk_management) + 50  # Approximate count
         }

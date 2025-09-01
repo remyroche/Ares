@@ -323,28 +323,6 @@ class HMMRegimeAnalyzer:
 
         return "\n".join(summary)
 
-    def _generate_state_interpretation(self, state_combination: str, meta: dict[str, Any], ) -> str:
-        """Generate human-readable interpretation of a state combination."""
-        state_names = meta.get("state_names", {})
-        interpretation_parts: list[str] = []
-
-        # Parse the combination string (e.g., "momentum:3|volatility:2|liquidity:1|microstructure:2")
-        states: dict[str, int] = {}
-        for part in state_combination.split("|"):
-            if ":" in part:
-                block, state_id = part.split(":", 1)
-                states[block] = int(state_id)
-
-        # Generate interpretation for each block
-        for block, state_id in states.items():
-            if block in state_names and str(state_id) in state_names[block]:
-                state_name = state_names[block][str(state_id)]
-                interpretation_parts.append(f"{state_name.lower()}")
-
-        if interpretation_parts:
-            return ", ".join(interpretation_parts) + " conditions"
-        return ""
-
     def save_detailed_summary(self, exchange: str, symbol: str, timeframe: str = "1m", ) -> str:
         """Save detailed regime summary to a file."""
         data = self.load_regime_data(exchange, symbol, timeframe)

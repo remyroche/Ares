@@ -151,89 +151,6 @@ def validate_data_quality(
         context: Context for logging
         fail_on_issues: Whether to fail on quality issues
     """
-    def decorator(func: Callable) -> Callable:
-        @functools.wraps(func)
-        async def async_wrapper(*args, **kwargs):
-            logger = system_logger.getChild(f"DataQuality.{context}")
-
-            # Validate input data
-            input_issues = _validate_data_quality_internal(
-                args, kwargs, "input", logger, validation_level,
-                required_columns, min_rows, max_null_ratio, check_duplicates,
-                check_timestamps, check_nan, check_infinite, check_constant,
-                check_correlation, max_correlation_threshold, min_unique_values
-            )
-
-            if input_issues and validation_level == "ERROR":
-                raise ValueError(f"Input data quality validation failed: {input_issues}")
-            elif input_issues and validation_level == "WARNING":
-                logger.warning(f"⚠️ Input data quality issues: {input_issues}")
-
-            # Execute the function
-            try:
-                result = await func(*args, **kwargs)
-            except Exception as e:
-                logger.error(f"❌ Function execution failed in {context}: {e}")
-                raise
-
-            # Validate output data
-            if result is not None:
-                output_issues = _validate_data_quality_internal(
-                    [result], {}, "output", logger, validation_level,
-                    required_columns, min_rows, max_null_ratio, check_duplicates,
-                    check_timestamps, check_nan, check_infinite, check_constant,
-                    check_correlation, max_correlation_threshold, min_unique_values
-                )
-
-                if output_issues and validation_level == "ERROR":
-                    raise ValueError(f"Output data quality validation failed: {output_issues}")
-                elif output_issues and validation_level == "WARNING":
-                    logger.warning(f"⚠️ Output data quality issues: {output_issues}")
-
-            return result
-
-        @functools.wraps(func)
-        def sync_wrapper(*args, **kwargs):
-            logger = system_logger.getChild(f"DataQuality.{context}")
-
-            # Validate input data
-            input_issues = _validate_data_quality_internal(
-                args, kwargs, "input", logger, validation_level,
-                required_columns, min_rows, max_null_ratio, check_duplicates,
-                check_timestamps, check_nan, check_infinite, check_constant,
-                check_correlation, max_correlation_threshold, min_unique_values
-            )
-
-            if input_issues and validation_level == "ERROR":
-                raise ValueError(f"Input data quality validation failed: {input_issues}")
-            elif input_issues and validation_level == "WARNING":
-                logger.warning(f"⚠️ Input data quality issues: {input_issues}")
-
-            # Execute the function
-            try:
-                result = func(*args, **kwargs)
-            except Exception as e:
-                logger.error(f"❌ Function execution failed in {context}: {e}")
-                raise
-
-            # Validate output data
-            if result is not None:
-                output_issues = _validate_data_quality_internal(
-                    [result], {}, "output", logger, validation_level,
-                    required_columns, min_rows, max_null_ratio, check_duplicates,
-                    check_timestamps, check_nan, check_infinite, check_constant,
-                    check_correlation, max_correlation_threshold, min_unique_values
-                )
-
-                if output_issues and validation_level == "ERROR":
-                    raise ValueError(f"Output data quality validation failed: {output_issues}")
-                elif output_issues and validation_level == "WARNING":
-                    logger.warning(f"⚠️ Output data quality issues: {output_issues}")
-
-            return result
-
-        return async_wrapper if asyncio.iscoroutinefunction(func) else sync_wrapper
-
     return decorator
 
 
@@ -434,77 +351,6 @@ def quality_gate(
         alert_config: Configuration for alert system
         validation_level: Validation level ("basic", "comprehensive", "strict")
     """
-    def decorator(func: Callable) -> Callable:
-        @functools.wraps(func)
-        async def async_wrapper(*args, **kwargs):
-            logger = system_logger.getChild("QualityGate")
-
-            # Execute the original function
-            logger.info("🚀 Executing function with quality gate...")
-            result = await func(*args, **kwargs)
-
-            # Extract DataFrame from result
-            df = _extract_dataframe_from_result(result)
-            if df is None:
-                logger.warning("No DataFrame found in result, skipping quality gate")
-                return result
-
-            # Perform quality validation
-            logger.info("🔍 Applying quality gate validation...")
-            quality_score, grade = _calculate_quality_score(df, validation_level)
-
-            # Check quality gates
-            quality_gate_passed = _check_quality_gates(
-                quality_score, grade, min_quality_score, max_correlation,
-                max_drift_psi, required_grade
-            )
-
-            if not quality_gate_passed:
-                error_msg = f"Quality gate failed: Score={quality_score:.3f}, Grade={grade}"
-                logger.error(f"❌ {error_msg}")
-                raise ValueError(error_msg)
-
-            logger.info(f"✅ Quality gate passed: Score={quality_score:.3f}, Grade={grade}")
-            return result
-
-        @functools.wraps(func)
-        def sync_wrapper(*args, **kwargs):
-            logger = system_logger.getChild("QualityGate")
-
-            # Execute the original function
-            logger.info("🚀 Executing function with quality gate...")
-            result = func(*args, **kwargs)
-
-            # Extract DataFrame from result
-            df = _extract_dataframe_from_result(result)
-            if df is None:
-                logger.warning("No DataFrame found in result, skipping quality gate")
-                return result
-
-            # Perform quality validation
-            logger.info("🔍 Applying quality gate validation...")
-            quality_score, grade = _calculate_quality_score(df, validation_level)
-
-            # Check quality gates
-            quality_gate_passed = _check_quality_gates(
-                quality_score, grade, min_quality_score, max_correlation,
-                max_drift_psi, required_grade
-            )
-
-            if not quality_gate_passed:
-                error_msg = f"Quality gate failed: Score={quality_score:.3f}, Grade={grade}"
-                logger.error(f"❌ {error_msg}")
-                raise ValueError(error_msg)
-
-            logger.info(f"✅ Quality gate passed: Score={quality_score:.3f}, Grade={grade}")
-            return result
-
-        # Return appropriate wrapper
-        if asyncio.iscoroutinefunction(func):
-            return async_wrapper
-        else:
-            return sync_wrapper
-
     return decorator
 
 
@@ -657,41 +503,26 @@ def monitor_feature_engineering(
     validation_level: str = "WARNING",
 ):
     """Decorator for feature engineering steps."""
-    def decorator(func):
-        return func
-    return decorator
 
 def monitor_data_collection(
     validation_level: str = "WARNING",
 ):
     """Decorator for data collection steps."""
-    def decorator(func):
-        return func
-    return decorator
 
 def monitor_model_training(
     validation_level: str = "WARNING",
 ):
     """Decorator for model training steps."""
-    def decorator(func):
-        return func
-    return decorator
 
 def monitor_validation(
     validation_level: str = "WARNING",
 ):
     """Decorator for validation steps."""
-    def decorator(func):
-        return func
-    return decorator
 
 def monitor_optimization(
     validation_level: str = "WARNING",
 ):
     """Decorator for optimization steps."""
-    def decorator(func):
-        return func
-    return decorator
 
 def monitor_step_execution(
     step_name: str = None,
@@ -701,9 +532,6 @@ def monitor_step_execution(
     log_level: str = "INFO",
 ):
     """Decorator to monitor step execution."""
-    def decorator(func):
-        return func
-    return decorator
 
 def secure_step_execution(
     error_handling: bool = True,
@@ -712,9 +540,6 @@ def secure_step_execution(
     resource_cleanup: bool = True,
 ):
     """Decorator to ensure secure step execution."""
-    def decorator(func):
-        return func
-    return decorator
 
 
 # ============================================================================
@@ -791,35 +616,6 @@ def auto_fix_data_quality_issues(
         fix_irregular_intervals: Whether to fix irregular time intervals
         context: Context for logging
     """
-    def decorator(func: Callable) -> Callable:
-        @functools.wraps(func)
-        async def async_wrapper(*args, **kwargs):
-            logger = system_logger.getChild(f"AutoFix.{context}")
-
-            # Extract and fix data
-            fixed_args, fixed_kwargs = _auto_fix_data_quality(
-                args, kwargs, logger, fix_nan, fix_infinite, fix_duplicates, fix_irregular_intervals
-            )
-
-            # Execute function with fixed data
-            result = await func(*fixed_args, **fixed_kwargs)
-            return result
-
-        @functools.wraps(func)
-        def sync_wrapper(*args, **kwargs):
-            logger = system_logger.getChild(f"AutoFix.{context}")
-
-            # Extract and fix data
-            fixed_args, fixed_kwargs = _auto_fix_data_quality(
-                args, kwargs, logger, fix_nan, fix_infinite, fix_duplicates, fix_irregular_intervals
-            )
-
-            # Execute function with fixed data
-            result = func(*fixed_args, **fixed_kwargs)
-            return result
-
-        return async_wrapper if asyncio.iscoroutinefunction(func) else sync_wrapper
-
     return decorator
 
 

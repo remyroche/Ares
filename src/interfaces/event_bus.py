@@ -75,20 +75,6 @@ class EventBus:
         default_return=False,
         context="event bus initialization",
     )
-    async def initialize(self) -> bool:
-        try:
-            self.logger.info("Initializing Event Bus...")
-            await self._load_event_bus_configuration()
-            if not self._validate_configuration():
-                self.logger.error(invalid("Invalid configuration for event bus"))
-                return False
-            await self._initialize_event_processing()
-            self.logger.info("✅ Event Bus initialization completed successfully")
-            return True
-        except Exception as e:
-            self.logger.error(failed(f"❌ Event Bus initialization failed: {e}"))
-            return False
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
@@ -232,93 +218,21 @@ class EventBus:
         default_return=None,
         context="event bus stop",
     )
-    async def stop(self) -> None:
-        self.logger.info("🛑 Stopping Event Bus...")
-        try:
-            self.is_running = False
-            self.status = {"timestamp": datetime.now().isoformat(), "status": "stopped"}
-            self.logger.info("✅ Event Bus stopped successfully")
-        except Exception as e:
-            self.logger.error(error(f"Error stopping event bus: {e}"))
-
     @handle_errors(
         exceptions=(Exception,),
         default_return=None,
         context="event subscription",
     )
-    def subscribe(self, event_type: EventType | str, callback: Callable) -> None:
-        """Subscribe to an event type."""
-        try:
-            event_key = (
-                event_type.value if isinstance(event_type, EventType) else str(event_type)
-            )
-            self.subscribers[event_key].append(callback)
-            self.logger.info(f"Subscriber added for event type: {event_key}")
-        except Exception as e:
-            self.logger.error(error(f"Error subscribing to event: {e}"))
-
     @handle_errors(
         exceptions=(Exception,),
         default_return=None,
         context="event unsubscription",
     )
-    def unsubscribe(
-        self,
-        event_type: EventType | str,
-        callback: Callable,
-    ) -> None:
-        """Unsubscribe from an event type."""
-        try:
-            event_key = (
-                event_type.value if isinstance(event_type, EventType) else str(event_type)
-            )
-            if event_key in self.subscribers:
-                self.subscribers[event_key] = [
-                    sub for sub in self.subscribers[event_key] if sub != callback
-                ]
-                self.logger.info(f"Subscriber removed for event type: {event_key}")
-        except Exception as e:
-            self.logger.error(error(f"Error unsubscribing from event: {e}"))
-
     @handle_errors(
         exceptions=(Exception,),
         default_return=None,
         context="event publishing",
     )
-    async def publish(self, event_type: EventType | str, data: Any) -> None:
-        """Publish an event to the bus."""
-        try:
-            event_key = (
-                event_type.value if isinstance(event_type, EventType) else str(event_type)
-            )
-            event = {
-                "type": event_key,
-                "data": data,
-                "timestamp": datetime.now().isoformat(),
-            }
-            await self.event_queue.put(event)
-            self.logger.info(f"Event '{event_key}' published to queue")
-        except Exception as e:
-            self.logger.error(error(f"Error publishing event: {e}"))
-
-    def get_status(self) -> dict[str, Any]:
-        return self.status.copy()
-
-    def get_history(self, limit: int | None = None) -> list[dict[str, Any]]:
-        history = self.history.copy()
-        if limit:
-            history = history[-limit:]
-        return history
-
-    def get_event_history(self, limit: int | None = None) -> list[dict[str, Any]]:
-        history = self.event_history.copy()
-        if limit:
-            history = history[-limit:]
-        return history
-
-    def get_subscribers(self) -> dict[str, list[Callable]]:
-        return dict(self.subscribers)
-
 
 # Global instance
 event_bus: EventBus | None = None
@@ -329,16 +243,3 @@ event_bus: EventBus | None = None
     default_return=None,
     context="event bus setup",
 )
-async def setup_event_bus(config: dict[str, Any] | None = None) -> EventBus | None:
-    try:
-        global event_bus
-        if config is None:
-            config = {"event_bus": {"processing_interval": 10, "max_history": 100}}
-        event_bus = EventBus(config)
-        success = await event_bus.initialize()
-        if success:
-            return event_bus
-        return None
-    except Exception as e:
-        print(f"Error setting up event bus: {e}")
-        return None

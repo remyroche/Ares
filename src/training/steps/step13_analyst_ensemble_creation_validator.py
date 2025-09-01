@@ -186,20 +186,3 @@ class Step7AnalystEnsembleCreationValidator:
         """Print validation message."""
         self.logger.info(message)
 
-
-def step07_analyst_ensemble_creation_validator(symbol: str, exchange: str, data_dir: str, training_input: dict[str, Any], config: dict[str, Any], ) -> bool:
-    """Step 7: Analyst Ensemble Creation Validator.
-
-    Args:
-        symbol: Trading symbol
-        exchange: Exchange name
-        data_dir: Data directory
-        training_input: Training input data
-        config: Configuration dictionary
-
-    Returns:
-        bool: True if validation passes
-
-    """
-    validator = Step7AnalystEnsembleCreationValidator(config)
-    return validator.validate(symbol, exchange, data_dir, training_input)

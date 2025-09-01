@@ -232,26 +232,6 @@ class RegimeSpecificTripleBarrierOptimizer:
         if regime_constraints:
             self.optimization_config.regime_constraints.update(regime_constraints)
 
-    async def initialize(self) -> bool:
-        """Initialize the optimizer components."""
-        try:
-            self.logger.info("🚀 Initializing Regime-Specific Triple Barrier Optimizer...")
-
-            # Validate configuration
-            if not self._validate_configuration():
-                self.logger.error("❌ Configuration validation failed")
-                return False
-
-            # Initialize storage
-            await self._initialize_storage()
-
-            self.logger.info("✅ Regime-Specific Triple Barrier Optimizer initialized successfully")
-            return True
-
-        except Exception as e:
-            self.logger.exception(f"❌ Error initializing optimizer: {e}")
-            return False
-
     def _validate_configuration(self) -> bool:
         """Validate the optimization configuration."""
         try:
@@ -277,56 +257,6 @@ class RegimeSpecificTripleBarrierOptimizer:
             self.logger.error(f"❌ Configuration validation error: {e}")
             return False
 
-    async def _initialize_storage(self) -> None:
-        """Initialize Optuna storage."""
-        try:
-            # Test storage connection
-            study = optuna.create_study(
-                study_name="test_study",
-                storage=self.storage_url,
-                load_if_exists=True
-            )
-            self.logger.info(f"✅ Storage initialized: {self.storage_url}")
-
-        except Exception as e:
-            self.logger.warning(f"⚠️ Storage initialization failed: {e}")
-            self.logger.info("📝 Using in-memory storage")
-            self.storage_url = None
-
-    def _get_regime_names(self, data: pd.DataFrame) -> List[str]:
-        """Extract regime names from data."""
-        regime_column = None
-
-        # Look for regime column
-        possible_regime_columns = [
-            'composite_cluster_id', 'regime', 'hmm_regime', 'market_regime',
-            'cluster_id', 'regime_id'
-        ]
-
-        for col in possible_regime_columns:
-            if col in data.columns:
-                regime_column = col
-                break
-
-        if regime_column is None:
-            self.logger.warning("⚠️ No regime column found, using default regimes")
-            return list(self.optimization_config.regime_constraints.keys())
-
-        # Get unique regime values
-        unique_regimes = data[regime_column].unique()
-        regime_names = []
-
-        for regime in unique_regimes:
-            if isinstance(regime, (int, np.integer)):
-                # Map numeric regime to name
-                regime_name = f"REGIME_{regime}"
-            else:
-                regime_name = str(regime)
-
-            regime_names.append(regime_name)
-
-        return regime_names
-
     def _create_regime_objective_function(
         self,
         regime_name: str,
@@ -334,39 +264,6 @@ class RegimeSpecificTripleBarrierOptimizer:
         regime_constraints: Dict[str, List[float]]
     ) -> callable:
         """Create objective function for a specific regime."""
-
-        def objective(trial: optuna.Trial) -> float:
-            """Objective function for regime-specific optimization."""
-
-            try:
-                # Suggest triple barrier parameters
-                tb_params = self._suggest_triple_barrier_params(trial, regime_constraints)
-
-                # Suggest TPSL parameters
-                tpsl_params = self._suggest_tpsl_params(trial, regime_constraints)
-
-                # Apply parameters to regime data
-                labeled_data = self._apply_regime_specific_labeling(
-                    regime_data, tb_params, tpsl_params
-                )
-
-                # Evaluate performance
-                metrics = self._evaluate_regime_performance(labeled_data, regime_name)
-
-                # Calculate composite score
-                score = self._calculate_composite_score(metrics)
-
-                # Store trial information
-                trial.set_user_attr("regime_name", regime_name)
-                trial.set_user_attr("tb_params", tb_params.__dict__)
-                trial.set_user_attr("tpsl_params", tpsl_params)
-                trial.set_user_attr("metrics", metrics)
-
-                return score
-
-            except Exception as e:
-                self.logger.warning(f"⚠️ Trial failed for regime {regime_name}: {e}")
-                return -np.inf
 
         return objective
 
@@ -574,22 +471,6 @@ class RegimeSpecificTripleBarrierOptimizer:
         except Exception as e:
             self.logger.error(f"❌ Error evaluating regime performance: {e}")
             return self._get_default_metrics()
-
-    def _get_default_metrics(self) -> Dict[str, float]:
-        """Get default metrics for failed evaluations."""
-        return {
-            'total_return': 0.0,
-            'win_rate': 0.5,
-            'profit_factor': 1.0,
-            'sharpe_ratio': 0.0,
-            'max_drawdown': 0.0,
-            'sortino_ratio': 0.0,
-            'calmar_ratio': 0.0,
-            'regime_accuracy': 0.5,
-            'regime_precision': 0.5,
-            'regime_recall': 0.5,
-            'regime_f1': 0.5,
-        }
 
     def _calculate_composite_score(self, metrics: Dict[str, float]) -> float:
         """Calculate composite optimization score."""
@@ -930,117 +811,7 @@ class RegimeSpecificTripleBarrierOptimizer:
         except Exception as e:
             self.logger.exception(f"❌ Error creating visualizations: {e}")
 
-    def get_optimized_parameters(self) -> Dict[str, Any]:
-        """Get optimized parameters for all regimes."""
-
-        optimized_params = {}
-
-        for regime_name, result in self.regime_results.items():
-            optimized_params[regime_name] = {
-                "triple_barrier_params": result.triple_barrier_params.__dict__,
-                "tpsl_params": result.tpsl_params,
-                "performance_metrics": {
-                    "sharpe_ratio": result.sharpe_ratio,
-                    "win_rate": result.win_rate,
-                    "profit_factor": result.profit_factor,
-                    "total_return": result.total_return,
-                    "max_drawdown": result.max_drawdown,
-                }
-            }
-
-        return optimized_params
-
-    def get_regime_specific_params(self, regime_name: str) -> Optional[Dict[str, Any]]:
-        """Get optimized parameters for a specific regime."""
-
-        if regime_name not in self.regime_results:
-            return None
-
-        result = self.regime_results[regime_name]
-
-        return {
-            "triple_barrier_params": result.triple_barrier_params.__dict__,
-            "tpsl_params": result.tpsl_params,
-            "performance_metrics": {
-                "sharpe_ratio": result.sharpe_ratio,
-                "win_rate": result.win_rate,
-                "profit_factor": result.profit_factor,
-                "total_return": result.total_return,
-                "max_drawdown": result.max_drawdown,
-            }
-        }
-
 
 # Utility functions for integration
-async def setup_regime_specific_optimizer(config: Dict[str, Any]) -> RegimeSpecificTripleBarrierOptimizer:
-    """Setup and initialize regime-specific optimizer."""
-
-    optimizer = RegimeSpecificTripleBarrierOptimizer(config)
-
-    if not await optimizer.initialize():
-        raise RuntimeError("Failed to initialize regime-specific optimizer")
-
-    return optimizer
 
 
-async def optimize_regime_triple_barrier_parameters(
-    data: pd.DataFrame,
-    config: Dict[str, Any],
-    regime_column: str = "composite_cluster_id"
-) -> Dict[str, RegimeOptimizationResult]:
-    """
-    Optimize regime-specific triple barrier parameters.
-
-    Args:
-        data: DataFrame with regime information
-        config: Configuration dictionary
-        regime_column: Column containing regime labels
-
-    Returns:
-        Dictionary mapping regime names to optimization results
-    """
-
-    optimizer = await setup_regime_specific_optimizer(config)
-    return await optimizer.optimize_regime_parameters(data, regime_column)
-
-
-def get_regime_optimized_triple_barrier_params(
-    regime_name: str,
-    optimization_results: Dict[str, RegimeOptimizationResult]
-) -> Optional[RegimeTripleBarrierParams]:
-    """
-    Get optimized triple barrier parameters for a specific regime.
-
-    Args:
-        regime_name: Name of the regime
-        optimization_results: Results from optimization
-
-    Returns:
-        Optimized triple barrier parameters or None if not found
-    """
-
-    if regime_name not in optimization_results:
-        return None
-
-    return optimization_results[regime_name].triple_barrier_params
-
-
-def get_regime_optimized_tpsl_params(
-    regime_name: str,
-    optimization_results: Dict[str, RegimeOptimizationResult]
-) -> Optional[Dict[str, float]]:
-    """
-    Get optimized TPSL parameters for a specific regime.
-
-    Args:
-        regime_name: Name of the regime
-        optimization_results: Results from optimization
-
-    Returns:
-        Optimized TPSL parameters or None if not found
-    """
-
-    if regime_name not in optimization_results:
-        return None
-
-    return optimization_results[regime_name].tpsl_params

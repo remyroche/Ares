@@ -127,56 +127,6 @@ class Analyst:
         default_return=False,
         context="analyst initialization",
     )
-    async def initialize(self) -> bool:
-        """
-        Initialize analyst with enhanced error handling.
-
-        Returns:
-            bool: True if initialization successful, False otherwise
-        """
-        self.logger.info("Initializing Analyst...")
-
-        # Load analyst configuration
-        await self._load_analyst_configuration()
-
-        # Validate configuration
-        if not self._validate_configuration():
-            self.logger.error("Invalid configuration for analyst")
-            return False
-
-        # Initialize analyst modules
-        await self._initialize_analyst_modules()
-
-        # Initialize Dual Model System
-        if self.enable_dual_model_system:
-            await self._initialize_dual_model_system()
-
-        # Initialize Market Health Analyzer
-        if self.enable_market_health_analysis:
-            await self._initialize_market_health_analyzer()
-
-        # Initialize Liquidation Risk Model
-        if self.enable_liquidation_risk_analysis:
-            await self._initialize_liquidation_risk_model()
-
-        # Initialize Feature Engineering Orchestrator
-        if self.enable_feature_engineering:
-            await self._initialize_feature_engineering_orchestrator()
-
-        # Initialize ML Confidence Predictor
-        if self.enable_ml_predictions:
-            await self._initialize_ml_confidence_predictor()
-
-        # Enhanced predictions are now handled by the supervisor
-        # No local initialization needed
-
-        # Initialize Unified Regime Classifier
-        if self.enable_regime_classification:
-            await self._initialize_regime_classifier()
-
-        self.logger.info("✅ Analyst initialization completed successfully")
-        return True
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
@@ -213,60 +163,21 @@ class Analyst:
         default_return=None,
         context="analyst modules initialization",
     )
-    async def _initialize_analyst_modules(self) -> None:
-        """Initialize analyst modules."""
-        self.logger.info("Initializing analyst modules...")
-
-        if self.enable_technical_analysis:
-            await self._initialize_technical_analysis()
-
-        if self.enable_risk_analysis:
-            await self._initialize_risk_analysis()
-
-        self.logger.info("Analyst modules initialized successfully")
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="technical analysis initialization",
     )
-    async def _initialize_technical_analysis(self) -> None:
-        """Initialize technical analysis module."""
-        self.logger.info("Initializing technical analysis...")
-        # Technical analysis initialization logic here
-        self.logger.info("Technical analysis initialized successfully")
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="risk analysis initialization",
     )
-    async def _initialize_risk_analysis(self) -> None:
-        """Initialize risk analysis module."""
-        self.logger.info("Initializing risk analysis...")
-        # Risk analysis initialization logic here
-        self.logger.info("Risk analysis initialized successfully")
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="dual model system initialization",
     )
-    async def _initialize_dual_model_system(self) -> None:
-        """Initialize Dual Model System."""
-        try:
-            from src.training.dual_model_system import setup_dual_model_system
-
-            self.dual_model_system = await setup_dual_model_system(self.config)
-            if self.dual_model_system:
-                self.logger.info("✅ Dual Model System initialized successfully")
-            else:
-                self.print(failed("❌ Failed to initialize Dual Model System"))
-        except Exception:
-            self.print(
-                initialization_error("Error initializing Dual Model System: {e}"),
-            )
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
@@ -294,42 +205,11 @@ class Analyst:
         default_return=None,
         context="liquidation risk model initialization",
     )
-    async def _initialize_liquidation_risk_model(self) -> None:
-        """Initialize Liquidation Risk Model."""
-        try:
-            from src.analyst.liquidation_risk_model import setup_liquidation_risk_model
-
-            self.liquidation_risk_model = await setup_liquidation_risk_model(
-                self.config,
-            )
-            if self.liquidation_risk_model:
-                self.logger.info("✅ Liquidation Risk Model initialized successfully")
-            else:
-                self.print(failed("❌ Failed to initialize Liquidation Risk Model"))
-        except Exception:
-            self.print(
-                initialization_error("Error initializing Liquidation Risk Model: {e}"),
-            )
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="feature engineering orchestrator initialization",
     )
-    async def _initialize_feature_engineering_orchestrator(self) -> None:
-        """Initialize Feature Engineering Orchestrator."""
-        try:
-            self.feature_engineering_orchestrator = FeatureEngineeringOrchestrator(
-                self.config,
-            )
-            self.logger.info(
-                "✅ Feature Engineering Orchestrator initialized successfully",
-            )
-        except Exception as e:
-            self.logger.exception(
-                f"Error initializing Feature Engineering Orchestrator: {e}",
-            )
-
     # Legacy S/R analyzer initialization method removed
 
     @handle_errors(
@@ -348,16 +228,6 @@ class Analyst:
         default_return=None,
         context="regime classifier initialization",
     )
-    async def _initialize_regime_classifier(self) -> None:
-        """Initialize Unified Regime Classifier."""
-        self.logger.info("Initializing Unified Regime Classifier...")
-        self.regime_classifier = UnifiedRegimeClassifier(
-            self.config,
-            "UNKNOWN",
-            "UNKNOWN",
-        )
-        self.logger.info("Unified Regime Classifier initialized successfully")
-
     @handle_specific_errors(
         error_handlers={
             ValueError: (False, "Invalid analysis parameters"),
@@ -538,38 +408,6 @@ class Analyst:
         default_return={},
         context="technical analysis",
     )
-    async def _perform_technical_analysis(
-        self,
-        analysis_input: dict[str, Any],
-    ) -> dict[str, Any]:
-        """
-        Perform technical analysis.
-
-        Args:
-            analysis_input: Input data for analysis
-
-        Returns:
-            dict: Technical analysis results
-        """
-        analysis_input.get("market_data")
-        analysis_input.get("current_price")
-
-        # Perform technical analysis
-        technical_results = {
-            "price_analysis": self._perform_price_analysis(analysis_input),
-            "volume_analysis": self._perform_volume_analysis(analysis_input),
-            "indicator_analysis": self._perform_indicator_analysis(analysis_input),
-            "pattern_analysis": self._perform_pattern_analysis(analysis_input),
-            "volatility_analysis": self._perform_volatility_analysis(analysis_input),
-            "correlation_analysis": self._perform_correlation_analysis(analysis_input),
-            "drawdown_analysis": self._perform_drawdown_analysis(analysis_input),
-            "risk_scoring": self._perform_risk_scoring(analysis_input),
-            "timestamp": datetime.now().isoformat(),
-        }
-
-        self.logger.info("Technical analysis completed successfully")
-        return technical_results
-
     @validate_data_quality(validation_level="WARNING")
     @with_tracing_span("price_analysis")
     def _perform_price_analysis(self, analysis_input: dict[str, Any]) -> dict[str, Any]:
@@ -813,66 +651,6 @@ class Analyst:
         default_return=None,
         context="regime classification",
     )
-    async def _perform_regime_classification(
-        self,
-        analysis_input: dict[str, Any],
-    ) -> dict[str, Any]:
-        """
-        Perform regime and location classification.
-
-        Args:
-            analysis_input: Input data for analysis
-
-        Returns:
-            dict: Regime and location classification results
-        """
-        try:
-            market_data = analysis_input.get("market_data")
-            analysis_input.get("current_price")
-
-            if self.regime_classifier:
-                # Use the new unified regime classifier for both regime and location
-                regime, location, confidence, additional_info = (
-                    self.regime_classifier.predict_regime_and_location(market_data)
-                )
-
-                regime_results = {
-                    "regime": regime,
-                    "location": location,
-                    "confidence": confidence,
-                    "regime_confidence": additional_info.get(
-                        "regime_confidence",
-                        confidence,
-                    ),
-                    "location_confidence": additional_info.get(
-                        "location_confidence",
-                        confidence,
-                    ),
-                    "regime_duration": 0,  # Could be enhanced with duration tracking
-                    "timestamp": datetime.now().isoformat(),
-                    "additional_info": additional_info,
-                }
-            else:
-                # Fallback regime results
-                regime_results = {
-                    "regime": "SIDEWAYS",
-                    "location": "OPEN_RANGE",
-                    "confidence": 0.5,
-                    "regime_confidence": 0.5,
-                    "location_confidence": 0.5,
-                    "regime_duration": 0,
-                    "timestamp": datetime.now().isoformat(),
-                }
-
-            self.logger.info(
-                f"Regime and location classification completed: {regime_results['regime']} at {regime_results['location']}",
-            )
-            return regime_results
-
-        except Exception:
-            self.print(error("Error performing regime classification: {e}"))
-            return {}
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
@@ -899,64 +677,11 @@ class Analyst:
         default_return=None,
         context="analysis results getting",
     )
-    def get_analysis_results(self, analysis_type: str | None = None) -> dict[str, Any]:
-        """
-        Get analysis results.
-
-        Args:
-            analysis_type: Type of analysis results to retrieve
-
-        Returns:
-            dict: Analysis results
-        """
-        try:
-            if analysis_type is None:
-                return self.analysis_results
-            return self.analysis_results.get(analysis_type, {})
-
-        except Exception:
-            self.print(error("Error getting analysis results: {e}"))
-            return {}
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="analysis history getting",
     )
-    def get_analysis_history(self, limit: int | None = None) -> list[dict[str, Any]]:
-        """
-        Get analysis history.
-
-        Args:
-            limit: Maximum number of history entries to return
-
-        Returns:
-            list: Analysis history
-        """
-        try:
-            if limit is None:
-                return self.analysis_history
-            return self.analysis_history[-limit:]
-
-        except Exception:
-            self.print(error("Error getting analysis history: {e}"))
-            return []
-
-    def get_analysis_status(self) -> dict[str, Any]:
-        """Get analysis status."""
-        return {
-            "is_analyzing": self.is_analyzing,
-            "last_analysis": self.analysis_results.get("timestamp"),
-            "analysis_count": len(self.analysis_history),
-            "dual_model_system_initialized": self.dual_model_system is not None,
-            "market_health_analyzer_initialized": self.market_health_analyzer
-            is not None,
-            "liquidation_risk_model_initialized": self.liquidation_risk_model
-            is not None,
-            "feature_engineering_orchestrator_initialized": self.feature_engineering_orchestrator
-            is not None,
-        }
-
     # Enhanced predictions are now handled by the supervisor
     # No local methods needed
 
@@ -965,57 +690,9 @@ class Analyst:
         default_return=None,
         context="analyst cleanup",
     )
-    async def stop(self) -> None:
-        """Clean up analyst resources."""
-        try:
-            self.logger.info("Stopping Analyst...")
-            self.is_analyzing = False
-
-            # Stop sub-components
-            if self.dual_model_system:
-                await self.dual_model_system.stop()
-
-            if self.market_health_analyzer:
-                await self.market_health_analyzer.stop()
-
-            if self.liquidation_risk_model:
-                await self.liquidation_risk_model.stop()
-
-            self.analysis_results = {}
-            self.analysis_history = []
-
-            self.logger.info("✅ Analyst stopped successfully")
-        except Exception:
-            self.print(error("❌ Error stopping Analyst: {e}"))
-
 
 @handle_errors(
     exceptions=(Exception,),
     default_return=None,
     context="analyst setup",
 )
-async def setup_analyst(config: dict[str, Any] | None = None) -> Analyst | None:
-    """
-    Setup and initialize Analyst.
-
-    Args:
-        config: Configuration dictionary
-
-    Returns:
-        Analyst: Initialized analyst or None if failed
-    """
-    try:
-        if config is None:
-            config = {}
-
-        analyst = Analyst(config)
-
-        if await analyst.initialize():
-            system_logger.info("✅ Analyst setup completed successfully")
-            return analyst
-        system_logger.error("❌ Analyst setup failed")
-        return None
-
-    except Exception:
-        system_logger.exception("❌ Error setting up Analyst")
-        return None

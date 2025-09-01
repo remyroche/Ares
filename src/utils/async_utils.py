@@ -56,26 +56,6 @@ class AsyncFileManager:
         default_return=False,
         context="async file manager initialization",
     )
-    async def initialize(self) -> bool:
-        """
-        Initialize async file manager with enhanced error handling.
-
-        Returns:
-            bool: True if initialization successful, False otherwise
-        """
-        self.logger.info("Initializing Async File Manager...")
-
-        # Load file configuration
-        await self._load_file_configuration()
-
-        # Validate configuration
-        if not self._validate_configuration():
-            self.logger.error(invalid("Invalid configuration for async file manager"))
-            return False
-
-        self.logger.info("✅ Async File Manager initialization completed successfully")
-        return True
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
@@ -189,47 +169,10 @@ class AsyncFileManager:
         default_return=None,
         context="JSON file reading",
     )
-    async def read_json(self, file_path: str) -> dict[str, Any] | None:
-        """
-        Read JSON file asynchronously.
-
-        Args:
-            file_path: Path to the JSON file
-
-        Returns:
-            Optional[Dict[str, Any]]: JSON data or None if failed
-        """
-        content = await self.read_file(file_path)
-        if content is None:
-        # Fallback implementation for content
-            return None
-
-        data: dict[str, Any] = json.loads(content)
-        self.logger.info(f"Read JSON file: {file_path}")
-        return data
-
     @handle_file_operations(
         default_return=False,
         context="JSON file writing",
     )
-    async def write_json(self, file_path: str, data: dict[str, Any], indent: int = 2) -> bool:
-        """
-        Write JSON file asynchronously.
-
-        Args:
-            file_path: Path to the JSON file
-            data: Data to write
-            indent: JSON indentation
-
-        Returns:
-            bool: True if successful, False otherwise
-        """
-        content = json.dumps(data, indent=indent, default=str)
-        success = await self.write_file(file_path, content)
-        if success:
-            self.logger.info(f"Wrote JSON file: {file_path}")
-        return success
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
@@ -264,31 +207,11 @@ class AsyncFileManager:
         self.file_cache.clear()
         self.logger.info(f"Cleared cache ({cache_size} entries)")
 
-    def get_cache_status(self) -> dict[str, Any]:
-        """
-        Get cache status information.
-
-        Returns:
-            Dict[str, Any]: Cache status
-        """
-        return {
-            "cache_enabled": self.cache_enabled,
-            "max_cache_size": self.max_cache_size,
-            "current_cache_size": len(self.file_cache),
-            "cached_files": list(self.file_cache.keys()),
-        }
-
     @handle_errors(
         exceptions=(Exception,),
         default_return=None,
         context="async file manager cleanup",
     )
-    async def stop(self) -> None:
-        """Stop the async file manager."""
-        self.logger.info("🛑 Stopping Async File Manager...")
-        self.clear_cache()
-        self.logger.info("✅ Async File Manager stopped successfully")
-
 
 class AsyncTaskManager:
     """
@@ -324,26 +247,6 @@ class AsyncTaskManager:
         default_return=False,
         context="async task manager initialization",
     )
-    async def initialize(self) -> bool:
-        """
-        Initialize async task manager with enhanced error handling.
-
-        Returns:
-            bool: True if initialization successful, False otherwise
-        """
-        self.logger.info("Initializing Async Task Manager...")
-
-        # Load task configuration
-        await self._load_task_configuration()
-
-        # Validate configuration
-        if not self._validate_configuration():
-            self.logger.error(invalid("Invalid configuration for async task manager"))
-            return False
-
-        self.logger.info("✅ Async Task Manager initialization completed successfully")
-        return True
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
@@ -447,30 +350,6 @@ class AsyncTaskManager:
         default_return=False,
         context="task cancellation",
     )
-    async def cancel_task(self, task_name: str) -> bool:
-        """
-        Cancel a running task.
-
-        Args:
-            task_name: Name of the task to cancel
-
-        Returns:
-            bool: True if successful, False otherwise
-        """
-        if task_name not in self.active_tasks:
-            self.logger.warning(missing(f"Task not found: {task_name}"))
-            return False
-
-        task = self.active_tasks[task_name]
-        task.cancel()
-
-        with contextlib.suppress(asyncio.CancelledError):
-            await task
-
-        del self.active_tasks[task_name]
-        self.logger.info(f"Cancelled task: {task_name}")
-        return True
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
@@ -492,33 +371,11 @@ class AsyncTaskManager:
         self.active_tasks.clear()
         self.logger.info("All tasks cancelled")
 
-    def get_task_status(self) -> dict[str, Any]:
-        """
-        Get task manager status information.
-
-        Returns:
-            Dict[str, Any]: Task manager status
-        """
-        return {
-            "active_tasks_count": len(self.active_tasks),
-            "max_concurrent_tasks": self.max_concurrent_tasks,
-            "task_timeout": self.task_timeout,
-            "active_task_names": list(self.active_tasks.keys()),
-            "completed_tasks_count": len(self.task_results),
-        }
-
     @handle_errors(
         exceptions=(Exception,),
         default_return=None,
         context="async task manager cleanup",
     )
-    async def stop(self) -> None:
-        """Stop the async task manager."""
-        self.logger.info("🛑 Stopping Async Task Manager...")
-        await self.cancel_all_tasks()
-        self.task_results.clear()
-        self.logger.info("✅ Async Task Manager stopped successfully")
-
 
 # Global instances
 async_file_manager: AsyncFileManager | None = None
@@ -530,50 +387,6 @@ async_task_manager: AsyncTaskManager | None = None
     default_return=None,
     context="async utils setup",
 )
-async def setup_async_utils(
-    config: dict[str, Any] | None = None,
-) -> tuple[AsyncFileManager | None, AsyncTaskManager | None]:
-    """
-    Setup global async utilities.
-
-    Args:
-        config: Optional configuration dictionary
-
-    Returns:
-        Tuple[Optional[AsyncFileManager], Optional[AsyncTaskManager]]: Global instances
-    """
-    global async_file_manager, async_task_manager
-
-    if config is None:
-        # Fallback implementation for config
-        config = {
-            "async_file_manager": {
-                "max_cache_size": 100,
-                "cache_enabled": True,
-                "default_encoding": "utf-8",
-                "chunk_size": 8192,
-                "timeout": 30,
-            },
-            "async_task_manager": {
-                "max_concurrent_tasks": 10,
-                "task_timeout": 300,
-                "enable_task_monitoring": True,
-                "auto_cleanup_failed_tasks": True,
-            },
-        }
-
-    # Create async file manager
-    async_file_manager = AsyncFileManager(config)
-    file_success = await async_file_manager.initialize()
-
-    # Create async task manager
-    async_task_manager = AsyncTaskManager(config)
-    task_success = await async_task_manager.initialize()
-
-    if file_success and task_success:
-        return async_file_manager, async_task_manager
-    return None, None
-
 
 class AsyncProcessesManager:
     """

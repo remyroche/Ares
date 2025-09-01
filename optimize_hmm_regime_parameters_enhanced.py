@@ -38,37 +38,6 @@ class EnhancedHMMRegimeOptimizer:
         self.optimization_history = []
         self.cv_results = {}
 
-    def _get_default_config(self) -> Dict[str, Any]:
-        """Get default configuration for enhanced optimization."""
-        return {
-            "optimization_settings": {
-                "n_trials": 100,
-                "timeout": 3600,
-                "study_name": "enhanced_hmm_optimization",
-                "random_state": 42,
-                "n_jobs": -1,  # Use all CPU cores
-                "parallel_trials": True
-            },
-            "advanced_optimization": {
-                "use_cross_validation": True,
-                "cv_folds": 5,
-                "use_early_stopping": True,
-                "early_stopping_patience": 10,
-                "use_adaptive_ranges": True,
-                "multi_objective": False
-            },
-            "sampling_strategy": {
-                "sampler": "tpe",  # "tpe", "cmaes", "random"
-                "n_startup_trials": 20,
-                "n_ei_candidates": 24
-            },
-            "pruning_strategy": {
-                "pruner": "median",  # "median", "hyperband", "none"
-                "n_startup_trials": 5,
-                "n_warmup_steps": 10
-            }
-        }
-
     def optimize_parallel(self, data: pd.DataFrame, feature_columns: List[str],
                          market_condition_columns: List[str], n_trials: int = 100,
                          timeout: Optional[int] = None, study_name: str = "enhanced_optimization") -> Dict[str, Any]:
@@ -205,66 +174,6 @@ class EnhancedHMMRegimeOptimizer:
                                  feature_columns: List[str],
                                  market_condition_columns: List[str]) -> callable:
         """Create enhanced objective function with cross-validation."""
-
-        def objective(trial: optuna.Trial) -> float:
-            """Enhanced objective function with cross-validation and early stopping."""
-
-            # Suggest parameters with adaptive ranges if enabled
-            if self.config['advanced_optimization']['use_adaptive_ranges']:
-                params = self._suggest_adaptive_parameters(trial)
-            else:
-                params = self._suggest_standard_parameters(trial)
-
-            try:
-                # Use cross-validation if enabled
-                if self.config['advanced_optimization']['use_cross_validation'] and processed_data['cv_splits']:
-                    cv_scores = []
-
-                    for train_idx, val_idx in processed_data['cv_splits']:
-                        # Split data
-                        train_data = processed_data['data'].iloc[train_idx]
-                        val_data = processed_data['data'].iloc[val_idx]
-
-                        # Generate clusters for training data
-                        train_clusters = self._generate_clusters_enhanced(train_data, params)
-
-                        # Evaluate on validation data
-                        val_score = self._evaluate_regime_quality_enhanced(
-                            val_data, train_clusters, processed_data['market_condition_columns'], params
-                        )
-                        cv_scores.append(val_score)
-
-                    # Return mean CV score
-                    final_score = np.mean(cv_scores)
-
-                    # Store CV results
-                    self.cv_results[trial.number] = {
-                        'cv_scores': cv_scores,
-                        'cv_mean': final_score,
-                        'cv_std': np.std(cv_scores)
-                    }
-
-                else:
-                    # Standard evaluation without CV
-                    cluster_data = self._generate_clusters_enhanced(processed_data['data'], params)
-                    final_score = self._evaluate_regime_quality_enhanced(
-                        cluster_data, None, processed_data['market_condition_columns'], params
-                    )
-
-                # Store trial information
-                trial_info = {
-                    'trial_number': trial.number,
-                    'params': params,
-                    'score': final_score,
-                    'timestamp': time.time()
-                }
-                self.optimization_history.append(trial_info)
-
-                return final_score
-
-            except Exception as e:
-                print(f"⚠️ Trial {trial.number} failed: {e}")
-                return -np.inf
 
         return objective
 

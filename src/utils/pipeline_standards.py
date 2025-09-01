@@ -144,26 +144,6 @@ class PipelineStandards:
         self.logger = logger or logging.getLogger(__name__)
 
     @staticmethod
-    def safe_import(module_name: str, fallback_value: Any = None, logger: Optional[logging.Logger] = None) -> Any:
-        """
-        Safely import a module with consistent fallback pattern.
-
-        Args:
-            module_name: Name of the module to import
-            fallback_value: Value to return if import fails
-            logger: Logger instance for warnings
-
-        Returns:
-            Imported module or fallback value
-        """
-        try:
-            module = __import__(module_name, fromlist=['*'])
-            return module
-        except ImportError as e:
-            if logger:
-                logger.warning(f"⚠️ Failed to import {module_name}: {e}. Using fallback.")
-            return fallback_value
-
     @staticmethod
     def validate_environment_dependencies(required_modules: List[str], logger: Optional[logging.Logger] = None) -> Dict[str, bool]:
         """
@@ -193,75 +173,7 @@ class PipelineStandards:
         return availability
 
     @staticmethod
-    def build_path(path_type: str, exchange: str, asset: str, **kwargs) -> str:
-        """
-        Build standardized path using the directory structure.
-
-        Args:
-            path_type: Type of path (raw_data, unified_data, etc.)
-            exchange: Exchange name
-            asset: Asset symbol
-            **kwargs: Additional path parameters
-
-        Returns:
-            Standardized path
-        """
-        if path_type not in PipelineStandards.DIRECTORY_STRUCTURE:
-            raise ValueError(f"Unknown path type: {path_type}")
-
-        path_template = PipelineStandards.DIRECTORY_STRUCTURE[path_type]
-        return path_template.format(exchange=exchange.lower(), asset=asset.lower(), **kwargs)
-
     @staticmethod
-    def standardize_timestamp(df: pd.DataFrame, column: str = "timestamp", target_format: str = "int64") -> pd.DataFrame:
-        """
-        Standardize timestamp column to consistent format.
-
-        Args:
-            df: DataFrame to process
-            column: Timestamp column name
-            target_format: Target format ("int64" for milliseconds, "datetime64[ns]" for datetime)
-
-        Returns:
-            DataFrame with standardized timestamp
-        """
-        if column not in df.columns:
-            return df
-
-        df = df.copy()
-
-        try:
-            if target_format == "int64":
-                # Convert to int64 milliseconds
-                if pd.api.types.is_datetime64_any_dtype(df[column]):
-                    df[column] = (pd.to_datetime(df[column], utc=True).astype("int64") // 10**6).astype("int64")
-                else:
-                    ts_numeric = pd.to_numeric(df[column], errors="coerce")
-                    if pd.notna(ts_numeric.max()) and float(ts_numeric.max()) > 1e14:
-                        # Already in nanoseconds, convert to milliseconds
-                        df[column] = (ts_numeric // 10**6).astype("int64")
-                    else:
-                        # Assume already in milliseconds
-                        df[column] = ts_numeric.astype("int64")
-
-            elif target_format == "datetime64[ns]":
-                # Convert to datetime64[ns]
-                if pd.api.types.is_datetime64_any_dtype(df[column]):
-                    df[column] = pd.to_datetime(df[column], utc=True)
-                else:
-                    ts_numeric = pd.to_numeric(df[column], errors="coerce")
-                    if pd.notna(ts_numeric.max()) and float(ts_numeric.max()) > 1e14:
-                        # Nanoseconds
-                        df[column] = pd.to_datetime(ts_numeric, unit='ns', utc=True)
-                    else:
-                        # Milliseconds
-                        df[column] = pd.to_datetime(ts_numeric, unit='ms', utc=True)
-
-        except Exception as e:
-            raise ValueError(f"Failed to standardize timestamp column '{column}': {e}")
-
-        return df
-
     @staticmethod
     def validate_timestamp_format(df: pd.DataFrame, column: str = "timestamp", expected_format: str = "int64") -> ValidationResult:
         """
@@ -416,52 +328,6 @@ class PipelineStandards:
         return result
 
     @staticmethod
-    def enforce_schema(df: pd.DataFrame, schema_name: str) -> pd.DataFrame:
-        """
-        Enforce schema by converting data types and adding missing columns.
-
-        Args:
-            df: DataFrame to enforce schema on
-            schema_name: Name of the schema to enforce
-
-        Returns:
-            DataFrame with enforced schema
-        """
-        if schema_name not in PipelineStandards.SCHEMAS:
-            raise ValueError(f"Unknown schema: {schema_name}")
-
-        schema = PipelineStandards.SCHEMAS[schema_name]
-        df = df.copy()
-
-        # Add missing optional columns with default values
-        for column in schema["optional_columns"]:
-            if column not in df.columns:
-                if schema["data_types"][column] == "float64":
-                    df[column] = 0.0
-                elif schema["data_types"][column] == "int64":
-                    df[column] = 0
-                elif schema["data_types"][column] == "string":
-                    df[column] = ""
-                elif schema["data_types"][column] == "bool":
-                    df[column] = False
-
-        # Convert data types
-        for column, expected_type in schema["data_types"].items():
-            if column in df.columns:
-                try:
-                    if expected_type == "int64":
-                        df[column] = pd.to_numeric(df[column], errors="coerce").fillna(0).astype("int64")
-                    elif expected_type == "float64":
-                        df[column] = pd.to_numeric(df[column], errors="coerce").fillna(0.0).astype("float64")
-                    elif expected_type == "string":
-                        df[column] = df[column].astype("string")
-                    elif expected_type == "bool":
-                        df[column] = df[column].astype("boolean")
-                except Exception as e:
-                    raise ValueError(f"Failed to convert column '{column}' to {expected_type}: {e}")
-
-        return df
-
     @staticmethod
     def validate_data_quality(df: pd.DataFrame, schema_name: str, quality_thresholds: Optional[Dict[str, Any]] = None) -> ValidationResult:
         """
@@ -542,63 +408,7 @@ class PipelineStandards:
         return result
 
     @staticmethod
-    def generate_file_name(file_type: str, exchange: str, asset: str, timeframe: str = None, **kwargs) -> str:
-        """
-        Generate standardized file name.
-
-        Args:
-            file_type: Type of file (klines, aggtrades, etc.)
-            exchange: Exchange name
-            asset: Asset symbol
-            timeframe: Timeframe (optional)
-            **kwargs: Additional parameters
-
-        Returns:
-            Standardized file name
-        """
-        if file_type not in PipelineStandards.FILE_NAMING:
-            raise ValueError(f"Unknown file type: {file_type}")
-
-        template = PipelineStandards.FILE_NAMING[file_type]
-        params = {
-            "exchange": exchange.upper(),
-            "asset": asset.upper(),
-            "timeframe": timeframe or "1m",
-            "timestamp": datetime.now().strftime("%Y%m%d_%H%M%S"),
-            **kwargs
-        }
-
-        return template.format(**params)
-
     @staticmethod
-    def create_metadata(schema_name: str, exchange: str, asset: str, timeframe: str, **kwargs) -> Dict[str, Any]:
-        """
-        Create standardized metadata for files.
-
-        Args:
-            schema_name: Schema name
-            exchange: Exchange name
-            asset: Asset symbol
-            timeframe: Timeframe
-            **kwargs: Additional metadata
-
-        Returns:
-            Standardized metadata dictionary
-        """
-        metadata = {
-            "schema_name": schema_name,
-            "exchange": exchange.upper(),
-            "asset": asset.upper(),
-            "timeframe": timeframe,
-            "created_at": datetime.now(timezone.utc).isoformat(),
-            "pipeline_version": "1.0.0",
-            "data_format": "parquet",
-            "compression": "snappy",
-            **kwargs
-        }
-
-        return metadata
-
     @staticmethod
     def validate_cross_step_consistency(data_dict: Dict[str, pd.DataFrame], step_sequence: List[str]) -> ValidationResult:
         """
@@ -662,30 +472,6 @@ class PipelineStandards:
         return result
 
     @staticmethod
-    def track_data_lineage(data: pd.DataFrame, source_step: str, transformations: List[str]) -> Dict[str, Any]:
-        """
-        Track data lineage and transformations.
-
-        Args:
-            data: The dataframe
-            source_step: Source step name
-            transformations: List of transformations applied
-
-        Returns:
-            Lineage tracking information
-        """
-        lineage = {
-            "source_step": source_step,
-            "transformations": transformations,
-            "timestamp": datetime.now().isoformat(),
-            "data_shape": data.shape,
-            "columns": list(data.columns),
-            "memory_usage": data.memory_usage(deep=True).sum(),
-            "dtypes": data.dtypes.to_dict()
-        }
-
-        return lineage
-
     @staticmethod
     def calculate_comprehensive_quality_score(data: pd.DataFrame, context: str = "general") -> float:
         """

@@ -180,27 +180,6 @@ class ComprehensiveParameterIntegration:
         # Fallback: return default parameters based on config
         return self._get_default_step_parameters(step_name, step_config)
 
-    def _get_default_step_parameters(self, step_name: str, step_config: Dict[str, Any]) -> Dict[str, Any]:
-        """Get default parameters for a step based on configuration."""
-
-        default_params = {}
-
-        for category, params in step_config.items():
-            default_params[category] = {}
-            for param_name, param_config in params.items():
-                if isinstance(param_config, tuple):
-                    # Numeric range parameter
-                    if len(param_config) == 2:
-                        default_params[category][param_name] = (param_config[0] + param_config[1]) / 2
-                elif isinstance(param_config, list):
-                    # Categorical parameter
-                    default_params[category][param_name] = param_config[0]
-                else:
-                    # Single value parameter
-                    default_params[category][param_name] = param_config
-
-        return default_params
-
     def validate_parameter_bounds(self, parameters: Dict[str, Any]) -> Dict[str, Any]:
         """Validate that all parameters are within their defined bounds."""
 
@@ -458,26 +437,6 @@ class ComprehensiveParameterIntegration:
 
         return validation
 
-    async def _get_trading_performance_metrics(self, step_name: str) -> Optional[Dict[str, float]]:
-        """Get trading performance metrics for a specific step."""
-
-        try:
-            # Try to get metrics from training manager
-            if self.training_manager and hasattr(self.training_manager, 'get_trading_metrics'):
-                return await self.training_manager.get_trading_metrics(step_name)
-
-            # Try to get from step-specific method
-            if self.training_manager and hasattr(self.training_manager, f'get_{step_name}_trading_metrics'):
-                method = getattr(self.training_manager, f'get_{step_name}_trading_metrics')
-                return await method()
-
-            # Fallback: simulate trading metrics (replace with actual implementation)
-            return self._simulate_trading_metrics(step_name)
-
-        except Exception as e:
-            self.logger.error(f"Failed to get trading metrics for {step_name}: {e}")
-            return None
-
     def _simulate_trading_metrics(self, step_name: str) -> Dict[str, float]:
         """Simulate trading performance metrics (replace with actual implementation)."""
 
@@ -615,17 +574,6 @@ class ComprehensiveParameterIntegration:
 
         except Exception as e:
             self.logger.error(f"Failed to log to MLflow: {e}")
-
-    async def get_integration_status(self) -> Dict[str, Any]:
-        """Get comprehensive integration status."""
-
-        return {
-            "integration_completed": bool(self.integration_status),
-            "total_steps_integrated": len(self.integration_status),
-            "parameter_validation_status": self.parameter_validation,
-            "integration_timestamp": datetime.now().isoformat(),
-            "recommendations": self._generate_integration_recommendations()
-        }
 
     def _generate_integration_recommendations(self) -> List[str]:
         """Generate recommendations based on integration status."""

@@ -423,21 +423,6 @@ class EnhancedMatrixGPUIntegration:
             self.logger.exception(f"❌ GPU vs CPU Benchmark failed: {e}")
             return {"error": str(e)}
 
-    def get_integration_summary(self) -> dict[str, Any]:
-        """Get summary of integration operations and results."""
-        try:
-            return {
-                "gpu_available": self.gpu_accel.mps_available,
-                "device_info": str(self.gpu_accel.device),
-                "integration_results": self.integration_results,
-                "performance_metrics": self.performance_metrics,
-                "gpu_performance": self.gpu_accel.get_performance_summary(),
-            }
-
-        except Exception as e:
-            self.logger.exception(f"❌ Integration summary generation failed: {e}")
-            return {"error": str(e)}
-
     def clear_gpu_memory(self) -> None:
         """Clear GPU memory cache."""
         self.gpu_accel.clear_gpu_memory()

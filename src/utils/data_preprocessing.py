@@ -115,22 +115,6 @@ def regularize_timestamps(
         return data
 
 
-def _get_frequency_string(interval: timedelta) -> str:
-    """Convert timedelta to pandas frequency string."""
-    total_seconds, interval.total_seconds()
-
-    if total_seconds <= 60:
-        return "1T"  # 1 minute
-    if total_seconds <= 300:
-        return "5T"  # 5 minutes
-    if total_seconds <= 900:
-        return "15T"  # 15 minutes
-    if total_seconds <= 3600:
-        return "1H"  # 1 hour
-    if total_seconds <= 14400:
-        return "4H"  # 4 hours
-    return "1D"  # 1 day
-
 
 def preprocess_data_for_multi_timeframe(
     price_data: pd.DataFrame,

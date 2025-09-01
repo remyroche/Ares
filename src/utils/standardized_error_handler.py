@@ -107,61 +107,6 @@ class ErrorRecord:
 
         return ErrorCategory.UNKNOWN
 
-    def _get_recovery_strategy(self) -> Dict[str, Any]:
-        """Get recovery strategy based on error category."""
-        strategies = {
-            ErrorCategory.DATA_QUALITY: {
-                'action': 'data_cleaning',
-                'description': 'Clean and validate data before processing',
-                'retry': True,
-                'max_retries': 3
-            },
-            ErrorCategory.MODEL_TRAINING: {
-                'action': 'model_retraining',
-                'description': 'Retrain model with different parameters',
-                'retry': True,
-                'max_retries': 2
-            },
-            ErrorCategory.CONFIGURATION: {
-                'action': 'config_validation',
-                'description': 'Validate and fix configuration parameters',
-                'retry': True,
-                'max_retries': 1
-            },
-            ErrorCategory.DEPENDENCY: {
-                'action': 'dependency_installation',
-                'description': 'Install missing dependencies',
-                'retry': False,
-                'max_retries': 0
-            },
-            ErrorCategory.RESOURCE: {
-                'action': 'resource_cleanup',
-                'description': 'Clean up resources and retry',
-                'retry': True,
-                'max_retries': 2
-            },
-            ErrorCategory.NETWORK: {
-                'action': 'network_retry',
-                'description': 'Retry network operation with backoff',
-                'retry': True,
-                'max_retries': 5
-            },
-            ErrorCategory.VALIDATION: {
-                'action': 'data_validation',
-                'description': 'Validate data format and schema',
-                'retry': True,
-                'max_retries': 2
-            },
-            ErrorCategory.UNKNOWN: {
-                'action': 'manual_intervention',
-                'description': 'Requires manual investigation',
-                'retry': False,
-                'max_retries': 0
-            }
-        }
-
-        return strategies.get(self.category, strategies[ErrorCategory.UNKNOWN])
-
     def to_dict(self) -> Dict[str, Any]:
         """Convert error record to dictionary."""
         return {
@@ -223,58 +168,6 @@ class StandardizedErrorHandler:
 
         return error_record
 
-    def categorize_error(self, error: Exception) -> ErrorCategory:
-        """Categorize an error.
-
-        Args:
-            error: The exception to categorize
-
-        Returns:
-            ErrorCategory: Category of the error
-        """
-        error_record = ErrorRecord(error, ErrorContext("unknown", "unknown"))
-        return error_record.category
-
-    def get_recovery_strategy(self, error_type: Union[Exception, ErrorCategory]) -> Dict[str, Any]:
-        """Get recovery strategy for an error type.
-
-        Args:
-            error_type: Exception or ErrorCategory
-
-        Returns:
-            Dict: Recovery strategy
-        """
-        if isinstance(error_type, Exception):
-            error_record = ErrorRecord(error_type, ErrorContext("unknown", "unknown"))
-            return error_record.recovery_strategy
-        else:
-            # Direct category lookup
-            error_record = ErrorRecord(Exception("dummy"), ErrorContext("unknown", "unknown"))
-            error_record.category = error_type
-            error_record.recovery_strategy = error_record._get_recovery_strategy()
-            return error_record.recovery_strategy
-
-    def log_error_with_context(
-        self,
-        error: Exception,
-        step_name: str,
-        data_context: Optional[Dict[str, Any]] = None
-    ) -> None:
-        """Log an error with context information.
-
-        Args:
-            error: The exception that occurred
-            step_name: Name of the step where error occurred
-            data_context: Context about the data being processed
-        """
-        context = {
-            'data_context': data_context or {},
-            'operation': 'unknown'
-        }
-
-        error_record = self.handle_step_error(error, step_name, context)
-        self._log_error_with_context(error_record)
-
     def _log_error_with_context(self, error_record: ErrorRecord) -> None:
         """Log error with full context."""
         log_message = f"""
@@ -303,70 +196,6 @@ Error in {error_record.context.step_name}:
         # Maintain history size
         if len(self.error_history) > self.max_history_size:
             self.error_history.pop(0)
-
-    def get_error_summary(self, step_name: Optional[str] = None) -> Dict[str, Any]:
-        """Get summary of errors.
-
-        Args:
-            step_name: Optional step name to filter by
-
-        Returns:
-            Dict: Error summary statistics
-        """
-        if step_name:
-            filtered_errors = [e for e in self.error_history if e.context.step_name == step_name]
-        else:
-            filtered_errors = self.error_history
-
-        summary = {
-            'total_errors': len(filtered_errors),
-            'by_severity': {},
-            'by_category': {},
-            'by_step': {},
-            'recent_errors': []
-        }
-
-        for error in filtered_errors:
-            # Count by severity
-            severity = error.severity.value
-            summary['by_severity'][severity] = summary['by_severity'].get(severity, 0) + 1
-
-            # Count by category
-            category = error.category.value
-            summary['by_category'][category] = summary['by_category'].get(category, 0) + 1
-
-            # Count by step
-            step = error.context.step_name
-            summary['by_step'][step] = summary['by_step'].get(step, 0) + 1
-
-        # Get recent errors (last 10)
-        summary['recent_errors'] = [
-            error.to_dict() for error in filtered_errors[-10:]
-        ]
-
-        return summary
-
-    def clear_history(self) -> None:
-        """Clear error history."""
-        self.error_history.clear()
-
-    def export_errors(self, file_path: str) -> bool:
-        """Export error history to file.
-
-        Args:
-            file_path: Path to export file
-
-        Returns:
-            bool: True if successful
-        """
-        try:
-            import json
-            with open(file_path, 'w') as f:
-                json.dump([error.to_dict() for error in self.error_history], f, indent=2)
-            return True
-        except Exception as e:
-            self.logger.error(f"Failed to export errors: {e}")
-            return False
 
 
 # Global instance

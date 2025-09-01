@@ -217,59 +217,6 @@ class RegimeSpecificTPSLOptimizer:
         default_return=False,
         context="regime-specific TP/SL optimizer initialization",
     )
-    async def initialize(self) -> bool:
-        """Initialize the regime-specific TP/SL optimizer.
-
-        Returns:
-            bool: True if initialization successful = False otherwise
-
-        """
-        try:
-            self.logger.info(
-                "Initializing Regime-Specific TP/SL Optimizer (Meta-Label)...",
-            )
-
-            # Initialize Meta-Labeling system
-            if not await self._initialize_meta_label_system():
-                self.print(failed("Failed to initialize Meta-Labeling system"))
-                return False
-
-            # Load existing optimization results
-            await self._load_optimization_results()
-
-            self.logger.info(
-                "✅ Regime-Specific TP/SL Optimizer initialized successfully",
-            )
-            return True
-
-        except Exception as e:
-            self.logger.exception(
-                f"❌ Failed to initialize Regime-Specific TP/SL Optimizer: {e}",
-            )
-            return False
-
-    async def _initialize_meta_label_system(self) -> bool:
-        """Initialize the MetaLabelingSystem.
-
-        Returns:
-            bool: True if initialization successful = False otherwise
-
-        """
-        try:
-            ok = await self.meta_labeling_system.initialize()
-            if ok:
-                self.logger.info(
-                    "✅ Meta-Labeling system initialized for regime identification",
-                )
-                return True
-            self.logger.warning("Meta-Labeling system failed to initialize")
-            return False
-        except Exception as e:
-            self.print(
-                initialization_error(f"Error initializing Meta-Labeling system: {e}"),
-            )
-            return False
-
     async def _load_optimization_results(self) -> None:
         """Load existing optimization results from disk."""
         try:
@@ -410,14 +357,6 @@ class RegimeSpecificTPSLOptimizer:
             )
 
             # Define objective function
-            def objective(trial):
-                return self._evaluate_tpsl_parameters(
-                    trial,
-                    regime,
-                    historical_data,
-                    base_params,
-                )
-
             # Run optimization
             study.optimize(objective, n_trials=self.n_trials, show_progress_bar=False)
 
@@ -577,69 +516,3 @@ class RegimeSpecificTPSLOptimizer:
         default_return=None,
         context="regime-specific TP/SL prediction",
     )
-    async def get_optimized_tpsl(
-        self, current_data: pd.DataFrame, historical_data: pd.DataFrame, force_optimization: bool = False
-    ) -> dict[str, Any]:
-        """Get optimized TP/SL parameters for the current label-driven market regime.
-
-        Args:
-            current_data: Current market data (OHLCV)
-            historical_data: Historical data for optimization
-            force_optimization: Force re-optimization even if cached
-
-        Returns:
-            Dictionary with optimized TP/SL parameters
-
-        """
-        try:
-            # Identify current regime via meta-labels
-            regime, confidence, regime_info = await self.identify_current_regime(current_data)
-
-            # Check if we have cached results for this regime
-            if not force_optimization and regime in self.optimization_results:
-                cached_params = self.optimization_results[regime]
-                self.logger.info(f"Using cached TP/SL parameters for {regime}")
-                return {
-                    **cached_params,
-                    "regime": regime,
-                    "confidence": confidence,
-                    "regime_info": regime_info,
-                }
-
-            # Optimize for current regime
-            optimized_params = await self.optimize_tpsl_for_regime(
-                regime,
-                historical_data,
-                current_data,
-            )
-
-            return {
-                **optimized_params,
-                "regime": regime,
-                "confidence": confidence,
-                "regime_info": regime_info,
-            }
-
-        except Exception as e:
-            self.print(error(f"Error getting optimized TP/SL: {e}"))
-            # Return default parameters
-            return {
-                **self.regime_parameters["SIDEWAYS_RANGE"],
-                "regime": "SIDEWAYS_RANGE",
-                "confidence": 0.5,
-                "regime_info": {"method": "fallback", "error": str(e)},
-            }
-
-    def get_regime_statistics(self) -> dict[str, Any]:
-        """Get statistics about regime-specific TP/SL optimization.
-
-        Returns:
-            Dictionary with optimization statistics
-
-        """
-        return {
-            "optimized_regimes": list(self.optimization_results.keys()),
-            "total_optimizations": len(self.optimization_results),
-            "last_optimization_time": self.last_optimization_time,
-            "regime_parameters": self.regime_parameters,
-        }

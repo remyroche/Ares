@@ -19,16 +19,6 @@ import logging
 logger = logging.getLogger(__name__)
 
 # Simple error handling decorator
-def handle_errors(func):
-    """Simple error handling decorator."""
-    def wrapper(*args, **kwargs):
-        try:
-            return func(*args, **kwargs)
-        except Exception as e:
-            logger.error(f"Error in {func.__name__}: {e}")
-            return None
-    return wrapper
-
 
 class ScenarioBasedPredictor:
     """
@@ -137,31 +127,6 @@ class ScenarioBasedPredictor:
         self.last_training_time: Optional[datetime] = None
         self.feature_importance: Dict[str, float] = {}
         self.model_performance: Dict[str, float] = {}
-
-    async def initialize(self) -> bool:
-        """
-        Initialize scenario-based predictor.
-
-        Returns:
-            bool: True if initialization successful, False otherwise
-        """
-        try:
-            self.logger.info("Initializing Scenario-Based Predictor...")
-
-            # Validate configuration
-            if not self._validate_configuration():
-                self.logger.error("Invalid configuration for scenario predictor")
-                return False
-
-            # Initialize model
-            self.model = lgb.LGBMClassifier(**self.model_config)
-
-            self.logger.info("✅ Scenario-Based Predictor initialized successfully")
-            return True
-
-        except Exception as e:
-            self.logger.error(f"❌ Scenario-Based Predictor initialization failed: {e}")
-            return False
 
     def _validate_configuration(self) -> bool:
         """
@@ -582,102 +547,3 @@ class ScenarioBasedPredictor:
                     "last_training_time": None
                 }
             }
-
-    def extract_features(self, market_data: pd.DataFrame) -> np.ndarray:
-        """
-        Extract features from market data for scenario prediction.
-
-        Args:
-            market_data: Market data with OHLCV
-
-        Returns:
-            np.ndarray: Feature array
-        """
-        try:
-            features = []
-
-            if len(market_data) < self.feature_config["lookback_periods"]:
-                # Not enough data, return default features
-                return np.array([0.5] * 15)
-
-            # Price-based features
-            close_prices = market_data['close'].values
-            high_prices = market_data['high'].values
-            low_prices = market_data['low'].values
-            volumes = market_data['volume'].values
-
-            # Current price and recent prices
-            current_price = close_prices[-1]
-            recent_prices = close_prices[-self.feature_config["lookback_periods"]:]
-
-            # Price momentum features
-            price_momentum_5 = (current_price - close_prices[-5]) / close_prices[-5]
-            price_momentum_10 = (current_price - close_prices[-10]) / close_prices[-10]
-            price_momentum_20 = (current_price - close_prices[-20]) / close_prices[-20]
-
-            features.extend([price_momentum_5, price_momentum_10, price_momentum_20])
-
-            # Volatility features
-            returns = np.diff(close_prices) / close_prices[:-1]
-            volatility_5 = np.std(returns[-5:])
-            volatility_10 = np.std(returns[-10:])
-            volatility_20 = np.std(returns[-20:])
-
-            features.extend([volatility_5, volatility_10, volatility_20])
-
-            # Volume features
-            volume_trend = (volumes[-1] - volumes[-5]) / volumes[-5] if volumes[-5] > 0 else 0
-            volume_ma_ratio = volumes[-1] / np.mean(volumes[-self.feature_config["volume_ma_period"]:]) if np.mean(volumes[-self.feature_config["volume_ma_period"]:]) > 0 else 1.0
-
-            features.extend([volume_trend, volume_ma_ratio])
-
-            # Technical indicators
-            # RSI
-            gains = np.where(returns > 0, returns, 0)
-            losses = np.where(returns < 0, -returns, 0)
-            avg_gain = np.mean(gains[-self.feature_config["rsi_period"]:]) if len(gains) >= self.feature_config["rsi_period"] else 0
-            avg_loss = np.mean(losses[-self.feature_config["rsi_period"]:]) if len(losses) >= self.feature_config["rsi_period"] else 0
-            rs = avg_gain / avg_loss if avg_loss > 0 else 1.0
-            rsi = 100 - (100 / (1 + rs))
-            features.append(rsi / 100)  # Normalize to 0-1
-
-            # Moving averages
-            ma_short = np.mean(close_prices[-self.feature_config["ma_short_period"]:])
-            ma_long = np.mean(close_prices[-self.feature_config["ma_long_period"]:])
-            ma_ratio = ma_short / ma_long if ma_long > 0 else 1.0
-            features.append(ma_ratio)
-
-            # Price range features
-            price_range = (high_prices[-1] - low_prices[-1]) / current_price
-            upper_shadow = (high_prices[-1] - current_price) / current_price
-            lower_shadow = (current_price - low_prices[-1]) / current_price
-
-            features.extend([price_range, upper_shadow, lower_shadow])
-
-            # Additional momentum features
-            latest_return = (current_price - close_prices[-2]) / close_prices[-2]
-            features.append(latest_return)
-
-            return np.array(features)
-
-        except Exception as e:
-            self.logger.error(f"❌ Feature extraction failed: {e}")
-            return np.array([0.5] * 15)
-
-    def get_configuration_summary(self) -> Dict[str, Any]:
-        """
-        Get configuration summary for step17 optimization.
-
-        Returns:
-            dict: Configuration summary
-        """
-        return {
-            "scenarios": self.scenarios,
-            "time_limit_minutes": self.time_limit_minutes,
-            "model_config": self.model_config,
-            "decision_thresholds": self.decision_thresholds,
-            "feature_config": self.feature_config,
-            "is_trained": self.is_trained,
-            "model_performance": self.model_performance,
-            "feature_importance": self.feature_importance
-        }

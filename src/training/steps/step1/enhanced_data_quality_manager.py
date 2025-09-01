@@ -49,26 +49,6 @@ class EnhancedDataQualityManager:
         self.validator = None
         self._initialize_components()
 
-    def _initialize_components(self) -> None:
-        """Initialize all quality management components."""
-        try:
-            from .data_gap_detector import DataGapDetector
-            self.gap_detector = DataGapDetector(str(self.data_cache_path))
-        except ImportError as e:
-            logger.warning(f"⚠️ Could not import DataGapDetector: {e}")
-
-        try:
-            from .comprehensive_gap_filler import ComprehensiveGapFiller
-            self.gap_filler = ComprehensiveGapFiller(str(self.data_cache_path))
-        except ImportError as e:
-            logger.warning(f"⚠️ Could not import ComprehensiveGapFiller: {e}")
-
-        try:
-            from .aggtrades_validator import AggtradesValidator
-            self.validator = AggtradesValidator(str(self.data_cache_path))
-        except ImportError as e:
-            logger.warning(f"⚠️ Could not import AggtradesValidator: {e}")
-
     @with_tracing_span("comprehensive_data_quality_check")
     @quality_gate(
         min_quality_score=0.6,
@@ -377,68 +357,6 @@ class EnhancedDataQualityManager:
 
     @with_tracing_span("get_data_for_step3_step4")
     @secure_data_processing
-    async def get_data_for_step3_step4(
-        self,
-        symbol: str,
-        exchange: str,
-        timeframe: str = "1m",
-        force_refresh: bool = False
-    ) -> Dict[str, Any]:
-        """Get data ready for step3 and step4, ensuring all gaps are filled and quality is validated."""
-        logger.info(f"📊 Preparing data for step3/step4: {exchange}_{symbol}_{timeframe}")
-
-        try:
-            # First, run comprehensive quality check
-            quality_results = await self.comprehensive_quality_check(
-                symbol, exchange, timeframe,
-                check_gaps=True, fill_gaps=True, validate_format=True
-            )
-
-            if not quality_results.get("success", False):
-                logger.error("❌ Data quality check failed")
-                return {
-                    "success": False,
-                    "error": "Data quality check failed",
-                    "issues": quality_results.get("issues", [])
-                }
-
-            # Check if data is ready for step3/step4
-            completeness_results = await self._check_step3_step4_completeness(symbol, exchange, timeframe)
-
-            if not completeness_results.get("ready", False):
-                logger.warning("⚠️ Data not ready for step3/step4, attempting to fix...")
-
-                # Try to use step1 and step01_5 components to get missing data
-                fix_results = await self._fix_missing_data_for_steps(symbol, exchange, timeframe)
-
-                if not fix_results.get("success", False):
-                    return {
-                        "success": False,
-                        "error": "Failed to prepare data for step3/step4",
-                        "missing": completeness_results.get("missing", []),
-                        "fix_attempts": fix_results
-                    }
-
-            # Return data paths and metadata
-            return {
-                "success": True,
-                "symbol": symbol,
-                "exchange": exchange,
-                "timeframe": timeframe,
-                "unified_data_path": str(self.data_cache_path / "unified" / exchange.lower() / symbol / timeframe),
-                "klines_path": str(self.data_cache_path / f"klines_{exchange}_{symbol}_{timeframe}_consolidated.parquet"),
-                "aggtrades_path": str(self.data_cache_path / f"aggtrades_{exchange}_{symbol}_consolidated.parquet"),
-                "quality_metrics": quality_results.get("quality_metrics", {}),
-                "ready_for_steps": True
-            }
-
-        except Exception as e:
-            logger.exception(f"❌ Error preparing data for step3/step4: {e}")
-            return {
-                "success": False,
-                "error": str(e)
-            }
-
     @with_tracing_span("fix_missing_data_for_steps")
     async def _fix_missing_data_for_steps(self, symbol: str, exchange: str, timeframe: str) -> Dict[str, Any]:
         """Use step1 and step01_5 components to fix missing data for step3/step4."""

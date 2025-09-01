@@ -204,24 +204,13 @@ def example_backwards_compatibility():
 
     # Legacy decorators (with deprecation warnings)
     @validate_call()
-    def legacy_function(x: int) -> int:
-        return x * 2
-
     @check_input(None)
     def legacy_check_function(df):
         return df
 
     # Enhanced decorator aliases
     @smart_recovery(max_retries=1)
-    def legacy_recovery_function(x):
-        if x < 0:
-            raise ValueError("Negative")
-        return x
-
     @cached(cache_size=5)
-    def legacy_cached_function(x):
-        return x ** 2
-
     # Test legacy functions
     print("Testing legacy decorator names:")
     test_df = pd.DataFrame({'A': [1, 2, 3]})

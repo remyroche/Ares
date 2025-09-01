@@ -233,18 +233,6 @@ class ParallelBacktester:
         self.executor: ProcessPoolExecutor | None = ProcessPoolExecutor(max_workers=self.n_workers)
         self.logger = system_logger.getChild("ParallelBacktester")
 
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc, tb):
-        try:
-            if hasattr(self, "executor") and self.executor:
-                self.executor.shutdown(wait=True)
-        finally:
-            self.executor = None
-        # do not suppress exceptions
-        return False
-
     def evaluate_batch(
         self, param_batch: list[dict[str, Any]], market_data: pd.DataFrame,
     ) -> list[float]:
@@ -280,20 +268,6 @@ class ParallelBacktester:
         return results
 
     @staticmethod
-    def _evaluate_single_params(data_pickle: bytes, params: dict[str, Any]) -> float:
-        """Evaluate single parameter set (runs in separate process)."""
-        _ = pickle.loads(data_pickle)
-        # Implement your evaluation logic here
-        return float(random.uniform(-1.0, 1.0))  # Placeholder
-
-    def __del__(self) -> None:
-        """Clean up executor."""
-        if hasattr(self, "executor") and self.executor:
-            try:
-                self.executor.shutdown(wait=True)
-            except Exception:
-                pass
-
 
 class IncrementalTrainer:
     """Incremental training to reuse model states."""
@@ -651,10 +625,6 @@ class MemoryEfficientDataManager:
             self.logger.exception(f"Failed to load Parquet {file_path}: {e}")
             raise
 
-    def get_subset(self, df: pd.DataFrame, start_idx: int, end_idx: int) -> np.ndarray:
-        """Get numpy array subset for efficient computation."""
-        return df.iloc[start_idx:end_idx].values
-
 
 class MemoryManager:
     """Manage memory usage during optimization."""
@@ -673,18 +643,6 @@ class MemoryManager:
             self._cleanup_memory()
             return True
         return False
-
-    def _cleanup_memory(self) -> None:
-        """Clean up memory by forcing garbage collection."""
-        self.cleanup_counter += 1
-        self.logger.info(f"Performing memory cleanup #{self.cleanup_counter}")
-
-        # Force garbage collection
-        gc.collect()
-
-        # Get memory usage after cleanup
-        memory_after = psutil.virtual_memory().percent / 100
-        self.logger.info(f"Memory usage after cleanup: {memory_after:.1%}")
 
     def profile_memory_usage(self) -> dict[str, float]:
         """Profile current memory usage."""
@@ -783,38 +741,6 @@ class EnhancedTrainingManagerOptimized:
         default_return=False,
         context="initialization",
     )
-    async def initialize(self) -> bool:
-        """Initialize the enhanced training manager with optimizations."""
-        try:
-            self.logger.info(
-                "🚀 Initializing Enhanced Training Manager with Optimizations...",
-            )
-
-            # Initialize optimization components
-            if self.enable_parallelization:
-                self.parallel_backtester = ParallelBacktester(
-                    n_workers=self.max_workers,
-                )
-                self.logger.info(
-                    f"✅ Parallel backtester initialized with {self.max_workers} workers",
-                )
-
-            self.streaming_processor = StreamingDataProcessor(
-                chunk_size=self.chunk_size,
-            )
-            self.adaptive_sampler = AdaptiveSampler()
-
-            # Initialize incremental trainer with base config
-            base_model_config = self.config.get("model", {})
-            self.incremental_trainer = IncrementalTrainer(base_model_config)
-
-            self.logger.info("✅ All optimization components initialized successfully")
-            return True
-
-        except Exception as e:
-            self.logger.exception(f"❌ Initialization failed: {e}")
-            return False
-
     async def execute_optimized_training(
         self, symbol: str, exchange: str, timeframe: str = "1h",
     ) -> dict[str, Any]:
@@ -1130,43 +1056,6 @@ class EnhancedTrainingManagerOptimized:
             "ensemble_scores": ensemble_scores,
         }
 
-    def get_memory_profile(self) -> dict[str, Any]:
-        """Get current memory profile."""
-        return self.memory_manager.profile_memory_usage()
-
-    def get_optimization_stats(self) -> dict[str, Any]:
-        """Get optimization statistics."""
-        stats = {
-            "caching_enabled": self.enable_caching,
-            "parallelization_enabled": self.enable_parallelization,
-            "early_stopping_enabled": self.enable_early_stopping,
-            "memory_management_enabled": self.enable_memory_management,
-            "max_workers": self.max_workers,
-            "memory_threshold": self.memory_threshold,
-        }
-
-        if self.cached_backtester:
-            stats["cache_size"] = len(self.cached_backtester.cache)
-
-        if self.adaptive_sampler:
-            stats["trial_history_size"] = len(self.adaptive_sampler.trial_history)
-
-        return stats
-
-    async def cleanup(self) -> None:
-        """Clean up resources."""
-        self.logger.info("🧹 Cleaning up resources...")
-
-        # Clean up parallel backtester
-        if self.parallel_backtester:
-            del self.parallel_backtester
-
-        # Force garbage collection
-        if self.enable_memory_management:
-            self.memory_manager._cleanup_memory()
-
-        self.logger.info("✅ Cleanup completed")
-
 
 class ParquetDatasetManager:
     """Efficient parquet dataset management for large-scale data operations."""
@@ -1183,141 +1072,6 @@ class ParquetDatasetManager:
             raise ImportError(
                 msg,
             )
-
-    def write_flat_parquet(
-        self, df: pd.DataFrame, file_path: str, compression: str = "snappy",
-    ) -> None:
-        """Write DataFrame to parquet format with optimized settings."""
-        try:
-            # Ensure directory exists
-            os.makedirs(os.path.dirname(file_path), exist_ok=True)
-
-            # Convert to pyarrow table and write
-            table = pa.Table.from_pandas(df)
-            pq.write_table(table, file_path, compression=compression)
-
-            self.logger.info(f"✅ Parquet file written: {file_path}")
-
-        except Exception as e:
-            self.logger.exception(f"❌ Failed to write parquet file {file_path}: {e}")
-            raise
-
-    def write_partitioned_dataset(
-        self,
-        df: pd.DataFrame,
-        base_dir: str,
-        partition_cols: list[str] | None = None,
-        schema_name: str | None = None,
-        compression: str = "snappy",
-        metadata: dict[str, Any] | None = None,
-        min_rows_per_group: int = 128_000,
-        max_rows_per_file: int = 5_000_000,
-    ) -> None:
-        """Write a hive-partitioned dataset using pyarrow.dataset.write_dataset."""
-        try:
-            os.makedirs(base_dir, exist_ok=True)
-            table = pa.Table.from_pandas(df, preserve_index=False)
-            if metadata:
-                try:
-                    schema_with_meta = table.schema.with_metadata(
-                        {
-                            str(k): (str(v) if v is not None else "")
-                            for k, v in metadata.items()
-                        },
-                    )
-                    table = table.cast(schema_with_meta)
-                except Exception:
-                    pass
-            # schema_name is accepted for compatibility; no-op here but reserved for future schema enforcement
-            partitioning = None
-            if partition_cols:
-                # Build a partition schema from table schema, defaulting to string if absent
-                fields = []
-                for col in partition_cols:
-                    try:
-                        f = table.schema.field(col)
-                        fields.append(pa.field(col, f.type))
-                    except KeyError:
-                        # Default to string if column not in table schema
-                        fields.append(pa.field(col, pa.string()))
-                partition_schema = pa.schema(fields)
-                partitioning = ds.partitioning(partition_schema, flavor="hive")
-            write_args = {
-                "base_dir": base_dir,
-                "format": "parquet",
-                "basename_template": "part-{i}.parquet",
-                "existing_data_behavior": "overwrite_or_ignore",
-                "max_rows_per_file": max_rows_per_file,
-                "min_rows_per_group": min_rows_per_group,
-                "max_rows_per_group": min(max_rows_per_file, 1_048_576),
-                "partitioning": partitioning,
-            }
-            ds.write_dataset(table, **write_args)
-            self.logger.info(
-                f"✅ Partitioned dataset written to {base_dir} with partitions={partition_cols or []}",
-            )
-        except Exception as e:
-            self.logger.exception(
-                f"❌ Failed to write partitioned dataset to {base_dir}: {e}",
-            )
-            raise
-
-    def materialize_projection(
-        self,
-        base_dir: str,
-        filters: list[tuple[str, str, Any]] | None,
-        columns: list[str] | None,
-        output_dir: str,
-        partition_cols: list[str] | None = None,
-        schema_name: str | None = None,
-        compression: str = "snappy",
-        batch_size: int = 131072,
-        metadata: dict[str, Any] | None = None,
-    ) -> None:
-        """Scan an existing dataset, project columns with filters, and write to a new partitioned dataset."""
-        try:
-            os.makedirs(output_dir, exist_ok=True)
-            dataset = ds.dataset(base_dir, format="parquet")
-            scanner = dataset.scanner(
-                columns=columns,
-                filter=self._build_filter(filters),
-                batch_size=batch_size,
-            )
-            table = scanner.to_table()
-            if metadata:
-                try:
-                    schema_with_meta = table.schema.with_metadata(
-                        {
-                            str(k): (str(v) if v is not None else "")
-                            for k, v in metadata.items()
-                        },
-                    )
-                    table = table.cast(schema_with_meta)
-                except Exception:
-                    pass
-            ds.write_dataset(
-                table,
-                base_dir=output_dir,
-                format="parquet",
-                basename_template="part-{i}.parquet",
-                existing_data_behavior="overwrite_or_ignore",
-                partitioning=(
-                    ds.partitioning(partition_cols, flavor="hive")
-                    if partition_cols
-                    else None
-                ),
-                max_rows_per_file=5_000_000,
-                min_rows_per_group=128_000,
-                max_rows_per_group=1_048_576,
-            )
-            self.logger.info(
-                f"✅ Materialized projection to {output_dir} (columns={columns}, filters={filters})",
-            )
-        except Exception as e:
-            self.logger.exception(
-                f"❌ Failed to materialize projection to {output_dir}: {e}",
-            )
-            raise
 
     @staticmethod
     def _build_filter(filters: list[tuple[str, str, Any]] | None):
@@ -1347,17 +1101,3 @@ class ParquetDatasetManager:
         except Exception as e:
             self.logger.exception(f"❌ Failed to read parquet file {file_path}: {e}")
             raise
-
-    def get_parquet_info(self, file_path: str) -> dict[str, Any]:
-        """Get information about a parquet file."""
-        try:
-            metadata = pq.read_metadata(file_path)
-            return {
-                "num_rows": metadata.num_rows,
-                "num_columns": metadata.num_columns,
-                "file_size_mb": os.path.getsize(file_path) / (1024 * 1024),
-                "schema": str(metadata.schema),
-            }
-        except Exception as e:
-            self.logger.exception(f"❌ Failed to get parquet info for {file_path}: {e}")
-            return {}

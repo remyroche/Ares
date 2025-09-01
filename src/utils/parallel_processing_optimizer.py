@@ -95,17 +95,6 @@ class MacM1ParallelOptimizer:
         except Exception:
             return False
 
-    def _get_optimal_chunk_size(self, data_size: int) -> int:
-        """
-        Calculate optimal chunk size for parallel processing.
-        """
-        base_chunk_size = self.chunk_size * (2 if self.is_m1_mac else 1)
-        # Aim for ~4x workers chunks at minimum
-        denom = max(1, self.max_workers * 4)
-        adaptive = max(1, data_size // denom)
-        optimal = max(base_chunk_size, adaptive)
-        return min(optimal, 10000)
-
     def _split_dataframe(
         self,
         df: pd.DataFrame,
@@ -220,48 +209,6 @@ class MacM1ParallelOptimizer:
         logger.info("✅ Parallel feature engineering completed")
         return final_result
 
-    def parallel_rolling_operations(
-        self,
-        df: pd.DataFrame,
-        window_sizes: list[int],
-        operation: str = "mean",
-    ) -> pd.DataFrame:
-        """
-        Perform rolling operations with different window sizes in parallel.
-        """
-
-        def rolling_operation(chunk_df: pd.DataFrame, window_size: int, op: str) -> pd.DataFrame:
-            numeric_cols = chunk_df.select_dtypes(include=[np.number]).columns
-            result = chunk_df.copy()
-            for col in numeric_cols:
-                if op == "mean":
-                    result[f"{col}_rolling_{window_size}"] = chunk_df[col].rolling(window_size).mean()
-                elif op == "std":
-                    result[f"{col}_rolling_{window_size}_std"] = chunk_df[col].rolling(window_size).std()
-                elif op == "min":
-                    result[f"{col}_rolling_{window_size}_min"] = chunk_df[col].rolling(window_size).min()
-                elif op == "max":
-                    result[f"{col}_rolling_{window_size}_max"] = chunk_df[col].rolling(window_size).max()
-            return result
-
-        feature_funcs = [partial(rolling_operation, window_size=w, op=operation) for w in window_sizes]
-        return self.parallel_feature_engineering(df, feature_funcs)
-
-    def get_system_info(self) -> dict[str, Any]:
-        """
-        Get system information for optimization.
-        """
-        cpu_count = mp.cpu_count()
-        memory_gb = psutil.virtual_memory().total / (1024**3)
-        return {
-            "cpu_count": cpu_count,
-            "memory_gb": memory_gb,
-            "is_m1_mac": self.is_m1_mac,
-            "max_workers": self.max_workers,
-            "chunk_size": self.chunk_size,
-            "memory_limit_mb": self.memory_limit_mb,
-        }
-
     def log_system_info(self) -> None:
         """Log system information for debugging."""
         info = self.get_system_info()
@@ -278,16 +225,6 @@ class MacM1ParallelOptimizer:
 _parallel_optimizer: MacM1ParallelOptimizer | None = None
 
 
-def get_parallel_optimizer() -> MacM1ParallelOptimizer:
-    """
-    Get the global parallel optimizer instance.
-    """
-    global _parallel_optimizer
-    if _parallel_optimizer is None:
-        # Fallback implementation for _parallel_optimizer
-        _parallel_optimizer = MacM1ParallelOptimizer()
-    return _parallel_optimizer
-
 
 def parallel_feature_engineering(max_workers: int = 4) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """
@@ -295,59 +232,5 @@ def parallel_feature_engineering(max_workers: int = 4) -> Callable[[Callable[...
     Skips parallelization for async functions.
     """
 
-    def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
-        # If async, return function unchanged to preserve coroutine semantics
-        if asyncio.iscoroutinefunction(func):
-            return func  # type: ignore[return-value]
-
-        @wraps(func)
-        def wrapper(*args: Any, **kwargs: Any):
-            optimizer = get_parallel_optimizer()
-            optimizer.max_workers = max(1, max_workers)
-
-            # Identify first DataFrame arg
-            df_arg: Optional[pd.DataFrame] = None
-            for arg in args:
-                if isinstance(arg, pd.DataFrame):
-                    df_arg = arg
-                    break
-            if df_arg is None:
-        # Fallback implementation for df_arg
-        # Fallback implementation for df_arg
-                # Try kwargs
-                for _k, v in kwargs.items():
-                    if isinstance(v, pd.DataFrame):
-                        df_arg = v
-                        break
-
-            if df_arg is None:
-        # Fallback implementation for df_arg
-        # Fallback implementation for df_arg
-                return func(*args, **kwargs)
-
-            # Run function in parallel by applying it to chunks and merging
-            def apply_func(chunk: pd.DataFrame) -> pd.DataFrame:
-                return func(chunk, *[a for a in args if not isinstance(a, pd.DataFrame)], **kwargs)  # type: ignore[misc]
-
-            return optimizer.parallel_apply(df_arg, apply_func)
-
-        return wrapper
-
     return decorator
 
-
-def optimize_for_m1_mac() -> None:
-    """
-    Apply Mac M1 specific optimizations via environment hints.
-    """
-    optimizer = get_parallel_optimizer()
-    optimizer.log_system_info()
-
-    if optimizer.is_m1_mac:
-        os.environ["OMP_NUM_THREADS"] = str(optimizer.max_workers)
-        os.environ["MKL_NUM_THREADS"] = str(optimizer.max_workers)
-        os.environ["OPENBLAS_NUM_THREADS"] = str(optimizer.max_workers)
-        logger.info("🍎 Applied Mac M1 specific optimizations")
-        logger.info(f"   Set OMP_NUM_THREADS={optimizer.max_workers}")
-        logger.info(f"   Set MKL_NUM_THREADS={optimizer.max_workers}")
-        logger.info(f"   Set OPENBLAS_NUM_THREADS={optimizer.max_workers}")

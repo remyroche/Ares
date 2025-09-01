@@ -115,14 +115,6 @@ class MultiTimeframeHMMEnsemble:
         self.logger.info(f"📊 Timeframes: {[tf.timeframe for tf in config.timeframes]}")
         self.logger.info(f"⚙️ Ensemble method: {config.ensemble_method}")
 
-    def _initialize_weights(self) -> None:
-        """Initialize ensemble weights based on timeframe configuration."""
-        total_weight = sum(tf.weight for tf in self.config.timeframes)
-        for tf_config in self.config.timeframes:
-            self.ensemble_weights[tf_config.timeframe] = tf_config.weight / total_weight
-
-        self.logger.info(f"📈 Initial weights: {self.ensemble_weights}")
-
     @handle_errors(
         exceptions=(Exception,),
         default_return=False,
@@ -355,35 +347,6 @@ class MultiTimeframeHMMEnsemble:
         except Exception as e:
             self.logger.exception(f"Error extracting features for cluster {cluster_id}: {e}")
             return None
-
-    def _get_regime_transitions(self, data: pd.DataFrame) -> pd.Series:
-        """Extract regime transitions from data."""
-        try:
-            # Look for cluster ID column
-            cluster_col = None
-            for col in data.columns:
-                if "cluster" in col.lower() and "id" in col.lower():
-                    cluster_col = col
-                    break
-
-            if cluster_col is None:
-                # Try to find any cluster-related column
-                for col in data.columns:
-                    if "cluster" in col.lower():
-                        cluster_col = col
-                        break
-
-            if cluster_col is None:
-                # Create dummy transitions (all zeros)
-                return pd.Series(0, index=data.index)
-
-            # Create regime transitions
-            cluster_ids = data[cluster_col].astype(int)
-            return (cluster_ids != cluster_ids.shift(1)).astype(int)
-
-        except Exception as e:
-            self.logger.exception(f"💥 Error extracting regime transitions: {e}")
-            return pd.Series(0, index=data.index)
 
     @handle_errors(
         exceptions=(Exception,), default_return=None, context="ensemble prediction"
@@ -738,49 +701,3 @@ class MultiTimeframeHMMEnsemble:
 
         except Exception as e:
             self.logger.exception(f"💥 Error saving ensemble: {e}")
-
-    def load_ensemble(self) -> bool:
-        """Load a trained ensemble."""
-        try:
-            metadata_path = os.path.join(self.models_dir, "ensemble_metadata.json")
-            if not os.path.exists(metadata_path):
-                self.logger.warning("⚠️ No ensemble metadata found")
-                return False
-
-            # Load metadata
-            with open(metadata_path) as f:
-                ensemble_data = json.load(f)
-
-            self.ensemble_weights = ensemble_data.get("ensemble_weights", {})
-            self.trained = ensemble_data.get("trained", False)
-
-            # Load meta-learner if available
-            meta_learner_path = os.path.join(self.models_dir, "meta_learner.joblib")
-            if os.path.exists(meta_learner_path):
-                self.meta_learner = joblib.load(meta_learner_path)
-
-            self.logger.info(f"📂 Ensemble loaded from {self.models_dir}")
-            return True
-
-        except Exception as e:
-            self.logger.exception(f"💥 Error loading ensemble: {e}")
-            return False
-
-    def get_ensemble_status(self) -> dict[str, Any]:
-        """Get ensemble status and statistics."""
-        return {
-            "trained": self.trained,
-            "symbol": self.symbol,
-            "exchange": self.exchange,
-            "timeframes": [tf.timeframe for tf in self.config.timeframes],
-            "ensemble_method": self.config.ensemble_method,
-            "ensemble_weights": self.ensemble_weights,
-            "prediction_count": self.prediction_count,
-            "timeframe_models_count": {
-                tf: len(models.get("hazard_models", {}))
-                for tf, models in self.timeframe_models.items()
-            },
-            "performance_history": {
-                tf: len(perf) for tf, perf in self.timeframe_performance.items()
-            },
-        }

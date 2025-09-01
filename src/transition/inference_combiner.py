@@ -66,60 +66,6 @@ class TransitionInferenceCombiner:
         s = float(self.reliability.get(timeframe, {}).get(cls, 1.0))
         return max(0.0, min(1.0, p * s))
 
-    def combine_probs(
-        self,
-        path_probs_by_timeframe: dict[str, dict[str, float]],
-    ) -> dict[str, float]:
-        """
-        Weighted average of path_class probabilities across configured timeframes, after reliability scaling.
-        path_probs_by_timeframe: {timeframe: {"continuation": p, "reversal": p, "beginning_of_trend": p, "end_of_trend": p}}
-        """
-        classes = ["continuation", "reversal", "beginning_of_trend", "end_of_trend"]
-        combined: dict[str, float] = {c: 0.0 for c in classes}
-        weight_sum = 0.0
-        for tf, probs in path_probs_by_timeframe.items():
-            w = float(self.cfg.weights.get(tf, 0.0))
-            if w <= 0.0:
-                continue
-            weight_sum += w
-            for c in classes:
-                p = float(probs.get(c, 0.0))
-                p_adj = self._apply_reliability(tf, c, p)
-                combined[c] += w * p_adj
-        if weight_sum > 0:
-            for c in combined:
-                combined[c] /= weight_sum
-        return combined
-
-    def gate_decision(
-        self,
-        combined_probs: dict[str, float],
-        timeframe: str = None,
-        macro_regime: str | None = None,
-    ) -> dict[str, Any]:
-        """
-        Decide if trade is allowed given thresholds. Neutral to long/short: we only check if favorable classes exceed thresholds.
-        Returns a dict with gating flag and which class triggered it.
-        """
-        cont = float(combined_probs.get("continuation", 0.0))
-        bot = float(combined_probs.get("beginning_of_trend", 0.0))
-        thr_map = self.cfg.timeframe_thresholds.get(timeframe, {})
-        if macro_regime and macro_regime in self.cfg.macro_thresholds:
-            thr_map = self.cfg.macro_thresholds[macro_regime].get(timeframe, thr_map)
-        thr_cont = float(thr_map.get("continuation", 0.75))
-        thr_bot = float(thr_map.get("beginning_of_trend", 0.75))
-        allow = False
-        trigger = None
-        if cont >= thr_cont:
-            allow, trigger = True, "continuation"
-        if bot >= thr_bot and bot >= cont:
-            allow, trigger = True, "beginning_of_trend"
-        return {
-            "allow_trade": allow,
-            "trigger": trigger,
-            "thresholds": {"continuation": thr_cont, "beginning_of_trend": thr_bot},
-        }
-
     def exit_bias(
         self,
         path_probs_1m: dict[str, float],

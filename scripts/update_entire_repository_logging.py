@@ -18,47 +18,6 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 
-def get_warning_symbol_function(message: str, log_level: str = "error") -> str:
-    """
-    Determine the appropriate warning symbol function based on the message content.
-
-    Args:
-        message: The error/warning message
-        log_level: The logging level (error, warning, exception, critical)
-
-    Returns:
-        The appropriate warning symbol function name
-    """
-    message_lower = message.lower()
-
-    # Error patterns
-    if any(word in message_lower for word in ["failed", "failure", "fail"]):
-        return "failed"
-    if any(word in message_lower for word in ["invalid", "invalid configuration"]):
-        return "invalid"
-    if any(
-        word in message_lower for word in ["missing", "not found", "file not found"]
-    ):
-        return "missing"
-    if any(word in message_lower for word in ["timeout", "timed out"]):
-        return "timeout"
-    if any(word in message_lower for word in ["connection", "network"]):
-        return "connection_error"
-    if any(word in message_lower for word in ["validation", "validate"]):
-        return "validation_error"
-    if any(word in message_lower for word in ["initialization", "init", "initialize"]):
-        return "initialization_error"
-    if any(word in message_lower for word in ["execution", "execute", "runtime"]):
-        return "execution_error"
-    if any(word in message_lower for word in ["critical", "fatal"]):
-        return "critical"
-    if any(word in message_lower for word in ["problem", "issue"]):
-        return "problem"
-    # Default based on log level
-    if log_level in ["error", "exception", "critical"]:
-        return "error"
-    return "warning"
-
 
 def should_skip_file(file_path: str) -> bool:
     """

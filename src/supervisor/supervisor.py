@@ -32,28 +32,6 @@ class CircuitBreaker:
         exceptions=(ValueError, TypeError, AttributeError, RuntimeError),
         default_return=None,
     )
-    async def call(self, func: callable, *args, **kwargs):
-        """Execute function with circuit breaker protection."""
-        if self.state == "OPEN":
-            if time.time() - self.last_failure_time > self.timeout:
-                self.state = "HALF_OPEN"
-            else:
-                msg = "Circuit breaker is OPEN"
-                raise Exception(msg)
-
-        try:
-            result = await func(*args, **kwargs)
-            if self.state == "HALF_OPEN":
-                self.state = "CLOSED"
-                self.failure_count = 0
-            return result
-        except Exception:
-            self.failure_count += 1
-            self.last_failure_time = time.time()
-            if self.failure_count >= self.failure_threshold:
-                self.state = "OPEN"
-            raise
-
 class OnlineLearningManager:
     """Manages online learning for model weighting based on performance."""
 
@@ -126,14 +104,6 @@ class OnlineLearningManager:
         except Exception:
             self.print(error("Error recalculating weights: {e}"))
 
-    def get_model_weights(self) -> dict[str , float]:
-        """Get current model weights."""
-        return self.model_weights.copy()
-
-    def get_model_performances(self) -> dict[str , list[float]]:
-        """Get model performance history."""
-        return {k: v.copy() for k, v in self.model_performances.items()}
-
 class Supervisor:
     """
     System-Level Supervisor component responsible for:
@@ -196,24 +166,6 @@ class Supervisor:
         default_return=False,
         context="supervisor initialization",
     )
-    async def initialize(self) -> bool:
-        try:
-            self.logger.info("Initializing Supervisor...")
-            await self._load_supervisor_configuration()
-            if not self._validate_configuration():
-                self.print(invalid("Invalid configuration for supervisor"))
-                return False
-            await self._initialize_components()
-            await self._setup_circuit_breakers()
-            await self._setup_online_learning()
-            await self._setup_component_monitors()
-            self.logger.info("✅ Supervisor initialization completed successfully")
-            self.is_initialized = True
-            return True
-        except Exception:
-            self.print(failed("❌ Supervisor initialization failed: {e}"))
-            return False
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None, context="supervisor configuration loading",
@@ -261,80 +213,18 @@ class Supervisor:
         exceptions=(Exception,),
         default_return=None, context="component initialization",
     )
-    async def _initialize_components(self) -> None:
-        try:
-            # Initialize critical components with updated structure
-            self.components = {
-                "database": None , "exchange": None,
-                "analyst": None , "strategist": None,
-                "tactician": None , "sentinel": None,
-                "paper_trader": None,
-                "performance_monitor": None,
-                "enhanced_training_manager": None , "model_manager": None,
-                "state_manager": None}
-
-            # Initialize enhanced prediction service
-            await self._initialize_enhanced_prediction_service()
-
-            self.logger.info("Components initialized successfully")
-        except Exception:
-            self.print(initialization_error("Error initializing components: {e}"))
-
     @handle_errors(
         exceptions=(Exception,),
         default_return=None, context="circuit breakers setup",
     )
-    async def _setup_circuit_breakers(self) -> None:
-        """Setup circuit breakers for critical services."""
-        try:
-            # Setup circuit breakers for external services
-            self.circuit_breakers = {
-                "exchange": CircuitBreaker(failure_threshold=5, timeout=60),
-                "database": CircuitBreaker(failure_threshold=3, timeout=30),
-                "analyst": CircuitBreaker(failure_threshold=3, timeout=30),
-                "strategist": CircuitBreaker(failure_threshold=3, timeout=30),
-                "tactician": CircuitBreaker(failure_threshold=3, timeout=30),
-                "enhanced_training_manager": CircuitBreaker(
-                    failure_threshold=3,
-                    timeout=60,
-                ),
-            }
-
-            self.logger.info("Circuit breakers setup complete")
-        except Exception:
-            self.print(error("Error setting up circuit breakers: {e}"))
-
     @handle_errors(
         exceptions=(Exception,),
         default_return=None, context="online learning setup",
     )
-    async def _setup_online_learning(self) -> None:
-        """Setup online learning for model weighting."""
-        try:
-            # Initialize online learning with default configuration
-            online_learning_config = self.supervisor_config.get("online_learning", {})
-            self.online_learning = OnlineLearningManager(online_learning_config)
-
-            self.logger.info("Online learning setup complete")
-        except Exception:
-            self.print(error("Error setting up online learning: {e}"))
-
     @handle_errors(
         exceptions=(Exception,),
         default_return=None, context="component monitors setup",
     )
-    async def _setup_component_monitors(self) -> None:
-        """Setup component-specific monitoring."""
-        try:
-            # Initialize component monitors with default states
-            for monitors in self.component_monitors.values():
-                for monitor_name in monitors:
-                    monitors[monitor_name] = False
-
-            self.logger.info("Component monitors setup complete")
-        except Exception:
-            self.print(error("Error setting up component monitors: {e}"))
-
     @handle_errors(
         exceptions=(Exception,),
         default_return=False,
@@ -649,79 +539,6 @@ class Supervisor:
                 "reason": "error",
                 "error": str(e)
             }
-
-    def _tactician_determine_direction(
-        self,
-        confidence_scores: Dict[str, float],
-        market_data: pd.DataFrame
-    ) -> str:
-        """Determine trade direction based on Tactician model confidences."""
-        try:
-            # Logic to determine if Tactician models suggest long, short, or neutral
-            # This would be based on the specific Tactician model outputs (lower timeframe)
-            bullish_confidence = sum(
-                conf for name, conf in confidence_scores.items()
-                if "bullish" in name.lower() or "long" in name.lower()
-            )
-            bearish_confidence = sum(
-                conf for name, conf in confidence_scores.items()
-                if "bearish" in name.lower() or "short" in name.lower()
-            )
-
-            # If no directional models, use overall confidence pattern
-            if bullish_confidence == 0 and bearish_confidence == 0:
-                # Use short-term price momentum as fallback
-                if len(market_data) >= 3:
-                    recent_change = (market_data['close'].iloc[-1] - market_data['close'].iloc[-3]) / market_data['close'].iloc[-3]
-                    if abs(recent_change) > 0.0005:  # 0.05% threshold for short-term
-                        return "long" if recent_change > 0 else "short"
-                return "neutral"
-
-            # Determine direction based on confidence
-            if bullish_confidence > bearish_confidence and bullish_confidence > 0.6:
-                return "long"
-            elif bearish_confidence > bullish_confidence and bearish_confidence > 0.6:
-                return "short"
-            else:
-                return "neutral"
-
-        except Exception as e:
-            self.logger.error(error(f"❌ Error determining tactician direction: {e}"))
-            return "neutral"
-
-    def _directions_agree(self, analyst_direction: str, tactician_direction: str) -> bool:
-        """Check if Analyst and Tactician agree on trade direction."""
-        if analyst_direction == "neutral" or tactician_direction == "neutral":
-            return False
-        return analyst_direction == tactician_direction
-
-    def _tactician_calculate_leverage(self, confidence: float) -> float:
-        """Calculate leverage based on confidence score."""
-        if confidence > 0.9:
-            return 3.0  # High leverage for very high confidence
-        elif confidence > 0.8:
-            return 2.5
-        elif confidence > 0.7:
-            return 2.0
-        elif confidence > 0.6:
-            return 1.5
-        else:
-            return 1.0  # No leverage for low confidence
-
-    def _tactician_calculate_position_size(self, confidence: float, leverage: float) -> float:
-        """Calculate position size based on confidence and leverage."""
-        base_size = confidence * 100  # Base size as percentage
-        adjusted_size = base_size * leverage
-        return min(adjusted_size, 100.0)  # Cap at 100%
-
-    def _tactician_calculate_entry_timing(self, market_data: pd.DataFrame, confidence: float) -> str:
-        """Calculate optimal entry timing."""
-        if confidence > 0.8:
-            return "immediate"
-        elif confidence > 0.7:
-            return "within_5_minutes"
-        else:
-            return "wait_for_confirmation"
 
     @handle_errors(
         exceptions=(Exception,),
@@ -1868,46 +1685,6 @@ class Supervisor:
         exceptions=(Exception,),
         default_return=None, context="supervisor stop",
     )
-    async def stop(self) -> None:
-        self.logger.info("🛑 Stopping Supervisor...")
-        try:
-            self.is_running = False
-            self.logger.info("✅ Supervisor stopped successfully")
-        except Exception:
-            self.print(error("Error stopping supervisor: {e}"))
-
-    def get_status(self) -> dict[str , Any]:
-        return {
-            "is_running": self.is_running , "supervision_interval": self.supervision_interval,
-            "max_history": self.max_history , "health_checks": self.health_checks,
-            "component_monitors": self.component_monitors , "recovery_attempts": dict(self.recovery_attempts),
-            "online_learning_weights": self.online_learning.get_model_weights(),
-        }
-
-    def get_history(self, limit: int | None = None) -> list[dict[str, Any]]:
-        history = self.history.copy()
-        if limit:
-            history = history[-limit:]
-        return history
-
-    def get_supervision_results(self) -> dict[str , Any]:
-        return self.supervision_results.copy()
-
-    def get_components(self) -> dict[str , Any]:
-        return self.components.copy()
-
-    def get_online_learning_status(self) -> dict[str , Any]:
-        """Get online learning status and statistics."""
-        return {
-            "model_weights": self.online_learning.get_model_weights(),
-            "model_performances": self.online_learning.get_model_performances(),
-            "learning_rate": self.online_learning.learning_rate , "min_weight": self.online_learning.min_weight,
-            "max_weight": self.online_learning.max_weight}
-
-    def get_component_monitors(self) -> dict[str , Any]:
-        """Get component monitors status."""
-        return self.component_monitors.copy()
-
     @handle_errors(
         exceptions=(Exception,),
         default_return=None,
@@ -1963,14 +1740,3 @@ supervisor: Supervisor | None = None
     exceptions=(Exception,),
     default_return=None, context="supervisor setup",
 )
-async def setup_supervisor(
-    config: dict[str , Any] | None = None,
-) -> Supervisor | None:
-    global supervisor
-    if config is None:
-        config = DEFAULT_SUPERVISOR_CONFIG
-    supervisor = Supervisor(config)
-    success = await supervisor.initialize()
-    if success:
-        return supervisor
-    return None

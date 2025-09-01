@@ -27,60 +27,6 @@ def is_import_used(import_name, content, ast_tree):
     return False
 
 
-def find_and_remove_unused_imports(filepath, dry_run=True):
-    """Find and remove unused imports from a file."""
-    try:
-        with open(filepath, 'r', encoding='utf-8') as f:
-            content = f.read()
-        
-        tree = ast.parse(content)
-        lines = content.split('\n')
-        imports_to_remove = []
-        
-        # Find all import statements
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Import):
-                for alias in node.names:
-                    import_name = alias.asname or alias.name.split('.')[0]
-                    if not is_import_used(import_name, content, tree):
-                        imports_to_remove.append(node.lineno - 1)  # 0-based index
-            elif isinstance(node, ast.ImportFrom):
-                # For from imports, check if any of the imported names are used
-                unused_names = []
-                for alias in node.names:
-                    import_name = alias.asname or alias.name
-                    if import_name != '*' and not is_import_used(import_name, content, tree):
-                        unused_names.append(alias.name)
-                
-                # If all names in the from import are unused, mark the whole line
-                if len(unused_names) == len(node.names) and node.names[0].name != '*':
-                    imports_to_remove.append(node.lineno - 1)
-        
-        if not imports_to_remove:
-            return False
-        
-        if dry_run:
-            print(f"\n{filepath}:")
-            for line_idx in sorted(set(imports_to_remove)):
-                if line_idx < len(lines):
-                    print(f"  Would remove line {line_idx + 1}: {lines[line_idx].strip()}")
-        else:
-            # Remove imports in reverse order to maintain line numbers
-            for line_idx in sorted(set(imports_to_remove), reverse=True):
-                if line_idx < len(lines):
-                    print(f"Removing line {line_idx + 1}: {lines[line_idx].strip()}")
-                    lines.pop(line_idx)
-            
-            # Write back the file
-            with open(filepath, 'w', encoding='utf-8') as f:
-                f.write('\n'.join(lines))
-        
-        return True
-        
-    except Exception as e:
-        print(f"Error processing {filepath}: {e}")
-        return False
-
 
 def process_files(file_pattern, dry_run=True):
     """Process multiple files matching a pattern."""

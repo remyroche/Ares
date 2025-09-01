@@ -60,25 +60,6 @@ class UnifiedRegimeIntelligenceValidator:
 		default_return=False,
 		context="validator initialization",
 	)
-	async def initialize(self) -> bool:
-		"""Initialize the validator."""
-		try:
-			self.logger.info("Initializing Unified Regime Intelligence Validator...")
-
-			# Validate configuration
-			if not self._validate_configuration():
-				self.logger.error("Invalid validator configuration")
-				return False
-
-			self.logger.info(
-				"Unified Regime Intelligence Validator initialized successfully",
-			)
-			return True
-
-		except Exception as e:
-			self.logger.exception(f"Failed to initialize validator: {e}")
-			return False
-
 	def _validate_configuration(self) -> bool:
 		"""Validate validator configuration."""
 		try:

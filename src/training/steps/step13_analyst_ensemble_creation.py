@@ -238,71 +238,6 @@ class AnalystEnsembleCreationStep:
             logger.exception(f"❌ Error creating ensemble: {e}")
             return {}
 
-    def _get_sample_data_for_feature_selection(self, data_dir: str, symbol: str, exchange: str) -> Optional[Tuple[pd.DataFrame, pd.Series]]:
-        """Get sample data for feature selection from existing features."""
-        try:
-            # Try to load sample features and labels from Step 2 artifacts
-            features_file = f"{data_dir}/{exchange}_{symbol}_features_train.parquet"
-            labels_file = f"{data_dir}/{exchange}_{symbol}_labeled_train.parquet"
-
-            if os.path.exists(features_file) and os.path.exists(labels_file):
-                features_df = pd.read_parquet(features_file)
-                labels_df = pd.read_parquet(labels_file)
-
-                # Align and extract target series
-                # This assumes 'target' is the target column and they share an index (e.g., timestamp)
-                if "target" in labels_df.columns:
-                    # Ensure indices are aligned before extracting the target
-                    if not features_df.index.equals(labels_df.index):
-                        if "timestamp" in labels_df.columns and "timestamp" not in labels_df.index.names:
-                            labels_df = labels_df.set_index("timestamp")
-                        if "timestamp" in features_df.columns and "timestamp" not in features_df.index.names:
-                            features_df = features_df.set_index("timestamp")
-                        labels_df = labels_df.reindex(features_df.index)
-
-                    target = labels_df["target"].dropna()
-                    features_df = features_df.loc[target.index]
-                    return features_df, target
-                logger.warning(f"⚠️ Target 'target' column not found in {labels_file}")
-
-            return None
-
-        except Exception as e:
-            logger.warning(f"⚠️ Failed to get sample data for feature selection: {e}")
-            return None
-
-    def _create_placeholder_ensemble(
-        self, symbol: str, exchange: str, data_dir: str, training_input: dict[str, Any],
-    ) -> bool:
-        """Create a placeholder ensemble when no enhanced models are available."""
-        try:
-            logger.info("📝 Creating placeholder ensemble for Step 7")
-
-            # Create placeholder ensemble structure
-            placeholder_ensemble: dict[str, Any] = {
-                "ensemble_models": {"placeholder_regime": {"placeholder_model": None}},
-                "ensemble_weights": {"placeholder_regime": {"placeholder_model": 1.0}},
-                "ensemble_metadata": {
-                    "symbol": symbol,
-                    "exchange": exchange,
-                    "created_at": pd.Timestamp.now().isoformat(),
-                    "model_count": 1,
-                    "is_placeholder": True,
-                },
-            }
-
-            # Save placeholder ensemble
-            self._save_ensemble_summary(
-                placeholder_ensemble, symbol, exchange, data_dir,
-            )
-
-            logger.info("✅ Placeholder ensemble created successfully")
-            return True
-
-        except Exception as e:
-            logger.exception(f"❌ Error creating placeholder ensemble: {e}")
-            return False
-
     def _save_ensemble_summary(
         self, ensemble_result: dict[str, Any], symbol: str, exchange: str, data_dir: str,
     ) -> None:
@@ -333,26 +268,3 @@ class AnalystEnsembleCreationStep:
         except Exception as e:
             logger.exception(f"❌ Error saving ensemble summary: {e}")
 
-
-def step07_analyst_ensemble_creation(
-    symbol: str,
-    exchange: str,
-    data_dir: str,
-    training_input: dict[str, Any],
-    config: dict[str, Any],
-) -> bool:
-    """Step 7: Analyst Ensemble Creation.
-
-    Args:
-        symbol: Trading symbol
-        exchange: Exchange name
-        data_dir: Data directory
-        training_input: Training input data
-        config: Configuration dictionary
-
-    Returns:
-        bool: True if successful
-
-    """
-    step = AnalystEnsembleCreationStep(config)
-    return step.execute(symbol, exchange, data_dir, training_input)

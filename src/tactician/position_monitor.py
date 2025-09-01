@@ -126,36 +126,6 @@ class PositionMonitor:
         default_return=False,
         context="position monitor initialization"
     )
-    async def initialize(self) -> bool:
-        """
-        Initialize the position monitor.
-
-        Returns:
-            bool: True if initialization successful
-        """
-        try:
-            self.logger.info("Initializing Position Monitor...")
-
-            # Initialize order manager
-            self.order_manager = EnhancedOrderManager(self.config)
-            await self.order_manager.initialize()
-
-            # Initialize position strategy
-            self.position_strategy = PositionDivisionStrategy(self.config)
-            await self.position_strategy.initialize()
-
-            # Validate configuration
-            if not self._validate_configuration():
-                self.logger.error(invalid("Invalid position monitor configuration"))
-                return False
-
-            self.logger.info("✅ Position Monitor initialized successfully")
-            return True
-
-        except Exception as e:
-            self.logger.error(failed(f"❌ Position Monitor initialization failed: {e}"))
-            return False
-
     def _validate_configuration(self) -> bool:
         """
         Validate position monitor configuration.
@@ -214,34 +184,6 @@ class PositionMonitor:
         default_return=None,
         context="position monitoring stop"
     )
-    async def stop_monitoring(self) -> bool:
-        """
-        Stop continuous position monitoring.
-
-        Returns:
-            bool: True if monitoring stopped successfully
-        """
-        try:
-            if not self.is_monitoring:
-                self.logger.warning(warning("Position monitoring not active"))
-                return True
-
-            self.is_monitoring = False
-
-            if self.monitoring_task:
-                self.monitoring_task.cancel()
-                try:
-                    await self.monitoring_task
-                except asyncio.CancelledError:
-                    pass
-
-            self.logger.info("✅ Position monitoring stopped")
-            return True
-
-        except Exception as e:
-            self.logger.error(failed(f"❌ Failed to stop position monitoring: {e}"))
-            return False
-
     async def _monitoring_loop(self) -> None:
         """
         Main monitoring loop that runs continuously.
@@ -418,25 +360,6 @@ class PositionMonitor:
             self.logger.error(failed(f"❌ Error calculating unrealized PnL: {e}"))
             return 0.0
 
-    async def _get_current_price(self, symbol: str) -> Optional[float]:
-        """
-        Get current price for a symbol.
-
-        Args:
-            symbol: Trading symbol
-
-        Returns:
-            float: Current price or None if failed
-        """
-        try:
-            # In a real implementation, this would fetch from exchange
-            # For now, return a placeholder
-            return 100.0  # Placeholder
-
-        except Exception as e:
-            self.logger.error(failed(f"❌ Error getting current price for {symbol}: {e}"))
-            return None
-
     async def _check_position_alerts(self, assessment: PositionAssessment) -> None:
         """
         Check for conditions that require alerts.
@@ -505,31 +428,6 @@ class PositionMonitor:
 
         except Exception as e:
             self.logger.error(failed(f"❌ Error creating alert: {e}"))
-
-    async def _cleanup_old_positions(self) -> None:
-        """
-        Clean up old positions that are no longer active.
-        """
-        try:
-            current_time = datetime.now()
-            positions_to_remove = []
-
-            for position_id, position_data in self.active_positions.items():
-                entry_time = position_data.get("entry_time")
-                if entry_time:
-                    if isinstance(entry_time, str):
-                        entry_time = datetime.fromisoformat(entry_time.replace('Z', '+00:00'))
-                    position_age = (current_time - entry_time).total_seconds()
-
-                    if position_age > self.max_position_age * 2:  # 2x max age
-                        positions_to_remove.append(position_id)
-
-            for position_id in positions_to_remove:
-                del self.active_positions[position_id]
-                self.logger.info(f"Removed old position: {position_id}")
-
-        except Exception as e:
-            self.logger.error(failed(f"❌ Error cleaning up old positions: {e}"))
 
     async def _auto_refresh_step12_config(self) -> None:
         """
@@ -607,122 +505,3 @@ class PositionMonitor:
         except Exception as e:
             self.logger.error(failed(f"❌ Error loading updated step12 config: {e}"))
             return None
-
-    def add_position(self, position_data: Dict[str, Any]) -> None:
-        """
-        Add a position to monitoring.
-
-        Args:
-            position_data: Position data
-        """
-        try:
-            position_id = position_data.get("position_id")
-            if not position_id:
-                self.logger.error(missing("Position ID is required"))
-                return
-
-            self.active_positions[position_id] = position_data
-            self.logger.info(f"Added position to monitoring: {position_id}")
-
-        except Exception as e:
-            self.logger.error(failed(f"❌ Error adding position: {e}"))
-
-    def remove_position(self, position_id: str) -> None:
-        """
-        Remove a position from monitoring.
-
-        Args:
-            position_id: Position ID to remove
-        """
-        try:
-            if position_id in self.active_positions:
-                del self.active_positions[position_id]
-                self.logger.info(f"Removed position from monitoring: {position_id}")
-            else:
-                self.logger.warning(warning(f"Position not found: {position_id}"))
-
-        except Exception as e:
-            self.logger.error(failed(f"❌ Error removing position: {e}"))
-
-    def get_active_positions(self) -> Dict[str, Dict[str, Any]]:
-        """
-        Get all active positions.
-
-        Returns:
-            Dict[str, Dict[str, Any]]: Active positions
-        """
-        return self.active_positions.copy()
-
-    def get_position_assessments(self, limit: Optional[int] = None) -> List[PositionAssessment]:
-        """
-        Get position assessments.
-
-        Args:
-            limit: Maximum number of assessments to return
-
-        Returns:
-            List[PositionAssessment]: Position assessments
-        """
-        if limit:
-            return self.position_assessments[-limit:]
-        return self.position_assessments.copy()
-
-    def get_position_alerts(self, unresolved_only: bool = True) -> List[PositionAlert]:
-        """
-        Get position alerts.
-
-        Args:
-            unresolved_only: Return only unresolved alerts
-
-        Returns:
-            List[PositionAlert]: Position alerts
-        """
-        if unresolved_only:
-            return [alert for alert in self.position_alerts if not alert.resolved]
-        return self.position_alerts.copy()
-
-    def resolve_alert(self, alert_id: str) -> bool:
-        """
-        Mark an alert as resolved.
-
-        Args:
-            alert_id: Alert ID to resolve
-
-        Returns:
-            bool: True if alert was resolved
-        """
-        try:
-            for alert in self.position_alerts:
-                if alert.alert_id == alert_id:
-                    alert.resolved = True
-                    self.logger.info(f"Resolved alert: {alert_id}")
-                    return True
-
-            self.logger.warning(warning(f"Alert not found: {alert_id}"))
-            return False
-
-        except Exception as e:
-            self.logger.error(failed(f"❌ Error resolving alert: {e}"))
-            return False
-
-    async def cleanup(self) -> None:
-        """
-        Cleanup resources.
-        """
-        try:
-            self.logger.info("Cleaning up Position Monitor...")
-
-            # Stop monitoring
-            await self.stop_monitoring()
-
-            # Cleanup component managers
-            if self.order_manager:
-                await self.order_manager.cleanup()
-
-            if self.position_strategy:
-                await self.position_strategy.cleanup()
-
-            self.logger.info("✅ Position Monitor cleanup completed")
-
-        except Exception as e:
-            self.logger.error(failed(f"❌ Position Monitor cleanup failed: {e}"))

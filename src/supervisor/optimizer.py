@@ -36,19 +36,6 @@ class Optimizer:
         default_return=False,
         context="optimizer initialization",
     )
-    async def initialize(self) -> bool:
-        try:
-            self.logger.info("Initializing Optimizer...")
-            await self._load_optimizer_configuration()
-            if not self._validate_configuration():
-                self.logger.error("Invalid configuration for optimizer")
-                return False
-            self.logger.info("✅ Optimizer initialization completed successfully")
-            return True
-        except Exception as e:
-            self.logger.error(f"❌ Optimizer initialization failed: {e}")
-            return False
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
@@ -160,125 +147,11 @@ class Optimizer:
         default_return=None,
         context="optimizer stop",
     )
-    async def stop(self) -> None:
-        self.logger.info("🛑 Stopping Optimizer...")
-        try:
-            self.is_running = False
-            self.status = {"timestamp": datetime.now().isoformat(), "status": "stopped"}
-            self.logger.info("✅ Optimizer stopped successfully")
-        except Exception as e:
-            self.logger.error(f"Error stopping optimizer: {e}")
-
-    def get_status(self) -> dict[str, Any]:
-        return self.status.copy()
-
-    def get_history(self, limit: int | None = None) -> list[dict[str, Any]]:
-        history = self.history.copy()
-        if limit:
-            history = history[-limit:]
-        return history
-
-    def get_optimization_results(self) -> dict[str, Any]:
-        return self.optimization_results.copy()
-
-    def get_parameters(self) -> dict[str, Any]:
-        return self.parameters.copy()
-
     @handle_errors(
         exceptions=(Exception,),
         default_return=None,
         context="global system optimization",
     )
-    async def implement_global_system_optimization(
-        self, historical_pnl_data: pd.DataFrame,
-        strategy_breakdown_data: dict, checkpoint_file_path: str,
-        hpo_ranges: dict, klines_df: pd.DataFrame,
-        agg_trades_df: pd.DataFrame, futures_df: pd.DataFrame,
-    ) -> dict:
-        """
-        Implement global system optimization with enhanced error handling.
-
-        Args:
-            historical_pnl_data: Historical PnL data
-            strategy_breakdown_data: Strategy breakdown data
-            checkpoint_file_path: Path to checkpoint file
-            hpo_ranges: Hyperparameter optimization ranges
-            klines_df: Klines data
-            agg_trades_df: Aggregated trades data
-            futures_df: Futures data
-
-        Returns:
-            dict: Optimization results
-        """
-        try:
-            self.logger.info(
-                "Running Final Fine-Tuned System Optimization (Stage 3b)...",
-            )
-
-            # Store data for optimization
-            self._optimization_klines_df = klines_df
-            self._optimization_agg_trades_df = agg_trades_df
-            self._optimization_futures_df = futures_df
-
-            # Calculate daily data for SR levels
-            daily_df = self._optimization_klines_df.resample("D").agg(
-                {
-                    "open": "first",
-                    "high": "max",
-                    "low": "min",
-                    "close": "last",
-                    "volume": "sum",
-                },
-            )
-            # Ensure column names are lowercase for consistency
-            daily_df.columns = daily_df.columns.str.lower()
-            self._optimization_sr_levels = self._get_sr_levels(daily_df)
-
-            # Define optimization dimensions from HPO ranges
-            self.logger.info(
-                "Defining optimization dimensions from narrowed HPO ranges.",
-            )
-
-            # Simulate optimization results
-            optimization_results = {
-                "best_params": {
-                    "learning_rate": 0.001,
-                    "batch_size": 64,
-                    "epochs": 100,
-                    "optimization_score": 0.85,
-                },
-                "optimization_score": 0.85,
-                "status": "completed",
-            }
-
-            self.logger.info("Global system optimization completed successfully")
-            return optimization_results
-
-        except Exception as e:
-            self.logger.error(f"Error in global system optimization: {e}")
-            return {"status": "failed", "error": str(e)}
-
-    def _get_sr_levels(self, daily_df: pd.DataFrame) -> list:
-        """Get support/resistance levels from daily data."""
-        try:
-            # Simple SR level calculation
-            levels = []
-            if not daily_df.empty:
-                high = daily_df["high"].max()
-                low = daily_df["low"].min()
-                close = daily_df["close"].iloc[-1]
-
-                levels = [
-                    {"level_price": high, "type": "resistance"},
-                    {"level_price": low, "type": "support"},
-                    {"level_price": close, "type": "current"},
-                ]
-
-            return levels
-        except Exception as e:
-            self.logger.error(f"Error calculating SR levels: {e}")
-            return []
-
 optimizer: Optimizer | None = None
 
 @handle_errors(
@@ -286,16 +159,3 @@ optimizer: Optimizer | None = None
     default_return=None,
     context="optimizer setup",
 )
-async def setup_optimizer(config: dict[str, Any] | None = None) -> Optimizer | None:
-    try:
-        global optimizer
-        if config is None:
-            config = {"optimizer": {"optimization_interval": 300, "max_history": 100}}
-        optimizer = Optimizer(config)
-        success = await optimizer.initialize()
-        if success:
-            return optimizer
-        return None
-    except Exception as e:
-        print(f"Error setting up optimizer: {e}")
-        return None

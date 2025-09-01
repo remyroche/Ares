@@ -160,22 +160,6 @@ class PipelineTester:
         self.mock_creator = MockDataCreator(symbol, exchange)
         self.launcher = AresLauncher()
 
-    def setup_environment(self):
-        """Setup environment for testing."""
-        self.logger.info("🔧 Setting up test environment")
-
-        # Set environment variables for testing
-        os.environ["BLANK_TRAINING_MODE"] = "1"
-        os.environ["FULL_TRAINING_MODE"] = "0"
-        os.environ["FORCE"] = "1"
-
-        # Create necessary directories
-        Path("data_cache").mkdir(exist_ok=True)
-        Path("data/training").mkdir(parents=True, exist_ok=True)
-        Path("log").mkdir(exist_ok=True)
-
-        self.logger.info("✅ Test environment setup completed")
-
     def create_mock_data(self):
         """Create mock data for testing."""
         self.logger.info("📊 Creating mock data")

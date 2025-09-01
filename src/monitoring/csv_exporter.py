@@ -50,49 +50,9 @@ class CSVExporter:
     @performance_monitor(level=PerformanceLevel.DETAILED)
     @memory_efficient()
     @handle_errors(exceptions=(Exception,), default_return=False, context="csv_exporter.initialize")
-    async def initialize(self) -> bool:
-        """Initialize CSV exporter."""
-        self.logger.info("📊 Initializing CSV Exporter...")
-
-        # Create subdirectories for different data types
-        for data_type in [
-            "performance",
-            "anomalies",
-            "predictions",
-            "correlations",
-            "risk_metrics",
-            "system_health",
-            "trade_data",
-            "model_metrics",
-        ]:
-            (self.export_dir / data_type).mkdir(exist_ok=True)
-
-        self.logger.info("✅ CSV Exporter initialized successfully")
-        return True
-
     @performance_monitor(level=PerformanceLevel.DETAILED)
     @memory_efficient()
     @handle_errors(exceptions=(Exception,), default_return=None, context="csv_exporter.export_performance")
-    async def export_performance_metrics(
-        self,
-        data: List[Dict[str, Any]],
-        time_range: str = "24h",
-        include_metadata: bool = True,
-    ) -> Optional[str]:
-        """Export performance metrics to CSV."""
-        if not data:
-            self.logger.warning("No performance data to export")
-            return None
-
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"performance_metrics_{time_range}_{timestamp}.csv"
-        filepath = self.export_dir / "performance" / filename
-
-        await self._write_csv_file(filepath, data, include_metadata)
-        self._record_export("performance", filepath, len(data))
-        self.logger.info(f"✅ Performance metrics exported to {filepath}")
-        return str(filepath)
-
     async def _write_csv_file(
         self,
         filepath: Path,
@@ -120,13 +80,3 @@ class CSVExporter:
             except Exception:
                 # Non-fatal metadata failure
                 pass
-
-    def _record_export(self, data_type: str, filepath: Path, count: int) -> None:
-        self.export_history.append(
-            {
-                "type": data_type,
-                "path": str(filepath),
-                "count": count,
-                "timestamp": datetime.now().isoformat(),
-            }
-        )

@@ -33,34 +33,6 @@ class SurrogateTrainingIntegration:
         self.surrogate_optimizer = None
 
     @handle_errors(default_return=False, context="surrogate_training_integration_initialization")
-    async def initialize(self) -> bool:
-        """Initialize the integration components."""
-        self.logger.info("🚀 Initializing Surrogate Training Integration")
-
-        # Initialize training manager
-        training_config = {
-            "enable_enhanced_matrix_operations": True,
-            "enable_step_2_5_enhancement": True,
-            "enable_step_5_5_enhancement": True,
-        }
-
-        self.training_manager = EnhancedTrainingManager(training_config)
-
-        # Initialize surrogate optimizer
-        surrogate_config = ComputationalOptimizationConfig(
-            enable_surrogate_models=True,
-            expensive_trials=15,
-            update_frequency=5,
-            surrogate_model_type="gaussian_process",
-            expensive_evaluation_ratio=0.3,
-            enable_surrogate_models_multi=True
-        )
-
-        self.surrogate_optimizer = SurrogateOptimizer(surrogate_config)
-
-        self.logger.info("✅ Surrogate Training Integration initialized")
-        return True
-
     async def optimize_training_hyperparameters(
         self,
         symbol: str = "BTCUSDT",

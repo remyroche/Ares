@@ -36,7 +36,3 @@ class RegimeSRTracker:
         default_return, False,
         context="regime_sr_tracker.initialize",
     )
-    async def initialize(self) -> bool:
-        self.logger.info("Initializing Regime SR Tracker ...")
-        self.logger.info("✅ Regime SR Tracker initialization completed")
-        return True

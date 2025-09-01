@@ -41,9 +41,6 @@ def create_fallback_logger():
     return logging.getLogger(__name__)
 
 def create_fallback_decorator():
-    def decorator(func):
-        return func
-    return decorator
 
 # Initialize fallbacks
 if system_logger is None:
@@ -128,15 +125,6 @@ class RegimeDataSplittingStep:
 
     @with_tracing_span("step08_regime_splitting.initialize", log_args=False)
     @handle_errors(exceptions=(Exception,), default_return=None, context="step08_initialization")
-    async def initialize(self) -> None:
-        """Initialize the regime data splitting step."""
-        self.logger.info("🚀 Initializing Step 8: Unified HMM Composite Regime Data Creation...")
-        self.logger.info("📋 Step 8 Configuration:")
-        self.logger.info(f"   - Unified dataset approach: Enabled")
-        self.logger.info(f"   - Regime labels: composite_cluster_id")
-        self.logger.info(f"   - Maintains temporal continuity: Yes")
-        self.logger.info("✅ Unified HMM Composite Regime Data Creation initialized successfully")
-
     @with_enhanced_mlflow_logging("step8")
     @with_tracing_span("step08_regime_splitting.execute", log_args=False)
     @handle_errors(exceptions=(Exception,), default_return={"success": False, "error": "Execution failed"}, context="step08_execution")

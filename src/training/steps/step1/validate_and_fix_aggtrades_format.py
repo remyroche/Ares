@@ -87,17 +87,6 @@ class AggtradesFormatValidator:
         self.data_cache_path.mkdir(exist_ok=True)
 
     @with_tracing_span("get_aggtrades_files")
-    def get_aggtrades_files(self, symbol: str, exchange: str) -> List[Path]:
-        """Get all aggtrades files for a symbol and exchange."""
-        pattern = f"aggtrades_{exchange}_{symbol}_*.csv"
-        csv_files = list(self.data_cache_path.glob(pattern))
-
-        # Also get parquet files if they exist
-        pattern_parquet = f"aggtrades_{exchange}_{symbol}_*.parquet"
-        parquet_files = list(self.data_cache_path.glob(pattern_parquet))
-
-        return sorted(csv_files + parquet_files)
-
     @validate_data_structure
     @with_tracing_span("validate_file_format")
     @handle_errors(

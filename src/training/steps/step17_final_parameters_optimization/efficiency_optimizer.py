@@ -88,19 +88,6 @@ class EfficiencyOptimizer:
         default_return=False,
         context="efficiency optimizer initialization",
     )
-    async def initialize(self) -> None:
-        """Initialize the efficiency optimizer."""
-        if self.config.enable_parallel_processing:
-            if self.config.use_process_pool:
-                self.executor = ProcessPoolExecutor(max_workers=self.max_workers)
-            else:
-                self.executor = ThreadPoolExecutor(max_workers=self.max_workers)
-
-        # Load existing caches if available
-        await self._load_caches()
-
-        self.logger.info("✅ Efficiency optimizer initialized successfully")
-
     @handle_errors(
         exceptions=(Exception,),
         default_return={"status": "FAILED", "error": "Optimization failed"},
@@ -581,27 +568,6 @@ class EfficiencyOptimizer:
         except Exception as e:
             self.logger.exception(f"Error trimming cache: {e}")
 
-    async def _clear_old_cache(self) -> None:
-        """Clear old cache entries."""
-        try:
-            current_time = time.time()
-            keys_to_remove = []
-
-            for key, result in self.evaluation_cache.items():
-                if "timestamp" in result:
-                    age_hours = (current_time - result["timestamp"]) / 3600
-                    if age_hours > self.config.cache_ttl_hours:
-                        keys_to_remove.append(key)
-
-            for key in keys_to_remove:
-                del self.evaluation_cache[key]
-
-            if keys_to_remove:
-                self.logger.info(f"Cleared {len(keys_to_remove)} old cache entries")
-
-        except Exception as e:
-            self.logger.exception(f"Error clearing old cache: {e}")
-
     def _calculate_efficiency_metrics(self, start_time: float) -> dict[str, Any]:
         """Calculate efficiency metrics."""
         try:
@@ -657,20 +623,6 @@ class EfficiencyOptimizer:
             self.logger.exception(f"Error calculating parallel efficiency: {e}")
             return 0.0
 
-    def _get_memory_usage(self) -> float:
-        """Get current memory usage in MB."""
-        try:
-            import psutil
-
-            process = psutil.Process()
-            memory_info = process.memory_info()
-            return memory_info.rss / 1024 / 1024  # Convert to MB
-        except ImportError:
-            return 0.0
-        except Exception as e:
-            self.logger.exception(f"Error getting memory usage: {e}")
-            return 0.0
-
     async def _load_caches(self) -> None:
         """Load existing caches from disk."""
         try:
@@ -722,19 +674,6 @@ class EfficiencyOptimizer:
 
         except Exception as e:
             self.logger.exception(f"Error saving caches: {e}")
-
-    async def cleanup(self) -> None:
-        """Cleanup resources."""
-        try:
-            if self.executor:
-                self.executor.shutdown(wait=True)
-
-            await self.save_caches()
-
-            self.logger.info("Efficiency optimizer cleanup completed")
-
-        except Exception as e:
-            self.logger.exception(f"Error during cleanup: {e}")
 
 
 def create_efficiency_optimizer(config: EfficiencyConfig) -> EfficiencyOptimizer:

@@ -171,36 +171,3 @@ class Step11AnalystCreationValidator:
 
 
 @validate_step2_operation
-def step11_analyst_creation_validator(
-    symbol: str, exchange: str, data_dir: str, training_input: dict[str, Any], config: dict[str, Any]
-) -> bool:
-    """Step 11: Analyst Creation Validator.
-
-    Args:
-        symbol: Trading symbol
-        exchange: Exchange name
-        data_dir: Data directory
-        training_input: Training input data
-        config: Configuration dictionary
-
-    Returns:
-        bool: True if validation passes
-    """
-    logger.info("🔍 Starting Step 11: Analyst Creation validation")
-
-    try:
-        validator = Step11AnalystCreationValidator(config)
-        result = validator.validate_step11_analyst_creation(
-            symbol, exchange, data_dir, training_input
-        )
-
-        if result:
-            logger.info("✅ Step 11: Analyst Creation validation passed")
-            return True
-        else:
-            logger.warning("⚠️ Step 11: Analyst Creation validation failed")
-            return False
-
-    except Exception as e:
-        logger.exception(f"❌ Step 11 validation failed: {e}")
-        return False

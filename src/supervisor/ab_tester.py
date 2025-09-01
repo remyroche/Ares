@@ -273,47 +273,6 @@ class ABTester:
         default_return=False,
         context="model promotion",
     )
-    async def promote_challenger_if_superior(self) -> bool:
-        """
-        Promote challenger model if it performs better than champion.
-
-        Returns:
-            bool: True if challenger was promoted, False otherwise
-        """
-        try:
-            if not self.ab_test_results.get("results"):
-                self.logger.warning(
-                    "No AB test results available for promotion decision",
-                )
-                return False
-
-            results = self.ab_test_results["results"]
-            winner = results.get("winner")
-            significance = results.get("statistical_significance", 0)
-
-            # Check if challenger is winner and results are statistically significant
-            if winner == "challenger" and significance > 0.8:
-                self.logger.info("Promoting challenger model to champion...")
-
-                # Update global config with challenger parameters
-                self.global_config["best_params"] = copy.deepcopy(
-                    self.challenger_params
-                )
-
-                # Update champion snapshot
-                self.champion_params_snapshot = copy.deepcopy(self.challenger_params)
-
-                self.logger.info("✅ Challenger model promoted to champion")
-                return True
-            self.logger.info(
-                "Challenger model not promoted (insufficient performance or significance)",
-            )
-            return False
-
-        except Exception as e:
-            self.logger.error(f"Error promoting challenger model: {e}")
-            return False
-
     def get_ab_test_status(self) -> dict[str, Any]:
         """
         Get current AB test status.
@@ -328,39 +287,8 @@ class ABTester:
             "results": self.ab_test_results,
         }
 
-    def get_champion_params(self) -> dict[str, Any]:
-        """
-        Get current champion parameters.
-
-        Returns:
-            Dict[str, Any]: Champion parameters
-        """
-        return copy.deepcopy(self.champion_params_snapshot)
-
-    def get_challenger_params(self) -> dict[str, Any] | None:
-        """
-        Get challenger parameters.
-
-        Returns:
-            Optional[Dict[str, Any]]: Challenger parameters or None
-        """
-        return copy.deepcopy(self.challenger_params) if self.challenger_params else None
-
     @handle_errors(
         exceptions=(Exception,),
         default_return=None,
         context="AB tester cleanup",
     )
-    async def stop(self) -> None:
-        """Stop the AB tester component."""
-        self.logger.info("🛑 Stopping AB Tester...")
-
-        try:
-            # Cleanup AB test state
-            self.is_ab_test_active = False
-            self.ab_test_end_time = datetime.now()
-
-            self.logger.info("✅ AB Tester stopped successfully")
-
-        except Exception as e:
-            self.logger.error(f"Error stopping AB tester: {e}")

@@ -72,39 +72,6 @@ class EnhancedPredictionIntegrator:
     )
     @comprehensive_validation(validation_level=ValidationLevel.STRICT)
     @performance_monitor(performance_level=PerformanceLevel.HIGH)
-    async def initialize(self) -> bool:
-        """
-        Initialize the enhanced prediction integrator.
-
-        Returns:
-            bool: True if initialization successful, False otherwise
-        """
-        try:
-            self.logger.info("🚀 Initializing Enhanced Prediction Integrator...")
-
-            # Load HMM-based models (step 6-8)
-            await self._load_hmm_models()
-
-            # Load analyst enhanced models (step 9)
-            await self._load_analyst_enhanced_models()
-
-            # Load confidence calibration results (step 11)
-            await self._load_calibration_results()
-
-            # Load optimization results (step 12-14)
-            await self._load_optimization_results()
-
-            # Apply optimized parameters if available
-            await self._apply_optimized_parameters()
-
-            self.is_initialized = True
-            self.logger.info("✅ Enhanced Prediction Integrator initialized successfully")
-            return True
-
-        except Exception as e:
-            self.logger.error(failed(f"❌ Enhanced Prediction Integrator initialization failed: {e}"))
-            return False
-
     @handle_errors(
         exceptions=(Exception,),
         default_return={},
@@ -646,21 +613,6 @@ class EnhancedPredictionIntegrator:
         except Exception as e:
             self.logger.error(error(f"❌ Error calibrating prediction: {e}"))
             return prediction_data
-
-    def _get_confidence_level(self, confidence: float) -> str:
-        """Get confidence level description."""
-        if confidence >= 0.9:
-            return "very_high"
-        elif confidence >= 0.8:
-            return "high"
-        elif confidence >= 0.7:
-            return "medium_high"
-        elif confidence >= 0.6:
-            return "medium"
-        elif confidence >= 0.5:
-            return "medium_low"
-        else:
-            return "low"
 
     # REMOVED: RSI and MACD calculation methods
     # These technical indicators should be handled by the ML models in steps 6-14

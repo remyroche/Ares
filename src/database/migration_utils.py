@@ -36,63 +36,6 @@ class DatabaseMigrationUtils:
         self.db_manager = db_manager
         self.logger = system_logger.getChild("MigrationUtils")
 
-    async def export_for_trading(self, export_name: str = None) -> str:
-        """
-        Exports database from backtesting computer for use on trading computer.
-        Filters out backtest-specific data and keeps only essential trading data.
-        """
-        if not export_name:
-            export_name = f"trading_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-
-        export_path = os.path.join(
-            self.db_manager.migration_dir,
-            f"{export_name}.sqlite",
-        )
-
-        try:
-            # Create a clean copy for trading export
-            shutil.copy2(self.db_manager.db_path, export_path)
-
-            # Create a temporary SQLite manager for the export
-            temp_db = SQLiteManager(export_path)
-            await temp_db.initialize()
-
-            # Remove backtest-specific data that shouldn't be on trading computer
-            await self._clean_for_trading(temp_db)
-
-            # Calculate checksum
-            with open(export_path, "rb") as f:
-                checksum = hashlib.md5(f.read()).hexdigest()
-
-            # Record export
-            export_data = {
-                "export_id": export_name,
-                "source_computer": os.uname().nodename
-                if hasattr(os, "uname")
-                else "unknown",
-                "export_type": "trading_export",
-                "status": "created",
-                "created_at": datetime.now().isoformat(),
-                "file_size": os.path.getsize(export_path),
-                "checksum": checksum,
-                "description": "Database export for trading computer",
-            }
-
-            await self.db_manager.set_document(
-                "database_migrations",
-                export_name,
-                export_data,
-            )
-
-            self.logger.info(
-                f"Trading export created: {export_path} (checksum: {checksum})",
-            )
-            return export_path
-
-        except Exception as e:
-            self.print(failed("Failed to create trading export: {e}"))
-            return ""
-
     async def _clean_for_trading(self, temp_db: SQLiteManager):
         """Removes backtest-specific data from the export."""
         try:
@@ -308,76 +251,8 @@ class DatabaseMigrationUtils:
 
         return validation_result
 
-    async def list_migrations(self) -> list[dict[str, Any]]:
-        """
-        Lists all available migrations with their details.
-        """
-        try:
-            migrations = await self.db_manager.get_collection("database_migrations")
-            return sorted(
-                migrations,
-                key=lambda x: x.get("created_at", ""),
-                reverse=True,
-            )
-        except Exception as e:
-            self.logger.error(f"Failed to list migrations: {e}", exc_info=True)
-            return []
-
-    async def cleanup_old_migrations(self, keep_days: int = 30):
-        """
-        Cleans up old migration files and records.
-        """
-        try:
-            cutoff_date = datetime.now() - timedelta(days=keep_days)
-
-            # Get old migrations
-            migrations = await self.list_migrations()
-            old_migrations = [
-                m
-                for m in migrations
-                if datetime.fromisoformat(m.get("created_at", "1970-01-01"))
-                < cutoff_date
-            ]
-
-            for migration in old_migrations:
-                migration_id = migration.get("migration_id", "")
-
-                # Remove migration file
-                migration_file = os.path.join(
-                    self.db_manager.migration_dir,
-                    f"{migration_id}.sqlite",
-                )
-                if os.path.exists(migration_file):
-                    os.remove(migration_file)
-                    self.logger.info(f"Removed old migration file: {migration_file}")
-
-                # Remove migration record
-                await self.db_manager.delete_document(
-                    "database_migrations",
-                    migration_id,
-                )
-                self.logger.info(f"Removed old migration record: {migration_id}")
-
-            self.logger.info(f"Cleaned up {len(old_migrations)} old migrations")
-
-        except Exception as e:
-            self.logger.error(f"Failed to cleanup old migrations: {e}", exc_info=True)
-
 
 # Utility functions for command-line operations
-async def export_database_for_trading(
-    db_path: str = "data/ares_local_db.sqlite",
-) -> str:
-    """Command-line function to export database for trading."""
-    db_manager = SQLiteManager(db_path)
-    await db_manager.initialize()
-
-    migration_utils = DatabaseMigrationUtils(db_manager)
-    export_path = await migration_utils.export_for_trading()
-
-    await db_manager.close()
-    return export_path
-
 
 async def import_database_for_trading(
     import_path: str,

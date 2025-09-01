@@ -19,38 +19,10 @@ class MockDataFrame:
     def __init__(self, data: Dict[str, list]):
         self.data = data
 
-    def __getitem__(self, key):
-        return MockSeries(self.data.get(key, [0.0]))
-
-    def iloc(self, index):
-        if isinstance(index, int):
-            return MockDataFrame({k: [v[index]] for k, v in self.data.items()})
-        elif isinstance(index, slice):
-            return MockDataFrame({k: v[index] for k, v in self.data.items()})
-        else:
-            return MockDataFrame({k: [v[index]] for k, v in self.data.items()})
-
 class MockSeries:
     """Mock Series for testing."""
     def __init__(self, data: list):
         self.data = data
-
-    def __getitem__(self, index):
-        return self.data[index]
-
-    def iloc(self, index):
-        if isinstance(index, int):
-            return self.data[index]
-        elif isinstance(index, slice):
-            return MockSeries(self.data[index])
-        else:
-            return self.data[index]
-
-    def pct_change(self):
-        return MockSeries([0.01, 0.02, -0.01, 0.03, 0.01])
-
-    def std(self):
-        return 0.02
 
 class MockEnhancedPredictionService:
     """Mock Enhanced Prediction Service for testing."""
@@ -91,47 +63,6 @@ class MockEnhancedPredictionService:
                 "tactician_calibrated_neutral": {"calibrated_confidence": 0.52}
             }
         }
-
-    async def get_calibrated_confidence_scores(
-        self,
-        market_data: MockDataFrame,
-        regime_info: Dict[str, Any],
-        symbol: str,
-        exchange: str
-    ) -> Dict[str, Dict[str, float]]:
-        """Provide calibrated confidence scores for BOTH Analyst and Tactician ML models."""
-        try:
-            calibrated_scores = {
-                "analyst_models": {},
-                "tactician_models": {}
-            }
-
-            # Get Analyst calibrated confidence scores
-            for model_type, models in self.analyst_ml_models.items():
-                for model_name, model_data in models.items():
-                    calibrated_confidence = model_data.get("calibrated_confidence")
-                    if calibrated_confidence is not None:
-                        calibrated_scores["analyst_models"][f"{model_type}_{model_name}"] = calibrated_confidence
-
-            # Get Tactician calibrated confidence scores
-            for model_type, models in self.tactician_ml_models.items():
-                for model_name, model_data in models.items():
-                    calibrated_confidence = model_data.get("calibrated_confidence")
-                    if calibrated_confidence is not None:
-                        calibrated_scores["tactician_models"][f"{model_type}_{model_name}"] = calibrated_confidence
-
-            # Fail if no calibrated confidence exists
-            if not calibrated_scores["analyst_models"]:
-                raise ValueError(f"No calibrated Analyst confidence scores available for {symbol} on {exchange}")
-
-            if not calibrated_scores["tactician_models"]:
-                raise ValueError(f"No calibrated Tactician confidence scores available for {symbol} on {exchange}")
-
-            return calibrated_scores
-
-        except Exception as e:
-            print(f"❌ Failed to get calibrated confidence scores: {e}")
-            raise
 
 class MockSupervisor:
     """Mock Supervisor for testing."""

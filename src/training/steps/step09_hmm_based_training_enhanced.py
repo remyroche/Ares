@@ -260,96 +260,11 @@ class EnhancedHMMBasedTrainingStep:
 
         self.logger.info("🔧 Enhanced HMM-based training with multi-output support initialized")
 
-    def print(self, message: str) -> None:
-        """Print message using logger."""
-        self.logger.info(message)
-
     @handle_errors(
         exceptions=(Exception,),
         default_return=False,
         context="enhanced HMM-based training step initialization",
     )
-    async def initialize(self) -> None:
-        """Initialize the enhanced HMM-based training step."""
-        self.logger.info("🚀 Initializing Enhanced HMM-Based Training Step...")
-
-        # Initialize multi-output probability trainer if enabled
-        if self.enable_multi_output:
-            from ..multi_output_probability_trainer import MultiOutputProbabilityTrainer
-
-            # Configure multi-output training with advanced models
-            multi_output_config = {
-                "use_lightgbm": True,
-                "n_estimators": 1000,
-                "learning_rate": 0.01,
-                "max_depth": 8,
-                "profit_target": 0.02,
-                "stop_loss": 0.01,
-                "look_ahead_periods": 20,
-                "magnitude_threshold_factor": 0.8,
-                "adverse_threshold": 0.01,
-                "avoidance_look_ahead": 10,
-                # Advanced model configuration
-                "timeframe": "15m",  # Use Transformer for 15-minute data
-                "model_architectures": {
-                    "1m": "cnn",      # CNN for 1-minute data (Tactician)
-                    "5m": "tcn",      # TCN for 5-minute data (Analyst)
-                    "15m": "transformer", # Transformer for 15-minute data (Enhanced)
-                    "30m": "lightgbm",    # LightGBM for 30-minute data (Analyst)
-                    "1h": "hmm_regime"    # HMM regime definition only
-                },
-                "neural_config": {
-                    "tcn": {
-                        "num_channels": [64, 128, 256],
-                        "kernel_size": 2,
-                        "dropout": 0.2,
-                        "batch_size": 32,
-                        "epochs": 50,
-                        "learning_rate": 0.001
-                    },
-                    "cnn": {
-                        "num_filters": [64, 128, 256],
-                        "kernel_sizes": [3, 3, 3],
-                        "dropout": 0.2,
-                        "batch_size": 32,
-                        "epochs": 50,
-                        "learning_rate": 0.001
-                    },
-                    "transformer": {
-                        "d_model": 128,
-                        "nhead": 8,
-                        "num_layers": 4,
-                        "dropout": 0.1,
-                        "batch_size": 32,
-                        "epochs": 50,
-                        "learning_rate": 0.001
-                    },
-                    "lstm": {
-                        "hidden_size": 128,
-                        "num_layers": 2,
-                        "bidirectional": True,
-                        "dropout": 0.2,
-                        "batch_size": 32,
-                        "epochs": 50,
-                        "learning_rate": 0.001
-                    },
-                    "gru": {
-                        "hidden_size": 128,
-                        "num_layers": 2,
-                        "bidirectional": True,
-                        "dropout": 0.2,
-                        "batch_size": 32,
-                        "epochs": 50,
-                        "learning_rate": 0.001
-                    }
-                }
-            }
-
-            self.multi_output_trainer = MultiOutputProbabilityTrainer(multi_output_config)
-            self.logger.info("✅ Multi-output probability trainer initialized")
-
-        self.logger.info("✅ Enhanced HMM-Based Training Step initialized successfully")
-
     @handle_errors(
         exceptions=(ValueError, TypeError, MemoryError),
         default_return=None,
@@ -831,50 +746,6 @@ class EnhancedHMMBasedTrainingStep:
 
         except Exception as e:
             self.logger.error(f"❌ Failed to save enhanced models: {e}")
-
-    def load_enhanced_models(
-        self,
-        model_name: str,
-        load_path: str
-    ) -> None:
-        """Load enhanced models from disk.
-
-        Args:
-            model_name: Name of the model to load
-            load_path: Path to load models from
-        """
-        try:
-            # Load multi-output models
-            multi_output_dir = os.path.join(load_path, "multi_output_models")
-            if os.path.exists(multi_output_dir) and self.multi_output_trainer:
-                model_path = os.path.join(multi_output_dir, f"{model_name}_multi_output.pkl")
-                if os.path.exists(model_path):
-                    import joblib
-                    self.multi_output_trainer = joblib.load(model_path)
-                    self.logger.info(f"✅ Loaded multi-output trainer from {model_path}")
-
-            # Load single-output models
-            single_output_dir = os.path.join(load_path, "single_output_models")
-            if os.path.exists(single_output_dir):
-                model_path = os.path.join(single_output_dir, f"{model_name}_single.pkl")
-                scaler_path = os.path.join(single_output_dir, f"{model_name}_scaler.pkl")
-
-                if os.path.exists(model_path) and os.path.exists(scaler_path):
-                    import joblib
-                    model = joblib.load(model_path)
-                    scaler = joblib.load(scaler_path)
-
-                    # Store in models dict
-                    self.models[f"{model_name}_single"] = {
-                        "model": model,
-                        "scaler": scaler,
-                        "model_type": "single_output"
-                    }
-
-            self.logger.info(f"✅ Enhanced models loaded from {load_path}")
-
-        except Exception as e:
-            self.logger.error(f"❌ Failed to load enhanced models: {e}")
 
 
 async def run_enhanced_step(

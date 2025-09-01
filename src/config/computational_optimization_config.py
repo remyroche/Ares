@@ -110,26 +110,6 @@ COMPUTATIONAL_OPTIMIZATION_CONFIG = {
     }
 
 
-def get_optimization_config(
-    custom_config: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    """Get computational optimization configuration.
-
-    Args:
-        custom_config: Optional custom configuration to override defaults
-
-    Returns:
-        Dict containing optimization configuration
-
-    """
-    config = COMPUTATIONAL_OPTIMIZATION_CONFIG.copy()
-
-    if custom_config:
-        # Deep merge custom configuration
-        config = _deep_merge_config(config = custom_config)
-
-    return config
-
 
 def _deep_merge_config(
     base_config: dict[str, Any],
@@ -147,67 +127,10 @@ def _deep_merge_config(
     return result
 
 
-def get_memory_optimization_config() -> dict[str, Any]:
-    """Get memory-specific optimization configuration."""
-    return COMPUTATIONAL_OPTIMIZATION_CONFIG["memory_management"]
 
 
-def get_parallelization_config() -> dict[str, Any]:
-    """Get parallelization-specific configuration."""
-    return COMPUTATIONAL_OPTIMIZATION_CONFIG["parallelization"]
 
 
-def get_caching_config() -> dict[str, Any]:
-    """Get caching-specific configuration."""
-    return COMPUTATIONAL_OPTIMIZATION_CONFIG["caching"]
-
-
-def get_early_stopping_config() -> dict[str, Any]:
-    """Get early stopping configuration."""
-    return COMPUTATIONAL_OPTIMIZATION_CONFIG["early_stopping"]
-
-
-def get_adaptive_sampling_config() -> dict[str, Any]:
-    """Get adaptive sampling configuration."""
-    return COMPUTATIONAL_OPTIMIZATION_CONFIG["adaptive_sampling"]
-
-
-def is_optimization_enabled(optimization_type: str) -> bool:
-    """Check if a specific optimization is enabled.
-
-    Args:
-        optimization_type: Type of optimization to check
-
-    Returns:
-        True if optimization is enabled = False otherwise
-
-    """
-    optimization_map = {
-        "caching": COMPUTATIONAL_OPTIMIZATION_CONFIG["caching"]["enabled"],
-        "parallelization": COMPUTATIONAL_OPTIMIZATION_CONFIG["parallelization"][
-            "enabled"
-        ],
-        "early_stopping": COMPUTATIONAL_OPTIMIZATION_CONFIG["early_stopping"][
-            "enabled"
-        ],
-        "memory_management": COMPUTATIONAL_OPTIMIZATION_CONFIG["memory_management"][
-            "enabled"
-        ],
-        "data_streaming": COMPUTATIONAL_OPTIMIZATION_CONFIG["data_streaming"][
-            "enabled"
-        ],
-        "adaptive_sampling": COMPUTATIONAL_OPTIMIZATION_CONFIG["adaptive_sampling"][
-            "enabled"
-        ],
-        "incremental_training": COMPUTATIONAL_OPTIMIZATION_CONFIG[
-            "incremental_training"
-        ]["enabled"],
-        "monitoring": COMPUTATIONAL_OPTIMIZATION_CONFIG["monitoring"][
-            "continuous_monitoring"
-        ],
-    }
-
-    return optimization_map.get(optimization_type, False)
 
 
 # Performance expectations based on the optimization strategies document
@@ -230,10 +153,6 @@ EXPECTED_PERFORMANCE_IMPROVEMENTS = {
     },
 }
 
-
-def get_performance_expectations() -> dict[str, Any]:
-    """Get expected performance improvements."""
-    return EXPECTED_PERFORMANCE_IMPROVEMENTS
 
 
 # Configuration validation

@@ -98,20 +98,8 @@ class BasePipeline:
         default_return=False,
         context="base_pipeline.initialize",
     )
-    async def initialize(self) -> bool:
-        self.logger.info("Initializing BasePipeline ...")
-        self.is_running = True
-        self.metrics.start_time = datetime.now()
-        return True
-
     @performance_monitor(level=PerformanceLevel.DETAILED)
     @resource_monitor()
     @memory_efficient()
     @pipeline_checkpoint(checkpoint_name="base_pipeline.shutdown")
     @handle_errors(exceptions=(Exception,), default_return=False, context="base_pipeline.shutdown")
-    async def shutdown(self) -> bool:
-        self.logger.info("Shutting down BasePipeline ...")
-        self.is_running = False
-        self.metrics.end_time = datetime.now()
-        self.metrics.update_duration()
-        return True

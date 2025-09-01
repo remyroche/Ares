@@ -43,67 +43,6 @@ class EnhancedSRPositionAnalyzer:
         self.logger = system_logger.getChild("EnhancedSRPositionAnalyzer")
         self.sr_predictor = None
 
-    async def initialize(self) -> bool:
-        """Initialize the analyzer with SRBreakoutPredictor."""
-        self.logger.info("🚀 Initializing Enhanced SR Position Analyzer...")
-
-        # Initialize SRBreakoutPredictor with enhanced configuration
-        sr_config = {
-            "sr_breakout_predictor": {
-                "enable_sr_breakout_tactics": True,
-                "sr_proximity_threshold": 0.02,
-                "breakout_confidence_threshold": 0.6,
-                "sr_detection_method": "fractal",
-                "min_sr_strength": 0.3,
-                "max_sr_levels": 10,
-                "sr_lookback_periods": 100,
-                "volume_weight": 0.7,
-                "price_weight": 0.3,
-                "atr_multiplier": 1.5,
-                "breakout_confirmation_periods": 3,
-                "false_breakout_filter": True,
-
-                # Enhanced strength calculation configuration
-                "strength_calculation": {
-                    "enable_enhanced_strength": True,
-                    "touch_count_lookback": 50,
-                    "bounce_rate_threshold": 0.02,
-                    "isolation_distance_threshold": 0.05,
-                    "age_decay_factor": 0.95
-                },
-
-                # DBSCAN clustering configuration
-                "dbscan_clustering": {
-                    "enable_dbscan_clustering": True,
-                    "eps": 0.01,
-                    "min_samples": 2,
-                    "enable_noise_filtering": True
-                },
-
-                # Feature calculation configuration
-                "feature_calculation": {
-                    "enable_comprehensive_features": True,
-                    "strength_score_weights": {
-                        "touch_count": 0.3,
-                        "total_volume": 0.2,
-                        "level_age": 0.2,
-                        "bounce_rate": 0.2,
-                        "isolation_score": 0.1
-                    }
-                }
-            }
-        }
-
-        self.sr_predictor = SRBreakoutPredictor(sr_config)
-        init_success = await self.sr_predictor.initialize()
-
-        if not init_success:
-            self.logger.error("❌ Failed to initialize SRBreakoutPredictor")
-            return False
-
-        self.logger.info("✅ Enhanced SR Position Analyzer initialized successfully")
-        return True
-
     def calculate_sr_position(self, price_data: pd.DataFrame, sr_context: Dict[str, Any]) -> pd.Series:
         """
         Calculate position between closest support and resistance levels using enhanced S/R analysis.

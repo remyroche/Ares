@@ -111,9 +111,6 @@ class TradingParameterOptimizer:
         )
 
         # Define objective function
-        def objective(trial):
-            return asyncio.run(self._evaluate_parameters(trial))
-
         # Run optimization
         study.optimize(
             objective,

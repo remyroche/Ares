@@ -63,33 +63,6 @@ def analyze_threshold_impact(log_file_path: str) -> dict[str, Any]:
     return analysis
 
 
-def create_feature_specific_thresholds():
-    """Create feature-specific threshold recommendations"""
-
-    return {
-        "wavelet_features": {
-            "missing_warning": 0.05,  # 5% - more lenient for wavelets
-            "missing_error": 0.20,  # 20% - more lenient for wavelets
-            "variance_threshold": 1e-12,
-            "reason": "Wavelet features naturally have edge effects and low variance",
-        },
-        "multi_timeframe_features": {
-            "missing_warning": 0.02,  # 2% - moderate tolerance
-            "missing_error": 0.10,  # 10% - moderate tolerance
-            "reason": "Alignment issues between timeframes can cause gaps",
-        },
-        "technical_indicators": {
-            "missing_warning": 0.01,  # 1% - standard tolerance
-            "missing_error": 0.05,  # 5% - standard tolerance
-            "reason": "Technical indicators should be mostly complete",
-        },
-        "price_features": {
-            "missing_warning": 0.001,  # 0.1% - very strict
-            "missing_error": 0.01,  # 1% - very strict
-            "reason": "Price data should be nearly complete",
-        },
-    }
-
 
 def main():
     parser = argparse.ArgumentParser(description="Analyze strict validation thresholds")

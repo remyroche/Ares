@@ -26,22 +26,6 @@ class MinimalPipelineTester:
         self.exchange = exchange
         print(f"🧪 Initializing Minimal Pipeline Tester for {symbol} on {exchange}")
 
-    def setup_environment(self):
-        """Setup test environment."""
-        print("🔧 Setting up test environment...")
-
-        # Set environment variables
-        os.environ["BLANK_TRAINING_MODE"] = "1"
-        os.environ["FULL_TRAINING_MODE"] = "0"
-        os.environ["FORCE"] = "1"
-
-        # Create directories
-        Path("data_cache").mkdir(exist_ok=True)
-        Path("data/training").mkdir(parents=True, exist_ok=True)
-        Path("log").mkdir(exist_ok=True)
-
-        print("✅ Environment setup completed")
-
     def create_mock_data(self):
         """Create mock data for testing."""
         print("📊 Creating mock data...")

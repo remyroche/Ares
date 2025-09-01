@@ -72,71 +72,6 @@ class DiverseLookbackOptimizer:
         self.logger.info("🎯 Diverse Lookback Optimizer initialized")
 
     @handle_errors(exceptions=(Exception,), default_return={})
-    async def find_diverse_lookback_periods(
-        self,
-        data: pd.DataFrame,
-        target: pd.Series,
-        regimes: Optional[pd.Series] = None,
-        symbol: str = "UNKNOWN",
-        exchange: str = "UNKNOWN",
-        timeframe: str = "1m"
-    ) -> dict[str, Any]:
-        """
-        Find diverse lookback periods for each feature.
-
-        Args:
-            data: Feature data
-            target: Target variable
-            regimes: HMM regime labels (optional)
-            symbol: Trading symbol
-            exchange: Exchange name
-            timeframe: Timeframe
-
-        Returns:
-            Dictionary with diverse lookback periods for each feature
-        """
-        self.logger.info(f"🎯 Finding diverse lookback periods for {symbol} on {exchange}")
-
-        results = {
-            "optimization_timestamp": datetime.now().isoformat(),
-            "symbol": symbol,
-            "exchange": exchange,
-            "timeframe": timeframe,
-            "diverse_lookback_periods": {},
-            "diversity_analysis": {},
-            "information_content_analysis": {},
-            "regime_specific_periods": {}
-        }
-
-        # 1. Find diverse lookback periods for each feature
-        self.logger.info("🔍 Finding diverse lookback periods...")
-        diverse_periods = await self._find_diverse_periods_for_all_features(data, target)
-        results["diverse_lookback_periods"] = diverse_periods
-
-        # 2. Analyze diversity and information content
-        self.logger.info("📊 Analyzing diversity and information content...")
-        diversity_analysis = await self._analyze_diversity_and_information(data, target, diverse_periods)
-        results["diversity_analysis"] = diversity_analysis
-
-        # 3. Analyze information content for each period
-        self.logger.info("🧠 Analyzing information content...")
-        info_analysis = await self._analyze_information_content(data, target, diverse_periods)
-        results["information_content_analysis"] = info_analysis
-
-        # 4. Regime-specific diverse periods (if regimes available)
-        if regimes is not None and len(regimes.unique()) > 1:
-            self.logger.info("🔄 Finding regime-specific diverse periods...")
-            regime_periods = await self._find_regime_specific_diverse_periods(
-                data, target, regimes, diverse_periods
-            )
-            results["regime_specific_periods"] = regime_periods
-
-        # 5. Save results
-        await self._save_diverse_lookback_results(results, symbol, exchange, timeframe)
-
-        self.logger.info("✅ Diverse lookback period optimization completed")
-        return results
-
     async def _find_diverse_periods_for_all_features(
         self,
         data: pd.DataFrame,
@@ -686,27 +621,3 @@ class DiverseLookbackOptimizer:
         mad = typical_price.rolling(window=period).apply(lambda x: np.mean(np.abs(x - x.mean())))
         cci = (typical_price - sma) / (0.015 * mad)
         return cci
-
-    def get_diverse_lookback_periods(
-        self,
-        symbol: str,
-        exchange: str,
-        timeframe: str
-    ) -> dict[str, Any]:
-        """Load diverse lookback periods."""
-
-        filepath = Path(f"data/diverse_lookback_optimization/{exchange}_{symbol}_{timeframe}_diverse_lookback_periods.json")
-
-        if not filepath.exists():
-            self.logger.warning(f"⚠️ No diverse lookback results found for {symbol} on {exchange}")
-            return {}
-
-        try:
-            with open(filepath, 'r') as f:
-                results = json.load(f)
-
-            return results.get("diverse_lookback_periods", {})
-
-        except Exception as e:
-            self.logger.error(f"❌ Error loading diverse lookback results: {e}")
-            return {}

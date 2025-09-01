@@ -99,22 +99,9 @@ class MLMonitor:
         default_return=False,
         context="ml_monitor.initialize",
     )
-    async def initialize(self) -> bool:
-        self.logger.info("Initializing ML Monitor ...")
-        self.performances.clear()
-        self.alerts.clear()
-        self.logger.info("✅ ML Monitor initialization completed")
-        return True
-
     @handle_errors(default_return=None, context="ml_monitor.record_performance")
-    async def record_performance(self, perf: ModelPerformance) -> None:
-        self.performances.append(perf)
-
     def get_latest_performance(self, model_id: str) -> Optional[ModelPerformance]:
         for p in reversed(self.performances):
             if p.model_id == model_id:
                 return p
         return None
-
-    def list_alerts(self) -> List[ModelDriftAlert]:
-        return list(self.alerts)

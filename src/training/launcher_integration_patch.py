@@ -33,34 +33,6 @@ class OptimizedAresLauncherMixin:
         self.leak_detector: Optional[Any] = None
         self.optimization_factory: Optional[OptimizedTrainingFactory] = None
 
-    def _setup_optimization_components(self, config: dict[str, Any]) -> None:
-        """Setup optimization components if enabled."""
-        if not self.optimization_enabled:
-            return
-
-        try:
-            # Create optimization factory
-            self.optimization_factory = OptimizedTrainingFactory(config)
-
-            # Create memory profiler
-            self.memory_profiler = self.optimization_factory.create_memory_profiler()
-
-            # Create leak detector
-            if self.memory_profiler:
-                self.leak_detector = (
-                    self.optimization_factory.create_memory_leak_detector(
-                        self.memory_profiler,
-                    )
-                )
-
-            self.logger.info("✅ Optimization components initialized")
-
-        except Exception as e:  # noqa: BLE001
-            error_msg = f"Failed to setup optimization components: {e}"
-            self.logger.exception(error_msg)
-            self.print(failed(error_msg))
-            self.optimization_enabled = False
-
     @handle_errors(
         exceptions=(Exception,),
         default_return=False,
@@ -340,64 +312,7 @@ class OptimizedAresLauncherMixin:
 def create_optimized_launcher_patch() -> Callable[[Any], Any]:
     """Create a patch that can be applied to the existing AresLauncher."""
 
-    def patch_launcher(launcher_instance: Any) -> Any:
-        """Apply optimization patches to an existing launcher instance."""
-        # Add optimization attributes
-        launcher_instance.optimization_enabled = True
-        launcher_instance.memory_profiler = None
-        launcher_instance.leak_detector = None
-        launcher_instance.optimization_factory = None
-
-        # Add optimization methods
-        launcher_instance._setup_optimization_components = (
-            OptimizedAresLauncherMixin._setup_optimization_components.__get__(
-                launcher_instance,
-            )
-        )
-        launcher_instance._run_optimized_unified_training = (
-            OptimizedAresLauncherMixin._run_optimized_unified_training.__get__(
-                launcher_instance,
-            )
-        )
-        launcher_instance.run_optimized_enhanced_blank_training = (
-            OptimizedAresLauncherMixin.run_optimized_enhanced_blank_training.__get__(
-                launcher_instance,
-            )
-        )
-        launcher_instance.run_optimized_backtesting = (
-            OptimizedAresLauncherMixin.run_optimized_backtesting.__get__(
-                launcher_instance,
-            )
-        )
-        launcher_instance.check_optimization_status = (
-            OptimizedAresLauncherMixin.check_optimization_status.__get__(
-                launcher_instance,
-            )
-        )
-
-        launcher_instance.logger.info("✅ Optimization patches applied to launcher")
-
-        return launcher_instance
-
     return patch_launcher
 
 
 # Quick integration function for immediate use
-def enable_optimizations_in_launcher() -> Optional[Callable[[Any], Any]]:
-    """Quick function to enable optimizations in the current launcher.
-    This can be called from ares_launcher.py to enable the new features.
-    """
-    import sys
-    from pathlib import Path
-
-    # Add the project root to the path if not already there
-    project_root = Path(__file__).parent.parent.parent
-    if str(project_root) not in sys.path:
-        sys.path.insert(0, str(project_root))
-
-    # Import and patch the launcher
-    try:
-        # This would be used in the actual launcher file
-        return create_optimized_launcher_patch()
-    except Exception:  # noqa: BLE001
-        return None

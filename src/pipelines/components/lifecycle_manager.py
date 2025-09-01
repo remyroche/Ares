@@ -29,6 +29,3 @@ class LifecycleManager:
         default_return, False,
         context="lifecycle_manager.initialize",
     )
-    async def initialize(self) -> bool:
-        self.logger.info("Initializing LifecycleManager ...")
-        return True

@@ -86,47 +86,11 @@ class CachedOptimizer:
         config_str = json.dumps(optimization_config, sort_keys=True)
         return hashlib.md5(config_str.encode()).hexdigest()
 
-    def _get_cache_file_path(self, cache_key: str) -> str:
-        """Get cache file path for given key."""
-        return os.path.join(self.cache_config.cache_dir, f"{cache_key}.pkl")
-
     @handle_errors(
         exceptions=(Exception,),
         default_return=None,
         context="cached results retrieval",
     )
-    def get_cached_optimization_results(
-        self,
-        optimization_config: dict[str, Any],
-    ) -> dict[str, Any] | None:
-        """Get cached optimization results if available and valid."""
-        try:
-            cache_key = self._generate_cache_key(optimization_config)
-            cache_file = self._get_cache_file_path(cache_key)
-
-            # Check if cache exists and is valid
-            if not os.path.exists(cache_file):
-                return None
-
-            # Check cache age
-            cache_age = datetime.now() - datetime.fromtimestamp(
-                os.path.getmtime(cache_file),
-            )
-            if cache_age > timedelta(hours=self.cache_config.cache_ttl_hours):
-                self.logger.info(f"Cache expired for key {cache_key}")
-                return None
-
-            # Load cached results
-            with open(cache_file, "rb") as f:
-                cached_results = pickle.load(f)
-
-            self.logger.info(f"Retrieved cached results for key {cache_key}")
-            return cached_results
-
-        except Exception:
-            self.print(warning("Error retrieving cached results: {e}"))
-            return None
-
     @handle_errors(
         exceptions=(Exception,),
         default_return=False,
@@ -345,53 +309,3 @@ class CachedOptimizer:
         default_return=False,
         context="cache cleanup",
     )
-    async def cleanup_cache(self) -> bool:
-        """Clean up expired cache files."""
-        try:
-            current_time = datetime.now()
-            cleaned_files = 0
-
-            for cache_key, metadata in self.cache_metadata.items():
-                file_path = metadata.get("file_path")
-                if file_path and os.path.exists(file_path):
-                    file_age = current_time - datetime.fromtimestamp(
-                        os.path.getmtime(file_path),
-                    )
-
-                    if file_age > timedelta(hours=self.cache_config.cache_ttl_hours):
-                        os.remove(file_path)
-                        del self.cache_metadata[cache_key]
-                        cleaned_files += 1
-
-            # Save updated metadata
-            self._save_cache_metadata()
-
-            self.logger.info(f"Cleaned up {cleaned_files} expired cache files")
-            return True
-
-        except Exception:
-            self.print(error("Error cleaning up cache: {e}"))
-            return False
-
-    def get_cache_statistics(self) -> dict[str, Any]:
-        """Get cache statistics."""
-        try:
-            total_files = len(self.cache_metadata)
-            total_size_mb = 0
-
-            for metadata in self.cache_metadata.values():
-                file_path = metadata.get("file_path")
-                if file_path and os.path.exists(file_path):
-                    total_size_mb += os.path.getsize(file_path) / (1024 * 1024)
-
-            return {
-                "total_cached_results": total_files,
-                "total_cache_size_mb": round(total_size_mb, 2),
-                "cache_dir": self.cache_config.cache_dir,
-                "cache_ttl_hours": self.cache_config.cache_ttl_hours,
-                "enable_warm_start": self.cache_config.enable_warm_start,
-            }
-
-        except Exception:
-            self.print(error("Error getting cache statistics: {e}"))
-            return {}

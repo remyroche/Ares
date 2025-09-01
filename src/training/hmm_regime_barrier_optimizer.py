@@ -136,105 +136,12 @@ class HMMRegimeBarrierOptimizer:
         self.logger.info(f"   Trading fee: {self.trading_fee*100:.1f}% per trade")
         self.logger.info(f"   Trials per regime: {self.n_trials_per_regime}")
 
-    def _get_regime_names(self, data: pd.DataFrame) -> List[str]:
-        """Extract HMM regime names from data."""
-
-        # Look for HMM regime column
-        regime_columns = [
-            'hmm_regime', 'hmm_cluster', 'composite_cluster_id',
-            'regime', 'cluster_id', 'regime_id'
-        ]
-
-        regime_column = None
-        for col in regime_columns:
-            if col in data.columns:
-                regime_column = col
-                break
-
-        if regime_column is None:
-            self.logger.warning("⚠️ No regime column found in data")
-            return []
-
-        # Get unique regime values
-        unique_regimes = data[regime_column].unique()
-        regime_names = []
-
-        for regime in unique_regimes:
-            if pd.isna(regime):
-                continue
-
-            if isinstance(regime, (int, np.integer)):
-                regime_name = f"HMM_Cluster_{regime}"
-            else:
-                regime_name = str(regime)
-
-            regime_names.append(regime_name)
-
-        self.logger.info(f"📊 Found {len(regime_names)} HMM regimes: {regime_names}")
-        return sorted(regime_names)
-
     def _create_regime_objective_function(
         self,
         regime_name: str,
         regime_data: pd.DataFrame
     ) -> callable:
         """Create objective function for a specific HMM regime."""
-
-        def objective(trial: optuna.Trial) -> float:
-            """Objective function for regime-specific barrier optimization."""
-
-            try:
-                # Suggest barrier parameters within 0.2-1.5% range
-                upper_barrier = trial.suggest_float(
-                    "upper_barrier",
-                    self.min_barrier,
-                    self.max_barrier,
-                    log=True  # Use log scale for better exploration
-                )
-                lower_barrier = trial.suggest_float(
-                    "lower_barrier",
-                    self.min_barrier,
-                    self.max_barrier,
-                    log=True
-                )
-
-                # Ensure upper barrier is greater than lower barrier
-                if upper_barrier <= lower_barrier:
-                    return -np.inf
-
-                # Simulate trades with these barriers (both long and short)
-                trades = self._simulate_trades_with_barriers(
-                    regime_data, upper_barrier, lower_barrier
-                )
-
-                # Compute per-side metrics
-                long_trades = [t for t in trades if t.get("side") == "long"]
-                short_trades = [t for t in trades if t.get("side") == "short"]
-
-                long_metrics = self._compute_trade_metrics(long_trades)
-                short_metrics = self._compute_trade_metrics(short_trades)
-
-                # Check minimum trades requirement
-                if (long_metrics["trades"] + short_metrics["trades"]) < self.min_trades_per_regime:
-                    return -np.inf
-
-                # Objective: maximize total profit after fees
-                total_profit = long_metrics["profit"] + short_metrics["profit"]
-
-                # Store trial information
-                trial.set_user_attr("regime_name", regime_name)
-                trial.set_user_attr("upper_barrier", upper_barrier)
-                trial.set_user_attr("lower_barrier", lower_barrier)
-                trial.set_user_attr("total_trades", long_metrics["trades"] + short_metrics["trades"])
-                trial.set_user_attr("total_profit", total_profit)
-                trial.set_user_attr("long_metrics", long_metrics)
-                trial.set_user_attr("short_metrics", short_metrics)
-
-                return float(total_profit)
-
-            except Exception as e:
-                self.logger.warning(f"⚠️ Trial failed for regime {regime_name}: {e}")
-                return -np.inf
 
         return objective
 
@@ -787,40 +694,6 @@ class HMMRegimeBarrierOptimizer:
         except Exception as e:
             self.logger.exception(f"❌ Error creating visualizations: {e}")
 
-    def get_optimized_barriers(self) -> Dict[str, Dict[str, float]]:
-        """Get optimized barriers for all regimes."""
-
-        optimized_barriers = {}
-
-        for regime_name, result in self.regime_results.items():
-            optimized_barriers[regime_name] = {
-                "upper_barrier": result.optimal_upper_barrier,
-                "lower_barrier": result.optimal_lower_barrier,
-                "upper_barrier_pct": result.optimal_upper_barrier * 100,
-                "lower_barrier_pct": result.optimal_lower_barrier * 100,
-                "total_profit_pct": result.total_profit * 100,
-                "total_trades": result.total_trades,
-                "win_rate_pct": result.win_rate * 100,
-                "avg_profit_per_trade_pct": result.avg_profit_per_trade * 100
-            }
-
-        return optimized_barriers
-
-    def get_regime_barriers(self, regime_name: str) -> Optional[Dict[str, float]]:
-        """Get optimized barriers for a specific regime."""
-
-        if regime_name not in self.regime_results:
-            return None
-
-        result = self.regime_results[regime_name]
-
-        return {
-            "upper_barrier": result.optimal_upper_barrier,
-            "lower_barrier": result.optimal_lower_barrier,
-            "upper_barrier_pct": result.optimal_upper_barrier * 100,
-            "lower_barrier_pct": result.optimal_lower_barrier * 100
-        }
-
     def build_barrier_map(self) -> Dict[str, Dict[str, float]]:
         """Build a compact map of regime -> {upper_barrier, lower_barrier} in decimals and %."""
         barrier_map: Dict[str, Dict[str, float]] = {}
@@ -833,82 +706,9 @@ class HMMRegimeBarrierOptimizer:
             }
         return barrier_map
 
-    def export_barrier_map(self, output_path: Optional[Path] = None) -> Path:
-        """Export the barrier map to JSON for downstream steps."""
-        if output_path is None:
-            output_dir = Path("hmm_regime_barrier_results")
-            output_dir.mkdir(exist_ok=True)
-            output_path = output_dir / "barriers.json"
-
-        import json
-        with open(output_path, "w") as f:
-            json.dump(self.build_barrier_map(), f, indent=2)
-        self.logger.info(f"✅ Exported barrier map to {output_path}")
-        return output_path
-
-    def load_barrier_map(self, input_path: Path) -> Dict[str, Dict[str, float]]:
-        """Load a barrier map from JSON."""
-        import json
-        with open(input_path) as f:
-            data = json.load(f)
-        return data
-
 
 # Utility functions for integration
-async def setup_hmm_regime_barrier_optimizer(config: Dict[str, Any] = None) -> HMMRegimeBarrierOptimizer:
-    """Setup and initialize HMM regime barrier optimizer."""
 
-    optimizer = HMMRegimeBarrierOptimizer(config)
-    return optimizer
-
-
-async def optimize_hmm_regime_barriers(
-    data: pd.DataFrame,
-    config: Dict[str, Any] = None,
-    regime_column: str = "hmm_regime"
-) -> Dict[str, RegimeBarrierResult]:
-    """
-    Optimize HMM regime-specific barrier limits.
-
-    Args:
-        data: DataFrame with OHLCV data and HMM regime information
-        config: Configuration dictionary
-        regime_column: Column containing HMM regime labels
-
-    Returns:
-        Dictionary mapping regime names to optimization results
-    """
-
-    optimizer = await setup_hmm_regime_barrier_optimizer(config)
-    return await optimizer.optimize_regime_barriers(data, regime_column)
-
-
-def get_optimized_hmm_barriers(
-    regime_name: str,
-    optimization_results: Dict[str, RegimeBarrierResult]
-) -> Optional[Dict[str, float]]:
-    """
-    Get optimized barriers for a specific HMM regime.
-
-    Args:
-        regime_name: Name of the HMM regime
-        optimization_results: Results from optimization
-
-    Returns:
-        Optimized barriers or None if not found
-    """
-
-    if regime_name not in optimization_results:
-        return None
-
-    result = optimization_results[regime_name]
-
-    return {
-        "upper_barrier": result.optimal_upper_barrier,
-        "lower_barrier": result.optimal_lower_barrier,
-        "upper_barrier_pct": result.optimal_upper_barrier * 100,
-        "lower_barrier_pct": result.optimal_lower_barrier * 100
-    }
 
 
 if __name__ == "__main__":

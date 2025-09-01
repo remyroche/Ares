@@ -103,10 +103,6 @@ class BacktestResult:
     # Detailed results
     level_tests: List[SRLevelTest] = None
 
-    def __post_init__(self):
-        if self.level_tests is None:
-            self.level_tests = []
-
 
 class SRBacktestingValidator:
     """
@@ -157,53 +153,6 @@ class SRBacktestingValidator:
 
         # Data integration
         self.data_integration: Optional[SRDataIntegrationSimple] = None
-
-    async def initialize_data_integration(
-        self,
-        symbol: str = "BTCUSDT",
-        exchange: str = "binance",
-        timeframes: Optional[List[str]] = None,
-        lookback_days: Optional[int] = None,
-        training_mode: str = "blank"
-    ) -> bool:
-        """Initialize the data integration system.
-
-        Args:
-            symbol: Trading symbol
-            exchange: Exchange name
-            timeframes: List of timeframes to use
-            lookback_days: Override default lookback period
-            training_mode: Training mode to use for lookback period
-
-        Returns:
-            True if initialization successful, False otherwise
-        """
-        try:
-            if self.logger:
-                self.logger.info("🔧 Initializing data integration for S/R backtesting...")
-
-            # Create and initialize data integration
-            self.data_integration = await create_sr_data_integration_simple(
-                symbol=symbol,
-                exchange=exchange,
-                timeframes=timeframes,
-                lookback_days=lookback_days,
-                training_mode=training_mode
-            )
-
-            if self.data_integration:
-                if self.logger:
-                    self.logger.info("✅ Data integration initialized successfully")
-                return True
-            else:
-                if self.logger:
-                    self.logger.error("❌ Failed to initialize data integration")
-                return False
-
-        except Exception as e:
-            if self.logger:
-                self.logger.error(f"❌ Data integration initialization failed: {e}")
-            return False
 
     @handle_specific_errors(
         error_handlers={

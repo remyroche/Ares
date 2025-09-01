@@ -115,62 +115,6 @@ class MemoryProfiler:
         )
         return snapshot
 
-    def _get_object_counts(self) -> dict[str, int]:
-        """Get counts of Python objects by type."""
-        object_counts = defaultdict(int)
-
-        # Count objects by type
-        for obj in gc.get_objects():
-            obj_type = type(obj).__name__
-            object_counts[obj_type] += 1
-
-        # Convert to regular dict and sort by count
-        sorted_counts = dict(
-            sorted(object_counts.items(), key=lambda x: x[1], reverse=True),
-        )
-
-        # Return top 20 most common object types
-        return dict(list(sorted_counts.items())[:20])
-
-    def _get_tracemalloc_info(self) -> dict[str, Any]:
-        """Get tracemalloc memory allocation information."""
-        if not tracemalloc.is_tracing():
-            return None
-
-        snapshot = tracemalloc.take_snapshot()
-        top_stats = snapshot.statistics("lineno")
-
-        # Get top 10 memory allocations
-        top_allocations = []
-        for _index, stat in enumerate(top_stats[:10]):
-            top_allocations.append(
-                {
-                    "filename": stat.traceback.format()[0]
-                    if stat.traceback.format()
-                    else "unknown",
-                    "size_mb": stat.size / (1024**2),
-                    "count": stat.count,
-                },
-            )
-
-        # Get total memory usage
-        total_size = sum(stat.size for stat in top_stats)
-
-        return {
-            "total_size_mb": total_size / (1024**2),
-            "total_count": len(top_stats),
-            "top_allocations": top_allocations,
-        }
-
-    def _get_gc_info(self) -> dict[str, Any]:
-        """Get garbage collector information."""
-        return {
-            "counts": gc.get_count(),
-            "stats": gc.get_stats() if hasattr(gc, "get_stats") else None,
-            "flags": gc.get_debug(),
-            "threshold": gc.get_threshold(),
-        }
-
     def _detect_memory_leaks(self) -> dict[str, Any] | None:
         """Detect potential memory leaks by analyzing memory growth trends."""
         if len(self.memory_snapshots) < self.leak_detection_window:
@@ -270,42 +214,6 @@ class MemoryProfiler:
         )
         self.monitoring_thread.start()
         self.logger.info("Continuous memory monitoring started")
-
-    def stop_continuous_monitoring(self) -> None:
-        """Stop continuous memory monitoring."""
-        self.is_monitoring = False
-        if self.monitoring_thread:
-            self.monitoring_thread.join(timeout=1)
-        self.logger.info("Continuous memory monitoring stopped")
-
-    def _monitoring_loop(self) -> None:
-        """Background monitoring loop."""
-        while self.is_monitoring:
-            try:
-                snapshot = self.take_snapshot("continuous_monitoring")
-
-                # Check for high memory usage
-                if snapshot["process_memory"]["percent"] > 80:
-                    self.logger.warning(
-                        f"High memory usage detected: {snapshot['process_memory']['percent']:.1f}%",
-                    )
-
-                # Check for potential leaks
-                if (
-                    "leak_detection" in snapshot
-                    and snapshot["leak_detection"]["detected"]
-                ):
-                    self.logger.warning("Potential memory leak detected!")
-                    for _indicator in snapshot["leak_detection"]["indicators"]:
-                        self.logger.warning(f"  - {_indicator}")
-
-                time.sleep(self.monitoring_interval)
-
-            except Exception as e:
-                error_msg = f"Error in memory monitoring loop: {e}"
-                self.logger.exception(error_msg)
-                self.logger.exception(error_msg)
-                time.sleep(self.monitoring_interval)
 
     def analyze_memory_trends(self, window_size: int = 50) -> dict[str, Any]:
         """Analyze memory usage trends over time."""
@@ -410,28 +318,6 @@ class MemoryProfiler:
             "after_rss_mb": after_snapshot["process_memory"]["rss_mb"],
         }
 
-    def optimize_memory_usage(self) -> dict[str, Any]:
-        """Perform comprehensive memory optimization."""
-        self.logger.info("Starting memory optimization...")
-
-        optimization_results = {}
-
-        # 1. Force garbage collection
-        gc_results = self.force_garbage_collection()
-        optimization_results["garbage_collection"] = gc_results
-
-        # 2. Clear internal caches
-        optimization_results["cache_clearing"] = self._clear_internal_caches()
-
-        # 3. Analyze current state
-        current_snapshot = self.take_snapshot("post_optimization")
-        optimization_results["final_state"] = current_snapshot
-
-        self.logger.info(
-            f"Memory optimization completed. Freed {gc_results['memory_freed_mb']:.1f}MB",
-        )
-        return optimization_results
-
     def _clear_internal_caches(self) -> dict[str, Any]:
         """Clear internal profiler caches to free memory."""
         initial_snapshots = len(self.memory_snapshots)
@@ -455,33 +341,6 @@ class MemoryProfiler:
             "snapshots_cleared": initial_snapshots - len(self.memory_snapshots),
             "traces_cleared": initial_traces,
             "snapshots_retained": len(self.memory_snapshots),
-        }
-
-    def generate_memory_report(self) -> dict[str, Any]:
-        """Generate a comprehensive memory usage report."""
-        if not self.memory_snapshots:
-            return {"status": "no_data"}
-
-        # Analyze trends
-        trends = self.analyze_memory_trends()
-
-        # Get current state
-        current_snapshot = self.take_snapshot("report_generation")
-
-        # Generate recommendations
-        recommendations = self._generate_memory_recommendations(
-            current_snapshot=current_snapshot,
-            trends=trends,
-        )
-
-        return {
-            "status": "success",
-            "generated_at": datetime.now().isoformat(),
-            "current_state": current_snapshot,
-            "trends": trends,
-            "recommendations": recommendations,
-            "total_snapshots": len(self.memory_snapshots),
-            "monitoring_active": self.is_monitoring,
         }
 
     def _generate_memory_recommendations(
@@ -533,12 +392,6 @@ class MemoryProfiler:
             )
 
         return recommendations
-
-    def __del__(self) -> None:
-        """Cleanup when profiler is destroyed."""
-        self.stop_continuous_monitoring()
-        if self.enable_tracemalloc and tracemalloc.is_tracing():
-            tracemalloc.stop()
 
 
 class MemoryLeakDetector:

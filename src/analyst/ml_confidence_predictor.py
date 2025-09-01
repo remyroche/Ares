@@ -828,106 +828,11 @@ class MLConfidencePredictor:
         default_return=None,
         context="feature engineering integration initialization",
     )
-    async def _initialize_feature_engineering_integration(self) -> None:
-        """Initialize feature engineering integration."""
-        try:
-            # Import feature engineering components
-            from src.analyst.advanced_feature_engineering import (
-                AdvancedFeatureEngineering,
-            )
-            from src.analyst.feature_engineering_orchestrator import (
-                FeatureEngineeringOrchestrator,
-            )
-            from src.analyst.multi_timeframe_feature_engineering import (
-                MultiTimeframeFeatureEngineering,
-            )
-
-            # Get configuration for feature engineering
-            feature_config = self.config.get(
-                "feature_engineering",
-                {
-                    "enable_advanced_features": True,
-                    "enable_multi_timeframe_features": True,
-                    "enable_autoencoder_features": True,
-                    "enable_legacy_features": True,
-                    "feature_cache_duration": 300,  # 5 minutes
-                    "enable_feature_selection": True,
-                    "max_features": 500,
-                    "multi_timeframe_feature_engineering": {
-                        "enable_mtf_features": True,
-                        "enable_timeframe_adaptation": True,
-                    },
-                },
-            )
-
-            # Initialize feature engineering components
-            self.advanced_feature_engineering = AdvancedFeatureEngineering(
-                feature_config,
-            )
-            await self.advanced_feature_engineering.initialize()
-
-            self.multi_timeframe_feature_engineering = MultiTimeframeFeatureEngineering(
-                feature_config,
-            )
-
-            self.feature_engineering_orchestrator = FeatureEngineeringOrchestrator(
-                feature_config,
-            )
-
-            self.logger.info(
-                "✅ Feature engineering integration initialized successfully",
-            )
-
-        except Exception as e:
-            self.logger.exception(
-                f"Error initializing feature engineering integration: {e}",
-            )
-            self.advanced_feature_engineering = None
-            self.multi_timeframe_feature_engineering = None
-            self.feature_engineering_orchestrator = None
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="meta labeling system initialization",
     )
-    async def _initialize_meta_labeling_system(self) -> None:
-        """Initialize meta-labeling system integration."""
-        try:
-            # Import meta-labeling system
-            from src.analyst.meta_labeling_system import CompositeHMMRegimeSystem
-
-            # Get configuration for meta-labeling
-            meta_config = self.config.get(
-                "meta_labeling",
-                {
-                    "enable_analyst_labels": True,
-                    "enable_tactician_labels": True,
-                    "pattern_detection": {
-                        "volatility_threshold": 0.02,
-                        "momentum_threshold": 0.01,
-                        "volume_threshold": 1.5,
-                    },
-                    "entry_prediction": {
-                        "prediction_horizon": 5,
-                        "max_adverse_excursion": 0.02,
-                    },
-                },
-            )
-
-            # Initialize composite HMM regime system
-            self.meta_labeling_system = CompositeHMMRegimeSystem(meta_config)
-            await self.meta_labeling_system.initialize()
-
-            self.logger.info("✅ Meta-labeling system initialized successfully")
-
-        except Exception:
-            self.print(
-                initialization_error("Error initializing meta-labeling system: {e}")
-            )
-            # Continue without meta-labeling system if not available
-            self.meta_labeling_system = None
-
 
 
     async def _generate_analyst_meta_labels(
@@ -1278,37 +1183,10 @@ class MLConfidencePredictor:
         default_return=None,
         context="model parameters initialization",
     )
-    async def _initialize_model_parameters(self) -> None:
-        """Initialize model parameters."""
-        # Ensure model directory exists
-        model_dir = os.path.dirname(self.model_path)
-        if not os.path.exists(model_dir):
-            os.makedirs(model_dir, exist_ok=True)
-
-        # Initialize performance metrics
-        self.model_performance = {
-            "accuracy": 0.0,
-            "precision": 0.0,
-            "recall": 0.0,
-            "f1_score": 0.0,
-        }
-
     @handle_file_operations(
         default_return=None,
         context="model loading",
     )
-    async def _load_existing_model(self) -> None:
-        """Load existing model if available."""
-        if os.path.exists(self.model_path):
-            try:
-                self.model = joblib.load(self.model_path)
-                self.is_trained = True
-                self.logger.info("✅ Loaded existing confidence predictor model")
-            except Exception:
-                self.print(failed("Failed to load existing model: {e}"))
-                self.model = None
-                self.is_trained = False
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=False,
@@ -1830,41 +1708,6 @@ class MLConfidencePredictor:
             self.print(error("Error calculating directional confidence: {str(e)}"))
             return 0.0
 
-    def _get_magnitude_levels(
-        self,
-        predictions: dict[str, float],
-        direction: str,
-    ) -> list[float]:
-        """
-        Get magnitude levels for a direction from predictions.
-
-        Args:
-            predictions: Dictionary of predictions
-            direction: Direction to get levels for
-
-        Returns:
-            List of magnitude levels
-        """
-        if not predictions:
-            msg = f"No predictions available for {direction} direction"
-            raise ValueError(msg)
-
-        levels = []
-        for level_str in predictions:
-            level = float(level_str.replace("%", ""))
-            if (
-                predictions[level_str] > 0.1
-            ):  # Only include levels with >10% probability
-                levels.append(level)
-
-        if not levels:
-            msg = f"No significant probability levels found for {direction} direction"
-            raise ValueError(
-                msg,
-            )
-
-        return sorted(levels)
-
     def _calculate_risk_score(self, adverse_probabilities: dict[str, float]) -> float:
         """
         Calculate overall risk score based on adverse probabilities.
@@ -1895,35 +1738,6 @@ class MLConfidencePredictor:
             raise ValueError(msg)
 
         return weighted_risk / total_weight
-
-    def _calculate_recommended_stop_loss(
-        self,
-        primary_magnitude: float,
-        adverse_probabilities: dict[str, float],
-    ) -> float:
-        """
-        Calculate recommended stop loss based on adverse probabilities.
-
-        Args:
-            primary_magnitude: Magnitude of primary prediction
-            adverse_probabilities: Dictionary of adverse probabilities
-
-        Returns:
-            Recommended stop loss level
-        """
-        if not adverse_probabilities:
-            msg = "No adverse probabilities provided for stop loss calculation"
-            raise ValueError(
-                msg,
-            )
-
-        # Find the level where adverse probability exceeds 30%
-        for level_str, probability in adverse_probabilities.items():
-            if probability > 0.3:
-                return float(level_str.replace("%", ""))
-
-        # If no level exceeds 30%, use 50% of primary magnitude
-        return primary_magnitude * 0.5
 
     async def _calculate_risk_assessment(
         self,
@@ -2008,66 +1822,6 @@ class MLConfidencePredictor:
                 f"MEDIUM_RISK: {direction.upper()} position with moderate position size"
             )
         return f"LOW_RISK: {direction.upper()} position with normal position size"
-
-    async def _initialize_enhanced_order_manager(self) -> None:
-        """Initialize enhanced order manager and async order executor for tactician order management."""
-        try:
-            # Import order management components
-            from src.tactician.async_order_executor import setup_async_order_executor
-            from src.tactician.enhanced_order_manager import (
-                setup_enhanced_order_manager,
-            )
-
-            # Get configuration for order management
-            order_config = self.config.get(
-                "enhanced_order_manager",
-                {
-                    "enable_enhanced_order_manager": True,
-                    "enable_async_order_executor": True,
-                    "enable_chase_micro_breakout": True,
-                    "enable_limit_order_return": True,
-                    "enable_partial_fill_management": True,
-                    "max_order_retries": 3,
-                    "order_timeout_seconds": 30,
-                    "slippage_tolerance": 0.001,
-                    "volume_threshold": 1.5,
-                    "momentum_threshold": 0.02,
-                    "execution_strategies": {
-                        "immediate": {"max_slippage": 0.001, "timeout_seconds": 30},
-                        "batch": {"batch_size": 0.1, "batch_interval": 5},
-                        "twap": {"duration_minutes": 10, "intervals": 20},
-                        "vwap": {"volume_threshold": 1.5, "price_deviation": 0.002},
-                        "iceberg": {"iceberg_qty": 0.1, "display_qty": 0.01},
-                        "adaptive": {
-                            "dynamic_slippage": True,
-                            "market_impact_aware": True,
-                        },
-                    },
-                },
-            )
-
-            # Initialize enhanced order manager
-            self.enhanced_order_manager = await setup_enhanced_order_manager(
-                order_config,
-            )
-            if self.enhanced_order_manager:
-                self.logger.info("✅ Enhanced order manager initialized successfully")
-            else:
-                self.print(failed("Failed to initialize enhanced order manager"))
-
-            # Initialize async order executor
-            self.async_order_executor = await setup_async_order_executor(order_config)
-            if self.async_order_executor:
-                self.logger.info("✅ Async order executor initialized successfully")
-            else:
-                self.print(failed("Failed to initialize async order executor"))
-
-        except Exception:
-            self.print(
-                initialization_error("Error initializing enhanced order manager: {e}")
-            )
-            self.enhanced_order_manager = None
-            self.async_order_executor = None
 
     async def execute_chase_micro_breakout(
         self,
@@ -2207,79 +1961,6 @@ class MLConfidencePredictor:
             self.print(error("Error executing LIMIT_ORDER_RETURN: {e}"))
             return {"success": False, "error": str(e), "order_id": None}
 
-    def get_order_status(self, order_id: str) -> dict[str, Any] | None:
-        """Get the status of an order."""
-        try:
-            if not self.enhanced_order_manager:
-                return None
-
-            order_state = self.enhanced_order_manager.get_order_status(order_id)
-            if order_state:
-                return {
-                    "order_id": order_state.order_id,
-                    "symbol": order_state.symbol,
-                    "side": order_state.side.value,
-                    "order_type": order_state.order_type.value,
-                    "status": order_state.status.value,
-                    "original_quantity": order_state.original_quantity,
-                    "executed_quantity": order_state.executed_quantity,
-                    "remaining_quantity": order_state.remaining_quantity,
-                    "average_price": order_state.average_price,
-                    "price": order_state.price,
-                    "leverage": order_state.leverage,
-                    "strategy_type": order_state.strategy_type,
-                    "created_time": order_state.created_time.isoformat(),
-                    "updated_time": order_state.updated_time.isoformat(),
-                }
-            return None
-
-        except Exception:
-            self.print(error("Error getting order status: {e}"))
-            return None
-
-    def get_strategy_orders(self, strategy_id: str) -> list[dict[str, Any]]:
-        """Get all orders for a specific strategy."""
-        try:
-            if not self.enhanced_order_manager:
-                return []
-
-            order_states = self.enhanced_order_manager.get_strategy_orders(strategy_id)
-            return [
-                {
-                    "order_id": order_state.order_id,
-                    "symbol": order_state.symbol,
-                    "side": order_state.side.value,
-                    "order_type": order_state.order_type.value,
-                    "status": order_state.status.value,
-                    "original_quantity": order_state.original_quantity,
-                    "executed_quantity": order_state.executed_quantity,
-                    "remaining_quantity": order_state.remaining_quantity,
-                    "average_price": order_state.average_price,
-                    "price": order_state.price,
-                    "leverage": order_state.leverage,
-                    "strategy_type": order_state.strategy_type,
-                    "created_time": order_state.created_time.isoformat(),
-                    "updated_time": order_state.updated_time.isoformat(),
-                }
-                for order_state in order_states
-            ]
-
-        except Exception:
-            self.print(error("Error getting strategy orders: {e}"))
-            return []
-
-    def get_order_manager_performance(self) -> dict[str, Any]:
-        """Get enhanced order manager performance metrics."""
-        try:
-            if not self.enhanced_order_manager:
-                return {}
-
-            return self.enhanced_order_manager.get_performance_metrics()
-
-        except Exception:
-            self.print(error("Error getting order manager performance: {e}"))
-            return {}
-
     async def execute_order_with_strategy(
         self,
         symbol: str,
@@ -2376,43 +2057,6 @@ class MLConfidencePredictor:
         except Exception as e:
             self.print(error("Error executing order with strategy: {e}"))
             return {"success": False, "error": str(e), "execution_id": None}
-
-    def get_execution_status(self, execution_id: str) -> dict[str, Any] | None:
-        """Get execution status for a specific execution ID."""
-        try:
-            if not self.async_order_executor:
-                return {"error": "Async order executor not available"}
-
-            execution_result = self.async_order_executor.get_execution_status(
-                execution_id,
-            )
-            if execution_result:
-                return {
-                    "execution_id": execution_result.execution_id,
-                    "status": execution_result.status.value,
-                    "executed_quantity": execution_result.executed_quantity,
-                    "average_price": execution_result.average_price,
-                    "slippage": execution_result.slippage,
-                    "execution_time": execution_result.execution_time,
-                    "performance_metrics": execution_result.performance_metrics,
-                }
-            return {"error": "Execution not found"}
-
-        except Exception as e:
-            self.print(execution_error("Error getting execution status: {e}"))
-            return {"error": str(e)}
-
-    def get_execution_performance(self) -> dict[str, Any]:
-        """Get overall execution performance metrics."""
-        try:
-            if not self.async_order_executor:
-                return {"error": "Async order executor not available"}
-
-            return self.async_order_executor.get_performance_metrics()
-
-        except Exception as e:
-            self.print(execution_error("Error getting execution performance: {e}"))
-            return {"error": str(e)}
 
     async def trigger_model_training(
         self,
@@ -2570,23 +2214,6 @@ class MLConfidencePredictor:
             self.print(error("Error calculating performance degradation: {e}"))
             return 0.0
 
-    async def update_model_performance(
-        self,
-        performance_metrics: dict[str, Any],
-    ) -> None:
-        """Update model performance history."""
-        try:
-            self.model_performance_history.append(
-                {"timestamp": datetime.now(), "metrics": performance_metrics},
-            )
-
-            # Keep only last 100 performance records
-            if len(self.model_performance_history) > 100:
-                self.model_performance_history = self.model_performance_history[-100:]
-
-        except Exception:
-            self.print(error("Error updating model performance: {e}"))
-
     def get_training_status(self) -> dict[str, Any]:
         """Get current training status and history."""
         try:
@@ -2614,54 +2241,6 @@ class MLConfidencePredictor:
         default_return=None,
         context="ML confidence predictor cleanup",
     )
-    async def stop(self) -> None:
-        """Clean up resources."""
-        try:
-            self.logger.info("Stopping ML Confidence Predictor...")
-            # Cleanup code here if needed
-            self.logger.info("✅ ML Confidence Predictor stopped successfully")
-        except Exception:
-            self.print(error("Error stopping ML Confidence Predictor: {e}"))
-
-    def update_ensemble_weights(
-        self,
-        performance_history: dict[str, float] = None,
-        regime: str = None,
-    ):
-        """
-        Dynamically update ensemble weights based on recent performance, regime, or meta-model.
-        If a meta-model is available, use it for weighting; otherwise, use recent accuracy.
-        """
-        if performance_history:
-            total = sum(performance_history.values())
-            if total > 0:
-                self.ensemble_weights = {
-                    k: v / total for k, v in performance_history.items()
-                }
-            else:
-                self.ensemble_weights = {
-                    k: 1.0 / len(performance_history) for k in performance_history
-                }
-        # Placeholder: regime-specific or meta-model weighting can be added here
-        # Example: if regime and regime in self.regime_models: ...
-        self.logger.info(f"Updated ensemble weights: {self.ensemble_weights}")
-
-    def ablation_study(self, features: pd.DataFrame, y_true: np.ndarray) -> dict:
-        """
-        Perform ablation study: remove each ensemble member in turn and measure performance drop.
-        Returns a dict of member: performance_with_removal.
-        """
-        results = {}
-        for member in self.ensemble_models:
-            others = {k: v for k, v in self.ensemble_models.items() if k != member}
-            if not others:
-                continue
-            preds = np.mean([m.predict(features) for m in others.values()], axis=0)
-            acc = np.mean((preds > 0.5) == y_true)
-            results[member] = acc
-        self.logger.info(f"Ablation study results: {results}")
-        return results
-
     @handle_errors(
         exceptions=(Exception,),
         default_return={},
@@ -2747,50 +2326,6 @@ class MLConfidencePredictor:
         return confidences
 
     # NEW: Reliability-aware mixture score helper
-    def compute_mixture_scores(
-        self,
-        intensities: dict[str, float],
-        confidences: dict[str, float],
-        reliability: dict[str, float] | None = None,
-        alpha: float = 1.0,
-        beta: float = 1.0,
-        gamma: float = 1.0,
-        top_k: int = 0,
-        w_min: float = 0.0,
-        w_max: float = 1.0,
-        normalize: bool = False,
-    ) -> dict[str, float]:
-        scores: dict[str, float] = {}
-        rel_map = reliability or {}
-        for label, inten in intensities.items():
-            c = float(np.clip(confidences.get(label, 0.5), 0.0, 1.0))
-            r = float(np.clip(rel_map.get(label, 1.0), 0.0, 1.0))
-            s = float(
-                np.power(np.clip(float(inten), 0.0, 1.0), alpha)
-                * np.power(c, beta)
-                * np.power(r, gamma)
-            )
-            scores[label] = float(np.clip(s, 0.0, 1.0))
-        if top_k > 0 and len(scores) > top_k:
-            ranked = sorted(scores.items(), key=lambda t: t[1], reverse=True)
-            keep = {k for k, _ in ranked[:top_k]}
-        else:
-            keep = set(scores.keys())
-        weights: dict[str, float] = {}
-        for label, s in scores.items():
-            if label in keep:
-                lo = w_min if w_min > 0 else 0.0
-                hi = w_max if w_max < 1.0 else 1.0
-                w = float(np.clip(s, lo, hi))
-            else:
-                w = 0.0
-            weights[label] = w
-        if normalize:
-            total = float(sum(weights.values()))
-            if total > 0:
-                weights = {k: float(v / total) for k, v in weights.items()}
-        return weights
-
     @handle_errors(
         exceptions=(Exception,),
         default_return={},

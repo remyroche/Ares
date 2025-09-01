@@ -341,10 +341,6 @@ class SROptimizationValidator:
         except Exception as e:
             return {"valid": False, "errors": [f"Quality validation error: {e}"]}
 
-    def get_validation_results(self) -> Dict[str, Any]:
-        """Get validation results."""
-        return self.validation_results
-
 
 @handle_errors(
     exceptions=(Exception,),

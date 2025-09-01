@@ -396,19 +396,6 @@ async def main():
     output_file = output_dir / f"data_quality_report_{args.symbol}_{args.exchange}_{timestamp}.json"
 
     # Convert numpy types to native Python types for JSON serialization
-    def convert_numpy_types(obj):
-        if isinstance(obj, np.integer):
-            return int(obj)
-        elif isinstance(obj, np.floating):
-            return float(obj)
-        elif isinstance(obj, np.ndarray):
-            return obj.tolist()
-        elif isinstance(obj, pd.DataFrame):
-            return obj.to_dict()
-        elif isinstance(obj, pd.Series):
-            return obj.to_dict()
-        return obj
-
     import json
     with open(output_file, "w") as f:
         json.dump(results, f, indent=2, default=convert_numpy_types)

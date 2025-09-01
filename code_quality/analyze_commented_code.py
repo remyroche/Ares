@@ -115,13 +115,6 @@ class CommentedCodeAnalyzer:
         else:
             return 'other'
     
-    def _get_context(self, lines: List[str], line_num: int) -> str:
-        """Get context around the commented line."""
-        start = max(0, line_num - 3)
-        end = min(len(lines), line_num + 2)
-        context_lines = lines[start:end]
-        return '\n'.join(context_lines)
-    
     def _find_multi_line_comments(self, lines: List[str], filepath: str) -> List[Dict[str, Any]]:
         """Find multi-line commented code blocks."""
         multi_line_blocks = []

@@ -530,34 +530,4 @@ VALIDATION_FUNCTIONS = {
 }
 
 
-def get_validation_config(step_name: str) -> dict[str, Any]:
-    """Get validation configuration for a specific step."""
-    return CRITICAL_ERROR_THRESHOLDS.get(step_name, {})
 
-
-def get_progression_rules(step_name: str) -> dict[str, Any]:
-    """Get progression rules for a specific step."""
-    return STEP_PROGRESSION_RULES.get(step_name, {})
-
-
-def can_proceed_to_step(
-    current_step: str,
-    next_step: str,
-    step_status: dict[str, Any],
-) -> tuple[bool, str]:
-    """Check if we can proceed to the next step based on current step status."""
-    current_rules = get_progression_rules(current_step)
-    next_rules = get_progression_rules(next_step)
-
-    # Check if current step is required for next step
-    if current_step in next_rules.get("required_for", []):
-        if step_status.get(current_step, {}).get("status") == "FAILED" and (
-            current_rules.get("failure_action") == "STOP_PIPELINE"
-            or current_rules.get("failure_action") == "SKIP_DEPENDENT_STEPS"
-        ):
-            return (
-                False,
-                f"Cannot proceed to {next_step}: {current_step} failed and is required",
-            )
-
-    return True, f"Proceeding to {next_step}"

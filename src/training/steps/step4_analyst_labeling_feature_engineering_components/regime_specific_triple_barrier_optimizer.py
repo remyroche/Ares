@@ -111,20 +111,6 @@ class RegimeSpecificTripleBarrierOptimizer:
             self.logger.warning(f"Failed to create triple barrier labeler: {e}")
             return None
 
-    def _get_default_barrier_settings(self) -> Dict[str, Any]:
-        """Get default barrier settings for initialization."""
-
-        return {
-            "upper_barrier_multiplier": 1.0,
-            "lower_barrier_multiplier": 1.0,
-            "barrier_timeout": 30,
-            "barrier_adjustment": 1.0,
-            "dynamic_barriers": True,
-            "confidence_threshold": 0.7,
-            "position_size_multiplier": 1.0,
-            "risk_per_trade": 0.05
-        }
-
     def _create_regime_specific_configs(self) -> Dict[str, Dict[str, Any]]:
         """Create regime-specific parameter configurations for triple barrier method."""
 
@@ -286,61 +272,6 @@ class RegimeSpecificTripleBarrierOptimizer:
             }
         }
 
-    async def optimize_regime_specific_parameters(
-        self,
-        regime_data: Dict[str, pd.DataFrame],
-        optimization_config: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """Optimize triple barrier parameters for each regime separately."""
-
-        self.logger.info("🚀 Starting regime-specific triple barrier optimization...")
-        self.logger.info(f"Regimes to optimize: {list(regime_data.keys())}")
-
-        optimization_results = {}
-
-        for regime_name, regime_df in regime_data.items():
-            if regime_name not in self.regime_configs:
-                self.logger.warning(f"⚠️ No configuration found for regime: {regime_name}")
-                continue
-
-            try:
-                self.logger.info(f"🔧 Optimizing parameters for {regime_name} regime...")
-
-                # Create regime-specific study
-                study = await self._create_regime_study(regime_name, optimization_config)
-
-                # Run optimization for this regime
-                regime_result = await self._optimize_single_regime(
-                    regime_name,
-                    regime_df,
-                    study,
-                    optimization_config
-                )
-
-                optimization_results[regime_name] = regime_result
-
-                # Store the optimized model
-                self.regime_models[regime_name] = regime_result.get("best_model", None)
-
-                # Update triple barrier labeler with optimized parameters
-                if self.triple_barrier_labeler:
-                    await self._update_triple_barrier_labeler(regime_name, regime_result)
-
-                self.logger.info(f"✅ {regime_name} regime optimization completed")
-
-            except Exception as e:
-                self.logger.error(f"❌ Failed to optimize {regime_name} regime: {e}")
-                optimization_results[regime_name] = {"error": str(e)}
-
-        # Store overall results
-        self.optimization_results = optimization_results
-
-        # Log to MLflow
-        if MLFLOW_AVAILABLE:
-            await self._log_regime_optimization_to_mlflow(optimization_results)
-
-        return optimization_results
-
     async def _update_triple_barrier_labeler(self, regime_name: str, regime_result: Dict[str, Any]):
         """Update triple barrier labeler with optimized parameters for a regime."""
 
@@ -462,22 +393,6 @@ class RegimeSpecificTripleBarrierOptimizer:
         regime_config: Dict[str, Any]
     ):
         """Create objective function for regime-specific optimization."""
-
-        def objective(trial):
-            # Sample parameters from regime-specific configuration
-            params = self._sample_regime_parameters(trial, regime_config)
-
-            # Evaluate the parameters on regime data
-            try:
-                performance_score = self._evaluate_regime_parameters(
-                    regime_name,
-                    regime_data,
-                    params
-                )
-                return performance_score
-            except Exception as e:
-                self.logger.warning(f"Trial failed for {regime_name}: {e}")
-                return float('-inf')  # Penalize failed trials
 
         return objective
 
@@ -722,18 +637,6 @@ class RegimeSpecificTripleBarrierOptimizer:
         except Exception as e:
             self.logger.error(f"Failed to log to MLflow: {e}")
 
-    async def get_regime_optimization_status(self) -> Dict[str, Any]:
-        """Get current status of regime-specific optimization."""
-
-        return {
-            "optimization_completed": bool(self.optimization_results),
-            "total_regimes_optimized": len(self.optimization_results),
-            "regime_models_created": len(self.regime_models),
-            "optimization_timestamp": datetime.now().isoformat(),
-            "regime_summary": self._create_regime_summary(),
-            "triple_barrier_integration": bool(self.triple_barrier_labeler)
-        }
-
     def _create_regime_summary(self) -> Dict[str, Any]:
         """Create a summary of all regime optimizations."""
 
@@ -754,70 +657,6 @@ class RegimeSpecificTripleBarrierOptimizer:
                 }
 
         return summary
-
-    async def apply_regime_parameters(self, regime_name: str) -> Dict[str, Any]:
-        """Apply optimized parameters for a specific regime."""
-
-        if regime_name not in self.regime_models:
-            return {"error": f"No optimized model found for regime: {regime_name}"}
-
-        try:
-            regime_model = self.regime_models[regime_name]
-            optimized_params = regime_model.get("optimized_parameters", {})
-
-            # This would integrate with your actual triple barrier implementation
-            # For now, returning the parameter application status
-
-            application_result = {
-                "regime_name": regime_name,
-                "status": "applied",
-                "parameters_applied": len(optimized_params),
-                "application_timestamp": datetime.now().isoformat(),
-                "parameter_summary": self._create_parameter_summary(optimized_params)
-            }
-
-            self.logger.info(f"✅ Applied optimized parameters for {regime_name} regime")
-
-            return application_result
-
-        except Exception as e:
-            self.logger.error(f"❌ Failed to apply parameters for {regime_name} regime: {e}")
-            return {"error": str(e)}
-
-    async def get_optimization_recommendations(self) -> List[str]:
-        """Get recommendations based on optimization results."""
-
-        recommendations = []
-
-        if not self.optimization_results:
-            recommendations.append("Run regime-specific optimization first")
-            return recommendations
-
-        # Analyze results and provide recommendations
-        for regime_name, result in self.optimization_results.items():
-            if "error" not in result:
-                best_value = result.get("best_value", 0)
-
-                if best_value < 0.5:
-                    recommendations.append(f"Consider adjusting parameters for {regime_name} regime (low performance)")
-                elif best_value > 0.8:
-                    recommendations.append(f"{regime_name} regime parameters are well-optimized")
-
-                # Regime-specific recommendations
-                if regime_name == "volatile_regime":
-                    recommendations.append("Volatile regime: Consider wider barriers and shorter timeouts")
-                elif regime_name == "trending_regime":
-                    recommendations.append("Trending regime: Consider momentum-aware labeling and position sizing")
-
-        recommendations.append("Monitor regime performance with new parameters")
-        recommendations.append("Consider re-optimization if market conditions change significantly")
-
-        return recommendations
-
-    async def get_triple_barrier_labeler(self):
-        """Get the integrated triple barrier labeler."""
-
-        return self.triple_barrier_labeler
 
 
 # Factory function for creating regime-specific triple barrier optimizer

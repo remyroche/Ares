@@ -573,32 +573,3 @@ class EnhancedRegimePredictor:
         except Exception as e:
             self.logger.warning(f"⚠️ Error extracting regime characteristics: {e}")
             return pd.DataFrame()
-
-    def get_model_summary(self) -> Dict[str, Any]:
-        """Get summary of the fitted models."""
-        summary = {
-            "persistence_model": None,
-            "adaptive_boundaries": None,
-            "configuration": {
-                "stability_threshold": self.stability_threshold,
-                "min_persistence": self.min_persistence,
-                "entropy_percentile": self.entropy_percentile,
-                "confidence_threshold": self.confidence_threshold
-            }
-        }
-
-        if self.persistence_model:
-            summary["persistence_model"] = {
-                "distribution_type": self.persistence_model.get("distribution_type"),
-                "mean_duration": self.persistence_model.get("mean_duration"),
-                "statistics": self.persistence_model.get("statistics", {})
-            }
-
-        if self.regime_boundaries:
-            summary["adaptive_boundaries"] = {
-                "n_boundaries": len(self.regime_boundaries.labels_) if hasattr(self.regime_boundaries, 'labels_') else 0,
-                "eps": self.regime_boundaries.eps,
-                "min_samples": self.regime_boundaries.min_samples
-            }
-
-        return summary

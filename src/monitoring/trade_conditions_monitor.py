@@ -37,7 +37,3 @@ class TradeConditionsMonitor:
         default_return, False,
         context="trade_conditions_monitor.initialize",
     )
-    async def initialize(self) -> bool:
-        self.logger.info("Initializing Trade Conditions Monitor ...")
-        self.logger.info("✅ Trade Conditions Monitor initialization completed")
-        return True

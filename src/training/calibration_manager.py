@@ -61,31 +61,6 @@ class CalibrationManager:
         default_return=False,
         context="calibration manager initialization",
     )
-    async def initialize(self) -> bool:
-        """Initialize calibration manager.
-
-        Returns:
-            bool: True if initialization successful, False otherwise
-
-        """
-        try:
-            self.logger.info("Initializing Calibration Manager...")
-
-            # Validate configuration
-            if not self._validate_configuration():
-                self.print(invalid("Invalid configuration for calibration manager"))
-                return False
-
-            # Initialize calibration components
-            await self._initialize_calibration_components()
-
-            self.logger.info("✅ Calibration Manager initialized successfully")
-            return True
-
-        except Exception:
-            self.print(failed("❌ Calibration Manager initialization failed: {e}"))
-            return False
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=False,
@@ -121,30 +96,6 @@ class CalibrationManager:
         default_return=None,
         context="calibration components initialization",
     )
-    async def _initialize_calibration_components(self) -> None:
-        """Initialize calibration components."""
-        try:
-            # Initialize ML confidence predictor for calibration
-            from src.analyst.ml_confidence_predictor import MLConfidencePredictor
-
-            self.ml_confidence_predictor = MLConfidencePredictor(self.config)
-            await self.ml_confidence_predictor.initialize()
-
-            # Initialize calibration methods
-            if self.enable_temperature_scaling:
-                self.logger.info("✅ Temperature scaling calibration initialized")
-
-            if self.enable_isotonic_regression:
-                self.logger.info("✅ Isotonic regression calibration initialized")
-
-            self.logger.info("✅ All calibration components initialized")
-
-        except Exception as e:
-            self.logger.exception(
-                f"❌ Failed to initialize calibration components: {e}",
-            )
-            raise
-
     @handle_specific_errors(
         error_handlers={
             ValueError: (False, "Invalid calibration parameters"),
@@ -154,65 +105,6 @@ class CalibrationManager:
         default_return=False,
         context="model calibration",
     )
-    async def calibrate_models(
-        self,
-        ensemble_results: dict[str, Any],
-        training_input: dict[str, Any],
-    ) -> dict[str, Any] | None:
-        """Calibrate models to improve prediction reliability.
-
-        Args:
-            ensemble_results: Results from ensemble creation
-            training_input: Training input parameters
-
-        Returns:
-            dict: Calibration results
-
-        """
-        try:
-            self.logger.info("🎯 Starting model calibration...")
-            self.is_calibrating = True
-
-            # Validate inputs
-            if not self._validate_calibration_inputs(ensemble_results, training_input):
-                return None
-
-            # Calibrate analyst models
-            analyst_calibration = None
-            if ensemble_results.get("analyst_ensembles"):
-                analyst_calibration = await self._calibrate_analyst_models(
-                    ensemble_results["analyst_ensembles"],
-                    training_input,
-                )
-
-            # Calibrate tactician models
-            tactician_calibration = None
-            if ensemble_results.get("tactician_ensembles"):
-                tactician_calibration = await self._calibrate_tactician_models(
-                    ensemble_results["tactician_ensembles"],
-                    training_input,
-                )
-
-            # Combine results
-            calibration_results = {
-                "analyst_calibration": analyst_calibration,
-                "tactician_calibration": tactician_calibration,
-                "training_input": training_input,
-                "calibration_timestamp": datetime.now().isoformat(),
-            }
-
-            # Store calibration results
-            await self._store_calibration_results(calibration_results)
-
-            self.is_calibrating = False
-            self.logger.info("✅ Model calibration completed successfully")
-            return calibration_results
-
-        except Exception:
-            self.print(failed("❌ Model calibration failed: {e}"))
-            self.is_calibrating = False
-            return None
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=False,
@@ -536,67 +428,14 @@ class CalibrationManager:
         except Exception:
             self.print(failed("❌ Failed to store calibration results: {e}"))
 
-    def get_calibration_status(self) -> dict[str, Any]:
-        """Get current calibration status.
-
-        Returns:
-            dict: Calibration status information
-
-        """
-        return {
-            "is_calibrating": self.is_calibrating,
-            "has_calibration_results": bool(self.calibration_results),
-            "confidence_calibration_enabled": self.enable_confidence_calibration,
-            "temperature_scaling_enabled": self.enable_temperature_scaling,
-            "isotonic_regression_enabled": self.enable_isotonic_regression,
-        }
-
-    def get_calibration_results(self) -> dict[str, Any]:
-        """Get the latest calibration results.
-
-        Returns:
-            dict: Calibration results
-
-        """
-        return self.calibration_results.copy()
-
     @handle_errors(
         exceptions=(Exception,),
         default_return=None,
         context="calibration manager cleanup",
     )
-    async def stop(self) -> None:
-        """Stop the calibration manager and cleanup resources."""
-        try:
-            self.logger.info("🛑 Stopping Calibration Manager...")
-            self.is_calibrating = False
-            self.logger.info("✅ Calibration Manager stopped successfully")
-        except Exception:
-            self.print(failed("❌ Failed to stop Calibration Manager: {e}"))
-
 
 @handle_errors(
     exceptions=(Exception,),
     default_return=None,
     context="calibration manager setup",
 )
-async def setup_calibration_manager(
-    config: dict[str, Any] | None = None,
-) -> CalibrationManager | None:
-    """Setup and return a configured CalibrationManager instance.
-
-    Args:
-        config: Configuration dictionary
-
-    Returns:
-        CalibrationManager: Configured calibration manager instance
-
-    """
-    try:
-        manager = CalibrationManager(config or {})
-        if await manager.initialize():
-            return manager
-        return None
-    except Exception as e:
-        system_logger.exception(f"Failed to setup calibration manager: {e}")
-        return None

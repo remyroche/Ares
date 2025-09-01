@@ -75,36 +75,6 @@ class PredictiveEnsembles:
         default_return=False,
         context="predictive ensembles initialization",
     )
-    async def initialize(self) -> bool:
-        """
-        Initialize predictive ensembles with enhanced error handling.
-
-        Returns:
-            bool: True if initialization successful, False otherwise
-        """
-        try:
-            self.logger.info("Initializing Predictive Ensembles...")
-
-            # Load predictive ensembles configuration
-            await self._load_ensemble_configuration()
-
-            # Validate configuration
-            if not self._validate_configuration():
-                self.print(invalid("Invalid configuration for predictive ensembles"))
-                return False
-
-            # Initialize predictive ensembles modules
-            await self._initialize_ensemble_modules()
-
-            self.logger.info(
-                "✅ Predictive Ensembles initialization completed successfully",
-            )
-            return True
-
-        except Exception:
-            self.print(failed("❌ Predictive Ensembles initialization failed: {e}"))
-            return False
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
@@ -184,143 +154,31 @@ class PredictiveEnsembles:
         default_return=None,
         context="ensemble modules initialization",
     )
-    async def _initialize_ensemble_modules(self) -> None:
-        """Initialize predictive ensembles modules."""
-        try:
-            # Initialize model ensemble module
-            if self.enable_model_ensemble:
-                await self._initialize_model_ensemble()
-
-            # Initialize voting ensemble module
-            if self.enable_voting_ensemble:
-                await self._initialize_voting_ensemble()
-
-            # Initialize stacking ensemble module
-            if self.enable_stacking_ensemble:
-                await self._initialize_stacking_ensemble()
-
-            # Initialize bagging ensemble module
-            if self.ensemble_config.get("enable_bagging_ensemble", True):
-                await self._initialize_bagging_ensemble()
-
-            # Initialize boosting ensemble module
-            if self.ensemble_config.get("enable_boosting_ensemble", True):
-                await self._initialize_boosting_ensemble()
-
-            self.logger.info("Predictive ensembles modules initialized successfully")
-
-        except Exception:
-            self.print(initialization_error("Error initializing ensemble modules: {e}"))
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="model ensemble initialization",
     )
-    async def _initialize_model_ensemble(self) -> None:
-        """Initialize model ensemble module."""
-        try:
-            # Initialize model ensemble components
-            self.model_ensemble_components = {
-                "random_forest": True,
-                "gradient_boosting": True,
-                "linear_regression": True,
-                "svr_model": True,
-            }
-
-            self.logger.info("Model ensemble module initialized")
-
-        except Exception:
-            self.print(initialization_error("Error initializing model ensemble: {e}"))
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="voting ensemble initialization",
     )
-    async def _initialize_voting_ensemble(self) -> None:
-        """Initialize voting ensemble module."""
-        try:
-            # Initialize voting ensemble components
-            self.voting_ensemble_components = {
-                "hard_voting": True,
-                "soft_voting": True,
-                "weighted_voting": True,
-                "majority_voting": True,
-            }
-
-            self.logger.info("Voting ensemble module initialized")
-
-        except Exception:
-            self.print(initialization_error("Error initializing voting ensemble: {e}"))
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="stacking ensemble initialization",
     )
-    async def _initialize_stacking_ensemble(self) -> None:
-        """Initialize stacking ensemble module."""
-        try:
-            # Initialize stacking ensemble components
-            self.stacking_ensemble_components = {
-                "meta_learner": True,
-                "cross_validation": True,
-                "feature_importance": True,
-                "model_selection": True,
-            }
-
-            self.logger.info("Stacking ensemble module initialized")
-
-        except Exception:
-            self.print(
-                initialization_error("Error initializing stacking ensemble: {e}"),
-            )
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="bagging ensemble initialization",
     )
-    async def _initialize_bagging_ensemble(self) -> None:
-        """Initialize bagging ensemble module."""
-        try:
-            # Initialize bagging ensemble components
-            self.bagging_ensemble_components = {
-                "bootstrap_sampling": True,
-                "out_of_bag_estimation": True,
-                "feature_sampling": True,
-                "bagging_validation": True,
-            }
-
-            self.logger.info("Bagging ensemble module initialized")
-
-        except Exception:
-            self.print(initialization_error("Error initializing bagging ensemble: {e}"))
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="boosting ensemble initialization",
     )
-    async def _initialize_boosting_ensemble(self) -> None:
-        """Initialize boosting ensemble module."""
-        try:
-            # Initialize boosting ensemble components
-            self.boosting_ensemble_components = {
-                "adaboost": True,
-                "gradient_boosting": True,
-                "xgboost": True,
-                "lightgbm": True,
-            }
-
-            self.logger.info("Boosting ensemble module initialized")
-
-        except Exception:
-            self.print(
-                initialization_error("Error initializing boosting ensemble: {e}"),
-            )
-
     @handle_specific_errors(
         error_handlers={
             ValueError: (False, "Invalid ensemble parameters"),
@@ -1064,101 +922,16 @@ class PredictiveEnsembles:
         default_return=None,
         context="ensemble results getting",
     )
-    def get_ensemble_results(self, ensemble_type: str | None = None) -> dict[str, Any]:
-        """
-        Get ensemble results.
-
-        Args:
-            ensemble_type: Optional ensemble type filter
-
-        Returns:
-            dict[str, Any]: Ensemble results
-        """
-        try:
-            if ensemble_type:
-                return self.ensemble_results.get(ensemble_type, {})
-            return self.ensemble_results.copy()
-
-        except Exception:
-            self.print(error("Error getting ensemble results: {e}"))
-            return {}
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="ensemble history getting",
     )
-    def get_ensemble_history(self, limit: int | None = None) -> list[dict[str, Any]]:
-        """
-        Get ensemble history.
-
-        Args:
-            limit: Optional limit on number of records
-
-        Returns:
-            list[dict[str, Any]]: Ensemble history
-        """
-        try:
-            history = self.ensemble_history.copy()
-
-            if limit:
-                history = history[-limit:]
-
-            return history
-
-        except Exception:
-            self.print(error("Error getting ensemble history: {e}"))
-            return []
-
-    def get_ensemble_status(self) -> dict[str, Any]:
-        """
-        Get ensemble status information.
-
-        Returns:
-            dict[str, Any]: Ensemble status
-        """
-        return {
-            "is_ensembling": self.is_ensembling,
-            "ensemble_interval": self.ensemble_interval,
-            "max_ensemble_history": self.max_ensemble_history,
-            "enable_model_ensemble": self.enable_model_ensemble,
-            "enable_voting_ensemble": self.enable_voting_ensemble,
-            "enable_stacking_ensemble": self.enable_stacking_ensemble,
-            "enable_bagging_ensemble": self.ensemble_config.get(
-                "enable_bagging_ensemble",
-                True,
-            ),
-            "enable_boosting_ensemble": self.ensemble_config.get(
-                "enable_boosting_ensemble",
-                True,
-            ),
-            "ensemble_history_count": len(self.ensemble_history),
-        }
-
     @handle_errors(
         exceptions=(Exception,),
         default_return=None,
         context="predictive ensembles cleanup",
     )
-    async def stop(self) -> None:
-        """Stop the predictive ensembles."""
-        self.logger.info("🛑 Stopping Predictive Ensembles...")
-
-        try:
-            # Stop ensembling
-            self.is_ensembling = False
-
-            # Clear results
-            self.ensemble_results.clear()
-
-            # Clear history
-            self.ensemble_history.clear()
-
-            self.logger.info("✅ Predictive Ensembles stopped successfully")
-
-        except Exception:
-            self.print(error("Error stopping predictive ensembles: {e}"))
-
 
 # Global predictive ensembles instance
 predictive_ensembles: PredictiveEnsembles | None = None

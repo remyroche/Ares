@@ -102,74 +102,6 @@ class MultiObjectiveParetoOptimizer:
         self.logger.info(f"Objectives: {[obj.value for obj in objectives]}")
         self.logger.info(f"Weights: {self.normalized_weights}")
 
-    async def create_multi_objective_study(
-        self,
-        study_name: str,
-        n_trials: int,
-        population_size: Optional[int] = None
-    ):
-        """Create a multi-objective optimization study."""
-
-        if not OPTUNA_AVAILABLE:
-            raise ImportError("Optuna is required for multi-objective optimization")
-
-        # Calculate optimal population size for NSGA-II
-        if population_size is None:
-            population_size = min(50, max(20, n_trials // 4))
-
-        study = optuna.create_study(
-            study_name=study_name,
-            directions=["maximize"] * len(self.objectives),
-            sampler=NSGAIISampler(
-                population_size=population_size,
-                crossover_prob=0.8,
-                mutation_prob=0.1,
-                seed=42
-            ),
-            pruner=MedianPruner(
-                n_startup_trials=5,
-                n_warmup_steps=10,
-                interval_steps=3
-            )
-        )
-
-        self.logger.info(f"Created multi-objective study: {study_name}")
-        self.logger.info(f"Population size: {population_size}, Objectives: {len(self.objectives)}")
-
-        return study
-
-    def create_multi_objective_objective_function(self, parameter_mapping: Dict[str, Any], data: pd.DataFrame):
-        """Create objective function for multi-objective optimization."""
-
-        def objective(trial):
-            # Sample parameters
-            params = self._sample_parameters(trial, parameter_mapping)
-
-            try:
-                # Evaluate all objectives
-                objective_values = []
-
-                for obj in self.objectives:
-                    if obj == OptimizationObjective.TOTAL_PROFIT:
-                        value = self._evaluate_total_profit(data, params)
-                    elif obj == OptimizationObjective.WIN_RATE:
-                        value = self._evaluate_win_rate(data, params)
-                    elif obj == OptimizationObjective.SHARPE_RATIO:
-                        value = self._evaluate_sharpe_ratio(data, params)
-                    else:
-                        value = 0.0
-
-                    objective_values.append(value)
-
-                return objective_values
-
-            except Exception as e:
-                self.logger.warning(f"Multi-objective evaluation failed: {e}")
-                # Return worst possible values
-                return [float('-inf')] * len(self.objectives)
-
-        return objective
-
     def _sample_parameters(self, trial, parameter_mapping: Dict[str, Any]) -> Dict[str, Any]:
         """Sample parameters for the trial."""
 
@@ -456,41 +388,6 @@ class CrossValidationPruner:
             is_significant=is_significant
         )
 
-    async def _evaluate_parameter_sensitivity_fold(
-        self,
-        train_data: pd.DataFrame,
-        val_data: pd.DataFrame,
-        step_name: str,
-        param_name: str,
-        param_config: Any
-    ) -> float:
-        """Evaluate parameter sensitivity on a single CV fold."""
-
-        try:
-            # Get test values for this parameter
-            test_values = self._get_test_values(param_config)
-
-            # Evaluate performance for each test value
-            performance_scores = []
-
-            for value in test_values:
-                score = await self._evaluate_parameter_value(
-                    train_data, val_data, step_name, param_name, value
-                )
-                performance_scores.append(score)
-
-            # Calculate sensitivity (variance in performance)
-            if len(performance_scores) > 1:
-                sensitivity = np.var(performance_scores)
-            else:
-                sensitivity = 0.0
-
-            return sensitivity
-
-        except Exception as e:
-            self.logger.debug(f"Parameter sensitivity evaluation failed: {e}")
-            return 0.0
-
     def _get_test_values(self, param_config: Any) -> List[Any]:
         """Get test values for parameter sensitivity testing."""
 
@@ -552,23 +449,6 @@ class CrossValidationPruner:
             self.logger.debug(f"Parameter value evaluation failed: {e}")
             return 0.5
 
-    def get_significant_parameters(self, cv_results: List[CrossValidationResult]) -> List[str]:
-        """Get list of parameters that passed significance threshold."""
-
-        significant = [result.parameter for result in cv_results if result.is_significant]
-
-        self.logger.info(f"Significant parameters: {len(significant)}/{len(cv_results)}")
-
-        return significant
-
-    def get_parameter_ranking(self, cv_results: List[CrossValidationResult]) -> List[Tuple[str, float]]:
-        """Get ranked list of parameters by sensitivity."""
-
-        ranking = [(result.parameter, result.mean_sensitivity) for result in cv_results]
-        ranking.sort(key=lambda x: x[1], reverse=True)
-
-        return ranking
-
 
 class EnsembleParameterOptimizer:
     """Optimize ensemble parameters efficiently."""
@@ -580,31 +460,6 @@ class EnsembleParameterOptimizer:
             "ensemble_method", "voting", "bagging", "boosting",
             "blending", "stacking_cv_folds", "meta_learner_cv"
         ]
-
-    def identify_ensemble_parameters(self, parameters: List[str]) -> Dict[str, List[str]]:
-        """Identify and categorize ensemble parameters."""
-
-        ensemble_params = []
-        base_params = []
-
-        for param in parameters:
-            if any(keyword in param.lower() for keyword in self.ensemble_keywords):
-                ensemble_params.append(param)
-            else:
-                base_params.append(param)
-
-        # Group ensemble parameters by type
-        ensemble_groups = self._group_ensemble_parameters(ensemble_params)
-
-        self.logger.info(f"Ensemble parameters identified: {len(ensemble_params)}")
-        self.logger.info(f"Base parameters: {len(base_params)}")
-        self.logger.info(f"Ensemble groups: {len(ensemble_groups)}")
-
-        return {
-            "ensemble_params": ensemble_params,
-            "base_params": base_params,
-            "ensemble_groups": ensemble_groups
-        }
 
     def _group_ensemble_parameters(self, ensemble_params: List[str]) -> Dict[str, List[str]]:
         """Group ensemble parameters by functionality."""
@@ -627,70 +482,6 @@ class EnsembleParameterOptimizer:
                 groups["advanced_features"].append(param)
 
         return groups
-
-    def optimize_parameter_order(self, base_params: List[str], ensemble_params: List[str]) -> List[str]:
-        """Optimize the order of parameters for efficient optimization."""
-
-        # Strategy: Base parameters first, then ensemble parameters in dependency order
-
-        # 1. Base parameters (model architecture, core hyperparameters)
-        optimized_order = base_params.copy()
-
-        # 2. Ensemble size and method (foundation for ensemble)
-        ensemble_groups = self._group_ensemble_parameters(ensemble_params)
-        optimized_order.extend(ensemble_groups["size_and_method"])
-
-        # 3. Cross-validation parameters (needed for meta-learning)
-        optimized_order.extend(ensemble_groups["cross_validation"])
-
-        # 4. Meta-learning parameters (depend on ensemble size/method)
-        optimized_order.extend(ensemble_groups["meta_learning"])
-
-        # 5. Advanced ensemble features (depend on everything else)
-        optimized_order.extend(ensemble_groups["advanced_features"])
-
-        self.logger.info(f"Optimized parameter order: {len(optimized_order)} parameters")
-        self.logger.info(f"  Base: {len(base_params)}, Ensemble: {len(ensemble_params)}")
-
-        return optimized_order
-
-    def create_ensemble_optimization_strategy(self, ensemble_params: List[str]) -> Dict[str, Any]:
-        """Create optimization strategy for ensemble parameters."""
-
-        strategy = {
-            "parameter_groups": self._group_ensemble_parameters(ensemble_params),
-            "optimization_order": self._get_ensemble_optimization_order(ensemble_params),
-            "dependency_graph": self._build_dependency_graph(ensemble_params),
-            "constraint_rules": self._get_constraint_rules(ensemble_params)
-        }
-
-        return strategy
-
-    def _get_ensemble_optimization_order(self, ensemble_params: List[str]) -> List[str]:
-        """Get optimal order for ensemble parameter optimization."""
-
-        # This would be more sophisticated in production
-        # For now, using a simple heuristic
-
-        priority_order = [
-            "ensemble_size", "ensemble_method", "stacking_enabled",
-            "stacking_cv_folds", "meta_learner", "meta_learner_cv"
-        ]
-
-        ordered_params = []
-        remaining_params = ensemble_params.copy()
-
-        # Add parameters in priority order
-        for priority in priority_order:
-            for param in remaining_params[:]:
-                if priority in param.lower():
-                    ordered_params.append(param)
-                    remaining_params.remove(param)
-
-        # Add any remaining parameters
-        ordered_params.extend(remaining_params)
-
-        return ordered_params
 
     def _build_dependency_graph(self, ensemble_params: List[str]) -> Dict[str, List[str]]:
         """Build dependency graph for ensemble parameters."""
@@ -746,48 +537,6 @@ class ParameterInteractionDetector:
         self.logger = logging.getLogger(__name__)
 
         self.logger.info(f"Parameter interaction detector initialized: threshold={interaction_threshold}, max={max_interactions}")
-
-    async def detect_parameter_interactions(
-        self,
-        data: pd.DataFrame,
-        parameters: List[str],
-        parameter_mapping: Dict[str, Dict[str, Any]]
-    ) -> List[ParameterInteraction]:
-        """Detect interactions between parameters."""
-
-        self.logger.info(f"🔗 Detecting parameter interactions for {len(parameters)} parameters...")
-
-        interactions = []
-        tested_pairs = 0
-
-        # Test pairwise interactions
-        for i, param1 in enumerate(parameters):
-            for j, param2 in enumerate(parameters[i+1:], i+1):
-                tested_pairs += 1
-
-                if tested_pairs > self.max_interactions:
-                    self.logger.info(f"Reached maximum interaction tests ({self.max_interactions})")
-                    break
-
-                try:
-                    interaction = await self._test_parameter_interaction(
-                        data, param1, param2, parameter_mapping
-                    )
-
-                    if interaction and interaction.interaction_strength > self.interaction_threshold:
-                        interactions.append(interaction)
-                        self.logger.debug(f"Strong interaction detected: {param1} ↔ {param2} (strength: {interaction.interaction_strength:.6f})")
-
-                except Exception as e:
-                    self.logger.debug(f"Interaction test failed for {param1}-{param2}: {e}")
-                    continue
-
-        # Sort by interaction strength
-        interactions.sort(key=lambda x: x.interaction_strength, reverse=True)
-
-        self.logger.info(f"✅ Interaction detection completed: {len(interactions)} significant interactions found")
-
-        return interactions
 
     async def _test_parameter_interaction(
         self,
@@ -851,13 +600,6 @@ class ParameterInteractionDetector:
         except Exception as e:
             self.logger.debug(f"Parameter interaction test failed: {e}")
             return None
-
-    def _get_param_config(self, parameter_mapping: Dict[str, Dict[str, Any]], step: str, param: str) -> Any:
-        """Get parameter configuration from mapping."""
-
-        if step in parameter_mapping and param in parameter_mapping[step]:
-            return parameter_mapping[step][param]
-        return None
 
     def _get_test_values(self, param_config: Any) -> List[Any]:
         """Get test values for interaction testing."""
@@ -951,64 +693,8 @@ class ParameterInteractionDetector:
 
         return confidence
 
-    def get_interaction_summary(self, interactions: List[ParameterInteraction]) -> Dict[str, Any]:
-        """Get summary of parameter interactions."""
-
-        if not interactions:
-            return {"error": "No interactions detected"}
-
-        # Group by interaction type
-        by_type = {}
-        for interaction in interactions:
-            interaction_type = interaction.interaction_type
-            if interaction_type not in by_type:
-                by_type[interaction_type] = []
-            by_type[interaction_type].append(interaction)
-
-        # Calculate statistics
-        strengths = [i.interaction_strength for i in interactions]
-        confidences = [i.confidence for i in interactions]
-
-        return {
-            "total_interactions": len(interactions),
-            "interactions_by_type": {
-                interaction_type: len(interactions)
-                for interaction_type, interactions in by_type.items()
-            },
-            "strength_statistics": {
-                "mean": np.mean(strengths),
-                "std": np.std(strengths),
-                "max": max(strengths),
-                "min": min(strengths)
-            },
-            "confidence_statistics": {
-                "mean": np.mean(confidences),
-                "std": np.std(confidences),
-                "max": max(confidences),
-                "min": min(confidences)
-            },
-            "top_interactions": [
-                {
-                    "param1": i.param1,
-                    "param2": i.param2,
-                    "strength": i.interaction_strength,
-                    "type": i.interaction_type,
-                    "confidence": i.confidence
-                }
-                for i in interactions[:10]  # Top 10
-            ]
-        }
-
 
 # Factory functions
-def create_multi_objective_optimizer(
-    objectives: List[OptimizationObjective],
-    weights: List[float]
-) -> MultiObjectiveParetoOptimizer:
-    """Create multi-objective optimizer instance."""
-
-    return MultiObjectiveParetoOptimizer(objectives, weights)
-
 
 def create_cv_pruner(cv_folds: int = 5, significance_threshold: float = 0.01) -> CrossValidationPruner:
     """Create cross-validation pruner instance."""
@@ -1016,19 +702,6 @@ def create_cv_pruner(cv_folds: int = 5, significance_threshold: float = 0.01) ->
     return CrossValidationPruner(cv_folds, significance_threshold)
 
 
-def create_ensemble_optimizer() -> EnsembleParameterOptimizer:
-    """Create ensemble parameter optimizer instance."""
-
-    return EnsembleParameterOptimizer()
-
-
-def create_interaction_detector(
-    interaction_threshold: float = 0.01,
-    max_interactions: int = 50
-) -> ParameterInteractionDetector:
-    """Create parameter interaction detector instance."""
-
-    return ParameterInteractionDetector(interaction_threshold, max_interactions)
 
 
 if __name__ == "__main__":

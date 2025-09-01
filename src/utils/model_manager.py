@@ -37,38 +37,6 @@ _NUMPY_RNG_UNPICKLE_PATCHED = False
 _NP_ORIGINAL_BITGEN_CTOR = None  # type: ignore[var-annotated]
 
 
-def _normalized_numpy_bitgen_ctor(bit_generator_name: Any, state: Any, *args: Any, **kwargs: Any) -> Any:  # type: ignore[override]
-    """Normalized ctor to keep picklable; avoids closures.
-
-    Attempts to resolve the bit generator by name/class and call the original constructor
-    with a possibly adjusted signature for cross-version compatibility.
-    """
-    global _NP_ORIGINAL_BITGEN_CTOR
-    name_candidate: Any = bit_generator_name
-    try:
-        if hasattr(name_candidate, "__name__"):
-            name_candidate = name_candidate.__name__
-        elif isinstance(name_candidate, str) and name_candidate.startswith("<class "):
-            name_candidate = name_candidate.split(".")[-1].split("'>")[0]
-    except Exception:
-        pass
-
-    effective_state = kwargs.get("state", state)
-    try:
-        # Newer numpy expects (name, state)
-        return _NP_ORIGINAL_BITGEN_CTOR(name_candidate, effective_state)  # type: ignore[misc]
-    except (TypeError, ValueError):
-        # Some versions expect only name
-        return _NP_ORIGINAL_BITGEN_CTOR(name_candidate)  # type: ignore[misc]
-    except Exception:
-        # Last resort: try resolving class directly
-        bitgen_cls = getattr(np.random, str(name_candidate), None)
-        if bitgen_cls is None and str(name_candidate) == "MT19937":
-            bitgen_cls = getattr(np.random, "MT19937", None)
-        if bitgen_cls is not None:
-            return bitgen_cls()
-        raise
-
 
 def _enable_numpy_rng_unpickle_compat(logger=None) -> None:
     """Enable compatibility for unpickling NumPy RNG BitGenerators (idempotent)."""
@@ -143,32 +111,6 @@ class ModelManager:
         default_return=False,
         context="model manager initialization",
     )
-    async def initialize(self) -> bool:
-        """
-        Initialize model manager with enhanced error handling.
-
-        Returns:
-            bool: True if initialization successful, False otherwise
-        """
-        self.logger.info("Initializing Model Manager...")
-
-        # Load model configuration
-        await self._load_model_configuration()
-
-        # Validate configuration
-        if not self._validate_configuration():
-            self.logger.error(invalid("Invalid configuration for model manager"))
-            return False
-
-        # Initialize directories
-        await self._initialize_directories()
-
-        # Load existing models
-        await self._load_existing_models()
-
-        self.logger.info("✅ Model Manager initialization completed successfully")
-        return True
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
@@ -229,23 +171,6 @@ class ModelManager:
         default_return=None,
         context="directory initialization",
     )
-    async def _initialize_directories(self) -> None:
-        """Initialize directories."""
-        # Create models directory
-        if not os.path.exists(self.models_dir):
-            os.makedirs(self.models_dir, exist_ok=True)
-            self.logger.info(f"Created models directory: {self.models_dir}")
-
-        # Create subdirectories
-        subdirs = ["champion", "challenger", "backups", "archives"]
-        for subdir in subdirs:
-            subdir_path = os.path.join(self.models_dir, subdir)
-            if not os.path.exists(subdir_path):
-                os.makedirs(subdir_path, exist_ok=True)
-                self.logger.info(f"Created subdirectory: {subdir_path}")
-
-        self.logger.info("Directories initialized successfully")
-
     @handle_file_operations(
         default_return=None,
         context="existing models loading",
@@ -366,141 +291,21 @@ class ModelManager:
         default_return=None,
         context="model loading",
     )
-    async def load_model(self, model_name: str) -> Any | None:
-        """
-        Load a model.
-
-        Args:
-            model_name: Name of the model to load
-
-        Returns:
-            Optional[Any]: Loaded model or None if failed
-        """
-        # Ensure NumPy RNG pickles created under different versions can be loaded
-        _enable_numpy_rng_unpickle_compat(self.logger)
-        if model_name not in self.models:
-            self.logger.error(missing(f"Model {model_name} not found"))
-            return None
-
-        model_path = self.models[model_name]["path"]
-
-        # Load model based on file extension
-        model: Any
-        if model_path.endswith(".joblib"):
-            model = joblib.load(model_path)
-        elif model_path.endswith(".pkl"):
-            with open(model_path, "rb") as f:
-                model = pickle.load(f)
-        elif model_path.endswith(".h5"):
-            model = h5py.File(model_path, "r")
-        else:
-            self.logger.error(error(f"Unsupported model format: {model_path}"))
-            return None
-
-        self.logger.info(f"Model {model_name} loaded successfully")
-        return model
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=False,
         context="model saving",
     )
-    async def save_model(
-        self,
-        model: Any,
-        model_name: str,
-        format: str = "joblib",
-    ) -> bool:
-        """
-        Save a model.
-
-        Args:
-            model: Model to save
-            model_name: Name for the model
-            format: Model format (joblib, pickle, h5)
-
-        Returns:
-            bool: True if successful, False otherwise
-        """
-        if not model_name:
-            self.logger.error(invalid("Invalid model name"))
-            return False
-
-        # Determine file extension
-        if format == "joblib":
-            extension = ".joblib"
-        elif format == "pickle":
-            extension = ".pkl"
-        elif format == "h5":
-            extension = ".h5"
-        else:
-            self.logger.error(error(f"Unsupported format: {format}"))
-            return False
-
-        # Create model path
-        model_path = os.path.join(self.models_dir, f"{model_name}{extension}")
-        os.makedirs(self.models_dir, exist_ok=True)
-
-        # Save model
-        if format == "joblib":
-            joblib.dump(model, model_path)
-        elif format == "pickle":
-            with open(model_path, "wb") as f:
-                pickle.dump(model, f)
-        elif format == "h5":
-            with h5py.File(model_path, "w") as f:
-                # This is a simplified example - actual implementation depends on model type
-                f.create_dataset("model", data=str(model))
-
-        # Register model
-        await self.register_model(model_name, model_path)
-
-        self.logger.info(f"Model {model_name} saved successfully")
-        return True
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=False,
         context="active model setting",
     )
-    async def set_active_model(self, model_name: str) -> bool:
-        """
-        Set the active model.
-
-        Args:
-            model_name: Name of the model to set as active
-
-        Returns:
-            bool: True if successful, False otherwise
-        """
-        if model_name not in self.models:
-            self.logger.error(missing(f"Model {model_name} not found"))
-            return False
-
-        self.active_model = model_name
-        self.model_metadata["active_model"] = model_name
-        self.model_metadata["last_updated"] = datetime.now().isoformat()
-
-        # Save metadata
-        await self._save_metadata()
-
-        self.logger.info(f"Active model set to: {model_name}")
-        return True
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="active model getting",
     )
-    async def get_active_model(self) -> str | None:
-        """
-        Get the active model name.
-
-        Returns:
-            Optional[str]: Active model name or None
-        """
-        return self.active_model
-
     @handle_file_operations(
         default_return=None,
         context="metadata saving",
@@ -518,67 +323,11 @@ class ModelManager:
         default_return=None,
         context="model backup creation",
     )
-    async def create_backup(self, model_name: str) -> None:
-        """
-        Create backup of a model.
-
-        Args:
-            model_name: Name of the model to backup
-        """
-        if model_name not in self.models:
-            self.logger.error(missing(f"Model {model_name} not found"))
-            return
-
-        model_path = self.models[model_name]["path"]
-        if not os.path.exists(model_path):
-            self.logger.error(missing(f"Model file not found: {model_path}"))
-            return
-
-        # Create backup directory
-        backup_dir = os.path.join(self.models_dir, "backups")
-        os.makedirs(backup_dir, exist_ok=True)
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        backup_path = os.path.join(
-            backup_dir,
-            f"{model_name}_backup_{timestamp}{os.path.splitext(model_path)[1]}",
-        )
-
-        # Copy model file
-        shutil.copy2(model_path, backup_path)
-
-        self.logger.info(f"Model backup created: {backup_path}")
-
-    def get_model_status(self) -> dict[str, Any]:
-        """
-        Get model manager status information.
-
-        Returns:
-            Dict[str, Any]: Model manager status
-        """
-        return {
-            "total_models": len(self.models),
-            "active_model": self.active_model,
-            "models_directory": self.models_dir,
-            "auto_backup": self.auto_backup,
-            "max_models": self.max_models,
-            "model_names": list(self.models.keys()),
-            "last_updated": self.model_metadata.get("last_updated"),
-        }
-
     @handle_errors(
         exceptions=(Exception,),
         default_return=None,
         context="model manager cleanup",
     )
-    async def stop(self) -> None:
-        """Stop the model manager."""
-        self.logger.info("🛑 Stopping Model Manager...")
-
-        # Save final metadata
-        await self._save_metadata()
-
-        self.logger.info("✅ Model Manager stopped successfully")
-
 
 # Global model manager instance
 model_manager: ModelManager | None = None
@@ -589,38 +338,3 @@ model_manager: ModelManager | None = None
     default_return=None,
     context="model manager setup",
 )
-async def setup_model_manager(
-    config: dict[str, Any] | None = None,
-) -> ModelManager | None:
-    """
-    Setup global model manager.
-
-    Args:
-        config: Optional configuration dictionary
-
-    Returns:
-        Optional[ModelManager]: Global model manager instance
-    """
-    global model_manager
-
-    if config is None:
-        # Fallback implementation for config
-        config = {
-            "model_manager": {
-                "models_directory": "models",
-                "metadata_file": "model_metadata.json",
-                "auto_backup": True,
-                "max_models": 10,
-                "supported_formats": [".joblib", ".pkl", ".h5"],
-                "compression_enabled": True,
-            },
-        }
-
-    # Create model manager
-    model_manager = ModelManager(config)
-
-    # Initialize model manager
-    success = await model_manager.initialize()
-    if success:
-        return model_manager
-    return None

@@ -37,21 +37,6 @@ class ServiceRegistry:
         self.container = container
         self.logger = system_logger.getChild("ServiceRegistry")
 
-    def register_all_services(self, config: dict[str, Any]) -> None:
-        """Register all trading system services."""
-        self.logger.info("Registering all trading system services")
-
-        # Register core infrastructure services
-        self._register_core_services(config)
-
-        # Register trading components
-        self._register_trading_components(config)
-
-        # Register specialized services
-        self._register_specialized_services(config)
-
-        self.logger.info("All services registered successfully")
-
     def _register_core_services(self, config: dict[str, Any]) -> None:
         """Register core infrastructure services."""
         # Event bus as singleton
@@ -137,10 +122,6 @@ class ServiceRegistry:
             lifetime=ServiceLifetime.SINGLETON,
             config=config.get("exchange", {}),
         )
-
-    def get_registered_services(self) -> dict[str, Any]:
-        """Get all registered services."""
-        return self.container.get_all_services()
 
     def validate_registrations(self) -> bool:
         """Validate that all required services are registered."""

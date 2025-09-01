@@ -47,7 +47,3 @@ class EnhancedMLTracker:
         default_return=False,
         context="enhanced_ml_tracker.initialize",
     )
-    async def initialize(self) -> bool:
-        self.logger.info("Initializing Enhanced ML Tracker ...")
-        self.logger.info("✅ Enhanced ML Tracker initialization completed")
-        return True

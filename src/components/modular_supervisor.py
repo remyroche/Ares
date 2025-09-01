@@ -57,36 +57,6 @@ class ModularSupervisor:
         default_return=False,
         context="modular supervisor initialization",
     )
-    async def initialize(self) -> bool:
-        """
-        Initialize modular supervisor with enhanced error handling.
-
-        Returns:
-            bool: True if initialization successful, False otherwise
-        """
-        try:
-            self.logger.info("Initializing Modular Supervisor...")
-
-            # Load supervisor configuration
-            await self._load_supervisor_configuration()
-
-            # Validate configuration
-            if not self._validate_configuration():
-                self.logger.error(invalid("Invalid configuration for modular supervisor"))
-                return False
-
-            # Initialize supervision modules
-            await self._initialize_supervision_modules()
-
-            self.logger.info(
-                "✅ Modular Supervisor initialization completed successfully",
-            )
-            return True
-
-        except Exception as e:
-            self.logger.error(failed(f"❌ Modular Supervisor initialization failed: {e}"))
-            return False
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
@@ -163,120 +133,26 @@ class ModularSupervisor:
         default_return=None,
         context="supervision modules initialization",
     )
-    async def _initialize_supervision_modules(self) -> None:
-        """Initialize supervision modules."""
-        try:
-            # Initialize performance monitoring module
-            if self.enable_performance_monitoring:
-                await self._initialize_performance_monitoring()
-
-            # Initialize risk monitoring module
-            if self.enable_risk_monitoring:
-                await self._initialize_risk_monitoring()
-
-            # Initialize system monitoring module
-            if self.supervisor_config.get("enable_system_monitoring", False):
-                await self._initialize_system_monitoring()
-
-            # Initialize alerting module
-            if self.supervisor_config.get("enable_alerting", True):
-                await self._initialize_alerting()
-
-            self.logger.info("Supervision modules initialized successfully")
-
-        except Exception as e:
-            self.logger.error(initialization_error(f"Error initializing supervision modules: {e}"))
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="performance monitoring initialization",
     )
-    async def _initialize_performance_monitoring(self) -> None:
-        """Initialize performance monitoring module."""
-        try:
-            # Initialize performance metrics
-            self.performance_metrics = {
-                "returns": True,
-                "sharpe_ratio": True,
-                "sortino_ratio": True,
-                "calmar_ratio": True,
-                "max_drawdown": True,
-                "win_rate": True,
-            }
-
-            self.logger.info("Performance monitoring module initialized")
-
-        except Exception as e:
-            self.logger.error(initialization_error(f"Error initializing performance monitoring: {e}"))
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="risk monitoring initialization",
     )
-    async def _initialize_risk_monitoring(self) -> None:
-        """Initialize risk monitoring module."""
-        try:
-            # Initialize risk metrics
-            self.risk_metrics = {
-                "var": True,
-                "cvar": True,
-                "volatility": True,
-                "beta": True,
-                "correlation": True,
-                "concentration": True,
-            }
-
-            self.logger.info("Risk monitoring module initialized")
-
-        except Exception as e:
-            self.logger.error(initialization_error(f"Error initializing risk monitoring: {e}"))
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="system monitoring initialization",
     )
-    async def _initialize_system_monitoring(self) -> None:
-        """Initialize system monitoring module."""
-        try:
-            # Initialize system metrics
-            self.system_metrics = {
-                "cpu_usage": True,
-                "memory_usage": True,
-                "disk_usage": True,
-                "network_latency": True,
-                "error_rate": True,
-                "uptime": True,
-            }
-
-            self.logger.info("System monitoring module initialized")
-
-        except Exception as e:
-            self.logger.error(initialization_error(f"Error initializing system monitoring: {e}"))
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="alerting initialization",
     )
-    async def _initialize_alerting(self) -> None:
-        """Initialize alerting module."""
-        try:
-            # Initialize alerting rules
-            self.alerting_rules = {
-                "performance_alerts": True,
-                "risk_alerts": True,
-                "system_alerts": True,
-                "threshold_alerts": True,
-            }
-
-            self.logger.info("Alerting module initialized")
-
-        except Exception as e:
-            self.logger.error(initialization_error(f"Error initializing alerting: {e}"))
-
     @handle_specific_errors(
         error_handlers={
             ValueError: (False, "Invalid supervision parameters"),
@@ -980,103 +856,16 @@ class ModularSupervisor:
         default_return=None,
         context="supervision results getting",
     )
-    def get_supervision_results(
-        self,
-        supervision_type: str | None = None,
-    ) -> dict[str, Any]:
-        """
-        Get supervision results.
-
-        Args:
-            supervision_type: Optional supervision type filter
-
-        Returns:
-            Dict[str, Any]: Supervision results
-        """
-        try:
-            if supervision_type:
-                return self.supervision_results.get(supervision_type, {})
-            return self.supervision_results.copy()
-
-        except Exception as e:
-            self.logger.error(error(f"Error getting supervision results: {e}"))
-            return {}
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="supervision history getting",
     )
-    def get_supervision_history(self, limit: int | None = None) -> list[dict[str, Any]]:
-        """
-        Get supervision history.
-
-        Args:
-            limit: Optional limit on number of records
-
-        Returns:
-            List[Dict[str, Any]]: Supervision history
-        """
-        try:
-            history = self.supervision_history.copy()
-
-            if limit:
-                history = history[-limit:]
-
-            return history
-
-        except Exception as e:
-            self.logger.error(error(f"Error getting supervision history: {e}"))
-            return []
-
-    def get_supervisor_status(self) -> dict[str, Any]:
-        """
-        Get supervisor status information.
-
-        Returns:
-            Dict[str, Any]: Supervisor status
-        """
-        return {
-            "is_supervising": self.is_supervising,
-            "supervision_interval": self.supervision_interval,
-            "max_supervision_history": self.max_supervision_history,
-            "enable_performance_monitoring": self.enable_performance_monitoring,
-            "enable_risk_monitoring": self.enable_risk_monitoring,
-            "enable_system_monitoring": self.supervisor_config.get(
-                "enable_system_monitoring",
-                False,
-            ),
-            "enable_alerting": self.supervisor_config.get(
-                "enable_alerting",
-                True,
-            ),
-            "supervision_history_count": len(self.supervision_history),
-        }
-
     @handle_errors(
         exceptions=(Exception,),
         default_return=None,
         context="modular supervisor cleanup",
     )
-    async def stop(self) -> None:
-        """Stop the modular supervisor."""
-        self.logger.info("🛑 Stopping Modular Supervisor...")
-
-        try:
-            # Stop supervising
-            self.is_supervising = False
-
-            # Clear results
-            self.supervision_results.clear()
-
-            # Clear history
-            self.supervision_history.clear()
-
-            self.logger.info("✅ Modular Supervisor stopped successfully")
-
-        except Exception as e:
-            self.logger.error(error(f"Error stopping modular supervisor: {e}"))
-
 # Global modular supervisor instance
 modular_supervisor: ModularSupervisor | None = None
 
@@ -1085,42 +874,3 @@ modular_supervisor: ModularSupervisor | None = None
     default_return=None,
     context="modular supervisor setup",
 )
-async def setup_modular_supervisor(
-    config: dict[str, Any] | None = None,
-) -> ModularSupervisor | None:
-    """
-    Setup global modular supervisor.
-
-    Args:
-        config: Optional configuration dictionary
-
-    Returns:
-        Optional[ModularSupervisor]: Global modular supervisor instance
-    """
-    try:
-        global modular_supervisor
-
-        if config is None:
-            config = {
-                "modular_supervisor": {
-                    "supervision_interval": 60,
-                    "max_supervision_history": 100,
-                    "enable_performance_monitoring": True,
-                    "enable_risk_monitoring": True,
-                    "enable_system_monitoring": False,
-                    "enable_alerting": True,
-                },
-            }
-
-        # Create modular supervisor
-        modular_supervisor = ModularSupervisor(config)
-
-        # Initialize modular supervisor
-        success = await modular_supervisor.initialize()
-        if success:
-            return modular_supervisor
-        return None
-
-    except Exception as e:
-        print(f"Error setting up modular supervisor: {e}")
-        return None

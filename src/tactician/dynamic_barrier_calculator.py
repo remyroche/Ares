@@ -93,26 +93,6 @@ class DynamicBarrierCalculator:
                 "binary_classification": True
             }
 
-    def _initialize_dynamic_barriers(self) -> None:
-        """Initialize dynamic barrier calculation parameters."""
-        # Get fractions from configuration - 4 barrier combinations
-        fractions = self.tactician_config.get("analyst_barrier_fractions", {})
-        self.upper_barrier_50_fraction = fractions.get("upper_barrier_50_fraction", 0.5)
-        self.lower_barrier_50_fraction = fractions.get("lower_barrier_50_fraction", 0.5)
-        self.upper_barrier_25_fraction = fractions.get("upper_barrier_25_fraction", 0.25)
-        self.lower_barrier_25_fraction = fractions.get("lower_barrier_25_fraction", 0.25)
-
-        # Get timeframe settings - both timeframes are equal
-        self.timeframes = self.tactician_config.get("timeframes", ["1m", "5m"])
-        self.primary_timeframe = self.tactician_config.get("primary_timeframe", "1m")
-        self.secondary_timeframe = self.tactician_config.get("secondary_timeframe", "5m")
-
-        self.logger.info(f"🔧 Dynamic Barrier Calculator Initialized:")
-        self.logger.info(f"   50% Barriers - Upper: {self.upper_barrier_50_fraction:.2f}, Lower: {self.lower_barrier_50_fraction:.2f}")
-        self.logger.info(f"   25% Barriers - Upper: {self.upper_barrier_25_fraction:.2f}, Lower: {self.lower_barrier_25_fraction:.2f}")
-        self.logger.info(f"   Timeframes: {self.timeframes} (both equal, ML model decides usage)")
-        self.logger.info(f"   Primary: {self.primary_timeframe}, Secondary: {self.secondary_timeframe}")
-
     @handle_errors(
         exceptions=(Exception,),
         default_return=(0.001, 0.00025),
@@ -173,50 +153,6 @@ class DynamicBarrierCalculator:
 
     # Removed volatility and market condition adjustment methods
     # Barriers are only fractions of Analyst barriers - no real-time adaptation
-
-    def get_timeframe_weights(self, timeframe: str) -> Tuple[float, float]:
-        """Get execution and confirmation weights for a timeframe."""
-        # Both timeframes are equal - let the ML model decide usage
-        return 0.5, 0.5
-
-    def calculate_multi_timeframe_barriers(self) -> Dict[str, Dict[str, Tuple[float, float]]]:
-        """Calculate 2 barrier combinations for both 1m and 5m timeframes."""
-        try:
-            barriers = {}
-
-            # Calculate 1m barriers (2 combinations)
-            if "1m" in self.timeframes:
-                barriers["1m"] = self.calculate_dynamic_barriers(timeframe="1m")
-
-            # Calculate 5m barriers (2 combinations)
-            if "5m" in self.timeframes:
-                barriers["5m"] = self.calculate_dynamic_barriers(timeframe="5m")
-
-            self.logger.info(f"📊 Multi-timeframe barriers calculated (2 combinations each):")
-            for tf, combinations in barriers.items():
-                self.logger.info(f"   {tf}:")
-                for name, (upper, lower) in combinations.items():
-                    self.logger.info(f"     {name}: Upper={upper:.4f}, Lower={lower:.4f}")
-            self.logger.info(f"   Note: Both barrier combinations will be used for each timeframe")
-
-            return barriers
-
-        except Exception as e:
-            self.logger.error(f"❌ Error calculating multi-timeframe barriers: {e}")
-            return {}
-
-    def get_analyst_barrier_info(self) -> Dict[str, Any]:
-        """Get information about Analyst barriers for comparison."""
-        return {
-            "upper_barrier_multiplier": self.analyst_config["profit_take_multiplier"],
-            "lower_barrier_multiplier": self.analyst_config["stop_loss_multiplier"],
-            "fractions": {
-                "upper_barrier_50_fraction": self.upper_barrier_50_fraction,
-                "lower_barrier_50_fraction": self.lower_barrier_50_fraction,
-                "upper_barrier_25_fraction": self.upper_barrier_25_fraction,
-                "lower_barrier_25_fraction": self.lower_barrier_25_fraction
-            }
-        }
 
     def validate_barrier_calculation(self, timeframe: str) -> Dict[str, Any]:
         """Validate barrier calculation for a timeframe."""

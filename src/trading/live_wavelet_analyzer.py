@@ -82,37 +82,6 @@ class LiveWaveletAnalyzer:
         default_return=False,
         context="live wavelet analyzer initialization",
     )
-    async def initialize(self) -> bool:
-        """Initialize the live wavelet analyzer."""
-        try:
-            self.logger.info("🚀 Initializing Live Wavelet Analyzer...")
-
-            # Validate configuration
-            self._validate_config()
-
-            # Pre-compute wavelet coefficients for efficiency
-            self._precompute_wavelet_coeffs()
-
-            # Initialize sliding window
-            self.price_window = deque(maxlen=self.sliding_window_size)
-            self.volume_window = deque(maxlen=self.sliding_window_size)
-
-            self.is_initialized = True
-            self.logger.info("✅ Live Wavelet Analyzer initialized successfully")
-            self.logger.info(
-                f"📊 Config: window={self.sliding_window_size}, "
-                f"wavelet={self.wavelet_type}, levels={self.decomposition_level}",
-            )
-            return True
-
-        except Exception:
-            self.print(
-                initialization_error(
-                    "❌ Error initializing Live Wavelet Analyzer: {e}",
-                ),
-            )
-            return False
-
     def _validate_config(self) -> None:
         """Validate configuration parameters."""
         if self.max_computation_time > 0.5:
@@ -149,78 +118,11 @@ class LiveWaveletAnalyzer:
         except Exception as e:
             self.logger.error(f"Error pre-computing wavelet coefficients: {e}")
 
-    def _get_decomposition_level(self, data_len: int) -> int:
-        try:
-            if not hasattr(self, "wavelet_obj"):
-                self.wavelet_obj = pywt.Wavelet(self.wavelet_type)
-            max_level = pywt.dwt_max_level(data_len, self.wavelet_obj.dec_len)
-            return max(1, min(self.decomposition_level, max_level))
-        except Exception:
-            return max(1, self.decomposition_level)
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="live wavelet signal generation",
     )
-    async def generate_signal(
-        self, price_data: pd.DataFrame,
-        volume_data: pd.DataFrame | None = None
-    ) -> WaveletSignal | None:
-        """
-        Generate trading signal using computationally-aware wavelet analysis.
-
-        Args:
-            price_data: Recent price data
-            volume_data: Recent volume data (optional)
-
-        Returns:
-            WaveletSignal or None if computation timeout
-        """
-        try:
-            if not self.is_initialized:
-                self.logger.error("Live Wavelet Analyzer not initialized")
-                return None
-
-            start_time = time.time()
-
-            # Update sliding windows
-            self._update_sliding_windows(price_data, volume_data)
-
-            # Check if we have enough data
-            if len(self.price_window) < self.sliding_window_size // 2:
-                return None
-
-            # Perform fast wavelet analysis
-            signal = await self._perform_fast_wavelet_analysis()
-
-            computation_time = time.time() - start_time
-            self.computation_times.append(computation_time)
-
-            # Check performance constraints
-            if computation_time > self.max_computation_time:
-                self.logger.warning(
-                    f"Wavelet computation too slow: {computation_time:.3f}s",
-                )
-                return None
-
-            if signal:
-                signal.computation_time = computation_time
-                self.latest_signal = signal
-                self.signal_history.append(signal)
-
-                self.logger.info(
-                    f"📊 Wavelet signal: {signal.signal_type} "
-                    f"(confidence: {signal.confidence:.2f}, "
-                    f"time: {computation_time:.3f}s)",
-                )
-
-            return signal
-
-        except Exception as e:
-            self.logger.error(f"Error generating wavelet signal: {e}")
-            return None
-
     def _update_sliding_windows(
         self, price_data: pd.DataFrame,
         volume_data: pd.DataFrame | None = None
@@ -269,65 +171,6 @@ class LiveWaveletAnalyzer:
             return None
         except Exception as e:
             self.logger.error(f"Error in fast wavelet analysis: {e}")
-            return None
-
-    def _compute_wavelet_features(
-        self, price_array: np.ndarray,
-    ) -> dict[str, float] | None:
-        """Compute wavelet features with performance constraints."""
-        try:
-            # Ensure array length is power of 2 for efficiency
-            target_length = 2 ** int(np.log2(len(price_array)))
-            if len(price_array) != target_length:
-                price_array = price_array[-target_length:]
-            # Use float32 contiguous for speed
-            if not price_array.flags.c_contiguous:
-                price_array = np.ascontiguousarray(price_array)
-            if price_array.dtype != np.float32:
-                price_array = price_array.astype(np.float32, copy=False)
-
-            # Compute DWT (fastest wavelet transform)
-            if not hasattr(self, "wavelet_obj"):
-                self.wavelet_obj = pywt.Wavelet(self.wavelet_type)
-            level = self._get_decomposition_level(len(price_array))
-            coeffs = pywt.wavedec(
-                price_array, self.wavelet_obj,
-                level=level, mode=self.padding_mode,
-            )
-
-            # Extract key features efficiently
-            features = {}
-
-            # Energy features (most important for trading)
-            for i, coeff in enumerate(coeffs):
-                if len(coeff) > 0:
-                    energy = np.sum(coeff**2)
-                    features[f"level_{i}_energy"] = energy
-
-                    # Normalized energy
-                    features[f"level_{i}_energy_norm"] = energy / len(coeff)
-
-            # Entropy features (market disorder)
-            for i, coeff in enumerate(coeffs):
-                if len(coeff) > 0 and np.sum(coeff**2) > 0:
-                    energy = np.sum(coeff**2)
-                    entropy = -np.sum(
-                        (coeff**2) / energy * np.log((coeff**2) / energy + 1e-10),
-                    )
-                    features[f"level_{i}_entropy"] = entropy
-
-            # Cross-level energy ratios
-            if len(coeffs) > 1:
-                for i in range(len(coeffs) - 1):
-                    energy_i = np.sum(coeffs[i] ** 2)
-                    energy_j = np.sum(coeffs[i + 1] ** 2)
-                    if energy_i > 0:
-                        features[f"energy_ratio_{i}_{i+1}"] = energy_j / energy_i
-
-            return features
-
-        except Exception as e:
-            self.logger.error(f"Error computing wavelet features: {e}")
             return None
 
     def _generate_trading_signal(self, features: dict[str, float]) -> WaveletSignal:
@@ -386,42 +229,6 @@ class LiveWaveletAnalyzer:
                 computation_time=0.0,
             )
 
-    def get_performance_stats(self) -> dict[str, Any]:
-        """Get performance statistics."""
-        try:
-            if not self.computation_times:
-                return {}
-
-            avg_time = np.mean(self.computation_times)
-            max_time = np.max(self.computation_times)
-            min_time = np.min(self.computation_times)
-
-            signal_count = len(
-                [s for s in self.signal_history if s.signal_type != "hold"],
-            )
-            total_signals = len(self.signal_history)
-
-            return {
-                "avg_computation_time": avg_time,
-                "max_computation_time": max_time,
-                "min_computation_time": min_time,
-                "signal_count": signal_count,
-                "total_signals": total_signals,
-                "signal_rate": signal_count / max(total_signals, 1),
-                "window_size": self.sliding_window_size,
-                "wavelet_type": self.wavelet_type,
-            }
-
-        except Exception as e:
-            self.logger.error(f"Error getting performance stats: {e}")
-            return {}
-
     def get_latest_signal(self) -> WaveletSignal | None:
         """Get the latest wavelet signal."""
         return self.latest_signal
-
-    def clear_history(self) -> None:
-        """Clear signal history."""
-        self.signal_history.clear()
-        self.computation_times.clear()
-        self.latest_signal = None

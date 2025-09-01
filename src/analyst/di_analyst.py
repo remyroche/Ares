@@ -71,68 +71,6 @@ class DIAnalyst(AnalystBase, IAnalyst):
             None
         )
 
-    async def initialize(self) -> bool:
-        """Initialize the analyst with all dependencies."""
-        if not await super().initialize():
-            return False
-
-        try:
-            # Initialize analysis components
-            await self._initialize_analysis_components()
-
-            # Set up event subscriptions if event bus is available
-            if self.event_bus:
-                await self._setup_event_subscriptions()
-
-            return True
-
-        except Exception:
-            self.print(failed("Failed to initialize analyst: {e}"))
-            return False
-
-    async def _initialize_analysis_components(self) -> None:
-        """Initialize analysis components with proper configuration."""
-        # Dual Model System
-        if self.analyst_config.get("enable_dual_model_system", True):
-            self.dual_model_system = DualModelSystem(
-                self.analyst_config.get("dual_model_system", {}),
-            )
-            await self.dual_model_system.initialize()
-
-        # Market Health Analyzer
-        if self.analyst_config.get("enable_market_health_analysis", True):
-            self.market_health_analyzer = MarketHealthAnalyzer(
-                self.analyst_config.get("market_health_analyzer", {}),
-            )
-            await self.market_health_analyzer.initialize()
-
-        # Liquidation Risk Model
-        if self.analyst_config.get("enable_liquidation_risk_analysis", True):
-            self.liquidation_risk_model = LiquidationRiskModel(
-                self.analyst_config.get("liquidation_risk_model", {}),
-            )
-            await self.liquidation_risk_model.initialize()
-
-        # Feature Engineering Orchestrator
-        if self.analyst_config.get("enable_feature_engineering", True):
-            self.feature_engineering_orchestrator = FeatureEngineeringOrchestrator(
-                self.analyst_config.get("feature_engineering_orchestrator", {}),
-            )
-            await self.feature_engineering_orchestrator.initialize()
-
-        self.logger.info("Analysis components initialized")
-
-    async def _setup_event_subscriptions(self) -> None:
-        """Set up event subscriptions for market data."""
-        from src.interfaces.event_bus import EventType
-
-        # Subscribe uses string event types in EventBus implementation
-        self.event_bus.subscribe(
-            EventType.MARKET_DATA_RECEIVED.value,
-            self.analyze_market_data,
-        )
-        self.logger.debug("Event subscriptions set up")
-
     @handle_errors(
         exceptions=(Exception,),
         default_return=None,
@@ -262,43 +200,6 @@ class DIAnalyst(AnalystBase, IAnalyst):
         except Exception:
             self.print(failed("Failed to store analysis result: {e}"))
 
-    async def get_historical_analysis(
-        self,
-        symbol: str,
-        start_date: datetime,
-        end_date: datetime,
-    ) -> list[AnalysisResult]:
-        """Get historical analysis results."""
-        try:
-            # Filter history by symbol and date range
-            filtered_results = []
-
-            for result in self.analysis_history:
-                result_time = datetime.fromisoformat(result["timestamp"])
-                if (
-                    result.get("symbol") == symbol
-                    and start_date <= result_time <= end_date
-                ):
-                    # Convert back to AnalysisResult object
-                    analysis_result = AnalysisResult(
-                        timestamp=result_time,
-                        symbol=result["symbol"],
-                        confidence=result["confidence"],
-                        signal=result["signal"],
-                        features={},  # Historical features not stored in summary
-                        technical_indicators={},
-                        market_regime=result["market_regime"],
-                        support_resistance={},
-                        risk_metrics={},
-                    )
-                    filtered_results.append(analysis_result)
-
-            return filtered_results
-
-        except Exception:
-            self.print(failed("Failed to get historical analysis: {e}"))
-            return []
-
     async def train_models(self, training_data: pd.DataFrame) -> bool:
         """Train analysis models."""
         try:
@@ -350,8 +251,3 @@ class DIAnalyst(AnalystBase, IAnalyst):
     async def _start_component(self) -> None:
         """Start analyst-specific operations."""
         self.logger.info("Analyst component started")
-
-    async def _stop_component(self) -> None:
-        """Stop analyst-specific operations."""
-        self.is_analyzing = False
-        self.logger.info("Analyst component stopped")

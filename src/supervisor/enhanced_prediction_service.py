@@ -57,27 +57,6 @@ class EnhancedPredictionService:
         context="initializing enhanced prediction service",
     )
     @with_tracing_span("initialize_enhanced_prediction_service")
-    async def initialize(self) -> bool:
-        """Initialize the Enhanced Prediction Service."""
-        try:
-            self.logger.info("🚀 Initializing Enhanced Prediction Service...")
-
-            # Load ML models for both Analyst and Tactician
-            await self._load_analyst_ml_models()
-            await self._load_tactician_ml_models()
-
-            # Load calibration and optimization results
-            await self._load_calibration_results()
-            await self._load_optimization_results()
-
-            self.is_initialized = True
-            self.logger.info("✅ Enhanced Prediction Service initialized successfully")
-            return True
-
-        except Exception as e:
-            self.logger.error(error(f"❌ Failed to initialize Enhanced Prediction Service: {e}"))
-            return False
-
     @handle_errors(
         exceptions=(Exception,),
         default_return=False,
@@ -240,170 +219,18 @@ class EnhancedPredictionService:
     @with_tracing_span("get_calibrated_confidence_scores")
     @validate_data_quality(validation_level="ERROR")
     @performance_monitor
-    async def get_calibrated_confidence_scores(
-        self,
-        market_data: pd.DataFrame,
-        regime_info: Dict[str, Any],
-        symbol: str,
-        exchange: str
-    ) -> Dict[str, Dict[str, float]]:
-        """
-        Provide calibrated confidence scores for BOTH Analyst and Tactician ML models.
-
-        This method ONLY provides calibrated confidence scores and fails if calibrated
-        confidence doesn't exist for either model set.
-
-        ML models should generate probabilities for specific price actions:
-        - Probability of reaching profit target without hitting stop-loss (triple barrier)
-        - Probability of price moving in predicted direction by X%
-        - Probability of avoiding adverse price movements
-
-        Calibration is based on step 11: comparing model performance to actual reliability.
-
-        Args:
-            market_data: Market data for prediction
-            regime_info: Market regime information
-            symbol: Trading symbol
-            exchange: Exchange name
-
-        Returns:
-            Dictionary with calibrated confidence scores for both Analyst and Tactician models
-
-        Raises:
-            ValueError: If calibrated confidence doesn't exist for either model set
-        """
-        try:
-            if not self.is_initialized:
-                raise ValueError("Enhanced Prediction Service not initialized")
-
-            calibrated_scores = {
-                "analyst_models": {},
-                "tactician_models": {}
-            }
-
-            # Get Analyst calibrated confidence scores
-            analyst_scores = await self._get_analyst_calibrated_confidence(
-                market_data, regime_info, symbol, exchange
-            )
-            if not analyst_scores:
-                raise ValueError(f"No calibrated Analyst confidence scores available for {symbol} on {exchange}")
-            calibrated_scores["analyst_models"] = analyst_scores
-
-            # Get Tactician calibrated confidence scores
-            tactician_scores = await self._get_tactician_calibrated_confidence(
-                market_data, regime_info, symbol, exchange
-            )
-            if not tactician_scores:
-                raise ValueError(f"No calibrated Tactician confidence scores available for {symbol} on {exchange}")
-            calibrated_scores["tactician_models"] = tactician_scores
-
-            self.logger.info(f"✅ Retrieved calibrated confidence scores for {symbol} on {exchange}")
-            self.logger.debug(f"Analyst models: {len(analyst_scores)}, Tactician models: {len(tactician_scores)}")
-
-            return calibrated_scores
-
-        except Exception as e:
-            self.logger.error(error(f"❌ Failed to get calibrated confidence scores: {e}"))
-            raise
-
     @handle_errors(
         exceptions=(Exception,),
         default_return={},
         context="getting analyst calibrated confidence",
     )
     @with_tracing_span("get_analyst_calibrated_confidence")
-    async def _get_analyst_calibrated_confidence(
-        self,
-        market_data: pd.DataFrame,
-        regime_info: Dict[str, Any],
-        symbol: str,
-        exchange: str
-    ) -> Dict[str, float]:
-        """Get calibrated confidence scores from Analyst ML models based on step 11 calibration."""
-        try:
-            analyst_scores = {}
-
-            for model_type, models in self.analyst_ml_models.items():
-                for model_name, model_data in models.items():
-                    try:
-                        # Get price action probabilities from ML model
-                        price_action_probabilities = model_data.get("price_action_probabilities", {})
-
-                        if not price_action_probabilities:
-                            self.logger.warning(warning(f"⚠️ No price action probabilities for Analyst model {model_name}"))
-                            continue
-
-                        # Get calibration data from step 11
-                        calibration_key = f"{exchange}_{symbol}_calibration_results"
-                        calibration_data = self.calibration_results.get(calibration_key, {})
-                        model_calibration = calibration_data.get("model_calibrations", {}).get(f"{model_type}_{model_name}", {})
-
-                        # Calculate calibrated confidence based on step 11 performance vs reliability
-                        calibrated_confidence = self._calculate_step11_calibrated_confidence(
-                            price_action_probabilities, model_calibration, model_name, "analyst"
-                        )
-
-                        if calibrated_confidence is not None:
-                            analyst_scores[f"{model_type}_{model_name}"] = calibrated_confidence
-
-                    except Exception as e:
-                        self.logger.warning(warning(f"⚠️ Failed to get confidence for Analyst model {model_name}: {e}"))
-
-            return analyst_scores
-
-        except Exception as e:
-            self.logger.error(error(f"❌ Error getting Analyst calibrated confidence: {e}"))
-            return {}
-
     @handle_errors(
         exceptions=(Exception,),
         default_return={},
         context="getting tactician calibrated confidence",
     )
     @with_tracing_span("get_tactician_calibrated_confidence")
-    async def _get_tactician_calibrated_confidence(
-        self,
-        market_data: pd.DataFrame,
-        regime_info: Dict[str, Any],
-        symbol: str,
-        exchange: str
-    ) -> Dict[str, float]:
-        """Get calibrated confidence scores from Tactician ML models based on step 11 calibration."""
-        try:
-            tactician_scores = {}
-
-            for model_type, models in self.tactician_ml_models.items():
-                for model_name, model_data in models.items():
-                    try:
-                        # Get price action probabilities from ML model
-                        price_action_probabilities = model_data.get("price_action_probabilities", {})
-
-                        if not price_action_probabilities:
-                            self.logger.warning(warning(f"⚠️ No price action probabilities for Tactician model {model_name}"))
-                            continue
-
-                        # Get calibration data from step 11
-                        calibration_key = f"{exchange}_{symbol}_calibration_results"
-                        calibration_data = self.calibration_results.get(calibration_key, {})
-                        model_calibration = calibration_data.get("model_calibrations", {}).get(f"{model_type}_{model_name}", {})
-
-                        # Calculate calibrated confidence based on step 11 performance vs reliability
-                        calibrated_confidence = self._calculate_step11_calibrated_confidence(
-                            price_action_probabilities, model_calibration, model_name, "tactician"
-                        )
-
-                        if calibrated_confidence is not None:
-                            tactician_scores[f"{model_type}_{model_name}"] = calibrated_confidence
-
-                    except Exception as e:
-                        self.logger.warning(warning(f"⚠️ Failed to get confidence for Tactician model {model_name}: {e}"))
-
-            return tactician_scores
-
-        except Exception as e:
-            self.logger.error(error(f"❌ Error getting Tactician calibrated confidence: {e}"))
-            return {}
-
     def _calculate_step11_calibrated_confidence(
         self,
         price_action_probabilities: Dict[str, Any],
@@ -701,64 +528,3 @@ class EnhancedPredictionService:
         except Exception as e:
             self.logger.error(error(f"❌ Service health check failed: {e}"))
             return False
-
-    def get_service_info(self) -> Dict[str, Any]:
-        """Get service information and statistics."""
-        try:
-            analyst_model_count = sum(len(models) for models in self.analyst_ml_models.values())
-            tactician_model_count = sum(len(models) for models in self.tactician_ml_models.values())
-
-            return {
-                "service_name": "Enhanced Prediction Service",
-                "is_initialized": self.is_initialized,
-                "analyst_models_loaded": analyst_model_count,
-                "tactician_models_loaded": tactician_model_count,
-                "analyst_model_types": list(self.analyst_ml_models.keys()),
-                "tactician_model_types": list(self.tactician_ml_models.keys()),
-                "calibration_results_loaded": len(self.calibration_results),
-                "optimization_results_loaded": len(self.optimization_results),
-                "entry_threshold": self.entry_threshold,
-                "max_confidence_threshold": self.max_confidence_threshold,
-                "probability_requirements": self._get_probability_requirements_info()
-            }
-
-        except Exception as e:
-            self.logger.error(error(f"❌ Failed to get service info: {e}"))
-            return {"error": str(e)}
-
-    def _get_probability_requirements_info(self) -> Dict[str, Any]:
-        """Get information about required probability outputs from ML models."""
-        return {
-            "probability_outputs_location": "ML models in steps 6-14 of enhanced_training_manager",
-            "required_probabilities": {
-                "triple_barrier_probability": "Probability of reaching profit target without hitting stop-loss",
-                "direction_probability": "Probability of price moving in predicted direction",
-                "magnitude_probability": "Probability of price moving by expected magnitude",
-                "barrier_avoidance_probability": "Probability of avoiding adverse price movements"
-            },
-            "model_structure": {
-                "expected_format": "price_action_probabilities dict in model_data",
-                "example": {
-                    "triple_barrier_probability": 0.75,
-                    "direction_probability": 0.80,
-                    "magnitude_probability": 0.65,
-                    "barrier_avoidance_probability": 0.70
-                }
-            },
-            "calibration_requirements": {
-                "step11_calibration": "Model performance vs actual reliability data",
-                "step12_optimization": "Optimized weights for probability components",
-                "calibration_data_structure": {
-                    "reliability_score": "Historical reliability of model predictions",
-                    "performance_ratio": "Actual vs expected performance ratio",
-                    "calibration_factor": "Overall calibration adjustment",
-                    "confidence_bias": "Systematic bias adjustment",
-                    "step12_optimized_weights": {
-                        "triple_barrier_weight": "Optimized weight for triple barrier probability",
-                        "direction_weight": "Optimized weight for direction probability",
-                        "magnitude_weight": "Optimized weight for magnitude probability",
-                        "barrier_avoidance_weight": "Optimized weight for barrier avoidance probability"
-                    }
-                }
-            }
-        }

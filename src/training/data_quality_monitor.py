@@ -475,20 +475,6 @@ class DataQualityMonitor:
             timestamp=datetime.now()
         )
 
-    def _get_required_keys_for_step(self, step_name: str) -> List[str]:
-        """Get required keys for a specific step."""
-        key_requirements = {
-            "step1": ["symbol", "exchange", "timeframe", "data_dir"],
-            "step01_5": ["symbol", "exchange", "timeframe", "data_dir"],
-            "step2": ["symbol", "exchange", "timeframe", "data_dir"],
-            "step3": ["symbol", "exchange", "timeframe", "data_dir"],
-            "step4": ["symbol", "exchange", "timeframe", "data_dir"],
-            "step5": ["symbol", "exchange", "timeframe", "data_dir"],
-            "step6": ["symbol", "exchange", "timeframe", "data_dir"],
-            "step7": ["symbol", "exchange", "timeframe", "data_dir"]
-        }
-        return key_requirements.get(step_name, [])
-
     async def monitor_compatibility(self, data: Any, step_name: str, expected_format: str = None) -> CompatibilityMetrics:
         """Monitor data compatibility for a specific step."""
         self.logger.info(f"🔍 Monitoring data compatibility for {step_name}")
@@ -577,20 +563,6 @@ class DataQualityMonitor:
             conversions_applied=conversions_applied,
             timestamp=datetime.now()
         )
-
-    def _get_required_columns_for_step(self, step_name: str) -> List[str]:
-        """Get required columns for a specific step."""
-        column_requirements = {
-            "step1": ["timestamp", "open", "high", "low", "close", "volume"],
-            "step01_5": ["timestamp", "open", "high", "low", "close", "volume"],
-            "step2": ["timestamp", "open", "high", "low", "close", "volume"],
-            "step3": ["timestamp", "open", "high", "low", "close", "volume"],
-            "step4": ["timestamp", "open", "high", "low", "close", "volume", "composite_cluster_id"],
-            "step5": ["timestamp", "open", "high", "low", "close", "volume", "composite_cluster_id"],
-            "step6": ["timestamp", "open", "high", "low", "close", "volume", "composite_cluster_id"],
-            "step7": ["timestamp", "open", "high", "low", "close", "volume", "composite_cluster_id"]
-        }
-        return column_requirements.get(step_name, [])
 
     def _check_data_types(self, data: pd.DataFrame, step_name: str) -> List[str]:
         """Check data types for compatibility."""
@@ -969,28 +941,6 @@ class DataQualityMonitor:
         self.logger.warning(f"   Issues: {metrics.issues}")
         self.logger.warning(f"   Warnings: {metrics.warnings}")
         self.logger.warning(f"   Recommendations: {metrics.recommendations}")
-
-    async def get_quality_summary(self) -> Dict[str, Any]:
-        """Get comprehensive quality summary."""
-        if not self.quality_history:
-            return {"message": "No quality data available"}
-
-        # Calculate summary statistics
-        scores = [metrics.overall_score for metrics in self.quality_history]
-        quality_levels = [metrics.quality_level.value for metrics in self.quality_history]
-
-        summary = {
-            "total_checks": len(self.quality_history),
-            "average_quality_score": np.mean(scores),
-            "min_quality_score": np.min(scores),
-            "max_quality_score": np.max(scores),
-            "quality_level_distribution": pd.Series(quality_levels).value_counts().to_dict(),
-            "recent_quality_trend": scores[-10:] if len(scores) >= 10 else scores,
-            "critical_issues_count": sum(1 for metrics in self.quality_history if metrics.quality_level == QualityLevel.CRITICAL),
-            "poor_quality_count": sum(1 for metrics in self.quality_history if metrics.quality_level in [QualityLevel.CRITICAL, QualityLevel.POOR])
-        }
-
-        return summary
 
     async def generate_quality_report(self) -> Dict[str, Any]:
         """Generate comprehensive quality report."""

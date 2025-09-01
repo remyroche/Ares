@@ -57,34 +57,6 @@ class PerformanceMetrics:
     profit_factor_ratio: float = 0.0
     risk_reward_ratio: float = 0.0
 
-    def to_dict(self) -> dict[str, Any]:
-        """Convert to dictionary."""
-        return {
-            "win_rate": self.win_rate,
-            "profit_factor": self.profit_factor,
-            "total_return": self.total_return,
-            "sharpe_ratio": self.sharpe_ratio,
-            "sortino_ratio": self.sortino_ratio,
-            "calmar_ratio": self.calmar_ratio,
-            "max_drawdown": self.max_drawdown,
-            "volatility": self.volatility,
-            "value_at_risk": self.value_at_risk,
-            "conditional_value_at_risk": self.conditional_value_at_risk,
-            "total_trades": self.total_trades,
-            "winning_trades": self.winning_trades,
-            "losing_trades": self.losing_trades,
-            "average_win": self.average_win,
-            "average_loss": self.average_loss,
-            "largest_win": self.largest_win,
-            "largest_loss": self.largest_loss,
-            "average_trade_duration": self.average_trade_duration,
-            "max_consecutive_wins": self.max_consecutive_wins,
-            "max_consecutive_losses": self.max_consecutive_losses,
-            "recovery_factor": self.recovery_factor,
-            "profit_factor_ratio": self.profit_factor_ratio,
-            "risk_reward_ratio": self.risk_reward_ratio,
-        }
-
 
 class AdvancedEvaluationEngine:
     """Advanced evaluation engine for hyperparameter optimization."""
@@ -349,52 +321,6 @@ class AdvancedEvaluationEngine:
             self.print(error(f"Error calculating performance metrics: {e}"))
             return PerformanceMetrics()
 
-    def _calculate_sharpe_ratio(self, returns: pd.Series) -> float:
-        """Calculate Sharpe ratio."""
-        try:
-            if len(returns) == 0:
-                return 0.0
-
-            excess_returns = returns - self.risk_free_rate / 252  # Daily risk-free rate
-            if excess_returns.std() == 0:
-                return 0.0
-
-            return excess_returns.mean() / excess_returns.std() * np.sqrt(252)
-        except Exception:
-            self.print(error("Error calculating Sharpe ratio: {e}"))
-            return 0.0
-
-    def _calculate_sortino_ratio(self, returns: pd.Series) -> float:
-        """Calculate Sortino ratio."""
-        try:
-            if len(returns) == 0:
-                return 0.0
-
-            excess_returns = returns - self.risk_free_rate / 252
-            downside_returns = excess_returns[excess_returns < 0]
-
-            if len(downside_returns) == 0 or downside_returns.std() == 0:
-                return 0.0
-
-            return excess_returns.mean() / downside_returns.std() * np.sqrt(252)
-        except Exception:
-            self.print(error("Error calculating Sortino ratio: {e}"))
-            return 0.0
-
-    def _calculate_max_drawdown(self, returns: pd.Series) -> float:
-        """Calculate maximum drawdown."""
-        try:
-            if len(returns) == 0:
-                return 0.0
-
-            cumulative_returns = (1 + returns).cumprod()
-            rolling_max = cumulative_returns.expanding().max()
-            drawdown = (cumulative_returns - rolling_max) / rolling_max
-            return abs(drawdown.min())
-        except Exception:
-            self.print(error("Error calculating max drawdown: {e}"))
-            return 0.0
-
     def _calculate_value_at_risk(
         self, returns: pd.Series, confidence_level: float, ) -> float:
         """Calculate Value at Risk."""
@@ -406,64 +332,6 @@ class AdvancedEvaluationEngine:
         except Exception:
             self.print(error("Error calculating VaR: {e}"))
             return 0.0
-
-    def _calculate_conditional_value_at_risk(
-        self, returns: pd.Series, confidence_level: float, ) -> float:
-        """Calculate Conditional Value at Risk (Expected Shortfall)."""
-        try:
-            if len(returns) == 0:
-                return 0.0
-
-            var = self._calculate_value_at_risk(returns, confidence_level)
-            return returns[returns <= var].mean()
-        except Exception:
-            self.print(error("Error calculating CVaR: {e}"))
-            return 0.0
-
-    def _calculate_max_consecutive_wins(self, df: pd.DataFrame) -> int:
-        """Calculate maximum consecutive wins."""
-        try:
-            if len(df) == 0:
-                return 0
-
-            consecutive_wins = 0
-            max_consecutive_wins = 0
-
-            for is_win in df["is_win"]:
-                if is_win:
-                    consecutive_wins += 1
-                    max_consecutive_wins = max(max_consecutive_wins, consecutive_wins)
-                else:
-                    consecutive_wins = 0
-
-            return max_consecutive_wins
-        except Exception:
-            self.print(error("Error calculating max consecutive wins: {e}"))
-            return 0
-
-    def _calculate_max_consecutive_losses(self, df: pd.DataFrame) -> int:
-        """Calculate maximum consecutive losses."""
-        try:
-            if len(df) == 0:
-                return 0
-
-            consecutive_losses = 0
-            max_consecutive_losses = 0
-
-            for is_win in df["is_win"]:
-                if not is_win:
-                    consecutive_losses += 1
-                    max_consecutive_losses = max(
-                        max_consecutive_losses,
-                        consecutive_losses,
-                    )
-                else:
-                    consecutive_losses = 0
-
-            return max_consecutive_losses
-        except Exception:
-            self.print(error("Error calculating max consecutive losses: {e}"))
-            return 0
 
     def _validate_metrics(self, metrics: PerformanceMetrics) -> bool:
         """Validate metrics against performance thresholds."""

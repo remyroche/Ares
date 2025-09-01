@@ -102,31 +102,6 @@ class OptimizedTrainingIntegration:
             await training_manager.cleanup()
             memory_profiler.stop_continuous_monitoring()
 
-    def get_compatibility_info(self) -> dict[str, Any]:
-        """Get information about compatibility with existing system."""
-        return {
-            "interface_compatibility": {
-                "enhanced_training_manager": "✅ Fully compatible",
-                "training_steps": "✅ Enhanced with optimizations",
-                "configuration": "✅ Backward compatible with extensions",
-                "logging": "✅ Compatible with existing logger",
-                "error_handling": "✅ Compatible with existing error handlers",
-            },
-            "performance_improvements": {
-                "memory_usage": "35-45% reduction",
-                "execution_time": "60-70% reduction",
-                "cache_efficiency": "70-80% cache hit ratio expected",
-                "parallel_speedup": f"Up to {self.config['computational_optimization']['parallelization']['max_workers']}x",
-            },
-            "new_features": {
-                "memory_profiling": "Real-time memory monitoring and leak detection",
-                "adaptive_sampling": "Smart parameter exploration",
-                "progressive_evaluation": "Early stopping for poor trials",
-                "streaming_data": "Memory-efficient large dataset processing",
-                "cached_backtesting": "Avoid redundant computations",
-            },
-        }
-
 
 def demonstrate_integration():
     """Demonstrate how to integrate optimized training with existing system."""

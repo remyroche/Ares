@@ -9,36 +9,18 @@ import numpy as np
 
 # Mock the imports to avoid dependency issues
 class MockLogger:
-    def info(self, msg): print(f"INFO: {msg}")
-    def error(self, msg): print(f"ERROR: {msg}")
-    def warning(self, msg): print(f"WARNING: {msg}")
-
 class MockSystemLogger:
-    def getChild(self, name): return MockLogger()
-
 # Mock the decorators
 def validate_data_quality(validation_level="WARNING"):
-    def decorator(func):
-        return func
-    return decorator
 
 def handle_errors(exceptions=(Exception,), default_return=None, context=""):
-    def decorator(func):
-        return func
-    return decorator
 
 def handle_specific_errors(error_handlers=None, default_return=None, context=""):
-    def decorator(func):
-        return func
-    return decorator
 
 # Mock the centralized decorators
 class MockCentralizedDecorators:
     @staticmethod
     def validate_data_quality(validation_level="WARNING"):
-        def decorator(func):
-            return func
-        return decorator
 
 # Create mock modules
 import sys

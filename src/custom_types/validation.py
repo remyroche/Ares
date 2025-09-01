@@ -123,51 +123,6 @@ def validate_ohlcv_data(data: Any) -> OHLCVData:
     """Validate OHLCV data structure."""
     return TypeValidator.validate_type(data, OHLCVData, "ohlcv_data")
 
-def type_safe(func: Callable) -> Callable:
-    """
-    Decorator for type-safe function execution.
-    Validates inputs and outputs based on type hints.
-    """
-
-    @wraps(func)
-    def wrapper(*args: Any, **kwargs: Any):
-        # Get function signature
-        sig = inspect.signature(func)
-
-        # Validate input arguments
-        bound_args = sig.bind(*args, **kwargs)
-        bound_args.apply_defaults()
-
-        for param_name, param_value in bound_args.arguments.items():
-            param = sig.parameters[param_name]
-            if param.annotation and param.annotation != inspect.Parameter.empty:
-                try:
-                    TypeValidator.validate_type(
-                        param_value,
-                        param.annotation,  # type: ignore[arg-type]
-                        f"{func.__name__}.{param_name}",
-                    )
-                except RuntimeTypeError as e:
-                    logger.warning(validation_error(f"Type validation warning: {e}"))
-
-        # Execute function
-        result = func(*args, **kwargs)
-
-        # Validate return value
-        if sig.return_annotation and sig.return_annotation != inspect.Parameter.empty:
-            try:
-                TypeValidator.validate_type(
-                    result,
-                    sig.return_annotation,  # type: ignore[arg-type]
-                    f"{func.__name__} return value",
-                )
-            except RuntimeTypeError as e:
-                logger.warning(validation_error(f"Return type validation warning: {e}"))
-
-        return result
-
-    return wrapper
-
 def validate_critical_path(
     validator_func: Callable[[Any], T],
 ) -> Callable[[Callable], Callable]:
@@ -175,22 +130,6 @@ def validate_critical_path(
     Decorator for critical path type validation.
     Used for functions where type safety is crucial.
     """
-
-    def decorator(func: Callable) -> Callable:
-        @wraps(func)
-        def wrapper(*args: Any, **kwargs: Any) -> T:
-            result = func(*args, **kwargs)
-            try:
-                return validator_func(result)
-            except RuntimeTypeError as e:
-                logger.error(
-                    validation_error(
-                        f"Critical path type validation failed: {e}",
-                    ),
-                )
-                raise
-
-        return wrapper
 
     return decorator
 

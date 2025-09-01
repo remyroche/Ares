@@ -51,39 +51,6 @@ class TransitionSeqDataset(Dataset):
         self.numeric_dim = numeric_dim
         self.label_index = label_index
 
-    def __len__(self) -> int:
-        return len(self.samples)
-
-    def __getitem__(self, idx: int) -> dict[str, torch.Tensor]:
-        s = self.samples[idx]
-        # Inputs
-        X_states_df: pd.DataFrame = s["X_pre_states"]
-        hmm_ids = X_states_df["hmm_state_id"].to_numpy(dtype=np.int64)
-        # numeric
-        X_num = s.get("X_pre_numeric", np.zeros((len(hmm_ids), 0), dtype=float))
-        # Targets
-        y_ret = s["Y_post_returns"].astype(np.float32)
-        y_states_df: pd.DataFrame = s["Y_post_states"]
-        y_hmm = y_states_df["hmm_state_id"].to_numpy(dtype=np.int64)
-        # Class at t0 (path_class) if present
-        path_map = {
-            "continuation": 0,
-            "reversal": 1,
-            "end_of_trend": 2,
-            "beginning_of_trend": 3,
-        }
-        y_path = path_map.get(str(s.get("path_class", "end_of_trend")), 2)
-        # time to pt
-        y_ttpt = int(s.get("Y_time_to_pt", -1))
-        return {
-            "hmm_ids": _to_tensor(hmm_ids, torch.long),
-            "x_num": _to_tensor(X_num, torch.float32),
-            "y_ret": _to_tensor(y_ret, torch.float32),
-            "y_hmm": _to_tensor(y_hmm, torch.long),
-            "y_path": _to_tensor(np.array(y_path), torch.long),
-            "y_ttpt": _to_tensor(np.array(y_ttpt), torch.float32),
-        }
-
 class SmallTransformer(pl.LightningModule if pl else nn.Module):
     pass  # TODO: Add proper implementation
     def __init__(
@@ -147,15 +114,6 @@ class SmallTransformer(pl.LightningModule if pl else nn.Module):
             self.ce = nn.CrossEntropyLoss()
         self.focal_gamma = float(focal_gamma)
 
-    def forward(self, hmm_ids: torch.Tensor, x_num: torch.Tensor) -> torch.Tensor:
-        # hmm_ids: [B = L_pre] ; x_num: [B, L_pre = F]
-        x = self.hmm_emb(hmm_ids) + self.num_proj(x_num)
-        x = self.enc_ln(x)
-        h = self.encoder(x)  # [B = L_pre, d]
-        # CLS token: mean pool last K
-        cls = h.mean(dim=1)
-        return h, cls
-
     def training_step(
         self,
         batch: dict[str, torch.Tensor],
@@ -198,49 +156,6 @@ class SmallTransformer(pl.LightningModule if pl else nn.Module):
         )
         return loss
 
-    def validation_step(self, batch: dict[str, torch.Tensor], batch_idx: int) -> None:
-        hmm_ids = batch["hmm_ids"]
-        x_num = batch["x_num"]
-        y_ret = batch["y_ret"]
-        y_hmm = batch["y_hmm"]
-        y_path = batch["y_path"]
-        h, cls = self(hmm_ids, x_num)
-        z = h[:, -self.post_len:, :]
-        pred_ret = self.dec_ret(z).squeeze(-1)
-        pred_hmm = self.dec_hmm(z)
-        pred_path = self.cls_path(cls)
-        loss_ret = self.mse(pred_ret, y_ret)
-        loss_hmm = self.ce(pred_hmm.reshape(-1, pred_hmm.size(-1)), y_hmm.reshape(-1))
-        if self.focal_gamma > 0.0:
-            ce = self.ce(pred_path, y_path)
-            with torch.no_grad():
-                p = (
-                    torch.softmax(pred_path, dim=-1)
-                    .gather(1, y_path.view(-1, 1))
-                    .clamp_min(1e-6)
-                    .squeeze()
-                )
-            loss_path = ((1 - p) ** self.focal_gamma) * ce
-        else:
-            loss_path = self.ce(pred_path, y_path)
-        loss = loss_ret * 1.0 + loss_hmm * 0.7 + loss_path * 0.5
-        # Metrics: state accuracy = return MSE, DTW (avg over batch subset)
-        with torch.no_grad():
-            state_pred = pred_hmm.argmax(-1)
-            state_acc = (state_pred == y_hmm).float().mean()
-            mse = nn.functional.mse_loss(pred_ret, y_ret)
-        self.log_dict(
-            {"val_loss": loss, "val_state_acc": state_acc, "val_mse": mse},
-            prog_bar=True,
-        )
-
-    def configure_optimizers(self):
-        opt = torch.optim.AdamW(self.parameters(), lr=self.lr, weight_decay=1e-2)
-        sch = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, mode="min", patience=5)
-        return {
-            "optimizer": opt, "lr_scheduler": {"scheduler": sch, "monitor": "val_loss"},
-        }
-
 class SmallTCN(SmallTransformer):
     pass  # TODO: Add proper implementation
     def __init__(
@@ -280,15 +195,6 @@ class SmallTCN(SmallTransformer):
                 ),
             )
         self.tcn = nn.ModuleList(blocks)
-
-    def forward(self, hmm_ids: torch.Tensor, x_num: torch.Tensor) -> torch.Tensor:
-        x = self.hmm_emb(hmm_ids) + self.num_proj(x_num)  # [B = L,D]
-        y = x.transpose(1, 2)  # [B = D,L]
-        for block in self.tcn:
-            y = y + block(y)
-        h = y.transpose(1, 2)  # [B = L,D]
-        cls = h.mean(dim=1)
-        return h, cls
 
 def build_dataloaders(
     samples: list[dict[str, Any]],

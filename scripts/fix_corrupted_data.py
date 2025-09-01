@@ -27,18 +27,6 @@ from src.utils.warning_symbols import warning
 def _log_exceptions(logger_name: str, default_return):
     """Decorator to log exceptions and return a default value on failure."""
 
-    def decorator(func):
-        @wraps(func)
-        def wrapper(*args, **kwargs):
-            logger = system_logger.getChild(logger_name)
-            try:
-                return func(*args, **kwargs)
-            except Exception as e:  # noqa: BLE001
-                logger.exception(f"Error in {func.__name__}: {e}")
-                return default_return
-
-        return wrapper
-
     return decorator
 
 

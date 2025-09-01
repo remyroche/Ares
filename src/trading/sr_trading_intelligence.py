@@ -58,31 +58,6 @@ class SRTradingIntelligence:
         self._update_task: Optional[asyncio.Task] = None
         self._is_running = False
 
-    async def initialize(self) -> bool:
-        """Initialize the SR Trading Intelligence system."""
-        try:
-            self.logger.info("🔧 Initializing SR Trading Intelligence...")
-
-            # Initialize SR Levels Manager
-            self.sr_manager = await self._create_sr_manager()
-            if not self.sr_manager:
-                self.logger.error("❌ Failed to initialize SR Levels Manager")
-                return False
-
-            # Load trading history
-            await self._load_trading_history()
-
-            # Start real-time updates if enabled
-            if self.enable_real_time_updates:
-                await self._start_real_time_updates()
-
-            self.logger.info("✅ SR Trading Intelligence initialized successfully")
-            return True
-
-        except Exception as e:
-            self.logger.error(f"❌ Failed to initialize SR Trading Intelligence: {e}")
-            return False
-
     async def _create_sr_manager(self) -> Optional[SRLevelsManager]:
         """Create and initialize SR Levels Manager."""
         try:
@@ -117,12 +92,6 @@ class SRTradingIntelligence:
         except Exception as e:
             self.logger.error(f"❌ Error in real-time update loop: {e}")
 
-    async def _get_current_market_data(self) -> Optional[Dict[str, Any]]:
-        """Get current market data from exchange."""
-        # This would integrate with your exchange data feed
-        # For now, return None to indicate no data available
-        return None
-
     async def _update_sr_levels_with_market_data(self, market_data: Dict[str, Any]):
         """Update SR levels with current market data."""
         try:
@@ -140,51 +109,6 @@ class SRTradingIntelligence:
 
         except Exception as e:
             self.logger.error(f"❌ Error updating SR levels with market data: {e}")
-
-    def get_sr_levels_for_trading(
-        self,
-        current_price: float,
-        include_metadata: bool = True
-    ) -> Dict[str, Any]:
-        """
-        Get SR levels optimized for trading decisions.
-
-        Args:
-            current_price: Current market price
-            include_metadata: Whether to include detailed metadata
-
-        Returns:
-            Trading-optimized SR levels with decision support
-        """
-        try:
-            if not self.sr_manager:
-                return {"error": "SR Manager not initialized"}
-
-            # Get basic SR levels
-            sr_levels = self.sr_manager.get_sr_levels_for_trading(
-                current_price, include_metadata
-            )
-
-            # Add trading intelligence
-            trading_intelligence = self._generate_trading_intelligence(
-                current_price, sr_levels
-            )
-
-            # Combine results
-            result = {
-                **sr_levels,
-                "trading_intelligence": trading_intelligence,
-                "risk_assessment": self._assess_risk(current_price, sr_levels),
-                "position_recommendations": self._generate_position_recommendations(
-                    current_price, sr_levels
-                )
-            }
-
-            return result
-
-        except Exception as e:
-            self.logger.error(f"❌ Error getting SR levels for trading: {e}")
-            return {"error": str(e)}
 
     def _generate_trading_intelligence(
         self,
@@ -402,82 +326,6 @@ class SRTradingIntelligence:
             self.logger.error(f"❌ Error generating position recommendations: {e}")
             return []
 
-    async def update_position(
-        self,
-        position_type: str,
-        entry_price: float,
-        size: float,
-        timestamp: datetime
-    ):
-        """Update current position information."""
-        try:
-            self.current_position = {
-                "type": position_type,
-                "entry_price": entry_price,
-                "size": size,
-                "entry_time": timestamp,
-                "last_update": timestamp
-            }
-
-            # Add to trading history
-            self.trading_history.append({
-                **self.current_position,
-                "action": "position_update"
-            })
-
-            # Update performance metrics
-            await self._update_performance_metrics()
-
-            self.logger.info(f"✅ Updated position: {position_type} {size} @ {entry_price}")
-
-        except Exception as e:
-            self.logger.error(f"❌ Error updating position: {e}")
-
-    async def close_position(self, exit_price: float, timestamp: datetime):
-        """Close current position and record trade."""
-        try:
-            if not self.current_position:
-                self.logger.warning("⚠️ No position to close")
-                return
-
-            # Calculate P&L
-            entry_price = self.current_position["entry_price"]
-            size = self.current_position["size"]
-            position_type = self.current_position["type"]
-
-            if position_type == "long":
-                pnl = (exit_price - entry_price) * size
-            else:  # short
-                pnl = (entry_price - exit_price) * size
-
-            # Record trade
-            trade_record = {
-                "entry_time": self.current_position["entry_time"],
-                "exit_time": timestamp,
-                "entry_price": entry_price,
-                "exit_price": exit_price,
-                "position_type": position_type,
-                "size": size,
-                "pnl": pnl,
-                "pnl_percentage": (pnl / (entry_price * size)) * 100
-            }
-
-            self.trading_history.append({
-                **trade_record,
-                "action": "position_close"
-            })
-
-            # Clear current position
-            self.current_position = {}
-
-            # Update performance metrics
-            await self._update_performance_metrics()
-
-            self.logger.info(f"✅ Closed position: P&L {pnl:.2f} ({trade_record['pnl_percentage']:.2f}%)")
-
-        except Exception as e:
-            self.logger.error(f"❌ Error closing position: {e}")
-
     async def _update_performance_metrics(self):
         """Update performance metrics based on trading history."""
         try:
@@ -554,30 +402,3 @@ class SRTradingIntelligence:
         except Exception as e:
             self.logger.error(f"❌ Error saving trading history: {e}")
 
-    async def shutdown(self):
-        """Shutdown the trading intelligence system."""
-        try:
-            self._is_running = False
-
-            if self._update_task and not self._update_task.done():
-                self._update_task.cancel()
-                try:
-                    await self._update_task
-                except asyncio.CancelledError:
-                    pass
-
-            # Save trading history
-            await self.save_trading_history()
-
-            self.logger.info("✅ SR Trading Intelligence shutdown complete")
-
-        except Exception as e:
-            self.logger.error(f"❌ Error during shutdown: {e}")
-
-
-async def create_sr_trading_intelligence(config: Dict[str, Any]) -> SRTradingIntelligence:
-    """Factory function to create and initialize SR Trading Intelligence."""
-    intelligence = SRTradingIntelligence(config)
-    if await intelligence.initialize():
-        return intelligence
-    return None

@@ -122,69 +122,6 @@ class CodeQualityCleanup:
         print("  Files with syntax errors need individual attention")
         return True
     
-    def generate_cleanup_report(self) -> str:
-        """Generate a summary report of cleanup actions."""
-        report = []
-        report.append("# Code Quality Cleanup Report")
-        report.append("")
-        report.append("## Summary")
-        report.append("This report summarizes the cleanup actions that can be performed.")
-        report.append("")
-        
-        report.append("## Available Actions")
-        report.append("")
-        report.append("### 1. Import Cleanup")
-        report.append("- **Command**: `python3 code_quality/cleanup_script.py --clean-imports`")
-        report.append("- **Description**: Remove unused imports from all Python files")
-        report.append("- **Impact**: Reduces file size and improves code clarity")
-        report.append("")
-        
-        report.append("### 2. Code Quality Analysis")
-        report.append("- **Command**: `python3 code_quality/cleanup_script.py --analyze`")
-        report.append("- **Description**: Generate comprehensive code quality report")
-        report.append("- **Impact**: Identifies issues for manual review")
-        report.append("")
-        
-        report.append("### 3. Commented Code Analysis")
-        report.append("- **Command**: `python3 code_quality/cleanup_script.py --analyze-comments`")
-        report.append("- **Description**: Identify commented code blocks")
-        report.append("- **Impact**: Helps identify code that needs implementation or removal")
-        report.append("")
-        
-        report.append("## Manual Actions Required")
-        report.append("")
-        report.append("### High Priority")
-        report.append("1. **Fix Syntax Errors**: Review and fix files with syntax errors")
-        report.append("2. **Review Dead Code**: Remove or implement unused functions")
-        report.append("3. **Review Commented Code**: Decide which blocks to implement/remove")
-        report.append("")
-        
-        report.append("### Medium Priority")
-        report.append("1. **Fix Formatting**: Apply automatic formatting tools")
-        report.append("2. **Document Legacy Functions**: Mark compatibility functions")
-        report.append("3. **Optimize Line Lengths**: Break long lines")
-        report.append("")
-        
-        report.append("## Files Needing Attention")
-        report.append("")
-        report.append("### Files with Syntax Errors")
-        report.append("- `test_advanced_ml_validation.py`")
-        report.append("- `download_futures_only.py`")
-        report.append("- `detect_and_fill_gaps_immediate.py`")
-        report.append("- `test_pytorch_integration.py`")
-        report.append("- `test_enhanced_decorator_system.py`")
-        report.append("- And many others...")
-        report.append("")
-        
-        report.append("### Files with Most Issues")
-        report.append("- `src/monitoring/` modules (unused imports)")
-        report.append("- `src/training/` modules (unused imports)")
-        report.append("- `src/supervisor/` modules (dead code)")
-        report.append("- `src/components/` modules (dead code)")
-        report.append("")
-        
-        return "\n".join(report)
-    
     def run_full_cleanup(self, dry_run: bool = True) -> bool:
         """Run all cleanup tasks."""
         print("🚀 Starting full code quality cleanup...")

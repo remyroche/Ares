@@ -134,10 +134,6 @@ class ProblemSpecificAndTransferLearningDemo:
         problems = {}
 
         # 1. Continuous optimization problem (Rosenbrock function)
-        def rosenbrock_function(params):
-            x, y = params['x'], params['y']
-            return (1 - x)**2 + 100 * (y - x**2)**2
-
         problems['continuous_rosenbrock'] = (
             rosenbrock_function,
             {
@@ -175,13 +171,6 @@ class ProblemSpecificAndTransferLearningDemo:
         )
 
         # 4. High-dimensional optimization problem
-        def high_dim_function(params):
-            # Sum of squares with some interactions
-            values = [params[f'x{i}'] for i in range(10)]
-            base_sum = sum(x**2 for x in values)
-            interaction = sum(values[i] * values[i+1] for i in range(9))
-            return base_sum + 0.1 * interaction
-
         high_dim_params = {f'x{i}': {'min': -1.0, 'max': 1.0} for i in range(10)}
         problems['high_dimensional'] = (high_dim_function, high_dim_params)
 
@@ -202,11 +191,6 @@ class ProblemSpecificAndTransferLearningDemo:
         )
 
         # 6. Discrete optimization problem
-        def discrete_function(params):
-            x = params['x']
-            y = params['y']
-            return x**2 + y**2
-
         problems['discrete_optimization'] = (
             discrete_function,
             {
@@ -229,13 +213,6 @@ class ProblemSpecificAndTransferLearningDemo:
         variations = []
         for i in range(3):
             def create_variation(scale_factor):
-                def varied_function(params):
-                    x, y = params['x'], params['y']
-                    # Scale the Rosenbrock function
-                    scaled_x = x * scale_factor
-                    scaled_y = y * scale_factor
-                    return (1 - scaled_x)**2 + 100 * (scaled_y - scaled_x**2)**2
-                return varied_function
 
             variation_func = create_variation(1.0 + i * 0.2)
             variations.append((

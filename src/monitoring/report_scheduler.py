@@ -75,7 +75,3 @@ class ReportScheduler:
         default_return=False,
         context="report_scheduler.initialize",
     )
-    async def initialize(self) -> bool:
-        self.logger.info("Initializing Report Scheduler ...")
-        self.logger.info("✅ Report Scheduler initialization completed")
-        return True

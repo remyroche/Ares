@@ -155,15 +155,6 @@ class IEventStore(ABC):
         """Save an event to the store"""
 
     @abstractmethod
-    async def get_events(
-        self,
-        aggregate_id: str | None = None,
-        from_sequence: int = 0,
-        to_sequence: int | None = None,
-        event_types: list[EventType] | None = None,
-    ) -> list[Event]:
-        """Retrieve events from the store"""
-
     @abstractmethod
     async def save_snapshot(self, snapshot: EventSnapshot) -> bool:
         """Save a snapshot to the store"""
@@ -205,45 +196,6 @@ class FileEventStore(IEventStore):
         except Exception as e:
             self.logger.error(failed(f"Failed to save event: {e}"))
             return False
-
-    async def get_events(
-        self,
-        aggregate_id: str | None = None,
-        from_sequence: int = 0,
-        to_sequence: int | None = None,
-        event_types: list[EventType] | None = None,
-    ) -> list[Event]:
-        """Retrieve events from file storage"""
-        try:
-            events: list[Event] = []
-
-            # Read all event files
-            for event_file in self.events_path.glob("events_*.jsonl"):
-                with open(event_file, encoding="utf-8") as f:
-                    for line in f:
-                        if line.strip():
-                            event_data = json.loads(line.strip())
-                            event = Event.from_dict(event_data)
-
-                            # Apply filters
-                            if aggregate_id and event.metadata.aggregate_id != aggregate_id:
-                                continue
-                            if event.metadata.sequence_number < from_sequence:
-                                continue
-                            if to_sequence is not None and event.metadata.sequence_number > to_sequence:
-                                continue
-                            if event_types and event.event_type not in event_types:
-                                continue
-
-                            events.append(event)
-
-            # Sort by sequence number
-            events.sort(key=lambda e: e.metadata.sequence_number)
-            return events
-
-        except Exception as e:
-            self.logger.error(failed(f"Failed to retrieve events: {e}"))
-            return []
 
     async def save_snapshot(self, snapshot: EventSnapshot) -> bool:
         """Save a snapshot to file storage"""
@@ -369,48 +321,6 @@ class EventVersionManager:
             self.logger.error(validation_error(f"Schema validation error: {e}"))
             return False
 
-    def migrate_event(self, event: Event, target_version: str) -> Event:
-        """Migrate event to target schema version"""
-        try:
-            current_version = event.metadata.schema_version
-
-            if current_version == target_version:
-                return event
-
-            # Create a copy of the event for migration
-            migrated_event = Event(
-                event_type=event.event_type,
-                data=event.data.copy() if isinstance(event.data, dict) else event.data,
-                metadata=EventMetadata(
-                    event_id=event.metadata.event_id,
-                    version=event.metadata.version,
-                    schema_version=target_version,
-                    timestamp=event.metadata.timestamp,
-                    source=event.metadata.source,
-                    correlation_id=event.metadata.correlation_id,
-                    causation_id=event.metadata.causation_id,
-                    aggregate_id=event.metadata.aggregate_id,
-                    sequence_number=event.metadata.sequence_number,
-                    retry_count=event.metadata.retry_count,
-                    status=event.metadata.status,
-                    tags=event.metadata.tags.copy(),
-                ),
-            )
-
-            # Apply simple migration example
-            if current_version == "1.0.0" and target_version == "1.1.0":
-                if isinstance(migrated_event.data, dict) and "timestamp" not in migrated_event.data:
-                    migrated_event.data["timestamp"] = migrated_event.metadata.timestamp.isoformat()
-
-            self.logger.info(
-                f"Migrated event {event.metadata.event_id} from {current_version} to {target_version}",
-            )
-            return migrated_event
-
-        except Exception as e:
-            self.logger.error(error(f"Event migration error: {e}"))
-            return event
-
 
 class EnhancedEventBus:
     """
@@ -464,28 +374,6 @@ class EnhancedEventBus:
         context="enhanced event bus initialization",
     )
     @performance_monitor(level=PerformanceLevel.DETAILED)
-    async def initialize(self) -> bool:
-        """Initialize the enhanced event bus"""
-        try:
-            self.logger.info("Initializing Enhanced Event Bus...")
-
-            await self._load_configuration()
-            if not self._validate_configuration():
-                self.logger.error(invalid("Invalid configuration for enhanced event bus"))
-                return False
-
-            await self._initialize_event_processing()
-            await self._load_event_history()
-
-            self.logger.info(
-                "✅ Enhanced Event Bus initialization completed successfully",
-            )
-            return True
-
-        except Exception as e:
-            self.logger.error(failed(f"❌ Enhanced Event Bus initialization failed: {e}"))
-            return False
-
     @performance_monitor(level=PerformanceLevel.BASIC)
     async def _load_configuration(self) -> None:
         """Load event bus configuration"""
@@ -710,240 +598,10 @@ class EnhancedEventBus:
             self.logger.error(error(f"Error creating snapshot: {e}"))
 
     @performance_monitor(level=PerformanceLevel.BASIC)
-    async def stop(self) -> None:
-        """Stop the enhanced event bus"""
-        try:
-            self.logger.info("🛑 Stopping Enhanced Event Bus...")
-            self.is_running = False
-
-            # Create final snapshot
-            if self.enable_snapshots:
-                await self._create_snapshot()
-
-            self.status = {
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-                "status": "stopped",
-            }
-            self.logger.info("✅ Enhanced Event Bus stopped successfully")
-
-        except Exception as e:
-            self.logger.error(error(f"Error stopping enhanced event bus: {e}"))
-
-    def subscribe(self, event_type: EventType | str, callback: Callable) -> None:
-        """Subscribe to an event type"""
-        try:
-            event_type_str = (
-                event_type.value if isinstance(event_type, EventType) else event_type
-            )
-            self.subscribers[event_type_str].append(callback)
-            self.logger.info(f"Subscriber added for event type: {event_type_str}")
-
-        except Exception as e:
-            self.logger.error(error(f"Error subscribing to event: {e}"))
-
-    def unsubscribe(self, event_type: EventType | str, callback: Callable) -> None:
-        """Unsubscribe from an event type"""
-        try:
-            event_type_str = (
-                event_type.value if isinstance(event_type, EventType) else event_type
-            )
-            if event_type_str in self.subscribers:
-                self.subscribers[event_type_str] = [
-                    sub for sub in self.subscribers[event_type_str] if sub != callback
-                ]
-                self.logger.info(f"Subscriber removed for event type: {event_type_str}")
-
-        except Exception as e:
-            self.logger.error(error(f"Error unsubscribing from event: {e}"))
-
     @performance_monitor(level=PerformanceLevel.DETAILED)
-    async def publish(
-        self,
-        event_type: EventType | str,
-        data: Any,
-        source: str = "",
-        correlation_id: str | None = None,
-        aggregate_id: str | None = None,
-        tags: dict[str, str] | None = None,
-    ) -> str:
-        """Publish an event to the bus"""
-        try:
-            # Convert string to EventType if needed
-            if isinstance(event_type, str):
-                try:
-                    event_type = EventType(event_type)
-                except ValueError:
-                    self.logger.error(error(f"Unknown event type: {event_type}"))
-                    return ""
-
-            # Create event metadata
-            metadata = EventMetadata(
-                event_id=str(uuid.uuid4()),
-                timestamp=datetime.now(timezone.utc),
-                source=source,
-                correlation_id=correlation_id,
-                aggregate_id=aggregate_id,
-                sequence_number=self.sequence_counter,
-                tags=tags or {},
-            )
-
-            # Create event
-            event = Event(event_type=event_type, data=data, metadata=metadata)
-
-            # Add to queue
-            await self.event_queue.put(event)
-            self.sequence_counter += 1
-
-            self.logger.debug(
-                f"Event '{event_type.value}' published with ID {event.metadata.event_id}",
-            )
-            return event.metadata.event_id
-
-        except Exception as e:
-            self.logger.error(error(f"Error publishing event: {e}"))
-            return ""
-
     @performance_monitor(level=PerformanceLevel.BASIC)
-    async def replay_events(
-        self,
-        aggregate_id: str | None = None,
-        from_sequence: int = 0,
-        to_sequence: int | None = None,
-        event_types: list[EventType] | None = None,
-    ) -> list[Event]:
-        """Replay events from the event store"""
-        try:
-            if not self.enable_persistence or self.event_store is None:
-                self.logger.warning(
-                    "Event persistence is disabled, cannot replay events",
-                )
-                return []
-
-            events = await self.event_store.get_events(
-                aggregate_id=aggregate_id,
-                from_sequence=from_sequence,
-                to_sequence=to_sequence,
-                event_types=event_types,
-            )
-
-            self.metrics["replays_performed"] += 1
-            self.logger.info(f"Replayed {len(events)} events")
-
-            return events
-
-        except Exception as e:
-            self.logger.error(error(f"Error replaying events: {e}"))
-            return []
-
     @performance_monitor(level=PerformanceLevel.BASIC)
-    async def rebuild_from_events(
-        self,
-        aggregate_id: str,
-        target_sequence: int | None = None,
-    ) -> dict[str, Any]:
-        """Rebuild aggregate state from events"""
-        try:
-            # Get latest snapshot
-            snapshot = None
-            if self.event_store is not None:
-                snapshot = await self.event_store.get_latest_snapshot(aggregate_id)
-
-            start_sequence = 0
-            state: dict[str, Any] = {}
-
-            if snapshot:
-                start_sequence = snapshot.sequence_number + 1
-                state = snapshot.state_data.copy()
-                self.logger.info(
-                    f"Starting rebuild from snapshot at sequence {snapshot.sequence_number}",
-                )
-
-            # Get events from snapshot point
-            events = []
-            if self.event_store is not None:
-                events = await self.event_store.get_events(
-                    aggregate_id=aggregate_id,
-                    from_sequence=start_sequence,
-                    to_sequence=target_sequence,
-                )
-
-            # Apply events to rebuild state (simplified example)
-            for event in events:
-                if event.event_type == EventType.TRADE_EXECUTED:
-                    state.setdefault("trades", []).append(event.data)
-                elif event.event_type == EventType.PERFORMANCE_UPDATE:
-                    state["performance"] = event.data
-
-            self.logger.info(
-                f"Rebuilt state for aggregate {aggregate_id} using {len(events)} events",
-            )
-            return state
-
-        except Exception as e:
-            self.logger.error(error(f"Error rebuilding from events: {e}"))
-            return {}
-
-    def get_status(self) -> dict[str, Any]:
-        """Get current event bus status"""
-        return {
-            **self.status,
-            "metrics": self.metrics.copy(),
-            "queue_size": self.event_queue.qsize(),
-            "subscribers_count": {k: len(v) for k, v in self.subscribers.items()},
-            "persistence_enabled": self.enable_persistence,
-            "snapshots_enabled": self.enable_snapshots,
-        }
-
-    def get_history(self, limit: int | None = None) -> list[dict[str, Any]]:
-        """Get event bus history"""
-        history = self.history.copy()
-        if limit:
-            history = history[-limit:]
-        return history
-
-    def get_event_history(self, limit: int | None = None) -> list[Event]:
-        """Get event history"""
-        history = self.event_history.copy()
-        if limit:
-            history = history[-limit:]
-        return history
-
-    def get_metrics(self) -> dict[str, Any]:
-        """Get event bus metrics"""
-        return self.metrics.copy()
-
 
 # Global instance
 enhanced_event_bus: EnhancedEventBus | None = None
 
-
-async def setup_enhanced_event_bus(
-    config: dict[str, Any] | None = None,
-) -> EnhancedEventBus | None:
-    """Setup the enhanced event bus"""
-    try:
-        global enhanced_event_bus
-
-        if config is None:
-            config = {
-                "event_bus": {
-                    "processing_interval": 1,
-                    "max_history": 1000,
-                    "enable_persistence": True,
-                    "enable_snapshots": True,
-                    "snapshot_frequency": 100,
-                    "storage_path": "event_store",
-                },
-            }
-
-        enhanced_event_bus = EnhancedEventBus(config)
-        success = await enhanced_event_bus.initialize()
-
-        if success:
-            return enhanced_event_bus
-
-        return None
-
-    except Exception as e:
-        print(f"Error setting up enhanced event bus: {e}")
-        return None

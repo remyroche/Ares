@@ -100,26 +100,6 @@ class ComprehensivePipelineExecutor:
 
         return comprehensive_report
 
-    async def _initialize_quality_monitoring(self) -> None:
-        """Initialize quality monitoring components."""
-        self.logger.info("🔧 Initializing quality monitoring components...")
-
-        # Reset execution state
-        self.execution_state.update({
-            "start_time": time.time(),
-            "current_step": None,
-            "completed_steps": [],
-            "failed_steps": [],
-            "overall_success": False,
-            "total_execution_time": 0.0,
-            "quality_scores": {},
-            "compatibility_scores": {},
-            "format_scores": {},
-            "index_scores": {}
-        })
-
-        self.logger.info("✅ Quality monitoring components initialized")
-
     async def _execute_pipeline_with_monitoring(
         self,
         training_input: Dict[str, Any]
@@ -376,20 +356,6 @@ class ComprehensivePipelineExecutor:
 
         except Exception as e:
             self.logger.error(f"❌ Failed to log comprehensive results: {e}")
-
-    async def get_execution_status(self) -> Dict[str, Any]:
-        """Get current execution status."""
-        return {
-            "current_step": self.execution_state["current_step"],
-            "completed_steps": self.execution_state["completed_steps"],
-            "failed_steps": self.execution_state["failed_steps"],
-            "overall_success": self.execution_state["overall_success"],
-            "total_execution_time": self.execution_state["total_execution_time"],
-            "quality_scores": self.execution_state["quality_scores"],
-            "compatibility_scores": self.execution_state["compatibility_scores"],
-            "format_scores": self.execution_state["format_scores"],
-            "index_scores": self.execution_state["index_scores"]
-        }
 
     async def print_execution_summary(self, comprehensive_report: Dict[str, Any]) -> None:
         """Print comprehensive execution summary."""

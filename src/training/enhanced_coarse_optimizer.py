@@ -340,46 +340,6 @@ class EnhancedCoarseOptimizer:
 
         return results
 
-    def _calculate_feature_importance_chunk(
-        self,
-        features: list[str],
-        X: pd.DataFrame,
-        y: pd.Series,
-    ) -> dict[str, float]:
-        """Calculate feature importance for a chunk of features (for multiprocessing)."""
-        results = {}
-        for feature in features:
-            try:
-                # Use mutual information as a robust importance measure
-                feature_data = X[[feature]]
-                target_data = y
-
-                # Handle NaN values
-                valid_mask = ~(feature_data.isnull().any(axis=1) | target_data.isnull())
-                if valid_mask.sum() < 10:
-                    results[feature] = 0.0
-                    continue
-
-                clean_feature = feature_data[valid_mask]
-                clean_target = target_data[valid_mask]
-
-                if len(clean_feature) < 10:
-                    results[feature] = 0.0
-                    continue
-
-                importance = mutual_info_classif(
-                    clean_feature,
-                    clean_target,
-                    random_state=42,
-                )[0]
-
-                results[feature] = float(importance)
-
-            except Exception:
-                results[feature] = 0.0
-
-        return results
-
     def _sequential_feature_selection(
         self,
         features: list[str],
@@ -429,56 +389,6 @@ class EnhancedCoarseOptimizer:
             )
 
         return results
-
-    def _robust_shap_analysis(
-        self,
-        X_sample: pd.DataFrame,
-        y_sample: pd.Series,
-    ) -> dict[str, float]:
-        """Robust SHAP analysis with multiple fallback strategies."""
-        models_to_try = [
-            (
-                "lightgbm",
-                lgb.LGBMClassifier(n_estimators=50, random_state=42, verbosity=-1),
-            ),
-            (
-                "catboost",
-                CatBoostClassifier(iterations=50, random_state=42, verbose=False),
-            ),
-            ("xgboost", xgb.XGBClassifier(n_estimators=50, random_state=42, verbose=0)),
-        ]
-
-        for model_name, model in models_to_try:
-            try:
-                self.logger.info(f"🤖 Trying SHAP analysis with {model_name}")
-
-                # Quick training with early stopping
-                model.fit(X_sample, y_sample)
-                # Try new import path first, then fallback to old path
-                try:
-                    from shap.explainers import TreeExplainer
-                except ImportError:
-                    from shap import TreeExplainer
-                explainer = TreeExplainer(model)
-                shap_values = explainer.shap_values(X_sample)
-
-                # Process SHAP values
-                if isinstance(shap_values, list):
-                    shap_values = np.array(shap_values)
-
-                feature_importance = np.mean(np.abs(shap_values), axis=0)
-                results = dict(zip(X_sample.columns, feature_importance, strict=False))
-
-                self.logger.info(f"✅ SHAP analysis successful with {model_name}")
-                return results
-
-            except Exception:
-                self.print(failed("❌ SHAP analysis failed for {model_name}: {e}"))
-                continue
-
-        # Fallback to correlation-based feature importance
-        self.print(failed("⚠️ All SHAP models failed, using correlation fallback"))
-        return self._correlation_based_importance(X_sample, y_sample)
 
     def _correlation_based_importance(
         self,
@@ -837,60 +747,6 @@ class EnhancedCoarseOptimizer:
             self.print(error(error_msg))
             return list(X.columns)[:10]  # Return first 10 features as fallback
 
-    def _get_model_parameters(
-        self,
-        model_type: str,
-        trial: optuna.Trial,
-        n_classes: int,
-    ) -> dict[str, Any]:
-        """Get model parameters from central configuration."""
-        if model_type not in self.model_configs:
-            msg = f"Unknown model type: {model_type}"
-            raise ValueError(msg)
-
-        config = self.model_configs[model_type]
-        params = config["fixed_params"].copy()
-
-        # Add trial parameters
-        for param_name, param_range in config["param_ranges"].items():
-            if isinstance(param_range, tuple):
-                if isinstance(param_range[0], float):
-                    params[param_name] = trial.suggest_float(
-                        param_name,
-                        param_range[0],
-                        param_range[1],
-                        log=True,
-                    )
-                else:
-                    params[param_name] = trial.suggest_int(
-                        param_name,
-                        param_range[0],
-                        param_range[1],
-                    )
-            elif isinstance(param_range, list):
-                params[param_name] = trial.suggest_categorical(param_name, param_range)
-
-        # Handle model-specific configurations
-        if model_type == "lightgbm":
-            params["objective"] = "multiclass" if n_classes > 2 else "binary"
-            params["metric"] = "multi_logloss" if n_classes > 2 else "binary_logloss"
-            if n_classes > 2:
-                params["num_class"] = n_classes
-        elif model_type == "xgboost":
-            params["objective"] = (
-                "multi:softmax" if n_classes > 2 else "binary:logistic"
-            )
-            params["eval_metric"] = "mlogloss" if n_classes > 2 else "logloss"
-            if n_classes > 2:
-                params["num_class"] = n_classes
-        elif model_type == "catboost":
-            if n_classes > 2:
-                params["loss_function"] = "MultiClass"
-            else:
-                params["loss_function"] = "Logloss"
-
-        return params
-
     def _create_model(self, model_type: str, params: dict[str, Any]):
         """Create model instance from configuration."""
         if model_type not in self.model_configs:
@@ -997,18 +853,6 @@ class EnhancedCoarseOptimizer:
             )
 
             # Add progress callback
-            def progress_callback(study, trial) -> None:
-                progress = (trial.number + 1) / n_trials * 100
-                self._track_optimization_progress(
-                    "Hyperparameter Optimization",
-                    progress,
-                    {
-                        "trial": trial.number + 1,
-                        "total_trials": n_trials,
-                        "best_value": study.best_value if study.best_value else 0.0,
-                    },
-                )
-
             study.optimize(objective, n_trials=n_trials, callbacks=[progress_callback])
 
             # Analyze top trials to define ranges

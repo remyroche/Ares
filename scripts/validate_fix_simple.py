@@ -25,15 +25,6 @@ def handle_errors(*, default_return: bool = False) -> DecoratorFunc:
     Helps ensure the script exits cleanly while reporting issues.
     """
 
-    def decorator(func: Callable[..., bool]) -> Callable[..., bool]:
-        def wrapper(*args: object, **kwargs: object) -> bool:
-            try:
-                return func(*args, **kwargs)
-            except Exception as e:  # noqa: BLE001
-                print(f"❌ Error during {func.__name__}: {e}")
-                return default_return
-        return wrapper
-
     return decorator
 
 

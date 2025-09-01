@@ -313,39 +313,6 @@ class BaselinePerformanceAnalyzer:
         self.logger.info("Baseline performance analysis complete")
         return baseline_metrics
 
-    def _export_baseline_report(self, metrics: Dict[str, Any], features: pd.DataFrame):
-        """Export baseline performance report.
-
-        Args:
-            metrics: Baseline performance metrics
-            features: Engineered features DataFrame
-        """
-        report = {
-            'baseline_analysis': {
-                'timestamp': pd.Timestamp.now().isoformat(),
-                'test_data_size': self.test_data_size,
-                'validation_split': self.validation_split,
-                'metrics': metrics,
-                'feature_statistics': {
-                    'total_features': len(features.columns),
-                    'feature_columns': list(features.columns),
-                    'data_shape': features.shape,
-                    'missing_values': features.isnull().sum().to_dict(),
-                    'data_types': features.dtypes.to_dict()
-                }
-            }
-        }
-
-        # Save report
-        output_file = Path("data/fractional_performance/baseline/baseline_report.json")
-        output_file.parent.mkdir(parents=True, exist_ok=True)
-
-        with open(output_file, 'w') as f:
-            import json
-            json.dump(report, f, indent=2, default=str)
-
-        self.logger.info(f"Baseline report exported to: {output_file}")
-
 
 def main():
     """Main function to run baseline performance analysis."""

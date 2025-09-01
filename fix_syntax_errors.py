@@ -9,22 +9,6 @@ import re
 from pathlib import Path
 
 
-def is_safe_to_fix(line: str) -> bool:
-    """Check if a line is safe to apply fixes to."""
-    # Skip lines that are clearly legitimate assignments
-    if re.match(r"^\s*[a-zA-Z_][a-zA-Z0-9_]*\s*=\s*[^=]", line):
-        return False
-
-    # Skip lines with legitimate comparisons
-    if re.search(r"\s==\s", line):
-        return False
-
-    # Skip lines with legitimate assignments in function calls
-    if re.search(r"\(\s*[a-zA-Z_][a-zA-Z0-9_]*\s*=\s*[^=]", line):
-        return False
-
-    return True
-
 
 def fix_import_statements(content: str) -> str:
     """Fix malformed import statements."""

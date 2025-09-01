@@ -23,17 +23,6 @@ class OptimizedTimeframeConfig:
     regime_specific: bool = True
     quality_thresholds: Dict[str, float] = None
 
-    def __post_init__(self):
-        if self.base_timeframes is None:
-            self.base_timeframes = ["1m", "5m", "15m", "30m", "1h"]
-        if self.quality_thresholds is None:
-            self.quality_thresholds = {
-                "min_correlation": 0.3,
-                "max_correlation": 0.8,
-                "min_information_score": 0.05,
-                "min_diversity_score": 0.2
-            }
-
 class EnhancedMultiTimeframeOptimizer:
     """
     Enhanced Multi-Timeframe Optimizer that uses optimized lookback periods
@@ -72,77 +61,6 @@ class EnhancedMultiTimeframeOptimizer:
 
         self.logger.info(f"✅ Extracted {len(optimized_periods)} optimized period sets")
         return optimized_periods
-
-    def _get_default_periods(self) -> Dict[str, List[int]]:
-        """Get default periods when no optimization results are available."""
-        return {
-            "RSI": [7, 14, 21],
-            "MACD_fast": [8, 12, 16],
-            "Bollinger_Bands": [10, 20, 30],
-            "SMA": [5, 20, 50],
-            "EMA": [5, 20, 50],
-            "ATR": [10, 20, 30],
-            "Stochastic": [5, 14, 21],
-            "ADX": [10, 20, 30],
-            "CCI": [10, 20, 30],
-            "Williams_R": [5, 14, 21],
-            "MFI": [10, 20, 30],
-            "ROC": [5, 10, 20],
-            "MOM": [5, 10, 20],
-            "TSI": [10, 20, 30],
-            "UO": [5, 10, 20],
-            "AO": [5, 10, 20],
-            "CMF": [10, 20, 30],
-            "VWAP": [5, 10, 20],
-            "VWAP_Momentum": [5, 10, 20],
-            "VWAP_Volatility": [5, 10, 20]
-        }
-
-    async def generate_optimized_multi_timeframe_features(
-        self,
-        data: pd.DataFrame,
-        target: pd.Series,
-        regime_labels: Optional[pd.Series] = None
-    ) -> Dict[str, Any]:
-        """
-        Generate multi-timeframe features using optimized lookback periods.
-
-        Args:
-            data: Price/volume data
-            target: Target variable for optimization
-            regime_labels: HMM regime labels if available
-
-        Returns:
-            Dictionary of optimized multi-timeframe features
-        """
-        try:
-            self.logger.info("🚀 Generating optimized multi-timeframe features...")
-
-            features = {}
-
-            # 1. Generate base timeframe features with optimized periods
-            base_features = await self._generate_base_timeframe_features(data, target)
-            features.update(base_features)
-
-            # 2. Generate cross-timeframe features with optimized periods
-            if self.config.cross_timeframe_enabled:
-                cross_features = await self._generate_optimized_cross_timeframe_features(data, target)
-                features.update(cross_features)
-
-            # 3. Generate regime-specific features if regimes are available
-            if regime_labels is not None and self.config.regime_specific:
-                regime_features = await self._generate_regime_specific_features(data, target, regime_labels)
-                features.update(regime_features)
-
-            # 4. Quality validation and filtering
-            features = await self._validate_and_filter_features(features, target)
-
-            self.logger.info(f"✅ Generated {len(features)} optimized multi-timeframe features")
-            return features
-
-        except Exception as e:
-            self.logger.error(f"❌ Error generating optimized multi-timeframe features: {e}")
-            return {}
 
     async def _generate_base_timeframe_features(
         self,
@@ -226,30 +144,6 @@ class EnhancedMultiTimeframeOptimizer:
                 continue
 
         return features
-
-    def _get_cross_timeframe_periods(self) -> List[Tuple[int, int]]:
-        """Get optimized period pairs for cross-timeframe analysis."""
-        cross_periods = []
-
-        # Extract unique periods from all optimized indicators
-        all_periods = set()
-        for periods in self.optimized_periods.values():
-            all_periods.update(periods)
-
-        # Sort periods and create pairs
-        sorted_periods = sorted(list(all_periods))
-
-        # Create diverse period pairs (avoid too similar periods)
-        for i, period1 in enumerate(sorted_periods):
-            for period2 in sorted_periods[i+1:]:
-                # Only include pairs with sufficient difference
-                if period2 >= period1 * 1.5:  # At least 50% difference
-                    cross_periods.append((period1, period2))
-
-        # Limit to top pairs based on diversity
-        cross_periods = self._select_diverse_period_pairs(cross_periods)
-
-        return cross_periods
 
     def _select_diverse_period_pairs(self, period_pairs: List[Tuple[int, int]], max_pairs: int = 20) -> List[Tuple[int, int]]:
         """Select diverse period pairs to avoid redundancy."""
@@ -458,24 +352,6 @@ class EnhancedMultiTimeframeOptimizer:
 
         return features
 
-    def _get_regime_specific_periods(self, regime: str) -> Dict[str, List[int]]:
-        """Get regime-specific optimized periods."""
-        regime_key = f"regime_{regime}"
-
-        # Check if we have regime-specific periods
-        regime_periods = {}
-        for key, periods in self.optimized_periods.items():
-            if key.startswith(regime_key):
-                # Extract indicator name from key
-                indicator_name = key.replace(f"{regime_key}_", "")
-                regime_periods[indicator_name] = periods
-
-        # If no regime-specific periods, use general periods
-        if not regime_periods:
-            return self.optimized_periods
-
-        return regime_periods
-
     async def _validate_and_filter_features(
         self,
         features: Dict[str, Any],
@@ -616,29 +492,3 @@ class EnhancedMultiTimeframeOptimizer:
         except Exception as e:
             self.logger.debug(f"⚠️ Failed to align {timeframe} series: {e}")
             return None
-
-    def save_optimization_results(self, output_path: str) -> None:
-        """Save optimization results to file."""
-        try:
-            results = {
-                "optimized_periods": self.optimized_periods,
-                "config": {
-                    "base_timeframes": self.config.base_timeframes,
-                    "cross_timeframe_enabled": self.config.cross_timeframe_enabled,
-                    "regime_specific": self.config.regime_specific,
-                    "quality_thresholds": self.config.quality_thresholds
-                },
-                "matrix_results_summary": {
-                    "total_features": len(self.optimized_periods),
-                    "total_periods": sum(len(periods) for periods in self.optimized_periods.values())
-                }
-            }
-
-            output_file = Path(output_path) / "enhanced_multi_timeframe_optimization_results.json"
-            with open(output_file, 'w') as f:
-                json.dump(results, f, indent=2, default=str)
-
-            self.logger.info(f"✅ Saved enhanced multi-timeframe optimization results to: {output_file}")
-
-        except Exception as e:
-            self.logger.error(f"❌ Failed to save optimization results: {e}")

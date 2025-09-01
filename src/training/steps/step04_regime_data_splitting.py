@@ -46,9 +46,6 @@ def create_fallback_logger():
     return logging.getLogger(__name__)
 
 def create_fallback_decorator():
-    def decorator(func):
-        return func
-    return decorator
 
 # Initialize fallbacks
 if system_logger is None:
@@ -116,16 +113,6 @@ class RegimeDataSplittingStep:
             self.logger.info("📝 Pipeline will continue with fallback implementations")
         else:
             self.logger.info("✅ All required dependencies available")
-
-    async def initialize(self) -> None:
-        """Initialize the regime data splitting step."""
-        self.start_time = time.time()
-        self.logger.info("🚀 Initializing Regime Data Splitting Step...")
-        self.logger.info("📋 Step 4 Configuration:")
-        self.logger.info(f"   - Unified dataset approach: Enabled")
-        self.logger.info(f"   - Regime labels: composite_cluster_id")
-        self.logger.info(f"   - Memory management: Optimized")
-        self.logger.info("✅ Regime Data Splitting Step initialized successfully")
 
     def _log_step_timing(self, step_name: str, start_time: float) -> None:
         """Log timing information for a step."""

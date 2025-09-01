@@ -50,64 +50,11 @@ class TrainingOrchestrator:
         default_return=False,
         context="training orchestrator initialization",
     )
-    async def initialize(self) -> bool:
-        """Initialize training orchestrator and all component managers.
-
-        Returns:
-            bool: True if initialization successful, False otherwise
-
-        """
-        try:
-            self.logger.info("Initializing Training Orchestrator...")
-
-            # Initialize component managers
-            await self._initialize_component_managers()
-
-            # Validate configuration
-            if not self._validate_configuration():
-                self.print(invalid("Invalid configuration for training orchestrator"))
-                return False
-
-            # Initialize validation framework
-            await self._initialize_validation_framework()
-
-            self.logger.info("✅ Training Orchestrator initialized successfully")
-            return True
-
-        except Exception as e:
-            self.logger.exception(
-                f"❌ Training Orchestrator initialization failed: {e}",
-            )
-            return False
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="validation framework initialization",
     )
-    async def _initialize_validation_framework(self) -> None:
-        """Initialize the validation framework components."""
-        try:
-            self.logger.info("Initializing validation framework...")
-
-            # Initialize step dependency validator
-            from src.utils.step_dependency_validator import StepDependencyValidator
-            self.step_dependency_validator = StepDependencyValidator()
-
-            # Initialize validator orchestrator
-            from src.utils.validator_orchestrator import validator_orchestrator
-            self.validator_orchestrator = validator_orchestrator
-
-            # Initialize base validator for common validation tasks
-            from src.utils.base_validator import BaseValidator
-            self.base_validator = BaseValidator("training_orchestrator", self.config)
-
-            self.logger.info("✅ Validation framework initialized successfully")
-
-        except Exception as e:
-            self.logger.exception(f"❌ Validation framework initialization failed: {e}")
-            raise
-
     async def validate_training_pipeline(
         self,
         pipeline_config: dict[str, Any],
@@ -389,41 +336,6 @@ class TrainingOrchestrator:
         default_return=None,
         context="component managers initialization",
     )
-    async def _initialize_component_managers(self) -> None:
-        """Initialize all component managers."""
-        try:
-            # Initialize model trainer
-            from src.training.model_trainer import ModelTrainer
-
-            self.model_trainer = ModelTrainer(self.config)
-            await self.model_trainer.initialize()
-
-            # Initialize optimization manager
-            from src.training.optimization_manager import OptimizationManager
-
-            self.optimization_manager = OptimizationManager(self.config)
-            await self.optimization_manager.initialize()
-
-            # Initialize ensemble manager
-            from src.training.ensemble_manager import EnsembleManager
-
-            self.ensemble_manager = EnsembleManager(self.config)
-            await self.ensemble_manager.initialize()
-
-            # Initialize calibration manager
-            from src.training.calibration_manager import CalibrationManager
-
-            self.calibration_manager = CalibrationManager(self.config)
-            await self.calibration_manager.initialize()
-
-            self.logger.info("✅ All component managers initialized")
-
-        except Exception as e:
-            error_msg = f"Failed to initialize component managers: {e}"
-            self.logger.exception(error_msg)
-            self.print(failed(error_msg))
-            raise
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=False,
@@ -679,27 +591,6 @@ class TrainingOrchestrator:
         default_return=None,
         context="training orchestrator cleanup",
     )
-    async def stop(self) -> None:
-        """Stop the training orchestrator and cleanup resources."""
-        try:
-            self.logger.info("🛑 Stopping Training Orchestrator...")
-
-            # Stop component managers
-            if self.model_trainer:
-                await self.model_trainer.stop()
-            if self.optimization_manager:
-                await self.optimization_manager.stop()
-            if self.ensemble_manager:
-                await self.ensemble_manager.stop()
-            if self.calibration_manager:
-                await self.calibration_manager.stop()
-
-            self.is_training = False
-            self.logger.info("✅ Training Orchestrator stopped successfully")
-
-        except Exception:
-            self.print(failed("❌ Failed to stop Training Orchestrator: {e}"))
-
 
 @handle_errors(
     exceptions=(Exception,),

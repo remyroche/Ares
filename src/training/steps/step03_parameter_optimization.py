@@ -51,39 +51,12 @@ class ParameterOptimizationStep:
         self._initialize_components()
 
     @secure_step_execution
-    def _initialize_components(self) -> None:
-        """Initialize parameter optimization components."""
-        self.logger.info("🔧 Initializing parameter optimization components...")
-        try:
-            # Initialize optimization components
-            self.logger.info("✅ Parameter optimization components initialized successfully")
-
-        except Exception as e:
-            self.logger.error(f"❌ Failed to initialize parameter optimization components: {e}")
-            raise
-
     @handle_errors(
         exceptions=(Exception,),
         default_return=False,
         context="parameter_optimization_initialization"
     )
     @secure_step_execution
-    async def initialize(self) -> bool:
-        """Initialize the parameter optimization step."""
-        try:
-            self.logger.info("🚀 Initializing parameter optimization step...")
-
-            # Load optimization configuration
-            optimization_config = self.config.get("parameter_optimization", {})
-            self.logger.info(f"📋 Optimization configuration loaded: {len(optimization_config)} parameters")
-
-            self.logger.info("✅ Parameter optimization step initialized successfully")
-            return True
-
-        except Exception as e:
-            self.logger.error(f"Failed to initialize parameter optimization step: {e}")
-            return False
-
     @monitor_step_execution
     @secure_step_execution
     @validate_pipeline_step
@@ -620,17 +593,6 @@ class ParameterOptimizationStep:
         context="parameter_optimization_cleanup"
     )
     @secure_step_execution
-    async def cleanup(self) -> bool:
-        """Clean up resources after optimization."""
-        try:
-            self.logger.info("🧹 Cleaning up parameter optimization resources...")
-            self.logger.info("✅ Parameter optimization cleanup completed")
-            return True
-
-        except Exception as e:
-            self.logger.error(f"Failed to cleanup parameter optimization: {e}")
-            return False
-
 
 @handle_errors(
     exceptions=(Exception,),

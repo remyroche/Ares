@@ -137,25 +137,3 @@ class TrainingConfig:
     cv_strategy: str = "time_series_split"
 
 
-def get_static_config() -> dict[str, Any]:
-    """Get the complete non-optimizable configuration."""
-    return {
-        "database": DatabaseConfig(),
-        "exchange": ExchangeConfig(),
-        "system": SystemConfig(),
-        "environment": EnvironmentConfig(),
-        "trading": TradingConfig(),
-        "training": TrainingConfig(),
-    }
-
-
-def get_config_section(section_name: str) -> dict[str, Any]:
-    """Get a specific configuration section."""
-    config = get_static_config()
-    section = config.get(section_name)
-    if section is None:
-        return {}
-
-    if hasattr(section, '__dict__'):
-        return section.__dict__
-    return section

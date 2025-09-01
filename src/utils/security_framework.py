@@ -119,30 +119,6 @@ class CredentialManager:
         self._save_credentials()
         self.logger.info(f"Stored credential for {service}:{key}")
 
-    def get_credential(self, service: str, key: str) -> Optional[str]:
-        """Retrieve a credential securely.
-
-        Args:
-            service: Service name
-            key: Credential key
-
-        Returns:
-            Credential value or None if not found
-        """
-        try:
-            if service in self.credentials and key in self.credentials[service]:
-                credential = self.credentials[service][key]
-                credential["last_accessed"] = datetime.now().isoformat()
-                self._save_credentials()
-
-                # Log access for audit
-                self.logger.info(f"Accessed credential for {service}:{key}")
-                return credential["value"]
-            return None
-        except Exception as e:
-            self.logger.error(f"Error accessing credential {service}:{key}: {e}")
-            return None
-
     def validate_credential(self, service: str, key: str, value: str) -> bool:
         """Validate a credential.
 
@@ -159,37 +135,6 @@ class CredentialManager:
             return False
 
         return hmac.compare_digest(stored_credential, value)
-
-    def rotate_credential(self, service: str, key: str, new_value: str) -> bool:
-        """Rotate a credential.
-
-        Args:
-            service: Service name
-            key: Credential key
-            new_value: New credential value
-
-        Returns:
-            True if rotation successful
-        """
-        try:
-            if service in self.credentials and key in self.credentials[service]:
-                old_credential = self.credentials[service][key]
-
-                # Store old credential in history
-                if "history" not in self.credentials[service]:
-                    self.credentials[service]["history"] = {}
-
-                self.credentials[service]["history"][f"{key}_rotated_{int(time.time())}"] = old_credential
-
-                # Update with new credential
-                self.store_credential(service, key, new_value, SecurityLevel(old_credential["security_level"]))
-
-                self.logger.info(f"Rotated credential for {service}:{key}")
-                return True
-            return False
-        except Exception as e:
-            self.logger.error(f"Error rotating credential {service}:{key}: {e}")
-            return False
 
 
 class DataEncryption:
@@ -261,69 +206,6 @@ class DataEncryption:
             self.logger.error(f"Error decrypting data: {e}")
             raise SecurityViolation(f"Decryption failed: {e}")
 
-    def encrypt_file(self, file_path: str, output_path: Optional[str] = None) -> str:
-        """Encrypt a file.
-
-        Args:
-            file_path: Path to file to encrypt
-            output_path: Output path for encrypted file
-
-        Returns:
-            Path to encrypted file
-        """
-        try:
-            if output_path is None:
-                output_path = f"{file_path}.enc"
-
-            with open(file_path, 'rb') as f:
-                data = f.read()
-
-            encrypted_data = self.encrypt_data(data)
-
-            with open(output_path, 'wb') as f:
-                f.write(encrypted_data)
-
-            self.logger.info(f"File encrypted: {file_path} -> {output_path}")
-            return output_path
-        except Exception as e:
-            self.logger.error(f"Error encrypting file {file_path}: {e}")
-            raise SecurityViolation(f"File encryption failed: {e}")
-
-    def decrypt_file(self, file_path: str, output_path: Optional[str] = None) -> str:
-        """Decrypt a file.
-
-        Args:
-            file_path: Path to encrypted file
-            output_path: Output path for decrypted file
-
-        Returns:
-            Path to decrypted file
-        """
-        try:
-            if output_path is None:
-                output_path = file_path.replace('.enc', '')
-
-            with open(file_path, 'rb') as f:
-                encrypted_data = f.read()
-
-            decrypted_data = self.decrypt_data(encrypted_data)
-
-            if isinstance(decrypted_data, str):
-                mode = 'w'
-                data = decrypted_data
-            else:
-                mode = 'wb'
-                data = decrypted_data.encode()
-
-            with open(output_path, mode) as f:
-                f.write(data)
-
-            self.logger.info(f"File decrypted: {file_path} -> {output_path}")
-            return output_path
-        except Exception as e:
-            self.logger.error(f"Error decrypting file {file_path}: {e}")
-            raise SecurityViolation(f"File decryption failed: {e}")
-
 
 class AccessControl:
     """Manages access control and authentication."""
@@ -338,30 +220,6 @@ class AccessControl:
             "viewer": ["read"],
             "api": ["read", "write"]
         }
-
-    def generate_access_token(self, user_id: str, permissions: List[str], expires_in: int = 3600) -> str:
-        """Generate an access token.
-
-        Args:
-            user_id: User identifier
-            permissions: List of permissions
-            expires_in: Token expiration time in seconds
-
-        Returns:
-            Access token
-        """
-        token = secrets.token_urlsafe(32)
-        expires_at = datetime.now() + timedelta(seconds=expires_in)
-
-        self.access_tokens[token] = {
-            "user_id": user_id,
-            "permissions": permissions,
-            "created_at": datetime.now().isoformat(),
-            "expires_at": expires_at.isoformat()
-        }
-
-        self.logger.info(f"Generated access token for user {user_id}")
-        return token
 
     def validate_access_token(self, token: str) -> Optional[Dict[str, Any]]:
         """Validate an access token.
@@ -399,21 +257,6 @@ class AccessControl:
             return False
 
         return required_permission in token_info["permissions"]
-
-    def revoke_token(self, token: str) -> bool:
-        """Revoke an access token.
-
-        Args:
-            token: Access token to revoke
-
-        Returns:
-            True if token was revoked
-        """
-        if token in self.access_tokens:
-            del self.access_tokens[token]
-            self.logger.info(f"Revoked access token")
-            return True
-        return False
 
 
 class AuditLogger:
@@ -477,14 +320,6 @@ class AuditLogger:
         else:
             self.audit_logger.info(log_message)
             self.logger.info(log_message)
-
-    def _get_client_ip(self) -> str:
-        """Get client IP address (placeholder for web applications)."""
-        return "unknown"
-
-    def _get_user_agent(self) -> str:
-        """Get user agent (placeholder for web applications)."""
-        return "unknown"
 
 
 class SecurityFramework:
@@ -553,96 +388,6 @@ class SecurityFramework:
         except Exception as e:
             self.logger.error(f"Security configuration validation failed: {e}")
             return False
-
-    def secure_api_call(self, service: str, endpoint: str, data: Dict[str, Any], security_level: SecurityLevel = SecurityLevel.HIGH) -> Dict[str, Any]:
-        """Make a secure API call.
-
-        Args:
-            service: Service name
-            endpoint: API endpoint
-            data: Request data
-            security_level: Security level
-
-        Returns:
-            API response
-        """
-        try:
-            # Get API credentials
-            api_key = self.credential_manager.get_credential(service, "api_key")
-            api_secret = self.credential_manager.get_credential(service, "api_secret")
-
-            if not api_key or not api_secret:
-                raise SecurityViolation(f"Missing credentials for service: {service}")
-
-            # Log API call
-            self.audit_logger.log_security_event(
-                "api_call",
-                "system",
-                f"API call to {service}:{endpoint}",
-                {"service": service, "endpoint": endpoint, "data_keys": list(data.keys())},
-                security_level
-            )
-
-            # Here you would implement the actual API call with proper security
-            # For now, return a mock response
-            return {"status": "success", "message": "Secure API call completed"}
-
-        except Exception as e:
-            self.logger.error(f"Secure API call failed: {e}")
-            raise SecurityViolation(f"API call failed: {e}")
-
-    def encrypt_sensitive_data(self, data: Dict[str, Any], fields_to_encrypt: List[str]) -> Dict[str, Any]:
-        """Encrypt sensitive data fields.
-
-        Args:
-            data: Data dictionary
-            fields_to_encrypt: List of field names to encrypt
-
-        Returns:
-            Data with encrypted fields
-        """
-        encrypted_data = data.copy()
-
-        for field in fields_to_encrypt:
-            if field in encrypted_data:
-                encrypted_data[field] = self.data_encryption.encrypt_data(str(encrypted_data[field]))
-
-        return encrypted_data
-
-    def decrypt_sensitive_data(self, data: Dict[str, Any], fields_to_decrypt: List[str]) -> Dict[str, Any]:
-        """Decrypt sensitive data fields.
-
-        Args:
-            data: Data dictionary
-            fields_to_decrypt: List of field names to decrypt
-
-        Returns:
-            Data with decrypted fields
-        """
-        decrypted_data = data.copy()
-
-        for field in fields_to_decrypt:
-            if field in decrypted_data:
-                decrypted_data[field] = self.data_encryption.decrypt_data(decrypted_data[field])
-
-        return decrypted_data
-
-    def get_security_report(self) -> Dict[str, Any]:
-        """Get comprehensive security report.
-
-        Returns:
-            Security report
-        """
-        report = {
-            "timestamp": datetime.now().isoformat(),
-            "security_configuration": self.security_policies,
-            "credential_count": len(self.credential_manager.credentials),
-            "active_tokens": len(self.access_control.access_tokens),
-            "audit_log_size": self.audit_logger.log_file.stat().st_size if self.audit_logger.log_file.exists() else 0,
-            "security_validation": self.validate_security_configuration()
-        }
-
-        return report
 
 
 # Global security framework instance

@@ -24,20 +24,12 @@ class DataProvider(Protocol[DataT]):
     """Protocol for data provider implementations."""
 
     @abstractmethod
-    async def get_data(self, symbol: Symbol, start: Timestamp, end: Timestamp) -> DataT:
-        """Get data for the specified symbol and time range."""
-        ...
-
     @abstractmethod
     async def get_latest_data(self, symbol: Symbol) -> DataT:
         """Get the latest data for the specified symbol."""
         ...
 
     @abstractmethod
-    def is_connected(self) -> bool:
-        """Check if the data provider is connected."""
-        ...
-
 
 @runtime_checkable
 class ModelPredictor(Protocol[T]):
@@ -54,10 +46,6 @@ class ModelPredictor(Protocol[T]):
         ...
 
     @abstractmethod
-    def get_feature_importance(self) -> dict[str , float]:
-        """Get feature importance scores."""
-        ...
-
     @abstractmethod
     def is_trained(self) -> bool:
         """Check if the model is trained and ready for prediction."""
@@ -69,25 +57,13 @@ class RiskManager(Protocol):
     """Protocol for risk management implementations."""
 
     @abstractmethod
-    async def assess_risk(self, trade_decision: TradeDecision) -> float:
-        """Assess risk for a trade decision."""
-        ...
-
     @abstractmethod
     async def validate_order(self, order: OrderRequest) -> bool:
         """Validate if an order meets risk requirements."""
         ...
 
     @abstractmethod
-    def get_risk_parameters(self) -> RiskParameters:
-        """Get current risk parameters."""
-        ...
-
     @abstractmethod
-    async def update_risk_parameters(self, params: RiskParameters) -> bool:
-        """Update risk parameters."""
-        ...
-
 
 @runtime_checkable
 class OrderExecutor(Protocol):
@@ -99,80 +75,32 @@ class OrderExecutor(Protocol):
         ...
 
     @abstractmethod
-    async def cancel_order(self, order_id: str) -> bool:
-        """Cancel an existing order."""
-        ...
-
     @abstractmethod
-    async def get_order_status(self, order_id: str) -> OrderInfo:
-        """Get status of an order."""
-        ...
-
     @abstractmethod
-    async def get_open_orders(self, symbol: Symbol | None = None) -> list[OrderInfo]:
-        """Get all open orders."""
-        ...
-
 
 @runtime_checkable
 class StateManager(Protocol[T]):
     """Protocol for state management implementations."""
 
     @abstractmethod
-    async def get_state(self, key: str) -> T | None:
-        """Get state value by key."""
-        ...
-
     @abstractmethod
-    async def set_state(self, key: str, value: T) -> bool:
-        """Set state value by key."""
-        ...
-
     @abstractmethod
-    async def delete_state(self, key: str) -> bool:
-        """Delete state by key."""
-        ...
-
     @abstractmethod
-    async def get_all_states(self) -> dict[str , T]:
-        """Get all states."""
-        ...
-
 
 @runtime_checkable
 class EventHandler(Protocol[T]):
     """Protocol for event handling implementations."""
 
     @abstractmethod
-    async def handle_event(self, event_type: str, data: T) -> None:
-        """Handle an event."""
-        ...
-
     @abstractmethod
-    async def subscribe(self, event_type: str) -> None:
-        """Subscribe to an event type."""
-        ...
-
     @abstractmethod
-    async def unsubscribe(self, event_type: str) -> None:
-        """Unsubscribe from an event type."""
-        ...
-
 
 @runtime_checkable
 class Configurable(Protocol[ConfigT]):
     """Protocol for configurable components."""
 
     @abstractmethod
-    def configure(self, config: ConfigT) -> None:
-        """Configure the component."""
-        ...
-
     @abstractmethod
-    def get_config(self) -> ConfigT:
-        """Get current configuration."""
-        ...
-
     @abstractmethod
     def validate_config(self, config: ConfigT) -> bool:
         """Validate configuration."""
@@ -184,20 +112,8 @@ class Monitorable(Protocol):
     """Protocol for monitorable components."""
 
     @abstractmethod
-    def get_health_status(self) -> dict[str , Any]:
-        """Get health status."""
-        ...
-
     @abstractmethod
-    def get_metrics(self) -> dict[str , float]:
-        """Get performance metrics."""
-        ...
-
     @abstractmethod
-    def get_status(self) -> str:
-        """Get current status."""
-        ...
-
 
 @runtime_checkable
 class Startable(Protocol):
@@ -209,10 +125,6 @@ class Startable(Protocol):
         ...
 
     @abstractmethod
-    async def stop(self) -> None:
-        """Stop the component."""
-        ...
-
     @abstractmethod
     def is_running(self) -> bool:
         """Check if component is running."""

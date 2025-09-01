@@ -155,26 +155,6 @@ class DemoComprehensivePipelineExecutor:
 
         return comprehensive_report
 
-    async def _initialize_quality_monitoring(self) -> None:
-        """Initialize quality monitoring components."""
-        print("🔧 Initializing quality monitoring components...")
-
-        # Reset execution state
-        self.execution_state.update({
-            "start_time": time.time(),
-            "current_step": None,
-            "completed_steps": [],
-            "failed_steps": [],
-            "overall_success": False,
-            "total_execution_time": 0.0,
-            "quality_scores": {},
-            "compatibility_scores": {},
-            "format_scores": {},
-            "index_scores": {}
-        })
-
-        print("✅ Quality monitoring components initialized")
-
     async def _execute_pipeline_with_monitoring(
         self,
         training_input: Dict[str, Any]

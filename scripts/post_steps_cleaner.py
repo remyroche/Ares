@@ -15,12 +15,6 @@ from pathlib import Path
 
 def fix_bracket_types(text: str) -> str:
     # Replace ' = ' with ', ' inside type brackets for dict/tuple/list annotations
-    def repl(m: re.Match[str]) -> str:
-        head = m.group(1)
-        inside = m.group(2)
-        fixed = inside.replace(" = ", ", ")
-        return f"{head}[{fixed}]"
-
     pattern = re.compile(r"\b(dict|tuple|list)\[([^\]]+)\]")
     return pattern.sub(repl, text)
 

@@ -273,43 +273,6 @@ class UnifiedRegimeClassifier:
                 return
 
             # Delegate to a module-level picklable ctor defined here to avoid closures
-            def _normalized_numpy_bitgen_ctor(
-                bit_generator_name, state=None, *args, **kwargs
-            ):  # type: ignore[override]
-                name_candidate = bit_generator_name
-                try:
-                    if hasattr(name_candidate, "__name__"):
-                        name_candidate = name_candidate.__name__
-                    elif isinstance(name_candidate, str) and name_candidate.startswith(
-                        "<class "
-                    ):
-                        name_candidate = name_candidate.split(".")[-1].split("'>")[0]
-                except Exception:
-                    pass
-                effective_state = kwargs.get("state", state)
-                try:
-                    return original_ctor(name_candidate, effective_state)
-                except (TypeError, ValueError):
-                    try:
-                        return original_ctor(name_candidate)
-                    except Exception as ctor_exc:  # noqa: BLE001
-                        try:
-                            import numpy as _np
-
-                            bitgen_cls = getattr(_np.random, name_candidate, None)
-                            if bitgen_cls is None and name_candidate == "MT19937":
-                                try:
-                                    import numpy.random._mt19937 as _mt  # type: ignore[attr-defined]
-
-                                    bitgen_cls = getattr(_mt, "MT19937", None)
-                                except Exception:
-                                    bitgen_cls = None
-                            if bitgen_cls is not None:
-                                return bitgen_cls()
-                        except Exception:
-                            pass
-                        raise ctor_exc
-
             np_random_pickle.__bit_generator_ctor = _normalized_numpy_bitgen_ctor  # type: ignore[attr-defined]
             UnifiedRegimeClassifier._enable_numpy_rng_unpickle_compat._patched = True
             if logger is not None:
@@ -326,31 +289,6 @@ class UnifiedRegimeClassifier:
         default_return=False,
         context="UnifiedRegimeClassifier.initialize",
     )
-    async def initialize(self) -> bool:
-        """
-        Initialize the UnifiedRegimeClassifier.
-
-        Returns:
-            bool: True if initialization successful, False otherwise
-        """
-        self.logger.info(
-            f"Initializing UnifiedRegimeClassifier for {self.exchange}_{self.symbol}",
-        )
-
-        # Create model directory if it doesn't exist
-        os.makedirs(self.model_dir, exist_ok=True)
-
-        # Try to load existing models
-        if self.load_models():
-            self.logger.info("✅ Loaded existing models successfully")
-            self.trained = True
-        else:
-            self.logger.info("ℹ️  No existing models found, will train new models")
-            self.trained = False
-
-        self.logger.info("✅ UnifiedRegimeClassifier initialized successfully")
-        return True
-
     async def _calculate_features(
         self,
         klines_df: pd.DataFrame,
@@ -2344,19 +2282,3 @@ class UnifiedRegimeClassifier:
         except Exception as e:
             self.logger.exception(f"❌ Error in regime classification: {e}")
             return {"error": str(e)}
-
-    def get_system_status(self) -> dict[str, Any]:
-        """Get system status and statistics."""
-        return {
-            "trained": self.trained,
-            "last_training_time": self.last_training_time.isoformat()
-            if self.last_training_time
-            else None,
-            "hmm_model_loaded": self.hmm_model is not None,
-            "basic_ensemble_loaded": self.basic_ensemble is not None,
-            "location_classifier_loaded": self.location_classifier is not None,
-            # Legacy S/R code removed
-            "n_states": self.n_states,
-            "target_timeframe": self.target_timeframe,
-            "state_to_regime_map": self.state_to_regime_map,
-        }

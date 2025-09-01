@@ -51,67 +51,6 @@ class FeatureOutputValidator:
         self.config = config or self._get_default_config()
         self.issues: list[OutputValidationIssue] = []
 
-    def _get_default_config(self) -> dict[str, Any]:
-        """Get default output validation configuration."""
-        return {
-            # Critical thresholds that indicate corrupted output - made more lenient for financial data
-            "critical_thresholds": {
-                "max_nan_percentage": 0.3,
-                "max_infinite_percentage": 0.05,
-                "max_zero_variance_percentage": 0.7,
-                "max_constant_percentage": 0.9,
-                "max_extreme_values_percentage": 0.1,
-                "min_feature_count": 1,
-                "max_feature_count": 10000,
-            },
-            # Warning thresholds - made more lenient for financial data
-            "warning_thresholds": {
-                "max_nan_percentage": 0.15,
-                "max_infinite_percentage": 0.01,
-                "max_zero_variance_percentage": 0.5,
-                "max_constant_percentage": 0.8,
-                "max_extreme_values_percentage": 0.05,
-                "max_correlation_threshold": 0.99,
-                "max_duplicate_features_percentage": 0.1,
-            },
-            # Feature type specific thresholds - made more lenient for financial data
-            "feature_type_thresholds": {
-                "wavelet_features": {
-                    "max_nan_percentage": 0.4,
-                    "max_infinite_percentage": 0.1,
-                    "description": "Wavelet features naturally have edge effects",
-                },
-                "microstructure_features": {
-                    "max_nan_percentage": 0.2,
-                    "max_infinite_percentage": 0.05,
-                    "description": "Microstructure features should be mostly complete",
-                },
-                "technical_indicators": {
-                    "max_nan_percentage": 0.1,
-                    "max_infinite_percentage": 0.01,
-                    "description": "Technical indicators should be reliable",
-                },
-                "price_features": {
-                    "max_nan_percentage": 0.01,
-                    "max_infinite_percentage": 0.001,
-                    "description": "Price-based features should be nearly complete",
-                },
-            },
-            # Validation checks
-            "validation_checks": {
-                "check_nan_values": True,
-                "check_infinite_values": True,
-                "check_zero_variance": True,
-                "check_constant_values": True,
-                "check_extreme_values": True,
-                "check_data_types": True,
-                "check_feature_correlations": True,
-                "check_duplicate_features": True,
-                "check_feature_names": True,
-                "check_output_structure": True,
-            },
-        }
-
     def validate_feature_output(
         self,
         features: dict[str, Any] | pd.DataFrame,
@@ -688,27 +627,6 @@ class FeatureOutputValidator:
         }
 
         return True
-
-    def _get_method_specific_thresholds(self, method_name: str) -> dict[str, float]:
-        """Get method-specific validation thresholds."""
-        method_lower = method_name.lower()
-
-        # Special handling for engineer_features method - use more lenient thresholds
-        if "engineer_features" in method_lower:
-            return {
-                "max_nan_percentage": 0.4,
-                "max_infinite_percentage": 0.1,
-                "max_zero_variance_percentage": 0.8,
-                "max_constant_percentage": 0.95,
-                "max_extreme_values_percentage": 0.15,
-                "description": "Complex financial feature engineering can produce varied outputs",
-            }
-
-        for feature_type, thresholds in self.config["feature_type_thresholds"].items():
-            if feature_type in method_lower:
-                return thresholds
-
-        return {}
 
     def _validate_feature_values(
         self, features_df: pd.DataFrame, method_name: str, results: dict[str, Any],

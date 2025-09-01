@@ -47,43 +47,6 @@ class LiveWaveletIntegration:
         default_return=False,
         context="live wavelet integration initialization",
     )
-    async def initialize(self) -> bool:
-        """Initialize the live wavelet integration."""
-        try:
-            if not self.is_enabled:
-                self.logger.info("Live wavelet integration disabled")
-                return True
-
-            self.logger.info("🚀 Initializing Live Wavelet Integration...")
-
-            # Initialize wavelet analyzer
-            wavelet_config = self.config.get("live_wavelet_analyzer", {})
-            self.wavelet_analyzer = LiveWaveletAnalyzer(wavelet_config)
-
-            success = await self.wavelet_analyzer.initialize()
-            if not success:
-                self.logger.error("Failed to initialize wavelet analyzer")
-                return False
-
-            self.logger.info("✅ Live Wavelet Integration initialized successfully")
-            return True
-
-        except (ImportError, ModuleNotFoundError) as e:
-            self.logger.exception(
-                f"❌ Error initializing Live Wavelet Integration - Missing dependencies: {e}",
-            )
-            return False
-        except (ValueError, AttributeError) as e:
-            self.logger.exception(
-                f"❌ Error initializing Live Wavelet Integration - Configuration error: {e}",
-            )
-            return False
-        except Exception as e:
-            self.logger.exception(
-                f"❌ Error initializing Live Wavelet Integration - Unexpected error: {e}",
-            )
-            return False
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
@@ -328,88 +291,11 @@ class LiveWaveletIntegration:
         except Exception as e:
             self.logger.error(f"Error updating performance stats: {e}")
 
-    def get_performance_stats(self) -> dict[str, Any]:
-        """Get performance statistics."""
-        try:
-            stats = {
-                "wavelet_enabled": self.is_enabled,
-                "signal_history_count": len(self.signal_history),
-                "performance_stats": self.performance_stats,
-            }
-
-            if self.signal_history:
-                recent_signals = self.signal_history[-100:]
-                signal_types = [s["signal_type"] for s in recent_signals]
-                confidences = [s["confidence"] for s in recent_signals]
-                computation_times = [s["computation_time"] for s in recent_signals]
-
-                stats.update(
-                    {
-                        "recent_signals": {
-                            "buy_count": signal_types.count("buy"),
-                            "sell_count": signal_types.count("sell"),
-                            "hold_count": signal_types.count("hold"),
-                            "avg_confidence": np.mean(confidences)
-                            if confidences
-                            else 0.0,
-                            "avg_computation_time": np.mean(computation_times)
-                            if computation_times
-                            else 0.0,
-                        },
-                    },
-                )
-
-            return stats
-
-        except Exception as e:
-            self.logger.error(f"Error getting performance stats: {e}")
-            return {}
-
     def get_latest_signal(self) -> WaveletSignal | None:
         """Get the latest wavelet signal."""
         if self.wavelet_analyzer:
             return self.wavelet_analyzer.get_latest_signal()
         return None
-
-    def is_healthy(self) -> bool:
-        """Check if the wavelet integration is healthy."""
-        try:
-            if not self.is_enabled:
-                return True
-
-            if not self.wavelet_analyzer:
-                return False
-
-            # Check performance stats
-            stats = self.performance_stats
-            if not stats:
-                return True
-
-            # Check if computation times are reasonable
-            avg_time = stats.get("avg_computation_time", 0)
-            if avg_time > 0.2:  # 200ms threshold
-                return False
-
-            # Check if we're generating signals
-            signal_rate = stats.get("signal_rate", 0)
-            if signal_rate < 0.01:  # At least 1% signal rate
-                return False
-
-            return True
-
-        except Exception as e:
-            self.logger.error(f"Error checking health: {e}")
-            return False
-
-    def disable(self) -> None:
-        """Disable wavelet integration."""
-        self.is_enabled = False
-        self.logger.info("Live wavelet integration disabled")
-
-    def enable(self) -> None:
-        """Enable wavelet integration."""
-        self.is_enabled = True
-        self.logger.info("Live wavelet integration enabled")
 
     def clear_history(self) -> None:
         """Clear signal history."""

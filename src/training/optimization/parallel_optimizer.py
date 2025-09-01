@@ -109,20 +109,6 @@ class ParallelParameterOptimizer:
                 f"Optimizing {len(confidence_params)} confidence parameters",
             )
 
-            def confidence_objective(trial):
-                # Suggest confidence parameters
-                params = {}
-                for param in confidence_params:
-                    if "threshold" in param.lower():
-                        params[param] = trial.suggest_float(param, 0.1, 0.9)
-                    elif "multiplier" in param.lower():
-                        params[param] = trial.suggest_float(param, 0.1, 2.0)
-                    else:
-                        params[param] = trial.suggest_float(param, 0.0, 1.0)
-
-                # Simulate performance (replace with actual evaluation)
-                return self._evaluate_confidence_parameters(params)
-
             # Create study
             study = optuna.create_study(direction="maximize")
             study.optimize(confidence_objective, n_trials=50)
@@ -149,22 +135,6 @@ class ParallelParameterOptimizer:
         """Optimize position sizing parameters."""
         try:
             self.logger.info(f"Optimizing {len(sizing_params)} sizing parameters")
-
-            def sizing_objective(trial):
-                # Suggest sizing parameters
-                params = {}
-                for param in sizing_params:
-                    if "size" in param.lower():
-                        params[param] = trial.suggest_float(param, 0.01, 0.5)
-                    elif "leverage" in param.lower():
-                        params[param] = trial.suggest_float(param, 1.0, 100.0)
-                    elif "kelly" in param.lower():
-                        params[param] = trial.suggest_float(param, 0.1, 1.0)
-                    else:
-                        params[param] = trial.suggest_float(param, 0.0, 1.0)
-
-                # Simulate performance
-                return self._evaluate_sizing_parameters(params)
 
             # Create study
             study = optuna.create_study(direction="maximize")
@@ -193,22 +163,6 @@ class ParallelParameterOptimizer:
         try:
             self.logger.info(f"Optimizing {len(risk_params)} risk parameters")
 
-            def risk_objective(trial):
-                # Suggest risk parameters
-                params = {}
-                for param in risk_params:
-                    if "stop_loss" in param.lower():
-                        params[param] = trial.suggest_float(param, 0.5, 5.0)
-                    elif "drawdown" in param.lower():
-                        params[param] = trial.suggest_float(param, 0.1, 0.5)
-                    elif "var" in param.lower():
-                        params[param] = trial.suggest_float(param, 0.01, 0.1)
-                    else:
-                        params[param] = trial.suggest_float(param, 0.0, 1.0)
-
-                # Simulate performance
-                return self._evaluate_risk_parameters(params)
-
             # Create study
             study = optuna.create_study(direction="maximize")
             study.optimize(risk_objective, n_trials=50)
@@ -228,57 +182,6 @@ class ParallelParameterOptimizer:
         default_return=None,
         context="parallel optimization execution",
     )
-    async def optimize_parameters_parallel(
-        self,
-        all_parameters: dict[str, Any],
-    ) -> dict[str, Any] | None:
-        """Optimize parameters in parallel."""
-        try:
-            # Group parameters by optimization type
-            parameter_groups = self.group_parameters_by_optimization_type(
-                all_parameters,
-            )
-
-            if not parameter_groups:
-                self.print(warning("No parameters to optimize"))
-                return None
-
-            # Create optimization tasks
-            tasks = []
-
-            if "confidence_parameters" in parameter_groups:
-                tasks.append(
-                    self.optimize_confidence_parameters(
-                        parameter_groups["confidence_parameters"],
-                    ),
-                )
-
-            if "sizing_parameters" in parameter_groups:
-                tasks.append(
-                    self.optimize_sizing_parameters(
-                        parameter_groups["sizing_parameters"],
-                    ),
-                )
-
-            if "risk_parameters" in parameter_groups:
-                tasks.append(
-                    self.optimize_risk_parameters(parameter_groups["risk_parameters"]),
-                )
-
-            # Run optimizations in parallel
-            self.logger.info(f"Starting parallel optimization with {len(tasks)} tasks")
-            results = await asyncio.gather(*tasks, return_exceptions=True)
-
-            # Process results
-            combined_results = self.combine_optimization_results(results)
-
-            self.logger.info("Parallel optimization completed successfully")
-            return combined_results
-
-        except Exception:
-            self.print(error("Error in parallel optimization: {e}"))
-            return None
-
     @handle_errors(
         exceptions=(Exception,),
         default_return={},
@@ -408,14 +311,3 @@ class ParallelParameterOptimizer:
         except Exception:
             self.print(warning("Error evaluating risk parameters: {e}"))
             return 0.0
-
-    def get_parallel_statistics(self) -> dict[str, Any]:
-        """Get parallel optimization statistics."""
-        return {
-            "max_workers": self.parallel_config.max_workers,
-            "use_process_pool": self.parallel_config.use_process_pool,
-            "use_thread_pool": self.parallel_config.use_thread_pool,
-            "chunk_size": self.parallel_config.chunk_size,
-            "timeout_seconds": self.parallel_config.timeout_seconds,
-            "enable_async": self.parallel_config.enable_async,
-        }

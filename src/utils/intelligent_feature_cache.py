@@ -120,36 +120,6 @@ class IntelligentFeatureCache:
             return f"<async_function_{getattr(obj, '__name__', 'unknown')}>"
         return obj
 
-    def _get_cache_file_path(self, cache_key: str) -> Path:
-        """
-        Get the file path for a cache key.
-
-        Args:
-            cache_key: Cache key
-
-        Returns:
-            Cache file path
-        """
-        suffix = ".pkl.gz" if self.enable_compression else ".pkl"
-        return self.cache_dir / f"{cache_key}{suffix}"
-
-    def _get_memory_usage_mb(self) -> float:
-        """
-        Get current memory usage in MB.
-
-        Returns:
-            Memory usage in MB
-        """
-        total_memory = 0
-        for value in self.memory_cache.values():
-            if isinstance(value, pd.DataFrame):
-                total_memory += int(value.memory_usage(deep=True).sum())
-            elif isinstance(value, np.ndarray):
-                total_memory += int(value.nbytes)
-            else:
-                total_memory += len(pickle.dumps(value))
-        return total_memory / (1024 * 1024)
-
     def _evict_least_used(self, target_memory_mb: float) -> None:
         """
         Evict least recently used items from memory cache.
@@ -333,32 +303,6 @@ class IntelligentFeatureCache:
 
         logger.info("🧹 Cleared all caches")
 
-    def get_stats(self) -> dict:
-        """
-        Get cache statistics.
-
-        Returns:
-            Dictionary with cache statistics
-        """
-        memory_usage = self._get_memory_usage_mb()
-        disk_usage = sum(
-            f.stat().st_size for f in self.cache_dir.glob("*.pkl*")
-        ) / (1024 * 1024)
-
-        total_requests = self.hit_count + self.miss_count
-        hit_rate = self.hit_count / total_requests if total_requests > 0 else 0.0
-
-        return {
-            "memory_usage_mb": memory_usage,
-            "disk_usage_mb": disk_usage,
-            "memory_cache_size": len(self.memory_cache),
-            "hit_count": self.hit_count,
-            "miss_count": self.miss_count,
-            "hit_rate": hit_rate,
-            "eviction_count": self.eviction_count,
-            "total_requests": total_requests,
-        }
-
     def log_stats(self) -> None:
         """Log current cache statistics."""
         stats = self.get_stats()
@@ -374,107 +318,5 @@ class IntelligentFeatureCache:
 _feature_cache: IntelligentFeatureCache | None = None
 
 
-def get_feature_cache() -> IntelligentFeatureCache:
-    """
-    Get the global feature cache instance.
-
-    Returns:
-        Global feature cache instance
-    """
-    global _feature_cache
-    if _feature_cache is None:
-        # Fallback implementation for _feature_cache
-        _feature_cache = IntelligentFeatureCache()
-    return _feature_cache
 
 
-def cache_feature_engineering(max_memory_mb: int = 2048):
-    """
-    Decorator for caching feature engineering functions.
-    Supports both sync and async functions.
-
-    Args:
-        max_memory_mb: Maximum memory usage for cache
-
-    Returns:
-        Decorator function
-    """
-
-    def decorator(func: Any):
-        # Check if function is async
-        is_async = asyncio.iscoroutinefunction(func)
-
-        if is_async:
-            @wraps(func)
-            async def async_wrapper(*args: Any, **kwargs: Any):
-                cache = get_feature_cache()
-                cache.max_memory_mb = max_memory_mb
-
-                # Generate cache key
-                cache_key = cache._generate_cache_key(func.__name__, args, kwargs)
-
-                # Try to get from cache
-                cached_result = cache.get(cache_key)
-                if cached_result is not None:
-                    logger.info(f"⚡ Cache HIT for {func.__name__}")
-                    return cached_result
-
-                # Compute result
-                logger.info(f"🔄 Computing {func.__name__} (cache miss)")
-                result = await func(*args, **kwargs)
-
-                # Cache the result
-                metadata = {
-                    "function": func.__name__,
-                    "args_count": len(args),
-                    "kwargs_count": len(kwargs),
-                }
-                cache.set(cache_key, result, metadata)
-
-                return result
-
-            return async_wrapper
-
-        @wraps(func)
-        def sync_wrapper(*args: Any, **kwargs: Any):
-            cache = get_feature_cache()
-            cache.max_memory_mb = max_memory_mb
-
-            # Generate cache key
-            cache_key = cache._generate_cache_key(func.__name__, args, kwargs)
-
-            # Try to get from cache
-            cached_result = cache.get(cache_key)
-            if cached_result is not None:
-                logger.info(f"⚡ Cache HIT for {func.__name__}")
-                return cached_result
-
-            # Compute result
-            logger.info(f"🔄 Computing {func.__name__} (cache miss)")
-            result = func(*args, **kwargs)
-
-            # Cache the result
-            metadata = {
-                "function": func.__name__,
-                "args_count": len(args),
-                "kwargs_count": len(kwargs),
-            }
-            cache.set(cache_key, result, metadata)
-
-            return result
-
-        return sync_wrapper
-
-    return decorator
-
-
-def clear_feature_cache() -> None:
-    """Clear the global feature cache."""
-    cache = get_feature_cache()
-    cache.clear()
-
-
-def log_feature_cache_stats() -> None:
-    """Log statistics for the global feature cache."""
-    cache = get_feature_cache()
-    cache.log_stats()

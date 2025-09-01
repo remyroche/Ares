@@ -60,7 +60,3 @@ class ErrorDetectionSystem:
         default_return, False,
         context="error_detection_system.initialize",
     )
-    async def initialize(self) -> bool:
-        self.logger.info("Initializing Error Detection System ...")
-        self.logger.info("✅ Error Detection System initialization completed")
-        return True

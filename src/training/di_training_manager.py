@@ -68,28 +68,6 @@ class DITrainingManager(InjectableBase):
         self.is_training = False
         self.training_history: list[dict[str, Any]] = []
 
-    async def initialize(self) -> bool:
-        """Initialize the training manager with dependency injection."""
-        if not await super().initialize():
-            return False
-
-        try:
-            # Create training pipeline and steps using DI
-            await self._initialize_training_components()
-
-            # Validate training configuration
-            if not self._validate_training_configuration():
-                return False
-
-            self.logger.info("Training manager initialized successfully")
-            return True
-
-        except Exception as e:
-            error_msg = f"Failed to initialize training manager: {e}"
-            self.logger.exception(error_msg)
-            self.print(failed(error_msg))
-            return False
-
     async def _initialize_training_components(self) -> None:
         """Initialize training components using dependency injection."""
         try:

@@ -43,67 +43,6 @@ def validate_file_operation(
         validate_output: Whether to validate output files
         log_level: Logging level for validation messages
     """
-    def decorator(func: Callable) -> Callable:
-        @functools.wraps(func)
-        async def async_wrapper(*args, **kwargs):
-            logger = system_logger.getChild(f"ValidationDecorator.{step_name}")
-
-            # Validate input files
-            if validate_input:
-                input_files = _extract_file_paths_from_args(args, kwargs, "input")
-                for file_path in input_files:
-                    if file_path and os.path.exists(file_path):
-                        await _validate_file_operation(
-                            file_path, step_name, expected_schema, "input", logger, log_level
-                        )
-
-            # Execute the function
-            result = await func(*args, **kwargs)
-
-            # Validate output files
-            if validate_output:
-                output_files = _extract_file_paths_from_result(result, "output")
-                for file_path in output_files:
-                    if file_path and os.path.exists(file_path):
-                        await _validate_file_operation(
-                            file_path, step_name, expected_schema, "output", logger, log_level
-                        )
-
-            return result
-
-        @functools.wraps(func)
-        def sync_wrapper(*args, **kwargs):
-            logger = system_logger.getChild(f"ValidationDecorator.{step_name}")
-
-            # Validate input files
-            if validate_input:
-                input_files = _extract_file_paths_from_args(args, kwargs, "input")
-                for file_path in input_files:
-                    if file_path and os.path.exists(file_path):
-                        _validate_file_operation_sync(
-                            file_path, step_name, expected_schema, "input", logger, log_level
-                        )
-
-            # Execute the function
-            result = func(*args, **kwargs)
-
-            # Validate output files
-            if validate_output:
-                output_files = _extract_file_paths_from_result(result, "output")
-                for file_path in output_files:
-                    if file_path and os.path.exists(file_path):
-                        _validate_file_operation_sync(
-                            file_path, step_name, expected_schema, "output", logger, log_level
-                        )
-
-            return result
-
-        # Return appropriate wrapper based on function type
-        if inspect.iscoroutinefunction(func):
-            return async_wrapper
-        else:
-            return sync_wrapper
-
     return decorator
 
 
@@ -122,75 +61,6 @@ def validate_dataframe_operation(
         validate_after: Whether to validate after operation
         log_level: Logging level for validation messages
     """
-    def decorator(func: Callable) -> Callable:
-        @functools.wraps(func)
-        async def async_wrapper(*args, **kwargs):
-            logger = system_logger.getChild(f"DataFrameValidation.{step_name}")
-
-            # Validate input DataFrames
-            if validate_before:
-                dataframes = _extract_dataframes_from_args(args, kwargs)
-                for i, df in enumerate(dataframes):
-                    if df is not None:
-                        await _validate_dataframe_operation(
-                            df, step_name, f"input_{i}", logger, log_level
-                        )
-
-            # Execute the function
-            result = await func(*args, **kwargs)
-
-            # Validate output DataFrames
-            if validate_after:
-                if isinstance(result, dict):
-                    for key, value in result.items():
-                        if hasattr(value, 'shape'):  # Likely a DataFrame
-                            await _validate_dataframe_operation(
-                                value, step_name, f"output_{key}", logger, log_level
-                            )
-                elif hasattr(result, 'shape'):  # Single DataFrame result
-                    await _validate_dataframe_operation(
-                        result, step_name, "output", logger, log_level
-                    )
-
-            return result
-
-        @functools.wraps(func)
-        def sync_wrapper(*args, **kwargs):
-            logger = system_logger.getChild(f"DataFrameValidation.{step_name}")
-
-            # Validate input DataFrames
-            if validate_before:
-                dataframes = _extract_dataframes_from_args(args, kwargs)
-                for i, df in enumerate(dataframes):
-                    if df is not None:
-                        _validate_dataframe_operation_sync(
-                            df, step_name, f"input_{i}", logger, log_level
-                        )
-
-            # Execute the function
-            result = func(*args, **kwargs)
-
-            # Validate output DataFrames
-            if validate_after:
-                if isinstance(result, dict):
-                    for key, value in result.items():
-                        if hasattr(value, 'shape'):  # Likely a DataFrame
-                            _validate_dataframe_operation_sync(
-                                value, step_name, f"output_{key}", logger, log_level
-                            )
-                elif hasattr(result, 'shape'):  # Single DataFrame result
-                    _validate_dataframe_operation_sync(
-                        result, step_name, "output", logger, log_level
-                    )
-
-            return result
-
-        # Return appropriate wrapper based on function type
-        if inspect.iscoroutinefunction(func):
-            return async_wrapper
-        else:
-            return sync_wrapper
-
     return decorator
 
 
@@ -209,45 +79,6 @@ def validate_step_operation(
         validate_dataframes: Whether to validate DataFrame operations
         log_level: Logging level for validation messages
     """
-    def decorator(func: Callable) -> Callable:
-        @functools.wraps(func)
-        async def async_wrapper(*args, **kwargs):
-            logger = system_logger.getChild(f"StepValidation.{step_name}")
-
-            # Execute the function
-            result = await func(*args, **kwargs)
-
-            # Post-execution validation
-            if validate_files:
-                await _validate_step_files(step_name, result, logger, log_level)
-
-            if validate_dataframes:
-                await _validate_step_dataframes(step_name, result, logger, log_level)
-
-            return result
-
-        @functools.wraps(func)
-        def sync_wrapper(*args, **kwargs):
-            logger = system_logger.getChild(f"StepValidation.{step_name}")
-
-            # Execute the function
-            result = func(*args, **kwargs)
-
-            # Post-execution validation
-            if validate_files:
-                _validate_step_files_sync(step_name, result, logger, log_level)
-
-            if validate_dataframes:
-                _validate_step_dataframes_sync(step_name, result, logger, log_level)
-
-            return result
-
-        # Return appropriate wrapper based on function type
-        if inspect.iscoroutinefunction(func):
-            return async_wrapper
-        else:
-            return sync_wrapper
-
     return decorator
 
 

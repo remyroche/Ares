@@ -267,71 +267,15 @@ def format_info_message(
 
 
 # Convenience functions for common warning types
-def warning(message: str) -> str:
-    """Format a warning message."""
-    return format_warning_message(message)
 
 
-def error(message: str) -> str:
-    """Format an error message."""
-    return format_error_message(message)
 
 
-def critical(message: str) -> str:
-    """Format a critical error message."""
-    return format_critical_message(message)
 
 
-def failed(message: str) -> str:
-    """Format a failure message."""
-    return format_problem_message(message)
 
 
-def success(message: str) -> str:
-    """Format a success message."""
-    return format_success_message(message)
 
 
-def info(message: str) -> str:
-    """Format an info message."""
-    return format_info_message(message)
 
 
-def initialization_error(message: str) -> str:
-    """Format an initialization error message."""
-    return format_error_message(message)
-
-
-def invalid(message: str) -> str:
-    """Format an invalid input message."""
-    return format_problem_message(message)
-
-
-def missing(message: str) -> str:
-    """Format a missing data message."""
-    return format_warning_message(message)
-
-
-def problem(message: str) -> str:
-    """Format a problem message."""
-    return format_problem_message(message)
-
-
-def timeout(message: str) -> str:
-    """Format a timeout message."""
-    return format_error_message(message)
-
-
-def connection_error(message: str) -> str:
-    """Format a connection error message."""
-    return format_error_message(message)
-
-
-def validation_error(message: str) -> str:
-    """Format a validation error message."""
-    return format_error_message(message)
-
-
-def execution_error(message: str) -> str:
-    """Format an execution error message."""
-    return format_error_message(message)

@@ -187,20 +187,6 @@ def fix_complex_assignment_statements(content: str) -> str:
     return "\n".join(fixed_lines)
 
 
-def fix_complex_list_comprehensions(content: str) -> str:
-    """Fix complex list comprehension syntax errors."""
-    lines = content.split("\n")
-    fixed_lines = []
-
-    for line in lines:
-        # Fix: for file_name = gap_count in analysis["top_files"]
-        if re.search(r"for\s+[a-zA-Z_][a-zA-Z0-9_]*\s*=\s*[a-zA-Z_][a-zA-Z0-9_]*\s+in\s+", line):
-            line = re.sub(r"for\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*=\s*([a-zA-Z_][a-zA-Z0-9_]*)\s+in\s+", r"for \1, \2 in ", line)
-
-        fixed_lines.append(line)
-
-    return "\n".join(fixed_lines)
-
 
 def fix_complex_constructor_calls(content: str) -> str:
     """Fix complex constructor call syntax errors."""

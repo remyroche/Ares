@@ -131,26 +131,6 @@ class ModelTrainingIntegrator:
         default_return=False,
         context="model training integrator initialization",
     )
-    async def initialize(self) -> bool:
-        """Initialize Model Training Integrator."""
-        try:
-            self.logger.info("Initializing Model Training Integrator...")
-
-            # Initialize data optimizer
-            self.data_optimizer = get_data_optimizer()
-
-            # Load existing models if available
-            await self._load_existing_models()
-
-            self.logger.info("✅ Model Training Integrator initialized successfully")
-            return True
-
-        except Exception as e:
-            error_msg = f"Error initializing Model Training Integrator: {e}"
-            self.logger.exception(error_msg)
-            self.print(initialization_error(error_msg))
-            return False
-
     async def _load_existing_models(self) -> None:
         """Load existing trained models."""
         try:
@@ -638,25 +618,6 @@ class ModelTrainingIntegrator:
         default_return=None,
         context="model training integrator cleanup",
     )
-    async def stop(self) -> None:
-        """Stop Model Training Integrator."""
-        try:
-            self.logger.info("Stopping Model Training Integrator...")
-
-            # Save final training statistics
-            stats = self.get_training_stats()
-            stats_path = os.path.join(self.models_path, "training_stats.json")
-
-            with open(stats_path, "w") as f:
-                json.dump(stats, f, indent=2, default=str)
-
-            self.logger.info("✅ Model Training Integrator stopped successfully")
-
-        except Exception as e:
-            error_msg = f"Error stopping Model Training Integrator: {e}"
-            self.logger.exception(error_msg)
-            self.print(error(error_msg))
-
 
 # Global model training integrator instance
 model_training_integrator: ModelTrainingIntegrator | None = None

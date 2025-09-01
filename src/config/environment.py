@@ -117,55 +117,12 @@ class EnvironmentSettings(BaseSettings):
 
     # --- Derived Properties ---
     @property
-    def is_live_mode(self) -> bool:
-        """Check if running in live mode."""
-        return self.trading_environment == "LIVE"
-
     @property
     def is_testnet_mode(self) -> bool:
         """Check if running in testnet mode."""
         return self.trading_environment == "TESTNET"
 
     @property
-    def is_paper_mode(self) -> bool:
-        """Check if running in paper mode."""
-        return self.trading_environment == "PAPER"
-
-    def get_exchange_credentials(self, exchange_name: str) -> dict[str, str | None]:
-        """Get credentials for a specific exchange.
-
-        Args:
-            exchange_name: Name of the exchange
-
-        Returns:
-            dict: Exchange credentials
-
-        """
-        exchange_name_lower = exchange_name.lower()
-
-        if exchange_name_lower == "binance":
-            return {
-                "api_key": self.binance_api_key,
-                "api_secret": self.binance_api_secret,
-            }
-        if exchange_name_lower == "gateio":
-            return {
-                "api_key": self.gateio_api_key,
-                "api_secret": self.gateio_api_secret,
-            }
-        if exchange_name_lower == "mexc":
-            return {
-                "api_key": self.mexc_api_key,
-                "api_secret": self.mexc_api_secret,
-            }
-        if exchange_name_lower == "okx":
-            return {
-                "api_key": self.okx_api_key,
-                "api_secret": self.okx_api_secret,
-                "password": self.okx_password,
-            }
-        return {"api_key": None, "api_secret": None}
-
     def validate_credentials(self, exchange_name: str) -> bool:
         """Validate that credentials are available for the specified exchange.
 
@@ -181,55 +138,6 @@ class EnvironmentSettings(BaseSettings):
             credentials["api_key"] is not None and credentials["api_secret"] is not None
         )
 
-    def get_database_config(self, database_type: str) -> dict[str, Any]:
-        """Get database configuration for a specific database type.
-
-        Args:
-            database_type: Type of database (firestore, influxdb, etc.)
-
-        Returns:
-            dict: Database configuration
-
-        """
-        if database_type.lower() == "firestore":
-            return {
-                "project_id": self.firestore_project_id,
-                "credentials_path": self.google_application_credentials,
-            }
-        if database_type.lower() == "influxdb":
-            return {
-                "url": self.influxdb_url,
-                "token": self.influxdb_token,
-                "org": self.influxdb_org,
-                "bucket": self.influxdb_bucket,
-            }
-        return {}
-
-    def get_email_config(self) -> dict[str, str | None]:
-        """Get email configuration.
-
-        Returns:
-            dict: Email configuration
-
-        """
-        return {
-            "sender_address": self.email_sender_address,
-            "sender_password": self.email_sender_password,
-            "recipient_address": self.email_recipient_address,
-        }
-
-    def get_mlflow_config(self) -> dict[str, str | None]:
-        """Get MLflow configuration.
-
-        Returns:
-            dict: MLflow configuration
-
-        """
-        return {
-            "tracking_uri": self.mlflow_tracking_uri,
-            "experiment_name": self.mlflow_experiment_name,
-        }
-
     class Config:
         """Pydantic configuration."""
 
@@ -238,23 +146,3 @@ class EnvironmentSettings(BaseSettings):
         case_sensitive = False
         extra = "ignore"
 
-
-def get_environment_settings() -> EnvironmentSettings:
-    """Get environment settings instance.
-
-    Returns:
-        EnvironmentSettings: Environment settings instance
-
-    """
-    try:
-        return EnvironmentSettings()
-    except Exception as e:
-        system_logger.error(f"Error loading environment settings: {e}")
-        # Return default settings
-        return EnvironmentSettings(
-            trading_environment="PAPER",
-            trade_symbol="ETHUSDT",
-            exchange_name="BINANCE",
-            timeframe="15m",
-            initial_equity=100.0,
-        )

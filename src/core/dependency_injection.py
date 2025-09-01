@@ -54,39 +54,6 @@ class DependencyContainer:
         self._factories: dict[Any, Callable] = {}
         self.logger = system_logger.getChild("DependencyContainer")
 
-    def register(
-        self,
-        service_name: Any,
-        service_type: type,
-        implementation: type | None = None,
-        singleton: bool = True,
-        config: dict[str, Any] | None = None,
-        dependencies: dict[str, str] | None = None,
-        lifetime: str = ServiceLifetime.SINGLETON,
-    ) -> None:
-        """Register a service with enhanced configuration support."""
-        # Map legacy singleton flag to lifetime if not explicitly provided
-        if lifetime not in {
-            ServiceLifetime.SINGLETON,
-            ServiceLifetime.TRANSIENT,
-            ServiceLifetime.SCOPED,
-        }:
-            lifetime = (
-                ServiceLifetime.SINGLETON if singleton else ServiceLifetime.TRANSIENT
-            )
-
-        self._services[service_name] = ServiceRegistration(
-            service_type=service_type,
-            implementation=implementation or service_type,
-            singleton=singleton,
-            config=config,
-            dependencies=dependencies,
-            lifetime=lifetime,
-        )
-        self.logger.debug(
-            f"Registered service: {getattr(service_name, '__name__', str(service_name))} -> {service_type.__name__}",
-        )
-
     def register_factory(
         self,
         service_name: Any,
@@ -111,53 +78,6 @@ class DependencyContainer:
         self.logger.debug(
             f"Registered factory for: {getattr(service_name, '__name__', str(service_name))}",
         )
-
-    def register_instance(self, service_name: Any, instance: Any) -> None:
-        """Register an already-created service instance (always singleton)."""
-        self._services[service_name] = ServiceRegistration(
-            service_type=type(instance),
-            implementation=type(instance),
-            singleton=True,
-            config=None,
-            dependencies=None,
-            lifetime=ServiceLifetime.SINGLETON,
-            instance=instance,
-        )
-        self._instances[service_name] = instance
-        self.logger.debug(
-            f"Registered instance for: {getattr(service_name, '__name__', str(service_name))}",
-        )
-
-    def begin_scope(self, scope_id: str) -> None:
-        """Begin a scoped lifetime context."""
-        self._current_scope = scope_id
-        if scope_id not in self._scoped_instances:
-            self._scoped_instances[scope_id] = {}
-        self.logger.debug(f"Entered scope: {scope_id}")
-
-    def end_scope(self, scope_id: str) -> None:
-        """End a scoped lifetime context and cleanup scoped instances."""
-        if self._current_scope == scope_id:
-            self._current_scope = None
-        if scope_id in self._scoped_instances:
-            del self._scoped_instances[scope_id]
-        self.logger.debug(f"Exited scope: {scope_id}")
-
-    def get_config(self, key: str, default: Any = None) -> Any:
-        """Get configuration value with fallback."""
-        return self._config.get(key, default)
-
-    def set_config(self, key: str, value: Any) -> None:
-        """Set configuration value."""
-        self._config[key] = value
-        self.logger.debug(f"Set config: {key} = {value}")
-
-    def get_service_config(self, service_name: Any) -> dict[str, Any]:
-        """Get service-specific configuration."""
-        service = self._services.get(service_name)
-        if service and service.config:
-            return service.config
-        return {}
 
     def resolve(self, service_name: Any) -> Any:
         """Resolve a service with enhanced error handling."""
@@ -242,26 +162,6 @@ class DependencyContainer:
             )
             raise
 
-    def _get_constructor_params(self, service_reg: ServiceRegistration) -> dict[str, Any]:
-        """Get constructor parameters for service creation."""
-        params = {}
-
-        # Add service-specific config if available
-        if service_reg.config:
-            params["config"] = service_reg.config
-
-        # Resolve dependencies if specified
-        if service_reg.dependencies:
-            for param_name, dep_service_name in service_reg.dependencies.items():
-                try:
-                    params[param_name] = self.resolve(dep_service_name)
-                except Exception as e:
-                    self.logger.warning(
-                        f"Failed to resolve dependency '{dep_service_name}' for '{param_name}': {e}",
-                    )
-
-        return params
-
     def _inject_config(self, instance: Any, config: dict[str, Any]) -> None:
         """Inject configuration into an instance."""
         if hasattr(instance, "configure"):
@@ -277,26 +177,6 @@ class ComponentFactory:
         self.container = container
         self.logger = system_logger.getChild("ComponentFactory")
 
-    def create_analyst(self, config: dict[str, Any] | None = None) -> IAnalyst:
-        """Create an analyst component."""
-        # Implementation would depend on specific analyst classes
-        raise NotImplementedError("Analyst creation not implemented")
-
-    def create_strategist(self, config: dict[str, Any] | None = None) -> IStrategist:
-        """Create a strategist component."""
-        # Implementation would depend on specific strategist classes
-        raise NotImplementedError("Strategist creation not implemented")
-
-    def create_tactician(self, config: dict[str, Any] | None = None) -> ITactician:
-        """Create a tactician component."""
-        # Implementation would depend on specific tactician classes
-        raise NotImplementedError("Tactician creation not implemented")
-
-    def create_supervisor(self, config: dict[str, Any] | None = None) -> ISupervisor:
-        """Create a supervisor component."""
-        # Implementation would depend on specific supervisor classes
-        raise NotImplementedError("Supervisor creation not implemented")
-
 
 class ModularTradingSystem:
     """Modular trading system using dependency injection."""
@@ -306,15 +186,3 @@ class ModularTradingSystem:
         self.factory = ComponentFactory(container)
         self.logger = system_logger.getChild("ModularTradingSystem")
         self.components: dict[str, Any] = {}
-
-    async def initialize(self) -> None:
-        """Initialize the trading system."""
-        self.logger.info("Initializing modular trading system")
-        # Initialize components as needed
-        pass
-
-    async def shutdown(self) -> None:
-        """Shutdown the trading system."""
-        self.logger.info("Shutting down modular trading system")
-        # Cleanup components
-        pass

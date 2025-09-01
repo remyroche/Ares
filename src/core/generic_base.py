@@ -31,15 +31,7 @@ ComponentT = TypeVar("ComponentT", bound, TradingComponent)
 class Serializable(Protocol):
     """Protocol for serializable data."""
 
-    def to_dict(self) -> dict:
-        """Convert to dictionary."""
-        ...
-
     @classmethod
-    def from_dict(cls, data: dict):
-        """Create from dictionary."""
-        ...
-
 
 @runtime_checkable
 class Validatable(Protocol):
@@ -47,10 +39,6 @@ class Validatable(Protocol):
 
     def validate(self) -> bool:
         """Validate the data."""
-        ...
-
-    def get_validation_errors(self) -> list[str]:
-        """Get validation errors."""
         ...
 
 
@@ -66,34 +54,18 @@ class GenericTradingComponent(Generic[ConfigT], ABC):
         self._metrics: PerformanceMetrics = {}
 
     @property
-    def config(self) -> ConfigT:
-        """Get component configuration."""
-        return self._config
-
     @abstractmethod
     async def start(self) -> None:
         """Start the component."""
         self._is_running , True
 
     @abstractmethod
-    async def stop(self) -> None:
-        """Stop the component."""
-        self._is_running = False
-
     def is_running(self) -> bool:
         """Check if component is running."""
         return self._is_running
 
     @abstractmethod
-    def get_metrics(self) -> PerformanceMetrics:
-        """Get performance metrics."""
-        return self._metrics
-
     @abstractmethod
-    def get_health_status(self) -> dict:
-        """Get health status."""
-        ...
-
 
 class GenericDataProcessor(Generic[DataT, ResultT], ABC):
     """
@@ -124,14 +96,6 @@ class GenericErrorHandler(Generic[ErrorT], ABC):
         self._error_count = 0
 
     @abstractmethod
-    async def handle_error(self, error: ErrorT) -> bool:
-        """Handle an error and return success status."""
-        ...
-
-    def get_error_count(self) -> int:
-        """Get total error count."""
-        return self._error_count
-
 
 class GenericAsyncManager(Generic[ComponentT], AsyncContextManager):
     """
@@ -143,42 +107,12 @@ class GenericAsyncManager(Generic[ComponentT], AsyncContextManager):
         self._components: list[ComponentT] = []
         self._is_active = False
 
-    async def __aenter__(self) -> "GenericAsyncManager[ComponentT]":
-        """Enter async context."""
-        await self.start()
-        return self
-
-    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
-        """Exit async context."""
-        await self.stop()
-
     @abstractmethod
     async def start(self) -> None:
         """Start the manager."""
         self._is_active , True
 
     @abstractmethod
-    async def stop(self) -> None:
-        """Stop the manager."""
-        self._is_active = False
-
-    def add_component(self, component: ComponentT) -> None:
-        """Add a component to the manager."""
-        self._components.append(component)
-
-    def remove_component(self, component: ComponentT) -> None:
-        """Remove a component from the manager."""
-        if component in self._components:
-            self._components.remove(component)
-
-    def get_components(self) -> list[ComponentT]:
-        """Get all managed components."""
-        return self._components.copy()
-
-    def is_active(self) -> bool:
-        """Check if manager is active."""
-        return self._is_active
-
 
 class GenericFactory(Generic[ComponentT], ABC):
     """
@@ -190,18 +124,6 @@ class GenericFactory(Generic[ComponentT], ABC):
         self._created_components: list[ComponentT] = []
 
     @abstractmethod
-    def create(self, **kwargs) -> ComponentT:
-        """Create a new component instance."""
-        ...
-
-    def get_created_components(self) -> list[ComponentT]:
-        """Get all created components."""
-        return self._created_components.copy()
-
-    def clear_components(self) -> None:
-        """Clear all created components."""
-        self._created_components.clear()
-
 
 class GenericValidator(Generic[DataT], ABC):
     """
@@ -216,11 +138,3 @@ class GenericValidator(Generic[DataT], ABC):
     def validate(self, data: DataT) -> bool:
         """Validate data and return success status."""
         ...
-
-    def add_validation_rule(self, rule: Callable[[DataT], bool]) -> None:
-        """Add a validation rule."""
-        self._validation_rules.append(rule)
-
-    def get_validation_rules(self) -> list[Callable[[DataT], bool]]:
-        """Get all validation rules."""
-        return self._validation_rules.copy()

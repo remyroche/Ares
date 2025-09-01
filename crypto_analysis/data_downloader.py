@@ -33,37 +33,6 @@ class BinanceDataDownloader:
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
         })
 
-    def get_klines(self, symbol, interval, start_time, end_time, limit=1000):
-        """
-        Fetch klines data from Binance API
-
-        Args:
-            symbol (str): Trading pair symbol (e.g., 'ETHUSDT')
-            interval (str): Kline interval (e.g., '15m')
-            start_time (int): Start time in milliseconds
-            end_time (int): End time in milliseconds
-            limit (int): Number of klines to fetch per request
-
-        Returns:
-            list: List of kline data
-        """
-        url = f"{self.base_url}/klines"
-        params = {
-            'symbol': symbol,
-            'interval': interval,
-            'startTime': start_time,
-            'endTime': end_time,
-            'limit': limit
-        }
-
-        try:
-            response = self.session.get(url, params=params)
-            response.raise_for_status()
-            return response.json()
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Error fetching data for {symbol}: {e}")
-            return []
-
     def download_asset_data(self, symbol, start_date, end_date, interval='15m'):
         """
         Download complete data for a single asset

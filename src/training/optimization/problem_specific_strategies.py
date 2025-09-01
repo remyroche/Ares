@@ -409,10 +409,6 @@ class BaseOptimizationStrategy(ABC):
         pass
 
     @abstractmethod
-    def get_strategy_name(self) -> str:
-        """Get the name of this strategy."""
-        pass
-
 
 class ContinuousOptimizationStrategy(BaseOptimizationStrategy):
     """Strategy for continuous optimization problems."""
@@ -448,9 +444,6 @@ class ContinuousOptimizationStrategy(BaseOptimizationStrategy):
 
         return adaptations
 
-    def get_strategy_name(self) -> str:
-        return "continuous_optimization"
-
 
 class DiscreteOptimizationStrategy(BaseOptimizationStrategy):
     """Strategy for discrete optimization problems."""
@@ -476,9 +469,6 @@ class DiscreteOptimizationStrategy(BaseOptimizationStrategy):
         adaptations['exploration_balance'] = 0.5
 
         return adaptations
-
-    def get_strategy_name(self) -> str:
-        return "discrete_optimization"
 
 
 class MultiObjectiveOptimizationStrategy(BaseOptimizationStrategy):
@@ -507,9 +497,6 @@ class MultiObjectiveOptimizationStrategy(BaseOptimizationStrategy):
 
         return adaptations
 
-    def get_strategy_name(self) -> str:
-        return "multi_objective_optimization"
-
 
 class ConstrainedOptimizationStrategy(BaseOptimizationStrategy):
     """Strategy for constrained optimization problems."""
@@ -537,9 +524,6 @@ class ConstrainedOptimizationStrategy(BaseOptimizationStrategy):
 
         return adaptations
 
-    def get_strategy_name(self) -> str:
-        return "constrained_optimization"
-
 
 class NoisyOptimizationStrategy(BaseOptimizationStrategy):
     """Strategy for noisy optimization problems."""
@@ -566,9 +550,6 @@ class NoisyOptimizationStrategy(BaseOptimizationStrategy):
         adaptations['uncertainty_threshold'] = 0.25
 
         return adaptations
-
-    def get_strategy_name(self) -> str:
-        return "noisy_optimization"
 
 
 class HighDimensionalOptimizationStrategy(BaseOptimizationStrategy):
@@ -598,9 +579,6 @@ class HighDimensionalOptimizationStrategy(BaseOptimizationStrategy):
 
         return adaptations
 
-    def get_strategy_name(self) -> str:
-        return "high_dimensional_optimization"
-
 
 class StrategySelector:
     """Selects and applies appropriate optimization strategies."""
@@ -621,38 +599,6 @@ class StrategySelector:
 
         # Initialize problem analyzer
         self.problem_analyzer = ProblemAnalyzer(config)
-
-    def select_and_apply_strategy(
-        self,
-        objective_function: Callable,
-        parameter_space: Dict[str, Any],
-        surrogate_optimizer: Any
-    ) -> Dict[str, Any]:
-        """Select and apply the best optimization strategy."""
-
-        # Analyze the problem
-        problem_characteristics = self.problem_analyzer.analyze_problem(
-            objective_function, parameter_space
-        )
-
-        self.logger.info(f"Problem characteristics: {problem_characteristics}")
-
-        # Select primary strategy
-        primary_strategy = self._select_primary_strategy(problem_characteristics)
-
-        # Apply strategy
-        adaptations = primary_strategy.adapt_optimization(
-            problem_characteristics, surrogate_optimizer
-        )
-
-        # Apply secondary strategies if needed
-        secondary_adaptations = self._apply_secondary_strategies(problem_characteristics)
-        adaptations.update(secondary_adaptations)
-
-        self.logger.info(f"Selected strategy: {primary_strategy.get_strategy_name()}")
-        self.logger.info(f"Adaptations: {adaptations}")
-
-        return adaptations
 
     def _select_primary_strategy(
         self,

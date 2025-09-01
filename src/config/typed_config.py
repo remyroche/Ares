@@ -164,52 +164,6 @@ class TypedConfigManager:
         """Validate training configuration."""
         return self._validator.validate_type(config, TrainingConfig, "training_config")
 
-    def get_config(self) -> ConfigDict:
-        """
-        Get current validated configuration.
-
-        Returns:
-            Current configuration
-
-        Raises:
-            RuntimeError: If no configuration loaded
-        """
-        if self._config is None:
-            msg = "No configuration loaded. Call load_config() first."
-            raise RuntimeError(msg)
-        return self._config
-
-    def get_database_config(self) -> DatabaseConfig | None:
-        """Get database configuration."""
-        config = self.get_config()
-        return config.get("database")
-
-    def get_exchange_config(self, exchange_name: str) -> ExchangeConfig | None:
-        """Get exchange configuration."""
-        config = self.get_config()
-        exchanges = config.get("exchanges", {})
-        return exchanges.get(exchange_name)
-
-    def get_trading_config(self) -> TradingConfig | None:
-        """Get trading configuration."""
-        config = self.get_config()
-        return config.get("trading")
-
-    def get_ml_config(self) -> MLConfig | None:
-        """Get ML configuration."""
-        config = self.get_config()
-        return config.get("ml")
-
-    def get_monitoring_config(self) -> MonitoringConfig | None:
-        """Get monitoring configuration."""
-        config = self.get_config()
-        return config.get("monitoring")
-
-    def get_system_config(self) -> SystemConfig | None:
-        """Get system configuration."""
-        config = self.get_config()
-        return config.get("system")
-
     def validate_runtime_config(self, config: dict[str, Any]) -> bool:
         """
         Validate configuration at runtime.
@@ -226,40 +180,5 @@ class TypedConfigManager:
         except RuntimeTypeError:
             return False
 
-    def save_config(self, config: ConfigDict, path: str | None = None) -> None:
-        """
-        Save configuration to file.
-
-        Args:
-            config: Configuration to save
-            path: Optional path to save to
-        """
-        save_path = Path(path or self._config_path or "config.json")
-
-        # Validate before saving
-        validated_config = validate_config(config)
-
-        with open(save_path, "w") as f:
-            json.dump(validated_config, f, indent=2, default=str)
-
-        logger.info(f"Configuration saved to {save_path}")
-
 # Global typed config manager
 _global_config_manager: TypedConfigManager | None = None
-
-def get_typed_config_manager() -> TypedConfigManager:
-    """Get the global typed configuration manager."""
-    global _global_config_manager
-    if _global_config_manager is None:
-        _global_config_manager = TypedConfigManager()
-    return _global_config_manager
-
-def load_typed_config(config_path: str) -> ConfigDict:
-    """Load typed configuration from file."""
-    manager = get_typed_config_manager()
-    return manager.load_config(config_path)
-
-def get_typed_config() -> ConfigDict:
-    """Get current typed configuration."""
-    manager = get_typed_config_manager()
-    return manager.get_config()

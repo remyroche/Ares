@@ -119,18 +119,6 @@ class MultiObjectiveHMMOptimizer:
 
         return final_results
 
-    def _initialize_population(self) -> List[Individual]:
-        """Initialize random population."""
-
-        population = []
-
-        for _ in range(self.population_size):
-            params = self._generate_random_params()
-            individual = Individual(params=params)
-            population.append(individual)
-
-        return population
-
     def _generate_random_params(self) -> Dict[str, Any]:
         """Generate random parameters for an individual."""
 

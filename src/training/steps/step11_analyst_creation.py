@@ -140,54 +140,11 @@ class AnalystCreationStep:
             self.logger.warning(f"Missing modules: {missing_modules}")
             # Continue with available modules, using fallbacks where needed
 
-    def _safe_get_device(self) -> str:
-        """Safely determine the best device to use with timeout protection."""
-        try:
-            # Use threading with timeout to prevent hanging
-            import queue
-            import threading
-
-            result_queue: "queue.Queue[tuple[str, Exception | None]]" = queue.Queue()
-
-            def check_mps() -> None:
-                try:
-                    is_available = torch.backends.mps.is_available()
-                    result_queue.put(("mps" if is_available else "cpu", None))
-                except Exception as e:  # noqa: BLE001
-                    result_queue.put(("cpu", e))
-
-            # Start the check in a separate thread
-            thread = threading.Thread(target=check_mps)
-            thread.daemon = True
-            thread.start()
-
-            # Wait for result with timeout
-            try:
-                device, err = result_queue.get(timeout=10)  # 10 second timeout
-                if err:
-                    self.logger.error(failed(f"MPS check failed: {err}, using CPU"))
-                    return "cpu"
-                return device
-            except queue.Empty:
-                self.logger.exception(
-                    timeout("MPS availability check timed out, using CPU"),
-                )
-                return "cpu"
-
-        except Exception as e:  # noqa: BLE001
-            self.logger.exception(error(f"Error checking MPS availability: {e}, using CPU"))
-            return "cpu"
-
     @handle_errors(
         exceptions=(Exception,),
         default_return=False,
         context="analyst creation step initialization",
     )
-    async def initialize(self) -> None:
-        """Initialize the analyst creation step."""
-        self.logger.info("Initializing Analyst Creation Step...")
-        self.logger.info("Analyst Creation Step initialized successfully.")
-
     @handle_errors(
         exceptions=(Exception,),
         default_return={"status": "FAILED", "error": "Execution failed"},

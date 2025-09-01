@@ -44,21 +44,6 @@ class FractionalPerformanceTracker:
         # Initialize tracking
         self._initialize_tracking()
 
-    def _initialize_tracking(self):
-        """Initialize performance tracking."""
-        self.logger.info("Initializing fractional performance tracking")
-
-        # Create performance files
-        self.metrics_file = self.output_dir / "performance_metrics.json"
-        self.alerts_file = self.output_dir / "performance_alerts.json"
-        self.dashboard_file = self.output_dir / "performance_dashboard.html"
-
-        # Load existing data if available
-        self._load_existing_data()
-
-        # Create initial dashboard
-        self._create_dashboard()
-
     def _load_existing_data(self):
         """Load existing performance data."""
         try:
@@ -74,46 +59,6 @@ class FractionalPerformanceTracker:
                     self.performance_alerts = json.load(f)
         except Exception as e:
             self.logger.warning(f"Could not load existing performance data: {e}")
-
-    def set_baseline_metrics(self, metrics: Dict[str, Any]):
-        """Set baseline performance metrics.
-
-        Args:
-            metrics: Dictionary of baseline metrics
-        """
-        self.baseline_metrics = metrics.copy()
-        self.logger.info(f"Set baseline metrics: {list(metrics.keys())}")
-        self._save_metrics()
-
-    def update_current_metrics(self, metrics: Dict[str, Any]):
-        """Update current performance metrics.
-
-        Args:
-            metrics: Dictionary of current metrics
-        """
-        self.current_metrics = metrics.copy()
-        self.check_count += 1
-
-        # Add timestamp
-        self.current_metrics['timestamp'] = datetime.now().isoformat()
-        self.current_metrics['check_count'] = self.check_count
-
-        # Store in historical data
-        self.historical_metrics.append(self.current_metrics.copy())
-
-        # Keep only recent history
-        max_history = 1000
-        if len(self.historical_metrics) > max_history:
-            self.historical_metrics = self.historical_metrics[-max_history:]
-
-        # Check for performance alerts
-        self._check_performance_alerts()
-
-        # Save and update dashboard
-        self._save_metrics()
-        self._create_dashboard()
-
-        self.last_check = datetime.now()
 
     def _check_performance_alerts(self):
         """Check for performance alerts."""
@@ -303,98 +248,3 @@ class FractionalPerformanceTracker:
 
         except Exception as e:
             self.logger.error(f"Failed to create HTML dashboard: {e}")
-
-    def get_performance_summary(self) -> Dict[str, Any]:
-        """Get performance summary.
-
-        Returns:
-            Dictionary with performance summary
-        """
-        if not self.baseline_metrics or not self.current_metrics:
-            return {}
-
-        summary = {
-            'baseline_metrics': self.baseline_metrics.copy(),
-            'current_metrics': self.current_metrics.copy(),
-            'improvements': {},
-            'degradations': {},
-            'overall_status': 'stable'
-        }
-
-        # Calculate improvements/degradations
-        for metric in self.baseline_metrics:
-            if metric in self.current_metrics:
-                baseline = self.baseline_metrics[metric]
-                current = self.current_metrics[metric]
-
-                if baseline != 0:
-                    change = (current - baseline) / abs(baseline)
-
-                    if change > 0:
-                        summary['improvements'][metric] = change
-                    elif change < 0:
-                        summary['degradations'][metric] = change
-
-        # Determine overall status
-        if summary['degradations']:
-            max_degradation = max(summary['degradations'].values())
-            if max_degradation < -0.1:
-                summary['overall_status'] = 'critical'
-            elif max_degradation < -0.05:
-                summary['overall_status'] = 'warning'
-
-        return summary
-
-    def get_alert_summary(self) -> List[Dict[str, Any]]:
-        """Get recent performance alerts.
-
-        Returns:
-            List of recent alerts
-        """
-        # Return alerts from last 24 hours
-        cutoff_time = datetime.now() - timedelta(hours=24)
-
-        recent_alerts = []
-        for alert in self.performance_alerts:
-            alert_time = datetime.fromisoformat(alert['timestamp'])
-            if alert_time > cutoff_time:
-                recent_alerts.append(alert)
-
-        return recent_alerts
-
-    def export_performance_report(self, output_file: str = None) -> str:
-        """Export comprehensive performance report.
-
-        Args:
-            output_file: Output file path (optional)
-
-        Returns:
-            Path to exported report
-        """
-        if output_file is None:
-            output_file = self.output_dir / f"performance_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-
-        report = {
-            'report_generated': datetime.now().isoformat(),
-            'tracking_started': self.start_time.isoformat(),
-            'total_checks': self.check_count,
-            'baseline_metrics': self.baseline_metrics,
-            'current_metrics': self.current_metrics,
-            'performance_summary': self.get_performance_summary(),
-            'recent_alerts': self.get_alert_summary(),
-            'historical_metrics_count': len(self.historical_metrics),
-            'configuration': {
-                'current_phase': self.config.current_phase,
-                'target_improvements': {
-                    'sharpe_ratio': self.config.target_sharpe_improvement,
-                    'drawdown_reduction': self.config.target_drawdown_reduction,
-                    'accuracy_improvement': self.config.target_accuracy_improvement
-                }
-            }
-        }
-
-        with open(output_file, 'w') as f:
-            json.dump(report, f, indent=2)
-
-        self.logger.info(f"Performance report exported to: {output_file}")
-        return str(output_file)

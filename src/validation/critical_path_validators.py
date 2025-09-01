@@ -195,10 +195,6 @@ def validate_trading_signal_critical(func: Callable) -> Callable:
     """Decorator for critical trading signal validation."""
 
     @wraps(func)
-    def wrapper(*args, **kwargs):
-        result = func(*args, **kwargs)
-        return CriticalPathValidator.validate_trading_signal(result)
-
     return wrapper
 
 
@@ -206,12 +202,6 @@ def validate_trade_decision_critical(func: Callable) -> Callable:
     """Decorator for critical trade decision validation."""
 
     @wraps(func)
-    def wrapper(*args, **kwargs):
-        result = func(*args, **kwargs)
-        if result is not None:
-            return CriticalPathValidator.validate_trade_decision(result)
-        return result
-
     return wrapper
 
 
@@ -219,15 +209,6 @@ def validate_order_execution_critical(func: Callable) -> Callable:
     """Decorator for critical order execution validation."""
 
     @wraps(func)
-    def wrapper(*args, **kwargs):
-        # Validate input order if present
-        if args and hasattr(args[0], "__dict__"):
-            for arg in args:
-                if isinstance(arg, dict) and "symbol" in arg and "side" in arg:
-                    CriticalPathValidator.validate_order_request(arg)
-
-        return func(*args, **kwargs)
-
     return wrapper
 
 
@@ -235,12 +216,6 @@ def validate_market_data_critical(func: Callable) -> Callable:
     """Decorator for critical market data validation."""
 
     @wraps(func)
-    def wrapper(*args, **kwargs):
-        result = func(*args, **kwargs)
-        if isinstance(result, dict):
-            return validate_market_data(result)
-        return result
-
     return wrapper
 
 
@@ -248,12 +223,6 @@ def validate_ml_input_critical(func: Callable) -> Callable:
     """Decorator for critical ML input validation."""
 
     @wraps(func)
-    def wrapper(*args, **kwargs):
-        result = func(*args, **kwargs)
-        if isinstance(result, dict) and "features" in result:
-            return validate_model_input(result)
-        return result
-
     return wrapper
 
 
@@ -264,49 +233,10 @@ class TypeSafetyMonitor:
         self.violations: list = []
         self.violation_counts: dict = {}
 
-    def record_violation(self, violation: RuntimeTypeError) -> None:
-        """Record a type safety violation."""
-        self.violations.append(
-            {
-                "timestamp": datetime.utcnow().isoformat() + "Z",
-                "expected_type": str(violation.expected_type),
-                "actual_type": str(type(violation.actual_value)),
-                "context": violation.context,
-                "message": str(violation),
-                "correlation_id": get_correlation_id(),
-            }
-        )
-
-        # Count violations by type
-        violation_key = f"{violation.expected_type}_{violation.context}"
-        self.violation_counts[violation_key] = (
-            self.violation_counts.get(violation_key, 0) + 1
-        )
-
-        # Log critical violations (correlation_id is included by filter)
-        logger.warning(f"Type safety violation: {violation}")
-
-    def get_violation_summary(self) -> dict:
-        """Get summary of type safety violations."""
-        return {
-            "total_violations": len(self.violations),
-            "violation_counts": self.violation_counts.copy(),
-            "recent_violations": self.violations[-10:] if self.violations else [],
-        }
-
-    def reset_violations(self) -> None:
-        """Reset violation tracking."""
-        self.violations.clear()
-        self.violation_counts.clear()
-
 
 # Global type safety monitor
 _type_safety_monitor = TypeSafetyMonitor()
 
-
-def get_type_safety_monitor() -> TypeSafetyMonitor:
-    """Get the global type safety monitor."""
-    return _type_safety_monitor
 
 
 def safe_execute_with_validation(func: Callable[..., T], *args, **kwargs) -> T | None:

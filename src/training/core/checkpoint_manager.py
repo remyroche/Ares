@@ -72,31 +72,6 @@ class CheckpointManager:
         default_return=False,
         context="checkpoint manager initialization",
     )
-    async def initialize(self) -> bool:
-        """Initialize checkpoint manager with enhanced error handling.
-
-        Returns:
-            bool: True if initialization successful, False otherwise
-
-        """
-        self.logger.info("Initializing Checkpoint Manager...")
-
-        # Load checkpoint configuration
-        await self._load_checkpoint_configuration()
-
-        # Validate configuration
-        if not self._validate_configuration():
-            self.logger.error(invalid("Invalid configuration for checkpoint manager"))
-            return False
-
-        # Initialize checkpoint modules
-        await self._initialize_checkpoint_modules()
-
-        self.logger.info(
-            "✅ Checkpoint Manager initialization completed successfully",
-        )
-        return True
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
@@ -709,58 +684,6 @@ class CheckpointManager:
         }
 
     # Checkpoint cleanup methods
-    def _perform_cleanup_scheduling(
-        self,
-        checkpoint_input: dict[str, Any],
-    ) -> dict[str, Any]:
-        """Perform cleanup scheduling."""
-        # Simulate cleanup scheduling
-        return {
-            "cleanup_scheduling_completed": True,
-            "scheduled_cleanups": 3,
-            "scheduling_method": "age_based",
-            "training_time": datetime.now().isoformat(),
-        }
-
-    def _perform_cleanup_execution(
-        self,
-        checkpoint_input: dict[str, Any],
-    ) -> dict[str, Any]:
-        """Perform cleanup execution."""
-        # Simulate cleanup execution
-        return {
-            "cleanup_execution_completed": True,
-            "cleanups_executed": 3,
-            "execution_method": "batch",
-            "training_time": datetime.now().isoformat(),
-        }
-
-    def _perform_cleanup_verification(
-        self,
-        checkpoint_input: dict[str, Any],
-    ) -> dict[str, Any]:
-        """Perform cleanup verification."""
-        # Simulate cleanup verification
-        return {
-            "cleanup_verification_completed": True,
-            "verification_score": 0.95,
-            "verification_method": "file_check",
-            "training_time": datetime.now().isoformat(),
-        }
-
-    def _perform_cleanup_reporting(
-        self,
-        checkpoint_input: dict[str, Any],
-    ) -> dict[str, Any]:
-        """Perform cleanup reporting."""
-        # Simulate cleanup reporting
-        return {
-            "cleanup_reporting_completed": True,
-            "report_format": "json",
-            "report_location": "/reports/cleanup_report.json",
-            "training_time": datetime.now().isoformat(),
-        }
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
@@ -854,21 +777,6 @@ class CheckpointManager:
         default_return=None,
         context="checkpoint manager cleanup",
     )
-    async def stop(self) -> None:
-        """Stop the checkpoint manager."""
-        self.logger.info("🛑 Stopping Checkpoint Manager...")
-
-        # Stop managing
-        self.is_managing = False
-
-        # Clear results
-        self.checkpoint_results.clear()
-
-        # Clear history
-        self.checkpoint_history.clear()
-
-        self.logger.info("✅ Checkpoint Manager stopped successfully")
-
 
 # Global checkpoint manager instance
 checkpoint_manager: CheckpointManager | None = None

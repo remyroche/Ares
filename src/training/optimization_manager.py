@@ -65,31 +65,6 @@ class OptimizationManager:
         default_return=False,
         context="optimization manager initialization",
     )
-    async def initialize(self) -> bool:
-        """Initialize optimization manager.
-
-        Returns:
-            bool: True if initialization successful, False otherwise
-
-        """
-        try:
-            self.logger.info("Initializing Optimization Manager...")
-
-            # Validate configuration
-            if not self._validate_configuration():
-                self.print(invalid("Invalid configuration for optimization manager"))
-                return False
-
-            # Initialize optimization components
-            await self._initialize_optimization_components()
-
-            self.logger.info("✅ Optimization Manager initialized successfully")
-            return True
-
-        except Exception as e:
-            self.print(failed(f"❌ Optimization Manager initialization failed: {e}"))
-            return False
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=False,
@@ -125,29 +100,6 @@ class OptimizationManager:
         default_return=None,
         context="optimization components initialization",
     )
-    async def _initialize_optimization_components(self) -> None:
-        """Initialize optimization components."""
-        try:
-            # Initialize Optuna for hyperparameter optimization
-            if self.enable_hyperparameter_optimization:
-                self.logger.info(
-                    "✅ Optuna initialized for hyperparameter optimization",
-                )
-
-            # Initialize feature selection components
-            if self.enable_feature_selection:
-                self.logger.info("✅ Feature selection components initialized")
-
-            # Initialize ensemble optimization components
-            if self.enable_ensemble_optimization:
-                self.logger.info("✅ Ensemble optimization components initialized")
-
-        except Exception as e:
-            self.logger.exception(
-                f"❌ Failed to initialize optimization components: {e}",
-            )
-            raise
-
     @handle_specific_errors(
         error_handlers={
             ValueError: (False, "Invalid optimization parameters"),
@@ -157,74 +109,6 @@ class OptimizationManager:
         default_return=False,
         context="model optimization",
     )
-    async def optimize_models(
-        self,
-        model_results: dict[str, Any],
-        training_input: dict[str, Any],
-    ) -> dict[str, Any] | None:
-        """Optimize trained models.
-
-        Args:
-            model_results: Results from model training
-            training_input: Training input parameters
-
-        Returns:
-            dict: Optimization results
-
-        """
-        try:
-            self.logger.info("🔧 Starting model optimization...")
-            self.is_optimizing = True
-
-            # Validate inputs
-            if not self._validate_optimization_inputs(model_results, training_input):
-                return None
-
-            # Perform hyperparameter optimization
-            hyperparameter_results = None
-            if self.enable_hyperparameter_optimization:
-                hyperparameter_results = await self._optimize_hyperparameters(
-                    model_results,
-                    training_input,
-                )
-
-            # Perform feature selection
-            feature_selection_results = None
-            if self.enable_feature_selection:
-                feature_selection_results = await self._optimize_feature_selection(
-                    model_results,
-                    training_input,
-                )
-
-            # Perform ensemble optimization
-            ensemble_optimization_results = None
-            if self.enable_ensemble_optimization:
-                ensemble_optimization_results = await self._optimize_ensembles(
-                    model_results,
-                    training_input,
-                )
-
-            # Combine results
-            optimization_results = {
-                "hyperparameter_optimization": hyperparameter_results,
-                "feature_selection": feature_selection_results,
-                "ensemble_optimization": ensemble_optimization_results,
-                "training_input": training_input,
-                "optimization_timestamp": datetime.now().isoformat(),
-            }
-
-            # Store optimization results
-            await self._store_optimization_results(optimization_results)
-
-            self.is_optimizing = False
-            self.logger.info("✅ Model optimization completed successfully")
-            return optimization_results
-
-        except Exception as e:
-            self.print(failed(f"❌ Model optimization failed: {e}"))
-            self.is_optimizing = False
-            return None
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=False,
@@ -614,67 +498,14 @@ class OptimizationManager:
         except Exception as e:
             self.print(failed(f"❌ Failed to store optimization results: {e}"))
 
-    def get_optimization_status(self) -> dict[str, Any]:
-        """Get current optimization status.
-
-        Returns:
-            dict: Optimization status information
-
-        """
-        return {
-            "is_optimizing": self.is_optimizing,
-            "has_optimization_results": bool(self.optimization_results),
-            "hyperparameter_optimization_enabled": self.enable_hyperparameter_optimization,
-            "feature_selection_enabled": self.enable_feature_selection,
-            "ensemble_optimization_enabled": self.enable_ensemble_optimization,
-        }
-
-    def get_optimization_results(self) -> dict[str, Any]:
-        """Get the latest optimization results.
-
-        Returns:
-            dict: Optimization results
-
-        """
-        return self.optimization_results.copy()
-
     @handle_errors(
         exceptions=(Exception,),
         default_return=None,
         context="optimization manager cleanup",
     )
-    async def stop(self) -> None:
-        """Stop the optimization manager and cleanup resources."""
-        try:
-            self.logger.info("🛑 Stopping Optimization Manager...")
-            self.is_optimizing = False
-            self.logger.info("✅ Optimization Manager stopped successfully")
-        except Exception as e:
-            self.print(failed(f"❌ Failed to stop Optimization Manager: {e}"))
-
 
 @handle_errors(
     exceptions=(Exception,),
     default_return=None,
     context="optimization manager setup",
 )
-async def setup_optimization_manager(
-    config: dict[str, Any] | None = None,
-) -> OptimizationManager | None:
-    """Setup and return a configured OptimizationManager instance.
-
-    Args:
-        config: Configuration dictionary
-
-    Returns:
-        OptimizationManager: Configured optimization manager instance
-
-    """
-    try:
-        manager = OptimizationManager(config or {})
-        if await manager.initialize():
-            return manager
-        return None
-    except Exception as e:
-        system_logger.exception(f"Failed to setup optimization manager: {e}")
-        return None

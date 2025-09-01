@@ -403,20 +403,6 @@ class OptimizedTripleBarrierLabeling:
         """
         return self.apply_triple_barrier_labeling_vectorized(chunk)
 
-    def apply_triple_barrier_labels(self, data: pd.DataFrame) -> pd.Series:
-        """Apply triple barrier labels and return only the labels series.
-
-        This is a convenience method for backward compatibility.
-
-        Args:
-            data: Market data
-
-        Returns:
-            Series with triple barrier labels
-        """
-        labeled_data = self.apply_triple_barrier_labeling_vectorized(data)
-        return labeled_data['label']
-
 
 @with_tracing_span("benchmark_triple_barrier_methods", log_args=False)
 @handle_errors(exceptions=(Exception,), default_return={}, context="benchmark_triple_barrier")

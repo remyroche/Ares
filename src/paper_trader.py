@@ -86,36 +86,6 @@ class PaperTrader:
         },
         default_return=False, context="paper trader initialization",
     )
-    async def initialize(self) -> bool:
-        """
-        Initialize paper trader with enhanced error handling.
-
-        Returns:
-            bool: True if initialization successful, False otherwise
-        """
-        try:
-            self.logger.info("Initializing Paper Trader...")
-
-            # Load trader configuration
-            await self._load_trader_configuration()
-
-            # Validate configuration
-            if not self._validate_configuration():
-                self.logger.error(invalid("Invalid configuration for paper trader"))
-                return False
-
-            # Initialize trading state
-            await self._initialize_trading_state()
-
-            self.logger.info("✅ Paper Trader initialization completed successfully")
-            return True
-
-        except Exception as e:
-            self.logger.exception(
-                initialization_error(f"Paper Trader initialization failed: {e}"),
-            )
-            return False
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None, context="trader configuration loading",
@@ -189,27 +159,6 @@ class PaperTrader:
         exceptions=(ValueError, AttributeError),
         default_return=None, context="trading state initialization",
     )
-    async def _initialize_trading_state(self) -> None:
-        """Initialize trading state."""
-        try:
-            # Set initial balance
-            self.balance = self.initial_balance
-            self.equity_history = [self.initial_balance]
-            self.prices.clear()
-
-            # Clear positions and history
-            self.positions.clear()
-            self.trade_history.clear()
-
-            self.logger.info(
-                f"Trading state initialized with balance: ${self.balance:,.2f}",
-            )
-
-        except Exception as e:
-            self.logger.exception(
-                initialization_error(f"Error initializing trading state: {e}"),
-            )
-
     @comprehensive_trading_decorator(
         enable_error_handling=True,
         enable_performance_monitoring=True,
@@ -494,37 +443,6 @@ class PaperTrader:
         exceptions=(ValueError, AttributeError),
         default_return=None, context="position getting",
     )
-    def get_position(self, symbol: str) -> dict[str, Any] | None:
-        """
-        Get current position for a symbol.
-
-        Args:
-            symbol: Trading symbol
-
-        Returns:
-            Optional[Dict[str, Any]]: Position information or None
-        """
-        try:
-            return self.positions.get(symbol, None)
-
-        except Exception as e:
-            self.logger.exception(
-                execution_error(f"Error getting position for {symbol}: {e}"),
-            )
-            return None
-
-    def mark_price(self, symbol: str, price: float) -> None:
-        """Update latest price for symbol for mark-to-market accounting."""
-        try:
-            if price <= 0:
-                return
-            self.prices[symbol] = price
-            self._update_equity()
-        except Exception as e:
-            self.logger.exception(
-                execution_error(f"Error marking price for {symbol}: {e}"),
-            )
-
     def _update_equity(self) -> None:
         """Recompute total equity using current prices and unrealized PnL."""
         try:
@@ -543,188 +461,23 @@ class PaperTrader:
         exceptions=(ValueError, AttributeError),
         default_return=None, context="all positions getting",
     )
-    def get_all_positions(self) -> dict[str, dict[str, Any]]:
-        """
-        Get all current positions.
-
-        Returns:
-            Dict[str, Dict[str, Any]]: All positions
-        """
-        try:
-            return self.positions.copy()
-
-        except Exception as e:
-            self.logger.exception(execution_error(f"Error getting all positions: {e}"))
-            return {}
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None, context="balance getting",
     )
-    def get_balance(self) -> float:
-        """
-        Get current balance.
-
-        Returns:
-            float: Current balance
-        """
-        try:
-            return self.balance
-
-        except Exception as e:
-            self.logger.exception(execution_error(f"Error getting balance: {e}"))
-            return 0.0
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None, context="trade history getting",
     )
-    def get_trade_history(self, symbol: str | None = None) -> list[dict[str, Any]]:
-        """
-        Get trade history.
-
-        Args:
-            symbol: Optional symbol filter
-
-        Returns:
-            List[Dict[str, Any]]: Trade history
-        """
-        try:
-            if symbol:
-                return [
-                    trade for trade in self.trade_history if trade["symbol"] == symbol
-                ]
-            return self.trade_history.copy()
-
-        except Exception as e:
-            self.logger.exception(execution_error(f"Error getting trade history: {e}"))
-            return []
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="performance calculation",
     )
-    def calculate_performance(self) -> dict[str, Any]:
-        """
-        Calculate trading performance metrics.
-
-        Returns:
-            Dict[str, Any]: Performance metrics
-        """
-        try:
-            if not self.trade_history:
-                return {
-                    "total_trades": 0,
-                    "win_rate": 0.0,
-                    "total_pnl": 0.0,
-                    "max_drawdown": 0.0,
-                    "sharpe_ratio": 0.0,
-                }
-
-            # Calculate basic metrics
-            total_trades = len(self.trade_history)
-            buy_trades = [t for t in self.trade_history if t["side"] == "BUY"]
-            sell_trades = [t for t in self.trade_history if t["side"] == "SELL"]
-
-            # Calculate P&L
-            total_buy_cost = sum(t["total_cost"] for t in buy_trades)
-            total_sell_proceeds = sum(t.get("net_proceeds", 0.0) for t in sell_trades)
-            total_pnl = total_sell_proceeds - total_buy_cost
-
-            # Calculate win rate
-            profitable_trades = len(
-                [t for t in sell_trades if t.get("net_proceeds", 0.0) > 0],
-            )
-            win_rate = profitable_trades / len(sell_trades) if sell_trades else 0.0
-
-            # Calculate max drawdown using equity history
-            if len(self.equity_history) < 2:
-                max_drawdown = 0.0
-                sharpe_ratio = 0.0
-            else:
-                equity_series = self.equity_history
-                peak = equity_series[0]
-                max_drawdown = 0.0
-                returns = []
-                for i in range(1, len(equity_series)):
-                    eq = equity_series[i]
-                    prev = equity_series[i - 1]
-                    peak = max(peak, eq)
-                    dd = (peak - eq) / peak
-                    max_drawdown = max(max_drawdown, dd)
-                    ret = (eq - prev) / prev if prev > 0 else 0.0
-                    returns.append(ret)
-                if returns:
-                    avg_return = float(np.mean(returns))
-                    std_return = float(np.std(returns))
-                    sharpe_ratio = avg_return / std_return if std_return > 0 else 0.0
-                else:
-                    sharpe_ratio = 0.0
-
-            return {
-                "total_trades": total_trades,
-                "buy_trades": len(buy_trades),
-                "sell_trades": len(sell_trades),
-                "win_rate": win_rate,
-                "total_pnl": total_pnl,
-                "current_balance": self.balance,
-                "current_equity": self.equity_history[-1]
-                if self.equity_history
-                else self.balance,
-                "max_drawdown": max_drawdown,
-                "sharpe_ratio": sharpe_ratio,
-                "total_return": (self.equity_history[-1] - self.initial_balance)
-                / self.initial_balance
-                if self.equity_history
-                else 0.0,
-            }
-
-        except Exception as e:
-            self.logger.exception(
-                execution_error(f"Error calculating performance: {e}"),
-            )
-            return {}
-
-    def get_trader_status(self) -> dict[str, Any]:
-        """
-        Get paper trader status information.
-
-        Returns:
-            Dict[str, Any]: Trader status
-        """
-        return {
-            "is_trading": self.is_trading,
-            "balance": self.balance,
-            "initial_balance": self.initial_balance,
-            "positions_count": len(self.positions),
-            "trades_count": len(self.trade_history),
-            "max_position_size": self.max_position_size,
-            "commission_rate": self.commission_rate,
-            "slippage_rate": self.slippage_rate,
-        }
-
     @handle_errors(
         exceptions=(Exception,),
         default_return=None, context="paper trader cleanup",
     )
-    async def stop(self) -> None:
-        """Stop the paper trader."""
-        self.logger.info("🛑 Stopping Paper Trader...")
-
-        try:
-            # Close all positions
-            if self.positions:
-                self.logger.info(f"Closing {len(self.positions)} positions...")
-                # Note: In a real implementation, you would close positions at current market prices
-                self.positions.clear()
-
-            self.is_trading = False
-            self.logger.info("✅ Paper Trader stopped successfully")
-
-        except Exception as e:
-            self.logger.exception(execution_error(f"Error stopping paper trader: {e}"))
-
 
 # Global paper trader instance
 paper_trader: PaperTrader | None = None
@@ -734,42 +487,3 @@ paper_trader: PaperTrader | None = None
     exceptions=(Exception,),
     default_return=None, context="paper trader setup",
 )
-async def setup_paper_trader(
-    config: dict[str, Any] | None = None,
-) -> PaperTrader | None:
-    """
-    Setup global paper trader.
-
-    Args:
-        config: Optional configuration dictionary
-
-    Returns:
-        Optional[PaperTrader]: Global paper trader instance
-    """
-    try:
-        global paper_trader
-
-        if config is None:
-            config = {
-                "paper_trader": {
-                    "initial_balance": 10000.0,
-                    "max_position_size": 0.1,
-                    "commission_rate": 0.001,
-                    "slippage_rate": 0.0005,
-                    "enable_risk_management": True,
-                    "max_drawdown": 0.2,
-                },
-            }
-
-        # Create paper trader
-        paper_trader = PaperTrader(config)
-
-        # Initialize paper trader
-        success = await paper_trader.initialize()
-        if success:
-            return paper_trader
-        return None
-
-    except Exception as e:
-        print(f"Error setting up paper trader: {e}")
-        return None

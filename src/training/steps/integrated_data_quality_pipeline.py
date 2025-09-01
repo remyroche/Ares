@@ -40,15 +40,6 @@ class IntegratedDataQualityPipeline:
         self.enhanced_quality_manager = None
         self._initialize_components()
 
-    def _initialize_components(self) -> None:
-        """Initialize all pipeline components."""
-        try:
-            from .step1.enhanced_data_quality_manager import EnhancedDataQualityManager
-            self.enhanced_quality_manager = EnhancedDataQualityManager(str(self.data_cache_path))
-            logger.info("✅ Enhanced data quality manager initialized")
-        except ImportError as e:
-            logger.warning(f"⚠️ Could not import EnhancedDataQualityManager: {e}")
-
     @with_tracing_span("run_comprehensive_quality_pipeline")
     @quality_gate(validation_level="comprehensive")
     @handle_errors(

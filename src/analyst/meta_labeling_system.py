@@ -68,19 +68,6 @@ class MetaLabelingSystem:
         default_return=False,
         context="meta labeling system initialization",
     )
-    async def initialize(self) -> bool:
-        """Initialize meta-labeling system."""
-        try:
-            self.logger.info("🚀 Initializing meta-labeling system...")
-            self.is_initialized = True
-            self.logger.info("✅ Meta-labeling system initialized successfully")
-            return True
-        except Exception:
-            self.print(
-                initialization_error("❌ Error initializing meta-labeling system: {e}")
-            )
-            return False
-
     @handle_errors(
         exceptions=(ValueError, AttributeError, KeyError, IndexError),
         default_return={},
@@ -861,10 +848,6 @@ class MetaLabelingSystem:
                 "adverse_excursion_confidence": 0,
             }
 
-    def generate_no_setup_label(self) -> dict[str, Any]:
-        """Generate NO_SETUP label when no other patterns are detected."""
-        return {"NO_SETUP": 1, "no_setup_confidence": 1.0}
-
     def generate_abort_entry_signal(self, features: dict[str, Any]) -> dict[str, Any]:
         """Generate ABORT_ENTRY_SIGNAL when conditions deteriorate."""
         try:
@@ -1079,87 +1062,8 @@ class MetaLabelingSystem:
         default_return={},
         context="combined labels generation",
     )
-    async def generate_combined_labels(
-        self,
-        price_data: pd.DataFrame,
-        volume_data: pd.DataFrame,
-        order_flow_data: pd.DataFrame | None = None,
-        analyst_timeframe: str = "30m",
-        tactician_timeframe: str = "1m",
-    ) -> dict[str, Any]:
-        """
-        Generate combined analyst and tactician labels.
-
-        Args:
-            price_data: OHLCV price data
-            volume_data: Volume data
-            order_flow_data: Optional order flow data
-            analyst_timeframe: Timeframe for analyst analysis
-            tactician_timeframe: Timeframe for tactician analysis
-
-        Returns:
-            Dict containing combined labels
-        """
-        try:
-            # Generate analyst labels
-            analyst_labels = await self.generate_analyst_labels(
-                price_data,
-                volume_data,
-                analyst_timeframe,
-            )
-
-            # Generate tactician labels
-            tactician_labels = await self.generate_tactician_labels(
-                price_data,
-                volume_data,
-                order_flow_data,
-                tactician_timeframe,
-            )
-
-            # Combine labels
-            combined_labels = {
-                "analyst_labels": analyst_labels,
-                "tactician_labels": tactician_labels,
-                "combined_timestamp": pd.Timestamp.now().isoformat(),
-                "total_labels": (
-                    analyst_labels.get("label_count", 0)
-                    + tactician_labels.get("signal_count", 0)
-                ),
-            }
-
-            self.logger.info(
-                f"Generated {combined_labels['total_labels']} combined labels",
-            )
-            return combined_labels
-
-        except Exception:
-            self.print(error("Error generating combined labels: {e}"))
-            return {}
-
-    def get_system_info(self) -> dict[str, Any]:
-        """Get meta-labeling system information."""
-        return {
-            "is_initialized": self.is_initialized,
-            "enable_analyst_labels": self.enable_analyst_labels,
-            "enable_tactician_labels": self.enable_tactician_labels,
-            "volatility_threshold": self.volatility_threshold,
-            "momentum_threshold": self.momentum_threshold,
-            "volume_threshold": self.volume_threshold,
-            "prediction_horizon": self.prediction_horizon,
-            "max_adverse_excursion": self.max_adverse_excursion,
-            "description": "Meta-labeling system for path-dependent trading signals",
-        }
-
     @handle_errors(
         exceptions=(Exception,),
         default_return=None,
         context="meta labeling system cleanup",
     )
-    async def stop(self) -> None:
-        """Stop the meta-labeling system."""
-        self.logger.info("🛑 Stopping Meta-Labeling System...")
-        try:
-            self.is_initialized = False
-            self.logger.info("✅ Meta-Labeling System stopped successfully")
-        except Exception:
-            self.print(error("Error stopping meta-labeling system: {e}"))

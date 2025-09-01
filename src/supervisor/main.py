@@ -216,99 +216,6 @@ class Supervisor:
         default_return=None,
         context="exchange state synchronization",
     )
-    async def _synchronize_exchange_state(self):
-        """
-        Fetches the current account equity and open positions from the exchange
-        and updates the persistent state. This is key for crash recovery.
-        """
-        try:
-            # 1. Update account equity and peak equity
-            account_info = await self.trader.get_account_info()  # Use self.trader
-            current_equity = float(account_info.get("totalWalletBalance", 0))
-
-            if current_equity > 0:
-                self.state_manager.set_state("account_equity", current_equity)
-                self.logger.debug(f"Updated account equity: ${current_equity:,.2f}")
-
-                peak_equity = self.state_manager.get_state(
-                    "global_peak_equity",
-                )  # Use global_peak_equity from state
-                if current_equity > peak_equity:
-                    self.state_manager.set_state("global_peak_equity", current_equity)
-                    self.logger.info(f"New peak equity reached: ${current_equity:,.2f}")
-            else:
-                self.logger.warning("Could not retrieve a valid account balance.")
-
-            # 2. Update open positions state for crash recovery
-            open_positions = await self.trader.get_open_positions()  # Use self.trader
-            symbol = self.symbol
-            active_position_on_exchange = None
-
-            for position in open_positions:
-                if (
-                    position.get("symbol") == symbol
-                    and float(position.get("positionAmt", 0)) != 0
-                ):
-                    # Capture more details for active_position
-                    active_position_on_exchange = {
-                        "symbol": position["symbol"],
-                        "amount": float(position["positionAmt"]),
-                        "entry_price": float(position["entryPrice"]),
-                        "leverage": int(position.get("leverage", 1)),
-                        "direction": "LONG"
-                        if float(position["positionAmt"]) > 0
-                        else "SHORT",
-                        "trade_id": self.state_manager.get_state(
-                            "current_position",
-                            {},
-                        ).get("trade_id"),  # Attempt to recover trade_id
-                        "entry_timestamp": self.state_manager.get_state(
-                            "current_position",
-                            {},
-                        ).get("entry_timestamp"),  # Attempt to recover timestamp
-                        "stop_loss": self.state_manager.get_state(
-                            "current_position",
-                            {},
-                        ).get("stop_loss"),
-                        "take_profit": self.state_manager.get_state(
-                            "current_position",
-                            {},
-                        ).get("take_profit"),
-                        "entry_fees_usd": self.state_manager.get_state(
-                            "current_position",
-                            {},
-                        ).get("entry_fees_usd", 0.0),
-                        "entry_context": self.state_manager.get_state(
-                            "current_position",
-                            {},
-                        ).get("entry_context", {}),
-                    }
-                    self.logger.debug(
-                        f"Found active position on exchange for {symbol}.",
-                    )
-                    break
-
-            # Synchronize the state file with what's on the exchange
-            current_state_position = self.state_manager.get_state(
-                "current_position",
-            )  # Use 'current_position'
-
-            # Only update if there's a meaningful change or new position found
-            if active_position_on_exchange != current_state_position:
-                self.logger.info(
-                    f"State mismatch or update: Synchronizing position state with exchange. New state: {active_position_on_exchange}",
-                )
-                self.state_manager.set_state(
-                    "current_position",
-                    active_position_on_exchange
-                )  # Update 'current_position'
-
-        except Exception as e:
-            self.logger.error(
-                f"Failed to synchronize state with exchange: {e}",
-                exc_info=True
-            )
-
 class MainSupervisor:
     """
     Main Supervisor Entrypoint with DI, type hints, and robust error handling.
@@ -333,19 +240,6 @@ class MainSupervisor:
         default_return=False,
         context="main supervisor initialization",
     )
-    async def initialize(self) -> bool:
-        try:
-            self.logger.info("Initializing Main Supervisor...")
-            await self._load_supervisor_configuration()
-            if not self._validate_configuration():
-                self.logger.error("Invalid configuration for main supervisor")
-                return False
-            self.logger.info("✅ Main Supervisor initialization completed successfully")
-            return True
-        except Exception as e:
-            self.logger.error(f"❌ Main Supervisor initialization failed: {e}")
-            return False
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
@@ -421,24 +315,6 @@ class MainSupervisor:
         default_return=None,
         context="main supervisor stop",
     )
-    async def stop(self) -> None:
-        self.logger.info("🛑 Stopping Main Supervisor...")
-        try:
-            self.is_running = False
-            self.status = {"timestamp": datetime.now().isoformat(), "status": "stopped"}
-            self.logger.info("✅ Main Supervisor stopped successfully")
-        except Exception as e:
-            self.logger.error(f"Error stopping main supervisor: {e}")
-
-    def get_status(self) -> dict[str, Any]:
-        return self.status.copy()
-
-    def get_history(self, limit: int | None = None) -> list[dict[str, Any]]:
-        history = self.history.copy()
-        if limit:
-            history = history[-limit:]
-        return history
-
 main_supervisor: MainSupervisor | None = None
 
 @handle_errors(

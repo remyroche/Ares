@@ -119,14 +119,6 @@ class UnifiedDataOrchestrator:
 
         _ = time.time() - start_time
 
-    def _get_memory_usage_mb(self) -> float:
-        """Get current memory usage in MB."""
-        try:
-            process = psutil.Process()
-            return process.memory_info().rss / 1024 / 1024
-        except Exception:
-            return 0.0
-
     def _log_memory_usage(self, context: str) -> None:
         """Log current memory usage with context."""
         memory_mb = self._get_memory_usage_mb()
@@ -181,36 +173,6 @@ class UnifiedDataOrchestrator:
         default_return=False,
         context="orchestrator initialization",
     )
-    async def initialize(self) -> bool:
-        """Initialize the orchestrator."""
-        start_time = time.time()
-        self._log_memory_usage("initialize_start")
-
-        try:
-            self.logger.info("🚀 Initializing Unified Data Orchestrator")
-
-            # Initialize components
-            await self.data_sharing_manager.initialize()
-
-            # Start cache cleanup task
-            if self.enable_caching:
-                self._cache_cleanup_task = asyncio.create_task(
-                    self._cache_cleanup_loop(),
-                )
-
-            init_time = time.time() - start_time
-            self.stats["operation_times"]["initialization"] = init_time
-
-            self._log_memory_usage("initialize_end")
-
-            self.logger.info("✅ Unified Data Orchestrator initialized successfully")
-            return True
-
-        except Exception as e:
-            init_time = time.time() - start_time
-            self.logger.exception(f"❌ Failed to initialize Unified Data Orchestrator: {e}")
-            return False
-
     @validate_step_prerequisites(
         required_packages=["asyncio", "gc"], context="Orchestrator Cleanup",
     )
@@ -249,34 +211,6 @@ class UnifiedDataOrchestrator:
     @handle_errors(
         exceptions=(Exception,), default_return=None, context="orchestrator cleanup",
     )
-    async def cleanup(self) -> None:
-        """Cleanup resources."""
-        start_time = time.time()
-        self._log_memory_usage("cleanup_start")
-
-        try:
-            if self._cache_cleanup_task:
-                self._cache_cleanup_task.cancel()
-                with contextlib.suppress(asyncio.CancelledError):
-                    await self._cache_cleanup_task
-
-            # Clear caches
-            _ = len(self.resampling_cache)
-            self.resampling_cache.clear()
-
-            self._force_garbage_collection()
-
-            cleanup_time = time.time() - start_time
-            self.stats["operation_times"]["cleanup"] = cleanup_time
-
-            self._log_memory_usage("cleanup_end")
-
-            self.logger.info("🧹 Unified Data Orchestrator cleanup completed")
-
-        except Exception as e:
-            cleanup_time = time.time() - start_time
-            self.logger.exception(f"❌ Error during cleanup: {e}")
-
     @validate_step_prerequisites(
         required_directories=["data_cache", "data/training"],
         min_memory_gb=2.0,
@@ -341,163 +275,6 @@ class UnifiedDataOrchestrator:
     @handle_errors(
         exceptions=(Exception,), default_return=None, context="unified data loading",
     )
-    async def get_unified_data(
-        self,
-        symbol: str,
-        exchange: str,
-        timeframe: str = "1m",
-        lookback_days: int | None = None,
-        force_reload: bool = False,
-        validate_quality: bool = True,
-        auto_repair: bool = True,
-    ) -> pd.DataFrame | None:
-        """Get unified data with comprehensive fallback strategies and quality validation.
-
-        Args:
-            symbol: Trading symbol
-            exchange: Exchange name
-            timeframe: Data timeframe
-            lookback_days: Number of days to look back
-            force_reload: Force reload from source
-            validate_quality: Validate data quality
-            auto_repair: Automatically repair data issues
-
-        Returns:
-            DataFrame with unified data or None if loading fails
-
-        """
-        start_time = time.time()
-        request_id = f"{exchange}_{symbol}_{timeframe}_{int(start_time)}"
-
-        self._log_memory_usage(f"data_load_start_{request_id}")
-        self.stats["total_requests"] += 1
-
-        try:
-            self.logger.info(
-                f"🔄 Loading unified data: {exchange}_{symbol}_{timeframe}",
-            )
-
-            # Step 1: Try data sharing manager first (most efficient)
-            if not force_reload:
-                cache_start = time.time()
-
-                data = await self.data_sharing_manager.get_unified_data(
-                    symbol=symbol,
-                    exchange=exchange,
-                    timeframe=timeframe,
-                    lookback_days=lookback_days,
-                    force_reload=False,
-                )
-
-                _ = time.time() - cache_start
-
-                if data is not None and not data.empty:
-                    self.stats["cache_hits"] += 1
-                    _ = data.memory_usage(deep=True).sum() / 1024 / 1024
-                    self.logger.info(f"✅ Data loaded from cache: {data.shape}")
-
-                    if validate_quality:
-                        validation_start = time.time()
-                        data = await self._validate_and_repair_data(data, auto_repair)
-                        _ = time.time() - validation_start
-
-                    total_time = time.time() - start_time
-                    self.stats["operation_times"][f"cache_hit_{request_id}"] = (
-                        total_time
-                    )
-                    self._log_memory_usage(f"data_load_cache_hit_{request_id}")
-
-                    return data
-
-            self.stats["cache_misses"] += 1
-
-            # Step 2: Try unified data loader
-            loader_start = time.time()
-
-            data = await self.data_loader.load_unified_data(
-                symbol=symbol,
-                exchange=exchange,
-                timeframe=timeframe,
-                lookback_days=lookback_days,
-            )
-
-            _ = time.time() - loader_start
-
-            if data is not None and not data.empty:
-                _ = data.memory_usage(deep=True).sum() / 1024 / 1024
-                self.logger.info(f"✅ Data loaded from unified loader: {data.shape}")
-
-                if validate_quality:
-                    validation_start = time.time()
-                    data = await self._validate_and_repair_data(data, auto_repair)
-                    _ = time.time() - validation_start
-
-                # Cache the data
-                if self.enable_caching:
-                    cache_start = time.time()
-                    await self.data_sharing_manager.cache_unified_data(
-                        symbol=symbol,
-                        exchange=exchange,
-                        timeframe=timeframe,
-                        lookback_days=lookback_days,
-                        data=data,
-                    )
-                    _ = time.time() - cache_start
-
-                total_time = time.time() - start_time
-                self.stats["operation_times"][f"unified_loader_{request_id}"] = (
-                    total_time
-                )
-                self._log_memory_usage(f"data_load_unified_success_{request_id}")
-
-                return data
-
-            # Step 3: Fallback to raw data loading and conversion
-            self.logger.warning(
-                "⚠️ Unified data not available, trying raw data conversion",
-            )
-            raw_start = time.time()
-
-            data = await self._load_and_convert_raw_data(
-                symbol=symbol,
-                exchange=exchange,
-                timeframe=timeframe,
-                lookback_days=lookback_days,
-            )
-
-            _ = time.time() - raw_start
-
-            if data is not None and not data.empty:
-                _ = data.memory_usage(deep=True).sum() / 1024 / 1024
-                self.logger.info(f"✅ Data loaded from raw conversion: {data.shape}")
-
-                if validate_quality:
-                    validation_start = time.time()
-                    data = await self._validate_and_repair_data(data, auto_repair)
-                    _ = time.time() - validation_start
-
-                total_time = time.time() - start_time
-                self.stats["operation_times"][f"raw_conversion_{request_id}"] = (
-                    total_time
-                )
-                self._log_memory_usage(f"data_load_raw_success_{request_id}")
-
-                return data
-
-            # All methods failed
-            total_time = time.time() - start_time
-            self.logger.error(
-                f"❌ Failed to load data for {exchange}_{symbol}_{timeframe}",
-            )
-            self._log_memory_usage(f"data_load_failed_{request_id}")
-            return None
-
-        except Exception as e:
-            total_time = time.time() - start_time
-            self.logger.exception(f"❌ Error loading unified data: {e}")
-            self._log_memory_usage(f"data_load_exception_{request_id}")
-            return None
-
     @validate_step_prerequisites(
         required_directories=["data_cache", "data/training"],
         min_memory_gb=4.0,
@@ -567,168 +344,6 @@ class UnifiedDataOrchestrator:
         default_return=None,
         context="multi-timeframe data loading",
     )
-    async def get_multi_timeframe_data(
-        self,
-        symbol: str,
-        exchange: str,
-        timeframes: list[str] | None = None,
-        lookback_days: int | None = None,
-        force_reload: bool = False,
-        validate_quality: bool = True,
-        auto_repair: bool = True,
-    ) -> dict[str, pd.DataFrame]:
-        """Get data for multiple timeframes with intelligent resampling.
-
-        Args:
-            symbol: Trading symbol
-            exchange: Exchange name
-            timeframes: List of timeframes to load
-            lookback_days: Number of days to look back
-            force_reload: Force reload from source
-            validate_quality: Validate data quality
-            auto_repair: Automatically repair data issues
-
-        Returns:
-            Dictionary mapping timeframes to DataFrames
-
-        """
-        start_time = time.time()
-        request_id = f"multi_{exchange}_{symbol}_{int(start_time)}"
-
-        self._log_memory_usage(f"multi_tf_start_{request_id}")
-
-        if timeframes is None:
-            timeframes = self.default_timeframes
-
-        try:
-            self.logger.info(f"🔄 Loading multi-timeframe data: {exchange}_{symbol}")
-            self.logger.info(f"   Timeframes: {timeframes}")
-
-            # Sort timeframes by resolution (highest to lowest)
-            timeframe_order = self._sort_timeframes_by_resolution(timeframes)
-
-            # Load base timeframe first (usually 1m)
-            base_timeframe = self._get_base_timeframe(timeframe_order)
-            base_start = time.time()
-
-            base_data = await self.get_unified_data(
-                symbol=symbol,
-                exchange=exchange,
-                timeframe=base_timeframe,
-                lookback_days=lookback_days,
-                force_reload=force_reload,
-                validate_quality=validate_quality,
-                auto_repair=auto_repair,
-            )
-
-            _ = time.time() - base_start
-
-            if base_data is None or base_data.empty:
-                self.logger.error(f"❌ Failed to load base data for {base_timeframe}")
-                return {}
-
-            _ = base_data.memory_usage(deep=True).sum() / 1024 / 1024
-
-            # Load or resample data for each timeframe
-            result: dict[str, pd.DataFrame] = {}
-            successful_timeframes = 0
-
-            for _i, timeframe in enumerate(timeframe_order, 1):
-                tf_start = time.time()
-
-                if timeframe == base_timeframe:
-                    result[timeframe] = base_data
-                    successful_timeframes += 1
-                    _ = time.time() - tf_start
-                    continue
-
-                # Try to load existing data for this timeframe
-                existing_start = time.time()
-
-                existing_data = await self.get_unified_data(
-                    symbol=symbol,
-                    exchange=exchange,
-                    timeframe=timeframe,
-                    lookback_days=lookback_days,
-                    force_reload=force_reload,
-                    validate_quality=validate_quality,
-                    auto_repair=auto_repair,
-                )
-
-                _ = time.time() - existing_start
-
-                if existing_data is not None and not existing_data.empty:
-                    result[timeframe] = existing_data
-                    _ = (
-                        existing_data.memory_usage(deep=True).sum() / 1024 / 1024
-                    )
-                    self.logger.info(
-                        f"✅ Loaded existing data for {timeframe}: {existing_data.shape}",
-                    )
-                    successful_timeframes += 1
-                else:
-                    # Resample from base data
-                    resample_start = time.time()
-
-                    resampled_data = await self._resample_data(
-                        data=base_data,
-                        from_timeframe=base_timeframe,
-                        to_timeframe=timeframe,
-                        symbol=symbol,
-                        exchange=exchange,
-                    )
-
-                    _ = time.time() - resample_start
-
-                    if resampled_data is not None and not resampled_data.empty:
-                        result[timeframe] = resampled_data
-                        _ = (
-                            resampled_data.memory_usage(deep=True).sum() / 1024 / 1024
-                        )
-                        self.logger.info(
-                            f"✅ Resampled data for {timeframe}: {resampled_data.shape}",
-                        )
-                        successful_timeframes += 1
-
-                        # Cache the resampled data
-                        if self.enable_caching:
-                            cache_start = time.time()
-                            await self.data_sharing_manager.cache_unified_data(
-                                symbol=symbol,
-                                exchange=exchange,
-                                timeframe=timeframe,
-                                lookback_days=lookback_days,
-                                data=resampled_data,
-                            )
-                            _ = time.time() - cache_start
-                    else:
-                        self.logger.warning(
-                            f"⚠️ Failed to resample data for {timeframe}",
-                        )
-
-                _ = time.time() - tf_start
-
-            total_time = time.time() - start_time
-            _ = (
-                sum(df.memory_usage(deep=True).sum() for df in result.values())
-                / 1024
-                / 1024
-            )
-
-            self.stats["operation_times"][f"multi_tf_{request_id}"] = total_time
-            self._log_memory_usage(f"multi_tf_end_{request_id}")
-
-            self.logger.info(
-                f"✅ Multi-timeframe data loading completed: {len(result)} timeframes",
-            )
-            return result
-
-        except Exception as e:
-            total_time = time.time() - start_time
-            self.logger.exception(f"❌ Error loading multi-timeframe data: {e}")
-            self._log_memory_usage(f"multi_tf_exception_{request_id}")
-            return {}
-
     @validate_step_prerequisites(
         required_packages=["pandas", "numpy"],
         data_quality_checks={
@@ -1439,11 +1054,6 @@ class UnifiedDataOrchestrator:
         timeframe_minutes = {tf: self._timeframe_to_minutes(tf) for tf in timeframes}
         return sorted(timeframes, key=lambda tf: timeframe_minutes[tf])
 
-    def _get_base_timeframe(self, timeframes: list[str]) -> str:
-        """Get the base timeframe (highest resolution)."""
-        sorted_timeframes = self._sort_timeframes_by_resolution(timeframes)
-        return sorted_timeframes[0] if sorted_timeframes else "1m"
-
     def _timeframe_to_minutes(self, timeframe: str) -> int:
         """Convert timeframe string to minutes."""
         timeframe_map = {
@@ -1456,38 +1066,6 @@ class UnifiedDataOrchestrator:
             "1d": 1440,
         }
         return timeframe_map.get(timeframe, 1)
-
-    async def _cache_cleanup_loop(self) -> None:
-        """Periodic cache cleanup loop."""
-        while True:
-            try:
-                await asyncio.sleep(3600)  # Run every hour
-
-                cleanup_start = time.time()
-
-                # Clean up resampling cache
-                if len(self.resampling_cache) > self.resampling_cache_size * 0.8:
-                    # Remove oldest entries
-                    keys_to_remove = list(self.resampling_cache.keys())[
-                        : len(self.resampling_cache) // 2
-                    ]
-                    for key in keys_to_remove:
-                        del self.resampling_cache[key]
-
-                    self.logger.info(
-                        f"🧹 Cleaned up resampling cache: {len(self.resampling_cache)} entries remaining",
-                    )
-
-                # Force garbage collection
-                if self.enable_memory_optimization:
-                    self._force_garbage_collection()
-
-                _ = time.time() - cleanup_start
-
-            except asyncio.CancelledError:
-                break
-            except Exception as e:
-                self.logger.exception(f"❌ Error in cache cleanup loop: {e}")
 
     def _force_garbage_collection(self) -> None:
         """Force garbage collection."""
@@ -1502,63 +1080,8 @@ class UnifiedDataOrchestrator:
         except Exception as e:
             self.logger.exception(f"❌ Error during garbage collection: {e}")
 
-    def get_stats(self) -> dict[str, Any]:
-        """Get orchestrator statistics."""
-        return {
-            **self.stats,
-            "cache_size": len(self.resampling_cache),
-            "data_sharing_stats": self.data_sharing_manager.stats,
-        }
-
-    def get_cache_info(self) -> dict[str, Any]:
-        """Get cache information."""
-        return {
-            "resampling_cache_size": len(self.resampling_cache),
-            "resampling_cache_limit": self.resampling_cache_size,
-            "data_sharing_cache_keys": list(
-                self.data_sharing_manager._data_cache.keys(),
-            ),
-        }
-
 # Global instance
 _unified_data_orchestrator: UnifiedDataOrchestrator | None = None
 
 
-def get_unified_data_orchestrator(config: dict[str, Any]) -> UnifiedDataOrchestrator:
-    """Get or create the global unified data orchestrator instance."""
-    global _unified_data_orchestrator
 
-    if _unified_data_orchestrator is None:
-        _unified_data_orchestrator = UnifiedDataOrchestrator(config)
-    else:
-        _unified_data_orchestrator.config = config
-
-    return _unified_data_orchestrator
-
-
-async def initialize_unified_data_orchestrator(config: dict[str, Any]) -> bool:
-    """Initialize the global unified data orchestrator."""
-    global _unified_data_orchestrator
-
-    if _unified_data_orchestrator is None:
-        _unified_data_orchestrator = UnifiedDataOrchestrator(config)
-
-    success = await _unified_data_orchestrator.initialize()
-
-    if success:
-        _unified_data_orchestrator.stats["initialized_at"] = datetime.now()
-    else:
-        system_logger.getChild("UnifiedDataOrchestrator").error("Initialization failed")
-
-    return success
-
-
-async def cleanup_unified_data_orchestrator() -> None:
-    """Cleanup the global unified data orchestrator."""
-    global _unified_data_orchestrator
-
-    if _unified_data_orchestrator is not None:
-        await _unified_data_orchestrator.cleanup()
-        _unified_data_orchestrator = None
-    else:
-        system_logger.getChild("UnifiedDataOrchestrator").debug("No orchestrator to cleanup")

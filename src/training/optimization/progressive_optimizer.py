@@ -101,29 +101,6 @@ class ProgressiveOptimizer:
             start_time = time.time()
 
             # Create objective function for tier 1
-            def tier1_objective(trial):
-                params = {}
-
-                # Suggest critical parameters
-                params["confidence_thresholds.base_entry_threshold"] = (
-                    trial.suggest_float("base_entry_threshold", 0.5, 0.9)
-                )
-                params["confidence_thresholds.position_close_threshold"] = (
-                    trial.suggest_float("position_close_threshold", 0.2, 0.6)
-                )
-                params["position_sizing_parameters.kelly_multiplier"] = (
-                    trial.suggest_float("kelly_multiplier", 0.1, 0.5)
-                )
-                params["position_sizing_parameters.max_position_size"] = (
-                    trial.suggest_float("max_position_size", 0.1, 0.4)
-                )
-                params["stop_loss_parameters.stop_loss_atr_multiplier"] = (
-                    trial.suggest_float("stop_loss_atr_multiplier", 1.0, 4.0)
-                )
-
-                # Evaluate performance
-                return self._evaluate_tier1_performance(params)
-
             # Create study with warm start if available
             study_name = f"tier1_optimization_{int(time.time())}"
             study = optuna.create_study(
@@ -183,34 +160,6 @@ class ProgressiveOptimizer:
             if tier1_results and self.progressive_config.use_previous_results:
                 initial_params.update(tier1_results.get("best_params", {}))
 
-            def tier2_objective(trial):
-                params = initial_params.copy()
-
-                # Suggest important parameters
-                params["volatility_parameters.volatility_multiplier"] = (
-                    trial.suggest_float("volatility_multiplier", 0.5, 2.0)
-                )
-                params["profit_taking_parameters.pt1_target_atr_multiplier"] = (
-                    trial.suggest_float("pt1_target_atr_multiplier", 1.5, 4.0)
-                )
-                params["ensemble_parameters.ensemble_method"] = (
-                    trial.suggest_categorical(
-                        "ensemble_method",
-                        ["confidence_weighted", "majority_vote", "weighted_average"],
-                    )
-                )
-                params["cooldown_parameters.base_cooldown_minutes"] = trial.suggest_int(
-                    "base_cooldown_minutes",
-                    15,
-                    120,
-                )
-                params["drawdown_parameters.warning_drawdown_threshold"] = (
-                    trial.suggest_float("warning_drawdown_threshold", 0.05, 0.25)
-                )
-
-                # Evaluate performance
-                return self._evaluate_tier2_performance(params)
-
             # Create study
             study_name = f"tier2_optimization_{int(time.time())}"
             study = optuna.create_study(
@@ -263,23 +212,6 @@ class ProgressiveOptimizer:
             initial_params = {}
             if tier2_results and self.progressive_config.use_previous_results:
                 initial_params.update(tier2_results.get("best_params", {}))
-
-            def tier3_objective(trial):
-                params = initial_params.copy()
-
-                # Suggest advanced parameters
-                params["feature_engineering_parameters.feature_selection_threshold"] = (
-                    trial.suggest_float("feature_selection_threshold", 0.001, 0.05)
-                )
-                params["monitoring_parameters.performance_alert_threshold"] = (
-                    trial.suggest_float("performance_alert_threshold", 0.05, 0.2)
-                )
-                params["optimization_parameters.min_trades_for_optimization"] = (
-                    trial.suggest_int("min_trades_for_optimization", 5, 20)
-                )
-
-                # Evaluate performance
-                return self._evaluate_tier3_performance(params)
 
             # Create study
             study_name = f"tier3_optimization_{int(time.time())}"
@@ -549,41 +481,3 @@ class ProgressiveOptimizer:
         except Exception:
             self.print(warning("Error evaluating Tier 3 performance: {e}"))
             return 0.0
-
-    def get_progressive_statistics(self) -> dict[str, Any]:
-        """Get progressive optimization statistics."""
-        try:
-            if not self.optimization_history:
-                return {"message": "No progressive optimization history available"}
-
-            latest_optimization = self.optimization_history[-1]
-
-            stats = {
-                "total_optimizations": len(self.optimization_history),
-                "latest_optimization_time": latest_optimization[
-                    "timestamp"
-                ].isoformat(),
-                "tier_results": {},
-                "total_optimization_time": latest_optimization["results"].get(
-                    "total_optimization_time",
-                    0,
-                ),
-                "total_trials": latest_optimization["results"].get("total_trials", 0),
-            }
-
-            # Add tier-specific statistics
-            for tier_name, tier_results in (
-                latest_optimization["results"].get("tier_results", {}).items()
-            ):
-                if tier_results:
-                    stats["tier_results"][tier_name] = {
-                        "best_value": tier_results.get("best_value", 0.0),
-                        "optimization_time": tier_results.get("optimization_time", 0),
-                        "n_trials": tier_results.get("n_trials", 0),
-                    }
-
-            return stats
-
-        except Exception:
-            self.print(error("Error getting progressive statistics: {e}"))
-            return {}

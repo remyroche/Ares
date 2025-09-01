@@ -33,18 +33,6 @@ class TradingLSTMModel(nn.Module):
         self.dropout = nn.Dropout(dropout)
         self.fc = nn.Linear(hidden_size, num_classes)
 
-    def forward(self, x):
-        # x shape: (batch_size, sequence_length, input_size)
-        lstm_out, _ = self.lstm(x)
-
-        # Take the last output
-        lstm_out = lstm_out[:, -1, :]
-
-        # Apply dropout and final classification
-        out = self.dropout(lstm_out)
-        out = self.fc(out)
-        return out
-
 class TradingTransformerModel(nn.Module):
     """Transformer model for trading predictions."""
 
@@ -66,18 +54,6 @@ class TradingTransformerModel(nn.Module):
         self.dropout = nn.Dropout(dropout)
         self.fc = nn.Linear(d_model, num_classes)
 
-    def forward(self, x):
-        # x shape: (batch_size, sequence_length, input_size)
-        x = self.input_projection(x)
-        x = self.positional_encoding(x)
-        x = self.transformer(x)
-
-        # Take the last output
-        x = x[:, -1, :]
-        x = self.dropout(x)
-        x = self.fc(x)
-        return x
-
 class PositionalEncoding(nn.Module):
     """Positional encoding for transformer."""
 
@@ -93,9 +69,6 @@ class PositionalEncoding(nn.Module):
         pe = pe.unsqueeze(0).transpose(0, 1)
 
         self.register_buffer('pe', pe)
-
-    def forward(self, x):
-        return x + self.pe[:x.size(0), :]
 
 def generate_synthetic_trading_data(n_samples=10000, sequence_length=50):
     """Generate synthetic trading data for demonstration."""

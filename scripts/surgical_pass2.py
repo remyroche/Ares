@@ -15,12 +15,6 @@ def apply_fixes(text: str) -> str:
     text = re.sub(r"\(\,\s*", r"(", text)  # def f(, x: int) -> def f(x: int)
 
     # 2) Fix dict/list/tuple type brackets having ' = '
-    def fix_brackets(m: re.Match[str]) -> str:
-        head = m.group(1)
-        inside = m.group(2)
-        fixed = inside.replace(" = ", ", ")
-        return f"{head}[{fixed}]"
-
     text = re.sub(r"\b(dict|list|tuple)\[([^\]]+)\]", fix_brackets, text)
 
     # 3) Fix typed variable annotations using comma instead of equals

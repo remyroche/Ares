@@ -307,11 +307,6 @@ class MultiOutputModel:
         # Initialize individual models
         self._initialize_models()
 
-    def _initialize_models(self):
-        """Initialize individual models for each probability type."""
-        for output_type in ['triple_barrier', 'direction', 'magnitude', 'barrier_avoidance']:
-            self.models[output_type] = self._create_model(output_type)
-
     def _create_model(self, output_type: str):
         """Create model for specific output type with advanced model selection."""
 
@@ -485,25 +480,6 @@ class MultiOutputModel:
         Returns:
             Dictionary of optimized weights
         """
-        def objective(weights):
-            """Objective function to minimize."""
-            total_loss = 0
-
-            for i, output_type in enumerate(['triple_barrier', 'direction', 'magnitude', 'barrier_avoidance']):
-                model = models[output_type]
-                y_true = y_val_multi[output_type]
-
-                try:
-                    y_pred_proba = model.predict_proba(X_val)[:, 1]  # Probability of positive class
-                    # Calculate Brier score (lower is better)
-                    brier_score = np.mean((y_pred_proba - y_true) ** 2)
-                    total_loss += brier_score * weights[i]
-                except Exception as e:
-                    self.logger.warning(f"Error calculating loss for {output_type}: {e}")
-                    total_loss += 1.0 * weights[i]  # Penalty for failed prediction
-
-            return total_loss
-
         # Initial weights (equal)
         initial_weights = [0.25, 0.25, 0.25, 0.25]
 
@@ -736,26 +712,3 @@ class MultiOutputProbabilityTrainer:
         except Exception as e:
             self.logger.error(f"Error in multi-output model prediction: {e}")
             return self._get_default_probabilities()
-
-    def _get_default_probabilities(self) -> Dict[str, float]:
-        """Get default probabilities when training fails."""
-        return {
-            "triple_barrier_probability": 0.5,
-            "direction_probability": 0.5,
-            "magnitude_probability": 0.5,
-            "barrier_avoidance_probability": 0.5,
-            "generation_timestamp": datetime.now().isoformat(),
-            "model_type": "multi_output"
-        }
-
-    def get_model_info(self) -> Dict[str, Any]:
-        """Get information about the trained model."""
-        if not self.is_trained:
-            return {"status": "not_trained"}
-
-        return {
-            "status": "trained",
-            "ensemble_weights": self.multi_output_model.ensemble_weights,
-            "model_types": {name: type(model).__name__ for name, model in self.trained_models.items()},
-            "calibrators": list(self.multi_output_model.calibrators.keys())
-        }

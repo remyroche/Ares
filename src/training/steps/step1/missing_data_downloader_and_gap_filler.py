@@ -47,44 +47,14 @@ except ImportError as e:
 
     # Fallback decorators
     def handle_errors(*args, **kwargs):
-        def decorator(func):
-            return func
-        return decorator
 
     def with_tracing_span(*args, **kwargs):
-        def decorator(func):
-            return func
-        return decorator
 
     def validate_data_quality(*args, **kwargs):
-        def decorator(func):
-            return func
-        return decorator
 
     def validate_data_structure(*args, **kwargs):
-        def decorator(func):
-            return func
-        return decorator
-
-    def guard_dataframe_nulls(*args, **kwargs):
-        def decorator(func):
-            return func
-        return decorator
-
-    def optimize_memory_usage(*args, **kwargs):
-        def decorator(func):
-            return func
-        return decorator
-
-    def comprehensive_data_validation(*args, **kwargs):
-        def decorator(func):
-            return func
-        return decorator
 
     def secure_data_processing(*args, **kwargs):
-        def decorator(func):
-            return func
-        return decorator
 
     DataGapDetector = None
     BinanceExchange = None
@@ -130,28 +100,6 @@ class MissingDataDownloaderAndGapFiller:
         default_return=False,
         context="missing_data_downloader.ensure_exchange_initialized"
     )
-    async def _ensure_exchange_initialized(self) -> bool:
-        """Ensure the exchange is properly initialized."""
-        if not self._exchange_initialized:
-            try:
-                logger.info("🔧 Initializing Binance exchange connection...")
-                if self.exchange:
-                    success = await self.exchange.initialize()
-                    if success:
-                        self._exchange_initialized = True
-                        logger.info("✅ Binance exchange initialized successfully")
-                        return True
-                    else:
-                        logger.error("❌ Failed to initialize Binance exchange")
-                        return False
-                else:
-                    logger.warning("⚠️ No exchange available")
-                    return False
-            except Exception as e:
-                logger.exception(f"❌ Error initializing exchange: {e}")
-                return False
-        return True
-
     @with_tracing_span("download_aggtrades_data")
     @handle_errors(
         exceptions=(OSError, ValueError, TypeError, KeyError),

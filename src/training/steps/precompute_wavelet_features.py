@@ -58,33 +58,6 @@ class WaveletFeaturePrecomputer:
         self.feature_engineer = None
         self.wavelet_cache = None
 
-    async def initialize(self) -> bool:
-        """Initialize the pre-computation system."""
-        try:
-            self.logger.info(
-                "🚀 Initializing wavelet feature pre-computation system...",
-            )
-
-            # Initialize feature engineering
-            self.feature_engineer = VectorizedAdvancedFeatureEngineering(self.config)
-            await self.feature_engineer.initialize()
-
-            # Initialize cache
-            self.wavelet_cache = WaveletFeatureCache(self.config)
-
-            self.logger.info(
-                "✅ Wavelet feature pre-computation system initialized successfully",
-            )
-            return True
-
-        except Exception as e:
-            self.print(
-                initialization_error(
-                    f"❌ Error initializing pre-computation system: {e}",
-                ),
-            )
-            return False
-
     async def precompute_dataset(
         self, data_path: str, output_path: str | None = None, symbol: str | None = None, start_date: str | None = None, end_date: str | None = None
     ) -> bool:
@@ -396,39 +369,6 @@ class WaveletFeaturePrecomputer:
 
         except Exception:
             self.print(error("Error in multiple dataset pre-computation: {e}"))
-            return False
-
-    def get_precomputation_stats(self) -> dict[str, Any]:
-        """Get pre-computation statistics."""
-        try:
-            cache_stats = (
-                self.wavelet_cache.get_cache_stats() if self.wavelet_cache else {}
-            )
-
-            return {
-                "precomputation_config": {
-                    "batch_size": self.batch_size,
-                    "enable_batch_processing": self.enable_batch_processing,
-                    "enable_progress_tracking": self.enable_progress_tracking,
-                    "enable_parallel_processing": self.enable_parallel_processing,
-                },
-                "cache_stats": cache_stats,
-                "timestamp": datetime.now().isoformat(),
-            }
-
-        except Exception as e:
-            self.print(error("Error getting pre-computation stats: {e}"))
-            return {"error": str(e)}
-
-    def clear_all_cache(self) -> bool:
-        """Clear all cached wavelet features."""
-        try:
-            if self.wavelet_cache:
-                return self.wavelet_cache.clear_cache()
-            return False
-
-        except Exception:
-            self.print(error("Error clearing cache: {e}"))
             return False
 
 

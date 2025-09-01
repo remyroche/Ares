@@ -122,39 +122,6 @@ class FractionalImplementationsConfig:
 DEFAULT_FRACTIONAL_CONFIG = FractionalImplementationsConfig()
 
 
-def get_fractional_config(config_dict: Dict[str, Any] = None) -> FractionalImplementationsConfig:
-    """Get fractional implementations configuration.
-
-    Args:
-        config_dict: Optional configuration dictionary to override defaults
-
-    Returns:
-        FractionalImplementationsConfig instance
-    """
-    if config_dict is None:
-        return DEFAULT_FRACTIONAL_CONFIG
-
-    # Create config from dictionary
-    config = FractionalImplementationsConfig()
-
-    # Update general settings
-    for key, value in config_dict.items():
-        if hasattr(config, key):
-            setattr(config, key, value)
-
-    # Update sub-configurations
-    if "fractional_labeling" in config_dict:
-        for key, value in config_dict["fractional_labeling"].items():
-            if hasattr(config.fractional_labeling, key):
-                setattr(config.fractional_labeling, key, value)
-
-    if "fractional_differentiation" in config_dict:
-        for key, value in config_dict["fractional_differentiation"].items():
-            if hasattr(config.fractional_differentiation, key):
-                setattr(config.fractional_differentiation, key, value)
-
-    return config
-
 
 def validate_fractional_config(config: FractionalImplementationsConfig) -> List[str]:
     """Validate fractional implementations configuration.

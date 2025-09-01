@@ -133,35 +133,6 @@ class AsyncOrderExecutor:
         default_return=False,
         context="order executor initialization"
     )
-    async def initialize(self) -> bool:
-        """
-        Initialize the order executor.
-
-        Returns:
-            bool: True if initialization successful
-        """
-        try:
-            self.logger.info("Initializing Async Order Executor...")
-
-            # Initialize order manager
-            self.order_manager = EnhancedOrderManager(self.config)
-            await self.order_manager.initialize()
-
-            # Initialize performance reporter
-            self.performance_reporter = await setup_performance_reporter(self.config)
-
-            # Validate configuration
-            if not self._validate_configuration():
-                self.logger.error(invalid("Invalid order executor configuration"))
-                return False
-
-            self.logger.info("✅ Async Order Executor initialized successfully")
-            return True
-
-        except Exception as e:
-            self.logger.error(failed(f"❌ Async Order Executor initialization failed: {e}"))
-            return False
-
     def _validate_configuration(self) -> bool:
         """
         Validate order executor configuration.
@@ -475,15 +446,6 @@ class AsyncOrderExecutor:
             # Use Optuna to optimize execution parameters
             study = optuna.create_study(direction="minimize")
 
-            def objective(trial):
-                # Define hyperparameters to optimize
-                trial.suggest_int("num_slices", 1, 20)
-                trial.suggest_float("slice_interval", 10, 300)
-
-                # Simulate execution with these parameters
-                # In real implementation, this would execute with these parameters
-                return 0.0  # Placeholder
-
             study.optimize(objective, n_trials=5)
 
             # Use best parameters for execution
@@ -494,47 +456,6 @@ class AsyncOrderExecutor:
         except Exception as e:
             self.logger.error(failed(f"❌ Adaptive execution failed: {e}"))
             return False
-
-    def get_active_executions(self) -> Dict[str, ExecutionResult]:
-        """
-        Get all active executions.
-
-        Returns:
-            Dict[str, ExecutionResult]: Active executions
-        """
-        return self.active_executions.copy()
-
-    def get_execution_history(self) -> List[ExecutionResult]:
-        """
-        Get execution history.
-
-        Returns:
-            List[ExecutionResult]: Execution history
-        """
-        return self.execution_history.copy()
-
-    def get_performance_metrics(self) -> Dict[str, Any]:
-        """
-        Get performance metrics.
-
-        Returns:
-            Dict[str, Any]: Performance metrics
-        """
-        try:
-            return {
-                "total_executions": self.total_executions,
-                "successful_executions": self.successful_executions,
-                "failed_executions": self.failed_executions,
-                "success_rate": self.successful_executions / self.total_executions if self.total_executions > 0 else 0.0,
-                "total_volume_executed": self.total_volume_executed,
-                "average_slippage": self.total_slippage / self.total_executions if self.total_executions > 0 else 0.0,
-                "active_executions": len(self.active_executions),
-                "execution_history_size": len(self.execution_history)
-            }
-
-        except Exception as e:
-            self.logger.error(failed(f"❌ Performance metrics calculation failed: {e}"))
-            return {}
 
     async def cancel_execution(self, execution_id: str) -> bool:
         """
@@ -568,23 +489,3 @@ class AsyncOrderExecutor:
         except Exception as e:
             self.logger.error(failed(f"❌ Execution cancellation failed: {e}"))
             return False
-
-    async def cleanup(self) -> None:
-        """
-        Cleanup resources.
-        """
-        try:
-            self.logger.info("Cleaning up Async Order Executor...")
-
-            # Cancel all active executions
-            for execution_id in list(self.active_executions.keys()):
-                await self.cancel_execution(execution_id)
-
-            # Cleanup order manager
-            if self.order_manager:
-                await self.order_manager.cleanup()
-
-            self.logger.info("✅ Async Order Executor cleanup completed")
-
-        except Exception as e:
-            self.logger.error(failed(f"❌ Async Order Executor cleanup failed: {e}"))

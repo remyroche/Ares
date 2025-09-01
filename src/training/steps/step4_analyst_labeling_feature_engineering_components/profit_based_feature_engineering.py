@@ -529,50 +529,6 @@ class ProfitBasedFeatureEngineering:
 
         return data
 
-    def get_feature_summary(self, data: pd.DataFrame) -> Dict[str, Any]:
-        """Get summary of profit-based features.
-
-        Args:
-            data: DataFrame with profit-based features
-
-        Returns:
-            Dictionary with feature summary information
-        """
-        profit_features = [col for col in data.columns if self.profit_column in col and col != self.profit_column]
-
-        # Categorize features
-        feature_categories = {
-            "basic_profit": [],
-            "categorical": [],
-            "risk_reward": [],
-            "momentum": [],
-            "volatility": [],
-            "volume": [],
-            "rolling": []
-        }
-
-        for feature in profit_features:
-            if "squared" in feature or "cubed" in feature or "abs" in feature or "sqrt" in feature or "log" in feature:
-                feature_categories["basic_profit"].append(feature)
-            elif "sign" in feature or "magnitude" in feature or "bins" in feature or "direction_strength" in feature:
-                feature_categories["categorical"].append(feature)
-            elif "sharpe" in feature or "sortino" in feature or "risk_adjusted" in feature:
-                feature_categories["risk_reward"].append(feature)
-            elif "momentum" in feature or "acceleration" in feature:
-                feature_categories["momentum"].append(feature)
-            elif "volatility" in feature:
-                feature_categories["volatility"].append(feature)
-            elif "volume" in feature:
-                feature_categories["volume"].append(feature)
-            elif "rolling" in feature:
-                feature_categories["rolling"].append(feature)
-
-        return {
-            "total_features": len(profit_features),
-            "feature_categories": feature_categories,
-            "performance_metrics": self.performance_metrics
-        }
-
     def select_features(
         self,
         data: pd.DataFrame,

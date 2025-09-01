@@ -34,48 +34,9 @@ class InjectableBase:
         self._initialized: bool = False
         # Provide a safe print shim so subclasses can call self.print
         if not hasattr(self, "print"):
-            def _shim_print(message: str) -> None:
-                try:
-                    self.logger.error(str(message))
-                except Exception as e:  # noqa: BLE001 - fallback safety
-                    print(
-                        f"Logger failed in shim_print: {e}",
-                        file=sys.stderr,
-                    )
-                    print(f"Original message: {message}", file=sys.stderr)
-
             self.print = _shim_print  # type: ignore[attr-defined]
 
-    def configure(self, config: dict[str, Any]) -> None:
-        """Configure the component with provided configuration."""
-        self.config.update(config)
-        self.logger.debug(
-            "Component %s configured",
-            self.__class__.__name__,
-        )
-
-    async def initialize(self) -> bool:
-        """Initialize the component.
-
-        Override in subclasses for custom initialization.
-        """
-        if self._initialized:
-            return True
-
-        self.logger.info(f"Initializing {self.__class__.__name__}")
-        self._initialized = True
-        return True
-
-    async def shutdown(self) -> None:
-        """Shutdown the component. Override in subclasses for custom cleanup."""
-        self.logger.info(f"Shutting down {self.__class__.__name__}")
-        self._initialized = False
-
     @property
-    def is_initialized(self) -> bool:
-        """Check if component is initialized."""
-        return self._initialized
-
 
 class TradingComponentBase(InjectableBase):
     """
@@ -111,15 +72,4 @@ class TradingComponentBase(InjectableBase):
         self.logger.info(f"Starting {self.__class__.__name__}")
         self.is_running = True
 
-    async def stop(self) -> None:
-        """Stop the trading component."""
-        if not self.is_running:
-            return
-
-        self.logger.info(f"Stopping {self.__class__.__name__}")
-        self.is_running = False
-
     @property
-    def is_active(self) -> bool:
-        """Check if component is active and running."""
-        return self.is_running and self.is_initialized

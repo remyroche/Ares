@@ -341,9 +341,6 @@ class UnifiedOptunaDemo:
                 load_if_exists=True,
             )
 
-            def _objective(trial: optuna.Trial) -> float:
-                return custom_objective(trial, X, y)
-
             study.optimize(_objective, n_trials=n_trials, n_jobs=1)
 
             result: dict[str, Any] = {

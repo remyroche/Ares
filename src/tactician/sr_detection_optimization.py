@@ -215,28 +215,6 @@ class SRDetectionOptimizer:
         default_return=False,
         context="S/R detection optimizer initialization"
     )
-    async def initialize(self) -> bool:
-        """Initialize the S/R detection optimizer."""
-        try:
-            self.logger.info("🚀 Initializing Enhanced S/R Detection Optimizer for 1-30m timeframes...")
-
-            # Initialize S/R predictor
-            self.sr_predictor = SRBreakoutPredictor(self.config)
-            if not await self.sr_predictor.initialize():
-                self.logger.error("Failed to initialize S/R predictor")
-                return False
-
-            # Validate configuration
-            if not self._validate_configuration():
-                return False
-
-            self.logger.info("✅ Enhanced S/R Detection Optimizer initialized successfully")
-            return True
-
-        except Exception as e:
-            self.logger.error(f"Failed to initialize S/R detection optimizer: {e}")
-            return False
-
     def _validate_configuration(self) -> bool:
         """Validate optimization configuration."""
         try:
@@ -274,69 +252,6 @@ class SRDetectionOptimizer:
         default_return=None,
         context="comprehensive S/R optimization"
     )
-    async def optimize_sr_detection(
-        self,
-        market_data: pd.DataFrame,
-        multi_timeframe_data: Optional[Dict[str, pd.DataFrame]] = None,
-        target_data: Optional[pd.Series] = None,
-        target_timeframe: str = "15m"
-    ) -> Optional[OptimizationResult]:
-        """
-        Run comprehensive S/R detection optimization for specific timeframe.
-
-        Args:
-            market_data: Main market data for optimization
-            multi_timeframe_data: Multi-timeframe data for confluence optimization
-            target_data: Target data for supervised optimization (optional)
-            target_timeframe: Target timeframe for optimization (1m, 5m, 15m, 30m)
-
-        Returns:
-            OptimizationResult: Optimized parameters and performance metrics
-        """
-        try:
-            self.logger.info(f"🎯 Starting comprehensive S/R detection optimization for {target_timeframe} timeframe...")
-
-            # Validate target timeframe
-            if target_timeframe not in self.timeframe_config:
-                self.logger.error(f"Invalid target timeframe: {target_timeframe}")
-                return None
-
-            # Prepare data
-            self.training_data = market_data
-            self.multi_timeframe_data = multi_timeframe_data or {}
-
-            # Split data for validation
-            split_idx = int(len(market_data) * (1 - self.test_size))
-            self.validation_data = market_data.iloc[split_idx:]
-            training_data = market_data.iloc[:split_idx]
-
-            # Update configuration for target timeframe
-            await self._update_timeframe_config(target_timeframe)
-
-            # Run optimization
-            if OPTUNA_AVAILABLE:
-                result = await self._run_optuna_optimization(training_data, target_data, target_timeframe)
-            else:
-                result = await self._run_basic_optimization(training_data, target_data, target_timeframe)
-
-            if result:
-                # Validate on out-of-sample data
-                await self._validate_optimization_result(result, target_timeframe)
-
-                # Store results
-                self.optimization_results.append(result)
-                if not self.best_result or result.optimization_score > self.best_result.optimization_score:
-                    self.best_result = result
-
-                self.logger.info(f"✅ Optimization completed for {target_timeframe}. Best score: {result.optimization_score:.4f}")
-                return result
-
-            return None
-
-        except Exception as e:
-            self.logger.error(f"Optimization failed: {e}")
-            return None
-
     async def _update_timeframe_config(self, target_timeframe: str) -> None:
         """Update configuration for specific timeframe."""
         try:
@@ -424,65 +339,6 @@ class SRDetectionOptimizer:
         except Exception as e:
             self.logger.error(f"Basic optimization failed: {e}")
             return None
-
-    def _get_timeframe_parameter_ranges(self, target_timeframe: str) -> Dict[str, List[Any]]:
-        """Get parameter ranges optimized for specific timeframe."""
-        base_ranges = {
-            "fractal_weight": [0.2, 0.3, 0.4, 0.5, 0.6],
-            "volume_weight": [0.2, 0.3, 0.4, 0.5],
-            "pivot_weight": [0.1, 0.2, 0.3, 0.4],
-            "atr_weight": [0.05, 0.1, 0.15, 0.2],
-            "touch_count_weight": [0.2, 0.3, 0.4, 0.5],
-            "total_volume_weight": [0.1, 0.2, 0.3, 0.4],
-            "level_age_weight": [0.1, 0.2, 0.3, 0.4],
-            "bounce_rate_weight": [0.1, 0.2, 0.3, 0.4],
-            "isolation_score_weight": [0.05, 0.1, 0.15, 0.2],
-        }
-
-        # Adjust ranges based on timeframe
-        if target_timeframe == "1m":
-            # More sensitive parameters for 1m
-            base_ranges.update({
-                "dbscan_eps": [0.002, 0.005, 0.008, 0.01],
-                "dbscan_min_samples": [2, 3, 4],
-            })
-        elif target_timeframe == "5m":
-            base_ranges.update({
-                "dbscan_eps": [0.005, 0.008, 0.01, 0.015],
-                "dbscan_min_samples": [2, 3, 4, 5],
-            })
-        elif target_timeframe == "15m":
-            base_ranges.update({
-                "dbscan_eps": [0.008, 0.01, 0.015, 0.02],
-                "dbscan_min_samples": [3, 4, 5, 6],
-            })
-        elif target_timeframe == "30m":
-            # Less sensitive parameters for 30m
-            base_ranges.update({
-                "dbscan_eps": [0.01, 0.015, 0.02, 0.025],
-                "dbscan_min_samples": [4, 5, 6],
-            })
-
-        return base_ranges
-
-    async def _evaluate_parameters(
-        self,
-        trial: optuna.Trial,
-        training_data: pd.DataFrame,
-        target_data: Optional[pd.Series],
-        target_timeframe: str
-    ) -> float:
-        """Evaluate parameters using Optuna trial with timeframe-specific suggestions."""
-        try:
-            # Suggest parameters with timeframe-specific ranges
-            params = self._suggest_timeframe_parameters(trial, target_timeframe)
-
-            # Evaluate parameters
-            return await self._evaluate_parameters_basic(params, training_data, target_data, target_timeframe)
-
-        except Exception as e:
-            self.logger.error(f"Parameter evaluation failed: {e}")
-            return -np.inf
 
     def _suggest_timeframe_parameters(self, trial: optuna.Trial, target_timeframe: str) -> Dict[str, Any]:
         """Suggest parameters optimized for specific timeframe."""
@@ -925,22 +781,6 @@ class SRDetectionOptimizer:
             "order_flow_hvn_threshold": params.get("order_flow_hvn_threshold", 1.5),
         }
 
-    def _get_basic_parameter_ranges(self) -> Dict[str, List[Any]]:
-        """Get parameter ranges for basic optimization."""
-        return {
-            "fractal_weight": [0.2, 0.3, 0.4, 0.5, 0.6],
-            "volume_weight": [0.2, 0.3, 0.4, 0.5],
-            "pivot_weight": [0.1, 0.2, 0.3, 0.4],
-            "atr_weight": [0.05, 0.1, 0.15, 0.2],
-            "touch_count_weight": [0.2, 0.3, 0.4, 0.5],
-            "total_volume_weight": [0.1, 0.2, 0.3, 0.4],
-            "level_age_weight": [0.1, 0.2, 0.3, 0.4],
-            "bounce_rate_weight": [0.1, 0.2, 0.3, 0.4],
-            "isolation_score_weight": [0.05, 0.1, 0.15, 0.2],
-            "dbscan_eps": [0.005, 0.01, 0.015, 0.02],
-            "dbscan_min_samples": [2, 3, 4, 5],
-        }
-
     def _generate_parameter_combinations(self, param_ranges: Dict[str, List[Any]]) -> List[Dict[str, Any]]:
         """Generate parameter combinations for grid search."""
         import itertools
@@ -978,69 +818,5 @@ class SRDetectionOptimizer:
 
         return combinations
 
-    def get_optimized_parameters(self) -> Optional[Dict[str, Any]]:
-        """Get the best optimized parameters."""
-        if self.best_result:
-            return {
-                "method_weights": self.best_result.method_weights,
-                "strength_weights": self.best_result.strength_weights,
-                "dbscan_params": self.best_result.dbscan_params,
-                "timeframe_weights": self.best_result.timeframe_weights,
-                "advanced_params": self.best_result.advanced_params,
-            }
-        return None
-
-    def save_optimization_results(self, filepath: str) -> bool:
-        """Save optimization results to file."""
-        try:
-            results = {
-                "best_result": self.best_result.to_dict() if self.best_result else None,
-                "all_results": [r.to_dict() for r in self.optimization_results],
-                "optimization_history": self.optimization_history,
-                "config": self.config,
-            }
-
-            with open(filepath, 'w') as f:
-                json.dump(results, f, indent=2, default=str)
-
-            self.logger.info(f"✅ Optimization results saved to {filepath}")
-            return True
-
-        except Exception as e:
-            self.logger.error(f"Failed to save optimization results: {e}")
-            return False
-
-    def load_optimization_results(self, filepath: str) -> bool:
-        """Load optimization results from file."""
-        try:
-            with open(filepath, 'r') as f:
-                data = json.load(f)
-
-            if data.get("best_result"):
-                self.best_result = OptimizationResult(**data["best_result"])
-
-            if data.get("all_results"):
-                self.optimization_results = [OptimizationResult(**r) for r in data["all_results"]]
-
-            if data.get("optimization_history"):
-                self.optimization_history = data["optimization_history"]
-
-            self.logger.info(f"✅ Optimization results loaded from {filepath}")
-            return True
-
-        except Exception as e:
-            self.logger.error(f"Failed to load optimization results: {e}")
-            return False
-
 
 # Setup function for easy integration
-async def setup_sr_detection_optimizer(config: Dict[str, Any]) -> Optional[SRDetectionOptimizer]:
-    """Setup S/R detection optimizer."""
-    try:
-        optimizer = SRDetectionOptimizer(config)
-        if await optimizer.initialize():
-            return optimizer
-        return None
-    except Exception as e:
-        system_logger.error(f"Failed to setup S/R detection optimizer: {e}")
-        return None

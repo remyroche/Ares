@@ -58,31 +58,6 @@ class ModularStrategist:
         default_return=False,
         context="modular strategist initialization",
     )
-    async def initialize(self) -> bool:
-        """
-        Initialize modular strategist with enhanced error handling.
-
-        Returns:
-            bool: True if initialization successful, False otherwise
-        """
-        self.logger.info("Initializing Modular Strategist...")
-
-        # Load strategist configuration
-        await self._load_strategist_configuration()
-
-        # Validate configuration
-        if not self._validate_configuration():
-            self.logger.error(invalid("Invalid configuration for modular strategist"))
-            return False
-
-        # Initialize strategy modules
-        await self._initialize_strategy_modules()
-
-        self.logger.info(
-            "✅ Modular Strategist initialization completed successfully",
-        )
-        return True
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
@@ -148,118 +123,26 @@ class ModularStrategist:
         default_return=None,
         context="strategy modules initialization",
     )
-    async def _initialize_strategy_modules(self) -> None:
-        """Initialize strategy modules."""
-        try:
-            # Initialize position sizing module
-            if self.enable_position_sizing:
-                await self._initialize_position_sizing()
-
-            # Initialize risk management module
-            if self.enable_risk_management:
-                await self._initialize_risk_management()
-
-            # Initialize portfolio optimization module
-            if self.strategist_config.get("enable_portfolio_optimization", False):
-                await self._initialize_portfolio_optimization()
-
-            # Initialize dynamic rebalancing module
-            if self.strategist_config.get("enable_dynamic_rebalancing", True):
-                await self._initialize_dynamic_rebalancing()
-
-            self.logger.info("Strategy modules initialized successfully")
-
-        except Exception as e:
-            self.logger.error(initialization_error(f"Error initializing strategy modules: {e}"))
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="position sizing initialization",
     )
-    async def _initialize_position_sizing(self) -> None:
-        """Initialize position sizing module."""
-        try:
-            # Initialize position sizing strategies
-            self.position_sizing_strategies = {
-                "kelly_criterion": True,
-                "fixed_fraction": True,
-                "volatility_targeting": True,
-                "risk_parity": True,
-            }
-
-            self.logger.info("Position sizing module initialized")
-
-        except Exception as e:
-            self.logger.error(initialization_error(f"Error initializing position sizing: {e}"))
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="risk management initialization",
     )
-    async def _initialize_risk_management(self) -> None:
-        """Initialize risk management module."""
-        try:
-            # Initialize risk management strategies
-            self.risk_management_strategies = {
-                "stop_loss": True,
-                "take_profit": True,
-                "trailing_stop": True,
-                "position_limits": True,
-            }
-
-            self.logger.info("Risk management module initialized")
-
-        except Exception as e:
-            self.logger.error(initialization_error(f"Error initializing risk management: {e}"))
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="portfolio optimization initialization",
     )
-    async def _initialize_portfolio_optimization(self) -> None:
-        """Initialize portfolio optimization module."""
-        try:
-            # Initialize portfolio optimization strategies
-            self.portfolio_optimization_strategies = {
-                "mean_variance": True,
-                "black_litterman": True,
-                "risk_parity": True,
-                "maximum_sharpe": True,
-            }
-
-            self.logger.info("Portfolio optimization module initialized")
-
-        except Exception as e:
-            self.logger.error(
-                initialization_error(f"Error initializing portfolio optimization: {e}"),
-            )
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="dynamic rebalancing initialization",
     )
-    async def _initialize_dynamic_rebalancing(self) -> None:
-        """Initialize dynamic rebalancing module."""
-        try:
-            # Initialize dynamic rebalancing strategies
-            self.dynamic_rebalancing_strategies = {
-                "threshold_rebalancing": True,
-                "calendar_rebalancing": True,
-                "drift_rebalancing": True,
-                "volatility_rebalancing": True,
-            }
-
-            self.logger.info("Dynamic rebalancing module initialized")
-
-        except Exception as e:
-            self.logger.error(
-                initialization_error(f"Error initializing dynamic rebalancing: {e}"),
-            )
-
     @handle_specific_errors(
         error_handlers={
             ValueError: (False, "Invalid strategy parameters"),
@@ -683,22 +566,6 @@ class ModularStrategist:
 
     # Risk management calculation methods
 
-    def _calculate_stop_loss(
-        self,
-        market_data: dict[str, Any],
-        analysis_data: dict[str, Any],
-    ) -> float:
-        """Calculate Stop Loss level."""
-        try:
-            # Simulate Stop Loss calculation
-            current_price = market_data.get("price", 0)
-            stop_loss_pct = 0.02  # 2% stop loss
-
-            return current_price * (1 - stop_loss_pct)
-        except Exception as e:
-            self.logger.error(error(f"Error calculating Stop Loss: {e}"))
-            return 0.0
-
     def _calculate_take_profit(
         self,
         market_data: dict[str, Any],
@@ -713,22 +580,6 @@ class ModularStrategist:
             return current_price * (1 + take_profit_pct)
         except Exception as e:
             self.logger.error(error(f"Error calculating Take Profit: {e}"))
-            return 0.0
-
-    def _calculate_trailing_stop(
-        self,
-        market_data: dict[str, Any],
-        analysis_data: dict[str, Any],
-    ) -> float:
-        """Calculate Trailing Stop level."""
-        try:
-            # Simulate Trailing Stop calculation
-            current_price = market_data.get("price", 0)
-            trailing_pct = 0.015  # 1.5% trailing stop
-
-            return current_price * (1 - trailing_pct)
-        except Exception as e:
-            self.logger.error(error(f"Error calculating Trailing Stop: {e}"))
             return 0.0
 
     def _calculate_position_limits(
@@ -842,22 +693,6 @@ class ModularStrategist:
 
     # Dynamic rebalancing calculation methods
 
-    def _calculate_threshold_rebalancing(
-        self,
-        market_data: dict[str, Any],
-        analysis_data: dict[str, Any],
-    ) -> bool:
-        """Calculate Threshold Rebalancing trigger."""
-        try:
-            # Simulate Threshold Rebalancing calculation
-            drift = np.random.random() * 0.1  # Random drift
-            threshold = 0.05  # 5% threshold
-
-            return drift > threshold
-        except Exception as e:
-            self.logger.error(error(f"Error calculating Threshold Rebalancing: {e}"))
-            return False
-
     def _calculate_calendar_rebalancing(
         self,
         market_data: dict[str, Any],
@@ -936,103 +771,16 @@ class ModularStrategist:
         default_return=None,
         context="strategy results getting",
     )
-    def get_strategy_results(
-        self,
-        strategy_type: str | None = None,
-    ) -> dict[str, Any]:
-        """
-        Get strategy results.
-
-        Args:
-            strategy_type: Optional strategy type filter
-
-        Returns:
-            Dict[str, Any]: Strategy results
-        """
-        try:
-            if strategy_type:
-                return self.strategy_results.get(strategy_type, {})
-            return self.strategy_results.copy()
-
-        except Exception as e:
-            self.logger.error(error(f"Error getting strategy results: {e}"))
-            return {}
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="strategy history getting",
     )
-    def get_strategy_history(self, limit: int | None = None) -> list[dict[str, Any]]:
-        """
-        Get strategy history.
-
-        Args:
-            limit: Optional limit on number of records
-
-        Returns:
-            List[Dict[str, Any]]: Strategy history
-        """
-        try:
-            history = self.strategy_history.copy()
-
-            if limit:
-                history = history[-limit:]
-
-            return history
-
-        except Exception as e:
-            self.logger.error(error(f"Error getting strategy history: {e}"))
-            return []
-
-    def get_strategist_status(self) -> dict[str, Any]:
-        """
-        Get strategist status information.
-
-        Returns:
-            Dict[str, Any]: Strategist status
-        """
-        return {
-            "is_strategizing": self.is_strategizing,
-            "strategy_interval": self.strategy_interval,
-            "max_strategy_history": self.max_strategy_history,
-            "enable_position_sizing": self.enable_position_sizing,
-            "enable_risk_management": self.enable_risk_management,
-            "enable_portfolio_optimization": self.strategist_config.get(
-                "enable_portfolio_optimization",
-                False,
-            ),
-            "enable_dynamic_rebalancing": self.strategist_config.get(
-                "enable_dynamic_rebalancing",
-                True,
-            ),
-            "strategy_history_count": len(self.strategy_history),
-        }
-
     @handle_errors(
         exceptions=(Exception,),
         default_return=None,
         context="modular strategist cleanup",
     )
-    async def stop(self) -> None:
-        """Stop the modular strategist."""
-        self.logger.info("🛑 Stopping Modular Strategist...")
-
-        try:
-            # Stop strategizing
-            self.is_strategizing = False
-
-            # Clear results
-            self.strategy_results.clear()
-
-            # Clear history
-            self.strategy_history.clear()
-
-            self.logger.info("✅ Modular Strategist stopped successfully")
-
-        except Exception as e:
-            self.logger.error(error(f"Error stopping modular strategist: {e}"))
-
 # Global modular strategist instance
 modular_strategist: ModularStrategist | None = None
 
@@ -1041,42 +789,3 @@ modular_strategist: ModularStrategist | None = None
     default_return=None,
     context="modular strategist setup",
 )
-async def setup_modular_strategist(
-    config: dict[str, Any] | None = None,
-) -> ModularStrategist | None:
-    """
-    Setup global modular strategist.
-
-    Args:
-        config: Optional configuration dictionary
-
-    Returns:
-        Optional[ModularStrategist]: Global modular strategist instance
-    """
-    try:
-        global modular_strategist
-
-        if config is None:
-            config = {
-                "modular_strategist": {
-                    "strategy_interval": 60,
-                    "max_strategy_history": 100,
-                    "enable_position_sizing": True,
-                    "enable_risk_management": True,
-                    "enable_portfolio_optimization": False,
-                    "enable_dynamic_rebalancing": True,
-                },
-            }
-
-        # Create modular strategist
-        modular_strategist = ModularStrategist(config)
-
-        # Initialize modular strategist
-        success = await modular_strategist.initialize()
-        if success:
-            return modular_strategist
-        return None
-
-    except Exception as e:
-        print(f"Error setting up modular strategist: {e}")
-        return None

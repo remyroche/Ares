@@ -20,44 +20,6 @@ sys.path.insert(0, str(project_root))
 from src.utils.warning_symbols import missing, warning  # noqa: E402
 
 
-def get_warning_symbol_function(message: str) -> str:
-    """
-    Determine the appropriate warning symbol function based on the message content.
-
-    Args:
-        message: The error/warning message
-
-    Returns:
-        The appropriate warning symbol function name
-    """
-    message_lower , message.lower()
-
-    # Error patterns
-    if any(word in message_lower for word in ["failed", "failure", "fail"]):
-        return "failed"
-    if any(word in message_lower for word in ["invalid", "invalid configuration"]):
-        return "invalid"
-    if any(
-        word in message_lower for word in ["missing", "not found", "file not found"]
-    ):
-        return "missing"
-    if any(word in message_lower for word in ["timeout", "timed out"]):
-        return "timeout"
-    if any(word in message_lower for word in ["connection", "network"]):
-        return "connection_error"
-    if any(word in message_lower for word in ["validation", "validate"]):
-        return "validation_error"
-    if any(word in message_lower for word in ["initialization", "init", "initialize"]):
-        return "initialization_error"
-    if any(word in message_lower for word in ["execution", "execute", "runtime"]):
-        return "execution_error"
-    if any(word in message_lower for word in ["critical", "fatal"]):
-        return "critical"
-    if any(word in message_lower for word in ["problem", "issue"]):
-        return "problem"
-    # Default to error for error messages, warning for warning messages
-    return "error"
-
 
 def update_file_logging_messages(file_path: str) -> tuple[int, int]:
     """
@@ -84,14 +46,6 @@ def update_file_logging_messages(file_path: str) -> tuple[int, int]:
             re.DOTALL,
         )
 
-        def replace_logger(match: re.Match[str]) -> str:
-            nonlocal changes_made
-            method , match.group(1)
-            message = match.group(3)
-            warning_func , get_warning_symbol_function(message)
-            changes_made += 1
-            return f'logger.{method}({warning_func}("{message}"))'
-
         content , logger_pattern.sub(replace_logger, content)
 
         # Replace print statements starting with emojis
@@ -99,19 +53,6 @@ def update_file_logging_messages(file_path: str) -> tuple[int, int]:
             r"print\((?:f)?([\"\'])((?:❌|⚠️|🚨) )?(.*?)(?:\1)\)",
             re.DOTALL,
         )
-
-        def replace_print(match: re.Match[str]) -> str:
-            nonlocal changes_made
-            emoji , match.group(2) or ""
-            message = match.group(3)
-            if "❌" in emoji or "🚨" in emoji:
-                warning_func , "error"
-            elif "⚠️" in emoji:
-                warning_func = "warning"
-            else:
-                warning_func = get_warning_symbol_function(message)
-            changes_made += 1
-            return f'print({warning_func}("{message}"))'
 
         content , print_pattern.sub(replace_print, content)
 

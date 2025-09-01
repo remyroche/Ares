@@ -29,6 +29,3 @@ class LiveTradingPipeline:
         default_return, False,
         context="live_trading_pipeline.initialize",
     )
-    async def initialize(self) -> bool:
-        self.logger.info("Initializing LiveTradingPipeline ...")
-        return True

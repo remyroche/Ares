@@ -44,25 +44,6 @@ class EnhancedOptimizationOrchestrator:
         # Initialize optimizers based on configuration
         self._initialize_optimizers()
 
-    def _initialize_optimizers(self) -> None:
-        """Initialize optimization components based on configuration."""
-        opt_config = self.config.get("hyperparameter_optimization", {})
-
-        # Initialize multi-objective optimizer
-        if opt_config.get("multi_objective", {}).get("enabled", False):
-            self.multi_objective_optimizer = MultiObjectiveOptimizer(opt_config)
-            self.logger.info("Multi-objective optimizer initialized")
-
-        # Initialize Bayesian optimizer
-        if opt_config.get("bayesian_optimization", {}).get("enabled", False):
-            self.bayesian_optimizer = AdvancedBayesianOptimizer(opt_config)
-            self.logger.info("Bayesian optimizer initialized")
-
-        # Initialize adaptive optimizer
-        if opt_config.get("adaptive_optimization", {}).get("enabled", False):
-            self.adaptive_optimizer = AdaptiveOptimizer(opt_config)
-            self.logger.info("Adaptive optimizer initialized")
-
     @handle_errors(
         exceptions=(Exception,),
         default_return=None,
@@ -368,39 +349,6 @@ class EnhancedOptimizationOrchestrator:
             return "poor"
 
         return "unknown"
-
-    def get_optimization_history(
-        self,
-        limit: int | None = None,
-    ) -> list[dict[str, Any]]:
-        """Get optimization history."""
-        if limit:
-            return self.optimization_history[-limit:]
-
-        return self.optimization_history
-
-    def get_performance_trends(self) -> dict[str, Any]:
-        """Analyze performance trends over time."""
-        if not self.optimization_history:
-            return {"message": "No optimization history available"}
-
-        trends = {
-            "score_trend": [],
-            "parameter_stability": {},
-            "optimization_frequency": {},
-        }
-
-        # Analyze score trends
-        for result in self.optimization_history:
-            if "summary" in result and "best_overall_score" in result["summary"]:
-                trends["score_trend"].append(
-                    {
-                        "timestamp": result["timestamp"],
-                        "score": result["summary"]["best_overall_score"],
-                    },
-                )
-
-        return trends
 
     @handle_errors(
         exceptions=(Exception,),

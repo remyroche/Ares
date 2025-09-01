@@ -478,62 +478,6 @@ class Steps1_7CompatibilityFramework:
         if len(self.compatibility_history) > 1000:
             self.compatibility_history = self.compatibility_history[-500:]
 
-    def get_compatibility_report(self, step_name: Optional[str] = None) -> Dict[str, Any]:
-        """Get a compatibility report.
-
-        Args:
-            step_name: Optional step name to filter by
-
-        Returns:
-            Dict: Compatibility report
-        """
-        if step_name:
-            filtered_history = [h for h in self.compatibility_history if h["step_name"] == step_name]
-        else:
-            filtered_history = self.compatibility_history
-
-        report = {
-            "total_checks": len(filtered_history),
-            "passed_checks": len([h for h in filtered_history if h["result"]]),
-            "failed_checks": len([h for h in filtered_history if not h["result"]]),
-            "by_check_type": {},
-            "by_step": {},
-            "recent_issues": []
-        }
-
-        for check in filtered_history:
-            # Count by check type
-            check_type = check["check_type"]
-            report["by_check_type"][check_type] = report["by_check_type"].get(check_type, 0) + 1
-
-            # Count by step
-            step = check["step_name"]
-            report["by_step"][step] = report["by_step"].get(step, 0) + 1
-
-        # Get recent failed checks
-        recent_failures = [h for h in filtered_history[-10:] if not h["result"]]
-        report["recent_issues"] = recent_failures
-
-        return report
-
-    def export_compatibility_report(self, file_path: str) -> bool:
-        """Export compatibility report to file.
-
-        Args:
-            file_path: Path to export file
-
-        Returns:
-            bool: True if successful
-        """
-        try:
-            report = self.get_compatibility_report()
-            with open(file_path, 'w') as f:
-                json.dump(report, f, indent=2)
-            return True
-        except Exception as e:
-            self.logger.error(f"Failed to export compatibility report: {e}")
-            return False
-
 
 # Global instance
 steps_1_7_compatibility = Steps1_7CompatibilityFramework()

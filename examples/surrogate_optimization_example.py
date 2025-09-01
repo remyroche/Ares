@@ -39,22 +39,6 @@ class SurrogateOptimizationDemo:
         self.visualizations = {}
 
     @handle_errors(default_return=None, context="surrogate_optimization_demo_initialization")
-    async def initialize(self) -> bool:
-        """Initialize the surrogate optimization demo."""
-        self.logger.info("🚀 Initializing Surrogate Optimization Demo")
-
-        # Create different configurations for testing
-        self.configs = {
-            'gaussian_process': self._create_gp_config(),
-            'random_forest': self._create_rf_config(),
-            'xgboost': self._create_xgb_config(),
-            'neural_network': self._create_nn_config(),
-            'multi_objective': self._create_multi_objective_config(),
-        }
-
-        self.logger.info("✅ Surrogate Optimization Demo initialized")
-        return True
-
     def _create_gp_config(self) -> ComputationalOptimizationConfig:
         """Create Gaussian Process configuration."""
         return ComputationalOptimizationConfig(
@@ -176,55 +160,6 @@ class SurrogateOptimizationDemo:
             'results': all_results,
             'analysis': analysis,
             'visualizations': self.visualizations
-        }
-
-    def _simple_quadratic_objective(self, params: Dict[str, Any]) -> float:
-        """Simple quadratic objective function for testing."""
-        x = params.get('x', 0)
-        y = params.get('y', 0)
-
-        # Simple quadratic function with global minimum at (0, 0)
-        return -(x**2 + y**2)
-
-    def _complex_multi_modal_objective(self, params: Dict[str, Any]) -> float:
-        """Complex multi-modal objective function."""
-        x = params.get('x', 0)
-        y = params.get('y', 0)
-
-        # Multi-modal function with multiple local optima
-        return -(
-            np.sin(x) * np.cos(y) +
-            0.5 * np.sin(2*x) * np.cos(2*y) +
-            0.25 * np.sin(3*x) * np.cos(3*y)
-        )
-
-    def _noisy_function_objective(self, params: Dict[str, Any]) -> float:
-        """Noisy objective function to test robustness."""
-        x = params.get('x', 0)
-        y = params.get('y', 0)
-
-        # Add noise to the objective
-        noise = np.random.normal(0, 0.1)
-        return -(x**2 + y**2) + noise
-
-    def _multi_objective_function(self, params: Dict[str, Any]) -> Dict[str, float]:
-        """Multi-objective function returning multiple objectives."""
-        x = params.get('x', 0)
-        y = params.get('y', 0)
-
-        # Performance objective (maximize)
-        performance = -(x**2 + y**2)
-
-        # Risk objective (minimize, so we return negative)
-        risk = -(abs(x) + abs(y))
-
-        # Cost objective (minimize, so we return negative)
-        cost = -(abs(x) + abs(y)) * 0.1
-
-        return {
-            'performance': performance,
-            'risk': risk,
-            'cost': cost
         }
 
     def _create_trading_strategy_space(self) -> Dict[str, Any]:

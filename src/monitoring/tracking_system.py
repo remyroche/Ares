@@ -36,7 +36,3 @@ class TrackingSystem:
         default_return, False,
         context="tracking_system.initialize",
     )
-    async def initialize(self) -> bool:
-        self.logger.info("Initializing Tracking System ...")
-        self.logger.info("✅ Tracking System initialization completed")
-        return True

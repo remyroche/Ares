@@ -75,22 +75,6 @@ class TacticianEnhancedPredictionIntegrator:
             "price_target_confidence": ml_config.get("price_target_confidence")         # Will be ML model output
         }
 
-    def _initialize_tactician_models(self) -> dict[str, Any]:
-        """Initialize Tactician prediction models."""
-        # Placeholder for actual ML models
-        # In production, these would be trained models for each prediction type
-        models = {}
-
-        for prediction_type in self.prediction_types:
-            models[prediction_type] = {
-                "model": None,  # Placeholder for actual model
-                "confidence": 0.90,  # Higher base confidence than Analyst
-                "timeframe": self.primary_timeframe,
-                "ml_confidence_factor": self.ml_confidence_factors.get(prediction_type, 1.0)
-            }
-
-        return models
-
     @handle_errors(
         exceptions=(Exception,),
         default_return={},
@@ -564,18 +548,6 @@ class TacticianEnhancedPredictionIntegrator:
             self.logger.error(error(f"❌ Error validating Tactician predictions: {e}"))
             return {"is_valid": False, "validation_score": 0.0, "issues": [str(e)], "enhancements": []}
 
-    def update_ml_confidence_factors(self, new_factors: dict[str, float]) -> None:
-        """Update ML confidence factors dynamically (called by ML model)."""
-        try:
-            for prediction_type, factor in new_factors.items():
-                if prediction_type in self.ml_confidence_factors:
-                    self.ml_confidence_factors[prediction_type] = factor
-                    self.logger.info(f"Updated ML confidence factor for {prediction_type}: {factor}")
-                else:
-                    self.logger.warning(f"Unknown prediction type for ML confidence factor: {prediction_type}")
-        except Exception as e:
-            self.logger.error(f"Error updating ML confidence factors: {e}")
-
     def load_step12_ml_confidence_factors(self, step12_results_path: str = None) -> bool:
         """
         Automatically load ML confidence factors from step12 results.
@@ -640,26 +612,6 @@ class TacticianEnhancedPredictionIntegrator:
 
         except Exception as e:
             self.logger.error(f"Error loading step12 ML confidence factors: {e}")
-            return False
-
-    def auto_refresh_from_step12(self) -> bool:
-        """
-        Automatically refresh ML confidence factors from step12 results.
-        This method is called periodically to check for new step12 results.
-        """
-        try:
-            # Check if step12 results have been updated
-            step12_config = self.config.get("step12_confidence_optimization", {})
-            auto_refresh = step12_config.get("auto_refresh", True)
-
-            if not auto_refresh:
-                return False
-
-            # Try to load latest step12 results
-            return self.load_step12_ml_confidence_factors()
-
-        except Exception as e:
-            self.logger.error(f"Error in auto refresh from step12: {e}")
             return False
 
     def get_prediction_summary(self, tactician_predictions: dict[str, Any]) -> dict[str, Any]:

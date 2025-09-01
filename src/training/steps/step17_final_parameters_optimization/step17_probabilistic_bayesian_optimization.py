@@ -155,44 +155,6 @@ class Step17ProbabilisticBayesianOptimization:
             self.logger.error(f"❌ Step 17 failed: {e}")
             raise
 
-    async def _initialize_optimization_components(self, context: Dict[str, Any]):
-        """Initialize all optimization components."""
-
-        self.logger.info("🔧 Initializing optimization components...")
-
-        # Initialize probabilistic Bayesian optimizers
-        if OPTUNA_AVAILABLE:
-            # Create Tactician optimizer
-            self.tactician_optimizer = ProbabilisticBayesianOptimizer(
-                config=self.optimization_config,
-                model_type="tactician",
-                storage_url="sqlite:///step17_tactician_optimization.db"
-            )
-
-            # Create Analyst optimizer
-            self.analyst_optimizer = ProbabilisticBayesianOptimizer(
-                config=self.optimization_config,
-                model_type="analyst",
-                storage_url="sqlite:///step17_analyst_optimization.db"
-            )
-
-            # Create integrator
-            self.integrator = ProbabilisticModelIntegrator({
-                "optimization": {
-                    "n_trials": self.optimization_config.n_trials,
-                    "n_jobs": self.optimization_config.n_jobs,
-                    "early_stopping_patience": self.optimization_config.early_stopping_patience,
-                    "sampler_type": self.optimization_config.sampler_type
-                }
-            })
-
-            self.logger.info("✅ Probabilistic Bayesian optimizers initialized")
-        else:
-            self.logger.warning("⚠️ Optuna not available, using fallback optimization")
-            # Fallback to existing optimizers
-            self.tactician_optimizer = AdvancedOptunaManager()
-            self.analyst_optimizer = AdvancedOptunaManager()
-
     async def _prepare_optimization_data(self, context: Dict[str, Any]) -> Dict[str, Any]:
         """Prepare data for optimization."""
 
@@ -231,101 +193,6 @@ class Step17ProbabilisticBayesianOptimization:
         self.logger.info(f"✅ Optimization data prepared: {len(features)} samples")
 
         return optimization_data
-
-    async def _get_historical_trading_data(self, context: Dict[str, Any]) -> pd.DataFrame:
-        """Get historical trading data for optimization."""
-
-        # Try to get from training manager
-        if self.training_manager and hasattr(self.training_manager, 'get_trading_history'):
-            return await self.training_manager.get_trading_history()
-
-        # Fallback: create synthetic data for testing
-        self.logger.warning("⚠️ Using synthetic historical data for testing")
-
-        # Create realistic trading history
-        dates = pd.date_range(start="2024-01-01", periods=1000, freq="1min")
-
-        np.random.seed(42)
-
-        # Generate synthetic trading outcomes
-        n_trades = 200
-        trade_dates = np.random.choice(dates, n_trades, replace=False)
-
-        # Generate trade outcomes
-        win_rate = 0.6
-        trades = []
-
-        for i, trade_date in enumerate(trade_dates):
-            # Random trade outcome
-            is_win = np.random.random() < win_rate
-
-            # Trade parameters
-            entry_price = 100 + np.random.normal(0, 5)
-            exit_price = entry_price + np.random.normal(0, 10)
-
-            if is_win:
-                exit_price = entry_price + abs(np.random.normal(5, 3))
-            else:
-                exit_price = entry_price - abs(np.random.normal(5, 3))
-
-            # Calculate returns
-            returns = (exit_price - entry_price) / entry_price
-
-            # Trade metadata
-            trade = {
-                'timestamp': trade_date,
-                'entry_price': entry_price,
-                'exit_price': exit_price,
-                'returns': returns,
-                'is_win': is_win,
-                'position_size': np.random.uniform(0.1, 1.0),
-                'confidence': np.random.uniform(0.5, 0.95),
-                'regime': np.random.choice(['bull', 'bear', 'sideways']),
-                'timeframe': np.random.choice(['1m', '5m', '15m']),
-                'barrier_hit': np.random.choice(['upper', 'lower', 'timeout'])
-            }
-
-            trades.append(trade)
-
-        return pd.DataFrame(trades)
-
-    async def _get_current_model_parameters(self, context: Dict[str, Any]) -> Dict[str, Any]:
-        """Get current model parameters for optimization baseline."""
-
-        # Try to get from training manager
-        if self.training_manager and hasattr(self.training_manager, 'get_model_parameters'):
-            return await self.training_manager.get_model_parameters()
-
-        # Fallback: default parameters
-        self.logger.warning("⚠️ Using default model parameters")
-
-        return {
-            "tactician": {
-                "barrier_system": {
-                    "upper_barrier_multiplier": 0.5,
-                    "lower_barrier_multiplier": 0.25,
-                    "confidence_threshold": 0.7,
-                    "precision_threshold": 0.8
-                },
-                "prediction_calibration": {
-                    "calibration_method": "isotonic",
-                    "calibration_cv_folds": 5,
-                    "uncertainty_estimation": "ensemble"
-                }
-            },
-            "analyst": {
-                "regime_detection": {
-                    "regime_threshold": 0.6,
-                    "regime_confidence_threshold": 0.7,
-                    "regime_transition_smoothing": 0.3
-                },
-                "prediction_calibration": {
-                    "calibration_method": "sigmoid",
-                    "calibration_cv_folds": 10,
-                    "uncertainty_estimation": "gaussian"
-                }
-            }
-        }
 
     async def _prepare_optimization_features(self, market_data: pd.DataFrame, historical_data: pd.DataFrame) -> np.ndarray:
         """Prepare features for optimization."""
@@ -471,20 +338,6 @@ class Step17ProbabilisticBayesianOptimization:
         y_combined = np.column_stack([y_profit, y_win_rate, y_sharpe])
 
         # Create model factory for Tactician
-        def tactician_factory(params):
-            # This would integrate with your actual Tactician model
-            # For now, returning a placeholder
-            from sklearn.ensemble import RandomForestRegressor
-
-            model = RandomForestRegressor(
-                n_estimators=params.get('n_estimators', 100),
-                max_depth=params.get('max_depth', 10),
-                random_state=42,
-                n_jobs=1
-            )
-
-            return model
-
         # Run optimization
         results = self.tactician_optimizer.optimize(
             X=X,
@@ -508,20 +361,6 @@ class Step17ProbabilisticBayesianOptimization:
         y_combined = np.column_stack([y_profit, y_win_rate, y_sharpe])
 
         # Create model factory for Analyst
-        def analyst_factory(params):
-            # This would integrate with your actual Analyst model
-            # For now, returning a placeholder
-            from sklearn.ensemble import RandomForestRegressor
-
-            model = RandomForestRegressor(
-                n_estimators=params.get('n_estimators', 200),
-                max_depth=params.get('max_depth', 15),
-                random_state=42,
-                n_jobs=1
-            )
-
-            return model
-
         # Run optimization
         results = self.analyst_optimizer.optimize(
             X=X,
@@ -867,41 +706,6 @@ class Step17ProbabilisticBayesianOptimization:
 
         except Exception as e:
             self.logger.error(f"❌ Failed to store optimization results: {e}")
-
-    def get_step_configuration(self) -> Dict[str, Any]:
-        """Get step configuration for integration."""
-
-        return {
-            "step_name": self.step_name,
-            "step_type": "optimization",
-            "dependencies": [
-                "step01_data_collection",
-                "step02_feature_engineering",
-                "step08_tactician_labeling",
-                "step09_tactician_specialist_training",
-                "step10_confidence_calibration"
-            ],
-            "outputs": [
-                "optimized_model_parameters",
-                "performance_improvements",
-                "uncertainty_estimates",
-                "optimization_report"
-            ],
-            "config": self.step_config
-        }
-
-    def get_optimization_status(self) -> Dict[str, Any]:
-        """Get current optimization status."""
-
-        return {
-            "step_name": self.step_name,
-            "optimization_completed": bool(self.optimization_results),
-            "total_parameters_optimized": len(self.parameter_importance),
-            "uncertainty_estimates_available": bool(self.uncertainty_estimates),
-            "performance_improvements": self.performance_history[-1] if self.performance_history else {},
-            "last_optimization": self.optimization_metadata.get("last_optimization"),
-            "recommendations": self.optimization_results.get("summary", {}).get("recommendations", [])
-        }
 
 
 # Factory function for creating step17

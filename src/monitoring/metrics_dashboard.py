@@ -61,13 +61,3 @@ class MetricsDashboard:
         self.update_interval: int = int(self.dashboard_config["update_interval_seconds"])  # type: ignore[index]
 
     @handle_errors(exceptions=(Exception,), default_return=False, context="metrics_dashboard.initialize")
-    async def initialize(self) -> bool:
-        self.logger.info("📊 Initializing Metrics Dashboard ...")
-        self.metrics.clear()
-        self.is_active = True
-        self.logger.info("✅ Metrics Dashboard initialized successfully")
-        return True
-
-    async def _metrics_update_loop(self) -> None:
-        while self.is_active:
-            await asyncio.sleep(self.update_interval)

@@ -45,17 +45,6 @@ def create_backup():
     print(f"✅ Backup created: {backup_dir}")
     return backup_dir
 
-def get_current_error_count():
-    """Get the current number of syntax errors."""
-    try:
-        result = subprocess.run(
-            "find . -name '*.py' -type f -exec python -m py_compile {} \; 2>&1 | wc -l",
-            shell=True, capture_output=True, text=True
-        )
-        return int(result.stdout.strip())
-    except:
-        return 0
-
 def main():
     """Main function."""
     print("🔧 Automated Syntax Fixer")

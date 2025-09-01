@@ -104,10 +104,6 @@ def performance(*args, **kwargs):
     return performance_monitor_v2(*args, **kwargs)
 
 # Configuration helpers for backwards compatibility
-def get_decorator_config():
-    """Get global decorator configuration."""
-    return global_config
-
 def set_decorator_config(**kwargs):
     """Update global decorator configuration."""
     for key, value in kwargs.items():
@@ -116,40 +112,11 @@ def set_decorator_config(**kwargs):
         else:
             warnings.warn(f"Unknown configuration key: {key}")
 
-def list_available_decorators(include_deprecated: bool = False):
-    """List all available decorators."""
-    return decorator_registry.list_decorators(include_deprecated=include_deprecated)
-
-def get_decorator_usage_stats():
-    """Get usage statistics for all decorators."""
-    return decorator_registry.get_usage_stats()
-
 def search_decorators(query: str):
     """Search decorators by name, description, or tags."""
     return decorator_registry.search(query)
 
 # Legacy decorator factory for easy migration
-def legacy_decorator_factory(legacy_name: str, new_name: str):
-    """Create a legacy decorator that maps to a new one."""
-    def decorator(*args, **kwargs):
-        _deprecation_warning(legacy_name, new_name)
-        # Import the new decorator dynamically to avoid circular imports
-        if new_name == "smart_error_recovery":
-            return smart_error_recovery(*args, **kwargs)
-        elif new_name == "cached_validation":
-            return cached_validation(*args, **kwargs)
-        elif new_name == "enhanced_validation":
-            return enhanced_validation(*args, **kwargs)
-        elif new_name == "performance_monitor_v2":
-            return performance_monitor_v2(*args, **kwargs)
-        else:
-            # Fallback to importing from the main decorators module
-            import importlib
-            decorators_module = importlib.import_module("src.utils.decorators")
-            new_decorator = getattr(decorators_module, new_name)
-            return new_decorator(*args, **kwargs)
-    return decorator
-
 # Register legacy decorators in the registry for discovery
 decorator_registry.register(
     name="validate_call",

@@ -154,27 +154,6 @@ class DatabaseSecurityManager:
         return mysql.connector.connect(**connection_params)
 
     @contextmanager
-    def get_secure_connection(self, db_type: DatabaseType, connection_params: Dict[str, Any]):
-        """Context manager for secure database connections.
-
-        Args:
-            db_type: Type of database
-            connection_params: Connection parameters
-
-        Yields:
-            Database connection
-        """
-        connection = None
-        try:
-            connection = self.create_secure_connection(db_type, connection_params)
-            yield connection
-        except Exception as e:
-            self.logger.error(f"Database connection error: {e}")
-            raise
-        finally:
-            if connection:
-                connection.close()
-
     def execute_secure_query(self, connection: Any, query: str, params: Optional[Tuple] = None,
                            db_type: DatabaseType = DatabaseType.SQLITE) -> List[Dict[str, Any]]:
         """Execute a secure database query.
@@ -277,57 +256,6 @@ class DatabaseSecurityManager:
 
         return encrypted_data
 
-    def decrypt_sensitive_data(self, data: Dict[str, Any], sensitive_fields: List[str]) -> Dict[str, Any]:
-        """Decrypt sensitive data after retrieving from database.
-
-        Args:
-            data: Data to decrypt
-            sensitive_fields: List of sensitive field names
-
-        Returns:
-            Data with decrypted sensitive fields
-        """
-        if not self.security_policies["encrypt_sensitive_data"]:
-            return data
-
-        decrypted_data = data.copy()
-
-        for field in sensitive_fields:
-            if field in decrypted_data and decrypted_data[field] is not None:
-                try:
-                    decrypted_data[field] = self.security.data_encryption.decrypt_data(decrypted_data[field])
-                except Exception as e:
-                    self.logger.warning(f"Failed to decrypt field {field}: {e}")
-                    # Keep encrypted value if decryption fails
-
-        return decrypted_data
-
-    def backup_database_securely(self, db_type: DatabaseType, connection_params: Dict[str, Any],
-                               backup_path: str) -> str:
-        """Create a secure database backup.
-
-        Args:
-            db_type: Type of database
-            connection_params: Connection parameters
-            backup_path: Path for backup file
-
-        Returns:
-            Path to encrypted backup file
-        """
-        try:
-            if db_type == DatabaseType.SQLITE:
-                return self._backup_sqlite_securely(connection_params, backup_path)
-            elif db_type == DatabaseType.POSTGRESQL:
-                return self._backup_postgresql_securely(connection_params, backup_path)
-            elif db_type == DatabaseType.MYSQL:
-                return self._backup_mysql_securely(connection_params, backup_path)
-            else:
-                raise ValueError(f"Unsupported database type for backup: {db_type}")
-
-        except Exception as e:
-            self.logger.error(f"Database backup failed: {e}")
-            raise
-
     def _backup_sqlite_securely(self, params: Dict[str, Any], backup_path: str) -> str:
         """Create secure SQLite backup."""
         db_path = params.get("database", "data_cache/database.db")
@@ -374,24 +302,6 @@ class DatabaseSecurityManager:
         encrypted_backup_path = self.security.data_encryption.encrypt_file(backup_path)
 
         return encrypted_backup_path
-
-    def get_database_security_report(self) -> Dict[str, Any]:
-        """Get database security report.
-
-        Returns:
-            Database security report
-        """
-        report = {
-            "timestamp": datetime.now().isoformat(),
-            "security_policies": self.security_policies,
-            "active_connections": len(self.connections),
-            "connection_pools": len(self.connection_pools),
-            "audit_logging_enabled": self.security_policies["audit_queries"],
-            "encryption_enabled": self.security_policies["encrypt_sensitive_data"],
-            "ssl_required": self.security_policies["require_ssl"]
-        }
-
-        return report
 
 
 # Global database security manager instance

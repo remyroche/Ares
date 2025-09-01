@@ -19,10 +19,6 @@ project_root = Path(__file__).parent.parent
 sys.path.append(str(project_root))
 
 
-def _list_source_files(pattern: str) -> List[str]:
-	"""List files matching the provided glob pattern, sorted for determinism."""
-	return sorted(glob.glob(pattern))
-
 
 def consolidate_binance_15m_data() -> bool:
 	"""Consolidate all Binance 15m klines data files."""

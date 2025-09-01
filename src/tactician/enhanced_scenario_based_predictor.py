@@ -23,16 +23,6 @@ import talib
 logger = logging.getLogger(__name__)
 
 # Simple error handling decorator
-def handle_errors(func):
-    """Simple error handling decorator."""
-    def wrapper(*args, **kwargs):
-        try:
-            return func(*args, **kwargs)
-        except Exception as e:
-            logger.error(f"Error in {func.__name__}: {e}")
-            return None
-    return wrapper
-
 
 class EnhancedScenarioBasedPredictor:
     """
@@ -198,31 +188,6 @@ class EnhancedScenarioBasedPredictor:
 
         return scenarios
 
-    async def initialize(self) -> bool:
-        """
-        Initialize enhanced scenario-based predictor.
-
-        Returns:
-            bool: True if initialization successful, False otherwise
-        """
-        try:
-            self.logger.info("Initializing Enhanced Scenario-Based Predictor...")
-
-            # Validate configuration
-            if not self._validate_configuration():
-                self.logger.error("Invalid configuration for enhanced scenario predictor")
-                return False
-
-            # Initialize model
-            self.model = lgb.LGBMClassifier(**self.model_config)
-
-            self.logger.info("✅ Enhanced Scenario-Based Predictor initialized successfully")
-            return True
-
-        except Exception as e:
-            self.logger.error(f"❌ Enhanced Scenario-Based Predictor initialization failed: {e}")
-            return False
-
     def _validate_configuration(self) -> bool:
         """
         Validate enhanced scenario predictor configuration.
@@ -265,161 +230,6 @@ class EnhancedScenarioBasedPredictor:
         except Exception as e:
             self.logger.error(f"❌ Configuration validation failed: {e}")
             return False
-
-    def extract_comprehensive_features(self, market_data: pd.DataFrame) -> np.ndarray:
-        """
-        Extract comprehensive features using all step7 technical indicators.
-
-        Args:
-            market_data: Market data with OHLCV
-
-        Returns:
-            np.ndarray: Comprehensive feature array
-        """
-        try:
-            features = []
-
-            if len(market_data) < max(self.feature_config["lookback_periods"], 50):
-                # Not enough data, return default features
-                return np.array([0.5] * 150)  # Increased feature count
-
-            # Price-based features
-            close_prices = market_data['close'].values
-            high_prices = market_data['high'].values
-            low_prices = market_data['low'].values
-            open_prices = market_data['open'].values
-            volumes = market_data['volume'].values
-
-            # Current price and recent prices
-            current_price = close_prices[-1]
-
-            # 1. Price momentum features
-            for period in self.feature_config["price_momentum_periods"]:
-                if len(close_prices) >= period:
-                    momentum = (current_price - close_prices[-period]) / close_prices[-period]
-                    features.append(momentum)
-                else:
-                    features.append(0.0)
-
-            # 2. Volatility features
-            returns = np.diff(close_prices) / close_prices[:-1]
-            for period in self.feature_config["volatility_periods"]:
-                if len(returns) >= period:
-                    volatility = np.std(returns[-period:])
-                    features.append(volatility)
-                else:
-                    features.append(0.0)
-
-            # 3. Volume features
-            volume_trend = (volumes[-1] - volumes[-5]) / volumes[-5] if volumes[-5] > 0 else 0
-            volume_ma_ratio = volumes[-1] / np.mean(volumes[-self.feature_config["volume_ma_period"]:]) if np.mean(volumes[-self.feature_config["volume_ma_period"]:]) > 0 else 1.0
-            features.extend([volume_trend, volume_ma_ratio])
-
-            # 4. RSI
-            rsi_params = self.technical_indicators["RSI"]
-            rsi = talib.RSI(close_prices, timeperiod=rsi_params["lookback_period"])
-            features.append(rsi[-1] / 100 if not np.isnan(rsi[-1]) else 0.5)
-
-            # 5. MACD
-            macd_params = self.technical_indicators["MACD"]
-            macd, macd_signal, macd_hist = talib.MACD(
-                close_prices,
-                fastperiod=macd_params["fast_period"],
-                slowperiod=macd_params["slow_period"],
-                signalperiod=macd_params["signal_period"]
-            )
-            features.extend([
-                macd[-1] if not np.isnan(macd[-1]) else 0.0,
-                macd_signal[-1] if not np.isnan(macd_signal[-1]) else 0.0,
-                macd_hist[-1] if not np.isnan(macd_hist[-1]) else 0.0
-            ])
-
-            # 6. Bollinger Bands
-            bb_params = self.technical_indicators["Bollinger_Bands"]
-            bb_upper, bb_middle, bb_lower = talib.BBANDS(
-                close_prices,
-                timeperiod=bb_params["lookback_period"],
-                nbdevup=bb_params["std_dev"],
-                nbdevdn=bb_params["std_dev"]
-            )
-            bb_position = (current_price - bb_lower[-1]) / (bb_upper[-1] - bb_lower[-1]) if bb_upper[-1] != bb_lower[-1] else 0.5
-            bb_squeeze = (bb_upper[-1] - bb_lower[-1]) / bb_middle[-1] if bb_middle[-1] > 0 else 0.0
-            features.extend([
-                bb_position if not np.isnan(bb_position) else 0.5,
-                bb_squeeze if not np.isnan(bb_squeeze) else 0.0
-            ])
-
-            # 7. SMA
-            sma_params = self.technical_indicators["SMA"]
-            sma_short = talib.SMA(close_prices, timeperiod=sma_params["short_period"])
-            sma_long = talib.SMA(close_prices, timeperiod=sma_params["long_period"])
-            sma_ratio = sma_short[-1] / sma_long[-1] if sma_long[-1] > 0 else 1.0
-            features.append(sma_ratio if not np.isnan(sma_ratio) else 1.0)
-
-            # 8. EMA
-            ema_params = self.technical_indicators["EMA"]
-            ema_short = talib.EMA(close_prices, timeperiod=ema_params["short_period"])
-            ema_long = talib.EMA(close_prices, timeperiod=ema_params["long_period"])
-            ema_ratio = ema_short[-1] / ema_long[-1] if ema_long[-1] > 0 else 1.0
-            features.append(ema_ratio if not np.isnan(ema_ratio) else 1.0)
-
-            # 9. ATR
-            atr_params = self.technical_indicators["ATR"]
-            atr = talib.ATR(high_prices, low_prices, close_prices, timeperiod=atr_params["lookback_period"])
-            atr_normalized = atr[-1] / current_price if current_price > 0 else 0.0
-            features.append(atr_normalized if not np.isnan(atr_normalized) else 0.0)
-
-            # 10. Stochastic
-            stoch_params = self.technical_indicators["Stochastic"]
-            stoch_k, stoch_d = talib.STOCH(
-                high_prices, low_prices, close_prices,
-                fastk_period=stoch_params["k_period"],
-                slowk_period=stoch_params["d_period"],
-                slowd_period=stoch_params["d_period"]
-            )
-            features.extend([
-                stoch_k[-1] / 100 if not np.isnan(stoch_k[-1]) else 0.5,
-                stoch_d[-1] / 100 if not np.isnan(stoch_d[-1]) else 0.5
-            ])
-
-            # 11. ADX
-            adx_params = self.technical_indicators["ADX"]
-            adx = talib.ADX(high_prices, low_prices, close_prices, timeperiod=adx_params["lookback_period"])
-            features.append(adx[-1] / 100 if not np.isnan(adx[-1]) else 0.5)
-
-            # 12. CCI
-            cci_params = self.technical_indicators["CCI"]
-            cci = talib.CCI(high_prices, low_prices, close_prices, timeperiod=cci_params["lookback_period"])
-            # Normalize CCI to 0-1 range
-            cci_normalized = (cci[-1] + 300) / 600 if not np.isnan(cci[-1]) else 0.5
-            features.append(np.clip(cci_normalized, 0, 1))
-
-            # 13. Additional price-based features
-            price_range = (high_prices[-1] - low_prices[-1]) / current_price
-            upper_shadow = (high_prices[-1] - current_price) / current_price
-            lower_shadow = (current_price - low_prices[-1]) / current_price
-            body_size = abs(close_prices[-1] - open_prices[-1]) / current_price
-
-            features.extend([price_range, upper_shadow, lower_shadow, body_size])
-
-            # 14. Latest return
-            latest_return = (current_price - close_prices[-2]) / close_prices[-2] if len(close_prices) > 1 else 0.0
-            features.append(latest_return)
-
-            # 15. Price acceleration (second derivative)
-            if len(close_prices) >= 3:
-                return_1 = (close_prices[-1] - close_prices[-2]) / close_prices[-2]
-                return_2 = (close_prices[-2] - close_prices[-3]) / close_prices[-3]
-                acceleration = return_1 - return_2
-                features.append(acceleration)
-            else:
-                features.append(0.0)
-
-            return np.array(features)
-
-        except Exception as e:
-            self.logger.error(f"❌ Comprehensive feature extraction failed: {e}")
-            return np.array([0.5] * 150)
 
     @handle_errors
     def prepare_scenario_targets(
@@ -850,23 +660,3 @@ class EnhancedScenarioBasedPredictor:
                     "time_limit_minutes": self.time_limit_minutes
                 }
             }
-
-    def get_enhanced_configuration_summary(self) -> Dict[str, Any]:
-        """
-        Get enhanced configuration summary for step17 optimization.
-
-        Returns:
-            dict: Enhanced configuration summary
-        """
-        return {
-            "scenarios": self.scenarios,
-            "time_limit_minutes": self.time_limit_minutes,
-            "model_config": self.model_config,
-            "decision_thresholds": self.decision_thresholds,
-            "technical_indicators": self.technical_indicators,
-            "feature_config": self.feature_config,
-            "is_trained": self.is_trained,
-            "model_performance": self.model_performance,
-            "feature_importance": self.feature_importance,
-            "n_scenarios": len(self.scenarios)
-        }

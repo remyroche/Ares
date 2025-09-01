@@ -51,34 +51,6 @@ class ModularAnalyst:
         default_return=False,
         context="modular analyst initialization",
     )
-    async def initialize(self) -> bool:
-        """
-        Initialize modular analyst with enhanced error handling.
-
-        Returns:
-            bool: True if initialization successful, False otherwise
-        """
-        try:
-            self.logger.info("Initializing Modular Analyst...")
-
-            # Load analyst configuration
-            await self._load_analyst_configuration()
-
-            # Validate configuration
-            if not self._validate_configuration():
-                self.logger.error(invalid("Invalid configuration for modular analyst"))
-                return False
-
-            # Initialize analysis modules
-            await self._initialize_analysis_modules()
-
-            self.logger.info("✅ Modular Analyst initialization completed successfully")
-            return True
-
-        except Exception as e:
-            self.logger.error(failed(f"❌ Modular Analyst initialization failed: {e}"))
-            return False
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
@@ -152,120 +124,26 @@ class ModularAnalyst:
         default_return=None,
         context="analysis modules initialization",
     )
-    async def _initialize_analysis_modules(self) -> None:
-        """Initialize analysis modules."""
-        try:
-            # Initialize technical analysis module
-            if self.enable_technical_analysis:
-                await self._initialize_technical_analysis()
-
-            # Initialize fundamental analysis module
-            if self.enable_fundamental_analysis:
-                await self._initialize_fundamental_analysis()
-
-            # Initialize sentiment analysis module
-            if self.analyst_config.get("enable_sentiment_analysis", False):
-                await self._initialize_sentiment_analysis()
-
-            # Initialize risk analysis module
-            if self.analyst_config.get("enable_risk_analysis", True):
-                await self._initialize_risk_analysis()
-
-            self.logger.info("Analysis modules initialized successfully")
-
-        except Exception as e:
-            self.logger.error(initialization_error(f"Error initializing analysis modules: {e}"))
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="technical analysis initialization",
     )
-    async def _initialize_technical_analysis(self) -> None:
-        """Initialize technical analysis module."""
-        try:
-            # Initialize technical analysis indicators
-            self.technical_indicators = {
-                "sma": True,
-                "ema": True,
-                "rsi": True,
-                "macd": True,
-                "bollinger_bands": True,
-                "stochastic": True,
-            }
-
-            self.logger.info("Technical analysis module initialized")
-
-        except Exception as e:
-            self.logger.error(initialization_error(f"Error initializing technical analysis: {e}"))
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="fundamental analysis initialization",
     )
-    async def _initialize_fundamental_analysis(self) -> None:
-        """Initialize fundamental analysis module."""
-        try:
-            # Initialize fundamental analysis metrics
-            self.fundamental_metrics = {
-                "pe_ratio": True,
-                "pb_ratio": True,
-                "debt_to_equity": True,
-                "roe": True,
-                "revenue_growth": True,
-                "earnings_growth": True,
-            }
-
-            self.logger.info("Fundamental analysis module initialized")
-
-        except Exception as e:
-            self.logger.error(initialization_error(f"Error initializing fundamental analysis: {e}"))
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="sentiment analysis initialization",
     )
-    async def _initialize_sentiment_analysis(self) -> None:
-        """Initialize sentiment analysis module."""
-        try:
-            # Initialize sentiment analysis metrics
-            self.sentiment_metrics = {
-                "news_sentiment": True,
-                "social_sentiment": True,
-                "market_sentiment": True,
-                "fear_greed_index": True,
-            }
-
-            self.logger.info("Sentiment analysis module initialized")
-
-        except Exception as e:
-            self.logger.error(initialization_error(f"Error initializing sentiment analysis: {e}"))
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="risk analysis initialization",
     )
-    async def _initialize_risk_analysis(self) -> None:
-        """Initialize risk analysis module."""
-        try:
-            # Initialize risk analysis metrics
-            self.risk_metrics = {
-                "var": True,
-                "max_drawdown": True,
-                "sharpe_ratio": True,
-                "volatility": True,
-                "beta": True,
-                "correlation": True,
-            }
-
-            self.logger.info("Risk analysis module initialized")
-
-        except Exception as e:
-            self.logger.error(initialization_error(f"Error initializing risk analysis: {e}"))
-
     @handle_specific_errors(
         error_handlers={
             ValueError: (False, "Invalid analysis parameters"),
@@ -788,103 +666,16 @@ class ModularAnalyst:
         default_return=None,
         context="analysis results getting",
     )
-    def get_analysis_results(
-        self,
-        analysis_type: str | None = None,
-    ) -> dict[str, Any]:
-        """
-        Get analysis results.
-
-        Args:
-            analysis_type: Optional analysis type filter
-
-        Returns:
-            Dict[str, Any]: Analysis results
-        """
-        try:
-            if analysis_type:
-                return self.analysis_results.get(analysis_type, {})
-            return self.analysis_results.copy()
-
-        except Exception as e:
-            self.logger.error(error(f"Error getting analysis results: {e}"))
-            return {}
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="analysis history getting",
     )
-    def get_analysis_history(self, limit: int | None = None) -> list[dict[str, Any]]:
-        """
-        Get analysis history.
-
-        Args:
-            limit: Optional limit on number of records
-
-        Returns:
-            List[Dict[str, Any]]: Analysis history
-        """
-        try:
-            history = self.analysis_history.copy()
-
-            if limit:
-                history = history[-limit:]
-
-            return history
-
-        except Exception as e:
-            self.logger.error(error(f"Error getting analysis history: {e}"))
-            return []
-
-    def get_analyst_status(self) -> dict[str, Any]:
-        """
-        Get analyst status information.
-
-        Returns:
-            Dict[str, Any]: Analyst status
-        """
-        return {
-            "is_analyzing": self.is_analyzing,
-            "analysis_interval": self.analysis_interval,
-            "max_analysis_history": self.max_analysis_history,
-            "enable_technical_analysis": self.enable_technical_analysis,
-            "enable_fundamental_analysis": self.enable_fundamental_analysis,
-            "enable_sentiment_analysis": self.analyst_config.get(
-                "enable_sentiment_analysis",
-                False,
-            ),
-            "enable_risk_analysis": self.analyst_config.get(
-                "enable_risk_analysis",
-                True,
-            ),
-            "analysis_history_count": len(self.analysis_history),
-        }
-
     @handle_errors(
         exceptions=(Exception,),
         default_return=None,
         context="modular analyst cleanup",
     )
-    async def stop(self) -> None:
-        """Stop the modular analyst."""
-        self.logger.info("🛑 Stopping Modular Analyst...")
-
-        try:
-            # Stop analyzing
-            self.is_analyzing = False
-
-            # Clear results
-            self.analysis_results.clear()
-
-            # Clear history
-            self.analysis_history.clear()
-
-            self.logger.info("✅ Modular Analyst stopped successfully")
-
-        except Exception as e:
-            self.logger.error(error(f"Error stopping modular analyst: {e}"))
-
 # Global modular analyst instance
 modular_analyst: ModularAnalyst | None = None
 
@@ -893,42 +684,3 @@ modular_analyst: ModularAnalyst | None = None
     default_return=None,
     context="modular analyst setup",
 )
-async def setup_modular_analyst(
-    config: dict[str, Any] | None = None,
-) -> ModularAnalyst | None:
-    """
-    Setup global modular analyst.
-
-    Args:
-        config: Optional configuration dictionary
-
-    Returns:
-        Optional[ModularAnalyst]: Global modular analyst instance
-    """
-    try:
-        global modular_analyst
-
-        if config is None:
-            config = {
-                "modular_analyst": {
-                    "analysis_interval": 60,
-                    "max_analysis_history": 100,
-                    "enable_technical_analysis": True,
-                    "enable_fundamental_analysis": True,
-                    "enable_sentiment_analysis": False,
-                    "enable_risk_analysis": True,
-                },
-            }
-
-        # Create modular analyst
-        modular_analyst = ModularAnalyst(config)
-
-        # Initialize modular analyst
-        success = await modular_analyst.initialize()
-        if success:
-            return modular_analyst
-        return None
-
-    except Exception as e:
-        print(f"Error setting up modular analyst: {e}")
-        return None

@@ -169,15 +169,7 @@ class EnhancedLMOptimizerConfig(BaseModel):
             # Custom JSON encoders if needed
         }
 
-    def to_dict(self) -> dict[str, Any]:
-        """Convert configuration to dictionary."""
-        return self.dict()
-
     @classmethod
-    def from_dict(cls, config_dict: dict[str, Any]) -> "EnhancedLMOptimizerConfig":
-        """Create configuration from dictionary."""
-        return cls(**config_dict)
-
     def validate_config(self) -> list[str]:
         """Validate configuration and return list of warnings."""
         warnings = []
@@ -194,91 +186,9 @@ class EnhancedLMOptimizerConfig(BaseModel):
 
         return warnings
 
-    def get_optimization_summary(self) -> dict[str, Any]:
-        """Get a summary of the optimization configuration."""
-        return {
-            "feature_selection": {
-                "enabled": self.feature_selection.enable,
-                "methods": self.feature_selection.methods,
-                "target_features": self.feature_selection.target_features,
-            },
-            "regularization": {
-                "enabled": self.regularization.enable,
-                "model_specific": list(self.regularization.model_specific.keys()),
-            },
-            "optuna": {
-                "enabled": self.optuna.enable,
-                "sampler": self.optuna.sampler,
-                "pruner": self.optuna.pruner,
-                "total_trials": self.optuna.n_trials_per_batch * self.optuna.n_batches,
-            },
-            "vectorization": {
-                "enabled": self.vectorization.enable,
-                "batch_size": self.vectorization.batch_size,
-                "use_gpu": self.vectorization.use_gpu,
-            },
-            "experiment_tracking": {
-                "enabled": self.experiment_tracking.enable,
-                "mlflow": self.experiment_tracking.mlflow,
-                "wandb": self.experiment_tracking.wandb,
-            },
-        }
-
 
 # Default configuration
 DEFAULT_CONFIG = EnhancedLMOptimizerConfig()
 
 # Configuration presets
-def get_fast_config() -> EnhancedLMOptimizerConfig:
-    """Get configuration optimized for speed."""
-    return EnhancedLMOptimizerConfig(
-        optuna=OptunaConfig(
-            n_trials_per_batch=20,
-            n_batches=2,
-            timeout_per_batch=120,
-        ),
-        feature_selection=FeatureSelectionConfig(
-            methods=["mutual_info", "random_forest"],
-            target_features={"step6": 50, "step06_5": 60, "step9": 50},
-        ),
-        experiment_tracking=ExperimentTrackingConfig(
-            enable=False,
-        ),
-    )
 
-
-def get_comprehensive_config() -> EnhancedLMOptimizerConfig:
-    """Get configuration optimized for comprehensive optimization."""
-    return EnhancedLMOptimizerConfig(
-        optuna=OptunaConfig(
-            n_trials_per_batch=100,
-            n_batches=5,
-            timeout_per_batch=600,
-            sampler=SamplerType.CMAES,
-        ),
-        feature_selection=FeatureSelectionConfig(
-            methods=["mutual_info", "lasso", "random_forest", "shap"],
-            target_features={"step6": 100, "step06_5": 120, "step9": 100},
-        ),
-        experiment_tracking=ExperimentTrackingConfig(
-            enable=True,
-            mlflow=True,
-            wandb=True,
-        ),
-    )
-
-
-def get_memory_efficient_config() -> EnhancedLMOptimizerConfig:
-    """Get configuration optimized for memory efficiency."""
-    return EnhancedLMOptimizerConfig(
-        vectorization=VectorizationConfig(
-            batch_size=512,
-            memory_efficient=True,
-        ),
-        optuna=OptunaConfig(
-            n_trials_per_batch=30,
-            n_batches=2,
-        ),
-        max_workers=2,
-        check_memory_usage=True,
-    )

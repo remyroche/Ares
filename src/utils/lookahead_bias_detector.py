@@ -869,29 +869,6 @@ class LookaheadBiasDetector:
 # Utility functions for easy integration
 
 
-def detect_lookahead_bias(
-    features_df: pd.DataFrame,
-    target_series: pd.Series,
-    timestamp_col: str | None = None,
-) -> dict[str, Any]:
-    """
-    Convenience function to detect lookahead bias.
-
-    Args:
-        features_df: Features DataFrame
-        target_series: Target Series
-        timestamp_col: Optional timestamp column
-
-    Returns:
-        Detection results
-    """
-    detector = LookaheadBiasDetector()
-    return detector.detect_feature_lookahead_bias(
-        features_df,
-        target_series,
-        timestamp_col,
-    )
-
 
 def validate_temporal_split(
     X_train: pd.DataFrame,
@@ -922,20 +899,3 @@ def validate_temporal_split(
         timestamp_col,
     )
 
-
-def apply_feature_lagging(
-    features_df: pd.DataFrame,
-    lag_periods: int = 1,
-) -> pd.DataFrame:
-    """
-    Convenience function to apply lagging to features.
-
-    Args:
-        features_df: Features DataFrame
-        lag_periods: Number of periods to lag
-
-    Returns:
-        Lagged features DataFrame
-    """
-    detector = LookaheadBiasDetector()
-    return detector.add_lagging_to_features(features_df, lag_periods)

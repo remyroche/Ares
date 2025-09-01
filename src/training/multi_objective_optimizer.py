@@ -73,24 +73,6 @@ class MultiObjectiveOptimizer:
         default_return=None,
         context="multi-objective optimization",
     )
-    def objective(self, trial: optuna.trial.Trial) -> tuple[float, float, float]:
-        """Multi-objective function returning (sharpe_ratio, win_rate, profit_factor)."""
-        # Suggest hyperparameters
-        params = self._suggest_hyperparameters(trial)
-
-        # Run backtest with suggested parameters
-        backtest_results = self._run_backtest(params)
-
-        # Calculate comprehensive metrics
-        metrics = self._calculate_metrics(backtest_results)
-
-        # Check risk constraints
-        if not self._check_risk_constraints(metrics):
-            return -np.inf, -np.inf, -np.inf
-
-        # Return Pareto objectives
-        return (metrics.sharpe_ratio, metrics.win_rate, metrics.profit_factor)
-
     def _suggest_hyperparameters(self, trial: optuna.trial.Trial) -> dict[str, Any]:
         """Suggest hyperparameters with advanced search spaces."""
         params = {}

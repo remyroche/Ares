@@ -604,23 +604,6 @@ class RegimePredictiveEnsembles:
                 "Global meta-learner components not found. Will train on first run.",
             )
 
-    def get_current_regime(self, current_features: pd.DataFrame) -> str:
-        """
-        Determines the current market regime from composite_cluster_id.
-        HMM composite clusters are paramount - no fallbacks allowed.
-        """
-        if current_features.empty:
-            return "UNKNOWN"
-
-        # HMM COMPOSITE CLUSTERS ONLY - NO FALLBACKS
-        if "composite_cluster_id" in current_features.columns:
-            cluster_id = current_features["composite_cluster_id"].iloc[-1]
-            return self._map_cluster_to_regime(cluster_id)
-        else:
-            self.logger.error("🚨 HMM composite_cluster_id column is missing from current features")
-            self.logger.error("   HMM composite clusters are paramount - no fallbacks allowed")
-            return "UNKNOWN"
-
     def _map_cluster_to_regime(self, cluster_id: int, timeframe: str = "1m") -> str:
         """
         Maps HMM composite cluster IDs to regime ensemble names.
@@ -659,83 +642,6 @@ class RegimePredictiveEnsembles:
         self.logger.debug(f"Mapped cluster_id {cluster_id} to regime {regime}")
         return regime
 
-    def get_regime_expert(self, cluster_id: int) -> Any:
-        """
-        Get the appropriate regime expert based on composite_cluster_id.
-        Returns the ensemble instance for the given cluster.
-        """
-        regime_name = self._map_cluster_to_regime(cluster_id)
-
-        if regime_name in self.regime_ensembles:
-            ensemble = self.regime_ensembles[regime_name]
-
-            # Ensure the ensemble is loaded
-            if not ensemble.trained:
-                final_model_file_name = os.path.join(
-                    self.model_storage_dir,
-                    f"final_{regime_name.lower()}_ensemble.joblib",
-                )
-                if not ensemble.load_model(final_model_file_name):
-                    self.logger.warning(
-                        f"Could not load final model for {regime_name}. Returning None."
-                    )
-                    return None
-
-            return ensemble
-        else:
-            self.logger.warning(f"No ensemble found for regime {regime_name}")
-            return None
-
-    def get_current_regime_info(self, current_features: pd.DataFrame) -> dict[str, Any]:
-        """
-        Get comprehensive current regime information including cluster ID and expert.
-        HMM composite clusters are paramount - no fallbacks allowed.
-        """
-        if current_features.empty:
-            return {
-                "cluster_id": -1,
-                "regime_name": "UNKNOWN",
-                "expert": None,
-                "confidence": 0.0,
-            }
-
-        # HMM COMPOSITE CLUSTERS ONLY - NO FALLBACKS
-        if "composite_cluster_id" not in current_features.columns:
-            self.logger.error("🚨 HMM composite_cluster_id column is missing from current features")
-            self.logger.error("   HMM composite clusters are paramount - no fallbacks allowed")
-            return {
-                "cluster_id": -1,
-                "regime_name": "UNKNOWN",
-                "expert": None,
-                "confidence": 0.0,
-            }
-
-        # Get cluster ID
-        cluster_id = int(current_features["composite_cluster_id"].iloc[-1])
-
-        # Map to regime name
-        regime_name = self._map_cluster_to_regime(cluster_id)
-
-        # Get the expert
-        expert = self.get_regime_expert(cluster_id)
-
-        # Get confidence from intensity if available
-        confidence = 0.0
-        if "intensity_cluster_" + str(cluster_id) in current_features.columns:
-            confidence = float(
-                current_features[f"intensity_cluster_{cluster_id}"].iloc[-1]
-            )
-
-        return {
-            "cluster_id": cluster_id,
-            "regime_name": regime_name,
-            "expert": expert,
-            "confidence": confidence,
-            "timestamp": current_features.index[-1]
-            if not current_features.empty
-            else None,
-        }
-
     def save_model(self, ensemble_instance: Any, path: str):
         """Saves a trained ensemble instance to a file."""
         try:
@@ -764,17 +670,3 @@ class RegimePredictiveEnsembles:
                 exc_info=True,
             )
             return False
-
-    def load_weights(self, weights: dict[str, Any]):
-        """Loads updated weights into the ensembles for dynamic weighting."""
-        for regime, ensemble_weights in weights.items():
-            if regime in self.regime_ensembles:
-                # Assuming BaseEnsemble has an attribute 'ensemble_weights'
-                self.regime_ensembles[regime].ensemble_weights = ensemble_weights
-
-    def get_current_weights(self) -> dict[str, Any]:
-        """Returns the current weights of all ensembles."""
-        return {
-            regime: ens.ensemble_weights
-            for regime, ens in self.regime_ensembles.items()
-        }

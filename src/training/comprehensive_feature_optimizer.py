@@ -52,16 +52,6 @@ class ComprehensiveFeatureConfig:
     memory_limit_mb: int = 4096
     cache_results: bool = True
 
-    def __post_init__(self):
-        if self.quality_thresholds is None:
-            self.quality_thresholds = {
-                "min_correlation": 0.2,
-                "max_correlation": 0.8,
-                "min_information_score": 0.03,
-                "min_diversity_score": 0.15,
-                "min_variance": 1e-10
-            }
-
 class ComprehensiveFeatureOptimizer:
     """
     Comprehensive feature optimizer that generates all feature types
@@ -113,113 +103,6 @@ class ComprehensiveFeatureOptimizer:
 
         self.logger.info(f"✅ Extracted {len(optimized_periods)} optimized period sets")
         return optimized_periods
-
-    def _get_default_periods(self) -> Dict[str, List[int]]:
-        """Get default periods when no optimization results are available."""
-        return {
-            "RSI": [7, 14, 21],
-            "MACD_fast": [8, 12, 16],
-            "Bollinger_Bands": [10, 20, 30],
-            "SMA": [5, 20, 50],
-            "EMA": [5, 20, 50],
-            "ATR": [10, 20, 30],
-            "Stochastic": [5, 14, 21],
-            "ADX": [10, 20, 30],
-            "CCI": [10, 20, 30],
-            "Williams_R": [5, 14, 21],
-            "MFI": [10, 20, 30],
-            "ROC": [5, 10, 20],
-            "MOM": [5, 10, 20],
-            "TSI": [10, 20, 30],
-            "UO": [5, 10, 20],
-            "AO": [5, 10, 20],
-            "CMF": [10, 20, 30],
-            "VWAP": [5, 10, 20],
-            "VWAP_Momentum": [5, 10, 20],
-            "VWAP_Volatility": [5, 10, 20]
-        }
-
-    async def generate_comprehensive_features(
-        self,
-        data: pd.DataFrame,
-        target: pd.Series,
-        regime_labels: Optional[pd.Series] = None
-    ) -> Dict[str, Any]:
-        """
-        Generate comprehensive features using optimized lookback periods.
-
-        Args:
-            data: OHLCV data
-            target: Target variable for optimization
-            regime_labels: HMM regime labels if available
-
-        Returns:
-            Dictionary of comprehensive optimized features
-        """
-        try:
-            self.logger.info("🚀 Generating comprehensive optimized features...")
-
-            features = {}
-
-            # Generate features for each type
-            feature_tasks = []
-
-            if self.config.interaction_features:
-                feature_tasks.append(('interaction', self._generate_interaction_features(data, target)))
-
-            if self.config.difference_acceleration_features:
-                feature_tasks.append(('difference', self._generate_difference_acceleration_features(data, target)))
-
-            if self.config.cross_timeframe_features:
-                feature_tasks.append(('cross_timeframe', self._generate_cross_timeframe_features(data, target)))
-
-            if self.config.microstructure_features:
-                feature_tasks.append(('microstructure', self._generate_microstructure_features(data, target)))
-
-            if self.config.volatility_features:
-                feature_tasks.append(('volatility', self._generate_volatility_features(data, target)))
-
-            if self.config.momentum_features:
-                feature_tasks.append(('momentum', self._generate_momentum_features(data, target)))
-
-            if self.config.liquidity_features:
-                feature_tasks.append(('liquidity', self._generate_liquidity_features(data, target)))
-
-            if self.config.candlestick_patterns:
-                feature_tasks.append(('candlestick', self._generate_candlestick_patterns(data, target)))
-
-            if self.config.ohlcv_price_features:
-                feature_tasks.append(('ohlcv', self._generate_ohlcv_price_features(data, target)))
-
-            # Execute feature generation
-            if self.config.parallel_processing:
-                # Parallel execution
-                results = await asyncio.gather(*[task for _, task in feature_tasks], return_exceptions=True)
-                for (feature_type, _), result in zip(feature_tasks, results):
-                    if isinstance(result, Exception):
-                        self.logger.error(f"❌ Error generating {feature_type} features: {result}")
-                    else:
-                        features.update(result)
-                        self.logger.info(f"✅ Generated {len(result)} {feature_type} features")
-            else:
-                # Sequential execution
-                for feature_type, task in feature_tasks:
-                    try:
-                        result = await task
-                        features.update(result)
-                        self.logger.info(f"✅ Generated {len(result)} {feature_type} features")
-                    except Exception as e:
-                        self.logger.error(f"❌ Error generating {feature_type} features: {e}")
-
-            # Quality validation and filtering
-            features = await self._validate_and_filter_features(features, target)
-
-            self.logger.info(f"✅ Generated {len(features)} comprehensive optimized features")
-            return features
-
-        except Exception as e:
-            self.logger.error(f"❌ Error generating comprehensive features: {e}")
-            return {}
 
     async def _generate_interaction_features(self, data: pd.DataFrame, target: pd.Series) -> Dict[str, Any]:
         """Generate interaction features using optimized periods."""
@@ -681,22 +564,6 @@ class ComprehensiveFeatureOptimizer:
                 pairs.append((feat1, feat2))
         return pairs
 
-    def _get_cross_timeframe_periods(self) -> List[Tuple[int, int]]:
-        """Get optimized period pairs for cross-timeframe analysis."""
-        all_periods = set()
-        for periods in self.optimized_periods.values():
-            all_periods.update(periods)
-
-        sorted_periods = sorted(list(all_periods))
-        cross_periods = []
-
-        for i, period1 in enumerate(sorted_periods):
-            for period2 in sorted_periods[i+1:]:
-                if period2 >= period1 * 1.5:  # At least 50% difference
-                    cross_periods.append((period1, period2))
-
-        return cross_periods[:self.config.max_cross_timeframe_pairs]
-
     async def _validate_and_filter_features(self, features: Dict[str, Any], target: pd.Series) -> Dict[str, Any]:
         """Validate and filter features based on quality thresholds."""
         filtered_features = {}
@@ -876,33 +743,3 @@ class ComprehensiveFeatureOptimizer:
 
         bearish_engulfing = (close < prev_open) & (open_price > prev_close) & (close < prev_close) & (open_price > prev_open)
         return bearish_engulfing.astype(float)
-
-    def save_optimization_results(self, output_path: str) -> None:
-        """Save optimization results to file."""
-        try:
-            results = {
-                "comprehensive_feature_optimization": {
-                    "total_features_generated": len(self.optimized_periods),
-                    "optimized_periods": self.optimized_periods,
-                    "config": {
-                        "interaction_features": self.config.interaction_features,
-                        "difference_acceleration_features": self.config.difference_acceleration_features,
-                        "cross_timeframe_features": self.config.cross_timeframe_features,
-                        "microstructure_features": self.config.microstructure_features,
-                        "volatility_features": self.config.volatility_features,
-                        "momentum_features": self.config.momentum_features,
-                        "liquidity_features": self.config.liquidity_features,
-                        "candlestick_patterns": self.config.candlestick_patterns,
-                        "ohlcv_price_features": self.config.ohlcv_price_features
-                    }
-                }
-            }
-
-            output_file = Path(output_path) / "comprehensive_feature_optimization_results.json"
-            with open(output_file, 'w') as f:
-                json.dump(results, f, indent=2, default=str)
-
-            self.logger.info(f"✅ Saved comprehensive feature optimization results to: {output_file}")
-
-        except Exception as e:
-            self.logger.error(f"❌ Failed to save optimization results: {e}")

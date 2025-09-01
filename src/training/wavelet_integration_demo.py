@@ -50,37 +50,6 @@ class WaveletIntegrationDemo:
         self.backtester = None
         self.wavelet_cache = None
 
-    async def initialize(self) -> bool:
-        """Initialize all wavelet workflow components."""
-        try:
-            self.logger.info(
-                "🚀 Initializing comprehensive wavelet integration demo...",
-            )
-
-            # Initialize vectorized advanced feature engineering
-            self.feature_engineer = VectorizedAdvancedFeatureEngineering(self.config)
-            await self.feature_engineer.initialize()
-
-            # Initialize wavelet pre-computer
-            self.wavelet_precomputer = WaveletFeaturePrecomputer(self.config)
-            await self.wavelet_precomputer.initialize()
-
-            # Initialize backtesting with cached features
-            self.backtester = BacktestingWithCachedFeatures(self.config)
-            await self.backtester.initialize()
-
-            # Initialize wavelet cache
-            self.wavelet_cache = WaveletFeatureCache(self.config)
-
-            self.logger.info("✅ Wavelet integration demo initialized successfully")
-            return True
-
-        except Exception as e:
-            self.logger.exception(
-                f"❌ Error initializing wavelet integration demo: {e}",
-            )
-            return False
-
     async def create_sample_data(self) -> tuple[pd.DataFrame, pd.DataFrame]:
         """Create realistic sample data for demonstration."""
         try:

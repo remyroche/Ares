@@ -273,50 +273,6 @@ def validate_timeframe_files():
     return len(valid_files) > 0
 
 
-def cleanup_corrupted_files():
-    """Clean up corrupted timeframe files."""
-    logger.info("🧹 Cleaning up corrupted timeframe files...")
-
-    # Look for files with 1970 timestamps
-    timeframe_patterns = [
-        "klines_*_5m_consolidated.parquet",
-        "klines_*_15m_consolidated.parquet",
-        "klines_*_30m_consolidated.parquet",
-        "klines_*_1h_consolidated.parquet",
-        "klines_*_4h_consolidated.parquet",
-        "klines_*_1d_consolidated.parquet",
-    ]
-
-    cleaned_files = []
-
-    for pattern in timeframe_patterns:
-        files = glob.glob(os.path.join("data_cache", pattern))
-        for file_path in files:
-            try:
-                df = pd.read_parquet(file_path)
-
-                if "timestamp" in df.columns:
-                    df["timestamp"] = pd.to_datetime(df["timestamp"])
-
-                    # Check for 1970 timestamps
-                    if df["timestamp"].min().year == 1970:
-                        logger.warning(
-                            f"🗑️ Removing corrupted file: {os.path.basename(file_path)}"
-                        )
-                        os.remove(file_path)
-                        cleaned_files.append(file_path)
-                        continue
-
-            except Exception as e:
-                logger.warning(
-                    f"🗑️ Removing unreadable file: {os.path.basename(file_path)}"
-                )
-                os.remove(file_path)
-                cleaned_files.append(file_path)
-
-    logger.info(f"🧹 Cleaned up {len(cleaned_files)} corrupted files")
-    return len(cleaned_files)
-
 
 def main():
     """Main function to fix multi-timeframe data issues."""

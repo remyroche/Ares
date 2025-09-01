@@ -208,19 +208,6 @@ class EnhancedStep1_5DataConverter:
         # Initialize directories
         self._initialize_directories()
 
-    def _initialize_directories(self):
-        """Initialize required directories."""
-        directories = [
-            self.config.data_dir,
-            self.config.unified_dir,
-            self.config.backup_dir,
-            self.config.temp_dir
-        ]
-
-        for directory in directories:
-            os.makedirs(directory, exist_ok=True)
-            self.logger.debug(f"Initialized directory: {directory}")
-
     async def execute(self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
         """
         Execute the enhanced data conversion process.
@@ -457,15 +444,6 @@ class EnhancedStep1_5DataConverter:
         except Exception as e:
             self.logger.error(f"Error saving unified data: {e}")
             return False
-
-    def get_memory_stats(self) -> Dict[str, Any]:
-        """Get memory statistics."""
-        return self.memory_monitor.get_memory_stats()
-
-    def get_quality_summary(self) -> Dict[str, Any]:
-        """Get quality validation summary."""
-        # This would return the last quality validation results
-        return {"message": "Quality validation results not available"}
 
 
 # Convenience function for backward compatibility

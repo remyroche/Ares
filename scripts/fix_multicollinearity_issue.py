@@ -23,18 +23,6 @@ sys.path.insert(0, str(src_dir))
 def _log_exceptions(logger_name: str):
     """Decorator to log exceptions and return False for failures."""
 
-    def decorator(func):
-        @wraps(func)
-        def wrapper(*args, **kwargs):
-            logger = system_logger.getChild(logger_name)
-            try:
-                return func(*args, **kwargs)
-            except Exception as e:  # noqa: BLE001
-                logger.exception(f"Error in {func.__name__}: {e}")
-                return False
-
-        return wrapper
-
     return decorator
 
 

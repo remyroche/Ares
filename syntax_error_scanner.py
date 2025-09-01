@@ -212,30 +212,6 @@ class SyntaxErrorScanner:
 
         return report
 
-    def get_files_by_error_count(self, min_errors: int = 1) -> List[Tuple[str, str, int]]:
-        """Get files with at least min_errors errors, sorted by error count."""
-        files = []
-        for file_path, errors in self.error_files.items():
-            if len(errors) >= min_errors:
-                relative_path = os.path.relpath(file_path, '.')
-                absolute_path = os.path.abspath(file_path)
-                files.append((relative_path, absolute_path, len(errors)))
-
-        return sorted(files, key=lambda x: x[2], reverse=True)
-
-    def get_files_by_error_type(self, error_type: str) -> List[Tuple[str, str, int]]:
-        """Get files with specific error type, sorted by error count."""
-        files = []
-        for file_path, errors in self.error_files.items():
-            type_count = sum(1 for error in errors
-                           if self.parse_error_line(error)[0] == error_type)
-            if type_count > 0:
-                relative_path = os.path.relpath(file_path, '.')
-                absolute_path = os.path.abspath(file_path)
-                files.append((relative_path, absolute_path, type_count))
-
-        return sorted(files, key=lambda x: x[2], reverse=True)
-
 
 def main():
     """Main function to run the syntax error scanner."""

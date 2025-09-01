@@ -636,20 +636,6 @@ class TimeframeRelevanceAnalyzer:
             "optimal_holding_period": self._calculate_optimal_holding_period(decay_rates)
         }
 
-    def _calculate_optimal_holding_period(self, decay_rates: dict[str, float]) -> dict[str, int]:
-        """Calculate optimal holding period for each timeframe."""
-        holding_periods = {}
-
-        for timeframe, decay_rate in decay_rates.items():
-            if decay_rate > 0:
-                # Optimal holding period is inversely related to decay rate
-                optimal_period = int(1.0 / decay_rate)
-                holding_periods[timeframe] = max(1, min(optimal_period, 100))
-            else:
-                holding_periods[timeframe] = 50  # Default
-
-        return holding_periods
-
     def _calculate_optimal_signal_horizon(self, signal_quality: dict[str, Any]) -> dict[str, int]:
         """Calculate optimal signal horizon for each timeframe."""
         horizons = {}
@@ -757,30 +743,6 @@ class TimeframeRelevanceAnalyzer:
             "max_position_size": min(1.0, base_position_size * 1.5)
         }
 
-    def _calculate_stop_loss_recommendations(self, analysis_results: dict[str, Any]) -> dict[str, float]:
-        """Calculate stop-loss recommendations."""
-        timeframe_analysis = analysis_results["timeframe_analysis"]
-
-        max_drawdowns = []
-        for analysis in timeframe_analysis.values():
-            if not analysis.get("insufficient_data", False):
-                drawdown = analysis["volatility_metrics"].get("max_drawdown", 0.1)
-                max_drawdowns.append(drawdown)
-
-        if max_drawdowns:
-            avg_drawdown = np.mean(max_drawdowns)
-            max_drawdown = np.max(max_drawdowns)
-        else:
-            avg_drawdown = 0.1
-            max_drawdown = 0.2
-
-        return {
-            "conservative_stop_loss": avg_drawdown * 0.5,
-            "moderate_stop_loss": avg_drawdown,
-            "aggressive_stop_loss": max_drawdown * 0.8,
-            "recommended_stop_loss": avg_drawdown * 0.7
-        }
-
     async def _save_analysis_results(
         self,
         results: dict[str, Any],
@@ -799,26 +761,3 @@ class TimeframeRelevanceAnalyzer:
             json.dump(results, f, indent=2, default=str)
 
         self.logger.info(f"💾 Saved timeframe analysis results to {filepath}")
-
-    def get_optimized_ensemble_config(
-        self,
-        symbol: str,
-        exchange: str
-    ) -> dict[str, Any]:
-        """Load optimized ensemble configuration."""
-
-        filepath = Path(f"data/timeframe_analysis/{exchange}_{symbol}_timeframe_analysis.json")
-
-        if not filepath.exists():
-            self.logger.warning(f"⚠️ No timeframe analysis found for {symbol} on {exchange}")
-            return {}
-
-        try:
-            with open(filepath, 'r') as f:
-                results = json.load(f)
-
-            return results.get("ensemble_optimization", {})
-
-        except Exception as e:
-            self.logger.error(f"❌ Error loading timeframe analysis: {e}")
-            return {}

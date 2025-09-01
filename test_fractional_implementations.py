@@ -17,42 +17,6 @@ from src.training.steps.fractional_differentiation import (
 class TestFractionalTripleBarrierLabeling:
     """Test suite for fractional triple barrier labeling."""
 
-    def setup_method(self):
-        """Set up test data."""
-        # Create synthetic OHLCV data
-        np.random.seed(42)
-        n_samples = 1000
-
-        # Generate price data with some trend and volatility
-        base_price = 100
-        returns = np.random.normal(0.0001, 0.02, n_samples)  # Small positive drift
-        prices = [base_price]
-
-        for ret in returns[1:]:
-            prices.append(prices[-1] * (1 + ret))
-
-        # Create OHLCV data
-        self.test_data = pd.DataFrame({
-            'open': prices,
-            'high': [p * (1 + abs(np.random.normal(0, 0.005))) for p in prices],
-            'low': [p * (1 - abs(np.random.normal(0, 0.005))) for p in prices],
-            'close': prices,
-            'volume': np.random.randint(1000, 10000, n_samples)
-        })
-
-        # Ensure high >= close >= low
-        self.test_data['high'] = np.maximum(self.test_data['high'], self.test_data['close'])
-        self.test_data['low'] = np.minimum(self.test_data['low'], self.test_data['close'])
-
-        # Create regime labels (simplified)
-        self.regime_labels = np.random.choice([0, 1, 2], size=n_samples)
-
-        # Create volatility series
-        self.volatility_series = pd.Series(
-            np.random.uniform(0.01, 0.05, n_samples),
-            index=self.test_data.index
-        )
-
     def test_fractional_labeling_initialization(self):
         """Test fractional labeling initialization."""
         labeler = FractionalTripleBarrierLabeling()
@@ -155,23 +119,6 @@ class TestFractionalTripleBarrierLabeling:
 class TestFractionalDifferentiation:
     """Test suite for fractional differentiation."""
 
-    def setup_method(self):
-        """Set up test data."""
-        np.random.seed(42)
-        n_samples = 500
-
-        # Create synthetic time series with trend and noise
-        t = np.arange(n_samples)
-        trend = 0.001 * t  # Linear trend
-        noise = np.random.normal(0, 0.1, n_samples)
-        self.test_series = pd.Series(trend + noise, name='test_series')
-
-        # Create price-like data
-        self.price_series = pd.Series(
-            np.cumsum(np.random.normal(0.001, 0.02, n_samples)) + 100,
-            name='price'
-        )
-
     def test_fractional_differentiation_initialization(self):
         """Test fractional differentiation initialization."""
         frac_diff = FractionalDifferentiation(d=0.5, window=50)
@@ -241,20 +188,6 @@ class TestFractionalDifferentiation:
 
 class TestFractionalFeatureGenerator:
     """Test suite for fractional feature generator."""
-
-    def setup_method(self):
-        """Set up test data."""
-        np.random.seed(42)
-        n_samples = 300
-
-        # Create OHLCV test data
-        self.test_data = pd.DataFrame({
-            'open': np.cumsum(np.random.normal(0.001, 0.02, n_samples)) + 100,
-            'high': np.cumsum(np.random.normal(0.001, 0.02, n_samples)) + 101,
-            'low': np.cumsum(np.random.normal(0.001, 0.02, n_samples)) + 99,
-            'close': np.cumsum(np.random.normal(0.001, 0.02, n_samples)) + 100,
-            'volume': np.random.randint(1000, 10000, n_samples)
-        })
 
     def test_fractional_feature_generator_initialization(self):
         """Test fractional feature generator initialization."""

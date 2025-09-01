@@ -380,20 +380,3 @@ class Step7EnhancedMatrixOperationsValidator(BaseValidator):
             validation["errors"].append(f"Summary file validation failed: {str(e)}")
 
         return validation
-
-    def get_validation_summary(self, symbol: str, exchange: str, timeframe: str) -> Dict[str, Any]:
-        """Get a comprehensive validation summary for Step 2.5."""
-        prerequisites = self.validate_step_prerequisites(symbol, exchange, timeframe)
-        output = self.validate_step_output(symbol, exchange, timeframe)
-
-        return {
-            "step_name": "step07_enhanced_matrix_operations",
-            "symbol": symbol,
-            "exchange": exchange,
-            "timeframe": timeframe,
-            "prerequisites_validation": prerequisites,
-            "output_validation": output,
-            "overall_validation_passed": prerequisites["validation_passed"] and output["validation_passed"],
-            "total_warnings": len(prerequisites["warnings"]) + len(output["warnings"]),
-            "total_errors": len(prerequisites["errors"]) + len(output["errors"])
-        }

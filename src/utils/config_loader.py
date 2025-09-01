@@ -165,24 +165,6 @@ class ConfigLoader:
         context="config merging",
     )
 
-    def merge_configs(self, *configs: dict[str, Any]) -> dict[str, Any]:
-        """
-        Merge multiple configuration dictionaries.
-
-        Args:
-            *configs: Configuration dictionaries to merge
-
-        Returns:
-            Merged configuration dictionary
-        """
-        merged_config = {}
-
-        for config in configs:
-            if config:
-                self._deep_merge(merged_config, config)
-
-        return merged_config
-
     def _deep_merge(self, target: dict[str, Any], source: dict[str, Any]) -> None:
         """
         Deep merge source dictionary into target dictionary.

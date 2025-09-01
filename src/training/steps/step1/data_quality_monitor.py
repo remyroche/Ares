@@ -68,9 +68,6 @@ class DataQualityAlert:
             "resolved": self.resolved
         }
 
-    def __str__(self) -> str:
-        return f"[{self.severity.upper()}] {self.alert_type}: {self.message}"
-
 
 class DataQualityMonitor:
     """Real-time data quality monitor with alerting capabilities."""
@@ -143,11 +140,6 @@ class DataQualityMonitor:
             return False
 
     @with_tracing_span("stop_monitoring")
-    async def stop_monitoring(self) -> None:
-        """Stop real-time monitoring."""
-        self.monitoring_active = False
-        logger.info("🛑 Data quality monitoring stopped")
-
     @with_tracing_span("add_alert_callback")
     def add_alert_callback(self, callback: Callable[[DataQualityAlert], None]) -> None:
         """Add a callback function to be called when alerts are generated.
@@ -159,15 +151,6 @@ class DataQualityMonitor:
         logger.info(f"✅ Added alert callback: {callback.__name__}")
 
     @with_tracing_span("set_quality_thresholds")
-    def set_quality_thresholds(self, thresholds: Dict[str, Any]) -> None:
-        """Set quality monitoring thresholds.
-
-        Args:
-            thresholds: Dictionary of threshold values
-        """
-        self.quality_thresholds.update(thresholds)
-        logger.info("✅ Updated quality monitoring thresholds")
-
     @with_tracing_span("monitoring_loop")
     async def _monitoring_loop(
         self,
@@ -430,54 +413,6 @@ class DataQualityMonitor:
             logger.exception(f"❌ Error saving alert: {e}")
 
     @with_tracing_span("get_alerts")
-    def get_alerts(
-        self,
-        symbol: Optional[str] = None,
-        exchange: Optional[str] = None,
-        severity: Optional[str] = None,
-        alert_type: Optional[str] = None,
-        start_time: Optional[datetime] = None,
-        end_time: Optional[datetime] = None,
-        limit: int = 100
-    ) -> List[DataQualityAlert]:
-        """Get filtered alerts.
-
-        Args:
-            symbol: Filter by symbol
-            exchange: Filter by exchange
-            severity: Filter by severity level
-            alert_type: Filter by alert type
-            start_time: Filter alerts after this time
-            end_time: Filter alerts before this time
-            limit: Maximum number of alerts to return
-
-        Returns:
-            List of filtered alerts
-        """
-        filtered_alerts = []
-
-        for alert in self.alerts:
-            # Apply filters
-            if symbol and alert.symbol != symbol:
-                continue
-            if exchange and alert.exchange != exchange:
-                continue
-            if severity and alert.severity != severity:
-                continue
-            if alert_type and alert.alert_type != alert_type:
-                continue
-            if start_time and alert.timestamp < start_time:
-                continue
-            if end_time and alert.timestamp > end_time:
-                continue
-
-            filtered_alerts.append(alert)
-
-            if len(filtered_alerts) >= limit:
-                break
-
-        return filtered_alerts
-
     @with_tracing_span("acknowledge_alert")
     def acknowledge_alert(self, alert_index: int) -> bool:
         """Acknowledge an alert by index.
@@ -519,10 +454,6 @@ class DataQualityMonitor:
             return False
 
     @with_tracing_span("get_performance_metrics")
-    def get_performance_metrics(self) -> Dict[str, Any]:
-        """Get monitoring performance metrics."""
-        return self.performance_metrics.copy()
-
     @with_tracing_span("generate_monitoring_report")
     def generate_monitoring_report(self) -> str:
         """Generate a monitoring report."""
@@ -594,19 +525,3 @@ async def start_data_quality_monitoring(
     return monitor
 
 
-def create_email_alert_callback(email_address: str) -> Callable[[DataQualityAlert], None]:
-    """Create an email alert callback function."""
-    def email_callback(alert: DataQualityAlert) -> None:
-        # This would integrate with your email system
-        logger.info(f"📧 Would send email to {email_address}: {alert}")
-
-    return email_callback
-
-
-def create_slack_alert_callback(webhook_url: str) -> Callable[[DataQualityAlert], None]:
-    """Create a Slack alert callback function."""
-    def slack_callback(alert: DataQualityAlert) -> None:
-        # This would integrate with Slack webhooks
-        logger.info(f"💬 Would send Slack message: {alert}")
-
-    return slack_callback

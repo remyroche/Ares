@@ -302,32 +302,6 @@ class ComprehensiveSRTrainingPipeline:
             self.logger.error(f"❌ Error validating and saving results: {e}")
             return {"error": str(e)}
 
-    def get_comprehensive_feature_summary(self) -> dict[str, Any]:
-        """Get comprehensive feature summary."""
-        try:
-            summary = {
-                "step07_features": {
-                    "loaded": self.step07_features_loaded,
-                    "count": len(self.model_trainer.step07_features),
-                    "features": self.model_trainer.step07_features
-                },
-                "step02_5_sr_levels": {
-                    "loaded": self.step02_5_sr_levels_loaded,
-                    "support_levels": len(self.model_trainer.step02_5_sr_levels.get("support_levels", [])),
-                    "resistance_levels": len(self.model_trainer.step02_5_sr_levels.get("resistance_levels", []))
-                },
-                "sr_feature_columns": {
-                    "count": len(self.model_trainer.sr_feature_columns),
-                    "columns": self.model_trainer.sr_feature_columns
-                }
-            }
-
-            return summary
-
-        except Exception as e:
-            self.logger.error(f"❌ Error getting feature summary: {e}")
-            return {"error": str(e)}
-
 
 # Convenience function for easy usage
 async def run_comprehensive_sr_training(

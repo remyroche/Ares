@@ -288,50 +288,6 @@ class VolatileRegimeEnsemble(BaseEnsemble):
             self.print(failed("GARCH model training failed: {e}"))
             return None
 
-    def _generate_meta_features(self, aligned_data: pd.DataFrame) -> pd.DataFrame:
-        """Generate meta-features specific to volatile regime detection."""
-        meta_features = pd.DataFrame(index=aligned_data.index)
-
-        # Volatility-specific features
-        if "volatility_20" in aligned_data.columns:
-            meta_features["volatility_percentile"] = (
-                aligned_data["volatility_20"].rolling(100).rank(pct=True)
-            )
-            meta_features["volatility_acceleration"] = aligned_data[
-                "volatility_20"
-            ].diff()
-            meta_features["volatility_momentum"] = aligned_data[
-                "volatility_20"
-            ] - aligned_data["volatility_20"].shift(5)
-
-        # Volume volatility features
-        if "volume" in aligned_data.columns:
-            meta_features["volume_volatility"] = (
-                aligned_data["volume"].rolling(20).std()
-            )
-            meta_features["volume_volatility_ratio"] = (
-                meta_features["volume_volatility"]
-                / aligned_data["volume"].rolling(20).mean()
-            )
-
-        # Price volatility features
-        if "close" in aligned_data.columns:
-            meta_features["price_volatility"] = (
-                aligned_data["close"].pct_change().rolling(20).std()
-            )
-            meta_features["price_volatility_percentile"] = (
-                meta_features["price_volatility"].rolling(100).rank(pct=True)
-            )
-
-        # Regime-specific features
-        if "volatility_regime" in aligned_data.columns:
-            meta_features["volatility_regime_numeric"] = aligned_data[
-                "volatility_regime"
-            ]
-
-        # Fill NaN values
-        return meta_features.fillna(0)
-
     def predict(self, current_features: pd.DataFrame) -> tuple[float, float]:
         """Make prediction for volatile regime."""
         if not self.trained:

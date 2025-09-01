@@ -29,39 +29,18 @@ try:
 except ImportError:
     # Fallback imports
     def handle_errors(*args, **kwargs):
-        def decorator(func):
-            return func
-        return decorator
 
     def guard_dataframe_nulls(*args, **kwargs):
-        def decorator(func):
-            return func
-        return decorator
 
     def with_tracing_span(*args, **kwargs):
-        def decorator(func):
-            return func
-        return decorator
 
     def secure_file_path(*args, **kwargs):
-        def decorator(func):
-            return func
-        return decorator
 
     def validate_dataframe_schema(*args, **kwargs):
-        def decorator(func):
-            return func
-        return decorator
 
     def validate_file_size(*args, **kwargs):
-        def decorator(func):
-            return func
-        return decorator
 
     def sanitize_string(*args, **kwargs):
-        def decorator(func):
-            return func
-        return decorator
 
     import logging
     system_logger = logging.getLogger(__name__)
@@ -354,108 +333,14 @@ class UnifiedDataLoader:
             return None
 
     @sanitize_string(max_length=100, allowed_chars="A-Za-z0-9/_-")
-    def _get_unified_data_path(
-        self, symbol: str, exchange: str, timeframe: str, data_dir: str
-    ) -> str:
-        """Get the path to unified data with input sanitization.
-
-        Args:
-            symbol: Trading symbol
-            exchange: Exchange name
-            timeframe: Timeframe
-            data_dir: Data directory
-
-        Returns:
-            Path to unified data directory
-        """
-        return os.path.join(data_dir, "unified", exchange.lower(), symbol, timeframe)
-
     @handle_errors(
         exceptions=(Exception,),
         default_return=None,
         context="unified_data_loader.get_data_info",
     )
-    async def get_data_info(
-        self, symbol: str, exchange: str, timeframe: str, data_dir: str = "data_cache"
-    ) -> Optional[dict[str, Any]]:
-        """Get information about available unified data.
-
-        Args:
-            symbol: Trading symbol
-            exchange: Exchange name
-            timeframe: Timeframe
-            data_dir: Data directory
-
-        Returns:
-            Dictionary with data information or None if failed
-        """
-        try:
-            unified_path = self._get_unified_data_path(symbol, exchange, timeframe, data_dir)
-
-            if not os.path.exists(unified_path):
-                return None
-
-            # Count files and get size
-            file_count = 0
-            total_size = 0
-            date_range = {"start": None, "end": None}
-
-            for root, _dirs, files in os.walk(unified_path):
-                for file in files:
-                    if file.endswith(".parquet"):
-                        file_count += 1
-                        file_path = os.path.join(root, file)
-                        total_size += os.path.getsize(file_path)
-
-                        # Try to get date range from file path
-                        try:
-                            # Extract date from path like: .../year=2025/month=07/day=15/...
-                            path_parts = file_path.split("/")
-                            for i, part in enumerate(path_parts):
-                                if part.startswith("year="):
-                                    year = int(part.split("=")[1])
-                                    month = int(path_parts[i + 1].split("=")[1])
-                                    day = int(path_parts[i + 2].split("=")[1])
-                                    date = f"{year:04d}-{month:02d}-{day:02d}"
-
-                                    if date_range["start"] is None or date < date_range["start"]:
-                                        date_range["start"] = date
-                                    if date_range["end"] is None or date > date_range["end"]:
-                                        date_range["end"] = date
-                                    break
-                        except Exception:
-                            pass
-
-            return {
-                "path": unified_path,
-                "file_count": file_count,
-                "total_size_bytes": total_size,
-                "total_size_mb": total_size / (1024 * 1024),
-                "date_range": date_range,
-                "exists": True,
-            }
-
-        except Exception as e:
-            self.logger.exception(f"❌ Failed to get data info: {e}")
-            return None
-
 
 # Global instance for easy access
 _unified_data_loader = None
-
-def get_unified_data_loader(config: Optional[dict[str, Any]] = None) -> UnifiedDataLoader:
-    """Get or create a global unified data loader instance.
-
-    Args:
-        config: Configuration dictionary
-
-    Returns:
-        UnifiedDataLoader instance
-    """
-    global _unified_data_loader
-    if _unified_data_loader is None:
-        _unified_data_loader = UnifiedDataLoader(config)
-    return _unified_data_loader
 
 
 # Convenience functions for backward compatibility
@@ -497,23 +382,3 @@ async def load_unified_data(symbol: str, exchange: str, timeframe: str, data_dir
     default_return=None,
     context="get_unified_data_info",
 )
-async def get_unified_data_info(symbol: str, exchange: str, timeframe: str, data_dir: str = "data_cache"
-) -> Optional[dict[str, Any]]:
-    """Get information about unified data with global loader instance.
-
-    Args:
-        symbol: Trading symbol
-        exchange: Exchange name
-        timeframe: Timeframe
-        data_dir: Data directory
-
-    Returns:
-        Dictionary with data information or None if failed
-    """
-    loader = get_unified_data_loader()
-    return await loader.get_data_info(
-        symbol=symbol,
-        exchange=exchange,
-        timeframe=timeframe,
-        data_dir=data_dir
-    )

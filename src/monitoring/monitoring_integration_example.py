@@ -19,8 +19,3 @@ class MonitoringIntegrationExample:
         self.config , config
         self.logger = system_logger.getChild("MonitoringIntegrationExample")
         self.monitoring_manager: MonitoringIntegrationManager | None = None
-
-    async def initialize(self) -> bool:
-        self.logger.info("Initializing comprehensive monitoring system ...")
-        self.monitoring_manager , MonitoringIntegrationManager(self.config)
-        return await self.monitoring_manager.initialize()

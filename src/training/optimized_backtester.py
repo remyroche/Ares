@@ -243,47 +243,7 @@ class OptimizedBacktester:
 
         return signals
 
-    def evaluate_batch_parallel(self, param_batch: list[dict[str, Any]]) -> list[float]:
-        """Evaluate multiple parameter sets in parallel."""
-        if len(param_batch) <= 1:
-            return [self.run_cached_backtest(params) for params in param_batch]
-
-        # Prepare data for parallel processing
-        data_pickle = pickle.dumps(self.market_data)
-        indicators_pickle = pickle.dumps(self.technical_indicators)
-
-        # Submit batch for parallel evaluation
-        futures = []
-        for params in param_batch:
-            future = self.executor.submit(
-                self._evaluate_single_params_parallel,
-                data_pickle,
-                indicators_pickle,
-                params,
-            )
-            futures.append(future)
-
-        # Collect results
-        return [future.result() for future in futures]
-
     @staticmethod
-    def _evaluate_single_params_parallel(
-        data_pickle: bytes,
-        indicators_pickle: bytes,
-        params: dict[str, Any],
-    ) -> float:
-        """Evaluate single parameter set (runs in separate process)."""
-        # Unpickle data
-        market_data = pickle.loads(data_pickle)
-        technical_indicators = pickle.loads(indicators_pickle)
-
-        # Create temporary backtester for this process
-        temp_backtester = OptimizedBacktester(market_data=market_data, config={})
-        temp_backtester.technical_indicators = technical_indicators
-
-        # Run evaluation
-        return temp_backtester._run_simplified_backtest(params)
-
     def _check_memory_usage(self) -> None:
         """Check and manage memory usage."""
         try:
@@ -297,62 +257,6 @@ class OptimizedBacktester:
             self.logger.warning(error_msg)
             self.print(warning(error_msg))
 
-    def _cleanup_memory(self) -> None:
-        """Clean up memory by forcing garbage collection."""
-        gc.collect()
-
-        # Clear cache if it's too large
-        if len(self.cache) > self.max_cache_size * 0.8:
-            # Keep only the most recent entries
-            cache_items = list(self.cache.items())
-            self.cache = dict(cache_items[-self.max_cache_size // 2 :])
-
-        self.logger.info("Memory cleanup completed")
-
-    def progressive_evaluate(
-        self,
-        params: dict[str, Any],
-        stages: list[tuple[float, float]] | None = None,
-    ) -> float:
-        """Evaluate parameters progressively across data subsets."""
-        if stages is None:
-            stages = [
-                (0.1, 0.3),  # 10% data = 30% weight
-                (0.3, 0.5),  # 30% data = 50% weight
-                (1.0, 1.0),  # 100% data = 100% weight
-            ]
-
-        total_score = 0
-        total_weight = 0
-
-        for data_ratio, weight in stages:
-            subset_size = int(len(self.market_data) * data_ratio)
-            subset_data = self.market_data.iloc[:subset_size]
-
-            # Create temporary backtester for subset
-            temp_backtester = OptimizedBacktester(
-                subset_data=subset_data, config=self.config,
-            )
-            score = temp_backtester._run_simplified_backtest(params)
-
-            total_score += score * weight
-            total_weight += weight
-
-            # Early stopping if performance is poor
-            if data_ratio < 1.0 and score < -0.5:
-                return -1.0  # Stop evaluation
-
-        return total_score / total_weight
-
-    def get_performance_stats(self) -> dict[str, Any]:
-        """Get performance statistics."""
-        return {
-            "cache_size": len(self.cache),
-            "evaluation_count": self.evaluation_count,
-            "cache_hit_rate": self._calculate_cache_hit_rate(),
-            "memory_usage": psutil.virtual_memory().percent,
-        }
-
     def _calculate_cache_hit_rate(self) -> float:
         """Calculate cache hit rate."""
         if self.evaluation_count == 0:
@@ -360,8 +264,3 @@ class OptimizedBacktester:
 
         cache_hits = self.evaluation_count - len(self.cache)
         return max(0, cache_hits / self.evaluation_count)
-
-    def __del__(self) -> None:
-        """Cleanup when object is destroyed."""
-        if hasattr(self, "executor"):
-            self.executor.shutdown(wait=False)

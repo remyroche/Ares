@@ -141,74 +141,11 @@ class EnhancedOrderManager:
         default_return=None,
         context="order manager initialization"
     )
-    async def initialize(self) -> bool:
-        """
-        Initialize the order manager.
-
-        Returns:
-            bool: True if initialization successful
-        """
-        try:
-            self.logger.info("Initializing Enhanced Order Manager...")
-
-            # Clear any existing state
-            self.active_orders.clear()
-            self.order_history.clear()
-
-            self.logger.info("✅ Enhanced Order Manager initialized successfully")
-            return True
-
-        except Exception as e:
-            self.logger.error(failed(f"❌ Enhanced Order Manager initialization failed: {e}"))
-            return False
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="order creation"
     )
-    async def create_order(self, order_request: OrderRequest) -> Optional[OrderState]:
-        """
-        Create a new order.
-
-        Args:
-            order_request: Order request details
-
-        Returns:
-            OrderState: Created order state or None if failed
-        """
-        try:
-            # Validate order request
-            if not self._validate_order_request(order_request):
-                self.logger.error(invalid("Invalid order request"))
-                return None
-
-            # Create order state
-            order_id = str(uuid.uuid4())
-            order_state = OrderState(
-                order_id=order_id,
-                symbol=order_request.symbol,
-                side=order_request.side,
-                order_type=order_request.order_type,
-                original_quantity=order_request.quantity,
-                remaining_quantity=order_request.quantity,
-                strategy_id=order_request.strategy_id,
-                strategy_type=order_request.strategy_type
-            )
-
-            # Add to active orders
-            self.active_orders[order_id] = order_state
-
-            # Update metrics
-            self.metrics.increment_counter("orders_created_total")
-
-            self.logger.info(f"Created order {order_id} for {order_request.symbol}")
-            return order_state
-
-        except Exception as e:
-            self.logger.error(failed(f"❌ Order creation failed: {e}"))
-            return None
-
     def _validate_order_request(self, order_request: OrderRequest) -> bool:
         """
         Validate order request parameters.
@@ -249,38 +186,6 @@ class EnhancedOrderManager:
         default_return=None,
         context="order update"
     )
-    async def update_order(self, order_id: str, updates: Dict[str, Any]) -> Optional[OrderState]:
-        """
-        Update an existing order.
-
-        Args:
-            order_id: Order ID to update
-            updates: Dictionary of updates to apply
-
-        Returns:
-            OrderState: Updated order state or None if failed
-        """
-        try:
-            if order_id not in self.active_orders:
-                self.logger.error(missing(f"Order {order_id} not found"))
-                return None
-
-            order_state = self.active_orders[order_id]
-
-            # Apply updates
-            for key, value in updates.items():
-                if hasattr(order_state, key):
-                    setattr(order_state, key, value)
-
-            order_state.updated_time = datetime.now()
-
-            self.logger.info(f"Updated order {order_id}")
-            return order_state
-
-        except Exception as e:
-            self.logger.error(failed(f"❌ Order update failed: {e}"))
-            return None
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
@@ -373,49 +278,3 @@ class EnhancedOrderManager:
         except Exception as e:
             self.logger.error(failed(f"❌ Fill processing failed: {e}"))
             return None
-
-    def get_active_orders(self) -> Dict[str, OrderState]:
-        """
-        Get all active orders.
-
-        Returns:
-            Dict[str, OrderState]: Active orders
-        """
-        return self.active_orders.copy()
-
-    def get_order_history(self) -> List[OrderState]:
-        """
-        Get order history.
-
-        Returns:
-            List[OrderState]: Order history
-        """
-        return self.order_history.copy()
-
-    def get_order(self, order_id: str) -> Optional[OrderState]:
-        """
-        Get a specific order.
-
-        Args:
-            order_id: Order ID
-
-        Returns:
-            OrderState: Order state or None if not found
-        """
-        return self.active_orders.get(order_id)
-
-    async def cleanup(self) -> None:
-        """
-        Cleanup resources.
-        """
-        try:
-            self.logger.info("Cleaning up Enhanced Order Manager...")
-
-            # Cancel all active orders
-            for order_id in list(self.active_orders.keys()):
-                await self.cancel_order(order_id)
-
-            self.logger.info("✅ Enhanced Order Manager cleanup completed")
-
-        except Exception as e:
-            self.logger.error(failed(f"❌ Enhanced Order Manager cleanup failed: {e}"))

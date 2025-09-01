@@ -18,38 +18,10 @@ class MockDataFrame:
     def __init__(self, data: Dict[str, list]):
         self.data = data
 
-    def __getitem__(self, key):
-        return MockSeries(self.data.get(key, [0.0]))
-
-    def iloc(self, index):
-        if isinstance(index, int):
-            return MockDataFrame({k: [v[index]] for k, v in self.data.items()})
-        elif isinstance(index, slice):
-            return MockDataFrame({k: v[index] for k, v in self.data.items()})
-        else:
-            return MockDataFrame({k: [v[index]] for k, v in self.data.items()})
-
 class MockSeries:
     """Mock Series for testing."""
     def __init__(self, data: list):
         self.data = data
-
-    def __getitem__(self, index):
-        return self.data[index]
-
-    def iloc(self, index):
-        if isinstance(index, int):
-            return self.data[index]
-        elif isinstance(index, slice):
-            return MockSeries(self.data[index])
-        else:
-            return self.data[index]
-
-    def pct_change(self):
-        return MockSeries([0.01, 0.02, -0.01, 0.03, 0.01])
-
-    def std(self):
-        return 0.02
 
 class MockEnhancedPredictionService:
     """Mock Enhanced Prediction Service for testing."""

@@ -244,43 +244,6 @@ async def analyze_timeframe_correlations(symbol: str, timeframes: list[str]):
     return analysis_results
 
 
-def list_available_timeframes() -> None:
-    """List all available timeframes and their purposes."""
-    print("📊 Available Timeframes and Their Purposes")
-    print("=" * 60)
-
-    # Get timeframe definitions
-    timeframes = CONFIG.get("TIMEFRAMES", {})
-    timeframe_sets = CONFIG.get("TIMEFRAME_SETS", {})
-    default_set = CONFIG.get("DEFAULT_TIMEFRAME_SET", "swing")
-
-    print("\n🎯 Individual Timeframes:")
-    print("-" * 40)
-
-    for tf, info in timeframes.items():
-        print(f"\n{tf}:")
-        print(f"  Purpose: {info.get('purpose', 'Unknown')}")
-        print(f"  Trading Style: {info.get('trading_style', 'Unknown')}")
-        print(f"  Lookback Days: {info.get('lookback_days', 'Unknown')}")
-        print(f"  Ensemble Weight: {info.get('ensemble_weight', 'Unknown')}")
-        print(f"  Description: {info.get('description', 'No description')}")
-
-    print("\n📋 Predefined Timeframe Sets:")
-    print("-" * 40)
-
-    for set_name, set_info in timeframe_sets.items():
-        is_default = " (DEFAULT)" if set_name == default_set else ""
-        print(f"\n{set_name}{is_default}:")
-        print(f"  Timeframes: {', '.join(set_info.get('timeframes', []))}")
-        print(f"  Description: {set_info.get('description', 'No description')}")
-        print(f"  Use Case: {set_info.get('use_case', 'No use case specified')}")
-
-    print("\n🔧 Configuration:")
-    print("-" * 40)
-    print(f"Default timeframe set: {default_set}")
-    print(f"Total timeframes defined: {len(timeframes)}")
-    print(f"Total timeframe sets: {len(timeframe_sets)}")
-
 
 def main() -> None:
     """Main function with command line interface."""

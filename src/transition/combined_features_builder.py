@@ -87,31 +87,3 @@ class CombinedFeaturesBuilder:
         low_close = (low - close.shift()).abs()
         tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
         return tr.rolling(window, min_periods=1).mean()
-
-    def build(self, ohlcv: pd.DataFrame) -> pd.DataFrame:
-        if ohlcv is None or ohlcv.empty:
-            return pd.DataFrame(
-                columns=REQUIRED_FEATURES,
-                index=pd.Index([], name=getattr(ohlcv, "index", None)),
-            )
-        df = ohlcv.copy()
-        df["log_returns"] = np.log(df["close"] / df["close"].shift(1))
-        df["volatility_20"] = df["log_returns"].rolling(20, min_periods=2).std()
-        if "volume" in df.columns:
-            vol_ma = df["volume"].rolling(20, min_periods=1).mean()
-            df["volume_ratio"] = (df["volume"] / vol_ma).replace(
-                [np.inf, -np.inf],
-                np.nan,
-            )
-        else:
-            df["volume_ratio"] = 1.0
-        df["rsi"] = self._rsi(df["close"])
-        df["macd"], df["macd_signal"], df["macd_histogram"] = self._macd(df["close"])
-        df["bb_position"], df["bb_width"] = self._bb(df["close"])
-        df["atr"] = self._atr(df["high"], df["low"], df["close"])
-        # Volatility regime features
-        df["volatility_regime"] = (
-            df["volatility_20"] > self.cfg.volatility_threshold
-        ).astype(int)
-        df["volatility_acceleration"] = df["volatility_20"].diff()
-        return df

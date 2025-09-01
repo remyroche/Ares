@@ -37,23 +37,6 @@ class SRPositionAnalyzer:
         self.logger = system_logger.getChild("SRPositionAnalyzer")
         self.feature_engine = None
 
-    async def initialize(self) -> bool:
-        """Initialize the analyzer with feature engineering capabilities."""
-        self.logger.info("🚀 Initializing SR Position Analyzer...")
-
-        # Initialize feature engineering for SR level generation
-        feature_config = {
-            "vectorized_advanced_features": {"enable_sr_distance": True},
-            "symbol": self.config.get("symbol", "ETHUSDT"),
-            "exchange": self.config.get("exchange", "BINANCE"),
-        }
-
-        self.feature_engine = VectorizedAdvancedFeatureEngineering(feature_config)
-        await self.feature_engine.initialize()
-
-        self.logger.info("✅ SR Position Analyzer initialized successfully")
-        return True
-
     def calculate_sr_position(self, price_data: pd.DataFrame, sr_levels: Dict[str, List[float]]) -> pd.Series:
         """
         Calculate position between closest support and resistance levels.

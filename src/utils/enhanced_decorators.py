@@ -25,10 +25,6 @@ class ValidatableData(Protocol):
         """Validate the data."""
         ...
 
-    def get_validation_errors(self) -> List[str]:
-        """Get validation errors if any."""
-        ...
-
 class ValidationResult:
     """Result of a validation operation."""
 
@@ -36,14 +32,6 @@ class ValidationResult:
         self.is_valid = is_valid
         self.errors = errors or []
         self.warnings = warnings or []
-
-    def __bool__(self):
-        return self.is_valid
-
-    def __str__(self):
-        if self.is_valid:
-            return "Validation passed"
-        return f"Validation failed: {', '.join(self.errors)}"
 
 def _apply_graceful_degradation(func: Callable, args: tuple, kwargs: dict) -> Any:
     """Apply graceful degradation strategy when validation fails."""
@@ -66,28 +54,6 @@ def _apply_graceful_degradation(func: Callable, args: tuple, kwargs: dict) -> An
         logger.error(f"Graceful degradation failed for {func.__name__}: {e}")
         return None
 
-def _get_default_return(func: Callable) -> Any:
-    """Get default return value for a function based on its signature."""
-    try:
-        sig = inspect.signature(func)
-        if sig.return_annotation != inspect.Signature.empty:
-            # Try to create a default instance of the return type
-            if sig.return_annotation == bool:
-                return False
-            elif sig.return_annotation == int:
-                return 0
-            elif sig.return_annotation == float:
-                return 0.0
-            elif sig.return_annotation == str:
-                return ""
-            elif sig.return_annotation == list:
-                return []
-            elif sig.return_annotation == dict:
-                return {}
-        return None
-    except Exception:
-        return None
-
 @register_decorator(
     name="smart_error_recovery",
     version="2.0",
@@ -108,59 +74,6 @@ def smart_error_recovery(
     backoff_factor = backoff_factor or global_config.backoff_factor
     retry_on_exceptions = retry_on_exceptions or (ValueError, TypeError, KeyError)
 
-    def decorator(func: F) -> F:
-        @functools.wraps(func)
-        async def async_wrapper(*args, **kwargs):
-            last_exception = None
-
-            for attempt in range(max_retries + 1):
-                try:
-                    return await func(*args, **kwargs)
-                except retry_on_exceptions as exc:
-                    last_exception = exc
-                    if attempt < max_retries:
-                        wait_time = backoff_factor ** attempt
-                        logger.warning(f"Attempt {attempt + 1} failed for {func.__name__}, retrying in {wait_time:.2f}s: {exc}")
-                        await asyncio.sleep(wait_time)
-                        continue
-
-                    # Apply fallback strategy
-                    if fallback_strategy == "graceful_degradation":
-                        return await _apply_graceful_degradation(func, args, kwargs)
-                    elif fallback_strategy == "default_return":
-                        return _get_default_return(func)
-                    else:
-                        raise last_exception
-
-            raise last_exception
-
-        @functools.wraps(func)
-        def sync_wrapper(*args, **kwargs):
-            last_exception = None
-
-            for attempt in range(max_retries + 1):
-                try:
-                    return func(*args, **kwargs)
-                except retry_on_exceptions as exc:
-                    last_exception = exc
-                    if attempt < max_retries:
-                        wait_time = backoff_factor ** attempt
-                        logger.warning(f"Attempt {attempt + 1} failed for {func.__name__}, retrying in {wait_time:.2f}s: {exc}")
-                        time.sleep(wait_time)
-                        continue
-
-                    # Apply fallback strategy
-                    if fallback_strategy == "graceful_degradation":
-                        return _apply_graceful_degradation(func, args, kwargs)
-                    elif fallback_strategy == "default_return":
-                        return _get_default_return(func)
-                    else:
-                        raise last_exception
-
-            raise last_exception
-
-        return async_wrapper if inspect.iscoroutinefunction(func) else sync_wrapper
-
     return decorator
 
 @register_decorator(
@@ -178,98 +91,6 @@ def cached_validation(
 
     cache_size = cache_size or global_config.cache_size
     ttl_seconds = ttl_seconds or global_config.cache_ttl
-
-    def decorator(func: F) -> F:
-        # Create a cache key generator
-        if key_generator is None:
-        # Fallback implementation for key_generator
-            def default_key_gen(*args, **kwargs):
-                # Create a hash of function signature and arguments
-                try:
-                    sig = inspect.signature(func)
-                    bound = sig.bind(*args, **kwargs)
-                    bound.apply_defaults()
-                    key_data = f"{func.__name__}:{sorted(bound.arguments.items())}"
-                    return hashlib.md5(key_data.encode()).hexdigest()
-                except Exception:
-                    # Fallback to simpler key generation
-                    key_data = f"{func.__name__}:{str(args)}:{str(sorted(kwargs.items()))}"
-                    return hashlib.md5(key_data.encode()).hexdigest()
-            key_gen = default_key_gen
-        else:
-            key_gen = key_generator
-
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            if not global_config.cache_enabled:
-                return func(*args, **kwargs)
-
-            cache_key = key_gen(*args, **kwargs)
-
-            # Check cache first
-            if hasattr(wrapper, '_cache') and cache_key in wrapper._cache:
-                cache_entry = wrapper._cache[cache_key]
-                if time.time() - cache_entry['timestamp'] < ttl_seconds:
-                    logger.debug(f"Cache hit for {func.__name__}")
-                    return cache_entry['result']
-
-            # Execute and cache result
-            result = func(*args, **kwargs)
-
-            # Initialize cache if needed
-            if not hasattr(wrapper, '_cache'):
-                wrapper._cache = {}
-
-            wrapper._cache[cache_key] = {
-                'result': result,
-                'timestamp': time.time()
-            }
-
-            # Maintain cache size
-            if len(wrapper._cache) > cache_size:
-                oldest_key = min(wrapper._cache.keys(),
-                               key=lambda k: wrapper._cache[k]['timestamp'])
-                del wrapper._cache[oldest_key]
-
-            logger.debug(f"Cached result for {func.__name__}")
-            return result
-
-        @functools.wraps(func)
-        async def async_wrapper(*args, **kwargs):
-            if not global_config.cache_enabled:
-                return await func(*args, **kwargs)
-
-            cache_key = key_gen(*args, **kwargs)
-
-            # Check cache first
-            if hasattr(async_wrapper, '_cache') and cache_key in async_wrapper._cache:
-                cache_entry = async_wrapper._cache[cache_key]
-                if time.time() - cache_entry['timestamp'] < ttl_seconds:
-                    logger.debug(f"Cache hit for {func.__name__}")
-                    return cache_entry['result']
-
-            # Execute and cache result
-            result = await func(*args, **kwargs)
-
-            # Initialize cache if needed
-            if not hasattr(async_wrapper, '_cache'):
-                async_wrapper._cache = {}
-
-            async_wrapper._cache[cache_key] = {
-                'result': result,
-                'timestamp': time.time()
-            }
-
-            # Maintain cache size
-            if len(async_wrapper._cache) > cache_size:
-                oldest_key = min(async_wrapper._cache.keys(),
-                               key=lambda k: async_wrapper._cache[k]['timestamp'])
-                del async_wrapper._cache[oldest_key]
-
-            logger.debug(f"Cached result for {func.__name__}")
-            return result
-
-        return async_wrapper if inspect.iscoroutinefunction(func) else wrapper
 
     return decorator
 
@@ -289,53 +110,6 @@ def enhanced_validation(
     """Enhanced validation decorator with auto-fixing capabilities."""
 
     strict = strict if strict is not None else (global_config.validation_mode.value == "strict")
-
-    def decorator(func: F) -> F:
-        @functools.wraps(func)
-        async def async_wrapper(*args, **kwargs):
-            # Pre-validation
-            if not validator.validate():
-                if auto_fix:
-                    logger.info(f"Auto-fixing validation issues in {func.__name__}")
-                    # Apply auto-fix logic
-                    args, kwargs = _apply_auto_fixes(args, kwargs, validator)
-                elif strict:
-                    errors = validator.get_validation_errors()
-                    raise ValueError(f"Validation failed: {errors}")
-
-            result = await func(*args, **kwargs)
-
-            # Post-validation
-            if not validator.validate():
-                if strict:
-                    errors = validator.get_validation_errors()
-                    raise ValueError(f"Output validation failed: {errors}")
-
-            return result
-
-        @functools.wraps(func)
-        def sync_wrapper(*args, **kwargs):
-            # Pre-validation
-            if not validator.validate():
-                if auto_fix:
-                    logger.info(f"Auto-fixing validation issues in {func.__name__}")
-                    # Apply auto-fix logic
-                    args, kwargs = _apply_auto_fixes(args, kwargs, validator)
-                elif strict:
-                    errors = validator.get_validation_errors()
-                    raise ValueError(f"Validation failed: {errors}")
-
-            result = func(*args, **kwargs)
-
-            # Post-validation
-            if not validator.validate():
-                if strict:
-                    errors = validator.get_validation_errors()
-                    raise ValueError(f"Output validation failed: {errors}")
-
-            return result
-
-        return async_wrapper if inspect.iscoroutinefunction(func) else sync_wrapper
 
     return decorator
 
@@ -360,89 +134,7 @@ def performance_monitor_v2(
 ) -> Callable[[F], F]:
     """Enhanced performance monitoring decorator."""
 
-    def decorator(func: F) -> F:
-        @functools.wraps(func)
-        async def async_wrapper(*args, **kwargs):
-            start_time = time.time()
-            start_memory = _get_memory_usage() if track_memory else 0
-            start_cpu = _get_cpu_usage() if track_cpu else 0
-
-            try:
-                result = await func(*args, **kwargs)
-                return result
-            finally:
-                end_time = time.time()
-                execution_time = end_time - start_time
-
-                metrics = {
-                    'function': func.__name__,
-                    'execution_time': execution_time,
-                    'timestamp': datetime.now()
-                }
-
-                if track_memory:
-                    end_memory = _get_memory_usage()
-                    metrics['memory_delta_mb'] = end_memory - start_memory
-                    metrics['peak_memory_mb'] = end_memory
-
-                if track_cpu:
-                    end_cpu = _get_cpu_usage()
-                    metrics['cpu_delta_percent'] = end_cpu - start_cpu
-                    metrics['peak_cpu_percent'] = end_cpu
-
-                _log_performance_metrics(metrics, level)
-
-        @functools.wraps(func)
-        def sync_wrapper(*args, **kwargs):
-            start_time = time.time()
-            start_memory = _get_memory_usage() if track_memory else 0
-            start_cpu = _get_cpu_usage() if track_cpu else 0
-
-            try:
-                result = func(*args, **kwargs)
-                return result
-            finally:
-                end_time = time.time()
-                execution_time = end_time - start_time
-
-                metrics = {
-                    'function': func.__name__,
-                    'execution_time': execution_time,
-                    'timestamp': datetime.now()
-                }
-
-                if track_memory:
-                    end_memory = _get_memory_usage()
-                    metrics['memory_delta_mb'] = end_memory - start_memory
-                    metrics['peak_memory_mb'] = end_memory
-
-                if track_cpu:
-                    end_cpu = _get_cpu_usage()
-                    metrics['cpu_delta_percent'] = end_cpu - start_cpu
-                    metrics['peak_cpu_percent'] = end_cpu
-
-                _log_performance_metrics(metrics, level)
-
-        return async_wrapper if inspect.iscoroutinefunction(func) else sync_wrapper
-
     return decorator
-
-def _get_memory_usage() -> float:
-    """Get current memory usage in MB."""
-    try:
-        import psutil
-        process = psutil.Process()
-        return process.memory_info().rss / 1024 / 1024
-    except ImportError:
-        return 0.0
-
-def _get_cpu_usage() -> float:
-    """Get current CPU usage percentage."""
-    try:
-        import psutil
-        return psutil.cpu_percent(interval=0.1)
-    except ImportError:
-        return 0.0
 
 def _log_performance_metrics(metrics: Dict[str, Any], level: str):
     """Log performance metrics based on level."""

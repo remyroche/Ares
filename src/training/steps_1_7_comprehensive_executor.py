@@ -98,23 +98,6 @@ class Steps1To7ComprehensiveExecutor:
 
         self.logger.info("🚀 Steps 1-7 Comprehensive Executor initialized")
 
-    async def initialize_all_steps(self) -> bool:
-        """Initialize all steps in the pipeline."""
-        self.logger.info("🔧 Initializing all pipeline steps...")
-
-        for step_name, step_instance in self.steps.items():
-            try:
-                self.logger.info(f"🔧 Initializing {step_name}...")
-                await step_instance.initialize()
-                self.logger.info(f"✅ {step_name} initialized successfully")
-            except Exception as e:
-                self.logger.error(f"❌ Failed to initialize {step_name}: {e}")
-                self.errors_encountered.append(f"{step_name}_initialization_error: {str(e)}")
-                return False
-
-        self.logger.info("✅ All steps initialized successfully")
-        return True
-
     async def validate_data_compatibility(self, step_name: str, data: Any) -> Dict[str, Any]:
         """Validate data compatibility for a specific step."""
         validation_result = {
@@ -171,34 +154,6 @@ class Steps1To7ComprehensiveExecutor:
             validation_result["issues"].append(f"Validation error: {str(e)}")
 
         return validation_result
-
-    def _get_required_columns_for_step(self, step_name: str) -> List[str]:
-        """Get required columns for a specific step."""
-        column_requirements = {
-            "step1": ["timestamp", "open", "high", "low", "close", "volume"],
-            "step01_5": ["timestamp", "open", "high", "low", "close", "volume"],
-            "step2": ["timestamp", "open", "high", "low", "close", "volume"],
-            "step3": ["timestamp", "open", "high", "low", "close", "volume"],
-            "step4": ["timestamp", "open", "high", "low", "close", "volume", "composite_cluster_id"],
-            "step5": ["timestamp", "open", "high", "low", "close", "volume", "composite_cluster_id"],
-            "step6": ["timestamp", "open", "high", "low", "close", "volume", "composite_cluster_id"],
-            "step7": ["timestamp", "open", "high", "low", "close", "volume", "composite_cluster_id"]
-        }
-        return column_requirements.get(step_name, [])
-
-    def _get_required_keys_for_step(self, step_name: str) -> List[str]:
-        """Get required keys for a specific step."""
-        key_requirements = {
-            "step1": ["symbol", "exchange", "timeframe", "data_dir"],
-            "step01_5": ["symbol", "exchange", "timeframe", "data_dir"],
-            "step2": ["symbol", "exchange", "timeframe", "data_dir"],
-            "step3": ["symbol", "exchange", "timeframe", "data_dir"],
-            "step4": ["symbol", "exchange", "timeframe", "data_dir"],
-            "step5": ["symbol", "exchange", "timeframe", "data_dir"],
-            "step6": ["symbol", "exchange", "timeframe", "data_dir"],
-            "step7": ["symbol", "exchange", "timeframe", "data_dir"]
-        }
-        return key_requirements.get(step_name, [])
 
     def _validate_data_types(self, data: pd.DataFrame, step_name: str) -> List[str]:
         """Validate data types for a specific step."""

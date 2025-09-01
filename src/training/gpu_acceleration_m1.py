@@ -282,33 +282,3 @@ class GPUAccelerationM1:
         }
 
         return U, S, Vt, metadata
-
-    def _get_gpu_memory_usage(self) -> float:
-        """Get current GPU memory usage.
-
-        Returns:
-            float: Memory usage as a fraction of total memory
-
-        """
-        try:
-            if self.mps_available:
-                # MPS doesn't provide direct memory usage info
-                # Return a conservative estimate
-                return 0.5
-            return 0.0
-        except Exception:
-            return 0.0
-
-    def get_performance_stats(self) -> dict[str, Any]:
-        """Get performance statistics.
-
-        Returns:
-            dict: Performance statistics
-
-        """
-        return {
-            "gpu_operations_count": self.gpu_operations_count,
-            "gpu_processing_time": self.gpu_processing_time,
-            "mps_available": self.mps_available,
-            "device": str(self.device),
-        }

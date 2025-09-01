@@ -47,9 +47,6 @@ def create_fallback_logger():
     return logging.getLogger(__name__)
 
 def create_fallback_decorator():
-    def decorator(func):
-        return func
-    return decorator
 
 # Initialize fallbacks
 if system_logger is None:
@@ -100,11 +97,6 @@ class DataCollectionStep:
             self.logger.info("📝 Pipeline will continue with fallback implementations")
         else:
             self.logger.info("✅ All required dependencies available")
-
-    async def initialize(self) -> None:
-        """Initialize the data collection step."""
-        self.logger.info("Initializing Data Collection Step...")
-        self.logger.info("Data Collection Step initialized successfully")
 
     @with_enhanced_mlflow_logging("step01_data_collection")
     async def execute(

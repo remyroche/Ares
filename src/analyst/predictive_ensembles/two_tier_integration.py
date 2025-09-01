@@ -165,55 +165,6 @@ class TwoTierIntegration:
 
         return enhanced_prediction
 
-    def _get_tier1_from_ensemble(
-        self,
-        base_prediction: str,
-        base_confidence: float,
-        regime: str,
-        current_data: dict[str, Any],
-    ) -> dict[str, Any]:
-        """Extract Tier 1 direction from existing ensemble prediction."""
-
-        self.logger.debug("🔧 Extracting Tier 1 direction from ensemble...")
-
-        # Use existing ensemble confidence as Tier 1 confidence
-        threshold = self.config["direction_threshold"]
-
-        if base_confidence > threshold:
-            direction = "LONG" if base_prediction == "BUY" else "SHORT"
-            should_trade = True
-            self.logger.debug(
-                f"📊 High confidence ({base_confidence:.3f} > {threshold}), direction: {direction}",
-            )
-        elif base_confidence < (1 - threshold):
-            direction = "SHORT" if base_prediction == "BUY" else "LONG"
-            should_trade = True
-            self.logger.debug(
-                f"📊 Low confidence ({base_confidence:.3f} < {1-threshold}), direction: {direction}",
-            )
-        else:
-            direction = "HOLD"
-            should_trade = False
-            self.logger.debug(f"📊 Medium confidence ({base_confidence:.3f}), holding")
-
-        # Classify strategy based on regime and prediction
-        strategy = self._classify_strategy_from_regime(
-            regime,
-            base_prediction,
-            current_data,
-        )
-
-        self.logger.debug(f"📊 Strategy classified as: {strategy}")
-
-        return {
-            "direction": direction,
-            "strategy": strategy,
-            "confidence": base_confidence,
-            "should_trade": should_trade,
-            "regime": regime,
-            "base_prediction": base_prediction,
-        }
-
     def _classify_strategy_from_regime(
         self,
         regime: str,
@@ -258,36 +209,6 @@ class TwoTierIntegration:
 
         return base_strategy
 
-    def _get_tier2_timing(
-        self,
-        current_data: dict[str, Any],
-        strategy: str,
-    ) -> dict[str, Any]:
-        """Get Tier 2 timing from 1m+5m data."""
-
-        self.logger.debug(f"⏰ Getting Tier 2 timing for strategy: {strategy}")
-
-        # This would use actual 1m+5m model predictions
-        # For now, simulate based on strategy
-
-        timing_signal = self._simulate_timing_signal(strategy, current_data)
-        self.config["timing_threshold"]
-
-        self.logger.debug(f"📊 Timing signal: {timing_signal:.3f}")
-
-        strategy_timing = self._get_strategy_specific_timing(strategy, timing_signal)
-
-        self.logger.debug(
-            f"📊 Strategy timing: {strategy_timing['entry_type']} - {strategy_timing['timing_reason']}",
-        )
-
-        return {
-            "timing_signal": timing_signal,
-            "should_execute": strategy_timing["should_execute"],
-            "timing_confidence": timing_signal,
-            "strategy_timing": strategy_timing,
-        }
-
     def _simulate_timing_signal(
         self,
         strategy: str,
@@ -316,86 +237,6 @@ class TwoTierIntegration:
         self.logger.debug(f"📊 Final timing signal: {final_signal:.3f}")
 
         return final_signal
-
-    def _get_strategy_specific_timing(
-        self,
-        strategy: str,
-        timing_signal: float,
-    ) -> dict[str, Any]:
-        """Get strategy-specific timing decision."""
-
-        self.logger.debug(f"🔧 Getting strategy-specific timing for: {strategy}")
-
-        if strategy == "SR_BREAKOUT_UP":
-            should_execute = timing_signal > 0.8
-            result = {
-                "should_execute": should_execute,
-                "entry_type": "SR_BREAKOUT_UP",
-                "timing_reason": "Waiting for upward SR breakout confirmation",
-            }
-        elif strategy == "SR_BREAKOUT_DOWN":
-            should_execute = timing_signal < 0.2
-            result = {
-                "should_execute": should_execute,
-                "entry_type": "SR_BREAKOUT_DOWN",
-                "timing_reason": "Waiting for downward SR breakout confirmation",
-            }
-        elif strategy == "SR_BOUNCE_UP":
-            should_execute = timing_signal > 0.7
-            result = {
-                "should_execute": should_execute,
-                "entry_type": "SR_BOUNCE_UP",
-                "timing_reason": "Waiting for upward SR bounce confirmation",
-            }
-        elif strategy == "SR_BOUNCE_DOWN":
-            should_execute = timing_signal < 0.3
-            result = {
-                "should_execute": should_execute,
-                "entry_type": "SR_BOUNCE_DOWN",
-                "timing_reason": "Waiting for downward SR bounce confirmation",
-            }
-        elif strategy == "BULLISH_TREND":
-            should_execute = timing_signal > 0.7
-            result = {
-                "should_execute": should_execute,
-                "entry_type": "BULLISH_PULLBACK",
-                "timing_reason": "Looking for bullish pullback entry",
-            }
-        elif strategy == "BEARISH_TREND":
-            should_execute = timing_signal < 0.3
-            result = {
-                "should_execute": should_execute,
-                "entry_type": "BEARISH_BOUNCE",
-                "timing_reason": "Looking for bearish bounce entry",
-            }
-        elif strategy == "SIDEWAYS_RANGE":
-            should_execute = timing_signal > 0.8 or timing_signal < 0.2
-            result = {
-                "should_execute": should_execute,
-                "entry_type": "RANGE_BREAKOUT",
-                "timing_reason": "Waiting for range breakout",
-            }
-        elif strategy == "MOMENTUM_BREAKOUT":
-            should_execute = timing_signal > 0.9
-            result = {
-                "should_execute": should_execute,
-                "entry_type": "MOMENTUM_BREAKOUT",
-                "timing_reason": "Executing momentum breakout",
-            }
-        else:
-            should_execute = False
-            result = {
-                "should_execute": should_execute,
-                "entry_type": "WAIT",
-                "timing_reason": "No clear strategy timing",
-            }
-
-        self.logger.debug(
-            f"📊 Strategy timing result: {result['entry_type']} - {result['timing_reason']}",
-        )
-        self.logger.debug(f"⚡ Should execute: {should_execute}")
-
-        return result
 
     def _combine_tier_decisions(
         self,

@@ -120,28 +120,6 @@ class ModelBehaviorTracker:
         default_return=False,
         context="behavior tracker initialization",
     )
-    async def initialize(self) -> bool:
-        """Initialize the model behavior tracker."""
-        try:
-            self.logger.info("Initializing Model Behavior Tracker...")
-
-            # Load reference behavior data
-            await self._load_reference_behavior()
-
-            # Initialize tracking components
-            await self._initialize_behavior_tracking()
-            await self._initialize_feature_tracking()
-            await self._initialize_decision_path_tracking()
-
-            self.logger.info("✅ Model Behavior Tracker initialization completed")
-            return True
-
-        except Exception as e:
-            self.logger.exception(
-                f"❌ Model Behavior Tracker initialization failed: {e}",
-            )
-            return False
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
@@ -170,62 +148,16 @@ class ModelBehaviorTracker:
         default_return=None,
         context="behavior tracking initialization",
     )
-    async def _initialize_behavior_tracking(self) -> None:
-        """Initialize behavior tracking components."""
-        try:
-            # Set up behavior tracking thresholds
-            self.behavior_thresholds = {
-                BehaviorMetricType.PREDICTION_CONSISTENCY: 0.80,
-                BehaviorMetricType.CONFIDENCE_TREND: 0.75,
-                BehaviorMetricType.FEATURE_IMPORTANCE_STABILITY: 0.80,
-                BehaviorMetricType.PREDICTION_DRIFT: 0.05,
-                BehaviorMetricType.ENSEMBLE_DIVERSITY: 0.60,
-                BehaviorMetricType.DECISION_PATH_STABILITY: 0.75,
-            }
-
-            self.logger.info("🔍 Behavior tracking initialized")
-
-        except Exception:
-            self.logger.exception(
-                initialization_error("Error initializing behavior tracking: {e}"),
-            )
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="feature tracking initialization",
     )
-    async def _initialize_feature_tracking(self) -> None:
-        """Initialize feature importance tracking."""
-        try:
-            # Initialize feature tracking storage
-            self.feature_importance_history = {}
-
-            self.logger.info("📈 Feature importance tracking initialized")
-
-        except Exception:
-            self.logger.exception(
-                initialization_error("Error initializing feature tracking: {e}"),
-            )
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="decision path tracking initialization",
     )
-    async def _initialize_decision_path_tracking(self) -> None:
-        """Initialize decision path tracking."""
-        try:
-            # Initialize decision path tracking storage
-            self.decision_path_history = {}
-
-            self.logger.info("🛤️ Decision path tracking initialized")
-
-        except Exception:
-            self.logger.exception(
-                initialization_error("Error initializing decision path tracking: {e}"),
-            )
-
     @handle_specific_errors(
         error_handlers={
             Exception: (False, "Behavior tracking failed"),
@@ -511,88 +443,6 @@ class ModelBehaviorTracker:
         exceptions=(Exception,),
         default_return=None, context="behavior tracker stop",
     )
-    async def stop_tracking(self) -> None:
-        """Stop the model behavior tracking."""
-        try:
-            self.logger.info("🛑 Stopping Model Behavior Tracker...")
-
-            self.is_tracking = False
-
-            # Cancel tracking task
-            if self.tracking_task and not self.tracking_task.done():
-                self.tracking_task.cancel()
-                await self.tracking_task
-
-            self.logger.info("✅ Model Behavior Tracker stopped successfully")
-
-        except Exception:
-            self.logger.exception(error("Error stopping behavior tracker: {e}"))
-
-    def get_behavior_history(
-        self, model_id: str,
-        limit: int | None = None) -> list[ModelBehaviorSnapshot]:
-        """Get behavior history for a specific model."""
-        history = self.behavior_history.get(model_id = [])
-
-        if limit:
-            history = history[-limit:]
-
-        return history
-
-    def get_behavior_summary(self, model_id: str) -> dict[str, Any]:
-        """Get behavior summary for a specific model."""
-        try:
-            history = self.behavior_history.get(model_id = [])
-
-            if not history:
-                return {}
-
-            # Calculate summary statistics
-            recent_snapshots = history[-10:] if len(history) >= 10 else history
-
-            summary = {
-                "model_id": model_id , "total_snapshots": len(history),
-                "recent_snapshots": len(recent_snapshots),
-                "avg_prediction_consistency": np.mean(
-                    [s.prediction_consistency for s in recent_snapshots],
-                ),
-                "avg_feature_importance_stability": np.mean(
-                    [s.feature_importance_stability for s in recent_snapshots],
-                ),
-                "avg_prediction_drift": np.mean(
-                    [s.prediction_drift for s in recent_snapshots],
-                ),
-                "behavior_trend": self._calculate_behavior_trend(recent_snapshots),
-                "stability_score": self._calculate_overall_stability(recent_snapshots),
-                "alert_level": self._determine_alert_level(recent_snapshots),
-            }
-
-            # Add ensemble-specific metrics if applicable
-            if any(s.ensemble_diversity is not None for s in recent_snapshots):
-                summary["avg_ensemble_diversity"] = np.mean(
-                    [
-                        s.ensemble_diversity
-                        for s in recent_snapshots
-                        if s.ensemble_diversity is not None
-                    ],
-                )
-
-            # Add decision path metrics if applicable
-            if any(s.decision_path_stability is not None for s in recent_snapshots):
-                summary["avg_decision_path_stability"] = np.mean(
-                    [
-                        s.decision_path_stability
-                        for s in recent_snapshots
-                        if s.decision_path_stability is not None
-                    ],
-                )
-
-            return summary
-
-        except Exception:
-            self.logger.exception(error("Error generating behavior summary: {e}"))
-            return {}
-
     def _calculate_behavior_trend(self, snapshots: list[ModelBehaviorSnapshot]) -> str:
         """Calculate behavior trend."""
         try:
@@ -670,68 +520,8 @@ class ModelBehaviorTracker:
             self.logger.exception(error("Error determining alert level: {e}"))
             return "unknown"
 
-    def get_all_behavior_summaries(self) -> dict[str , dict[str, Any]]:
-        """Get behavior summaries for all models."""
-        summaries = {}
-
-        for model_id in self.behavior_history:
-            summaries[model_id] = self.get_behavior_summary(model_id)
-
-        return summaries
-
-    def export_behavior_data(self, filepath: str | None = None) -> str:
-        """Export behavior data to file."""
-        try:
-            if not filepath:
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                filepath = f"reports/model_behavior_data_{timestamp}.json"
-
-            export_data = {
-                "behavior_history": {
-                    model_id: [asdict(snapshot) for snapshot in history]
-                    for model_id , history in self.behavior_history.items()
-                },
-                "behavior_summaries": self.get_all_behavior_summaries(),
-                "export_timestamp": datetime.now().isoformat(),
-            }
-
-            with open(filepath = "w") as f:
-                json.dump(export_data = f, indent=2, default=str)
-
-            self.logger.info(f"📊 Behavior data exported to {filepath}")
-            return filepath
-
-        except Exception:
-            self.logger.exception(error("Error exporting behavior data: {e}"))
-            return ""
-
 # Factory function for creating model behavior tracker
 @handle_errors(
     exceptions=(Exception,),
     default_return=None, context="model behavior tracker setup",
 )
-async def setup_model_behavior_tracker(
-    config: dict[str , Any],
-    performance_monitor: PerformanceMonitor,
-) -> ModelBehaviorTracker | None:
-    """
-    Set up model behavior tracker.
-
-    Args:
-        config: Configuration dictionary
-        performance_monitor: Performance monitor instance
-
-    Returns:
-        ModelBehaviorTracker instance or None if setup fails
-    """
-    try:
-        tracker = ModelBehaviorTracker(config, performance_monitor)
-        success = await tracker.initialize()
-
-        if success:
-            return tracker
-        return None
-
-    except Exception:
-        system_logger.exception(error("Error setting up model behavior tracker: {e}"))
-        return None

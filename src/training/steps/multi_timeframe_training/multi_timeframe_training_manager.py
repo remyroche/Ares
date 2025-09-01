@@ -89,43 +89,6 @@ class MultiTimeframeTrainingManager:
         default_return=False,
         context="multi-timeframe training manager initialization",
     )
-    async def initialize(self) -> bool:
-        """Initialize multi-timeframe training manager with enhanced error handling.
-
-        Returns:
-            bool: True if initialization successful = False otherwise
-
-        """
-        try:
-            self.logger.info("Initializing Multi-Timeframe Training Manager...")
-
-            # Load multi-timeframe training configuration
-            await self._load_multi_timeframe_training_configuration()
-
-            # Validate configuration
-            if not self._validate_configuration():
-                self.logger.error(
-                    "Invalid configuration for multi-timeframe training manager",
-                )
-                return False
-
-            # Initialize multi-timeframe training modules
-            await self._initialize_multi_timeframe_training_modules()
-
-            # Initialize multi-timeframe feature engineering and regime integration
-            await self._initialize_multi_timeframe_components()
-
-            self.logger.info(
-                "✅ Multi-Timeframe Training Manager initialization completed successfully",
-            )
-            return True
-
-        except Exception as e:
-            self.logger.exception(
-                f"❌ Multi-Timeframe Training Manager initialization failed: {e}",
-            )
-            return False
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
@@ -256,142 +219,21 @@ class MultiTimeframeTrainingManager:
         default_return=None,
         context="timeframe analysis initialization",
     )
-    async def _initialize_timeframe_analysis(self) -> None:
-        """Initialize timeframe analysis module."""
-        try:
-            # Initialize timeframe analysis components
-            self.timeframe_analysis_components = {
-                "timeframe_correlation": True,
-                "timeframe_volatility": True,
-                "timeframe_trend": True,
-                "timeframe_pattern": True,
-            }
-
-            self.logger.info("Timeframe analysis module initialized")
-
-        except Exception as e:
-            self.logger.exception(
-                f"Error initializing timeframe analysis: {e}",
-            )
-            # Log specific error details for debugging
-            self.logger.exception(f"Timeframe analysis initialization failed: {type(e).__name__}: {e!s}")
-            # Re-raise the exception to prevent silent failures
-            raise
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="cross timeframe features initialization",
     )
-    async def _initialize_cross_timeframe_features(self) -> None:
-        """Initialize cross timeframe features module."""
-        try:
-            # Initialize cross timeframe features components
-            self.cross_timeframe_features_components = {
-                "feature_extraction": True,
-                "feature_combination": True,
-                "feature_selection": True,
-                "feature_validation": True,
-            }
-
-            self.logger.info("Cross timeframe features module initialized")
-
-        except Exception as e:
-            self.logger.exception(
-                f"Error initializing cross timeframe features: {e}",
-            )
-            # Log specific error details for debugging
-            self.logger.exception(f"Cross timeframe features initialization failed: {type(e).__name__}: {e!s}")
-            # Re-raise the exception to prevent silent failures
-            raise
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="timeframe ensemble initialization",
     )
-    async def _initialize_timeframe_ensemble(self) -> None:
-        """Initialize timeframe ensemble module."""
-        try:
-            # Initialize timeframe ensemble components
-            self.timeframe_ensemble_components = {
-                "ensemble_creation": True,
-                "ensemble_training": True,
-                "ensemble_evaluation": True,
-                "ensemble_optimization": True,
-            }
-
-            self.logger.info("Timeframe ensemble module initialized")
-
-        except Exception as e:
-            self.logger.exception(
-                f"Error initializing timeframe ensemble: {e}",
-            )
-            # Log specific error details for debugging
-            self.logger.exception(f"Timeframe ensemble initialization failed: {type(e).__name__}: {e!s}")
-            # Re-raise the exception to prevent silent failures
-            raise
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="timeframe optimization initialization",
     )
-    async def _initialize_timeframe_optimization(self) -> None:
-        """Initialize timeframe optimization module."""
-        try:
-            # Initialize timeframe optimization components
-            self.timeframe_optimization_components = {
-                "hyperparameter_optimization": True,
-                "feature_selection": True,
-                "model_selection": True,
-                "ensemble_optimization": True,
-            }
-
-            self.logger.info("Timeframe optimization module initialized")
-
-        except Exception as e:
-            self.logger.exception(
-                f"Error initializing timeframe optimization: {e}",
-            )
-            # Log specific error details for debugging
-            self.logger.exception(f"Timeframe optimization initialization failed: {type(e).__name__}: {e!s}")
-            # Re-raise the exception to prevent silent failures
-            raise
-
-    async def _initialize_multi_timeframe_components(self) -> None:
-        """Initialize multi-timeframe feature engineering and regime integration components."""
-        try:
-            self.logger.info("Initializing Multi-Timeframe Components...")
-
-            # Initialize multi-timeframe feature engineering
-            if self.config.get("multi_timeframe_feature_engineering", {}).get(
-                "enable_mtf_features",
-                True,
-            ):
-                self.logger.info("✅ Multi-Timeframe Feature Engineering initialized")
-            else:
-                self.logger.info("⚠️ Multi-Timeframe Feature Engineering disabled")
-
-            # Initialize multi-timeframe regime integration
-            if self.config.get("multi_timeframe_regime_integration", {}).get(
-                "enable_propagation",
-                True,
-            ):
-                await self.mtf_regime_integration.initialize()
-                self.logger.info("✅ Multi-Timeframe Regime Integration initialized")
-            else:
-                self.logger.info("⚠️ Multi-Timeframe Regime Integration disabled")
-
-        except Exception as e:
-            self.logger.exception(
-                f"Error initializing multi-timeframe components: {e}",
-            )
-            # Log specific error details for debugging
-            self.logger.exception(f"Multi-timeframe components initialization failed: {type(e).__name__}: {e!s}")
-            # Re-raise the exception to prevent silent failures
-            raise
-
     async def generate_multi_timeframe_features_for_training(
         self, data_dict: dict[str, Any], symbol: str, ) -> dict[str, Any]:
         """Generate multi-timeframe features for training data.
@@ -1166,27 +1008,6 @@ class MultiTimeframeTrainingManager:
         default_return=None,
         context="multi-timeframe training manager cleanup",
     )
-    async def stop(self) -> None:
-        """Stop the multi-timeframe training manager."""
-        self.logger.info("🛑 Stopping Multi-Timeframe Training Manager...")
-
-        try:
-            # Stop training
-            self.is_training = False
-
-            # Clear results
-            self.multi_timeframe_training_results.clear()
-
-            # Clear history
-            self.multi_timeframe_training_history.clear()
-
-            self.logger.info("✅ Multi-Timeframe Training Manager stopped successfully")
-
-        except Exception as e:
-            self.logger.exception(
-                f"Error stopping multi-timeframe training manager: {e}",
-            )
-
     async def _validate_step_dependencies(
         self, step_name: str, pipeline_state: dict[str, Any], ) -> bool:
         """Validate that all prerequisites for a step are met using StepDependencyValidator.

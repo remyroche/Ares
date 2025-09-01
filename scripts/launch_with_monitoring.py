@@ -34,19 +34,6 @@ def launch_bot_with_monitoring():
     print(f"✅ Monitor started with PID: {monitor_process.pid}")
 
     # Function to handle cleanup
-    def cleanup(signum, frame):
-        print("\n🛑 Shutting down...")
-        bot_process.terminate()
-        monitor_process.terminate()
-        try:
-            bot_process.wait(timeout=5)
-            monitor_process.wait(timeout=5)
-        except Exception:
-            bot_process.kill()
-            monitor_process.kill()
-        print("✅ Cleanup complete")
-        sys.exit(0)
-
     # Set up signal handlers
     signal.signal(signal.SIGINT, cleanup)
     signal.signal(signal.SIGTERM, cleanup)

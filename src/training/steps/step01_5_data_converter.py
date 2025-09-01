@@ -49,9 +49,6 @@ def create_fallback_logger():
     return logging.getLogger(__name__)
 
 def create_fallback_decorator():
-    def decorator(func):
-        return func
-    return decorator
 
 # Initialize fallbacks
 if system_logger is None:
@@ -424,11 +421,6 @@ class TimingTracker:
 			)
 			print(f"⏱️  [TIMING] Phase '{phase_name}' completed in {duration:.2f} seconds")
 
-	def get_total_time(self) -> float:
-		if self.start_time is None:
-			return 0.0
-		return time.time() - self.start_time
-
 	def print_summary(self) -> None:
 		print("\n" + "=" * 60)
 		print("⏱️  [TIMING] EXECUTION SUMMARY")
@@ -451,19 +443,6 @@ timing_tracker = TimingTracker()
 
 class MemoryTracker:
 	@staticmethod
-	def get_memory_usage() -> dict[str, float]:
-		try:
-			import psutil
-			process = psutil.Process()
-			mem = process.memory_info()
-			return {
-				"rss_mb": mem.rss / 1024 / 1024,
-				"vms_mb": mem.vms / 1024 / 1024,
-				"percent": process.memory_percent(),
-			}
-		except Exception:
-			return {"rss_mb": 0.0, "vms_mb": 0.0, "percent": 0.0}
-
 	@staticmethod
 	def log_memory_usage(context: str = "") -> None:
 		mem = MemoryTracker.get_memory_usage()
@@ -681,14 +660,6 @@ class ParquetDatasetManager:
 				before_count += sum(1 for f in files if f.endswith(".parquet"))
 		except Exception:
 			before_count = None
-
-		def _file_visitor(written_file: Any) -> None:
-			try:
-				path = getattr(written_file, "path", None) or str(written_file)
-			except Exception:
-				path = str(written_file)
-			if self.logger:
-				self.logger.info(f"🆕 Wrote partitioned parquet file: {path}")
 
 		write_args: dict[str, Any] = {
 			"base_dir": base_dir,
@@ -932,11 +903,6 @@ class UnifiedDataConverter:
 			self.logger.info("📝 Pipeline will continue with fallback implementations")
 		else:
 			self.logger.info("✅ All required dependencies available")
-
-	async def initialize(self) -> None:
-		self.logger.info("🚀 Initializing Unified Data Converter...")
-		self.logger.info(f"📁 Unified data directory: {self.unified_dir}")
-		self.logger.info(f"📁 Backup directory: {self.backup_dir}")
 
 	@handle_errors(exceptions=(Exception,), default_return=False, context="unified data conversion")
 	async def execute(
@@ -1431,30 +1397,6 @@ class UnifiedDataConverter:
 			self.logger.exception(f"❌ Failed to write daily partition for {target_date}: {e}")
 			return False
 
-	async def _setup_future_infrastructure(self, symbol: str, exchange: str, timeframe: str) -> bool:
-		try:
-			self.logger.info("🔧 Setting up infrastructure for future data collection...")
-			future_config = {
-				"symbol": symbol,
-				"exchange": exchange,
-				"timeframe": timeframe,
-				"unified_base_dir": os.path.join(self.unified_dir, exchange.lower(), symbol, timeframe),
-				"partitioning": ["exchange", "symbol", "timeframe", "year", "month", "day"],
-				"compression": "snappy",
-				"max_rows_per_file": 1_000_000,
-				"schema_name": "unified",
-				"created_at": datetime.now(UTC).isoformat(),
-			}
-			config_path = os.path.join(self.unified_dir, f"{exchange.lower()}_{symbol}_{timeframe}_config.json")
-			import json
-			with open(config_path, "w") as f:
-				json.dump(future_config, f, indent=2)
-			self.logger.info(f"✅ Future infrastructure config saved to: {config_path}")
-			return True
-		except Exception as e:
-			self.logger.exception(f"❌ Failed to set up future infrastructure: {e}")
-			return False
-
 	async def _validate_unified_dataset(self, symbol: str, exchange: str, timeframe: str) -> bool:
 		try:
 			self.logger.info("🔍 Validating unified dataset...")
@@ -1527,12 +1469,6 @@ class UnifiedDataConverter:
 		except Exception as e:
 			self.logger.exception(f"❌ Data quality verification failed: {e}")
 			return False
-
-	def get_unified_data_path(self, symbol: str, exchange: str, timeframe: str) -> str:
-		return os.path.join(self.unified_dir, exchange.lower(), symbol, timeframe)
-
-	def get_unified_config_path(self, symbol: str, exchange: str, timeframe: str) -> str:
-		return os.path.join(self.unified_dir, f"{exchange.lower()}_{symbol}_{timeframe}_config.json")
 
 	async def _load_klines_data(self, symbol: str, exchange: str, timeframe: str) -> Optional[pd.DataFrame]:
 		"""Load klines data with standardized validation."""
@@ -1675,15 +1611,6 @@ class UnifiedDataConverter:
 	@memory_efficient
 	@quality_gate
 	@handle_errors(exceptions=(Exception,), default_return=None, context="deprecated aggtrades to klines conversion")
-	async def _create_klines_from_aggtrades(self, symbol: str, exchange: str, timeframe: str) -> Optional[pd.DataFrame]:
-		import warnings
-		warnings.warn(
-			"_create_klines_from_aggtrades is deprecated. Use _download_klines_data instead.",
-			DeprecationWarning,
-			stacklevel=2,
-		)
-		return None
-
 	async def _fill_missing_values(self, unified: pd.DataFrame) -> pd.DataFrame:
 		try:
 			filled_columns: list[str] = []

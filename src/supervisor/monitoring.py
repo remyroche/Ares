@@ -37,19 +37,6 @@ class Monitoring:
         },
         default_return=False, context="monitoring initialization",
     )
-    async def initialize(self) -> bool:
-        try:
-            self.logger.info("Initializing Monitoring...")
-            await self._load_monitoring_configuration()
-            if not self._validate_configuration():
-                print(invalid("Invalid configuration for monitoring"))
-                return False
-            self.logger.info("✅ Monitoring initialization completed successfully")
-            return True
-        except Exception:
-            print(failed("❌ Monitoring initialization failed: {e}"))
-            return False
-
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None, context="monitoring configuration loading",
@@ -153,48 +140,9 @@ class Monitoring:
         exceptions=(Exception,),
         default_return=None, context="monitoring stop",
     )
-    async def stop(self) -> None:
-        self.logger.info("🛑 Stopping Monitoring...")
-        try:
-            self.is_running = False
-            self.status = {"timestamp": datetime.now().isoformat(), "status": "stopped"}
-            self.logger.info("✅ Monitoring stopped successfully")
-        except Exception:
-            print(error("Error stopping monitoring: {e}"))
-
-    def get_status(self) -> dict[str, Any]:
-        return self.status.copy()
-
-    def get_history(self, limit: int | None = None) -> list[dict[str, Any]]:
-        history = self.history.copy()
-        if limit:
-            history = history[-limit:]
-        return history
-
-    def get_metrics(self) -> dict[str, Any]:
-        return self.metrics.copy()
-
-    def get_alerts(self) -> list[dict[str, Any]]:
-        return self.alerts.copy()
-
 monitoring: Monitoring | None = None
 
 @handle_errors(
     exceptions=(Exception,),
     default_return=None, context="monitoring setup",
 )
-async def setup_monitoring(
-    config: dict[str, Any] | None = None,
-) -> Monitoring | None:
-    try:
-        global monitoring
-        if config is None:
-            config = {"monitoring": {"check_interval": 30, "max_history": 100}}
-        monitoring = Monitoring(config)
-        success = await monitoring.initialize()
-        if success:
-            return monitoring
-        return None
-    except Exception as e:
-        print(f"Error setting up monitoring: {e}")
-        return None

@@ -24,10 +24,6 @@ class LeverageSizer:
         self.logger = system_logger.getChild("LeverageSizer")
         # Backward-compatibility shim for legacy self.print calls
         if not hasattr(self, "print"):
-            def _shim_print(message: str) -> None:
-                with contextlib.suppress(Exception):
-                    self.logger.error(str(message))
-
             self.print = _shim_print  # type: ignore[attr-defined]
 
         # Load configuration from step17 optimization results
@@ -68,18 +64,6 @@ class LeverageSizer:
         default_return=False,
         context="leverage sizer initialization",
     )
-    async def initialize(self) -> bool:
-        """Initialize the leverage sizer."""
-        self.logger.info("Initializing leverage sizer...")
-
-        # Validate configuration
-        if not self._validate_configuration():
-            return False
-
-        self.is_initialized = True
-        self.logger.info("✅ Leverage sizer initialized successfully")
-        return True
-
     def _validate_configuration(self) -> bool:
         """Validate leverage sizer configuration."""
         try:
@@ -109,39 +93,6 @@ class LeverageSizer:
             self.logger.error(f"Configuration validation failed: {e}")
             return False
 
-    def refresh_step17_configuration(self, step17_results: dict[str, Any]) -> None:
-        """
-        Refresh configuration from step17 optimization results.
-        This method is called automatically when step17 completes.
-
-        Args:
-            step17_results: Step17 optimization results
-        """
-        try:
-            if "leverage" in step17_results:
-                leverage_optimization = step17_results["leverage"]
-
-                # Update leverage parameters
-                self.min_leverage = leverage_optimization.get("min_leverage", self.min_leverage)
-                self.max_leverage = leverage_optimization.get("max_leverage", self.max_leverage)
-                self.confidence_threshold = leverage_optimization.get("confidence_threshold", self.confidence_threshold)
-                self.liquidation_buffer = leverage_optimization.get("liquidation_buffer", self.liquidation_buffer)
-
-                # Update component weights
-                self.ml_weight = leverage_optimization.get("ml_weight", self.ml_weight)
-                self.liquidation_weight = leverage_optimization.get("liquidation_weight", self.liquidation_weight)
-
-                # Update additional parameters
-                self.leverage_multiplier = leverage_optimization.get("leverage_multiplier", self.leverage_multiplier)
-                self.risk_adjustment_factor = leverage_optimization.get("risk_adjustment_factor", self.risk_adjustment_factor)
-                self.confidence_boost_threshold = leverage_optimization.get("confidence_boost_threshold", self.confidence_boost_threshold)
-                self.max_risk_leverage = leverage_optimization.get("max_risk_leverage", self.max_risk_leverage)
-
-                self.logger.info("✅ Leverage sizer configuration refreshed from step17 results")
-
-        except Exception as e:
-            self.logger.error(f"Error refreshing step17 configuration: {e}")
-
     @handle_specific_errors(
         error_handlers={
             ValueError: (None, "Invalid input data for leverage sizing"),
@@ -150,110 +101,6 @@ class LeverageSizer:
         default_return={},
         context="leverage sizing calculation",
     )
-    async def calculate_leverage(
-        self,
-        ml_predictions: dict[str, Any],
-        current_price: float = 0.0,
-        account_balance: float = 1000.0,
-        analyst_confidence: float = 0.5,
-        tactician_confidence: float = 0.5,
-        market_health_analysis: dict[str, Any] | None = None,
-        strategist_risk_parameters: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
-        """
-        Calculate leverage using ML confidence scores and liquidation risk model.
-
-        Args:
-            ml_predictions: ML model predictions
-            current_price: Current market price
-            account_balance: Account balance
-            analyst_confidence: Analyst confidence score
-            tactician_confidence: Tactician confidence score
-            market_health_analysis: Market health analysis
-            strategist_risk_parameters: Strategist risk parameters
-
-        Returns:
-            dict[str, Any]: Leverage sizing analysis
-        """
-        if not self.is_initialized:
-            self.logger.error("Leverage sizer not initialized")
-            return {}
-
-        try:
-            # NEW: Extract combined confidence from Tactician multi-output predictions
-            combined_confidence = ml_predictions.get("combined_confidence", 0.5)
-
-            # Extract ML confidence scores (for backward compatibility)
-            price_target_confidences = ml_predictions.get("price_target_confidences", {})
-            adversarial_confidences = ml_predictions.get("adversarial_confidences", {})
-
-            # NEW: Use combined confidence for leverage sizing if available
-            if combined_confidence >= self.leverage_combined_threshold:
-                # Calculate base ML leverage
-                ml_leverage = self._calculate_ml_leverage(
-                    price_target_confidences, adversarial_confidences,
-                )
-
-                # Calculate liquidation risk-adjusted leverage
-                liquidation_leverage = self._calculate_liquidation_safe_leverage(
-                    current_price, account_balance, market_health_analysis,
-                )
-
-                # Calculate weighted leverage
-                final_leverage = self._calculate_weighted_leverage(
-                    ml_leverage, liquidation_leverage,
-                )
-
-                # Apply market-health and strategist risk modifiers
-                final_leverage = self._apply_leverage_modifiers(
-                    final_leverage,
-                    market_health_analysis=market_health_analysis,
-                    strategist_risk_parameters=strategist_risk_parameters,
-                    analyst_confidence=analyst_confidence,
-                    tactician_confidence=tactician_confidence,
-                )
-            else:
-                # If combined confidence is below threshold, use minimum leverage
-                final_leverage = self.min_leverage
-                ml_leverage = self.min_leverage
-                liquidation_leverage = self.min_leverage
-
-            # Create leverage sizing analysis
-            leverage_analysis = {
-                "timestamp": datetime.now(),
-                "current_price": current_price,
-                "account_balance": account_balance,
-                "ml_leverage": ml_leverage,
-                "liquidation_leverage": liquidation_leverage,
-                "final_leverage": final_leverage,
-                "combined_confidence": combined_confidence,
-                "leverage_combined_threshold": self.leverage_combined_threshold,
-                "price_target_confidences": price_target_confidences,
-                "adversarial_confidences": adversarial_confidences,
-                "market_health_modifiers": (market_health_analysis or {}),
-                "strategist_risk_parameters": (strategist_risk_parameters or {}),
-                "leverage_reason": self._generate_leverage_reason(
-                    final_leverage,
-                    ml_leverage,
-                    liquidation_leverage,
-                    price_target_confidences,
-                    adversarial_confidences,
-                    combined_confidence,
-                ),
-            }
-
-            # Store in history
-            self.leverage_sizing_history.append(leverage_analysis)
-            if len(self.leverage_sizing_history) > 100:  # Keep last 100 entries
-                self.leverage_sizing_history = self.leverage_sizing_history[-100:]
-
-            self.logger.info(f"✅ Leverage calculated: {final_leverage:.1f}x")
-            return leverage_analysis
-
-        except Exception as e:
-            self.logger.error(f"Error calculating leverage: {e}")
-            return {}
-
     def _calculate_ml_leverage(
         self,
         price_target_confidences: dict[str, float],
@@ -451,70 +298,19 @@ class LeverageSizer:
             self.logger.exception(f"Error generating leverage reason: {e}")
             return f"Leverage: {final_leverage:.1f}x (Error generating reason)"
 
-    def get_leverage_sizing_history(
-        self,
-        limit: int | None = None,
-    ) -> list[dict[str, Any]]:
-        """Get leverage sizing history."""
-        if limit:
-            return self.leverage_sizing_history[-limit:]
-        return self.leverage_sizing_history.copy()
-
     @handle_errors(
         exceptions=(Exception,),
         default_return=None,
         context="leverage sizer cleanup",
     )
-    async def stop(self) -> None:
-        """Stop the leverage sizer."""
-        try:
-            self.logger.info("Stopping leverage sizer...")
-            self.is_initialized = False
-            self.logger.info("✅ Leverage sizer stopped successfully")
-        except Exception as e:
-            self.logger.error(f"❌ Failed to stop leverage sizer: {e}")
-
     @handle_errors(
         exceptions=(Exception,),
         default_return=None,
         context="leverage sizer cleanup",
     )
-    async def cleanup(self) -> None:
-        """Cleanup leverage sizer resources."""
-        try:
-            self.logger.info("Cleaning up leverage sizer...")
-            await self.stop()
-            self.leverage_sizing_history.clear()
-            self.logger.info("✅ Leverage sizer cleanup completed")
-        except Exception as e:
-            self.logger.error(f"Error cleaning up leverage sizer: {e}")
-
 
 @handle_errors(
     exceptions=(Exception,),
     default_return=None,
     context="leverage sizer setup",
 )
-async def setup_leverage_sizer(
-    config: dict[str, Any] | None = None,
-) -> LeverageSizer | None:
-    """
-    Setup and return a configured LeverageSizer instance.
-
-    Args:
-        config: Configuration dictionary
-
-    Returns:
-        LeverageSizer: Configured leverage sizer instance
-    """
-    try:
-        if config is None:
-            config = {}
-
-        leverage_sizer = LeverageSizer(config)
-        if await leverage_sizer.initialize():
-            return leverage_sizer
-        return None
-    except Exception as e:
-        system_logger.exception(f"Failed to setup leverage sizer: {e}")
-        return None

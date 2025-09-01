@@ -205,21 +205,6 @@ def _tf_band(timeframe: str) -> str:
     return "high"
 
 
-def get_model_choice_for_label(
-    label: str, timeframe: str,
-) -> tuple[str, dict[str, Any]]:
-    """Return (model_key, params) for the given base label and timeframe.
-
-    If label not in mapping, default to a conservative LightGBM.
-    """
-    base = label.strip().upper()
-    band = _tf_band(timeframe)
-    cfg = LABEL_GROUPS.get(base)
-    if not cfg:
-        return "lightgbm", {"num_leaves": 48}
-    key, params = cfg.get(band, cfg.get("high"))
-    return key, dict(params or {})
-
 
 def build_model(model_key: str, params: dict[str, Any]) -> Any:
     """Instantiate a model from a key and params. Returns a fitted-ready estimator.
@@ -357,7 +342,3 @@ def build_model(model_key: str, params: dict[str, Any]) -> Any:
             n_jobs=-1,
         )
 
-
-def select_model_for_label_timeframe(label: str, timeframe: str):
-    key, params = get_model_choice_for_label(label, timeframe)
-    return build_model(key, params)

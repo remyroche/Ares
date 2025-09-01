@@ -52,29 +52,6 @@ class WaveletFeatureSelectionDemo:
             self.logger.exception(f"Error loading config: {e}")
             return {}
 
-    async def initialize(self) -> bool:
-        """Initialize the demo."""
-        try:
-            self.logger.info("🚀 Initializing Wavelet Feature Selection Demo...")
-
-            # Initialize workflow
-            success = await self.workflow.initialize()
-            if not success:
-                self.logger.error("Failed to initialize workflow")
-                return False
-
-            # Generate demo data
-            self._generate_demo_data()
-
-            self.logger.info(
-                "✅ Wavelet Feature Selection Demo initialized successfully",
-            )
-            return True
-
-        except Exception as e:
-            self.logger.exception(f"❌ Error initializing demo: {e}")
-            return False
-
     def _generate_demo_data(self) -> None:
         """Generate realistic demo data for the workflow."""
         try:
@@ -351,60 +328,6 @@ class WaveletFeatureSelectionDemo:
 
         except Exception as e:
             self.logger.exception(f"Error displaying results: {e}")
-
-    def save_results(self, results: dict[str, Any]) -> None:
-        """Save workflow results to files."""
-        try:
-            # Save summary report
-            summary_path = self.workflow.results_dir / "workflow_summary.yaml"
-            with open(summary_path, "w") as f:
-                yaml.dump(results["summary"], f, default_flow_style=False)
-
-            # Save feature importance results
-            importance_path = self.workflow.results_dir / "feature_importance.csv"
-            importance_df = pd.DataFrame(
-                [
-                    {
-                        "feature_name": f.feature_name,
-                        "permutation_importance": f.permutation_importance,
-                        "shap_importance": f.shap_importance,
-                        "combined_score": f.combined_score,
-                        "feature_type": f.feature_type,
-                        "computation_cost_ms": f.computation_cost,
-                    }
-                    for f in results["feature_results"]
-                ],
-            )
-            importance_df.to_csv(importance_path, index=False)
-
-            # Save winner features
-            winners_path = self.workflow.results_dir / "winner_features.csv"
-            winners_df = pd.DataFrame(
-                [
-                    {
-                        "feature_name": f.feature_name,
-                        "importance_score": f.combined_score,
-                        "computation_cost_ms": f.computation_cost,
-                        "feature_type": f.feature_type,
-                    }
-                    for f in results["winner_features"]
-                ],
-            )
-            winners_df.to_csv(winners_path, index=False)
-
-            # Save model comparison
-            model_comparison_path = self.workflow.results_dir / "model_comparison.yaml"
-            with open(model_comparison_path, "w") as f:
-                yaml.dump(
-                    results["summary"]["model_comparison"],
-                    f,
-                    default_flow_style=False,
-                )
-
-            self.logger.info(f"💾 Results saved to {self.workflow.output_dir}")
-
-        except Exception as e:
-            self.logger.exception(f"Error saving results: {e}")
 
 
 async def main() -> None:

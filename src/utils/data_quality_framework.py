@@ -237,54 +237,6 @@ class DataQualityFramework:
         # Initialize standard validation rules
         self._initialize_standard_rules()
 
-    def _initialize_standard_rules(self):
-        """Initialize standard validation rules for common data types."""
-
-        # Klines data validation
-        klines_schema = SchemaValidationRule(
-            required_columns=["timestamp", "open", "high", "low", "close", "volume"],
-            optional_columns=["quote_asset_volume", "number_of_trades"],
-            data_types={
-                "timestamp": "int64",
-                "open": "float64",
-                "high": "float64",
-                "low": "float64",
-                "close": "float64",
-                "volume": "float64"
-            },
-            severity=DataQualityLevel.CRITICAL
-        )
-        self.add_validation_rule("klines_schema", klines_schema)
-
-        # OHLC consistency validation
-        ohlc_consistency = ConsistencyValidationRule(
-            column="high",
-            allowed_values=None,
-            pattern=None,
-            severity=DataQualityLevel.HIGH
-        )
-        self.add_validation_rule("ohlc_consistency", ohlc_consistency)
-
-        # Price range validation
-        price_range = RangeValidationRule(
-            column="close",
-            min_value=0.0,
-            max_value=None,
-            allow_nan=False,
-            severity=DataQualityLevel.HIGH
-        )
-        self.add_validation_rule("price_range", price_range)
-
-        # Volume validation
-        volume_validation = RangeValidationRule(
-            column="volume",
-            min_value=0.0,
-            max_value=None,
-            allow_nan=False,
-            severity=DataQualityLevel.MEDIUM
-        )
-        self.add_validation_rule("volume_validation", volume_validation)
-
     def add_validation_rule(self, name: str, rule: ValidationRule) -> None:
         """Add a validation rule.
 
@@ -388,29 +340,6 @@ class DataQualityFramework:
             self.logger.error(f"Data validation failed: {summary['failed_rules']}/{summary['total_rules']} rules failed")
             self.logger.error(f"Issues: Critical={summary['critical_issues']}, High={summary['high_issues']}, Medium={summary['medium_issues']}, Low={summary['low_issues']}")
 
-    def format_data(self, data: pd.DataFrame, data_type: str = "klines") -> pd.DataFrame:
-        """Format data according to standardized formats.
-
-        Args:
-            data: Data to format
-            data_type: Type of data (klines, features, etc.)
-
-        Returns:
-            Formatted data
-        """
-        formatted_data = data.copy()
-
-        if data_type == "klines":
-            formatted_data = self._format_klines_data(formatted_data)
-        elif data_type == "features":
-            formatted_data = self._format_features_data(formatted_data)
-        elif data_type == "labels":
-            formatted_data = self._format_labels_data(formatted_data)
-        else:
-            self.logger.warning(f"Unknown data type for formatting: {data_type}")
-
-        return formatted_data
-
     def _format_klines_data(self, data: pd.DataFrame) -> pd.DataFrame:
         """Format klines data."""
         formatted = data.copy()
@@ -455,87 +384,6 @@ class DataQualityFramework:
             formatted[col] = pd.to_numeric(formatted[col], errors='coerce').astype('int64')
 
         return formatted
-
-    def clean_data(self, data: pd.DataFrame, cleaning_rules: Optional[Dict[str, Any]] = None) -> pd.DataFrame:
-        """Clean data according to specified rules.
-
-        Args:
-            data: Data to clean
-            cleaning_rules: Cleaning rules to apply
-
-        Returns:
-            Cleaned data
-        """
-        if not self.quality_policies["auto_clean"]:
-            self.logger.info("Auto-cleaning disabled, returning original data")
-            return data
-
-        cleaned_data = data.copy()
-
-        # Default cleaning rules
-        default_rules = {
-            "remove_duplicates": True,
-            "handle_missing_values": True,
-            "remove_outliers": False,
-            "normalize_whitespace": True
-        }
-
-        if cleaning_rules:
-            default_rules.update(cleaning_rules)
-
-        # Remove duplicates
-        if default_rules["remove_duplicates"]:
-            initial_rows = len(cleaned_data)
-            cleaned_data = cleaned_data.drop_duplicates()
-            removed_duplicates = initial_rows - len(cleaned_data)
-            if removed_duplicates > 0:
-                self.logger.info(f"Removed {removed_duplicates} duplicate rows")
-
-        # Handle missing values
-        if default_rules["handle_missing_values"]:
-            # For numeric columns, fill with median
-            numeric_columns = cleaned_data.select_dtypes(include=[np.number]).columns
-            for col in numeric_columns:
-                if cleaned_data[col].isna().any():
-                    median_value = cleaned_data[col].median()
-                    cleaned_data[col].fillna(median_value, inplace=True)
-                    self.logger.info(f"Filled missing values in {col} with median: {median_value}")
-
-        # Enhanced outlier handling (if enabled)
-        outlier_handling = default_rules.get("outlier_handling", "detect_only")
-        if outlier_handling != "none":
-            cleaned_data = self._handle_outliers_enhanced(cleaned_data, default_rules)
-
-        # Normalize whitespace in string columns
-        if default_rules["normalize_whitespace"]:
-            string_columns = cleaned_data.select_dtypes(include=['object']).columns
-            for col in string_columns:
-                cleaned_data[col] = cleaned_data[col].astype(str).str.strip()
-
-        return cleaned_data
-
-    def _remove_outliers(self, data: pd.DataFrame, method: str = "iqr", threshold: float = 1.5) -> pd.DataFrame:
-        """Remove outliers from numeric columns."""
-        cleaned_data = data.copy()
-
-        numeric_columns = cleaned_data.select_dtypes(include=[np.number]).columns
-
-        for col in numeric_columns:
-            if method == "iqr":
-                Q1 = cleaned_data[col].quantile(0.25)
-                Q3 = cleaned_data[col].quantile(0.75)
-                IQR = Q3 - Q1
-                lower_bound = Q1 - threshold * IQR
-                upper_bound = Q3 + threshold * IQR
-
-                outliers = (cleaned_data[col] < lower_bound) | (cleaned_data[col] > upper_bound)
-                outlier_count = outliers.sum()
-
-                if outlier_count > 0:
-                    cleaned_data = cleaned_data[~outliers]
-                    self.logger.info(f"Removed {outlier_count} outliers from {col}")
-
-        return cleaned_data
 
     def _handle_outliers_enhanced(self, data: pd.DataFrame, cleaning_rules: Dict[str, Any]) -> pd.DataFrame:
         """Handle outliers using enhanced outlier handler with error raising."""
@@ -630,36 +478,6 @@ class DataQualityFramework:
             profile["columns"][column] = col_profile
 
         return profile
-
-    def get_quality_report(self, data: pd.DataFrame, include_profile: bool = True) -> Dict[str, Any]:
-        """Generate comprehensive data quality report.
-
-        Args:
-            data: Data to analyze
-            include_profile: Whether to include data profiling
-
-        Returns:
-            Quality report
-        """
-        report = {
-            "timestamp": datetime.now().isoformat(),
-            "data_shape": data.shape,
-            "validation_results": self.validate_data(data),
-            "quality_score": self.calculate_quality_score(data)
-        }
-
-        if include_profile:
-            report["data_profile"] = self.profile_data(data)
-
-        # Add quality metrics
-        report["quality_metrics"] = {
-            "completeness": self._calculate_completeness_score(data),
-            "consistency": self._calculate_consistency_score(data),
-            "accuracy": self._calculate_accuracy_score(data),
-            "timeliness": self._calculate_timeliness_score(data)
-        }
-
-        return report
 
     def calculate_quality_score(self, data: pd.DataFrame) -> float:
         """Calculate overall data quality score.

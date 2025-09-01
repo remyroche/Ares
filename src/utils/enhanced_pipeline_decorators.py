@@ -68,19 +68,6 @@ class EnhancedPipelineDecorator:
         self.reports_dir = Path("reports/enhanced_training_pipeline")
         self.reports_dir.mkdir(parents=True, exist_ok=True)
 
-    def __call__(self, func: Callable) -> Callable:
-        """Apply the enhanced decorator to a function."""
-
-        @functools.wraps(func)
-        async def async_wrapper(*args, **kwargs):
-            return await self._execute_with_enhanced_monitoring(func, args, kwargs, is_async=True)
-
-        @functools.wraps(func)
-        def sync_wrapper(*args, **kwargs):
-            return asyncio.run(self._execute_with_enhanced_monitoring(func, args, kwargs, is_async=False))
-
-        return async_wrapper if asyncio.iscoroutinefunction(func) else sync_wrapper
-
     async def _execute_with_enhanced_monitoring(
         self,
         func: Callable,
@@ -533,31 +520,6 @@ def debug_pipeline_step(step_name: str):
 
 
 # Utility functions for report management
-async def get_step_reports(step_name: str = None, limit: int = 50) -> List[Dict[str, Any]]:
-    """Retrieve step reports from the metadata index."""
-
-    reports_dir = Path("reports/enhanced_training_pipeline")
-    metadata_file = reports_dir / "reports_metadata.json"
-
-    if not metadata_file.exists():
-        return []
-
-    try:
-        with open(metadata_file, 'r', encoding='utf-8') as f:
-            metadata_index = json.load(f)
-
-        # Filter by step name if provided
-        if step_name:
-            metadata_index = [m for m in metadata_index if m["step_name"] == step_name]
-
-        # Sort by completion time (newest first) and limit
-        metadata_index.sort(key=lambda x: x["completion_time"], reverse=True)
-        return metadata_index[:limit]
-
-    except Exception as e:
-        system_logger.error(f"Failed to retrieve step reports: {e}")
-        return []
-
 
 async def get_latest_step_report(step_name: str) -> Optional[Dict[str, Any]]:
     """Get the latest report for a specific step."""
@@ -565,56 +527,6 @@ async def get_latest_step_report(step_name: str) -> Optional[Dict[str, Any]]:
     reports = await get_step_reports(step_name, limit=1)
     return reports[0] if reports else None
 
-
-async def cleanup_old_reports(days_to_keep: int = 30):
-    """Clean up old reports to save disk space."""
-
-    reports_dir = Path("reports/enhanced_training_pipeline")
-    if not reports_dir.exists():
-        return
-
-    cutoff_date = datetime.now() - timedelta(days=days_to_keep)
-    cleaned_count = 0
-
-    try:
-        metadata_file = reports_dir / "reports_metadata.json"
-        if metadata_file.exists():
-            with open(metadata_file, 'r', encoding='utf-8') as f:
-                metadata_index = json.load(f)
-
-            # Filter out old reports
-            old_reports = []
-            for metadata in metadata_index:
-                report_date = datetime.fromisoformat(metadata["completion_time"])
-                if report_date < cutoff_date:
-                    old_reports.append(metadata)
-
-            # Remove old report files
-            for old_report in old_reports:
-                try:
-                    report_path = Path(old_report["report_path"])
-                    summary_path = Path(old_report["summary_path"])
-
-                    if report_path.exists():
-                        report_path.unlink()
-                        cleaned_count += 1
-
-                    if summary_path.exists():
-                        summary_path.unlink()
-                        cleaned_count += 1
-
-                except Exception as e:
-                    system_logger.warning(f"Failed to remove old report file: {e}")
-
-            # Update metadata index
-            metadata_index = [m for m in metadata_index if m not in old_reports]
-            with open(metadata_file, 'w', encoding='utf-8') as f:
-                json.dump(metadata_index, f, indent=2, ensure_ascii=False)
-
-            system_logger.info(f"🧹 Cleaned up {cleaned_count} old report files")
-
-    except Exception as e:
-        system_logger.error(f"Failed to cleanup old reports: {e}")
 
 
 # Export the main decorator for easy import

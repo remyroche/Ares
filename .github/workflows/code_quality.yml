@@ -48,11 +48,38 @@ jobs:
         poetry run ruff check .
         poetry run ruff format . --check
 
-    - name: Dead code detection
-      run: poetry run vulture src/ --min-confidence 80 || true
+    - name: Dead code detection with Vulture
+      run: |
+        echo "=== Vulture Dead Code Detection ==="
+        poetry run vulture src/ --min-confidence 80 --exclude=test_models,test_results,log || true
+        echo "=== End Vulture Report ==="
+
+    - name: Dead code detection with Pyright
+      run: |
+        echo "=== Pyright Dead Code Detection ==="
+        poetry run pyright --outputformat=text src/ || true
+        echo "=== End Pyright Report ==="
 
     - name: Run MyPy (Static Type Checking)
-      run: poetry run mypy --ignore-missing-imports --package src
+      run: |
+        echo "=== MyPy Type Checking ==="
+        poetry run mypy src/ --show-error-codes --show-column-numbers
+        echo "=== End MyPy Report ==="
 
     - name: Run Radon (Code Complexity and Maintainability)
-      run: poetry run radon cc src/ -s -nc
+      run: |
+        echo "=== Radon Complexity Analysis ==="
+        poetry run radon cc src/ -s -nc
+        echo "=== End Radon Report ==="
+
+    - name: Check for unused imports and variables
+      run: |
+        echo "=== Unused Code Detection ==="
+        poetry run ruff check . --select=F401,F841 --output-format=text || true
+        echo "=== End Unused Code Report ==="
+
+    - name: Check for unreachable code
+      run: |
+        echo "=== Unreachable Code Detection ==="
+        poetry run ruff check . --select=RET504 --output-format=text || true
+        echo "=== End Unreachable Code Report ==="

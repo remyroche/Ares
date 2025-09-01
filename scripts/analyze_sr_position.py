@@ -251,7 +251,7 @@ class SRPositionAnalyzer:
         print("=" * 80)
 
 
-        async def load_price_data(symbol: str, exchange: str, timeframe: str) -> Optional[pd.DataFrame]:
+async def load_price_data(symbol: str, exchange: str, timeframe: str) -> Optional[pd.DataFrame]:
     """Load price data for analysis."""
     # Try multiple data formats and locations
     possible_paths = [
@@ -261,7 +261,7 @@ class SRPositionAnalyzer:
         Path(f"data/{exchange}_{symbol}_labeled_regimes.csv"),
     ]
 
-            for path in possible_paths:
+    for path in possible_paths:
         if path.exists():
             if path.suffix == ".csv":
                 return pd.read_csv(path)
@@ -271,7 +271,7 @@ class SRPositionAnalyzer:
             return None
 
 
-        async def main():
+async def main():
     """Main function to run SR position analysis."""
     parser = argparse.ArgumentParser(
         description="Analyze SR position between support and resistance levels"
@@ -293,7 +293,7 @@ class SRPositionAnalyzer:
 
     # Load price data
     price_data = await load_price_data(args.symbol, args.exchange, args.timeframe)
-            if price_data is None:
+    if price_data is None:
         system_logger.error("❌ Failed to load price data")
         return
 
@@ -304,13 +304,13 @@ class SRPositionAnalyzer:
     }
 
     analyzer = SRPositionAnalyzer(config)
-            if not await analyzer.initialize():
+    if not await analyzer.initialize():
         system_logger.error("❌ Failed to initialize analyzer")
         return
 
     # Generate SR levels
     sr_levels = analyzer.feature_engine._generate_sr_levels(price_data)
-            if not sr_levels:
+    if not sr_levels:
         system_logger.error("❌ Failed to generate SR levels")
         return
 
@@ -321,12 +321,12 @@ class SRPositionAnalyzer:
     analyzer.print_analysis_report(analysis)
 
     # Save detailed results if requested
-            if args.output:
+    if args.output:
         output_path = Path(args.output)
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Save position series to CSV
-            if "position_series" in analysis:
+        # Save position series to CSV
+        if "position_series" in analysis:
             position_df = pd.DataFrame(
                 {
                     "timestamp": analysis["position_series"].index, "sr_position": analysis["position_series"].values,
@@ -338,5 +338,5 @@ class SRPositionAnalyzer:
     system_logger.info("✅ SR Position Analysis completed successfully")
 
 
-        if __name__ == "__main__":
+if __name__ == "__main__":
     asyncio.run(main())

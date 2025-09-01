@@ -2099,8 +2099,8 @@ class HMMRegimeAnalyzer:
 
 
 
-    def main():
-    parser, argparse.ArgumentParser(description="Analyze HMM regime discovery results")
+def main():
+    parser = argparse.ArgumentParser(description="Analyze HMM regime discovery results")
     parser.add_argument("--exchange", default="BINANCE", help="Exchange name")
     parser.add_argument("--symbol", default="ETHUSDT", help="Symbol name")
     parser.add_argument("--timeframe", default="1m", help="Timeframe")
@@ -2111,13 +2111,14 @@ class HMMRegimeAnalyzer:
         help="Output directory for reports",
     )
 
-    args, parser.parse_args()
+    args = parser.parse_args()
 
-    analyzer, HMMRegimeAnalyzer(args.data_dir)
+    analyzer = HMMRegimeAnalyzer(args.data_dir)
     analyzer.generate_regime_report(
         args.exchange, args.symbol,
         args.timeframe, args.output_dir,
     )
 
-        if __name__ == "__main__":
+
+if __name__ == "__main__":
     main()

@@ -14,7 +14,6 @@ Usage:
     python scripts/analyze_timeframe.py --symbol BTCUSDT --timeframe 1m
 """
 
-import traceback
 from datetime import datetime
 from pathlib import Path
 from src.utils.logger import ensure_logging_setup, get_logger
@@ -38,14 +37,15 @@ def terminal_log(message: str, level: str = "INFO"):
     """Log to both terminal and logger"""
     timestamp = datetime.now().strftime("%H:%M:%S")
     print(f"[{timestamp}] {level}: {message}", flush=True)
-            if level == "INFO":
+    if level == "INFO":
         logger.info(message)
     elif level == "ERROR":
         logger.error(message)
     elif level == "WARNING":
         logger.warning(message)
 
-        class PriceActionAnalyzer:
+
+class PriceActionAnalyzer:
     """
     Analyzes historical aggtrades data to determine optimal timeframes and SL/TP levels.
     """
@@ -121,9 +121,6 @@ def terminal_log(message: str, level: str = "INFO"):
 
         for file_path in aggtrades_files:
             try:
-    pass  # TODO: Add proper exception handling
-        except Exception as e:
-    pass  # TODO: Add proper exception handling
                 processed_files += 1
                 terminal_log(f"📄 Loading {os.path.basename(file_path)}...", "INFO")
 
@@ -457,9 +454,6 @@ def terminal_log(message: str, level: str = "INFO"):
             )
 
             try:
-    pass  # TODO: Add proper exception handling
-        except Exception as e:
-    pass  # TODO: Add proper exception handling
                 result = self.analyze_price_movement(df, target_pct, stop_pct)
 
                 # Calculate additional metrics
@@ -717,7 +711,7 @@ def terminal_log(message: str, level: str = "INFO"):
                 )
         print("=" * 80)
 
-    def main():
+def main():
     """Main function to run the price action analysis."""
     parser = argparse.ArgumentParser(
         description="Analyze price action timeframes for optimal SL/TP levels",
@@ -753,93 +747,85 @@ def terminal_log(message: str, level: str = "INFO"):
     terminal_log(f"🕐 Started: {start_time.strftime('%Y-%m-%d %H:%M:%S')}", "INFO")
     terminal_log("=" * 60, "INFO")
 
-            try:
-    pass  # TODO: Add proper exception handling
-        except Exception as e:
-    pass  # TODO: Add proper exception handling
-        # Initialize analyzer
-        analyzer = PriceActionAnalyzer(args.symbol, args.timeframe)
-        terminal_log(
-            f"✅ Analyzer initialized with {len(analyzer.valid_combinations)} valid combinations",
-            "INFO",
-        )
+    # Initialize analyzer
+    analyzer = PriceActionAnalyzer(args.symbol, args.timeframe)
+    terminal_log(
+        f"✅ Analyzer initialized with {len(analyzer.valid_combinations)} valid combinations",
+        "INFO",
+    )
 
-        # Load data
-        terminal_log("📂 Loading historical data...", "INFO")
-        df = analyzer.load_aggtrades_data(test_mode=args.test_mode)
+    # Load data
+    terminal_log("📂 Loading historical data...", "INFO")
+    df = analyzer.load_aggtrades_data(test_mode=args.test_mode)
 
-        if df.empty:
-            terminal_log("❌ No data loaded. Exiting.", "ERROR")
-            return 1
-
-        terminal_log(f"✅ Data loaded: {len(df):,} rows", "INFO")
-        terminal_log(
-            f"📅 Date range: {df['timestamp'].min()} to {df['timestamp'].max()}",
-            "INFO",
-        )
-
-        # Resample data
-        terminal_log("🔄 Resampling data to target timeframe...", "INFO")
-        df_resampled = analyzer.resample_to_timeframe(df)
-
-        if df_resampled.empty:
-            terminal_log("❌ Resampling failed. Exiting.", "ERROR")
-            return 1
-
-        terminal_log(
-            f"✅ Resampling complete: {len(df_resampled):,} data points",
-            "INFO",
-        )
-
-        # Run analysis
-        terminal_log("🔍 Running comprehensive analysis...", "INFO")
-        display_df, score_df = analyzer.run_comprehensive_analysis(df_resampled)
-
-        if display_df.empty:
-            terminal_log("❌ Analysis failed. No results generated.", "ERROR")
-            return 1
-
-        # Find optimal parameters
-        terminal_log("🎯 Finding optimal parameters...", "INFO")
-        optimal_params = analyzer.find_optimal_parameters(score_df)
-
-        # Generate recommendations
-        terminal_log("💡 Generating recommendations...", "INFO")
-        recommendations = analyzer.generate_recommendations(optimal_params, display_df)
-
-        # Save results
-        terminal_log("💾 Saving results...", "INFO")
-        analyzer.save_results(
-            display_df = display_df, score_df = score_df, optimal_params = optimal_params, recommendations = recommendations, df_resampled = df_resampled
-        )
-
-        # Print summary
-        terminal_log("📋 Printing summary...", "INFO")
-        analyzer.print_summary(display_df, optimal_params, recommendations)
-
-        # Final summary
-        total_time = (datetime.now() - start_time).total_seconds()
-        terminal_log("=" * 60, "INFO")
-        terminal_log("🎉 ANALYSIS COMPLETED SUCCESSFULLY!", "INFO")
-        terminal_log(f"⏱️  Total time: {total_time:.1f} seconds", "INFO")
-        terminal_log(f"📊 Combinations tested: {len(display_df)}", "INFO")
-        terminal_log(
-            f"🎯 Optimal target: {optimal_params.get('optimal_target', 'N/A')}%",
-            "INFO",
-        )
-        terminal_log(
-            f"🛑 Optimal stop: {optimal_params.get('optimal_stop', 'N/A')}%",
-            "INFO",
-        )
-        terminal_log("=" * 60, "INFO")
-
-            except Exception as e:
-        terminal_log(f"❌ Analysis failed: {e}", "ERROR")
-        terminal_log(f"📋 Traceback: {traceback.format_exc()}", "ERROR")
+    if df.empty:
+        terminal_log("❌ No data loaded. Exiting.", "ERROR")
         return 1
 
-            return 0
+    terminal_log(f"✅ Data loaded: {len(df):,} rows", "INFO")
+    terminal_log(
+        f"📅 Date range: {df['timestamp'].min()} to {df['timestamp'].max()}",
+        "INFO",
+    )
 
-        if __name__ == "__main__":
+    # Resample data
+    terminal_log("🔄 Resampling data to target timeframe...", "INFO")
+    df_resampled = analyzer.resample_to_timeframe(df)
+
+    if df_resampled.empty:
+        terminal_log("❌ Resampling failed. Exiting.", "ERROR")
+        return 1
+
+    terminal_log(
+        f"✅ Resampling complete: {len(df_resampled):,} data points",
+        "INFO",
+    )
+
+    # Run analysis
+    terminal_log("🔍 Running comprehensive analysis...", "INFO")
+    display_df, score_df = analyzer.run_comprehensive_analysis(df_resampled)
+
+    if display_df.empty:
+        terminal_log("❌ Analysis failed. No results generated.", "ERROR")
+        return 1
+
+    # Find optimal parameters
+    terminal_log("🎯 Finding optimal parameters...", "INFO")
+    optimal_params = analyzer.find_optimal_parameters(score_df)
+
+    # Generate recommendations
+    terminal_log("💡 Generating recommendations...", "INFO")
+    recommendations = analyzer.generate_recommendations(optimal_params, display_df)
+
+    # Save results
+    terminal_log("💾 Saving results...", "INFO")
+    analyzer.save_results(
+        display_df=display_df, score_df=score_df, optimal_params=optimal_params, recommendations=recommendations, df_resampled=df_resampled
+    )
+
+    # Print summary
+    terminal_log("📋 Printing summary...", "INFO")
+    analyzer.print_summary(display_df, optimal_params, recommendations)
+
+    # Final summary
+    total_time = (datetime.now() - start_time).total_seconds()
+    terminal_log("=" * 60, "INFO")
+    terminal_log("🎉 ANALYSIS COMPLETED SUCCESSFULLY!", "INFO")
+    terminal_log(f"⏱️  Total time: {total_time:.1f} seconds", "INFO")
+    terminal_log(f"📊 Combinations tested: {len(display_df)}", "INFO")
+    terminal_log(
+        f"🎯 Optimal target: {optimal_params.get('optimal_target', 'N/A')}%",
+        "INFO",
+    )
+    terminal_log(
+        f"🛑 Optimal stop: {optimal_params.get('optimal_stop', 'N/A')}%",
+        "INFO",
+    )
+    terminal_log("=" * 60, "INFO")
+
+    return 0
+
+
+if __name__ == "__main__":
     exit_code = main()
     sys.exit(exit_code)

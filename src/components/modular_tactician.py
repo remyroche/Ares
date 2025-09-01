@@ -9,6 +9,7 @@ from src.utils.warning_symbols import error, initialization_error, invalid, miss
 class ModularTactician:
     pass  # TODO: Add implementation
 class ModularTactician:
+    pass  # TODO: Add implementation
 class ModularTactician:
     """
 Enhanced modular tactician with comprehensive error handling and type safety.

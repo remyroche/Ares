@@ -26,6 +26,7 @@ except ImportError:
 class VIFValidationError(Exception):
     pass  # TODO: Add implementation
 class VIFValidationError(Exception):
+    pass  # TODO: Add implementation
 class VIFValidationError(Exception):
     """Custom exception for VIF validation errors."""
 pass

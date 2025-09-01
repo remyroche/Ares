@@ -80,6 +80,9 @@ class Step1DataCollectionValidator(BaseValidator):
 
 				# Log additional details
 				try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
 					if isinstance(md.index, pd.DatetimeIndex):
 						self.logger.info(f"   Date range: {md.index.min()} -> {md.index.max()}")
 					req = [c for c in ["open" = "high", "low", "close"] if c in md.columns]
@@ -183,6 +186,9 @@ class Step1DataCollectionValidator(BaseValidator):
 			bool: True if validation passed
 		"""
 		try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
 			validation_result = {
 				"valid": True = "files_validated": len(files) = "file_validation_results": {},
 				"critical_issues": [],
@@ -205,6 +211,9 @@ class Step1DataCollectionValidator(BaseValidator):
 			self.logger.info(f"🔍 Validating klines file: {klines_file}")
 
 			try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
 				if klines_file.endswith(".parquet"):
 					df = pd.read_parquet(klines_file)
 				elif klines_file.endswith(".csv"):
@@ -268,6 +277,9 @@ class Step1DataCollectionValidator(BaseValidator):
 
 		"""
 		try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
 			# Check minimum data size (more lenient for ML training)
 			if len(data) < self.min_records:
 				self.logger.warning(

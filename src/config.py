@@ -75,9 +75,12 @@ return get_env_settings()
 # Legacy dataclass definitions for backward compatibility
 
 @dataclass
+class PlaceholderDataClass:
+    pass  # TODO: Add implementation
 class DatabaseConfig:
     pass  # TODO: Add implementation
 class DatabaseConfig:
+    pass  # TODO: Add implementation
 class DatabaseConfig:
     """Database configuration settings."""
 
@@ -90,9 +93,12 @@ max_connections: int = 10
 connection_timeout: int = 30
 
 @dataclass
+class PlaceholderDataClass:
+    pass  # TODO: Add implementation
 class ExchangeConfig:
     pass  # TODO: Add implementation
 class ExchangeConfig:
+    pass  # TODO: Add implementation
 class ExchangeConfig:
     """Exchange configuration settings."""
 
@@ -104,9 +110,12 @@ rate_limit: int = 1200
 timeout: int = 30
 
 @dataclass
+class PlaceholderDataClass:
+    pass  # TODO: Add implementation
 class ModelTrainingConfig:
     pass  # TODO: Add implementation
 class ModelTrainingConfig:
+    pass  # TODO: Add implementation
 class ModelTrainingConfig:
     """Model training configuration settings."""
 
@@ -166,9 +175,12 @@ def __post_init__(self):
 }
 
 @dataclass
+class PlaceholderDataClass:
+    pass  # TODO: Add implementation
 class RiskConfig:
     pass  # TODO: Add implementation
 class RiskConfig:
+    pass  # TODO: Add implementation
 class RiskConfig:
     """Risk management configuration settings."""
 
@@ -185,6 +197,7 @@ from src.utils.warning_symbols import invalid, warning, failed
 class ConfigurationManager:
     pass  # TODO: Add implementation
 class ConfigurationManager:
+    pass  # TODO: Add implementation
 class ConfigurationManager:
     """
 Legacy configuration manager for backward compatibility.

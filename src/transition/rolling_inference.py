@@ -10,9 +10,12 @@ import pandas as pd
 
 
 @dataclass
+class PlaceholderDataClass:
+    pass  # TODO: Add implementation
 class RollingInferenceConfig:
     pass  # TODO: Add implementation
 class RollingInferenceConfig:
+    pass  # TODO: Add implementation
 class RollingInferenceConfig:
     pre_window: int
 horizons: list[int]
@@ -22,6 +25,7 @@ path_class_priority: list[str]
 class RollingMTInference:
     pass  # TODO: Add implementation
 class RollingMTInference:
+    pass  # TODO: Add implementation
 class RollingMTInference:
     """
 Runtime helper for the rolling MultiTask RF.

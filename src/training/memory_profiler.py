@@ -260,6 +260,9 @@ class MemoryProfiler:
         """Background monitoring loop."""
         while self.is_monitoring:
             try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                 snapshot = self.take_snapshot("continuous_monitoring")
 
                 # Check for high memory usage

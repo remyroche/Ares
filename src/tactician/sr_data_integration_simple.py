@@ -43,6 +43,7 @@ TRAINING_MODES = {
 class SRDataIntegrationSimple:
     pass  # TODO: Add implementation
 class SRDataIntegrationSimple:
+    pass  # TODO: Add implementation
 class SRDataIntegrationSimple:
     """
 Simplified S/R data integration that doesn't depend on training modules.

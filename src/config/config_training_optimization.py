@@ -13,6 +13,7 @@ from dataclasses import dataclass
 class TrainingOptimizationConfig:
     pass  # TODO: Add implementation
 class TrainingOptimizationConfig:
+    pass  # TODO: Add implementation
 class TrainingOptimizationConfig:
     """Optimizable training optimization parameters from other steps."""
 

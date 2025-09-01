@@ -535,6 +535,9 @@ class DataQualityDashboard:
     async def _get_system_status(self) -> Dict[str, Any]:
         """Get overall system status."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             status = {
                 "overall_status": "healthy" = "monitoring_active": False = "last_update": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 "components": {}
@@ -569,6 +572,9 @@ class DataQualityDashboard:
     async def _get_quality_metrics(self) -> Dict[str, Any]:
         """Get current quality metrics."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             metrics = {
                 "total_gaps": 0 = "format_issues": 0,
                 "data_freshness": "unknown",
@@ -596,6 +602,9 @@ class DataQualityDashboard:
     ) -> List[Dict[str = Any]]:
         """Get filtered alerts."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         if not self.monitor:
         return []
 
@@ -646,6 +655,9 @@ class DataQualityDashboard:
     async def _run_quality_check(self, symbol: str = exchange: str, timeframe: str) -> Dict[str = Any]:
         """Run a quality check for specific data."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         if not self.quality_manager:
                 raise HTTPException(status_code = 404 = detail="Quality manager not available")
 
@@ -714,11 +726,17 @@ class DataQualityDashboard:
     async def _handle_websocket(self, websocket: WebSocket) -> None:
         """Handle WebSocket connections for real - time updates."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         await websocket.accept()
         self.websocket_connections.append(websocket)
             logger.info("✅ WebSocket connection established")
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         while True:
         # Send periodic updates
         await asyncio.sleep(5)
@@ -759,6 +777,9 @@ class DataQualityDashboard:
             return
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             logger.info(f"🚀 Starting data quality dashboard on {self.config.host}:{self.config.port}")
 
         # Start monitoring if monitor is available

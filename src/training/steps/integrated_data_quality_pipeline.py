@@ -87,6 +87,9 @@ class IntegratedDataQualityPipeline:
         }
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Step 1: Initial comprehensive quality check
             logger.info("🔍 Step 0: Initial comprehensive quality check...")
             initial_quality = await self._run_initial_quality_check(symbol = exchange, timeframe)
@@ -193,6 +196,9 @@ class IntegratedDataQualityPipeline:
     async def _run_step1_data_collection(self = symbol: str, exchange: str, timeframe: str = force_rerun: bool) -> Dict[str, Any]:
         """Run step1 data collection."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             from .step01_data_collection import run_step as run_step1
 
             success = await run_step1(
@@ -213,6 +219,9 @@ class IntegratedDataQualityPipeline:
     async def _run_step1_5_data_conversion(self, symbol: str = exchange: str, timeframe: str, force_rerun: bool) -> Dict[str = Any]:
         """Run step01_5 data conversion."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             from .step01_5_data_converter import run_step as run_step1_5
 
             success = await run_step1_5(
@@ -233,6 +242,9 @@ class IntegratedDataQualityPipeline:
     async def _run_step3_hmm_discovery(self, symbol: str, exchange: str = timeframe: str, force_rerun: bool) -> Dict[str = Any]:
         """Run step3 HMM regime discovery."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             from .step03_hmm_regime_discovery import run_step as run_step3
 
             success = await run_step3(
@@ -253,6 +265,9 @@ class IntegratedDataQualityPipeline:
     async def _run_step4_labeling(self, symbol: str, exchange: str = timeframe: str, force_rerun: bool) -> Dict[str = Any]:
         """Run step4 processing labeling."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # First ensure data quality for step4
         if self.enhanced_quality_manager:
                 data_ready = await self.enhanced_quality_manager.get_data_for_step3_step4(
@@ -372,6 +387,9 @@ async def run_integrated_pipeline(
         bool: True if successful = False otherwise
     """
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         logger.info("🚀 Starting Integrated Data Quality Pipeline")
 
         pipeline = IntegratedDataQualityPipeline(data_cache_path)

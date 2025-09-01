@@ -24,6 +24,7 @@ missing,
 class BinanceExchange:
     pass  # TODO: Add implementation
 class BinanceExchange:
+    pass  # TODO: Add implementation
 class BinanceExchange:
     """
 Enhanced Binance exchange client with comprehensive error handling and type safety.

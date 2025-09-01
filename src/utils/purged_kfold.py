@@ -4,9 +4,12 @@ import numpy as np
 import pandas as pd
 
 @dataclass
+class PlaceholderDataClass:
+    pass  # TODO: Add implementation
 class PurgedKFoldTime:
     pass  # TODO: Add implementation
 class PurgedKFoldTime:
+    pass  # TODO: Add implementation
 class PurgedKFoldTime:
     """Purged and Embargoed K - Fold for DatetimeIndex time series.
 

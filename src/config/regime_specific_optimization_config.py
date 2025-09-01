@@ -19,9 +19,6 @@ PARAMETER_SEARCH_SPACES
 
 
 class RegimeType(Enum):
-    pass  # TODO: Add implementation
-class RegimeType(Enum):
-class RegimeType(Enum):
     """Enum for different regime types."""
 
 BULL_TREND = "BULL_TREND"
@@ -36,9 +33,12 @@ MEAN_REVERSION = "MEAN_REVERSION"
 
 
 @dataclass
+class PlaceholderDataClass:
+    pass  # TODO: Add implementation
 class RegimeSpecificConstraints:
     pass  # TODO: Add implementation
 class RegimeSpecificConstraints:
+    pass  # TODO: Add implementation
 class RegimeSpecificConstraints:
     """Constraints for regime-specific parameter optimization."""
 
@@ -70,9 +70,12 @@ break_even_threshold_range: List[float] = field(default_factory=lambda: [0.005, 
 
 
 @dataclass
+class PlaceholderDataClass:
+    pass  # TODO: Add implementation
 class RegimeSpecificOptimizationConfig:
     pass  # TODO: Add implementation
 class RegimeSpecificOptimizationConfig:
+    pass  # TODO: Add implementation
 class RegimeSpecificOptimizationConfig:
     """Configuration for regime-specific optimization."""
 

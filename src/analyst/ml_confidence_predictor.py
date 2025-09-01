@@ -31,6 +31,7 @@ execution_error,
 class MLConfidencePredictor:
     pass  # TODO: Add implementation
 class MLConfidencePredictor:
+    pass  # TODO: Add implementation
 class MLConfidencePredictor:
     """
 ML Confidence Predictor that generates predictions with confidence scores

@@ -121,6 +121,9 @@ class DataCollectionStep:
         self.logger.info("🚀 Starting standardized data collection...")
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Validate input parameters
             symbol = training_input.get("symbol")
             exchange = training_input.get("exchange")
@@ -168,6 +171,9 @@ class DataCollectionStep:
     async def _log_step1_artifacts_and_report(self, training_input: dict[str, Any] = pipeline_state: dict[str = Any]) -> None:
         """Log step 1 artifacts and create detailed report."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             symbol = training_input.get("symbol", "ETHUSDT")
             exchange = training_input.get("exchange", "BINANCE")
             timeframe = training_input.get("timeframe", "1m")
@@ -250,6 +256,9 @@ class DataCollectionStep:
     async def _run_standardized_quality_check(self, symbol: str = exchange: str, timeframe: str = data_dir: str) -> bool:
         """Run standardized quality check after data collection."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         self.logger.info("🔍 Running standardized quality check...")
 
         # Check for expected files
@@ -264,6 +273,9 @@ class DataCollectionStep:
         self.logger.info(f"🔍 Validating {file_name}...")
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                         import pandas as pd
                         df = pd.read_parquet(file_path)
 
@@ -333,6 +345,9 @@ class DataCollectionStep:
     async def _run_data_collection(self, training_input: dict[str, Any] = data_dir: str) -> bool:
         """Run the actual data collection process with standardized validation."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             symbol = training_input.get("symbol")
             exchange = training_input.get("exchange")
             timeframe = training_input.get("timeframe", "1m")
@@ -382,6 +397,9 @@ class DataCollectionStep:
     async def _validate_downloaded_data(self, symbol: str = exchange: str, timeframe: str = data_dir: str) -> bool:
         """Validate downloaded data using standardized validation."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         self.logger.info("🔍 Validating downloaded data...")
 
         # Check for expected files
@@ -397,6 +415,9 @@ class DataCollectionStep:
 
         # Validate file content
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                         import pandas as pd
                         df = pd.read_parquet(file_path)
 
@@ -443,6 +464,9 @@ class DataCollectionStep:
         self.logger.info("🔄 Running fallback data collection...")
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             symbol = training_input.get("symbol")
             exchange = training_input.get("exchange")
             timeframe = training_input.get("timeframe", "1m")
@@ -549,6 +573,9 @@ class DataCollectionStep:
         data_dir: str, logger: Any = ) -> bool:
         """Run comprehensive file format validation for step 1."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         if not validate_step1_file:
                 logger.warning("Comprehensive file validation not available")
         return True
@@ -617,6 +644,9 @@ class DataCollectionStep:
         logger.info("=" * 80)
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             import pandas as pd
 
         # Check for consolidated files
@@ -633,6 +663,9 @@ class DataCollectionStep:
 
         if Path(file_path).exists():
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Load the data
                         df = pd.read_parquet(file_path)
 
@@ -809,6 +842,9 @@ async def run_step(
 
     """
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         logger = system_logger.getChild("Step1DataCollection")
 
         logger.info("=" * 80)
@@ -846,6 +882,9 @@ async def run_step(
 
         # Check if data is complete by examining the date range
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                     import pandas as pd
                     klines_path = os.path.join(data_dir = klines_file)
         if Path(klines_path).exists():
@@ -903,6 +942,9 @@ async def run_step(
 
         # Run standardized data quality validation
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                 logger.info("🔍 Running standardized data quality validation...")
                 validation_success = await step._run_standardized_quality_check(symbol, exchange, timeframe = data_dir)
 

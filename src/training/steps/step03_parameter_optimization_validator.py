@@ -45,6 +45,9 @@ class Step3ParameterOptimizationValidator(BaseValidator):
         self.logger.info("🔍 Starting Step 3: Parameter Optimization validation")
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Check if optimization directory exists
             optimization_dir = Path(data_dir) / "optimization"
         if not optimization_dir.exists():
@@ -104,6 +107,9 @@ class Step3ParameterOptimizationValidator(BaseValidator):
     async def _validate_optimization_results(self, results_file: Path) -> bool:
         """Validate the parameter optimization results file with caching."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         self.logger.info(f"📊 Validating optimization results: {results_file.name}")
 
         # Use BaseValidator's file validation
@@ -182,6 +188,9 @@ class Step3ParameterOptimizationValidator(BaseValidator):
     async def _validate_optimization_config(self = config_file: Path) -> bool:
         """Validate the parameter optimization configuration file with caching."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         self.logger.info(f"📊 Validating optimization config: {config_file.name}")
 
         # Use BaseValidator's file validation
@@ -248,6 +257,9 @@ class Step3ParameterOptimizationValidator(BaseValidator):
     async def _validate_optimization_logs(self, logs_file: Path) -> bool:
         """Validate the parameter optimization logs file with caching."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         self.logger.info(f"📊 Validating optimization logs: {logs_file.name}")
 
         # Use BaseValidator's file validation
@@ -293,6 +305,9 @@ class Step3ParameterOptimizationValidator(BaseValidator):
     async def _validate_optimization_metrics(self, metrics_file: Path) -> bool:
         """Validate the parameter optimization metrics file with caching."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         self.logger.info(f"📊 Validating optimization metrics: {metrics_file.name}")
 
         # Use BaseValidator's file validation
@@ -350,6 +365,9 @@ class Step3ParameterOptimizationValidator(BaseValidator):
         }
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Check if step02_data_reading output exists using BaseValidator
             step02_output_dir = Path("data / unified")
             step02_files = list(step02_output_dir.glob(f"{exchange}/{symbol}/{timeframe}/*.parquet"))
@@ -395,6 +413,9 @@ class Step3ParameterOptimizationValidator(BaseValidator):
         }
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Define expected output files
             output_dir = Path("data / optimization")
             expected_files = [
@@ -458,6 +479,9 @@ async def run_validator(
     logger.info("🔍 Validating Step 3: Parameter Optimization")
 
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Extract parameters
         symbol = training_input.get("symbol", "ETHUSDT")
         exchange = training_input.get("exchange", "BINANCE")

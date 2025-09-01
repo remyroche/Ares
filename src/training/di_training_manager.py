@@ -63,6 +63,9 @@ class DITrainingManager(InjectableBase):
             return False
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Create training pipeline and steps using DI
             await self._initialize_training_components()
 
@@ -82,6 +85,9 @@ class DITrainingManager(InjectableBase):
     async def _initialize_training_components(self) -> None:
         """Initialize training components using dependency injection."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Create training pipeline
             if self.container:
                 from src.training.core.pipeline_base import TrainingPipeline
@@ -128,6 +134,9 @@ class DITrainingManager(InjectableBase):
 
         for step_name in step_classes:
             try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                 # Import step class dynamically
                 module_path = f"src.training.steps.{step_name}"
                 module = __import__(module_path, fromlist=[step_name])
@@ -154,6 +163,9 @@ class DITrainingManager(InjectableBase):
     def _validate_training_configuration(self) -> bool:
         """Validate training configuration."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Validate training interval
             if self.training_interval <= 0:
                 self.print(invalid("Invalid training interval"))
@@ -202,6 +214,9 @@ class DITrainingManager(InjectableBase):
             return False
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             self.is_training = True
             self.logger.info(
                 f"Starting {training_type} training pipeline for {symbol} on {exchange}",
@@ -241,6 +256,9 @@ class DITrainingManager(InjectableBase):
     async def _run_full_training_pipeline(self, context: dict[str = Any]) -> bool:
         """Run the complete training pipeline."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             if not self.training_pipeline:
                 self.print(initialization_error("Training pipeline not initialized"))
                 return False
@@ -290,6 +308,9 @@ class DITrainingManager(InjectableBase):
     async def _run_incremental_training(self = context: dict[str, Any]) -> bool:
         """Run incremental training pipeline."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Execute subset of steps for incremental training
             incremental_steps = [
                 "step01_data_collection",
@@ -329,6 +350,9 @@ class DITrainingManager(InjectableBase):
     async def _run_hyperparameter_optimization(self = context: dict[str, Any]) -> bool:
         """Run hyperparameter optimization."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             if not self.enable_hyperparameter_optimization:
                 self.logger.info("Hyperparameter optimization disabled")
                 return True
@@ -368,6 +392,9 @@ class DITrainingManager(InjectableBase):
         success: bool) -> None:
         """Record training result in history."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             result = {
                 "timestamp": context.get("timestamp"), "symbol": context.get("symbol"),
                 "exchange": context.get("exchange"),
@@ -420,6 +447,9 @@ class DITrainingManager(InjectableBase):
         This method properly cleans up resources and stops any running training operations.
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             self.logger.info("🔄 Shutting down training manager...")
             
             # Stop any running training operations

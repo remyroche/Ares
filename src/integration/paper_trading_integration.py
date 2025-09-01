@@ -35,6 +35,7 @@ from src.reports.paper_trading_reporter import PaperTradingReporter
 class PaperTradingIntegration:
     pass  # TODO: Add implementation
 class PaperTradingIntegration:
+    pass  # TODO: Add implementation
 class PaperTradingIntegration:
     """
 Integration module for paper trading with enhanced reporting.

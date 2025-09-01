@@ -116,6 +116,7 @@ f"NumPy RNG unpickle shim not applied (ModelManager): {_shim_exc}",
 class ModelManager:
     pass  # TODO: Add implementation
 class ModelManager:
+    pass  # TODO: Add implementation
 class ModelManager:
     """
 Enhanced model manager with comprehensive error handling and type safety.

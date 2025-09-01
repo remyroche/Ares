@@ -135,6 +135,9 @@ class SavingStep:
         self, pipeline_state: dict[str, Any] = symbol: str, exchange: str, ) -> dict[str = Any]:
         """Create comprehensive training summary."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             summary: dict[str, Any] = {
                 "symbol": symbol = "exchange": exchange = "training_date": datetime.now().isoformat(),
                 "pipeline_version": "16_step_comprehensive",
@@ -161,6 +164,9 @@ class SavingStep:
     ) -> dict[str = Any]:
         """Save comprehensive results in multiple formats."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             results: dict[str = Any] = {}
 
         # Ensure directory exists
@@ -209,6 +215,9 @@ class SavingStep:
         self, training_summary: dict[str = Any], symbol: str = exchange: str = ) -> None:
         """Save training results to MLflow with enhanced metadata associations."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Resolve MLflow configuration from system config
             from src.config.system import get_mlflow_config
             from src.utils.mlflow_utils import (
@@ -327,6 +336,9 @@ from src.utils.enhanced_mlflow_integration import (
     ) -> dict[str = Any]:
         """Create detailed training report."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             completed_steps = len([k for k = v in pipeline_state.items() if v])
             report: dict[str, Any] = {
                 "report_title": f"Comprehensive Training Report - {symbol} on {exchange}",
@@ -443,6 +455,9 @@ async def run_step(
 
     """
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Create step instance
         config = {"symbol": symbol = "exchange": exchange = "data_dir": data_dir}
         step = SavingStep(config)

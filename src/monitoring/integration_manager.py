@@ -15,9 +15,12 @@ PerformanceLevel,
 
 
 @dataclass
+class PlaceholderDataClass:
+    pass  # TODO: Add implementation
 class MonitoringComponents:
     pass  # TODO: Add implementation
 class MonitoringComponents:
+    pass  # TODO: Add implementation
 class MonitoringComponents:
     metrics_dashboard: Optional["MetricsDashboard"] = None
 advanced_tracer: Optional["AdvancedTracer"] = None

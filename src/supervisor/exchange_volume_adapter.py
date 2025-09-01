@@ -21,6 +21,7 @@ warning
 class ExchangeVolumeAdapter:
     pass  # TODO: Add implementation
 class ExchangeVolumeAdapter:
+    pass  # TODO: Add implementation
 class ExchangeVolumeAdapter:
     """
 Adapts trading strategies and position sizing based on exchange volume characteristics.

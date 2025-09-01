@@ -69,6 +69,7 @@ return pnl_aware_loss
 class PnLLossFunctions:
     pass  # TODO: Add implementation
 class PnLLossFunctions:
+    pass  # TODO: Add implementation
 class PnLLossFunctions:
     """
 PnL Loss Functions with comprehensive error handling and type safety.

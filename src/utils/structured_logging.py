@@ -68,6 +68,7 @@ finally:
 class CorrelationIdFilter(logging.Filter):
     pass  # TODO: Add implementation
 class CorrelationIdFilter(logging.Filter):
+    pass  # TODO: Add implementation
 class CorrelationIdFilter(logging.Filter):
     """Logging filter that injects correlation_id and session_id into records."""
 

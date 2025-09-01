@@ -123,6 +123,9 @@ class FractionalDifferentiation:
                 continue
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                 adf_result = adfuller(clean_series)
                 pvalue = adf_result[1]
                 adf_stat, adf_result[0]

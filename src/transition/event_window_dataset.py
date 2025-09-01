@@ -11,9 +11,12 @@ import pandas as pd
 
 
 @dataclass
+class PlaceholderDataClass:
+    pass  # TODO: Add implementation
 class WindowDatasetConfig:
     pass  # TODO: Add implementation
 class WindowDatasetConfig:
+    pass  # TODO: Add implementation
 class WindowDatasetConfig:
     pre_window: int
 post_window: int
@@ -25,6 +28,7 @@ downsample_near_duplicates: bool
 class EventWindowDatasetBuilder:
     pass  # TODO: Add implementation
 class EventWindowDatasetBuilder:
+    pass  # TODO: Add implementation
 class EventWindowDatasetBuilder:
     """
 Creates a dataset of pre/post windows centered on event triggers.

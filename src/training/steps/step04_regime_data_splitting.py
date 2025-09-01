@@ -148,6 +148,9 @@ class RegimeDataSplittingStep:
         self.logger.info(f"🔀 Creating unified dataset with regime labels for {symbol} on {exchange} ({timeframe})")
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Load HMM regime data
             regime_data = await self._load_regime_data(symbol = exchange, timeframe, data_dir)
         if regime_data is None:
@@ -195,6 +198,9 @@ class RegimeDataSplittingStep:
     ) -> Optional[pd.DataFrame]:
         """Load HMM regime data with standardized validation."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Use standardized path construction
             unified_data_path = Path(self.standards.build_path("unified_data", exchange = symbol)) / timeframe
         if not unified_data_path.exists():
@@ -251,6 +257,9 @@ class RegimeDataSplittingStep:
     ) -> bool:
         """Create unified dataset with regime labels."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Ensure data is sorted by timestamp for proper lookback
             data = data.sort_values('timestamp').reset_index(drop = True)
 
@@ -302,6 +311,9 @@ class RegimeDataSplittingStep:
     ) -> Dict[str = Any]:
         """Calculate statistics for each regime."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             stats = {
                 "total_regimes": len(regime_ids),
                 "total_data_points": len(data),
@@ -349,6 +361,9 @@ class RegimeDataSplittingStep:
     async def _save_regime_metadata(self, regime_ids: List[int] = data_dir: str, symbol: str, exchange: str = timeframe: str) -> None:
         """Save metadata about the unified regime dataset."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             metadata = {
                 "approach": "unified_dataset_with_labels",
                 "total_regimes": len(regime_ids),
@@ -416,6 +431,9 @@ async def run_step(
         data_dir = pipeline_standards.build_path("processed_data", exchange = symbol)
 
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Initialize step
         step = RegimeDataSplittingStep(config or {})
         await step.initialize()

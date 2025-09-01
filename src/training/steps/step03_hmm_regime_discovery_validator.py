@@ -35,6 +35,9 @@ async def run_validator(
 	start_time = time.time()
 
 	try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
 		# Extract parameters
 		symbol = training_input.get("symbol", "")
 		exchange = training_input.get("exchange", "")
@@ -81,6 +84,9 @@ async def run_validator(
 				# Validate file content for parquet files
 				if artifact.endswith(".parquet"):
 					try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
 						df = pd.read_parquet(artifact_path)
 						artifact_info[artifact]["rows"] = len(df)
 						artifact_info[artifact]["columns"] = list(df.columns)
@@ -106,6 +112,9 @@ async def run_validator(
 				# Validate JSON metadata
 				elif artifact.endswith(".json"):
 					try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
 						with open(artifact_path) as f:
 							meta = json.load(f)
 						artifact_info[artifact]["metadata"] = meta

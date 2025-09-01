@@ -45,6 +45,7 @@ else:
 class EnvironmentSettings(BaseSettings):
     pass  # TODO: Add implementation
 class EnvironmentSettings(BaseSettings):
+    pass  # TODO: Add implementation
 class EnvironmentSettings(BaseSettings):
     """Manages all environment-specific settings using Pydantic."""
 

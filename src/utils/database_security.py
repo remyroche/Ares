@@ -20,9 +20,6 @@ from .logger import system_logger
 from .error_handler import handle_errors
 
 class DatabaseType(Enum):
-    pass  # TODO: Add implementation
-class DatabaseType(Enum):
-class DatabaseType(Enum):
     """Supported database types."""
 SQLITE = "sqlite"
 POSTGRESQL = "postgresql"
@@ -31,6 +28,7 @@ MYSQL = "mysql"
 class DatabaseSecurityManager:
     pass  # TODO: Add implementation
 class DatabaseSecurityManager:
+    pass  # TODO: Add implementation
 class DatabaseSecurityManager:
     """Manages database security and connections."""
 

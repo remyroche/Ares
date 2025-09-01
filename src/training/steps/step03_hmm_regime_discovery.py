@@ -1260,10 +1260,8 @@ class HMMRegimeDiscoveryStep:
             composite_scaler, StandardScaler()
             composite_features_scaled, composite_scaler.fit_transform(composite_features)
 
-        # Apply K-means clustering with configurable number of clusters based on training mode
-        import os
-        n_clusters = int(os.environ.get("HMM_CLUSTERS", "20"))
-        self.logger.info(f"🎯 Using {n_clusters} HMM clusters (configured via HMM_CLUSTERS environment variable)")
+        # Apply K-means clustering for 20 clusters (always use 20 for proper regime discovery)
+        n_clusters = 20
             kmeans, KMeans(
                 n_clusters = n_clusters,
                 random_state = random_state,

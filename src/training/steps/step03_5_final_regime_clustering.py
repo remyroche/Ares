@@ -73,19 +73,18 @@ class FinalRegimeClusteringStep:
                     param_results, json.load(f)
         self.optimized_params, param_results.get("combined_parameters", {})
         self.logger.info(f"✅ Loaded optimized parameters: {len(self.optimized_params)} parameters")
+        self.logger.info(f"📊 Optimized parameters: {self.optimized_params}")
             else:
         self.logger.warning("⚠️ No optimized parameters found, using defaults")
-        # Get HMM clusters from environment variable
-        import os
-        hmm_clusters = int(os.environ.get("HMM_CLUSTERS", "20"))
-        self.logger.info(f"🎯 Using {hmm_clusters} HMM clusters (configured via HMM_CLUSTERS environment variable)")
+        # Always use 20 clusters for discovery, filtering will happen later
         self.optimized_params = {
                     "n_components": 4,
-                    "n_clusters": hmm_clusters,
+                    "n_clusters": 20,  # Always use 20 for proper regime discovery
                     "momentum_window": 15,
                     "volatility_window": 20,
                     "volume_window": 15
                 }
+        self.logger.info(f"🎯 Using default parameters with 20 clusters for regime discovery")
         except Exception as e:
         self.logger.error(f"Failed to load optimized parameters: {e}")
 
@@ -414,11 +413,25 @@ class FinalRegimeClusteringStep:
         try:
         self.logger.info("🎯 Performing final clustering...")
 
-        # Get optimized clustering parameters
-            n_clusters = self.optimized_params.get("n_clusters", int(os.environ.get("HMM_CLUSTERS", "20")))
-            self.logger.info(f"🎯 Final clustering using {n_clusters} clusters")
-            method, self.optimized_params.get("method", "kmeans")
-            random_state, self.optimized_params.get("random_state", 42)
+        # Always use 20 clusters for discovery (proper regime discovery)
+        n_clusters_discovery = 20
+        method = self.optimized_params.get("method", "kmeans")
+        random_state = self.optimized_params.get("random_state", 42)
+        
+        # Get training mode to determine how many clusters to use after discovery
+        import os
+        light_mode = os.environ.get("LIGHT_TRAINING_MODE", "0") == "1"
+        blank_mode = os.environ.get("BLANK_TRAINING_MODE", "0") == "1"
+        
+        if light_mode:
+            n_clusters_final = 2
+            self.logger.info(f"💡 LIGHT MODE: Using {n_clusters_final} biggest clusters from {n_clusters_discovery} discovered")
+        elif blank_mode:
+            n_clusters_final = 4
+            self.logger.info(f"🧪 BLANK MODE: Using {n_clusters_final} biggest clusters from {n_clusters_discovery} discovered")
+        else:
+            n_clusters_final = n_clusters_discovery
+            self.logger.info(f"📊 FULL MODE: Using all {n_clusters_final} discovered clusters")
 
         # Prepare features
             features, await self._prepare_features_with_optimized_params(data)
@@ -444,38 +457,71 @@ class FinalRegimeClusteringStep:
             scaler, StandardScaler()
             features_scaled, scaler.fit_transform(composite_features)
 
-        # Perform clustering
+        # Perform clustering with 20 clusters for discovery
         if method == "kmeans":
                 from sklearn.cluster import KMeans
                 clustering, KMeans(
-                    n_clusters = n_clusters,
+                    n_clusters = n_clusters_discovery,
                     random_state = random_state,
                     n_init = 10
                 )
-                cluster_labels, clustering.fit_predict(features_scaled)
+                cluster_labels_full, clustering.fit_predict(features_scaled)
                 clustering_model, clustering
             else:
         # Default to K - means
                 from sklearn.cluster import KMeans
                 clustering, KMeans(
-                    n_clusters = n_clusters,
+                    n_clusters = n_clusters_discovery,
                     random_state = random_state,
                     n_init = 10
                 )
-                cluster_labels, clustering.fit_predict(features_scaled)
+                cluster_labels_full, clustering.fit_predict(features_scaled)
                 clustering_model, clustering
 
-            clustering_results = {
-                "model": clustering_model,
-                "scaler": scaler,
-                "cluster_labels": cluster_labels,
-                "n_clusters": n_clusters,
-                "method": method,
-                "hmm_results": hmm_results,
-                "composite_features": composite_features
-            }
+        # Filter to use only the biggest clusters if in light/blank mode
+        if n_clusters_final < n_clusters_discovery:
+            # Calculate cluster sizes
+            unique_clusters, cluster_counts = np.unique(cluster_labels_full, return_counts=True)
+            
+            # Sort clusters by size (biggest first)
+            cluster_size_pairs = list(zip(unique_clusters, cluster_counts))
+            cluster_size_pairs.sort(key=lambda x: x[1], reverse=True)
+            
+            # Get the biggest clusters
+            biggest_clusters = [pair[0] for pair in cluster_size_pairs[:n_clusters_final]]
+            self.logger.info(f"🎯 Selected biggest clusters: {biggest_clusters} (sizes: {[pair[1] for pair in cluster_size_pairs[:n_clusters_final]]})")
+            
+            # Create mapping from original cluster IDs to new cluster IDs
+            cluster_mapping = {old_id: new_id for new_id, old_id in enumerate(biggest_clusters)}
+            
+            # Filter cluster labels to only include the biggest clusters
+            cluster_labels = np.full_like(cluster_labels_full, -1)  # Initialize with -1 (unassigned)
+            for old_id, new_id in cluster_mapping.items():
+                cluster_labels[cluster_labels_full == old_id] = new_id
+            
+            # Remove unassigned data points (those not in the biggest clusters)
+            valid_mask = cluster_labels != -1
+            cluster_labels = cluster_labels[valid_mask]
+            composite_features = composite_features[valid_mask]
+            features_scaled = features_scaled[valid_mask]
+            
+            self.logger.info(f"📊 Filtered data: {len(cluster_labels)} points from {len(cluster_labels_full)} total")
+        else:
+            cluster_labels = cluster_labels_full
 
-        self.logger.info(f"✅ Final clustering completed: {n_clusters} clusters")
+        clustering_results = {
+            "model": clustering_model,
+            "scaler": scaler,
+            "cluster_labels": cluster_labels,
+            "n_clusters": n_clusters_final,
+            "n_clusters_discovered": n_clusters_discovery,
+            "method": method,
+            "hmm_results": hmm_results,
+            "composite_features": composite_features,
+            "filtered": n_clusters_final < n_clusters_discovery
+        }
+
+        self.logger.info(f"✅ Final clustering completed: {n_clusters_final} clusters (from {n_clusters_discovery} discovered)")
         return clustering_results
 
         except Exception as e:

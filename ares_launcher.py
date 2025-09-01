@@ -405,20 +405,17 @@ class AresLauncher:
             os.environ["LIGHT_TRAINING_MODE"] = "1"
             os.environ["BLANK_TRAINING_MODE"] = "0"
             os.environ["FULL_TRAINING_MODE"] = "0"
-            os.environ["HMM_CLUSTERS"] = "2"
-            print(f"💡 LIGHT TRAINING MODE: Set LIGHT_TRAINING_MODE=1, HMM_CLUSTERS=2")
+            print(f"💡 LIGHT TRAINING MODE: Set LIGHT_TRAINING_MODE=1 (will use 2 biggest clusters from 20 discovered)")
         elif training_mode == "blank":
             os.environ["BLANK_TRAINING_MODE"] = "1"
             os.environ["LIGHT_TRAINING_MODE"] = "0"
             os.environ["FULL_TRAINING_MODE"] = "0"
-            os.environ["HMM_CLUSTERS"] = "4"
-            print(f"🧪 BLANK TRAINING MODE: Set BLANK_TRAINING_MODE=1, HMM_CLUSTERS=4")
+            print(f"🧪 BLANK TRAINING MODE: Set BLANK_TRAINING_MODE=1 (will use 4 biggest clusters from 20 discovered)")
         elif training_mode == "full":
             os.environ["FULL_TRAINING_MODE"] = "1"
             os.environ["LIGHT_TRAINING_MODE"] = "0"
             os.environ["BLANK_TRAINING_MODE"] = "0"
-            os.environ["HMM_CLUSTERS"] = "20"
-            print(f"🚀 FULL TRAINING MODE: Set FULL_TRAINING_MODE=1, HMM_CLUSTERS=20")
+            print(f"🚀 FULL TRAINING MODE: Set FULL_TRAINING_MODE=1 (will use all 20 discovered clusters)")
 
         mode_display = f"{training_mode} training"
         intensity_pct = f"{get_intensity_percentage(training_mode)*100:.0f}%"
@@ -2073,28 +2070,22 @@ class AresLauncher:
             os.environ["LIGHT_TRAINING_MODE"] = "1"
             os.environ["BLANK_TRAINING_MODE"] = "0"
             os.environ["FULL_TRAINING_MODE"] = "0"
-            # Set HMM clusters for light mode (2 clusters)
-            os.environ["HMM_CLUSTERS"] = "2"
             self.logger.info(
-                "💡 LIGHT TRAINING MODE: Set LIGHT_TRAINING_MODE=1 for step-based training (30 days, 2 HMM clusters)"
+                "💡 LIGHT TRAINING MODE: Set LIGHT_TRAINING_MODE=1 for step-based training (30 days, will use 2 biggest clusters from 20 discovered)"
             )
         elif training_mode == "blank":
             os.environ["BLANK_TRAINING_MODE"] = "1"
             os.environ["LIGHT_TRAINING_MODE"] = "0"
             os.environ["FULL_TRAINING_MODE"] = "0"
-            # Set HMM clusters for blank mode (4 clusters)
-            os.environ["HMM_CLUSTERS"] = "4"
             self.logger.info(
-                "🧪 BLANK TRAINING MODE: Set BLANK_TRAINING_MODE=1 for step-based training (180 days, 4 HMM clusters)"
+                "🧪 BLANK TRAINING MODE: Set BLANK_TRAINING_MODE=1 for step-based training (180 days, will use 4 biggest clusters from 20 discovered)"
             )
         elif training_mode == "full":
             os.environ["FULL_TRAINING_MODE"] = "1"
             os.environ["LIGHT_TRAINING_MODE"] = "0"
             os.environ["BLANK_TRAINING_MODE"] = "0"
-            # Set HMM clusters for full mode (20 clusters - default)
-            os.environ["HMM_CLUSTERS"] = "20"
             self.logger.info(
-                "📊 FULL TRAINING MODE: Set FULL_TRAINING_MODE=1 for step-based training (730 days, 20 HMM clusters)"
+                "📊 FULL TRAINING MODE: Set FULL_TRAINING_MODE=1 for step-based training (730 days, will use all 20 discovered clusters)"
             )
 
         # Prevent blank mode with step1 data collection

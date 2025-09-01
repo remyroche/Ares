@@ -1,12 +1,9 @@
 # src/database/migration_utils.py
 
-import asyncio
 import hashlib
-import json
 import os
 import shutil
 from datetime import datetime, timedelta
-from typing import Any
 
 from src.database.sqlite_manager import SQLiteManager
 from src.utils.logger import system_logger
@@ -36,6 +33,9 @@ class DatabaseMigrationUtils:
         )
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Create a clean copy for trading export
             shutil.copy2(self.db_manager.db_path, export_path)
 
@@ -80,6 +80,9 @@ class DatabaseMigrationUtils:
     async def _clean_for_trading(self, temp_db: SQLiteManager):
         """Removes backtest-specific data from the export."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Remove backtest results (keep only the latest successful ones)
             backtest_results = await temp_db.get_collection("backtest_results")
             if len(backtest_results) > 1:

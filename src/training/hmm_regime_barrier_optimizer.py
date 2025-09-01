@@ -660,10 +660,14 @@ class HMMRegimeBarrierOptimizer:
             output_dir.mkdir(exist_ok=True)
             
             import json
-            with open(output_dir / "optimization_summary.json", "w") as f:
+            summary_path = output_dir / "optimization_summary.json"
+            with open(summary_path, "w") as f:
                 json.dump(summary, f, indent=2, default=str)
             
-            self.logger.info(f"✅ Optimization summary saved to {output_dir}")
+            barriers_path = self.export_barrier_map(output_dir / "barriers.json")
+            
+            self.logger.info(f"✅ Optimization summary saved to {summary_path}")
+            self.logger.info(f"✅ Barriers map saved to {barriers_path}")
             
         except Exception as e:
             self.logger.exception(f"❌ Error generating summary: {e}")
@@ -818,6 +822,38 @@ class HMMRegimeBarrierOptimizer:
             "upper_barrier_pct": result.optimal_upper_barrier * 100,
             "lower_barrier_pct": result.optimal_lower_barrier * 100
         }
+
+    def build_barrier_map(self) -> Dict[str, Dict[str, float]]:
+        """Build a compact map of regime -> {upper_barrier, lower_barrier} in decimals and %."""
+        barrier_map: Dict[str, Dict[str, float]] = {}
+        for regime_name, res in self.regime_results.items():
+            barrier_map[regime_name] = {
+                "upper_barrier": res.optimal_upper_barrier,
+                "lower_barrier": res.optimal_lower_barrier,
+                "upper_barrier_pct": res.optimal_upper_barrier * 100.0,
+                "lower_barrier_pct": res.optimal_lower_barrier * 100.0,
+            }
+        return barrier_map
+    
+    def export_barrier_map(self, output_path: Optional[Path] = None) -> Path:
+        """Export the barrier map to JSON for downstream steps."""
+        if output_path is None:
+            output_dir = Path("hmm_regime_barrier_results")
+            output_dir.mkdir(exist_ok=True)
+            output_path = output_dir / "barriers.json"
+        
+        import json
+        with open(output_path, "w") as f:
+            json.dump(self.build_barrier_map(), f, indent=2)
+        self.logger.info(f"✅ Exported barrier map to {output_path}")
+        return output_path
+    
+    def load_barrier_map(self, input_path: Path) -> Dict[str, Dict[str, float]]:
+        """Load a barrier map from JSON."""
+        import json
+        with open(input_path) as f:
+            data = json.load(f)
+        return data
 
 
 # Utility functions for integration

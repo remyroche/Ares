@@ -51,6 +51,17 @@ except ImportError:
     RegimeSpecificTripleBarrierOptimizer = None
     create_regime_specific_triple_barrier_optimizer = None
 
+# Import HMM regime barrier optimizer (focused upper/lower barriers)
+try:
+    from .hmm_regime_barrier_optimizer import (
+        HMMRegimeBarrierOptimizer,
+        optimize_hmm_regime_barriers,
+    )
+    HMM_BARRIER_OPTIMIZER_AVAILABLE = True
+except Exception:
+    HMM_BARRIER_OPTIMIZER_AVAILABLE = False
+    HMMRegimeBarrierOptimizer = None
+
 
 class EarlyStageOptimizer:
     """
@@ -81,6 +92,19 @@ class EarlyStageOptimizer:
             self.logger.info("✅ Regime-specific triple barrier optimizer initialized")
         else:
             self.logger.warning("⚠️ Regime-specific triple barrier optimizer not available")
+        
+        # HMM regime barrier optimizer
+        self.hmm_barrier_optimizer = None
+        self.hmm_barrier_results = {}
+        self.hmm_barrier_map = {}
+        if HMM_BARRIER_OPTIMIZER_AVAILABLE:
+            try:
+                self.hmm_barrier_optimizer = HMMRegimeBarrierOptimizer(
+                    config.get("hmm_regime_barrier_optimizer", {})
+                )
+                self.logger.info("✅ HMM Regime Barrier Optimizer initialized")
+            except Exception as e:
+                self.logger.warning(f"⚠️ Failed to initialize HMM Regime Barrier Optimizer: {e}")
     
     async def optimize_sr_parameters(
         self, 
@@ -836,6 +860,42 @@ class EarlyStageOptimizer:
                 
         except Exception as e:
             self.logger.error(f"Failed to log regime optimization to MLflow: {e}")
+    
+    async def optimize_hmm_regime_barriers(
+        self,
+        data: pd.DataFrame,
+        regime_column: str = "hmm_regime"
+    ) -> Dict[str, Any]:
+        """Run HMM regime barrier optimization and persist a barriers map for downstream use."""
+        
+        if not self.hmm_barrier_optimizer:
+            return {"error": "HMM Regime Barrier Optimizer not available"}
+        
+        try:
+            self.logger.info("🚀 Starting HMM regime barrier optimization (upper/lower only)...")
+            results = await self.hmm_barrier_optimizer.optimize_regime_barriers(
+                data, regime_column=regime_column
+            )
+            self.hmm_barrier_results = results
+            
+            # Build and export barrier map for downstream steps
+            self.hmm_barrier_map = self.hmm_barrier_optimizer.build_barrier_map()
+            barriers_path = self.hmm_barrier_optimizer.export_barrier_map()
+            
+            self.logger.info(f"✅ HMM regime barrier optimization completed. Barriers saved to {barriers_path}")
+            return {
+                "results": results,
+                "barrier_map": self.hmm_barrier_map,
+                "barriers_path": str(barriers_path)
+            }
+        except Exception as e:
+            err = f"Failed to run HMM regime barrier optimization: {e}"
+            self.logger.exception(err)
+            return {"error": err}
+    
+    def get_hmm_barrier_map(self) -> Dict[str, Dict[str, float]]:
+        """Return the latest HMM barrier map (regime -> upper/lower in decimals and %)."""
+        return self.hmm_barrier_map or {}
     
     async def get_optimization_status(self) -> Dict[str, Any]:
         """Get current status of early stage optimization."""

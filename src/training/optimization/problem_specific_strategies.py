@@ -4,7 +4,6 @@ Problem-Specific Optimization Strategies
 
 This module provides intelligent optimization strategies that automatically adapt
 to different problem characteristics:
-    pass  # TODO: Add implementation
 - Problem type detection
 - Adaptive strategy selection
 - Domain-specific optimizations

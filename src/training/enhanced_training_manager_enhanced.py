@@ -13,7 +13,7 @@ from src.utils.logger import system_logger
 from src.utils.error_handler import handle_errors
 from src.utils.training_pipeline_decorators import (
     monitor_pipeline_step,
-    validate_pipeline_input, monitor_pipeline_performance = PipelineStage,
+    validate_pipeline_input, monitor_pipeline_performance, PipelineStage,
     PipelineValidationLevel
 )
 
@@ -28,11 +28,11 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
     3. Consistent storage of all reports in a centralized location
     """
 
-    def __init__(self = config: Dict[str = Any]):
+    def __init__(self, config: Dict[str, Any]):
         super().__init__(config)
         self.logger = system_logger.getChild("EnhancedTrainingManagerWithReporting")
         self.pipeline_reports_dir = Path("reports/enhanced_training_pipeline")
-        self.pipeline_reports_dir.mkdir(parents = True, exist_ok = True)
+        self.pipeline_reports_dir.mkdir(parents=True, exist_ok=True)
 
         # Initialize reporting configuration
         self.reporting_config = config.get("enhanced_reporting", {})
@@ -49,14 +49,14 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
         self.logger.info(f"   🧹 Auto Cleanup: {self.auto_cleanup_reports}")
 
     @handle_errors(
-        exceptions=(Exception, ) = default_return = False = context="enhanced_training_execution"
+        exceptions=(Exception, ), default_return=False, context="enhanced_training_execution"
     )
     @monitor_pipeline_step(
-        stage = PipelineStage.MODEL_TRAINING, validation_level = PipelineValidationLevel.WARNING = enable_data_quality = True,
-        memory_threshold = 80.0, duration_threshold = 3600.0  # 1 hour
+        stage=PipelineStage.MODEL_TRAINING, validation_level=PipelineValidationLevel.WARNING, enable_data_quality=True,
+        memory_threshold=80.0, duration_threshold=3600.0  # 1 hour
     )
     async def execute_enhanced_training(
-        self = enhanced_training_input: dict[str, Any],
+        self, enhanced_training_input: dict[str, Any],
     ) -> bool:
         """Execute the comprehensive enhanced training pipeline with detailed reporting."""
 
@@ -66,7 +66,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
 
         # Initialize pipeline reporting
         pipeline_report = {
-            "pipeline_execution_id": self.current_pipeline_execution_id = "pipeline_start_time": datetime.now().isoformat() = "training_input": enhanced_training_input,
+            "pipeline_execution_id": self.current_pipeline_execution_id, "pipeline_start_time": datetime.now().isoformat(), "training_input": enhanced_training_input,
             "steps": {},
             "overall_metrics": {},
             "artifacts": {},
@@ -77,11 +77,6 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
         }
 
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
-        except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
             # Call the parent method with enhanced monitoring
             result = await super().execute_enhanced_training(enhanced_training_input)
 
@@ -96,25 +91,20 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             return result
 
         except Exception as e:
-    pipeline_report["errors"].append({
-                "type": type(e).__name__ = "message": str(e) = "timestamp": datetime.now().isoformat()
+            pipeline_report["errors"].append({
+                "type": type(e).__name__, "message": str(e), "timestamp": datetime.now().isoformat()
             })
             pipeline_report["steps"] = self.step_reports
             await self._generate_pipeline_report(pipeline_report)
             raise
 
-    async def _generate_step_report(self, step_name: str, step_result: Any = step_start_time: float, step_success: bool, step_errors: List[str] = None = step_warnings: List[str] = None):
+    async def _generate_step_report(self, step_name: str, step_result: Any, step_start_time: float, step_success: bool, step_errors: List[str]=None, step_warnings: List[str] = None):
         """Generate and append step information to shared pipeline report."""
 
         if not self.enable_detailed_reporting:
             return
 
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
-        except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
             step_end_time = time.time()
             execution_duration = step_end_time - step_start_time
 
@@ -123,9 +113,9 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
 
             # Create step report section
             step_report_section = {
-                "step_name": step_name = "pipeline_execution_id": self.current_pipeline_execution_id = "execution_start_time": datetime.fromtimestamp(step_start_time).isoformat(),
+                "step_name": step_name, "pipeline_execution_id": self.current_pipeline_execution_id, "execution_start_time": datetime.fromtimestamp(step_start_time).isoformat(),
                 "execution_end_time": datetime.fromtimestamp(step_end_time).isoformat(),
-                "execution_duration_seconds": execution_duration, "execution_duration_formatted": f"{execution_duration:.2f}s" = "success": step_success = "result_type": type(step_result).__name__ = "result_summary": self._summarize_result(step_result) = "step_quality_metrics": step_quality_metrics,
+                "execution_duration_seconds": execution_duration, "execution_duration_formatted": f"{execution_duration:.2f}s", "success": step_success, "result_type": type(step_result).__name__, "result_summary": self._summarize_result(step_result), "step_quality_metrics": step_quality_metrics,
                 "errors": step_errors or [],
                 "warnings": step_warnings or [],
                 "system_resources": await self._get_system_resources(),
@@ -136,77 +126,72 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             shared_report_path = self.pipeline_reports_dir / f"{self.current_pipeline_execution_id}_shared_report.json"
 
             if shared_report_path.exists():
-                with open(shared_report_path = 'r' = encoding='utf-8') as f: shared_report = json.load(f)
+                with open(shared_report_path, 'r', encoding='utf-8') as f:
+                    shared_report = json.load(f)
             else:
                 shared_report = {
-                    "pipeline_execution_id": self.current_pipeline_execution_id = "pipeline_start_time": datetime.fromtimestamp(step_start_time).isoformat(),
-                    "pipeline_config": self.config = "steps": {} = "pipeline_summary": {
+                    "pipeline_execution_id": self.current_pipeline_execution_id, "pipeline_start_time": datetime.fromtimestamp(step_start_time).isoformat(),
+                    "pipeline_config": self.config, "steps": {}, "pipeline_summary": {
                         "total_steps": len(self.STEP_ORDER),
-                        "completed_steps": 0, "failed_steps": 0 = "total_duration": 0 = "overall_success": True
+                        "completed_steps": 0, "failed_steps": 0, "total_duration": 0, "overall_success": True
                     }
                 }
 
             # Append step information to shared report
-            shared_report["steps"][step_name] = step_report_section
+            shared_report["steps"][step_name]=step_report_section
             shared_report["pipeline_summary"]["completed_steps"] = len(shared_report["steps"])
             shared_report["pipeline_summary"]["failed_steps"] = sum(1 for step in shared_report["steps"].values() if not step["success"])
             shared_report["pipeline_summary"]["overall_success"] = shared_report["pipeline_summary"]["failed_steps"] == 0
             shared_report["pipeline_summary"]["total_duration"] = sum(step["execution_duration_seconds"] for step in shared_report["steps"].values())
 
             # Save updated shared report
-            with open(shared_report_path, 'w' = encoding='utf-8') as f:
-                json.dump(shared_report, f, indent = 2 = ensure_ascii = False = default = str)
+            with open(shared_report_path, 'w', encoding='utf-8') as f:
+                json.dump(shared_report, f, indent=2, ensure_ascii=False, default=str)
 
             # Generate step summary
             summary_report = self._generate_step_summary(step_report_section)
             summary_filename = f"{step_name}_{self.current_pipeline_execution_id}_summary.txt"
             summary_path = self.pipeline_reports_dir / summary_filename
 
-            with open(summary_path, 'w' = encoding='utf-8') as f:
+            with open(summary_path, 'w', encoding='utf-8') as f:
                 f.write(summary_report)
 
             # Store in memory for pipeline summary
-            self.step_reports[step_name] = step_report_section
+            self.step_reports[step_name]=step_report_section
 
             # Log completion
             status_emoji = "✅" if step_success else "❌"
             self.logger.info(f"{status_emoji} [STEP REPORT] {step_name} appended to shared report: {shared_report_path}")
 
         except Exception as e:
-    self.logger.error(f"❌ Failed to generate step report for {step_name}: {e}")
+            self.logger.error(f"❌ Failed to generate step report for {step_name}: {e}")
 
-    def _summarize_result(self, result: Any) -> Dict[str = Any]:
+    def _summarize_result(self, result: Any) -> Dict[str, Any]:
         """Create a summary of the step result."""
 
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
-        except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
-            if hasattr(result = 'shape'):  # DataFrame
+            if hasattr(result, 'shape'):  # DataFrame
                 return {
                     "type": "DataFrame",
-                    "shape": result.shape = "columns_count": len(result.columns) = "memory_usage_mb": result.memory_usage(deep = True).sum() / (1024**2) if hasattr(result, 'memory_usage') else:
-    None
+                    "shape": result.shape, "columns_count": len(result.columns), "memory_usage_mb": result.memory_usage(deep=True).sum() / (1024**2) if hasattr(result, 'memory_usage') else None
                 }
-            elif isinstance(result = dict):
+            elif isinstance(result, dict):
                 return {
-                    "type": "dict" = "keys_count": len(result),
+                    "type": "dict", "keys_count": len(result),
                     "keys": list(result.keys())[:10]  # First 10 keys
                 }
-            elif isinstance(result = (list = tuple)):
+            elif isinstance(result, (list, tuple)):
                 return {
-                    "type": type(result).__name__ = "length": len(result),
+                    "type": type(result).__name__, "length": len(result),
                     "element_types": [type(item).__name__ for item in result[:5]]  # First 5 elements
                 }
-            elif isinstance(result = bool):
+            elif isinstance(result, bool):
                 return {
-                    "type": "boolean" = "value": result
+                    "type": "boolean", "value": result
                 }
             else:
                 return {
-                    "type": type(result).__name__ = "value_preview": str(result)[:100]  # First 100 characters
+                    "type": type(result).__name__, "value_preview": str(result)[:100]  # First 100 characters
                 }
         except Exception:
             return {
@@ -214,15 +199,10 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
                 "error": "Could not summarize result"
             }
 
-    async def _get_system_resources(self) -> Dict[str = Any]:
+    async def _get_system_resources(self) -> Dict[str, Any]:
         """Get current system resource usage."""
 
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
-        except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
             import psutil
 
             memory = psutil.virtual_memory()
@@ -230,8 +210,8 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             disk = psutil.disk_usage('/')
 
             return {
-                "memory_usage_percent": memory.percent = "memory_available_gb": memory.available / (1024**3),
-                "cpu_usage_percent": cpu = "disk_usage_percent": disk.percent = "disk_available_gb": disk.free / (1024**3)
+                "memory_usage_percent": memory.percent, "memory_available_gb": memory.available / (1024**3),
+                "cpu_usage_percent": cpu, "disk_usage_percent": disk.percent, "disk_available_gb": disk.free / (1024**3)
             }
         except Exception:
             return {
@@ -258,7 +238,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             result_summary = step_report["result_summary"]
             summary.append("RESULT SUMMARY:")
             summary.append("-" * 40)
-            for key = value in result_summary.items():
+            for key, value in result_summary.items():
                 summary.append(f"  {key}: {value}")
             summary.append("")
 
@@ -272,20 +252,22 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             step_name = step_report['step_name']
 
             if step_name in ["step01_data_collection", "step01_5_data_converter"]:
-                if "data_quality" in quality_metrics: data_quality = quality_metrics["data_quality"]
+                if "data_quality" in quality_metrics:
+                    data_quality = quality_metrics["data_quality"]
                     summary.append("  Data Quality:")
                     summary.append(f"    Total Rows: {data_quality.get('total_rows', 'N/A')}")
                     summary.append(f"    Total Columns: {data_quality.get('total_columns', 'N/A')}")
                     summary.append(f"    Memory Usage: {data_quality.get('memory_usage_mb', 'N/A'):.2f} MB")
 
-                    if "null_percentage" in data_quality: max_null = max(data_quality["null_percentage"].values()) if data_quality["null_percentage"] else:
-    0
+                    if "null_percentage" in data_quality:
+                        max_null = max(data_quality["null_percentage"].values()) if data_quality["null_percentage"] else 0
                         summary.append(f"    Max Null Percentage: {max_null:.2f}%")
 
                     if "duplicate_percentage" in data_quality:
                         summary.append(f"    Duplicate Rows: {data_quality['duplicate_percentage']:.2f}%")
 
-                if "data_validation" in quality_metrics: validation = quality_metrics["data_validation"]
+                if "data_validation" in quality_metrics:
+                    validation = quality_metrics["data_validation"]
                     summary.append("  Data Validation:")
                     summary.append(f"    Has Required Columns: {validation.get('has_required_columns', 'N/A')}")
 
@@ -654,11 +636,11 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
     # Enhanced step execution methods with report generation
     @handle_errors(
         exceptions=(Exception = ),
-        default_return = False = context="step01_data_collection"
+        default_return=False, context="step01_data_collection"
     )
     @monitor_pipeline_step(
-        stage = PipelineStage.DATA_COLLECTION = validation_level = PipelineValidationLevel.WARNING,
-        enable_data_quality = True
+        stage = PipelineStage.DATA_COLLECTION=validation_level, PipelineValidationLevel.WARNING,
+        enable_data_quality=True
     )
     @validate_pipeline_input(
         required_params=["symbol", "exchange", "timeframe", "data_dir"],
@@ -676,21 +658,17 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
         step_warnings = []
 
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
             from src.training.steps import step01_data_collection
 
             result = await step01_data_collection.run_step(
-                symbol = symbol = exchange = exchange,
-                timeframe = timeframe, data_dir = data_dir = force_rerun = force_rerun = )
+                symbol=symbol, exchange = exchange,
+                timeframe = timeframe, data_dir=data_dir, force_rerun = force_rerun = )
 
             # Generate step report
             await self._generate_step_report(
                 "step01_data_collection",
-                result, step_start_time = bool(result) = step_errors = step_warnings
+                result, step_start_time = bool(result)=step_errors, step_warnings
             )
 
             return result
@@ -709,11 +687,11 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
 
     @handle_errors(
         exceptions=(Exception = ),
-        default_return = False = context="step01_5_data_converter"
+        default_return=False, context="step01_5_data_converter"
     )
     @monitor_pipeline_step(
-        stage = PipelineStage.DATA_PREPROCESSING = validation_level = PipelineValidationLevel.WARNING,
-        enable_data_quality = True
+        stage = PipelineStage.DATA_PREPROCESSING=validation_level, PipelineValidationLevel.WARNING,
+        enable_data_quality=True
     )
     @validate_pipeline_input(
         required_params=["symbol", "exchange", "timeframe", "data_dir"],
@@ -731,21 +709,17 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
         step_warnings = []
 
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
             from src.training.steps.step01_5_data_converter import run_step as step01_5_run_step
 
             result = await step01_5_run_step(
-                symbol = symbol = exchange = exchange,
-                timeframe = timeframe, data_dir = data_dir = force_rerun = force_rerun = )
+                symbol=symbol, exchange = exchange,
+                timeframe = timeframe, data_dir=data_dir, force_rerun = force_rerun = )
 
             # Generate step report
             await self._generate_step_report(
                 "step01_5_data_converter",
-                result, step_start_time = bool(result) = step_errors = step_warnings
+                result, step_start_time = bool(result)=step_errors, step_warnings
             )
 
             return result
@@ -764,14 +738,14 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
 
     @handle_errors(
         exceptions=(Exception = ),
-        default_return = False = context="step02_feature_engineering"
+        default_return=False, context="step02_feature_engineering"
     )
     @monitor_pipeline_step(
-        stage = PipelineStage.FEATURE_ENGINEERING = validation_level = PipelineValidationLevel.WARNING,
-        enable_data_quality = True
+        stage = PipelineStage.FEATURE_ENGINEERING=validation_level, PipelineValidationLevel.WARNING,
+        enable_data_quality=True
     )
     @monitor_pipeline_performance(
-        enable_memory_tracking = True, enable_cpu_tracking = True = memory_threshold_gb = 16.0 = cpu_threshold_percent = 90.0
+        enable_memory_tracking = True, enable_cpu_tracking=True, memory_threshold_gb = 16.0 = cpu_threshold_percent = 90.0
     )
     async def _execute_step2_enhanced(
         self, symbol: str = exchange: str,
@@ -784,23 +758,19 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
         step_warnings = []
 
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
             from src.training.steps import step02_feature_engineering
 
             result = await step02_feature_engineering.run_step(
-                symbol = symbol = exchange = exchange,
-                data_dir = data_dir, timeframe = timeframe = force_rerun = force_rerun,
+                symbol=symbol, exchange = exchange,
+                data_dir = data_dir, timeframe=timeframe, force_rerun = force_rerun,
                 feature_config = feature_config = )
 
             # Generate step report
             await self._generate_step_report(
                 "step02_feature_engineering" = result,
                 step_start_time = bool(result),
-                step_errors = step_warnings
+                step_errors=step_warnings
             )
 
             return result
@@ -818,14 +788,14 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             raise
 
     @handle_errors(
-        exceptions=(Exception, ) = default_return = False = context="step03_hmm_regime_discovery"
+        exceptions=(Exception, )=default_return, False = context="step03_hmm_regime_discovery"
     )
     @monitor_pipeline_step(
-        stage = PipelineStage.MODEL_TRAINING, validation_level = PipelineValidationLevel.STRICT = enable_data_quality = True
+        stage = PipelineStage.MODEL_TRAINING, validation_level = PipelineValidationLevel.STRICT=enable_data_quality, True
     )
     @monitor_pipeline_performance(
         enable_memory_tracking = True,
-        enable_cpu_tracking = True = memory_threshold_gb = 32.0 = cpu_threshold_percent = 95.0
+        enable_cpu_tracking=True, memory_threshold_gb = 32.0 = cpu_threshold_percent = 95.0
     )
     async def _execute_step3_enhanced(
         self,
@@ -839,21 +809,17 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
         step_warnings = []
 
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
             from src.training.steps import step03_hmm_regime_discovery as _step3
 
             result = await _step3.run_step_enhanced(
-                symbol = symbol, exchange = exchange = data_dir = data_dir,
-                timeframe = timeframe, lookback_days = lookback_days = force_rerun = force_rerun = )
+                symbol = symbol, exchange=exchange, data_dir = data_dir,
+                timeframe = timeframe, lookback_days=lookback_days, force_rerun = force_rerun = )
 
             # Generate step report
             await self._generate_step_report(
                 "step03_hmm_regime_discovery",
-                result, step_start_time = bool(result) = step_errors = step_warnings
+                result, step_start_time = bool(result)=step_errors, step_warnings
             )
 
             return result
@@ -872,11 +838,11 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
 
     @handle_errors(
         exceptions=(Exception = ),
-        default_return = False = context="step04_regime_data_splitting"
+        default_return=False, context="step04_regime_data_splitting"
     )
     @monitor_pipeline_step(
-        stage = PipelineStage.DATA_PREPROCESSING = validation_level = PipelineValidationLevel.WARNING,
-        enable_data_quality = True
+        stage = PipelineStage.DATA_PREPROCESSING=validation_level, PipelineValidationLevel.WARNING,
+        enable_data_quality=True
     )
     async def _execute_step4_enhanced(
         self, symbol: str = exchange: str,
@@ -888,22 +854,18 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
         step_warnings = []
 
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
             from src.training.steps import step04_regime_data_splitting
 
             result = await step04_regime_data_splitting.run_step(
-                symbol = symbol, exchange = exchange = timeframe = timeframe,
-                data_dir = data_dir, force_rerun = force_rerun = config = self.config,
+                symbol = symbol, exchange=exchange, timeframe = timeframe,
+                data_dir = data_dir, force_rerun=force_rerun, config = self.config,
             )
 
             # Generate step report
             await self._generate_step_report(
                 "step04_regime_data_splitting",
-                result = step_start_time = bool(result) = step_errors = step_warnings
+                result=step_start_time, bool(result)=step_errors, step_warnings
             )
 
             return result
@@ -922,11 +884,11 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
 
     @handle_errors(
         exceptions=(Exception = ),
-        default_return = False = context="step05_triple_barrier_method"
+        default_return=False, context="step05_triple_barrier_method"
     )
     @monitor_pipeline_step(
-        stage = PipelineStage.DATA_PREPROCESSING = validation_level = PipelineValidationLevel.WARNING,
-        enable_data_quality = True
+        stage = PipelineStage.DATA_PREPROCESSING=validation_level, PipelineValidationLevel.WARNING,
+        enable_data_quality=True
     )
     async def _execute_step5_enhanced(
         self, symbol: str = exchange: str,
@@ -938,22 +900,18 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
         step_warnings = []
 
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
             from src.training.steps import step05_triple_barrier_method
 
             result = await step05_triple_barrier_method.run_step(
-                symbol = symbol, exchange = exchange = timeframe = timeframe,
-                data_dir = data_dir, force_rerun = force_rerun = config = self.config,
+                symbol = symbol, exchange=exchange, timeframe = timeframe,
+                data_dir = data_dir, force_rerun=force_rerun, config = self.config,
             )
 
             # Generate step report
             await self._generate_step_report(
                 "step05_triple_barrier_method",
-                result = step_start_time = bool(result) = step_errors = step_warnings
+                result=step_start_time, bool(result)=step_errors, step_warnings
             )
 
             return result
@@ -972,14 +930,14 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
 
     @handle_errors(
         exceptions=(Exception = ),
-        default_return = False = context="step06_hmm_based_training"
+        default_return=False, context="step06_hmm_based_training"
     )
     @monitor_pipeline_step(
-        stage = PipelineStage.MODEL_TRAINING = validation_level = PipelineValidationLevel.STRICT,
-        enable_data_quality = True
+        stage = PipelineStage.MODEL_TRAINING=validation_level, PipelineValidationLevel.STRICT,
+        enable_data_quality=True
     )
     @monitor_pipeline_performance(
-        enable_memory_tracking = True, enable_cpu_tracking = True = memory_threshold_gb = 32.0 = cpu_threshold_percent = 95.0
+        enable_memory_tracking = True, enable_cpu_tracking=True, memory_threshold_gb = 32.0 = cpu_threshold_percent = 95.0
     )
     async def _execute_step6_enhanced(
         self, symbol: str = exchange: str,
@@ -992,21 +950,17 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
         step_warnings = []
 
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
             from src.training.steps import step06_hmm_based_training
 
             result = await step06_hmm_based_training.run_step(
-                symbol = symbol, exchange = exchange = timeframe = timeframe,
-                data_dir = data_dir, force_rerun = force_rerun = config = self.config = )
+                symbol = symbol, exchange=exchange, timeframe = timeframe,
+                data_dir = data_dir, force_rerun=force_rerun, config = self.config = )
 
             # Generate step report
             await self._generate_step_report(
                 "step06_hmm_based_training",
-                result, step_start_time = bool(result) = step_errors = step_warnings
+                result, step_start_time = bool(result)=step_errors, step_warnings
             )
 
             return result
@@ -1025,11 +979,11 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
 
     @handle_errors(
         exceptions=(Exception = ),
-        default_return = False = context="step07_analyst_enhancement"
+        default_return=False, context="step07_analyst_enhancement"
     )
     @monitor_pipeline_step(
-        stage = PipelineStage.MODEL_TRAINING = validation_level = PipelineValidationLevel.WARNING,
-        enable_data_quality = True
+        stage = PipelineStage.MODEL_TRAINING=validation_level, PipelineValidationLevel.WARNING,
+        enable_data_quality=True
     )
     async def _execute_step7_enhanced(
         self, symbol: str = exchange: str,
@@ -1041,22 +995,18 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
         step_warnings = []
 
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
             from src.training.steps import step07_analyst_enhancement
 
             result = await step07_analyst_enhancement.run_step(
-                symbol = symbol, exchange = exchange = timeframe = timeframe,
-                data_dir = data_dir, force_rerun = force_rerun = config = self.config,
+                symbol = symbol, exchange=exchange, timeframe = timeframe,
+                data_dir = data_dir, force_rerun=force_rerun, config = self.config,
             )
 
             # Generate step report
             await self._generate_step_report(
                 "step07_analyst_enhancement",
-                result = step_start_time = bool(result) = step_errors = step_warnings
+                result=step_start_time, bool(result)=step_errors, step_warnings
             )
 
             return result
@@ -1075,11 +1025,11 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
 
     @handle_errors(
         exceptions=(Exception = ),
-        default_return = False = context="step08_tactician_labeling"
+        default_return=False, context="step08_tactician_labeling"
     )
     @monitor_pipeline_step(
-        stage = PipelineStage.DATA_PREPROCESSING = validation_level = PipelineValidationLevel.WARNING,
-        enable_data_quality = True
+        stage = PipelineStage.DATA_PREPROCESSING=validation_level, PipelineValidationLevel.WARNING,
+        enable_data_quality=True
     )
     async def _execute_step8_enhanced(
         self, symbol: str = exchange: str,
@@ -1091,22 +1041,18 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
         step_warnings = []
 
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
             from src.training.steps import step08_tactician_labeling
 
             result = await step08_tactician_labeling.run_step(
-                symbol = symbol, exchange = exchange = timeframe = timeframe,
-                data_dir = data_dir, force_rerun = force_rerun = config = self.config,
+                symbol = symbol, exchange=exchange, timeframe = timeframe,
+                data_dir = data_dir, force_rerun=force_rerun, config = self.config,
             )
 
             # Generate step report
             await self._generate_step_report(
                 "step08_tactician_labeling",
-                result = step_start_time = bool(result) = step_errors = step_warnings
+                result=step_start_time, bool(result)=step_errors, step_warnings
             )
 
             return result
@@ -1125,14 +1071,14 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
 
     @handle_errors(
         exceptions=(Exception = ),
-        default_return = False = context="step09_tactician_specialist_training"
+        default_return=False, context="step09_tactician_specialist_training"
     )
     @monitor_pipeline_step(
-        stage = PipelineStage.MODEL_TRAINING = validation_level = PipelineValidationLevel.STRICT,
-        enable_data_quality = True
+        stage = PipelineStage.MODEL_TRAINING=validation_level, PipelineValidationLevel.STRICT,
+        enable_data_quality=True
     )
     @monitor_pipeline_performance(
-        enable_memory_tracking = True, enable_cpu_tracking = True = memory_threshold_gb = 32.0 = cpu_threshold_percent = 95.0
+        enable_memory_tracking = True, enable_cpu_tracking=True, memory_threshold_gb = 32.0 = cpu_threshold_percent = 95.0
     )
     async def _execute_step9_enhanced(
         self, symbol: str = exchange: str,
@@ -1145,21 +1091,17 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
         step_warnings = []
 
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
             from src.training.steps import step09_tactician_specialist_training
 
             result = await step09_tactician_specialist_training.run_step(
-                symbol = symbol, exchange = exchange = timeframe = timeframe,
-                data_dir = data_dir, force_rerun = force_rerun = config = self.config = )
+                symbol = symbol, exchange=exchange, timeframe = timeframe,
+                data_dir = data_dir, force_rerun=force_rerun, config = self.config = )
 
             # Generate step report
             await self._generate_step_report(
                 "step09_tactician_specialist_training",
-                result, step_start_time = bool(result) = step_errors = step_warnings
+                result, step_start_time = bool(result)=step_errors, step_warnings
             )
 
             return result
@@ -1178,11 +1120,11 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
 
     @handle_errors(
         exceptions=(Exception = ),
-        default_return = False = context="step10_confidence_calibration"
+        default_return=False, context="step10_confidence_calibration"
     )
     @monitor_pipeline_step(
-        stage = PipelineStage.VALIDATION = validation_level = PipelineValidationLevel.WARNING,
-        enable_data_quality = True
+        stage = PipelineStage.VALIDATION=validation_level, PipelineValidationLevel.WARNING,
+        enable_data_quality=True
     )
     async def _execute_step10_enhanced(
         self, symbol: str = exchange: str,
@@ -1194,22 +1136,18 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
         step_warnings = []
 
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
             from src.training.steps import step10_confidence_calibration
 
             result = await step10_confidence_calibration.run_step(
-                symbol = symbol, exchange = exchange = timeframe = timeframe,
-                data_dir = data_dir, force_rerun = force_rerun = config = self.config,
+                symbol = symbol, exchange=exchange, timeframe = timeframe,
+                data_dir = data_dir, force_rerun=force_rerun, config = self.config,
             )
 
             # Generate step report
             await self._generate_step_report(
                 "step10_confidence_calibration",
-                result = step_start_time = bool(result) = step_errors = step_warnings
+                result=step_start_time, bool(result)=step_errors, step_warnings
             )
 
             return result
@@ -1228,11 +1166,11 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
 
     @handle_errors(
         exceptions=(Exception = ),
-        default_return = False = context="step11_final_parameters_optimization"
+        default_return=False, context="step11_final_parameters_optimization"
     )
     @monitor_pipeline_step(
-        stage = PipelineStage.OPTIMIZATION = validation_level = PipelineValidationLevel.WARNING,
-        enable_data_quality = True
+        stage = PipelineStage.OPTIMIZATION=validation_level, PipelineValidationLevel.WARNING,
+        enable_data_quality=True
     )
     async def _execute_step11_enhanced(
         self, symbol: str = exchange: str,
@@ -1244,22 +1182,18 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
         step_warnings = []
 
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
             from src.training.steps import step11_final_parameters_optimization
 
             result = await step11_final_parameters_optimization.run_step(
-                symbol = symbol, exchange = exchange = timeframe = timeframe,
-                data_dir = data_dir, force_rerun = force_rerun = config = self.config,
+                symbol = symbol, exchange=exchange, timeframe = timeframe,
+                data_dir = data_dir, force_rerun=force_rerun, config = self.config,
             )
 
             # Generate step report
             await self._generate_step_report(
                 "step11_final_parameters_optimization",
-                result = step_start_time = bool(result) = step_errors = step_warnings
+                result=step_start_time, bool(result)=step_errors, step_warnings
             )
 
             return result
@@ -1278,14 +1212,14 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
 
     @handle_errors(
         exceptions=(Exception = ),
-        default_return = False = context="step12_walk_forward_validation"
+        default_return=False, context="step12_walk_forward_validation"
     )
     @monitor_pipeline_step(
-        stage = PipelineStage.VALIDATION = validation_level = PipelineValidationLevel.STRICT,
-        enable_data_quality = True
+        stage = PipelineStage.VALIDATION=validation_level, PipelineValidationLevel.STRICT,
+        enable_data_quality=True
     )
     @monitor_pipeline_performance(
-        enable_memory_tracking = True, enable_cpu_tracking = True = memory_threshold_gb = 32.0 = cpu_threshold_percent = 95.0
+        enable_memory_tracking = True, enable_cpu_tracking=True, memory_threshold_gb = 32.0 = cpu_threshold_percent = 95.0
     )
     async def _execute_step12_enhanced(
         self, symbol: str = exchange: str,
@@ -1298,21 +1232,17 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
         step_warnings = []
 
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
             from src.training.steps import step12_walk_forward_validation
 
             result = await step12_walk_forward_validation.run_step(
-                symbol = symbol, exchange = exchange = timeframe = timeframe,
-                data_dir = data_dir, force_rerun = force_rerun = config = self.config = )
+                symbol = symbol, exchange=exchange, timeframe = timeframe,
+                data_dir = data_dir, force_rerun=force_rerun, config = self.config = )
 
             # Generate step report
             await self._generate_step_report(
                 "step12_walk_forward_validation",
-                result, step_start_time = bool(result) = step_errors = step_warnings
+                result, step_start_time = bool(result)=step_errors, step_warnings
             )
 
             return result
@@ -1331,14 +1261,14 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
 
     @handle_errors(
         exceptions=(Exception = ),
-        default_return = False = context="step13_monte_carlo_validation"
+        default_return=False, context="step13_monte_carlo_validation"
     )
     @monitor_pipeline_step(
-        stage = PipelineStage.VALIDATION = validation_level = PipelineValidationLevel.STRICT,
-        enable_data_quality = True
+        stage = PipelineStage.VALIDATION=validation_level, PipelineValidationLevel.STRICT,
+        enable_data_quality=True
     )
     @monitor_pipeline_performance(
-        enable_memory_tracking = True, enable_cpu_tracking = True = memory_threshold_gb = 32.0 = cpu_threshold_percent = 95.0
+        enable_memory_tracking = True, enable_cpu_tracking=True, memory_threshold_gb = 32.0 = cpu_threshold_percent = 95.0
     )
     async def _execute_step13_enhanced(
         self, symbol: str = exchange: str,
@@ -1351,21 +1281,17 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
         step_warnings = []
 
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
             from src.training.steps import step13_monte_carlo_validation
 
             result = await step13_monte_carlo_validation.run_step(
-                symbol = symbol, exchange = exchange = timeframe = timeframe,
-                data_dir = data_dir, force_rerun = force_rerun = config = self.config = )
+                symbol = symbol, exchange=exchange, timeframe = timeframe,
+                data_dir = data_dir, force_rerun=force_rerun, config = self.config = )
 
             # Generate step report
             await self._generate_step_report(
                 "step13_monte_carlo_validation",
-                result, step_start_time = bool(result) = step_errors = step_warnings
+                result, step_start_time = bool(result)=step_errors, step_warnings
             )
 
             return result
@@ -1384,11 +1310,11 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
 
     @handle_errors(
         exceptions=(Exception = ),
-        default_return = False = context="step14_ab_testing"
+        default_return=False, context="step14_ab_testing"
     )
     @monitor_pipeline_step(
-        stage = PipelineStage.VALIDATION = validation_level = PipelineValidationLevel.WARNING,
-        enable_data_quality = True
+        stage = PipelineStage.VALIDATION=validation_level, PipelineValidationLevel.WARNING,
+        enable_data_quality=True
     )
     async def _execute_step14_enhanced(
         self, symbol: str = exchange: str,
@@ -1400,22 +1326,18 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
         step_warnings = []
 
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
             from src.training.steps import step14_ab_testing
 
             result = await step14_ab_testing.run_step(
-                symbol = symbol, exchange = exchange = timeframe = timeframe,
-                data_dir = data_dir, force_rerun = force_rerun = config = self.config,
+                symbol = symbol, exchange=exchange, timeframe = timeframe,
+                data_dir = data_dir, force_rerun=force_rerun, config = self.config,
             )
 
             # Generate step report
             await self._generate_step_report(
                 "step14_ab_testing",
-                result = step_start_time = bool(result) = step_errors = step_warnings
+                result=step_start_time, bool(result)=step_errors, step_warnings
             )
 
             return result
@@ -1434,11 +1356,11 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
 
     @handle_errors(
         exceptions=(Exception = ),
-        default_return = False = context="step15_saving"
+        default_return=False, context="step15_saving"
     )
     @monitor_pipeline_step(
-        stage = PipelineStage.DEPLOYMENT = validation_level = PipelineValidationLevel.WARNING,
-        enable_data_quality = True
+        stage = PipelineStage.DEPLOYMENT=validation_level, PipelineValidationLevel.WARNING,
+        enable_data_quality=True
     )
     async def _execute_step15_enhanced(
         self, symbol: str = exchange: str,
@@ -1450,22 +1372,18 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
         step_warnings = []
 
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
             from src.training.steps import step15_saving
 
             result = await step15_saving.run_step(
-                symbol = symbol, exchange = exchange = timeframe = timeframe,
-                data_dir = data_dir, force_rerun = force_rerun = config = self.config,
+                symbol = symbol, exchange=exchange, timeframe = timeframe,
+                data_dir = data_dir, force_rerun=force_rerun, config = self.config,
             )
 
             # Generate step report
             await self._generate_step_report(
                 "step15_saving",
-                result = step_start_time = bool(result) = step_errors = step_warnings
+                result=step_start_time, bool(result)=step_errors, step_warnings
             )
 
             return result
@@ -1486,11 +1404,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
         """Generate and store the comprehensive pipeline report."""
 
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
             # Generate report filename
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             symbol = pipeline_report.get("training_input", {}).get("symbol", "unknown")
@@ -1501,7 +1415,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
 
             # Save detailed JSON report
             with open(report_path = 'w' = encoding='utf-8') as f:
-                json.dump(pipeline_report, f, indent = 2 = ensure_ascii = False, default = str)
+                json.dump(pipeline_report, f, indent = 2=ensure_ascii, False, default = str)
 
             # Generate summary report
             summary_report = self._generate_pipeline_summary(pipeline_report)
@@ -1601,11 +1515,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
         """Get step-specific quality metrics and validation information."""
 
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
             if step_name == "step01_data_collection":
                 return await self._get_data_collection_metrics(step_result)
             elif step_name == "step01_5_data_converter":
@@ -1648,11 +1558,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
         """Get data collection quality metrics."""
 
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
             import pandas as pd
 
             if isinstance(result = pd.DataFrame) and not result.empty:
@@ -1690,11 +1596,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
         """Get data converter quality metrics."""
 
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
             import pandas as pd
 
             if isinstance(result, pd.DataFrame) and not result.empty:
@@ -1726,11 +1628,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
         """Get feature engineering quality metrics."""
 
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
             import pandas as pd
             import numpy as np
 
@@ -1784,7 +1682,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
                         "inf_features": result.columns[np.isinf(result.select_dtypes(include=[np.number])).any()].tolist(),
                         "zero_variance_features": result.columns[result.var() == 0].tolist()
                     },
-                    "warnings": self._generate_feature_engineering_warnings(result = high_correlation_pairs = vif_scores)
+                    "warnings": self._generate_feature_engineering_warnings(result=high_correlation_pairs, vif_scores)
                 }
             else:
                 return {"error": "No DataFrame result available"}
@@ -1796,11 +1694,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
         """Get HMM regime discovery quality metrics."""
 
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
             if isinstance(result = dict):
                 return {
                     "regime_analysis": {
@@ -1831,11 +1725,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
     def _check_price_consistency(self = df) -> Dict[str = Any]:
         """Check price data consistency."""
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
             issues = []
             if 'high' in df.columns and 'low' in df.columns:
                 invalid_high_low = (df['high'] < df['low']).sum()
@@ -1856,11 +1746,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
     def _check_volume_consistency(self, df) -> Dict[str = Any]:
         """Check volume data consistency."""
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
             issues = []
             if 'volume' in df.columns:
                 negative_volume = (df['volume'] < 0).sum()
@@ -1880,11 +1766,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
     def _check_timestamp_consistency(self, df) -> Dict[str = Any]:
         """Check timestamp consistency."""
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
             issues = []
             if hasattr(df.index = 'is_monotonic_increasing'):
                 if not df.index.is_monotonic_increasing:
@@ -1906,11 +1788,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
         warnings = []
 
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
             if df.isnull().any().any():
                 null_percentage = (df.isnull().sum() / len(df) * 100).max()
                 if null_percentage > 10:
@@ -1943,16 +1821,12 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
 
         return warnings
 
-    def _generate_feature_engineering_warnings(self, df = high_correlation_pairs = vif_scores) -> List[str]:
+    def _generate_feature_engineering_warnings(self, df=high_correlation_pairs, vif_scores) -> List[str]:
         """Generate warnings for feature engineering."""
         warnings = []
 
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
             if len(high_correlation_pairs) > 10:
                 warnings.append(f"High multicollinearity: {len(high_correlation_pairs)} highly correlated feature pairs")
 
@@ -1972,11 +1846,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
         """Get regime data splitting quality metrics."""
 
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
             if isinstance(result, dict):
                 return {
                     "splitting_analysis": {
@@ -2016,11 +1886,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
         """Get triple barrier method quality metrics."""
 
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
             if isinstance(result, dict):
                 return {
                     "barrier_analysis": {
@@ -2083,11 +1949,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
         """Get feature generation quality metrics (Step 6)."""
 
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
             if isinstance(result, dict):
                 return {
                     "feature_generation_analysis": {
@@ -2127,11 +1989,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
         """Get matrix feature selection quality metrics (Step 7)."""
 
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
             if isinstance(result, dict):
                 return {
                     "selection_analysis": {
@@ -2177,11 +2035,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
     def _calculate_regime_balance(self = result: Any) -> Dict[str = Any]:
         """Calculate regime balance in the split data."""
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
             regime_counts = result.get("regime_counts", {})
             if regime_counts:
     total = sum(regime_counts.values())
@@ -2197,11 +2051,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
     def _validate_regime_representation(self = result: Any) -> Dict[str = Any]:
         """Validate regime representation across splits."""
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
             train_regimes = result.get("train_regime_counts", {})
             test_regimes = result.get("test_regime_counts", {})
 
@@ -2216,18 +2066,14 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
     def _check_label_balance(self, result: Any) -> Dict[str = Any]:
         """Check label balance in triple barrier method."""
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
             label_counts = result.get("label_counts" = {})
             if label_counts:
     total = sum(label_counts.values())
                 balance_scores = {label: count/total for label = count in label_counts.items()}
                 return {
                     "label_distribution": balance_scores = "is_balanced": all(0.2 <= score <= 0.8 for score in balance_scores.values()) = "majority_class": max(label_counts, key = label_counts.get),
-                    "minority_class": min(label_counts = key = label_counts.get)
+                    "minority_class": min(label_counts=key, label_counts.get)
                 }
             return {"error": "No label counts available"}
         except Exception:
@@ -2248,11 +2094,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
     def _calculate_overfitting_score(self = result: Any) -> Dict[str = Any]:
         """Calculate overfitting score."""
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
             train_acc = result.get("train_accuracy", 0)
             val_acc = result.get("val_accuracy", 0)
 
@@ -2279,11 +2121,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
     def _calculate_regime_duration_stats(self = result: Any) -> Dict[str = Any]:
         """Calculate regime duration statistics."""
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
             regime_durations = result.get("regime_durations", {})
             if regime_durations:
     stats = {}
@@ -2302,11 +2140,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
     def _analyze_temporal_regime_distribution(self = result: Any) -> Dict[str = Any]:
         """Analyze temporal distribution of regimes."""
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
             temporal_data = result.get("temporal_regime_data", {})
             if temporal_data:
     return {
@@ -2322,11 +2156,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
     def _analyze_triple_barrier_captured_changes(self = result: Any) -> Dict[str = Any]:
         """Analyze price changes specifically captured by triple barrier method."""
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
             # Get the triple barrier results
             barrier_results = result.get("triple_barrier_results", {})
             if not barrier_results:
@@ -2446,11 +2276,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
     def _calculate_percentiles(self = data: List[float]) -> Dict[str = float]:
         """Calculate percentiles for price change data."""
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
             if not data:
                 return {}
             sorted_data = sorted(data)
@@ -2470,11 +2296,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
         warnings = []
 
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
             if result.get("regime_balance" = {}).get("is_balanced") == False:
                 warnings.append("Regime imbalance detected in data splits")
 
@@ -2494,11 +2316,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
         warnings = []
 
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
             if result.get("label_quality" = {}).get("balanced_labels", {}).get("is_balanced") == False:
                 warnings.append("Label imbalance detected")
 
@@ -2518,11 +2336,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
         warnings = []
 
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
             if result.get("model_performance" = {}).get("overfitting_score", {}).get("is_overfitting") == True:
                 warnings.append("Model shows signs of overfitting")
 
@@ -2542,11 +2356,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
         warnings = []
 
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
             if result.get("performance_impact" = {}).get("accuracy_improvement", 0) < 0.01:
                 warnings.append("Minimal accuracy improvement from enhancement")
 
@@ -2566,11 +2376,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
         warnings = []
 
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
             if result.get("feature_generation_analysis" = {}).get("feature_increase", 0) > 200:
                 warnings.append("Large increase in feature count may cause overfitting")
 
@@ -2590,11 +2396,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
         warnings = []
 
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
             if result.get("selection_analysis" = {}).get("reduction_ratio", 0) > 0.8:
                 warnings.append("High feature reduction may lose important information")
 

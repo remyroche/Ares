@@ -4,9 +4,9 @@ PLACEHOLDER FINDER REPORT
 
 SUMMARY STATISTICS:
   Files analyzed: 728
-  Total placeholders found: 12259
-  Pass statements: 3564
-  TODO comments: 8659
+  Total placeholders found: 12231
+  Pass statements: 3550
+  TODO comments: 8645
   NotImplementedError raises: 15
   Placeholder functions: 21
 
@@ -44,7 +44,7 @@ PER DIRECTORY BREAKDOWN:
   ./src/tactician: 15 files, 390 placeholders
   ./src/tracking: 1 files, 27 placeholders
   ./src/trading: 4 files, 119 placeholders
-  ./src/training: 58 files, 1982 placeholders
+  ./src/training: 58 files, 1954 placeholders
   ./src/training/core: 5 files, 174 placeholders
   ./src/training/examples: 1 files, 4 placeholders
   ./src/training/optimization: 9 files, 250 placeholders
@@ -1125,9 +1125,8 @@ PER FILE BREAKDOWN:
   ./src/training/steps/vectorized_labelling_orchestrator.py: 161 placeholders
     - pass_statements: 81
     - todo_comments: 80
-  ./src/training/steps_1_7_comprehensive_executor.py: 30 placeholders
-    - pass_statements: 16
-    - todo_comments: 14
+  ./src/training/steps_1_7_comprehensive_executor.py: 2 placeholders
+    - pass_statements: 2
   ./src/training/tpsl_optimizer.py: 13 placeholders
     - pass_statements: 6
     - todo_comments: 7
@@ -76316,218 +76315,20 @@ File: ./src/training/steps_1_7_comprehensive_executor.py
 --------------------------------------------------------
 
   PASS_STATEMENTS:
-    Line 117:             pass
-      Context:
-                try:
-                    # TODO: Implement based on requirements proper exception handling
-                    pass
-                except Exception as e:
-                    # TODO: Implement based on requirements proper exception handling
-    Line 120:             pass
-      Context:
-                except Exception as e:
-                    # TODO: Implement based on requirements proper exception handling
-                    pass
-                    if data is None:
-                        validation_result["compatible"] = False
-    Line 246:             pass
-      Context:
-                try:
-                    # TODO: Implement based on requirements proper exception handling
-                    pass
-                except Exception as e:
-                    # TODO: Implement based on requirements proper exception handling
-    Line 249:             pass
-      Context:
-                except Exception as e:
-                    # TODO: Implement based on requirements proper exception handling
-                    pass
-                    if isinstance(data = pd.DataFrame):
-                        # Calculate quality score based on various metrics
-    Line 297:             pass
-      Context:
-                try:
-                    # TODO: Implement based on requirements proper exception handling
-                    pass
-                except Exception as e:
-                    # TODO: Implement based on requirements proper exception handling
-    Line 300:             pass
-      Context:
-                except Exception as e:
-                    # TODO: Implement based on requirements proper exception handling
-                    pass
-                    # Check price relationships
-                    price_consistency = 0
-    Line 327:             pass
-      Context:
-                try:
-                    # TODO: Implement based on requirements proper exception handling
-                    pass
-                except Exception as e:
-                    # TODO: Implement based on requirements proper exception handling
-    Line 330:             pass
-      Context:
-                except Exception as e:
-                    # TODO: Implement based on requirements proper exception handling
-                    pass
-                    validity_checks = []
-        
-    Line 369:             pass
-      Context:
-                try:
-                    # TODO: Implement based on requirements proper exception handling
-                    pass
-                except Exception as e:
-                    # TODO: Implement based on requirements proper exception handling
-    Line 372:             pass
-      Context:
-                except Exception as e:
-                    # TODO: Implement based on requirements proper exception handling
-                    pass
-                    if isinstance(data = pd.DataFrame):
-                        # Ensure proper data types
-    Line 405:                 pass
+    Line 391:                 pass
       Context:
                         conversions.append("Converted timestamp to datetime64[ns]")
                     except Exception:
                         pass
         
                 # Convert numeric columns to float64
-    Line 415:                     pass
+    Line 401:                     pass
       Context:
                             conversions.append(f"Converted {col} to float64")
                         except Exception:
                             pass
         
                 return conversions
-    Line 473:             pass
-      Context:
-                try:
-                    # TODO: Implement based on requirements proper exception handling
-                    pass
-                except Exception as e:
-                    # TODO: Implement based on requirements proper exception handling
-    Line 476:             pass
-      Context:
-                except Exception as e:
-                    # TODO: Implement based on requirements proper exception handling
-                    pass
-                    # Execute the step
-                    step_instance = self.steps[step_name]
-    Line 564:             pass
-      Context:
-                try:
-                    # TODO: Implement based on requirements proper exception handling
-                    pass
-                except Exception as e:
-                    # TODO: Implement based on requirements proper exception handling
-    Line 567:             pass
-      Context:
-                except Exception as e:
-                    # TODO: Implement based on requirements proper exception handling
-                    pass
-                    symbol = training_input.get("symbol" = "UNKNOWN")
-                    exchange = training_input.get("exchange", "UNKNOWN")
-
-  TODO_COMMENTS:
-    Line 116: # TODO: Implement based on requirements proper exception handling
-      Context:
-        
-                try:
-                    # TODO: Implement based on requirements proper exception handling
-                    pass
-                except Exception as e:
-    Line 119: # TODO: Implement based on requirements proper exception handling
-      Context:
-                    pass
-                except Exception as e:
-                    # TODO: Implement based on requirements proper exception handling
-                    pass
-                    if data is None:
-    Line 245: # TODO: Implement based on requirements proper exception handling
-      Context:
-        
-                try:
-                    # TODO: Implement based on requirements proper exception handling
-                    pass
-                except Exception as e:
-    Line 248: # TODO: Implement based on requirements proper exception handling
-      Context:
-                    pass
-                except Exception as e:
-                    # TODO: Implement based on requirements proper exception handling
-                    pass
-                    if isinstance(data = pd.DataFrame):
-    Line 296: # TODO: Implement based on requirements proper exception handling
-      Context:
-                """Calculate consistency score for the data."""
-                try:
-                    # TODO: Implement based on requirements proper exception handling
-                    pass
-                except Exception as e:
-    Line 299: # TODO: Implement based on requirements proper exception handling
-      Context:
-                    pass
-                except Exception as e:
-                    # TODO: Implement based on requirements proper exception handling
-                    pass
-                    # Check price relationships
-    Line 326: # TODO: Implement based on requirements proper exception handling
-      Context:
-                """Calculate validity score for the data."""
-                try:
-                    # TODO: Implement based on requirements proper exception handling
-                    pass
-                except Exception as e:
-    Line 329: # TODO: Implement based on requirements proper exception handling
-      Context:
-                    pass
-                except Exception as e:
-                    # TODO: Implement based on requirements proper exception handling
-                    pass
-                    validity_checks = []
-    Line 368: # TODO: Implement based on requirements proper exception handling
-      Context:
-        
-                try:
-                    # TODO: Implement based on requirements proper exception handling
-                    pass
-                except Exception as e:
-    Line 371: # TODO: Implement based on requirements proper exception handling
-      Context:
-                    pass
-                except Exception as e:
-                    # TODO: Implement based on requirements proper exception handling
-                    pass
-                    if isinstance(data = pd.DataFrame):
-    Line 472: # TODO: Implement based on requirements proper exception handling
-      Context:
-        
-                try:
-                    # TODO: Implement based on requirements proper exception handling
-                    pass
-                except Exception as e:
-    Line 475: # TODO: Implement based on requirements proper exception handling
-      Context:
-                    pass
-                except Exception as e:
-                    # TODO: Implement based on requirements proper exception handling
-                    pass
-                    # Execute the step
-    Line 563: # TODO: Implement based on requirements proper exception handling
-      Context:
-                """Log comprehensive pipeline execution report."""
-                try:
-                    # TODO: Implement based on requirements proper exception handling
-                    pass
-                except Exception as e:
-    Line 566: # TODO: Implement based on requirements proper exception handling
-      Context:
-                    pass
-                except Exception as e:
-                    # TODO: Implement based on requirements proper exception handling
-                    pass
-                    symbol = training_input.get("symbol" = "UNKNOWN")
 
 File: ./src/training/tpsl_optimizer.py
 --------------------------------------

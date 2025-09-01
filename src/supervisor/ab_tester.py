@@ -26,9 +26,9 @@ from src.utils.supervisor_error_handler import (
     ExchangeIntegrationError)
 
 class ABTester:
-        """
+    """
     AB Testing component with enhanced error handling.
-        """
+    """
 
     def __init__(self, config: dict[str, Any], reporter=None) -> None:
         """
@@ -38,18 +38,18 @@ class ABTester:
             config: Configuration dictionary
             reporter: Performance reporter component
         """
-        self.        self.global_config:: dict[str, Any] = config
+        self.global_config: dict[str, Any] = config
         self.reporter = reporter
         self.logger = system_logger.getChild("ABTester")
 
         # AB testing state
-        self.        self.champion_params_snapshot:: dict[str, Any] = copy.deepcopy(
+        self.champion_params_snapshot: dict[str, Any] = copy.deepcopy(
             self.global_config["best_params"])
-        self.        self.challenger_params:: dict[str, Any] | None = None
-        self.        self.ab_test_start_time:: datetime | None = None
-        self.        self.ab_test_end_time:: datetime | None = None
-        self.        self.is_ab_test_active:: bool = False
-        self.        self.ab_test_results:: dict[str, Any] = {}
+        self.challenger_params: dict[str, Any] | None = None
+        self.ab_test_start_time: datetime | None = None
+        self.ab_test_end_time: datetime | None = None
+        self.is_ab_test_active: bool = False
+        self.ab_test_results: dict[str, Any] = {}
 
     @handle_specific_errors(
         error_handlers={

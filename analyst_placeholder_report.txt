@@ -4,22 +4,18 @@ PLACEHOLDER FINDER REPORT
 
 SUMMARY STATISTICS:
   Files analyzed: 32
-  Total placeholders found: 37
+  Total placeholders found: 25
   Pass statements: 5
-  TODO comments: 29
+  TODO comments: 17
   NotImplementedError raises: 2
   Placeholder functions: 1
 
 PER DIRECTORY BREAKDOWN:
-  src/analyst: 17 files, 30 placeholders
+  src/analyst: 15 files, 18 placeholders
   src/analyst/predictive_ensembles: 3 files, 3 placeholders
   src/analyst/predictive_ensembles/regime_ensembles: 2 files, 4 placeholders
 
 PER FILE BREAKDOWN:
-  src/analyst/advanced_feature_engineering.py: 6 placeholders
-    - todo_comments: 6
-  src/analyst/autoencoder_feature_generator.py: 6 placeholders
-    - todo_comments: 6
   src/analyst/di_analyst.py: 2 placeholders
     - todo_comments: 1
     - placeholder_functions: 1
@@ -64,100 +60,6 @@ PER FILE BREAKDOWN:
     - todo_comments: 1
 
 DETAILED FINDINGS:
-
-File: src/analyst/advanced_feature_engineering.py
--------------------------------------------------
-
-  TODO_COMMENTS:
-    Line 711: pass  # TODO: Add implementation
-      Context:
-            # Implementation placeholder - add specific implementation as needed
-        class FeatureInteractionEngine:
-            pass  # TODO: Add implementation
-        class FeatureInteractionEngine:
-            """
-    Line 1212: pass  # TODO: Add implementation
-      Context:
-            # Implementation placeholder - add specific implementation as needed
-        class AdvancedFeatureEngineering:
-            pass  # TODO: Add implementation
-        class AdvancedFeatureEngineering:
-            """
-    Line 2263: pass  # TODO: Add implementation
-      Context:
-            # Implementation placeholder - add specific implementation as needed
-        class VolatilityRegimeModel:
-            pass  # TODO: Add implementation
-        class VolatilityRegimeModel:
-            """Model volatility regimes using GARCH and other methods."""
-    Line 2356: pass  # TODO: Add implementation
-      Context:
-            # Implementation placeholder - add specific implementation as needed
-        class CorrelationAnalyzer:
-            pass  # TODO: Add implementation
-        class CorrelationAnalyzer:
-            """Analyze correlations between different assets and timeframes."""
-    Line 2415: pass  # TODO: Add implementation
-      Context:
-            # Implementation placeholder - add specific implementation as needed
-        class MomentumAnalyzer:
-            pass  # TODO: Add implementation
-        class MomentumAnalyzer:
-            """Analyze momentum patterns and signals."""
-    Line 2489: pass  # TODO: Add implementation
-      Context:
-            # Implementation placeholder - add specific implementation as needed
-        class LiquidityAnalyzer:
-            pass  # TODO: Add implementation
-        class LiquidityAnalyzer:
-            """Analyze liquidity conditions and market depth."""
-
-File: src/analyst/autoencoder_feature_generator.py
---------------------------------------------------
-
-  TODO_COMMENTS:
-    Line 182: pass  # TODO: Add implementation
-      Context:
-            # Implementation placeholder - add specific implementation as needed
-        class PriceReturnConverter:
-            pass  # TODO: Add implementation
-        class PriceReturnConverter:
-            """Convert price features to returns (price differences) for better autoencoder training."""
-    Line 616: pass  # TODO: Add implementation
-      Context:
-            # Implementation placeholder - add specific implementation as needed
-        class FeatureFilter:
-            pass  # TODO: Add implementation
-        class FeatureFilter:
-            """Random Forest + SHAP feature filtering."""
-    Line 1312: pass  # TODO: Add implementation
-      Context:
-            # Implementation placeholder - add specific implementation as needed
-        class ImprovedAutoencoderPreprocessor:
-            pass  # TODO: Add implementation
-        class ImprovedAutoencoderPreprocessor:
-            """Enhanced preprocessor with separate fit/transform and no data leakage."""
-    Line 1508: pass  # TODO: Add implementation
-      Context:
-            # Implementation placeholder - add specific implementation as needed
-        class SequenceAwareAutoencoder:
-            pass  # TODO: Add implementation
-        class SequenceAwareAutoencoder:
-            """1D-CNN based autoencoder that learns to reconstruct the last timestep of a sequence."""
-    Line 1748: pass  # TODO: Add implementation
-      Context:
-            # Implementation placeholder - add specific implementation as needed
-        class AutoencoderFeatureAnalyzer:
-            pass  # TODO: Add implementation
-        class AutoencoderFeatureAnalyzer:
-            """Comprehensive feature importance analysis for autoencoder-generated features."""
-    Line 2516: pass  # TODO: Add implementation
-      Context:
-            # Implementation placeholder - add specific implementation as needed
-        class AutoencoderFeatureGenerator:
-            pass  # TODO: Add implementation
-        class AutoencoderFeatureGenerator:
-            """Main class for the complete autoencoder feature generation workflow."""
 
 File: src/analyst/di_analyst.py
 -------------------------------

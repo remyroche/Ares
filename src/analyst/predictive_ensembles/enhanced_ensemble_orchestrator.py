@@ -23,10 +23,6 @@ from src.utils.logger import system_logger
 
 
 class EnhancedRegimePredictiveEnsembles(RegimePredictiveEnsembles):
-    # Implementation placeholder - add specific implementation as needed
-class EnhancedRegimePredictiveEnsembles(RegimePredictiveEnsembles):
-    pass  # TODO: Add implementation
-class EnhancedRegimePredictiveEnsembles(RegimePredictiveEnsembles):
     """
 Enhanced ensemble orchestrator that integrates multi-timeframe training.
 

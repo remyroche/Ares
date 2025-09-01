@@ -167,8 +167,8 @@ except Exception as e:
     # Exception handling placeholder - implement specific error handling as needed
 kid = int(c.split("_")[-1])
 intensities[kid] = float(row_int[c].iloc[0])
-except Exception:
-                        pass
+except Exception as e:
+                        logger.warning(f"Error processing intensity for cluster {c}: {e}")
 # Forecasting features
 p_emerge: dict[int, float] = {}
 exit_hazard: float | None = None

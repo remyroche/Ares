@@ -293,8 +293,8 @@ elif isinstance(name_candidate, str) and name_candidate.startswith(
 "<class "
 ):
                         name_candidate = name_candidate.split(".")[-1].split("'>")[0]
-except Exception:
-                    pass
+except Exception as e:
+                    self.logger.debug(f"Error parsing name candidate: {e}")
 effective_state = kwargs.get("state", state)
 try:
     # Exception handling placeholder - implement specific error handling as needed
@@ -327,8 +327,8 @@ except Exception:
                                     bitgen_cls = None
 if bitgen_cls is not None:
                                 return bitgen_cls()
-except Exception:
-                            pass
+except Exception as e:
+                            self.logger.debug(f"Error creating bitgen class: {e}")
 raise ctor_exc
 
 np_random_pickle.__bit_generator_ctor = _normalized_numpy_bitgen_ctor  # type: ignore[attr-defined]

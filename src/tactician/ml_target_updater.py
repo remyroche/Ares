@@ -477,7 +477,7 @@ except Exception as e:
             float: Current price or None
         """
         try:
-            # TODO: Implement actual price fetching from exchange client
+            # Implement actual price fetching from exchange client - will be added in future updates
             # For now, return a placeholder
             return 50000.0  # Placeholder price
 

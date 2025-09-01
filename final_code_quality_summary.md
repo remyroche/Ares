@@ -12,6 +12,7 @@ We successfully used the tools in `code_quality/tools/` to attempt comprehensive
   - Files processed: 500 (all Python files in `src/` directory)
   - Files fixed: 21
   - Total fixes applied: 231
+  - Additional testing: 75 files in `scripts/` (0 fixed), 4 files in `crypto_analysis/` (0 fixed)
 - **Issues**: Only handled basic syntax errors
 
 ### 2. ⚠️ Enhanced Syntax Fixer (`enhanced_syntax_fixer.py`)
@@ -35,8 +36,11 @@ We successfully used the tools in `code_quality/tools/` to attempt comprehensive
 
 ### File Count Clarification
 - **Total Python files in workspace**: 746
-- **Python files in `src/` directory**: 500 (processed by tools)
-- **Python files outside `src/`**: 246 (not processed)
+- **Python files in `src/` directory**: 500 (processed by tools, many syntax errors)
+- **Python files in `scripts/` directory**: 75 (tested separately, many syntax errors)
+- **Python files in `crypto_analysis/` directory**: 4 (tested separately, no syntax errors)
+- **Python files in `exchanges/`, `config/`, `gui/` directories**: 0 (these directories don't exist or have no Python files)
+- **Other Python files** (root level, backtesting/, code_quality/, etc.): 167 (not processed)
 
 ### 1. Syntax Error Patterns Identified
 The codebase has several recurring syntax error patterns:
@@ -53,6 +57,8 @@ The codebase has several recurring syntax error patterns:
 - **Analyst Module**: 20+ files with syntax errors
 - **Utils Module**: 50+ files with syntax errors
 - **Config Module**: 30+ files with syntax errors
+- **Scripts Directory**: ~40+ files with syntax errors (out of 75 total)
+- **Crypto Analysis Directory**: 0 files with syntax errors (out of 4 total)
 
 ### 3. Root Cause Analysis
 The syntax errors appear to be the result of:

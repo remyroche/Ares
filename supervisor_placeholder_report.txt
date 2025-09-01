@@ -3,15 +3,32 @@ PLACEHOLDER FINDER REPORT
 ================================================================================
 
 SUMMARY STATISTICS:
-  Files analyzed: 18
-  Total placeholders found: 0
-  Pass statements: 0
-  TODO comments: 0
-  NotImplementedError raises: 0
-  Placeholder functions: 0
-
-PER DIRECTORY BREAKDOWN:
-
-PER FILE BREAKDOWN:
+----------------------------------------
+Files Analyzed: 18
+Total Placeholders: 9
+Pass Statements: 1
+Todo Comments: 8
+Raise Notimplemented: 0
+Placeholder Functions: 0
 
 DETAILED FINDINGS:
+----------------------------------------
+
+File: src/supervisor/multi_exchange_ab_tester.py
+------------------------------------------------
+
+  Pass Statements:
+    Line 25: Standalone pass statement (likely placeholder)
+
+File: src/supervisor/supervisor.py
+----------------------------------
+
+  Todo Comments:
+    Line 1634: pass  # TODO: Add proper exception handling
+    Line 1652: pass  # TODO: Add proper exception handling
+    Line 2019: pass  # TODO: Add proper exception handling
+    Line 2035: pass  # TODO: Add proper exception handling
+    Line 2051: pass  # TODO: Add proper exception handling
+    Line 2067: pass  # TODO: Add proper exception handling
+    Line 2083: pass  # TODO: Add proper exception handling
+    Line 2205: pass  # TODO: Add proper exception handling

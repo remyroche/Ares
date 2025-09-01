@@ -127,6 +127,9 @@ class Step9TacticianSpecialistTrainingValidator(BaseValidator):
             bool: True if files exist
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Expected tactician model file patterns
             expected_files = [
                 f"{data_dir}/{exchange}_{symbol}_tactician_model.pkl",
@@ -168,6 +171,9 @@ class Step9TacticianSpecialistTrainingValidator(BaseValidator):
             bool: True if performance is acceptable
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Load tactician training history
             history_file = (
                 f"{data_dir}/{exchange}_{symbol}_tactician_training_history.json"
@@ -259,6 +265,9 @@ class Step9TacticianSpecialistTrainingValidator(BaseValidator):
             bool: True if training metrics are acceptable
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             history_file = (
                 f"{data_dir}/{exchange}_{symbol}_tactician_training_history.json"
             )
@@ -351,6 +360,9 @@ class Step9TacticianSpecialistTrainingValidator(BaseValidator):
             bool: True if model quality is acceptable
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Load tactician model metadata
             metadata_file = (
                 f"{data_dir}/{exchange}_{symbol}_tactician_model_metadata.json"
@@ -413,6 +425,9 @@ class Step9TacticianSpecialistTrainingValidator(BaseValidator):
 
         if os.path.exists(model_file):
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         with open(model_file, "rb") as f:
                         loaded_artifact, pickle.load(f)
 
@@ -472,6 +487,9 @@ class Step9TacticianSpecialistTrainingValidator(BaseValidator):
         Returns the input if it already exposes a callable predict.
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         if callable(getattr(artifact, "predict", None)):
         return artifact
         if isinstance(artifact, dict):

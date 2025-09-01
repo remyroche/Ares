@@ -307,6 +307,9 @@ class UnifiedRegimeIntelligenceStep:
     def _safe_get_device(self) -> str:
         """Safely determine best device: prefer CUDA, then MPS with timeout, else CPU."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         if torch.cuda.is_available():
         return "cuda"
         # MPS check can occasionally hang; guard with timeout
@@ -345,6 +348,9 @@ class UnifiedRegimeIntelligenceStep:
     async def initialize(self) -> bool:
         """Initialize the unified regime intelligence step."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         self.logger.info("🚀 Initializing Unified Regime Intelligence Step...")
 
         # Initialize model
@@ -381,6 +387,9 @@ class UnifiedRegimeIntelligenceStep:
     async def train(self, data: dict[str, pd.DataFrame]) -> bool:
         """Train the unified regime intelligence model."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         self.logger.info("🚀 Starting Unified Regime Intelligence training...")
 
         # Enhanced optimization for step06_5
@@ -470,6 +479,9 @@ class UnifiedRegimeIntelligenceStep:
     ) -> dict[str, Any] | None:
         """Prepare data for enhanced optimization."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Load HMM composite data for each timeframe
             hmm_data: dict[str, pd.DataFrame] = {}
         for tf in self.timeframes:
@@ -522,6 +534,9 @@ class UnifiedRegimeIntelligenceStep:
     ) -> dict[str, Any] | None:
         """Prepare training data from multi - timeframe HMM states, intensity scores, and features."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Load HMM composite data for each timeframe
             hmm_data: dict[str, pd.DataFrame] = {}
         for tf in self.timeframes:
@@ -608,6 +623,9 @@ class UnifiedRegimeIntelligenceStep:
     def _generate_intensity_scores(self, hmm_df: pd.DataFrame) -> pd.DataFrame:
         """Generate comprehensive intensity scores from HMM states (enhanced method)."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Get unique cluster IDs
             cluster_ids, hmm_df.get(
                 "composite_cluster_id", hmm_df.get("hmm_state", pd.Series(np.arange(20), index = hmm_df.index)),
@@ -692,6 +710,9 @@ class UnifiedRegimeIntelligenceStep:
     ) -> pd.DataFrame:
         """Create cross - timeframe intensity correlations."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Initialize correlation dataframe
             correlation_df, pd.DataFrame(index = base_index)
 
@@ -754,6 +775,9 @@ class UnifiedRegimeIntelligenceStep:
     ) -> pd.Series:
         """Calculate rolling correlation between two timeframe intensities."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Calculate mean intensity per timeframe
             tf1_mean, tf1_intensities.mean(axis = 1)
             tf2_mean, tf2_intensities.mean(axis = 1)
@@ -772,6 +796,9 @@ class UnifiedRegimeIntelligenceStep:
     ) -> pd.Series:
         """Calculate how well all timeframes are aligned."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Get dominant regime for each timeframe
             dominant_regimes: dict[str, pd.Series] = {}
         for tf, intensities in tf_intensities.items():
@@ -797,6 +824,9 @@ class UnifiedRegimeIntelligenceStep:
     ) -> pd.Series:
         """Calculate temporal consistency across timeframes."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Calculate intensity stability for each timeframe
             stability_scores: list[pd.Series] = []
         for intensities in tf_intensities.values():
@@ -820,6 +850,9 @@ class UnifiedRegimeIntelligenceStep:
     ) -> pd.Series:
         """Calculate regime synchronization across timeframes."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Calculate regime change points for each timeframe
             change_points: dict[str, pd.Series] = {}
         for tf, intensities in tf_intensities.items():
@@ -849,6 +882,9 @@ class UnifiedRegimeIntelligenceStep:
     ) -> pd.DataFrame:
         """Create regime transition probability features."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Initialize transition dataframe
             transition_df, pd.DataFrame(index = base_index)
 
@@ -908,6 +944,9 @@ class UnifiedRegimeIntelligenceStep:
     ) -> pd.Series:
         """Calculate how quickly we transition from a specific regime."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Create regime mask
             regime_mask = (regimes == regime_id).astype(int)
 
@@ -928,6 +967,9 @@ class UnifiedRegimeIntelligenceStep:
     ) -> pd.Series:
         """Calculate typical persistence length of a specific regime."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Create regime mask
             regime_mask = (regimes == regime_id).astype(int)
 
@@ -948,6 +990,9 @@ class UnifiedRegimeIntelligenceStep:
     ) -> pd.Series:
         """Calculate momentum of a specific regime."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Create regime mask
             regime_mask = (regimes == regime_id).astype(int)
 
@@ -966,6 +1011,9 @@ class UnifiedRegimeIntelligenceStep:
     ) -> dict[str, Any]:
         """Create training sequences for the unified model."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             sequences: list[dict[str, Any]] = []
             labels: dict[str, list[int]] = {"regime": [], "transition": [], "tpsl": []}
 
@@ -1114,6 +1162,9 @@ class UnifiedRegimeIntelligenceStep:
     async def _log_feature_count_info(self, feature_tensor: torch.Tensor, intensity_features: list[np.ndarray], features: pd.DataFrame, cross_tf_correlations: pd.DataFrame, transition_features: pd.DataFrame) -> None:
         """Log detailed information about feature counts and dimensions."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             total_features, feature_tensor.shape[-1] if len(feature_tensor.shape) > 1 else 0
             intensity_feature_count, sum(feat.shape[-1] for feat in intensity_features) if intensity_features else 0
             additional_feature_count, features.shape[1] if not features.empty else 0
@@ -1161,6 +1212,9 @@ class UnifiedRegimeIntelligenceStep:
     ) -> int:
         """Detect regime transitions based on intensity score changes."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Get current and previous intensity scores
             current_intensities: dict[int, float] = {}
             previous_intensities: dict[int, float] = {}
@@ -1233,6 +1287,9 @@ class UnifiedRegimeIntelligenceStep:
     ) -> int:
         """Calculate TPSL - based direction (long / short only)."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Get current price and future prices for TPSL calculation
             current_price = (
                 hmm_data.iloc[current_idx]["close"]
@@ -1275,6 +1332,9 @@ class UnifiedRegimeIntelligenceStep:
     async def _train_model(self, train_data: dict[str, Any]) -> bool:
         """Train the unified regime intelligence model."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Apply model - specific pruning for Step 6.5
         if "features" in train_data and len(train_data["features"]) > 0:
                 from src.training.model_specific_pruning import ModelSpecificPruning
@@ -1454,6 +1514,9 @@ class UnifiedRegimeIntelligenceStep:
     async def _save_artifacts(self) -> None:
         """Save model artifacts and metadata."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Save model
             torch.save(
         self.model.state_dict(),
@@ -1498,6 +1561,9 @@ class UnifiedRegimeIntelligenceStep:
 
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         if self.model is None:
                 raise ValueError("Model not trained or loaded")
 
@@ -1572,6 +1638,9 @@ class UnifiedRegimeIntelligenceStep:
 
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Get base predictions
             base_prediction, self.predict(hmm_states, features)
         if base_prediction is None:
@@ -1622,6 +1691,9 @@ class UnifiedRegimeIntelligenceStep:
 
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Determine intended direction from TPSL prediction
             intended_direction = "long" if tpsl_prediction == 1 else "short"
 
@@ -1738,6 +1810,9 @@ class UnifiedRegimeIntelligenceStep:
 
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Get base unified predictions
             unified_prediction, self.predict(hmm_states, market_features)
 
@@ -1884,6 +1959,9 @@ class UnifiedRegimeIntelligenceStep:
         self, unified_prediction: dict[str, Any], sr_outcome: dict[str, Any]) -> float:
         """Calculate combined confidence when near S / R levels."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             unified_confidence, unified_prediction.get("confidence_score", 0.5)
             sr_confidence, sr_outcome.get("confidence", 0.5)
 
@@ -1901,6 +1979,9 @@ class UnifiedRegimeIntelligenceStep:
         self, unified_prediction: dict[str, Any], sr_outcome: dict[str, Any]) -> dict[str, Any]:
         """Calculate risk management parameters when near S / R levels."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             combined_confidence, self._calculate_sr_combined_confidence(
                 unified_prediction, sr_outcome,
             )
@@ -2063,6 +2144,9 @@ async def run_step(
     }
 
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         logger.info(
             f"🔄 Starting Unified Regime Intelligence Step for {exchange}:{symbol}",
         )
@@ -2070,6 +2154,9 @@ async def run_step(
         # Phase 1: Load configuration
         logger.info("📋 Phase 1: Loading configuration...")
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             config, training_config or {}
             uri_config, config.get("UNIFIED_REGIME_INTELLIGENCE", {})
 
@@ -2102,6 +2189,9 @@ async def run_step(
         # Phase 3: Load data
         logger.info("📥 Phase 3: Loading training data...")
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             data = {
                 "combined_features": pd.DataFrame(),  # Would be loaded from previous steps
             }

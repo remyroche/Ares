@@ -71,6 +71,9 @@ class GPUAccelerationM1:
             Result matrix and metadata
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             start_time = time.time()
             self.logger.info("🚀 GPU Matrix Multiplication (MPS)")
 
@@ -137,6 +140,9 @@ class GPUAccelerationM1:
             U, S, Vt matrices and metadata
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             start_time = time.time()
             self.logger.info("🚀 GPU SVD Decomposition (MPS)")
 
@@ -204,6 +210,9 @@ class GPUAccelerationM1:
 
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Check if MPS is available
             if not self.mps_available:
                 return False

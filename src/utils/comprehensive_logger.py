@@ -165,6 +165,9 @@ class ComprehensiveLogger:
           records with `propagate = False` are captured as well
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Route Python warnings through logging system so they get captured too
             logging.captureWarnings(True)
 

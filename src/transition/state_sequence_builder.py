@@ -89,6 +89,9 @@ class StateSequenceBuilder:
         # Ensure trained
         self._ensure_trained(klines_df)
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Reuse the URC feature pipeline to get HMM states
             features_df = self.urc._calculate_features(klines_df)
             if features_df.empty:

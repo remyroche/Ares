@@ -166,6 +166,9 @@ class EventBus:
     )
     async def _process_events(self) -> None:
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             now = datetime.now().isoformat()
             self.status = {"timestamp": now, "status": "running"}
             self.history.append(self.status.copy())
@@ -188,6 +191,9 @@ class EventBus:
     )
     async def _dispatch_event(self, event: dict[str, Any]) -> None:
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             event_type = event.get("type", "unknown")
             subscribers = self.subscribers.get(event_type, [])
             payload = event.get("data")
@@ -288,6 +294,9 @@ class EventBus:
     async def publish(self, event_type: EventType | str, data: Any) -> None:
         """Publish an event to the bus."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             event_key = (
                 event_type.value if isinstance(event_type, EventType) else str(event_type)
             )

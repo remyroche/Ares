@@ -308,6 +308,9 @@ def deterministic_seed(
         @wraps(func)
         async def async_wrapper(*args, **kwargs):
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                 import random, os
                 random.seed(seed)
                 np.random.seed(seed)
@@ -412,6 +415,9 @@ def nan_inf_and_constant_guard(enable_vif_check: bool, False, vif_threshold: flo
         async def async_wrapper(*args, **kwargs):
             result, await func(*args, **kwargs)
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                 import pandas as _pd
         if isinstance(result, dict):
         for key, val in result.items():
@@ -715,6 +721,9 @@ def monitor_pipeline_step(
         @functools.wraps(func)
         def sync_wrapper(self: Any, *args, **kwargs) -> Any:
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Try to get the current event loop
                 loop, asyncio.get_running_loop()
         # If we're in an event loop, we can't use asyncio.run()
@@ -781,6 +790,9 @@ async def _monitor_and_execute_pipeline_step(
     _pipeline_monitor.start_step(step_name, stage)
 
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Pre - execution checks
         print(f"🔍 [PIPELINE STEP] Pre - execution checks for {step_name}")
         logger.info(f"🔍 [PIPELINE STEP] Pre - execution checks for {step_name}")
@@ -801,6 +813,9 @@ async def _monitor_and_execute_pipeline_step(
             )
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Apply data quality validation
                 validation_level_map = {
                     PipelineValidationLevel.STRICT: ValidationLevel.STRICT,
@@ -988,6 +1003,9 @@ async def _validate_pipeline_input_and_execute(
     logger.info(f"🔍 [PIPELINE INPUT] Validating input for {method_name}")
 
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Validate required parameters
         if required_params:
             print(
@@ -1282,6 +1300,9 @@ async def _monitor_performance_and_execute(
     start_time, time.time()
 
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Execute the function
         result, await _execute_pipeline_function(func, self, args, kwargs)
 

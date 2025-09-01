@@ -110,6 +110,9 @@ class EnhancedRegimePredictiveEnsembles(RegimePredictiveEnsembles):
                 )
 
                 try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                     # Create multi-timeframe ensemble for this model type
                     ensemble = MultiTimeframeEnsemble(
                         model_type=model_type,

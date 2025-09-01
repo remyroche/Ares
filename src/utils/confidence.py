@@ -18,6 +18,9 @@ def normalize_dual_confidence(
     dual, analyst_confidence * (tactician_confidence**2)
     normalized, max(0.0, min(1.0, (dual - DUAL_CONF_BASELINE) / DUAL_CONF_RANGE))
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         if logger is not None:
             logger.info(
                 {

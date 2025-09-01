@@ -44,22 +44,3 @@ class AnomalyType(Enum):
     FEATURE_DRIFT = "feature_drift"
 
 
-class ErrorDetectionSystem:
-    """Error detection system scaffold."""
-
-    def __init__(self, config: Dict[str, Any]) -> None:
-        self.config = config
-        self.logger = system_logger.getChild("ErrorDetectionSystem")
-
-    @handle_specific_errors(
-        error_handlers, {
-            ValueError: (False, "Invalid error detection configuration"),
-            AttributeError: (False, "Missing error detection parameters"),
-        },
-        default_return, False,
-        context="error_detection_system.initialize",
-    )
-    async def initialize(self) -> bool:
-        self.logger.info("Initializing Error Detection System ...")
-        self.logger.info("✅ Error Detection System initialization completed")
-        return True

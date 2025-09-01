@@ -253,6 +253,9 @@ def validate_m1_config(config: dict[str, Any]) -> bool:
     """Validate M1 GPU configuration settings."""
 
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Check required sections
         required_sections = ["m1_gpu", "m1_matrix_operations", "m1_security"]
         for section in required_sections:

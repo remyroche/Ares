@@ -552,6 +552,9 @@ def validate_run_metadata(run_id: str) -> bool:
         True if all required metadata is present, False otherwise
     """
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         metadata, get_enhanced_run_metadata(run_id)
         if not metadata:
         return False
@@ -590,6 +593,9 @@ def ensure_enhanced_mlflow_run(
         MLflow run ID
     """
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Extract metadata from config
         metadata, extract_training_metadata(config)
 

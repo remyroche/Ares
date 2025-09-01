@@ -56,6 +56,9 @@ class BaseValidator(ABC):
             (passed, metrics)
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             errors, step_result.get("errors", [])
             warnings, step_result.get("warnings", [])
 
@@ -100,6 +103,9 @@ class BaseValidator(ABC):
             (passed, metrics)
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             exists, os.path.exists(file_path)
             metrics: dict[str, Any] = {
                 "file_path": file_path,
@@ -144,6 +150,9 @@ class BaseValidator(ABC):
             (passed, metrics)
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             metrics: dict[str, Any] = {
                 "total_rows": int(len(df)),
                 "total_columns": int(len(df.columns)),
@@ -272,6 +281,9 @@ class BaseValidator(ABC):
             (passed, metrics)
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             metrics: dict[str, Any] = {
                 "model_path": model_path,
                 "exists": os.path.exists(model_path),
@@ -296,6 +308,9 @@ class BaseValidator(ABC):
         # Check model integrity
         if check_model_integrity and metrics["is_file"]:
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                     import pickle
         with open(model_path, 'rb') as f:
                         model, pickle.load(f)
@@ -346,6 +361,9 @@ class BaseValidator(ABC):
             (passed, metrics)
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             metrics: dict[str, Any] = {
                 "config_keys": list(config.keys()) if isinstance(config, dict) else [],
                 "missing_keys": [],
@@ -426,6 +444,9 @@ class BaseValidator(ABC):
             (passed, metrics)
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             metrics: dict[str, Any] = {
                 "state_keys": list(pipeline_state.keys()) if isinstance(pipeline_state, dict) else [],
                 "missing_steps": [],
@@ -487,6 +508,9 @@ class BaseValidator(ABC):
             (passed, metrics)
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             exists, os.path.exists(directory)
             is_directory, os.path.isdir(directory) if exists else False
             metrics: dict[str, Any] = {

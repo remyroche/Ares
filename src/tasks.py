@@ -37,6 +37,9 @@ def run_monthly_training_pipeline() -> None:
     """
     print("Celery Task: Kicking off monthly training pipeline...")
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         async def run_training():
             # Initialize database manager
             db_manager = SQLiteManager({})

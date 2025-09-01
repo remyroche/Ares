@@ -262,6 +262,9 @@ class EnhancedMissingValueHandler:
         self.logger.info(f"Downloading data for gap: {gap}")
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Download missing data
             downloaded_data, self._download_missing_data(
                 symbol, exchange, timeframe, gap.start_time, gap.end_time
@@ -300,6 +303,9 @@ class EnhancedMissingValueHandler:
             Downloaded data or None if failed
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Convert timestamps to datetime
             start_dt, datetime.fromtimestamp(start_time)
             end_dt, datetime.fromtimestamp(end_time)

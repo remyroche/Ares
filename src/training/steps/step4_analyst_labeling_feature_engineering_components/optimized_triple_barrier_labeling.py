@@ -149,6 +149,9 @@ class OptimizedTripleBarrierLabeling:
 
         # Normalize common OHLCV column name variants to lowercase expected by downstream logic
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             rename_map: dict[str, str] = {}
             canonical_map = {
                 "Open": "open",

@@ -133,6 +133,9 @@ def validate_data_quality_v2(
         # Pre - validation
         if global_config.enable_data_quality_checks:
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Apply data quality checks based on validation level
         if validation_level in ["ERROR", "CRITICAL", "STRICT"]:
         # Strict validation - fail on any issues

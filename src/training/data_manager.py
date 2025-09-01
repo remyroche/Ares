@@ -86,6 +86,9 @@ class UnifiedDataManager:
 
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             self.logger.info("🔄 Creating unified database with time-based splits...")
 
             # Validate ratios
@@ -499,6 +502,9 @@ class UnifiedDataManager:
         """Save individual data splits for easy access by subsequent steps."""
         # Prefer Parquet for DataFrame splits, fallback to Pickle
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             train_data.to_parquet(
                 self.train_file_parquet, compression="snappy", index=False,
             )
@@ -696,6 +702,9 @@ class UnifiedDataManager:
 
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             validation_results = {"status": "SUCCESS", "issues": [], "warnings": []}
 
             # Check if all files exist
@@ -772,6 +781,9 @@ class UnifiedDataManager:
     ) -> bool:
         """Check if the temporal ordering is maintained across splits."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             if len(validation_data) > 0 and len(test_data) > 0:
                 return (
                     train_data.index.max() <= validation_data.index.min()

@@ -333,6 +333,9 @@ async def _validate_file_operation(
 ) -> None:
     """Validate a file operation."""
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         validator, ComprehensiveFileValidator()
         result, validator.validate_file_format(file_path, expected_schema, step_name)
 
@@ -358,6 +361,9 @@ def _validate_file_operation_sync(
 ) -> None:
     """Validate a file operation (synchronous version)."""
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         validator, ComprehensiveFileValidator()
         result, validator.validate_file_format(file_path, expected_schema, step_name)
 
@@ -382,6 +388,9 @@ async def _validate_dataframe_operation(
 ) -> None:
     """Validate a DataFrame operation."""
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Basic DataFrame validation
         if df is None or df.empty:
             logger.warning(f"⚠️ {operation_type.capitalize()} DataFrame is None or empty")
@@ -431,6 +440,9 @@ def _validate_dataframe_operation_sync(
 ) -> None:
     """Validate a DataFrame operation (synchronous version)."""
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Basic DataFrame validation
         if df is None or df.empty:
             logger.warning(f"⚠️ {operation_type.capitalize()} DataFrame is None or empty")

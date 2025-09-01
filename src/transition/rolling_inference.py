@@ -53,6 +53,9 @@ class RollingMTInference:
 
     def load(self) -> bool:
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             models, meta, feat = MultiTaskRandomForest.load(
                 self.models_dir, prefix=self.prefix,
             )
@@ -141,6 +144,9 @@ class RollingMTInference:
         p_path: dict[str, float] = {}
         if pc is not None:
             try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                 proba = pc.predict_proba(X)[0]
                 classes = list(getattr(pc, "classes_", []))
                 for i, c in enumerate(classes):
@@ -191,6 +197,9 @@ class RollingMTInference:
         nr = self.models.get("next_regime")
         if nr is not None:
             try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                 proba = nr.predict_proba(X)[0]
                 classes = list(getattr(nr, "classes_", []))
                 p_nr = {}

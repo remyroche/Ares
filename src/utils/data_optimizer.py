@@ -393,6 +393,9 @@ def regime_columns() -> list[str]:
     def get_optimization_stats(self) -> dict[str, Any]:
         """Get data optimization statistics."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         return {
                 "processing_stats": self.processing_stats,
                 "optimization_config": {

@@ -73,6 +73,9 @@ class DataSharingManager:
     def _get_data_size_gb(self, data: pd.DataFrame | dict[str, Any]) -> float:
         """Estimate the size of data in GB."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             if isinstance(data, pd.DataFrame):
                 # Estimate DataFrame size
                 return data.memory_usage(deep=True).sum() / (1024**3)

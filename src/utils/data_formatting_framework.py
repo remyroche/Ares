@@ -205,6 +205,9 @@ class DataFormattingFramework:
         for column, target_type in data_types.items():
         if column in data.columns:
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         if target_type == "int64":
                         data[column] = pd.to_numeric(data[column], errors='coerce').astype('int64')
                     elif target_type == "float64":
@@ -298,6 +301,9 @@ class DataFormattingFramework:
         normalized_data, data.copy()
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Convert to datetime first
             timestamps, pd.to_datetime(normalized_data[timestamp_column], unit='s', errors='coerce')
 

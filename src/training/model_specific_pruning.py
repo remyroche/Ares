@@ -75,6 +75,9 @@ class ModelSpecificPruning:
 
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             self.logger.info(f"🧠 Pruning features for neural network: {model_type}")
             original_count = len(features_df.columns)
             target_features = self.neural_network_config["target_features"]
@@ -150,6 +153,9 @@ class ModelSpecificPruning:
 
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             self.logger.info(f"📊 Pruning features for linear model: {model_type}")
             original_count = len(features_df.columns)
             target_features = self.linear_model_config["target_features"]
@@ -220,6 +226,9 @@ class ModelSpecificPruning:
 
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             self.logger.info(f"🌳 Pruning features for ensemble model: {model_type}")
             original_count = len(features_df.columns)
             target_features = self.ensemble_config["target_features"]
@@ -287,6 +296,9 @@ class ModelSpecificPruning:
 
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             self.logger.info(f"🎯 Pruning features for Step 6 {timeframe} {architecture}")
 
             if architecture in ["CNN", "TCN", "Transformer"]:
@@ -328,6 +340,9 @@ class ModelSpecificPruning:
 
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             self.logger.info("🎯 Pruning features for Step 6.5 Unified Regime Intelligence")
 
             # Focus on regime-related features
@@ -382,6 +397,9 @@ class ModelSpecificPruning:
 
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             self.logger.info("🎯 Pruning features for Step 7 Analyst Ensemble")
 
             # Use ensemble pruning with focus on diversity

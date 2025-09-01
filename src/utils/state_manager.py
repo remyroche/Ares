@@ -108,6 +108,9 @@ class StateManager:
             bool: True if configuration is valid, False otherwise
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Validate state file path
         if not self.state_file:
         self.print(invalid("Invalid state file path"))
@@ -179,6 +182,9 @@ class StateManager:
             bool: True if successful, False otherwise
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Ensure directory exists
             Path(self.state_file).parent.mkdir(parents = True, exist_ok = True)
 
@@ -296,6 +302,9 @@ async def setup_state_manager(
         Optional[StateManager]: Global state manager instance
     """
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         global state_manager
 
         if config is None:

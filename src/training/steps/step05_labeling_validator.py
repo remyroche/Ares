@@ -45,6 +45,9 @@ class Step5LabelingValidator(BaseValidator):
         self.logger.info("🔍 Starting Step 5: Labeling validation")
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Check if labeled data directory exists
             labeled_data_dir, Path(data_dir) / "training" / "labeled_data"
         if not labeled_data_dir.exists():
@@ -94,6 +97,9 @@ class Step5LabelingValidator(BaseValidator):
     async def _validate_labeled_file(self, labeled_file: Path) -> bool:
         """Validate a labeled data file with caching."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         self.logger.info(f"📁 Validating labeled file: {labeled_file.name}")
 
         # Use BaseValidator's file validation
@@ -148,6 +154,9 @@ class Step5LabelingValidator(BaseValidator):
     async def _validate_metadata_file(self, metadata_file: Path) -> bool:
         """Validate the labeling metadata file with caching."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         self.logger.info(f"📊 Validating metadata file: {metadata_file.name}")
 
         # Use BaseValidator's file validation
@@ -204,6 +213,9 @@ class Step5LabelingValidator(BaseValidator):
         }
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Check if step04_regime_data_splitting output exists using BaseValidator
             step04_output_dir, Path("data / training / regime_splits")
             step04_files, list(step04_output_dir.glob(f"{exchange}_{symbol}_{timeframe}*regime*.parquet"))
@@ -239,6 +251,9 @@ class Step5LabelingValidator(BaseValidator):
         }
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Define expected output files
             output_dir, Path("data / training / labeled_data")
             expected_files = [
@@ -306,6 +321,9 @@ async def run_validator(
     logger.info("🔍 Validating Step 5: Labeling")
 
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Extract parameters
         symbol, training_input.get("symbol", "ETHUSDT")
         exchange, training_input.get("exchange", "BINANCE")

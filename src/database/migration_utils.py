@@ -49,6 +49,9 @@ class DatabaseMigrationUtils:
         )
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Create a clean copy for trading export
             shutil.copy2(self.db_manager.db_path, export_path)
 
@@ -95,6 +98,9 @@ class DatabaseMigrationUtils:
     async def _clean_for_trading(self, temp_db: SQLiteManager):
         """Removes backtest-specific data from the export."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Remove backtest results (keep only the latest successful ones)
             backtest_results = await temp_db.get_collection("backtest_results")
             if len(backtest_results) > 1:
@@ -132,6 +138,9 @@ class DatabaseMigrationUtils:
         Imports database on trading computer from backtesting computer export.
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Verify file exists
             if not os.path.exists(import_path):
                 self.print(missing("Import file not found: {import_path}"))
@@ -189,6 +198,9 @@ class DatabaseMigrationUtils:
         export_path = os.path.join(self.db_manager.migration_dir, f"{export_name}.json")
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Get all backtest results
             backtest_results = await self.db_manager.get_collection("backtest_results")
 
@@ -234,6 +246,9 @@ class DatabaseMigrationUtils:
         }
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Check if file exists
             if not os.path.exists(file_path):
                 validation_result["errors"].append("File does not exist")
@@ -253,6 +268,9 @@ class DatabaseMigrationUtils:
 
             # Try to open as SQLite database
             try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                 import sqlite3
 
                 conn = sqlite3.connect(file_path)
@@ -327,6 +345,9 @@ class DatabaseMigrationUtils:
         Cleans up old migration files and records.
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             cutoff_date = datetime.now() - timedelta(days=keep_days)
 
             # Get old migrations

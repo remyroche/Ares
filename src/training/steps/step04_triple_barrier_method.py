@@ -140,6 +140,9 @@ class TripleBarrierMethodStep:
         self.logger.info(f"🚀 Executing Triple Barrier Method for {symbol} on {exchange}")
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Load data from previous steps
             unified_data_path, Path(data_dir) / "unified" / exchange / symbol / timeframe
         if not unified_data_path.exists():
@@ -211,6 +214,9 @@ class TripleBarrierMethodStep:
     ) -> None:
         """Log step 4 artifacts and create detailed report."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Collect execution metadata
             execution_metadata = {
                 "start_time": datetime.now().isoformat(),
@@ -245,7 +251,7 @@ class TripleBarrierMethodStep:
             ,
                 "asset": symbol,  # Use symbol as asset
                 "lookback_period": self.config.get("lookback_days", 1095),  # Default to 3 years
-                "project_version": self.config.get("project_version", "1.0.0"),  # Default version
+                "project_version": self.config.get("project_version", "1_2_3"),  # Default version
             }
 
         # Create step data for report
@@ -278,7 +284,7 @@ class TripleBarrierMethodStep:
                 ,
                     "asset": symbol,
                     "lookback_period": self.config.get("lookback_days", 1095),
-                    "project_version": self.config.get("project_version", "1.0.0"),
+                    "project_version": self.config.get("project_version", "1_2_3"),
                 }
             )
         self.logger.info(f"✅ Logged triple barrier method report: {report_name}")
@@ -296,7 +302,7 @@ class TripleBarrierMethodStep:
                         "label_distribution": result_data['label'].value_counts().to_dict() if 'label' in result_data.columns else {,
                     "asset": symbol,
                     "lookback_period": self.config.get("lookback_days", 1095),
-                    "project_version": self.config.get("project_version", "1.0.0"),
+                    "project_version": self.config.get("project_version", "1_2_3"),
                 },
                         "timeframe": timeframe,
                     }
@@ -314,7 +320,7 @@ class TripleBarrierMethodStep:
                 ,
                     "asset": symbol,
                     "lookback_period": self.config.get("lookback_days", 1095),
-                    "project_version": self.config.get("project_version", "1.0.0"),
+                    "project_version": self.config.get("project_version", "1_2_3"),
                 }
             )
 
@@ -327,6 +333,9 @@ class TripleBarrierMethodStep:
     async def _apply_optimized_triple_barrier(self, data: pd.DataFrame) -> Optional[pd.DataFrame]:
         """Apply optimized triple barrier labeling with profit tracking."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Configure triple barrier parameters
             profit_take_multiplier, self.config.get("triple_barrier", {}).get("profit_take_multiplier", 0.002)
             stop_loss_multiplier, self.config.get("triple_barrier", {}).get("stop_loss_multiplier", 0.001)
@@ -377,6 +386,9 @@ class TripleBarrierMethodStep:
     async def _apply_basic_triple_barrier(self, data: pd.DataFrame) -> Optional[pd.DataFrame]:
         """Apply basic triple barrier labeling as fallback with profit tracking."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         self.logger.warning("⚠️ Using basic triple barrier implementation with profit tracking")
 
         # Simple triple barrier implementation with profit tracking
@@ -456,6 +468,9 @@ class TripleBarrierMethodStep:
             DataFrame with enhanced label columns
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             enhanced_data, data.copy()
 
         # Create profit - binned labels (categorize profits into bins)

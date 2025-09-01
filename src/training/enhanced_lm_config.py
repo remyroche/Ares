@@ -160,14 +160,6 @@ class EnhancedLMOptimizerConfig(BaseModel):
     validate_data_quality: bool = Field(default=True, description="Validate data quality before optimization")
     check_memory_usage: bool = Field(default=True, description="Check memory usage during optimization")
 
-    class Config:
-        """Pydantic configuration."""
-
-        validate_assignment = True
-        extra = "forbid"  # Prevent additional fields
-        json_encoders = {
-            # Custom JSON encoders if needed
-        }
 
     def to_dict(self) -> dict[str, Any]:
         """Convert configuration to dictionary."""

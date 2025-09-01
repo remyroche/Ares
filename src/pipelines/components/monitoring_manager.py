@@ -11,21 +11,3 @@ from src.utils.performance_monitor import (
 )
 from src.utils.logger import system_logger
 
-
-class MonitoringManager:
-    def __init__(self, config: Dict[str, Any]) -> None:
-        self.config = config
-        self.logger = system_logger.getChild("MonitoringManager")
-
-    @performance_monitor(level=PerformanceLevel.DETAILED)
-    @handle_specific_errors(
-        error_handlers={
-            ValueError: (False, "Invalid monitoring manager configuration"),
-            AttributeError: (False, "Missing monitoring manager parameters"),
-        },
-        default_return=False,
-        context="monitoring_manager.initialize",
-    )
-    async def initialize(self) -> bool:
-        self.logger.info("Initializing MonitoringManager ...")
-        return True

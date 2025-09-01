@@ -386,6 +386,9 @@ def validate_enhanced_reporting_config(config: dict[str, Any]) -> bool:
         bool: True if valid, False otherwise
     """
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         required_sections , [
             "enhanced_trading_launcher",
             "paper_trading_integration",

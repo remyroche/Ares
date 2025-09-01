@@ -74,6 +74,9 @@ class Step6HMMBasedEnhancementValidator(BaseValidator):
         # Phase 1: Validate error absence
         self.logger.info("🔍 Phase 1: Validating error absence...")
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             error_passed, error_metrics, self.validate_error_absence(step_result)
         self.validation_results["error_absence"] = error_metrics
 
@@ -91,6 +94,9 @@ class Step6HMMBasedEnhancementValidator(BaseValidator):
         # Phase 2: Validate enhanced model files existence
         self.logger.info("🔍 Phase 2: Validating enhanced model files...")
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             model_files_passed, self._validate_enhanced_model_files(
                 symbol,
                 exchange,
@@ -112,6 +118,9 @@ class Step6HMMBasedEnhancementValidator(BaseValidator):
         # Phase 3: Validate performance improvement
         self.logger.info("🔍 Phase 3: Validating performance improvement...")
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             improvement_passed, self._validate_performance_improvement(
                 symbol,
                 exchange,
@@ -133,6 +142,9 @@ class Step6HMMBasedEnhancementValidator(BaseValidator):
         # Phase 4: Validate enhancement quality
         self.logger.info("🔍 Phase 4: Validating enhancement quality...")
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             quality_passed, self._validate_enhancement_quality(
                 symbol,
                 exchange,
@@ -154,6 +166,9 @@ class Step6HMMBasedEnhancementValidator(BaseValidator):
         # Phase 5: Validate outcome favorability
         self.logger.info("🔍 Phase 5: Validating outcome favorability...")
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             outcome_passed, outcome_metrics, self.validate_outcome_favorability(
                 step_result,
             )
@@ -219,6 +234,9 @@ class Step6HMMBasedEnhancementValidator(BaseValidator):
 
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             enhanced_models_dir, f"{data_dir}/enhanced_hmm_models"
             summary_file, f"{data_dir}/{exchange}_{symbol}_hmm_enhancement_summary.json"
 
@@ -286,6 +304,9 @@ class Step6HMMBasedEnhancementValidator(BaseValidator):
 
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Load original metrics from step5 HMM history
             import json
 
@@ -370,6 +391,9 @@ class Step6HMMBasedEnhancementValidator(BaseValidator):
 
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Load enhancement summary to find a concrete model artifact
             import json
 
@@ -463,6 +487,9 @@ class Step6HMMBasedEnhancementValidator(BaseValidator):
     def _extract_estimator_from_artifact(self, artifact: Any) -> Any:
         """Unwrap saved artifacts to get the underlying estimator (adapted from Step 5)."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             predict_attr, getattr(artifact, "predict", None)
         if callable(predict_attr):
         return artifact

@@ -50,6 +50,9 @@ def correlation_context(correlation_id: str | None, None):
     token, None
     cid, correlation_id or generate_correlation_id()
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         token, correlation_id_var.set(cid)
         yield cid
     finally:
@@ -91,6 +94,9 @@ def get_json_formatter(datefmt: str | None, None) -> logging.Formatter:
 
 # FastAPI middleware utilities (optional import to avoid hard dependency)
 try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
     from starlette.middleware.base import BaseHTTPMiddleware
 
     class CorrelationIdMiddleware(BaseHTTPMiddleware):  # type: ignore[misc]

@@ -108,6 +108,9 @@ class Step11ConfidenceCalibrationValidator(BaseValidator):
 
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Expected calibration file patterns
             expected_files = [
                 f"{data_dir}/{exchange}_{symbol}_calibrated_models.pkl",

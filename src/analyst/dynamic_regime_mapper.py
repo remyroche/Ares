@@ -66,6 +66,9 @@ class DynamicRegimeMapper:
     async def _discover_regimes_from_step1_7(self) -> bool:
         """Discover regimes by reading Step 1.7 HMM clustering results."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             self.logger.info("Discovering regimes from Step 1.7 results...")
 
             # Look for meta files that contain archetype descriptions
@@ -99,6 +102,9 @@ class DynamicRegimeMapper:
     async def _process_meta_file(self, meta_file: str) -> bool:
         """Process a Step 1.7 meta file to extract regime information."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             meta_path = os.path.join(self.data_dir, meta_file)
 
             with open(meta_path) as f:
@@ -312,6 +318,9 @@ class DynamicRegimeMapper:
     def save_regime_mapping(self, output_path: str, timeframe: str = "1m") -> bool:
         """Save the regime mapping to a file."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             mapping_data = {
                 "timeframe": timeframe, "regime_mapping": self.get_regime_mapping(timeframe),
                 "archetype_descriptions": self.archetype_descriptions.get(
@@ -334,6 +343,9 @@ class DynamicRegimeMapper:
     def load_regime_mapping(self, input_path: str) -> bool:
         """Load a regime mapping from a file."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             with open(input_path) as f:
                 mapping_data = json.load(f)
 

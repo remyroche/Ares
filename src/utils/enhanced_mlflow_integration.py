@@ -61,6 +61,9 @@ def with_enhanced_mlflow_logging(step_name: str):
         # Start MLflow run for this step
             run_id, None
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Set up MLflow
                 tracking_uri, config.get("mlflow", {}).get("tracking_uri") or "file:./mlruns"
                 experiment_name, config.get("mlflow", {}).get("experiment_name") or "ares_training"
@@ -184,6 +187,9 @@ def log_step_artifact(
         additional_metadata: Additional metadata to log
     """
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         if not os.path.exists(artifact_path):
             system_logger.warning(f"Artifact file not found: {artifact_path}")
             return
@@ -280,6 +286,9 @@ def log_step_dataframe(
         additional_metadata: Additional metadata to log
     """
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         metadata, extract_training_metadata(config)
 
         # Create temporary file
@@ -501,6 +510,9 @@ def log_step_report(
         Generated report name
     """
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         metadata, extract_training_metadata(config)
         exchange, metadata["exchange"]
         token, metadata["asset"]
@@ -576,6 +588,9 @@ def log_step_model(
         additional_metadata: Additional metadata to log
     """
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         metadata, extract_training_metadata(config)
 
         # Prepare additional metadata
@@ -621,6 +636,9 @@ def log_step_metrics(
         additional_metadata: Additional metadata to log
     """
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         metadata, extract_training_metadata(config)
 
         # Prepare additional metadata
@@ -690,6 +708,9 @@ class EnhancedMLflowManager:
             MLflow run ID
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         if not run_name:
                 run_name, f"{self.metadata['exchange']}_{self.metadata['asset']}_{step_name or 'training'}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
@@ -736,6 +757,9 @@ class EnhancedMLflowManager:
             raise ValueError("No active MLflow run. Call start_run() first.")
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Prepare additional metadata
             extra_metadata = {
                 "model_type": model_type,
@@ -779,6 +803,9 @@ class EnhancedMLflowManager:
             raise ValueError("No active MLflow run. Call start_run() first.")
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Convert metrics to float
             float_metrics = {k: float(v) for k, v in metrics.items() if isinstance(v, (int, float))}
 
@@ -826,6 +853,9 @@ class EnhancedMLflowManager:
             raise ValueError("No active MLflow run. Call start_run() first.")
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Prepare additional metadata
             extra_metadata = {
                 "pipeline_step": "parameters_logging",
@@ -869,6 +899,9 @@ class EnhancedMLflowManager:
             raise ValueError("No active MLflow run. Call start_run() first.")
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Prepare additional metadata
             extra_metadata = {
                 "artifact_type": artifact_type,
@@ -909,6 +942,9 @@ class EnhancedMLflowManager:
             additional_metadata: Additional metadata to log
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Create temporary file
         with tempfile.NamedTemporaryFile(suffix=".parquet", delete = False) as tmp_file:
                 df.to_parquet(tmp_file.name, index = False)
@@ -951,6 +987,9 @@ class EnhancedMLflowManager:
             additional_metadata: Additional metadata to log
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Create temporary file
             import json
         with tempfile.NamedTemporaryFile(suffix=".json", delete = False, mode="w") as tmp_file:
@@ -1028,6 +1067,9 @@ def log_step_metadata(
         run_id: Optional MLflow run ID
     """
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         metadata, extract_training_metadata(config)
 
         # Log enhanced training metadata for the step
@@ -1068,6 +1110,9 @@ def log_model_performance(
         run_id: Optional MLflow run ID
     """
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         metadata, extract_training_metadata(config)
 
         # Log metrics with metadata
@@ -1104,6 +1149,9 @@ def log_pipeline_completion(
         run_id: Optional MLflow run ID
     """
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         metadata, extract_training_metadata(config)
 
         # Log enhanced training metadata for pipeline completion

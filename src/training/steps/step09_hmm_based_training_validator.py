@@ -55,6 +55,9 @@ async def run_validator(
     logger.info("🔍 Validating Step 8: HMM - Based Training")
 
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Extract parameters
         symbol, training_input.get("symbol", "ETHUSDT")
         exchange, training_input.get("exchange", "BINANCE")
@@ -84,6 +87,9 @@ async def run_validator(
 
         # Try to load and validate the models
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             import pickle
             import numpy as np
 
@@ -126,6 +132,9 @@ async def run_validator(
             model_validation_results = {}
         for regime_id, model in models.items():
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Basic model validation
         if hasattr(model, 'predict'):
                         model_validation_results[regime_id] = "VALID"

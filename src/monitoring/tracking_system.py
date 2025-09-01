@@ -19,22 +19,3 @@ class TrackingType(Enum):
     MODEL_BEHAVIOR = "model_behavior"
 
 
-class TrackingSystem:
-    """Comprehensive tracking system (scaffold)."""
-
-    def __init__(self, config: Dict[str, Any]) -> None:
-        self.config , config
-        self.logger = system_logger.getChild("TrackingSystem")
-
-    @handle_specific_errors(
-        error_handlers, {
-            ValueError: (False, "Invalid tracking configuration"),
-            AttributeError: (False, "Missing tracking parameters"),
-        },
-        default_return, False,
-        context="tracking_system.initialize",
-    )
-    async def initialize(self) -> bool:
-        self.logger.info("Initializing Tracking System ...")
-        self.logger.info("✅ Tracking System initialization completed")
-        return True

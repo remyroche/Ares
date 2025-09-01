@@ -114,6 +114,9 @@ class TransitionRandomForest:
         # SHAP (optional)
         if self.cfg.enable_shap and shap is not None:
             try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                 explainer = shap.TreeExplainer(mdl)
                 # Sample a subset for SHAP speed
                 ns = min(2000, len(X_val))

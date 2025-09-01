@@ -99,6 +99,9 @@ class PositionSizer:
     def _validate_configuration(self) -> bool:
         """Validate position sizer configuration."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             required_keys = [
                 "kelly_multiplier",
                 "max_position_size",
@@ -134,6 +137,9 @@ class PositionSizer:
             step17_results: Step17 optimization results
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             if "position_sizing" in step17_results:
                 position_sizing_optimization = step17_results["position_sizing"]
 
@@ -200,6 +206,9 @@ class PositionSizer:
         self.logger.info("Calculating position size using ML intelligence...")
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # NEW: Extract combined confidence from Tactician multi-output predictions
             combined_confidence = ml_predictions.get("combined_confidence", 0.5)
 
@@ -286,6 +295,9 @@ class PositionSizer:
     ) -> float:
         """Calculate position size using Kelly criterion based on ML confidence scores."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Use the new Kelly criterion formula module
             kelly_multiplier = calculate_kelly_multiplier(
                 price_target_confidences=price_target_confidences,
@@ -320,6 +332,9 @@ class PositionSizer:
     ) -> float:
         """Calculate position size based on ML confidence scores."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Get average confidence for target levels (0.5% to 2.0%)
             target_levels = [0.5, 1.0, 1.5, 2.0]
             confidences = []
@@ -402,6 +417,9 @@ class PositionSizer:
     ) -> float:
         """Adjust position size based on market health (vol/liquidity/stress), strategist risk, and dynamic confidence."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             adjusted = base_size
 
             # Market health: downscale size under high volatility or stress; upscale when healthy
@@ -473,6 +491,9 @@ class PositionSizer:
     ) -> str:
         """Generate reason for position sizing decision."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Get average confidence and risk
             key_levels = [0.5, 1.0, 1.5, 2.0]
             confidences = []
@@ -539,6 +560,9 @@ class PositionSizer:
     def _get_historical_performance(self) -> tuple[float, float]:
         """Get historical performance data for Kelly criterion calculation."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Use local sizing history as a proxy when available
             # Expect entries with keys: {"pnl": float}
             history = self.position_sizing_history[-500:]  # recent window
@@ -629,6 +653,9 @@ async def setup_position_sizer(
         Optional[PositionSizer]: Initialized position sizer or None
     """
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         if config is None:
             config = {}
 

@@ -18,6 +18,9 @@ import numpy as np
 import pandas as pd
 
 try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
     from src.utils.logger import system_logger
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 except ImportError:
@@ -126,6 +129,9 @@ def _apply_performance_monitoring(wrapper_func: Callable, level: str = "basic") 
         start_memory, _get_memory_usage() if level in ["detailed", "profiling"] else 0
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             result, wrapper_func(*args, **kwargs)
         return result
         finally:

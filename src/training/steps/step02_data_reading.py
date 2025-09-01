@@ -148,6 +148,9 @@ class DataReadingStep:
         self.logger.info(f"📖 Reading unified data for {symbol} on {exchange} ({timeframe})")
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Use standardized path construction
             unified_data_path, Path(self.standards.build_path("unified_data", exchange, symbol)) / timeframe
 
@@ -209,6 +212,9 @@ class DataReadingStep:
         self.logger.info("🔍 Validating data quality...")
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Use standardized validation
             validation_result, self.standards.validate_data_quality(data, "unified")
 
@@ -257,6 +263,9 @@ class DataReadingStep:
         self.logger.info("💾 Saving validation report...")
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             import json
             from datetime import datetime
 
@@ -301,6 +310,9 @@ class DataReadingStep:
         self.logger.info("🚀 Starting Step 2: Data Reading and Validation")
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Read unified data
             unified_data, await self.read_unified_data(symbol, exchange, timeframe, data_dir)
 
@@ -368,6 +380,9 @@ class DataReadingStep:
     ) -> None:
         """Log step 2 artifacts and create detailed report."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Collect execution metadata
             execution_metadata = {
                 "start_time": datetime.fromtimestamp(self.start_time).isoformat() if self.start_time else datetime.now().isoformat(),
@@ -403,7 +418,7 @@ class DataReadingStep:
                 "data_dir": data_dir,
                 "asset": symbol,  # Use symbol as asset
                 "lookback_period": self.config.get("lookback_days", 1095),  # Default to 3 years
-                "project_version": self.config.get("project_version", "1.0.0"),  # Default version
+                "project_version": self.config.get("project_version", "1_2_3"),  # Default version
             }
 
         # Create step data for report
@@ -436,7 +451,7 @@ class DataReadingStep:
                     "timeframe": timeframe,
                     "asset": symbol,
                     "lookback_period": self.config.get("lookback_days", 1095),
-                    "project_version": self.config.get("project_version", "1.0.0"),
+                    "project_version": self.config.get("project_version", "1_2_3"),
                 }
             )
         self.logger.info(f"✅ Logged data reading report: {report_name}")
@@ -455,7 +470,7 @@ class DataReadingStep:
                         "timeframe": timeframe,
                         "asset": symbol,
                         "lookback_period": self.config.get("lookback_days", 1095),
-                        "project_version": self.config.get("project_version", "1.0.0"),
+                        "project_version": self.config.get("project_version", "1_2_3"),
                     }
                 )
         self.logger.info(f"✅ Logged validated data: {artifact_name}")
@@ -471,7 +486,7 @@ class DataReadingStep:
                     "quality_score": validation_results.get("quality_score", 0.0),
                     "asset": symbol,
                     "lookback_period": self.config.get("lookback_days", 1095),
-                    "project_version": self.config.get("project_version", "1.0.0"),
+                    "project_version": self.config.get("project_version", "1_2_3"),
                     "timeframe": timeframe,
                 }
             )
@@ -488,7 +503,7 @@ class DataReadingStep:
                 ,
                     "asset": symbol,
                     "lookback_period": self.config.get("lookback_days", 1095),
-                    "project_version": self.config.get("project_version", "1.0.0"),
+                    "project_version": self.config.get("project_version", "1_2_3"),
                 }
             )
 

@@ -52,6 +52,9 @@ class DIIntegration:
         This method shows how all DI patterns work together in practice.
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             self.logger.info("Demonstrating full dependency injection integration")
 
             # Step 1: Register all services

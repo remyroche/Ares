@@ -125,6 +125,9 @@ class Step16SavingValidator(BaseValidator):
 
 		"""
 		try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
 			# Expected final model file patterns
 			expected_files = [
 				f"{data_dir}/{exchange}_{symbol}_final_model.pkl",
@@ -173,6 +176,9 @@ class Step16SavingValidator(BaseValidator):
 
 		"""
 		try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
 			# Check for all expected pipeline files
 			pipeline_files = [
 				f"{data_dir}/{exchange}_{symbol}_historical_data.pkl",  # legacy bundle
@@ -262,11 +268,17 @@ class Step16SavingValidator(BaseValidator):
 
 		"""
 		try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
 			# Check final model file integrity
 			model_file, f"{data_dir}/{exchange}_{symbol}_final_model.pkl"
 
 			if os.path.exists(model_file):
 				try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
 					with open(model_file, "rb") as f:
 						loaded, pickle.load(f)
 
@@ -298,6 +310,9 @@ class Step16SavingValidator(BaseValidator):
 
 			if os.path.exists(metadata_file):
 				try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
 					import json as _json
 
 					with open(metadata_file) as f:
@@ -323,6 +338,9 @@ class Step16SavingValidator(BaseValidator):
 
 			if os.path.exists(config_file):
 				try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
 					import json as _json
 
 					with open(config_file) as f:
@@ -352,6 +370,9 @@ class Step16SavingValidator(BaseValidator):
 		Tries common keys and patterns to retrieve an estimator with predict.
 		"""
 		try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
 			if callable(getattr(artifact, "predict", None)):
 				return artifact
 			if isinstance(artifact, dict):
@@ -396,6 +417,9 @@ class Step16SavingValidator(BaseValidator):
 
 		"""
 		try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
 			# Load final model metadata
 			metadata_file, f"{data_dir}/{exchange}_{symbol}_final_model_metadata.json"
 
@@ -432,7 +456,7 @@ class Step16SavingValidator(BaseValidator):
 				# Check model version
 				if "version" in metadata:
 					version, str(metadata["version"])
-					if not version or version == "0.0.0":
+					if not version or version == "0_2_3":
 						self.print(invalid("⚠️ Invalid model version"))
 
 				# Check training date

@@ -142,6 +142,9 @@ class RegimeDataSplittingStep:
     async def execute(self) -> dict[str, Any]:
         """Execute the unified regime data creation step."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         self.logger.info("🔄 Loading unified data for HMM composite regime data creation...")
             data_loader, get_unified_data_loader(self.config)
             from src.config.constants import (
@@ -223,6 +226,9 @@ class RegimeDataSplittingStep:
     ) -> None:
         """Log step 8 artifacts and create detailed report."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             symbol, self.config.get("symbol", "ETHUSDT")
             exchange, self.config.get("exchange", "BINANCE")
             timeframe, self.config.get("timeframe", "1m")
@@ -261,7 +267,7 @@ class RegimeDataSplittingStep:
                 "lookback_days": self.config.get("lookback_days", 1095),
                 "asset": symbol,  # Use symbol as asset
                 "lookback_period": self.config.get("lookback_days", 1095),
-                "project_version": self.config.get("project_version", "1.0.0"),
+                "project_version": self.config.get("project_version", "1_2_3"),
             }
 
         # Create step data for report
@@ -295,7 +301,7 @@ class RegimeDataSplittingStep:
                     "timeframe": timeframe,
                     "asset": symbol,
                     "lookback_period": self.config.get("lookback_days", 1095),
-                    "project_version": self.config.get("project_version", "1.0.0"),
+                    "project_version": self.config.get("project_version", "1_2_3"),
                     "approach": "unified_dataset_with_labels",
                 }
             )
@@ -313,7 +319,7 @@ class RegimeDataSplittingStep:
                         "timeframe": timeframe,
                         "asset": symbol,
                         "lookback_period": self.config.get("lookback_days", 1095),
-                        "project_version": self.config.get("project_version", "1.0.0"),
+                        "project_version": self.config.get("project_version", "1_2_3"),
                         "approach": "unified_dataset_with_labels",
                     }
                 )
@@ -329,7 +335,7 @@ class RegimeDataSplittingStep:
                     "timeframe": timeframe,
                     "asset": symbol,
                     "lookback_period": self.config.get("lookback_days", 1095),
-                    "project_version": self.config.get("project_version", "1.0.0"),
+                    "project_version": self.config.get("project_version", "1_2_3"),
                     "approach": "unified_dataset_with_labels",
                 }
             )
@@ -345,6 +351,9 @@ class RegimeDataSplittingStep:
     def _save_unified_regime_dataset(self, unified_data: pd.DataFrame, unique_clusters: list) -> bool:
         """Save unified dataset with regime labels."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             data_dir, self.config.get("data_dir", "data / training")
             os.makedirs(data_dir, exist_ok = True)
 
@@ -400,6 +409,9 @@ class RegimeDataSplittingStep:
     def _create_regime_statistics(self, unified_data: pd.DataFrame, unique_clusters: list) -> dict[str, Any]:
         """Create statistics for the unified regime dataset."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             stats = {
                 "approach": "unified_dataset_with_labels",
                 "total_regimes": len(unique_clusters),

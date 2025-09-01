@@ -88,6 +88,9 @@ async def demonstrate_directional_analysis():
     )
 
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         result = await predictor.predict_directional_with_adversarial_analysis(
             market_data,
             current_price

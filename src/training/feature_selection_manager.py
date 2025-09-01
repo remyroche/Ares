@@ -63,6 +63,9 @@ class FeatureSelectionManager:
 
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             self.logger.info(f"🔍 Starting enhanced feature selection: {features_df.shape[1]} -> {self.target_features} features")
 
             # Stage 0: Add autoencoder features if enabled
@@ -437,6 +440,9 @@ class FeatureSelectionManager:
     def _stage0_autoencoder_features(self, features_df: pd.DataFrame, target: pd.Series) -> tuple[pd.DataFrame, dict[str, Any]]:
         """Stage 0: Add autoencoder features from the autoencoder feature generator."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             self.logger.info("🔧 Stage 0: Adding autoencoder features...")
 
             # Import autoencoder feature generator
@@ -478,6 +484,9 @@ class FeatureSelectionManager:
     def _stage6_regularization_aware_selection(self, features_df: pd.DataFrame, target: pd.Series) -> tuple[pd.DataFrame, dict[str, Any]]:
         """Stage 6: Regularization-aware feature selection using pipeline regularization."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             self.logger.info("🔧 Stage 6: Applying regularization-aware feature selection...")
 
             # Load regularization configuration from pipeline
@@ -534,11 +543,17 @@ class FeatureSelectionManager:
         stability_scores = {}
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             from sklearn.model_selection import cross_val_score
             from sklearn.linear_model import LogisticRegression
 
             for feature in features_df.columns:
                 try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                     # Use single feature for prediction
                     X_single = features_df[[feature]]
 

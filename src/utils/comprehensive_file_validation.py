@@ -201,6 +201,9 @@ class ComprehensiveFileValidator:
 
         # 2. Load and validate data
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             df = self._load_file(file_path, file_type_result["file_type"])
             summary["shape"] = df.shape
             summary["memory_usage"] = df.memory_usage(deep = True).sum()

@@ -72,6 +72,9 @@ class MacM1ParallelOptimizer:
         Detect if running on Apple Silicon macOS.
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         if platform.system() != "Darwin":
         return False
         # Prefer Python's platform.machine which is fast and available

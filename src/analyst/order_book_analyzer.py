@@ -31,6 +31,9 @@ class OrderBookAnalyzer:
     ) -> pd.DataFrame:
         """Identify top-K size clusters (walls) on one side of the book."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             df = book_df[[price_col, size_col]].dropna().copy()
             if df.empty:
                 return pd.DataFrame(columns=["price", "size"])  # empty
@@ -56,6 +59,9 @@ class OrderBookAnalyzer:
     ) -> dict[str, float]:
         """Compute nearest wall distances/sizes and imbalance features."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             features: dict[str, float] = {
                 "nearest_bid_wall_dist_pct": 1.0,
                 "nearest_ask_wall_dist_pct": 1.0,
@@ -116,6 +122,9 @@ class OrderBookAnalyzer:
     ) -> dict[str, float]:
         """Compute simple correlation/overlap metrics between wall locations and S/R centers."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             if not wall_prices or not sr_centers:
                 return {"overlap_ratio": 0.0, "avg_min_dist_to_sr": 1.0}
             wp = np.array(wall_prices)
@@ -142,6 +151,9 @@ class OrderBookAnalyzer:
     ) -> dict[str, float]:
         """Load SR zones and order book walls from files and compute correlation metrics."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             sr = (
                 pd.read_parquet(sr_zones_file)
                 if sr_zones_file.endswith(".parquet")

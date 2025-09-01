@@ -29,23 +29,3 @@ class PredictionType(Enum):
     PROBABILITY = "probability"
 
 
-class EnhancedMLTracker:
-    """Minimal Enhanced ML Tracker placeholder."""
-
-    def __init__(self, config: Dict[str, Any]) -> None:
-        self.config = config
-        self.logger = system_logger.getChild("EnhancedMLTracker")
-        self.tracker_config = config.get("enhanced_ml_tracker", {})
-
-    @handle_specific_errors(
-        error_handlers={
-            ValueError: (False, "Invalid tracker configuration"),
-            AttributeError: (False, "Missing tracker parameters"),
-        },
-        default_return=False,
-        context="enhanced_ml_tracker.initialize",
-    )
-    async def initialize(self) -> bool:
-        self.logger.info("Initializing Enhanced ML Tracker ...")
-        self.logger.info("✅ Enhanced ML Tracker initialization completed")
-        return True

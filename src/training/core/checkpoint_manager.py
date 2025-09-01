@@ -279,6 +279,9 @@ class CheckpointManager:
 
         self.is_managing = True
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             self.logger.info("🔄 Starting checkpoint execution...")
 
             # Perform checkpoint saving
@@ -891,6 +894,9 @@ async def setup_checkpoint_manager(
 
     """
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         global checkpoint_manager
 
         if config is None:

@@ -14,6 +14,9 @@ from dataclasses import dataclass, field
 from enum import Enum
 
 try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
     from src.utils.logger import system_logger
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 except ImportError:

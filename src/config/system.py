@@ -91,7 +91,7 @@ def get_system_config() -> dict[str, Any]:
         },
         # --- Version Information ---
         "version": {
-            "ares_version": "2.0.0",
+            "ares_version": "2_2_3",
             "log_level": settings.log_level,
         },
     }

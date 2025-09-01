@@ -53,6 +53,9 @@ def __init__(self, config: dict[str, Any]) -> None:
             Dict containing A / B testing results
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         self.logger.info("🔄 Executing A / B Testing...")
 
         # Extract parameters
@@ -305,6 +308,9 @@ async def run_step(
         bool: True if successful, False otherwise
     """
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Create step instance
         config: dict[str, Any] = {"symbol": symbol, "exchange": exchange, "data_dir": data_dir}
         step, ABTestingStep(config)

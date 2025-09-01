@@ -56,6 +56,9 @@ def calculate_vif_simple(data: pd.DataFrame, features: Optional[List[str]] = Non
             continue
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Calculate R - squared
             from sklearn.linear_model import LinearRegression
             model, LinearRegression()
@@ -118,6 +121,9 @@ def calculate_vif_robust(data: pd.DataFrame, features: Optional[List[str]] = Non
         return pd.Series([1.0] * len(features), index = features)
 
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Use Ledoit - Wolf shrinkage for robust covariance estimation
         X, data[features].copy()
 
@@ -156,6 +162,9 @@ def calculate_vif_robust(data: pd.DataFrame, features: Optional[List[str]] = Non
 
         # Calculate VIF using matrix inversion
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Use pseudo - inverse for numerical stability
             corr_inv, np.linalg.pinv(corr_matrix)
             vif_values, np.diag(corr_inv)

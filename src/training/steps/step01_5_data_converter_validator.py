@@ -148,6 +148,9 @@ class Step1_5DataConverterValidator(BaseValidator):
             bool: True if validation passed
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Find all parquet files
             parquet_files, glob.glob(os.path.join(base_path, "*.parquet"), recursive = True)
 
@@ -194,6 +197,9 @@ class Step1_5DataConverterValidator(BaseValidator):
             Dictionary with validation results
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Load the file
             df, pd.read_parquet(file_path)
 
@@ -268,6 +274,9 @@ class Step1_5DataConverterValidator(BaseValidator):
             bool: True if validation passed
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Expected config path: data_cache / unified/{exchange}_{symbol}_{timeframe}_config.json
             config_path, os.path.join(
                 data_dir, "unified", f"{exchange.lower()}_{symbol}_{timeframe}_config.json"

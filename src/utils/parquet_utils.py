@@ -93,6 +93,9 @@ class ParquetUtils:
         engines: list[str | None] = [None, "pyarrow", "fastparquet"]
         for idx, engine in enumerate(engines, start = 1):
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                 strategy_msg = (
                     f"   Trying strategy {idx}/{len(engines)}: "
                     f"{'default' if engine is None else engine} engine"

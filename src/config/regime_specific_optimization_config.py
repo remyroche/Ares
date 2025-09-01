@@ -398,6 +398,9 @@ def validate_regime_optimization_config(config: RegimeSpecificOptimizationConfig
     """Validate regime-specific optimization configuration."""
 
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Check objectives
         if not config.objectives:
             print("❌ No objectives specified")

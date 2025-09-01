@@ -623,6 +623,9 @@ class ProfitBasedFeatureEngineering:
         elif method == "mutual_info":
         # Select features based on mutual information (requires scikit - learn)
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                 from sklearn.feature_selection import mutual_info_regression
         # Filter out categorical features for mutual info
                 numerical_features = []

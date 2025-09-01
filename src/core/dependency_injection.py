@@ -162,6 +162,9 @@ class DependencyContainer:
     def resolve(self, service_name: Any) -> Any:
         """Resolve a service with enhanced error handling."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Handle existing instances (singleton or scoped)
             if service_name in self._instances:
                 return self._instances[service_name]

@@ -80,6 +80,9 @@ class OptimizedTrainingIntegration:
         memory_profiler.take_snapshot("regime_training_start")
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Execute optimized training (maintains same interface)
             results = await training_manager.execute_optimized_training(
                 symbol=symbol,
@@ -181,6 +184,9 @@ async def run_integration_example() -> None:
     exchange = "BINANCE"
 
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         results = await integration.execute_optimized_regime_training(symbol, exchange)
 
         logger.info("📊 Training Results Summary:")

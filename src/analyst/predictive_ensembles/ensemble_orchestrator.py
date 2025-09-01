@@ -248,6 +248,9 @@ class RegimePredictiveEnsembles:
         # First, get prediction from the current regime expert
         if current_expert is not None:
             try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                 prediction_output = current_expert.get_prediction(
                     current_features,
                     **kwargs,

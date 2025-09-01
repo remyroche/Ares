@@ -280,6 +280,9 @@ def training_step_error_handler(
             handler.log_step_start(step_name, **key_params)
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Execute the function
                 start_time, time.time()
                 result, await cast(Awaitable[T | None], func)(*args, **kwargs)  # type: ignore[misc]
@@ -347,6 +350,9 @@ def training_step_error_handler(
             handler.log_step_start(step_name, **key_params)
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Execute the function
                 start_time, time.time()
                 result, cast(T | None, func(*args, **kwargs))
@@ -381,6 +387,9 @@ def training_step_error_handler(
         # Attempt recovery if enabled
         if enable_recovery and context.recovery_attempts < max_recovery_attempts:
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                         recovery_result, _attempt_sync_recovery(
                             step_name,
                             cast(Callable[..., T | None], func),

@@ -238,6 +238,9 @@ class WaveletFeatureCache:
     def _initialize_cache_directory(self) -> None:
         """Initialize cache directory structure."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             cache_path, Path(self.cache_dir)
             cache_path.mkdir(parents = True, exist_ok = True)
 
@@ -266,6 +269,9 @@ class WaveletFeatureCache:
 
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Create a hashable representation of the data
             data_hash, self._hash_dataframe(price_data)
 
@@ -310,6 +316,9 @@ class WaveletFeatureCache:
 
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             cache_path, Path(self.cache_dir)
 
         if self.cache_format == "parquet":
@@ -347,6 +356,9 @@ class WaveletFeatureCache:
 
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             features_file, metadata_file, self.get_cache_filepath(cache_key)
 
         # Check if files exist
@@ -373,6 +385,9 @@ class WaveletFeatureCache:
     def _validate_cache_integrity(self, cache_key: str) -> bool:
         """Validate cache file integrity."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             features_file, metadata_file, self.get_cache_filepath(cache_key)
 
         # Check file sizes
@@ -382,6 +397,9 @@ class WaveletFeatureCache:
 
         # Try to read metadata
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         with open(metadata_file) as f:
                     metadata, json.load(f)
 
@@ -427,6 +445,9 @@ class WaveletFeatureCache:
 
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         if not self.cache_enabled:
         return False
 
@@ -490,6 +511,9 @@ class WaveletFeatureCache:
 
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             features_file, metadata_file, self.get_cache_filepath(cache_key)
 
         # Load features based on format
@@ -530,6 +554,9 @@ class WaveletFeatureCache:
     def _features_to_dataframe(self, features: dict[str, Any]) -> pd.DataFrame:
         """Convert features dictionary to DataFrame for caching."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Convert features to DataFrame format with aligned lengths
         if not features:
         return pd.DataFrame()
@@ -587,6 +614,9 @@ class WaveletFeatureCache:
     def _dataframe_to_features(self, df: pd.DataFrame) -> dict[str, Any]:
         """Convert DataFrame back to features dictionary."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             features: dict[str, Any] = {}
 
         if not df.empty:
@@ -615,6 +645,9 @@ class WaveletFeatureCache:
 
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             cache_path, Path(self.cache_dir)
 
         if cache_key:
@@ -641,6 +674,9 @@ class WaveletFeatureCache:
     def get_cache_stats(self) -> dict[str, Any]:
         """Get cache statistics."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             cache_path, Path(self.cache_dir)
             stats = {
                 "cache_dir": str(cache_path),
@@ -705,6 +741,9 @@ class VectorizedVolatilityRegimeModel:
     ) -> dict[str, Any]:
         """Generate volatility regime features using vectorized operations."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             features: dict[str, Any] = {}
 
         # Debug: Check what columns are available
@@ -825,6 +864,9 @@ class VectorizedCorrelationAnalyzer:
     ) -> dict[str, Any]:
         """Analyze price - volume correlations using vectorized operations."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             features: dict[str, Any] = {}
 
             close, price_data["close"].astype(float)
@@ -881,6 +923,9 @@ class VectorizedMomentumAnalyzer:
     ) -> dict[str, Any]:
         """Generate momentum features using vectorized operations."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             features: dict[str, Any] = {}
 
             close, price_data["close"].astype(float)
@@ -970,6 +1015,9 @@ class VectorizedLiquidityAnalyzer:
     ) -> dict[str, Any]:
         """Generate liquidity features using vectorized operations."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             features: dict[str, Any] = {}
 
             close, price_data["close"].astype(float)
@@ -1065,6 +1113,9 @@ class VectorizedCandlestickPatternAnalyzer:
     async def analyze_patterns(self, price_data: pd.DataFrame) -> dict[str, Any]:
         """Generate candlestick pattern features using vectorized operations."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             features = {}
 
             open_price, price_data["open"].astype(float)
@@ -1152,6 +1203,9 @@ class VectorizedSRDistanceCalculator:
     ) -> dict[str, Any]:
         """Calculate distances to support / resistance levels."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             features = {}
 
             close, price_data["close"].astype(float)
@@ -1223,6 +1277,9 @@ class VectorizedWaveletTransformAnalyzer:
     ) -> dict[str, Any]:
         """Generate wavelet transform features with improved safety and performance."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             features = {}
 
         # Validate input data
@@ -1334,6 +1391,9 @@ class VectorizedWaveletTransformAnalyzer:
     def _remove_constant_features(self, features: dict[str, Any]) -> dict[str, Any]:
         """Remove features with zero or near - zero variance."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             non_constant_features = {}
             constant_features = []
             variance_threshold, 1e - 12  # Very small threshold for true constants
@@ -1435,6 +1495,9 @@ class VectorizedAdvancedFeatureEngineering:
 
         # Configure joblib memory to prevent cache flushing warnings
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             import joblib
             memory_location, FEATURE_OPTIMIZATION_CONFIG.get("joblib_memory_location", "data / joblib_cache")
             memory_verbose, FEATURE_OPTIMIZATION_CONFIG.get("joblib_memory_verbose", 0)
@@ -1490,6 +1553,9 @@ class VectorizedAdvancedFeatureEngineering:
     async def initialize(self) -> bool:
         """Initialize vectorized advanced feature engineering components."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         self.logger.info(
                 "🚀 Initializing vectorized advanced feature engineering...",
             )
@@ -1516,6 +1582,9 @@ class VectorizedAdvancedFeatureEngineering:
         # Initialize liquidity analysis
         if self.enable_liquidity_analysis:
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         self.logger.info("🔍 Creating VectorizedLiquidityAnalyzer...")
         self.liquidity_analyzer, VectorizedLiquidityAnalyzer(self.config)
         self.logger.info("🔍 VectorizedLiquidityAnalyzer created, initializing...")
@@ -1535,6 +1604,9 @@ class VectorizedAdvancedFeatureEngineering:
         # Initialize candlestick pattern analyzer
         if self.enable_candlestick_patterns:
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         self.logger.info("🔍 Creating VectorizedCandlestickPatternAnalyzer...")
         self.candlestick_analyzer, VectorizedCandlestickPatternAnalyzer(
         self.config,
@@ -1556,6 +1628,9 @@ class VectorizedAdvancedFeatureEngineering:
         # Initialize S / R distance calculator
         if self.enable_sr_distance:
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         self.logger.info("🔍 Creating VectorizedSRDistanceCalculator...")
         self.sr_distance_calculator, VectorizedSRDistanceCalculator(
         self.config,
@@ -1577,6 +1652,9 @@ class VectorizedAdvancedFeatureEngineering:
         # Initialize wavelet transform analyzer
         if self.enable_wavelet_transforms:
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         self.logger.info("🔍 Creating VectorizedWaveletTransformAnalyzer...")
         self.wavelet_analyzer, VectorizedWaveletTransformAnalyzer(self.config)
         self.logger.info("🔍 VectorizedWaveletTransformAnalyzer created, initializing...")
@@ -1595,6 +1673,9 @@ class VectorizedAdvancedFeatureEngineering:
 
         # Initialize profit - based feature engineering
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                 from src.training.steps.step04_analyst_labeling_feature_engineering_components.profit_based_feature_engineering import (
                     ProfitBasedFeatureEngineering
                 )
@@ -1632,6 +1713,9 @@ class VectorizedAdvancedFeatureEngineering:
     ) -> pd.Series:
         """Calculate price impact using vectorized operations with improved NaN handling."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         if "close" not in price_data.columns or "volume" not in volume_data.columns:
         return pd.Series(0, index = price_data.index)
 
@@ -1677,6 +1761,9 @@ class VectorizedAdvancedFeatureEngineering:
     ) -> pd.Series:
         """Calculate volume - price impact using vectorized operations with improved NaN handling."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         if "close" not in price_data.columns or "volume" not in volume_data.columns:
         return pd.Series(0, index = price_data.index)
 
@@ -1722,6 +1809,9 @@ class VectorizedAdvancedFeatureEngineering:
     ) -> pd.Series:
         """Calculate order flow imbalance using vectorized operations with improved NaN handling."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         if "close" not in price_data.columns or "volume" not in volume_data.columns:
         return pd.Series(0, index = price_data.index)
 
@@ -1769,6 +1859,9 @@ class VectorizedAdvancedFeatureEngineering:
     ) -> tuple[pd.DataFrame, pd.DataFrame]:
         """Validate and transform input data to ensure proper structure."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Debug: Log input data structure
         self.logger.info(f"🔍 Input price_data columns: {list(price_data.columns)}")
         self.logger.info(f"🔍 Input price_data shape: {price_data.shape}")
@@ -1824,9 +1917,15 @@ class VectorizedAdvancedFeatureEngineering:
     def _handle_nan_values_basic(self, features: dict[str, Any]) -> dict[str, Any]:
         """Basic NaN handling for features when comprehensive method is not available."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             cleaned_features = {}
         for feature_name, feature_value in features.items():
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         if isinstance(feature_value, (int, float, np.integer, np.floating)):
         # Scalar values - handle safely
         if np.isnan(feature_value) or np.isinf(feature_value):
@@ -1881,6 +1980,9 @@ class VectorizedAdvancedFeatureEngineering:
     def _log_multi_timeframe_summary(self, features: dict[str, Any], timeframes: list[str]) -> None:
         """Log a summary of multi - timeframe feature generation."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Count features by timeframe
             timeframe_counts = {}
         for tf in timeframes:
@@ -1907,6 +2009,9 @@ class VectorizedAdvancedFeatureEngineering:
     ) -> dict[str, Any]:
         """Generate simple features for timeframes with limited data."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             features = {}
 
         if price_data.empty or len(price_data) < 3:  # Very low minimum requirement
@@ -1966,12 +2071,18 @@ class VectorizedAdvancedFeatureEngineering:
     def _handle_nan_values_comprehensive(self, features: dict[str, Any]) -> dict[str, Any]:
         """Comprehensive NaN handling for all feature types."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             cleaned_features = {}
             nan_count, 0
             inf_count, 0
 
         for feature_name, feature_value in features.items():
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Handle different data types
         if isinstance(feature_value, (int, float, np.integer, np.floating)):
         # Scalar values
@@ -2045,6 +2156,9 @@ class VectorizedAdvancedFeatureEngineering:
     def _handle_nan_values_robust(self, features: dict[str, Any]) -> dict[str, Any]:
         """Robust NaN handling that always works regardless of method availability."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Filter out coroutine objects before processing
             valid_features = {}
         for key, value in features.items():
@@ -2082,12 +2196,18 @@ class VectorizedAdvancedFeatureEngineering:
     def _handle_nan_values_inline(self, features: dict[str, Any]) -> dict[str, Any]:
         """Inline NaN handling as final fallback."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             cleaned_features = {}
             nan_count, 0
             inf_count, 0
 
         for feature_name, feature_value in features.items():
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Handle different data types
         if isinstance(feature_value, (int, float, np.integer, np.floating)):
         # Scalar values - handle safely
@@ -2103,6 +2223,9 @@ class VectorizedAdvancedFeatureEngineering:
                     elif isinstance(feature_value, pd.Series):
         # Pandas Series with robust NaN handling
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                             cleaned_series, feature_value.copy()
 
         # Handle NaN values with detailed logging
@@ -2117,6 +2240,9 @@ class VectorizedAdvancedFeatureEngineering:
 
         # Handle infinite values with detailed logging - Safe boolean operations
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Convert to numpy array safely and handle infinite values
                                 series_values, cleaned_series.values
         if hasattr(series_values, "dtype") and np.issubdtype(series_values.dtype, np.number):
@@ -2309,6 +2435,9 @@ class VectorizedAdvancedFeatureEngineering:
 
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         if not self.is_initialized:
         self.logger.error(
                     "🚨 Vectorized advanced feature engineering not initialized",
@@ -2369,6 +2498,9 @@ class VectorizedAdvancedFeatureEngineering:
                 else:
         # Try to convert the existing index to datetime if it looks like timestamps
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         if price_data.index.dtype == "object" or str(price_data.index.dtype).startswith("datetime"):
         # Try to parse the index as datetime
                             price_data.index, pd.to_datetime(price_data.index)
@@ -2447,6 +2579,9 @@ class VectorizedAdvancedFeatureEngineering:
                     else:
         # Try to convert the existing index to datetime if it looks like timestamps
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         if volume_data.index.dtype == "object" or str(volume_data.index.dtype).startswith("datetime"):
         # Try to parse the index as datetime
                                 volume_data.index, pd.to_datetime(volume_data.index)
@@ -2568,6 +2703,9 @@ class VectorizedAdvancedFeatureEngineering:
         self.logger.info("🔍 Generating context dynamics features...")
             context_features_count, 0
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                 idx, price_data.index
         # funding_rate
         if "funding_rate" in price_data.columns:
@@ -2744,6 +2882,9 @@ class VectorizedAdvancedFeatureEngineering:
         self.logger.info("🔍 Generating fractional differentiation features...")
         if self.enable_fractional_diff and self.fractional_feature_generator:
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Combine price and volume data for fractional differentiation
                 combined_data, price_data.copy()
         if volume_data is not None and not volume_data.empty:
@@ -2783,6 +2924,9 @@ class VectorizedAdvancedFeatureEngineering:
                 else:
         # Normalize incoming sr_levels to the format expected by the calculator
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         if "support" not in sr_levels and "support_levels" in sr_levels:
                             sr_levels = {
                                 "support": [
@@ -2875,6 +3019,9 @@ class VectorizedAdvancedFeatureEngineering:
         if self.profit_feature_engineer and "potential_profit_pct" in price_data.columns:
         self.logger.info("🔍 Generating profit - based features...")
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Create a combined DataFrame for profit - based feature engineering
                 profit_data, price_data.copy()
         if volume_data is not None and not volume_data.empty:
@@ -2933,6 +3080,9 @@ class VectorizedAdvancedFeatureEngineering:
             offenders: list[str] = []
         for k, v in selected_features.items():
         try: if isinstance(v, pd.Series):
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                         arr, v.values.reshape(-1)
                     elif isinstance(v, np.ndarray):
                         arr, v.reshape(-1) if v.ndim >= 1 else None
@@ -3015,6 +3165,9 @@ class VectorizedAdvancedFeatureEngineering:
 
         # 🔍 LOOKAHEAD BIAS DETECTION - Check for temporal alignment issues
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Convert to DataFrame for detection
                 features_df, pd.DataFrame(sanitized)
 
@@ -3109,6 +3262,9 @@ class VectorizedAdvancedFeatureEngineering:
 
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         if not self.wavelet_cache:
         # Fallback to direct computation if cache is not available
         return await self.wavelet_analyzer.analyze_wavelet_transforms(
@@ -3183,6 +3339,9 @@ class VectorizedAdvancedFeatureEngineering:
     ) -> dict[str, Any]:
         """Engineer market microstructure features using vectorized operations."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         self.logger.info("🔍 Starting microstructure feature engineering...")
             features = {}
 
@@ -3236,6 +3395,9 @@ class VectorizedAdvancedFeatureEngineering:
 
         # Order book wall features (stationary): use returns / diffs
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         if order_flow_data is not None:
         # Expect optional columns: bid_wall_price / size, ask_wall_price / size, mid
                     df, order_flow_data
@@ -3424,6 +3586,9 @@ class VectorizedAdvancedFeatureEngineering:
 
         # Additional kline / aggTrades - based proxies
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # BB z - score
                 close, price_data["close"].astype(float)
                 sma20, close.rolling(20, min_periods = 5).mean()
@@ -3470,6 +3635,9 @@ class VectorizedAdvancedFeatureEngineering:
         self, price_data: pd.DataFrame, ) -> pd.Series:
         """Calculate bid - ask spread using aggtrades data for accurate spread estimation."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         if "close" not in price_data.columns:
         return pd.Series(0.001, index = price_data.index)  # Default 0.1% spread
 
@@ -3587,6 +3755,9 @@ class VectorizedAdvancedFeatureEngineering:
     def _track_nan_origins(self, stage: str, data_dict: dict[str, Any]) -> None:
         """Track NaN values throughout the feature engineering pipeline to identify origins."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             nan_report = {}
             total_nans, 0
 
@@ -3674,6 +3845,9 @@ class VectorizedAdvancedFeatureEngineering:
         self, price_data: pd.DataFrame, ) -> dict[str, Any]:
         """Engineer basic OHLCV - based technical indicators using vectorized operations."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             features = {}
 
         # Ensure we have the required OHLCV columns
@@ -3845,6 +4019,9 @@ class VectorizedAdvancedFeatureEngineering:
         self, price_data: pd.DataFrame, ) -> dict[str, Any]:
         """Engineer adaptive indicators that adjust to market conditions."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             features = {}
 
         if "close" not in price_data.columns:
@@ -3976,6 +4153,9 @@ class VectorizedAdvancedFeatureEngineering:
         self, features: dict[str, Any], ) -> dict[str, Any]:
         """Select optimal features based on variance and correlation."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         if not features:
         return features
 
@@ -4039,6 +4219,9 @@ class VectorizedAdvancedFeatureEngineering:
         self, price_data: pd.DataFrame, volume_data: pd.DataFrame, order_flow_data: pd.DataFrame | None, None, sr_levels: dict[str, Any] | None, None, ) -> dict[str, Any]:
         """Engineer multi - timeframe features with optimized lookback periods."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Initialize Mac M1 optimizations
             optimize_for_m1_mac()
 
@@ -4141,6 +4324,9 @@ class VectorizedAdvancedFeatureEngineering:
     def _get_matrix_optimization_results(self) -> Optional[Dict[str, Any]]:
         """Get matrix optimization results if available."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Check for matrix optimization results in pipeline state or cache
             matrix_results_path = "data / optimization_results / matrix_diverse_lookback_optimization_results.json"
         if Path(matrix_results_path).exists():
@@ -4196,6 +4382,9 @@ class VectorizedAdvancedFeatureEngineering:
     ) -> Dict[str, Any]:
         """Generate traditional multi - timeframe features (fallback method)."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Initialize Mac M1 optimizations
             optimize_for_m1_mac()
 
@@ -4217,6 +4406,9 @@ class VectorizedAdvancedFeatureEngineering:
 
         for tf in timeframes:
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Resample price data to different timeframes
                     tf_price, self._resample_price_data(processed_price, tf)
                     tf_volume, self._resample_volume_data(processed_volume, tf) if processed_volume is not None else None
@@ -4313,6 +4505,9 @@ class VectorizedAdvancedFeatureEngineering:
     def _remove_constant_features(self, features: dict[str, Any]) -> dict[str, Any]:
         """Remove features with zero or near - zero variance."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             non_constant_features = {}
             constant_features = []
             variance_threshold, 1e - 12  # Very small threshold for true constants
@@ -4341,6 +4536,9 @@ class VectorizedAdvancedFeatureEngineering:
     def _ensure_pickle_safe_features(self, features: dict[str, Any]) -> dict[str, Any]:
         """Ensure all features are pickle - safe by removing any coroutines or async objects."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             pickle_safe_features = {}
             removed_features = []
 
@@ -4381,6 +4579,9 @@ class VectorizedAdvancedFeatureEngineering:
 
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         if price_data.empty:
         return None
 
@@ -4412,6 +4613,9 @@ class VectorizedAdvancedFeatureEngineering:
 
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         if volume_data is None or volume_data.empty:
         return None
 
@@ -4434,6 +4638,9 @@ class VectorizedAdvancedFeatureEngineering:
     def _generate_timeframe_features(self, price_data: pd.DataFrame, volume_data: pd.DataFrame, timeframe: str) -> dict[str, Any]:
         """Generate features for a specific timeframe with improved NaN handling."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             features = {}
 
         # Get minimum data requirement for this timeframe
@@ -4570,6 +4777,9 @@ class VectorizedAdvancedFeatureEngineering:
     def _generate_cross_timeframe_features(self, price_data: pd.DataFrame, volume_data: pd.DataFrame | None, None) -> dict[str, Any]:
         """Generate comprehensive cross - timeframe features."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             features = {}
 
         if price_data.empty or len(price_data) < 100:  # Need sufficient data
@@ -4798,10 +5008,16 @@ class VectorizedAdvancedFeatureEngineering:
     async def _generate_regime_aware_features(self, price_data: pd.DataFrame, volume_data: pd.DataFrame | None, None) -> dict[str, Any]:
         """Generate regime - aware features if HMM data is available."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             features = {}
 
         # Try to load HMM regime data
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                 import glob
 
         # Look for HMM regime files
@@ -4837,12 +5053,18 @@ class VectorizedAdvancedFeatureEngineering:
     def _validate_and_clean_features(self, features: dict[str, Any]) -> dict[str, Any]:
         """Validate and clean generated features."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             cleaned_features = {}
             duplicate_count, 0
             constant_count, 0
 
         for feature_name, feature_value in features.items():
         try: if isinstance(feature_value, pd.Series):
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Check for excessive NaN values (more lenient threshold)
                         nan_ratio, feature_value.isna().sum() / len(feature_value)
         if nan_ratio > 0.8:  # More than 80% NaN (increased from 50%)
@@ -4911,11 +5133,17 @@ class VectorizedAdvancedFeatureEngineering:
     def _ensure_pickle_safe_features(self, features: dict[str, Any]) -> dict[str, Any]:
         """Ensure features are pickle - safe by removing any async objects or coroutines."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             safe_features = {}
             removed_count, 0
 
         for feature_name, feature_value in features.items():
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Check if the value is a coroutine or async object
         if hasattr(feature_value, "__await__") or hasattr(feature_value, "send"):
         self.logger.warning(f"⚠️ Removing async object from feature {feature_name}")
@@ -4948,6 +5176,9 @@ class VectorizedAdvancedFeatureEngineering:
     def _generate_fallback_features(self, price_data: pd.DataFrame, volume_data: pd.DataFrame) -> dict[str, Any]:
         """Generate fallback features when main feature engineering fails."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             features = {}
 
         if price_data.empty:
@@ -4979,6 +5210,9 @@ class VectorizedAdvancedFeatureEngineering:
     def _calculate_regime_stability(self, cluster_ids: np.ndarray) -> np.ndarray:
         """Calculate regime stability based on cluster transitions."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             stability, np.zeros(len(cluster_ids))
 
         for i in range(1, len(cluster_ids):
@@ -5014,6 +5248,9 @@ class VectorizedAdvancedFeatureEngineering:
     ) -> dict[str, Any]:
         """Generate meta - labels for ensemble learning."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             features = {}
 
         # Simple meta - label based on price momentum
@@ -5042,6 +5279,9 @@ class VectorizedAdvancedFeatureEngineering:
     ) -> dict[str, Any]:
         """Generate explicit meta - labels for specific timeframes."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             features = {}
 
         # Simple explicit meta - labels
@@ -5155,6 +5395,9 @@ class VectorizedAdvancedFeatureEngineering:
 
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             enhanced_features = {}
 
         # Define lookback periods for different timeframes
@@ -5299,6 +5542,9 @@ class VectorizedAdvancedFeatureEngineering:
 
         # Generate interaction features for high - priority combinations
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             interaction_features, await self._generate_interaction_features(valid_enhanced_features, features, price_data)
         if isinstance(interaction_features, dict):
         # Filter out any coroutine features from interaction_features before updating
@@ -5364,6 +5610,9 @@ class VectorizedAdvancedFeatureEngineering:
 
         # Apply caps to control feature explosion
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                 pre_total, len(final_enhanced_features)
         # Identify RAW - only keys in each category (normalized variants handled separately)
                 accel_raw = [k for k in final_enhanced_features if "_accel_" in k and not k.endswith("_norm")]
@@ -5473,6 +5722,9 @@ class VectorizedAdvancedFeatureEngineering:
 
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         if len(series) < window:
         return series
 
@@ -5526,6 +5778,9 @@ class VectorizedAdvancedFeatureEngineering:
 
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             interaction_features = {}
 
         # Validate that enhanced_features contains actual data, not coroutines
@@ -5706,6 +5961,9 @@ class VectorizedAdvancedFeatureEngineering:
 
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             cross_timeframe_features = {}
 
         # Validate that features contains actual data, not coroutines
@@ -5826,6 +6084,9 @@ class VectorizedAdvancedFeatureEngineering:
 
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Validate price data
         if price_data.empty:
                 msg = "Price data is empty"
@@ -5866,6 +6127,9 @@ class VectorizedAdvancedFeatureEngineering:
 
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         if not enhanced_features:
         self.logger.warning("⚠️ No enhanced features generated")
                 return
@@ -5926,6 +6190,9 @@ class VectorizedAdvancedFeatureEngineering:
 
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Filter out coroutine objects before logging
             valid_all_features = {}
         for key, value in all_features.items():
@@ -5985,6 +6252,9 @@ class VectorizedAdvancedFeatureEngineering:
     def _generate_sr_levels(self, price_data: pd.DataFrame) -> dict[str, Any]:
         """Generate support / resistance levels from price data."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         if price_data.empty or "close" not in price_data.columns:
         self.logger.warning("⚠️ Invalid price data for S / R level generation")
         return {}
@@ -6056,6 +6326,9 @@ class VectorizedAdvancedFeatureEngineering:
 
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         if data.empty:
         return data
 

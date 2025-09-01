@@ -74,6 +74,9 @@ def _enable_numpy_rng_unpickle_compat(logger = None) -> None:
     if _NUMPY_RNG_UNPICKLE_PATCHED:
         return
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         import numpy.random._pickle as np_random_pickle  # type: ignore[attr - defined]
 
         original_ctor, getattr(np_random_pickle, "__bit_generator_ctor", None)
@@ -260,7 +263,7 @@ class ModelManager:
                 "models": {},
                 "active_model": None,
                 "last_updated": datetime.now().isoformat(),
-                "version": "1.0.0",
+                "version": "1_2_3",
             }
         self.logger.info("Created new model metadata")
 
@@ -345,7 +348,7 @@ class ModelManager:
         else:
         self.model_metadata.setdefault("models", {})[model_name] = {
                 "description": f"Model {model_name}",
-                "version": "1.0.0",
+                "version": "1_2_3",
                 "created": datetime.now().isoformat(),
             }
 

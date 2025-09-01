@@ -215,6 +215,9 @@ class IntelligentFeatureCache:
         return None
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         if self.enable_compression:
         with gzip.open(cache_file, "rb") as f:
                     cache_data, pickle.load(f)

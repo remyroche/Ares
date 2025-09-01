@@ -18,93 +18,93 @@ from src.tactician.dynamic_barrier_calculator import DynamicBarrierCalculator
 
 class TacticianEnhancedPredictionIntegrator:
     """
-Enhanced Prediction Integrator for Tactician that delivers multi-outcome predictions
-similar to the Analyst but with smaller price deviations and higher confidence.
+    Enhanced Prediction Integrator for Tactician that delivers multi-outcome predictions
+    similar to the Analyst but with smaller price deviations and higher confidence.
 
-Key Features:
-    - Price deviation % without hitting the opposite barrier (smaller than Analyst)
-- Price direction prediction
-- Confidence that we will reach a certain price
-- Shorter timeframes (1m, 5m vs Analyst's longer timeframes)
-- Higher precision using dynamic barriers
-- Integration with Analyst predictions
-"""
+    Key Features:
+        - Price deviation % without hitting the opposite barrier (smaller than Analyst)
+        - Price direction prediction
+        - Confidence that we will reach a certain price
+        - Shorter timeframes (1m, 5m vs Analyst's longer timeframes)
+        - Higher precision using dynamic barriers
+        - Integration with Analyst predictions
+    """
 
-def __init__(self, config: dict[str, Any]) -> None:
+    def __init__(self, config: dict[str, Any]) -> None:
         """Initialize the Tactician enhanced prediction integrator."""
-self.config = config
-self.logger = get_logger(__name__)
+        self.config = config
+        self.logger = get_logger(__name__)
 
-# Initialize dynamic barrier calculator
-self.barrier_calculator = DynamicBarrierCalculator(config)
+        # Initialize dynamic barrier calculator
+        self.barrier_calculator = DynamicBarrierCalculator(config)
 
-# Load Tactician configuration
-self._load_tactician_config()
+        # Load Tactician configuration
+        self._load_tactician_config()
 
-# Initialize prediction models (placeholder for actual ML models)
-self.tactician_models = self._initialize_tactician_models()
+        # Initialize prediction models (placeholder for actual ML models)
+        self.tactician_models = self._initialize_tactician_models()
 
-self.logger.info("🚀 Tactician Enhanced Prediction Integrator initialized")
+        self.logger.info("🚀 Tactician Enhanced Prediction Integrator initialized")
 
-def _load_tactician_config(self) -> None:
+    def _load_tactician_config(self) -> None:
         """Load Tactician-specific configuration."""
-tactician_config = self.config.get("tactician_triple_barrier", {})
+        tactician_config = self.config.get("tactician_triple_barrier", {})
 
-# Timeframe configuration
-self.timeframes = tactician_config.get("timeframes", ["1m", "5m"])
-self.primary_timeframe = tactician_config.get("primary_timeframe", "1m")
-self.secondary_timeframe = tactician_config.get("secondary_timeframe", "5m")
+        # Timeframe configuration
+        self.timeframes = tactician_config.get("timeframes", ["1m", "5m"])
+        self.primary_timeframe = tactician_config.get("primary_timeframe", "1m")
+        self.secondary_timeframe = tactician_config.get("secondary_timeframe", "5m")
 
-# Precision configuration (simplified)
-self.precision_threshold = tactician_config.get("precision_threshold", 0.85)
+        # Precision configuration (simplified)
+        self.precision_threshold = tactician_config.get("precision_threshold", 0.85)
 
-# Multi-outcome prediction configuration (similar to Analyst)
-self.prediction_types = [
-"price_deviation_prediction",    # Price deviation % for 2 barrier combinations
-"price_direction_prediction",    # Price direction (long/short)
-"price_target_confidence"        # Confidence to reach upper barrier before lower barrier
-]
+        # Multi-outcome prediction configuration (similar to Analyst)
+        self.prediction_types = [
+            "price_deviation_prediction",    # Price deviation % for 2 barrier combinations
+            "price_direction_prediction",    # Price direction (long/short)
+            "price_target_confidence"        # Confidence to reach upper barrier before lower barrier
+        ]
 
-# ML model confidence factors (to be determined by ML model, not hardcoded)
-step12_config = self.config.get("step12_confidence_optimization", {})
-ml_config = step12_config.get("ml_confidence_factors", {})
+        # ML model confidence factors (to be determined by ML model, not hardcoded)
+        step12_config = self.config.get("step12_confidence_optimization", {})
+        ml_config = step12_config.get("ml_confidence_factors", {})
 
-self.ml_confidence_factors = {
-"price_deviation_prediction": ml_config.get("price_deviation_prediction"),  # Will be ML model output
-"price_direction_prediction": ml_config.get("price_direction_prediction"),  # Will be ML model output
-"price_target_confidence": ml_config.get("price_target_confidence")         # Will be ML model output
-}
+        self.ml_confidence_factors = {
+            "price_deviation_prediction": ml_config.get("price_deviation_prediction"),  # Will be ML model output
+            "price_direction_prediction": ml_config.get("price_direction_prediction"),  # Will be ML model output
+            "price_target_confidence": ml_config.get("price_target_confidence")         # Will be ML model output
+        }
 
-def _initialize_tactician_models(self) -> dict[str, Any]:
+    def _initialize_tactician_models(self) -> dict[str, Any]:
         """Initialize Tactician prediction models."""
-# Placeholder for actual ML models
-# In production, these would be trained models for each prediction type
-models = {}
+        # Placeholder for actual ML models
+        # In production, these would be trained models for each prediction type
+        models = {}
 
-for prediction_type in self.prediction_types:
+        for prediction_type in self.prediction_types:
             models[prediction_type] = {
-"model": None,  # Placeholder for actual model
-"confidence": 0.90,  # Higher base confidence than Analyst
-"timeframe": self.primary_timeframe,
-"ml_confidence_factor": self.ml_confidence_factors.get(prediction_type, 1.0)
-}
+                "model": None,  # Placeholder for actual model
+                "confidence": 0.90,  # Higher base confidence than Analyst
+                "timeframe": self.primary_timeframe,
+                "ml_confidence_factor": self.ml_confidence_factors.get(prediction_type, 1.0)
+            }
 
-return models
+        return models
 
-@handle_errors(
-exceptions=(Exception,),
-default_return={},
-context="generating tactician enhanced predictions",
-)
-@with_tracing_span("Tactician.generateEnhancedPredictions")
-async def generate_tactician_predictions(
-self,
-market_data: pd.DataFrame,
-analyst_predictions: dict[str, Any],
-symbol: str,
-exchange: str,
-timeframe: str = None
-) -> dict[str, Any]:
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return={},
+        context="generating tactician enhanced predictions",
+    )
+    @with_tracing_span("Tactician.generateEnhancedPredictions")
+    async def generate_tactician_predictions(
+        self,
+        market_data: pd.DataFrame,
+        analyst_predictions: dict[str, Any],
+        symbol: str,
+        exchange: str,
+        timeframe: str = None
+    ) -> dict[str, Any]:
         """
 Generate Tactician enhanced predictions based on Analyst predictions.
 
@@ -120,241 +120,241 @@ Returns:
         """
         try:
             # Determine timeframe
-if timeframe is None:
+            if timeframe is None:
                 timeframe = self._determine_optimal_timeframe(market_data)
 
-# Get dynamic barriers for this timeframe (smaller than Analyst)
-upper_barrier, lower_barrier = self.barrier_calculator.calculate_dynamic_barriers(timeframe)
+            # Get dynamic barriers for this timeframe (smaller than Analyst)
+            upper_barrier, lower_barrier = self.barrier_calculator.calculate_dynamic_barriers(timeframe)
 
-# Generate enhanced predictions for each type
-tactician_predictions = {}
+            # Generate enhanced predictions for each type
+            tactician_predictions = {}
 
-for prediction_type in self.prediction_types:
+            for prediction_type in self.prediction_types:
                 enhanced_prediction = await self._generate_enhanced_prediction(
-prediction_type=prediction_type,
-market_data=market_data,
-analyst_predictions=analyst_predictions,
-upper_barrier=upper_barrier,
-lower_barrier=lower_barrier,
-timeframe=timeframe,
-symbol=symbol,
-exchange=exchange
-)
+                    prediction_type=prediction_type,
+                    market_data=market_data,
+                    analyst_predictions=analyst_predictions,
+                    upper_barrier=upper_barrier,
+                    lower_barrier=lower_barrier,
+                    timeframe=timeframe,
+                    symbol=symbol,
+                    exchange=exchange
+                )
 
-if enhanced_prediction:
+                if enhanced_prediction:
                     tactician_predictions[prediction_type] = enhanced_prediction
 
-# Add metadata
-tactician_predictions["metadata"] = {
-"timeframe": timeframe,
-"symbol": symbol,
-"exchange": exchange,
-"upper_barrier": upper_barrier,
-"lower_barrier": lower_barrier,
-"precision_threshold": self.precision_threshold,
-"high_precision_mode": self.enable_high_precision_mode,
-"timestamp": datetime.now().isoformat()
-}
+            # Add metadata
+            tactician_predictions["metadata"] = {
+                "timeframe": timeframe,
+                "symbol": symbol,
+                "exchange": exchange,
+                "upper_barrier": upper_barrier,
+                "lower_barrier": lower_barrier,
+                "precision_threshold": self.precision_threshold,
+                "high_precision_mode": self.enable_high_precision_mode,
+                "timestamp": datetime.now().isoformat()
+            }
 
-self.logger.info(f"🎯 Generated {len(tactician_predictions)} Tactician enhanced predictions for {timeframe}")
+            self.logger.info(f"🎯 Generated {len(tactician_predictions)} Tactician enhanced predictions for {timeframe}")
 
-return tactician_predictions
+            return tactician_predictions
 
-except Exception as e:
+        except Exception as e:
             self.logger.error(error(f"❌ Error generating Tactician predictions: {e}"))
-return {}
+            return {}
 
-async def _generate_enhanced_prediction(
-self,
-prediction_type: str,
-market_data: pd.DataFrame,
-analyst_predictions: dict[str, Any],
-upper_barrier: float,
-lower_barrier: float,
-timeframe: str,
-symbol: str,
-exchange: str
-) -> dict[str, Any]:
-                """Generate enhanced prediction for a specific type."""
+    async def _generate_enhanced_prediction(
+        self,
+        prediction_type: str,
+        market_data: pd.DataFrame,
+        analyst_predictions: dict[str, Any],
+        upper_barrier: float,
+        lower_barrier: float,
+        timeframe: str,
+        symbol: str,
+        exchange: str
+    ) -> dict[str, Any]:
+        """Generate enhanced prediction for a specific type."""
         try:
             # Get base prediction from Analyst
-base_prediction = self._extract_analyst_prediction(analyst_predictions, prediction_type)
+            base_prediction = self._extract_analyst_prediction(analyst_predictions, prediction_type)
 
-if base_prediction is None:
+            if base_prediction is None:
                 return None
 
-# Apply Tactician-specific enhancement
-enhanced_prediction = self._apply_tactician_enhancement(
-prediction_type=prediction_type,
-base_prediction=base_prediction,
-market_data=market_data,
-upper_barrier=upper_barrier,
-lower_barrier=lower_barrier,
-timeframe=timeframe
-)
+            # Apply Tactician-specific enhancement
+            enhanced_prediction = self._apply_tactician_enhancement(
+                prediction_type=prediction_type,
+                base_prediction=base_prediction,
+                market_data=market_data,
+                upper_barrier=upper_barrier,
+                lower_barrier=lower_barrier,
+                timeframe=timeframe
+            )
 
-# Apply basic precision filtering
-if enhanced_prediction.get("confidence", 0.0) < self.precision_threshold:
+            # Apply basic precision filtering
+            if enhanced_prediction.get("confidence", 0.0) < self.precision_threshold:
                 return None
 
-return enhanced_prediction
+            return enhanced_prediction
 
-except Exception as e:
+        except Exception as e:
             self.logger.error(error(f"❌ Error generating {prediction_type} prediction: {e}"))
-return None
+            return None
 
-def _extract_analyst_prediction(
-self,
-analyst_predictions: dict[str, Any],
-prediction_type: str
-) -> Optional[dict[str, Any]]:
-                """Extract base prediction from Analyst predictions."""
+    def _extract_analyst_prediction(
+        self,
+        analyst_predictions: dict[str, Any],
+        prediction_type: str
+    ) -> Optional[dict[str, Any]]:
+        """Extract base prediction from Analyst predictions."""
         try:
             # Map Tactician prediction types to Analyst prediction types
-analyst_type_mapping = {
-"price_deviation_prediction": "price_prediction",
-"price_direction_prediction": "direction_prediction",
-"price_target_confidence": "confidence_prediction"
-}
+            analyst_type_mapping = {
+                "price_deviation_prediction": "price_prediction",
+                "price_direction_prediction": "direction_prediction",
+                "price_target_confidence": "confidence_prediction"
+            }
 
-analyst_type = analyst_type_mapping.get(prediction_type, prediction_type)
+            analyst_type = analyst_type_mapping.get(prediction_type, prediction_type)
 
-# Look for prediction in various possible locations
-for key, value in analyst_predictions.items():
+            # Look for prediction in various possible locations
+            for key, value in analyst_predictions.items():
                 if analyst_type in key.lower():
                     return value
-elif isinstance(value, dict) and analyst_type in value:
+                elif isinstance(value, dict) and analyst_type in value:
                     return value[analyst_type]
 
-# Fallback: create synthetic prediction based on market data
-return self._create_synthetic_prediction(prediction_type, analyst_predictions)
+            # Fallback: create synthetic prediction based on market data
+            return self._create_synthetic_prediction(prediction_type, analyst_predictions)
 
-except Exception as e:
+        except Exception as e:
             self.logger.warning(warning(f"⚠️ Could not extract {prediction_type} from Analyst predictions: {e}"))
-return None
+            return None
 
-def _create_synthetic_prediction(
-self,
-prediction_type: str,
-analyst_predictions: dict[str, Any]
-) -> dict[str, Any]:
-                """Create synthetic prediction when Analyst prediction is not available."""
+    def _create_synthetic_prediction(
+        self,
+        prediction_type: str,
+        analyst_predictions: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Create synthetic prediction when Analyst prediction is not available."""
         try:
             # Extract any available confidence or prediction values
-base_confidence = 0.5
-base_prediction = 0.0
+            base_confidence = 0.5
+            base_prediction = 0.0
 
-for key, value in analyst_predictions.items():
+            for key, value in analyst_predictions.items():
                 if isinstance(value, dict):
                     if "confidence" in value:
                         base_confidence = value["confidence"]
-if "prediction" in value:
+                    if "prediction" in value:
                         base_prediction = value["prediction"]
 
-# Create synthetic prediction based on type
-if prediction_type == "price_deviation_prediction":
+            # Create synthetic prediction based on type
+            if prediction_type == "price_deviation_prediction":
                 # Price deviation for both 50% and 25% of Analyst barriers
-# This will be calculated by the ML model based on market conditions
-synthetic_value = base_prediction * 0.5  # Base 50% of Analyst deviation
-elif prediction_type == "price_direction_prediction":
+                # This will be calculated by the ML model based on market conditions
+                synthetic_value = base_prediction * 0.5  # Base 50% of Analyst deviation
+            elif prediction_type == "price_direction_prediction":
                 # Same direction as Analyst
-synthetic_value = base_prediction  # Keep same direction
-elif prediction_type == "price_target_confidence":
+                synthetic_value = base_prediction  # Keep same direction
+            elif prediction_type == "price_target_confidence":
                 # Confidence calculated by ML model (not just boosted)
-synthetic_value = base_confidence  # Base confidence, ML model will enhance
-else:
+                synthetic_value = base_confidence  # Base confidence, ML model will enhance
+            else:
                 synthetic_value = base_prediction
 
-return {
-"prediction": synthetic_value,
-"confidence": base_confidence,
-"model_type": "synthetic",
-"prediction_type": prediction_type,
-"timestamp": datetime.now().isoformat()
-}
+            return {
+                "prediction": synthetic_value,
+                "confidence": base_confidence,
+                "model_type": "synthetic",
+                "prediction_type": prediction_type,
+                "timestamp": datetime.now().isoformat()
+            }
 
-except Exception as e:
+        except Exception as e:
             self.logger.error(error(f"❌ Error creating synthetic prediction: {e}"))
-return {
-"prediction": 0.0,
-"confidence": 0.5,
-"model_type": "synthetic",
-"prediction_type": prediction_type,
-"timestamp": datetime.now().isoformat()
-}
+            return {
+                "prediction": 0.0,
+                "confidence": 0.5,
+                "model_type": "synthetic",
+                "prediction_type": prediction_type,
+                "timestamp": datetime.now().isoformat()
+            }
 
-def _apply_tactician_enhancement(
-self,
-prediction_type: str,
-base_prediction: dict[str, Any],
-market_data: pd.DataFrame,
-upper_barrier: float,
-lower_barrier: float,
-timeframe: str
-) -> dict[str, Any]:
-                """Apply Tactician-specific enhancement to base prediction."""
+    def _apply_tactician_enhancement(
+        self,
+        prediction_type: str,
+        base_prediction: dict[str, Any],
+        market_data: pd.DataFrame,
+        upper_barrier: float,
+        lower_barrier: float,
+        timeframe: str
+    ) -> dict[str, Any]:
+        """Apply Tactician-specific enhancement to base prediction."""
         try:
             # Get ML model confidence factor for this prediction type
-ml_confidence_factor = self.ml_confidence_factors.get(prediction_type, 1.0)
-if ml_confidence_factor is None:
+            ml_confidence_factor = self.ml_confidence_factors.get(prediction_type, 1.0)
+            if ml_confidence_factor is None:
                 # Fallback to base confidence if ML model hasn't provided factor yet
-ml_confidence_factor = 1.0
+                ml_confidence_factor = 1.0
 
-# Extract base values
-base_value = base_prediction.get("prediction", 0.0)
-base_confidence = base_prediction.get("confidence", 0.5)
+            # Extract base values
+            base_value = base_prediction.get("prediction", 0.0)
+            base_confidence = base_prediction.get("confidence", 0.5)
 
-# Apply Tactician-specific enhancement based on prediction type
-enhanced_value = self._enhance_prediction_value(
-prediction_type=prediction_type,
-base_value=base_value,
-market_data=market_data,
-upper_barrier=upper_barrier,
-lower_barrier=lower_barrier,
-timeframe=timeframe
-)
+            # Apply Tactician-specific enhancement based on prediction type
+            enhanced_value = self._enhance_prediction_value(
+                prediction_type=prediction_type,
+                base_value=base_value,
+                market_data=market_data,
+                upper_barrier=upper_barrier,
+                lower_barrier=lower_barrier,
+                timeframe=timeframe
+            )
 
-# Calculate enhanced confidence using ML model factor
-enhanced_confidence = self._calculate_enhanced_confidence(
-base_confidence=base_confidence,
-ml_confidence_factor=ml_confidence_factor,
-market_data=market_data,
-timeframe=timeframe
-)
+            # Calculate enhanced confidence using ML model factor
+            enhanced_confidence = self._calculate_enhanced_confidence(
+                base_confidence=base_confidence,
+                ml_confidence_factor=ml_confidence_factor,
+                market_data=market_data,
+                timeframe=timeframe
+            )
 
-# Calculate precision score
-precision_score = self._calculate_precision_score(
-enhanced_confidence=enhanced_confidence,
-market_data=market_data,
-timeframe=timeframe
-)
+            # Calculate precision score
+            precision_score = self._calculate_precision_score(
+                enhanced_confidence=enhanced_confidence,
+                market_data=market_data,
+                timeframe=timeframe
+            )
 
-return {
-"prediction": enhanced_value,
-"confidence": enhanced_confidence,
-"precision_score": precision_score,
-"model_type": "tactician_enhanced",
-"prediction_type": prediction_type,
-"timeframe": timeframe,
-"upper_barrier": upper_barrier,
-"lower_barrier": lower_barrier,
-"ml_confidence_factor": ml_confidence_factor,
-"base_prediction": base_prediction,
-"timestamp": datetime.now().isoformat()
-}
+            return {
+                "prediction": enhanced_value,
+                "confidence": enhanced_confidence,
+                "precision_score": precision_score,
+                "model_type": "tactician_enhanced",
+                "prediction_type": prediction_type,
+                "timeframe": timeframe,
+                "upper_barrier": upper_barrier,
+                "lower_barrier": lower_barrier,
+                "ml_confidence_factor": ml_confidence_factor,
+                "base_prediction": base_prediction,
+                "timestamp": datetime.now().isoformat()
+            }
 
-except Exception as e:
+        except Exception as e:
             self.logger.error(error(f"❌ Error applying Tactician enhancement: {e}"))
-return base_prediction
+            return base_prediction
 
-def _enhance_prediction_value(
-self,
-prediction_type: str,
-base_value: float,
-market_data: pd.DataFrame,
-barrier_combinations: Dict[str, Tuple[float, float]],
-timeframe: str
-) -> Dict[str, float]:
+    def _enhance_prediction_value(
+        self,
+        prediction_type: str,
+        base_value: float,
+        market_data: pd.DataFrame,
+        barrier_combinations: Dict[str, Tuple[float, float]],
+        timeframe: str
+    ) -> Dict[str, float]:
         """Enhance prediction value for 2 barrier combinations."""
         try:
             if prediction_type == "price_deviation_prediction":

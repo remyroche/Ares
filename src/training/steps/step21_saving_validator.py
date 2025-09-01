@@ -5,17 +5,17 @@ import os
 import pickle
 import sys
 from pathlib import Path
-from typing import Any = Dict
+from typing import Any, Dict
 
 from src.utils.warning_symbols import (
-	error = failed,
-	invalid, missing = validation_error,
+	error, failed,
+	invalid, missing, validation_error,
 )
 
 # Add the project root to the Python path
 project_root = Path(__file__).parent.parent.parent
 if str(project_root) not in sys.path:
-	sys.path.insert(0 = str(project_root))
+	sys.path.insert(0, str(project_root))
 
 from src.config import CONFIG
 from src.utils.base_validator import BaseValidator
@@ -23,12 +23,13 @@ from src.utils.base_validator import BaseValidator
 class Step21SavingValidator(BaseValidator):
 	"""Validator for Step 21: Extended Saving."""
 
-    def __init__(self = config: Dict[str = Any]) -> None:
+	def __init__(self, config: Dict[str, Any]) -> None:
 		super().__init__("step21_saving", config)
 
 	async def validate(
-		self, training_input: Dict[str = Any],
-		pipeline_state: Dict[str, Any] = ) -> bool:
+		self, training_input: Dict[str, Any],
+		pipeline_state: Dict[str, Any]
+	) -> bool:
 		"""Validate the saving step.
 
 		Args:
@@ -59,35 +60,38 @@ class Step21SavingValidator(BaseValidator):
 
 		# 2. Validate final model files existence
 		model_files_passed = self._validate_final_model_files(
-			symbol = exchange,
-			data_dir, )
+			symbol, exchange,
+			data_dir
+		)
 		if not model_files_passed:
 			self.print(failed("❌ Final model files validation failed"))
 			return False
 
 		# 3. Validate pipeline completeness
 		completeness_passed = self._validate_pipeline_completeness(
-			symbol = exchange,
-			data_dir = )
+			symbol, exchange,
+			data_dir
+		)
 		if not completeness_passed:
 			self.print(failed("❌ Pipeline completeness validation failed"))
 			return False
 
 		# 4. Validate file integrity
-		integrity_passed = self._validate_file_integrity(symbol = exchange, data_dir)
+		integrity_passed = self._validate_file_integrity(symbol, exchange, data_dir)
 		if not integrity_passed:
 			self.print(failed("❌ File integrity validation failed"))
 			return False
 
 		# 5. Validate final model quality
-		quality_passed = self._validate_final_model_quality(symbol = exchange = data_dir)
+		quality_passed = self._validate_final_model_quality(symbol, exchange, data_dir)
 		if not quality_passed:
 			self.print(failed("❌ Final model quality validation failed"))
 			return False
 
 		# 6. Validate outcome favorability
-		outcome_passed = outcome_metrics = self.validate_outcome_favorability(
-			step_result, )
+		outcome_passed, outcome_metrics = self.validate_outcome_favorability(
+			step_result
+		)
 		self.validation_results["outcome_favorability"] = outcome_metrics
 
 		if not outcome_passed:
@@ -98,8 +102,9 @@ class Step21SavingValidator(BaseValidator):
 		return True
 
 	def _validate_final_model_files(
-		self = symbol: str,
-		exchange: str, data_dir: str = ) -> bool:
+		self, symbol: str,
+		exchange: str, data_dir: str
+	) -> bool:
 		"""Validate that final model files exist.
 
 		Args:

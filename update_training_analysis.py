@@ -42,18 +42,19 @@ def update_training_analysis():
         if file_path not in analysis["called_files"]:
             analysis["called_files"].append(file_path)
     
-    # Remove these files from uncalled files if they were there
+    # Remove these files from unused files if they were there
     for file_path in new_step_files:
-        if file_path in analysis["uncalled_files"]:
-            analysis["uncalled_files"].remove(file_path)
+        if file_path in analysis["unused_files"]:
+            analysis["unused_files"].remove(file_path)
     
     # Update statistics
-    analysis["statistics"]["total_files"] = len(analysis["called_files"]) + len(analysis["uncalled_files"])
-    analysis["statistics"]["called_files_count"] = len(analysis["called_files"])
-    analysis["statistics"]["uncalled_files_count"] = len(analysis["uncalled_files"])
-    analysis["statistics"]["coverage_percentage"] = (len(analysis["called_files"]) / analysis["statistics"]["total_files"]) * 100
+    analysis["summary"]["total_files"] = len(analysis["called_files"]) + len(analysis["unused_files"])
+    analysis["summary"]["called_files"] = len(analysis["called_files"])
+    analysis["summary"]["unused_files"] = len(analysis["unused_files"])
     
-    # Update metadata
+    # Update metadata if it exists
+    if "metadata" not in analysis:
+        analysis["metadata"] = {}
     analysis["metadata"]["pipeline_steps"] = 21
     analysis["metadata"]["description"] = "Complete 21-step enhanced training pipeline analysis"
     analysis["metadata"]["updated_at"] = "2024-01-01"  # Update with current date
@@ -65,10 +66,10 @@ def update_training_analysis():
     
     print(f"✅ Updated analysis saved to {output_file}")
     print(f"📊 New statistics:")
-    print(f"   - Total files: {analysis['statistics']['total_files']}")
-    print(f"   - Called files: {analysis['statistics']['called_files_count']}")
-    print(f"   - Uncalled files: {analysis['statistics']['uncalled_files_count']}")
-    print(f"   - Coverage: {analysis['statistics']['coverage_percentage']:.1f}%")
+    print(f"   - Total files: {analysis['summary']['total_files']}")
+    print(f"   - Called files: {analysis['summary']['called_files']}")
+    print(f"   - Unused files: {analysis['summary']['unused_files']}")
+    print(f"   - Coverage: {(analysis['summary']['called_files'] / analysis['summary']['total_files']) * 100:.1f}%")
     print(f"   - Pipeline steps: {analysis['metadata']['pipeline_steps']}")
 
 if __name__ == "__main__":

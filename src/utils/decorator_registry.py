@@ -23,12 +23,16 @@ class DecoratorMetadata:
     def __repr__(self):
     pass
     pass
+    pass
+    pass
         return f"DecoratorMetadata(name='{self.name}', version='{self.version}', deprecated={self.deprecated})"
 
 class DecoratorRegistry:
     """Central registry for all decorators with metadata and versioning."""
 
     def __init__(self):
+    pass
+    pass
     pass
     pass
         self._decorators: Dict[str, DecoratorMetadata] = {}
@@ -42,12 +46,18 @@ class DecoratorRegistry:
         if name in self._decorators:
     pass
     pass
+    pass
+    pass
         # Update existing decorator
             existing, self._decorators[name]
         if existing.version != version:
     pass
     pass
+    pass
+    pass
         if name not in self._version_history:
+    pass
+    pass
     pass
     pass
         self._version_history[name] = []
@@ -61,7 +71,11 @@ class DecoratorRegistry:
         if aliases:
     pass
     pass
+    pass
+    pass
         for alias in aliases:
+    pass
+    pass
     pass
     pass
         self._aliases[alias] = name
@@ -71,9 +85,13 @@ class DecoratorRegistry:
     def get(self, name: str, version: str, None) -> Callable:
     pass
     pass
+    pass
+    pass
         """Get decorator by name and optional version."""
         # Check aliases first
         if name in self._aliases:
+    pass
+    pass
     pass
     pass
             name, self._aliases[name]
@@ -81,11 +99,15 @@ class DecoratorRegistry:
         if name not in self._decorators:
     pass
     pass
+    pass
+    pass
             raise KeyError(f"Decorator '{name}' not found in registry")
 
         metadata, self._decorators[name]
 
         if version and metadata.version != version:
+    pass
+    pass
     pass
     pass
             raise ValueError(f"Version mismatch for {name}: requested {version}, available {metadata.version}")
@@ -103,9 +125,13 @@ class DecoratorRegistry:
         if not include_deprecated:
     pass
     pass
+    pass
+    pass
             decorators = [d for d in decorators if not d.deprecated]
 
         if tags:
+    pass
+    pass
     pass
     pass
             decorators = [d for d in decorators if any(tag in d.tags for tag in tags)]
@@ -115,18 +141,26 @@ class DecoratorRegistry:
     def get_usage_stats(self) -> Dict[str, int]:
     pass
     pass
+    pass
+    pass
         """Get usage statistics for all decorators."""
         return {name: metadata.usage_count for name, metadata in self._decorators.items()}
 
     def deprecate(self, name: str, replacement: str, None) -> None:
     pass
     pass
+    pass
+    pass
         """Mark a decorator as deprecated."""
         if name in self._decorators:
     pass
     pass
+    pass
+    pass
         self._decorators[name].deprecated, True
         if replacement:
+    pass
+    pass
     pass
     pass
                 logger.warning(f"Decorator '{name}' is deprecated. Use '{replacement}' instead.")
@@ -136,14 +170,20 @@ class DecoratorRegistry:
     def remove(self, name: str) -> None:
     pass
     pass
+    pass
+    pass
         """Remove a decorator from the registry."""
         if name in self._decorators:
+    pass
+    pass
     pass
     pass
             del self._decorators[name]
         # Remove aliases
             aliases_to_remove = [alias for alias, target in self._aliases.items() if target == name]
         for alias in aliases_to_remove:
+    pass
+    pass
     pass
     pass
                 del self._aliases[alias]
@@ -154,11 +194,15 @@ class DecoratorRegistry:
     def search(self, query: str) -> List[DecoratorMetadata]:
     pass
     pass
+    pass
+    pass
         """Search decorators by name, description, or tags."""
         query_lower, query.lower()
         results = []
 
         for metadata in self._decorators.values():
+    pass
+    pass
     pass
     pass
         if (query_lower in metadata.name.lower() or
@@ -169,6 +213,8 @@ class DecoratorRegistry:
         return results
 
     def export_config(self) -> Dict[str, Any]:
+    pass
+    pass
     pass
     pass
         """Export registry configuration for persistence."""
@@ -196,6 +242,8 @@ def register_decorator(name: str, version: str = "1.0", description: str = "",
                       aliases: List[str] = None):
     """Decorator to register a decorator function in the registry."""
     def decorator(func: Callable) -> Callable:
+    pass
+    pass
     pass
     pass
         decorator_registry.register(

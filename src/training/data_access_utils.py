@@ -67,6 +67,8 @@ def load_training_data(
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         return data_manager.get_features_and_labels(split_type, label_column)
     except Exception as e:
         error_msg = f"Error loading {split_type} data for {symbol} on {exchange}: {e}"
@@ -101,6 +103,8 @@ def load_validation_data_for_optimization(
             exchange,
             "validation",
             label_column,
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -147,6 +151,8 @@ def get_dataset_metadata(
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         return data_manager.get_metadata()
     except Exception as e:
         logger = system_logger.getChild("DataAccessUtils")
@@ -173,6 +179,8 @@ def validate_dataset_integrity(
     """
     try:
         data_manager = get_data_manager(data_dir, symbol, exchange)
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -216,6 +224,8 @@ def update_dataset_with_new_features(
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         data_manager.update_data_split(split_type, updated_data)
         logger.info(f"Successfully updated {split_type} dataset with new features")
     except Exception as e:
@@ -249,14 +259,18 @@ def check_unified_database_exists(
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         # Check if main database file exists
         if not os.path.exists(data_manager.database_file):
+    pass
     pass
     pass
             return False
 
         # Check if metadata file exists
         if not os.path.exists(data_manager.metadata_file):
+    pass
     pass
     pass
             return False
@@ -294,6 +308,8 @@ def get_time_splits_info(
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         return metadata.get("splits", {})
     except Exception as e:
         logger = system_logger.getChild("DataAccessUtils")
@@ -326,6 +342,8 @@ def ensure_temporal_consistency(
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         validation_results = data_manager.validate_database_integrity()
 
         # Check for temporal ordering issues
@@ -336,6 +354,7 @@ def ensure_temporal_consistency(
         ]
 
         if temporal_issues:
+    pass
     pass
     pass
             return False
@@ -377,6 +396,7 @@ def get_test_features_and_labels(
 
 
 def get_full_dataset(data_dir: str, **kwargs) -> pd.DataFrame:
+    pass
     pass
     pass
     """Get the full dataset."""

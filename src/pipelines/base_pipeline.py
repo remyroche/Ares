@@ -47,32 +47,40 @@ class PipelineConfig:
     def validate(self) -> List[str]:
     pass
     pass
+    pass
         errors: List[str] = []
         if not self.name:
+    pass
     pass
     pass
             errors.append("Pipeline name is required")
         if not self.symbol:
     pass
     pass
+    pass
             errors.append("Symbol is required")
         if not self.exchange:
+    pass
     pass
     pass
             errors.append("Exchange is required")
         if self.environment not in ["live", "backtest", "training"]:
     pass
     pass
+    pass
             errors.append("Environment must be 'live', 'backtest', or 'training'")
         if self.loop_interval_seconds <= 0:
+    pass
     pass
     pass
             errors.append("Loop interval must be positive")
         if self.max_retries < 0:
     pass
     pass
+    pass
             errors.append("Max retries must be non-negative")
         if self.timeout_seconds <= 0:
+    pass
     pass
     pass
             errors.append("Timeout must be positive")
@@ -93,7 +101,9 @@ class PipelineMetrics:
     def update_duration(self) -> None:
     pass
     pass
+    pass
         if self.start_time and self.end_time:
+    pass
     pass
     pass
             self.duration_seconds = (self.end_time - self.start_time).total_seconds()
@@ -101,6 +111,7 @@ class PipelineMetrics:
 
 class BasePipeline:
     def __init__(self, config: Dict[str, Any]) -> None:
+    pass
     pass
     pass
         self.config = config

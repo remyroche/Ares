@@ -34,6 +34,7 @@ class MultiTaskRandomForest:
     def __init__(self, config: dict[str, Any], horizons: list[int]) -> None:
     pass
     pass
+    pass
         self.logger = system_logger.getChild("MultiTaskRandomForest")
         tm = (config or {}).get("TRANSITION_MODELING", {})
         mt = (
@@ -59,8 +60,10 @@ class MultiTaskRandomForest:
     def _assemble_X(self, samples: list[dict[str, Any]]) -> pd.DataFrame:
     pass
     pass
+    pass
         rows: list[dict[str, float]] = []
         for s in samples:
+    pass
     pass
     pass
             rf = dict(s.get("rf_features", {}))
@@ -70,7 +73,9 @@ class MultiTaskRandomForest:
     def _cap(self, X: pd.DataFrame, y: pd.Series) -> tuple[pd.DataFrame, pd.Series]:
     pass
     pass
+    pass
         if len(X) > self.cfg.max_train_samples:
+    pass
     pass
     pass
             return X.iloc[-self.cfg.max_train_samples :], y.iloc[
@@ -81,13 +86,16 @@ class MultiTaskRandomForest:
     def _best_f1_threshold(self, y_true: np.ndarray, y_score: np.ndarray) -> float:
     pass
     pass
+    pass
         if y_true.size == 0 or y_score.size == 0:
+    pass
     pass
     pass
             return 0.5
         candidates = np.linspace(0.05, 0.95, 19)
         best_thr, best_f1 = 0.5, -1.0
         for thr in candidates:
+    pass
     pass
     pass
             y_pred = (y_score >= thr).astype(int)
@@ -97,9 +105,12 @@ class MultiTaskRandomForest:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             except Exception:
                 f1 = 0.0
             if f1 > best_f1:
+    pass
     pass
     pass
                 best_f1, best_thr = f1, thr
@@ -108,7 +119,9 @@ class MultiTaskRandomForest:
     def fit(self, samples: list[dict[str, Any]]) -> dict[str, Any]:
     pass
     pass
+    pass
         if not self.cfg.enabled or not samples:
+    pass
     pass
     pass
             return {"trained": False}
@@ -153,11 +166,14 @@ class MultiTaskRandomForest:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             classes = list(pc_model.classes_)
             val_true = yva.values
             scales: dict[str , float] = {}
             thrs: dict[str , float] = {}
             for i, c in enumerate(classes):
+    pass
     pass
     pass
                 p = proba[:, i].astype(float)
@@ -175,8 +191,10 @@ class MultiTaskRandomForest:
         for head in ("onset_beginning", "end_trend"):
     pass
     pass
+    pass
             y = pd.Series([int(s.get(head, 0)) for s in samples])
             if y.nunique() < 2:
+    pass
     pass
     pass
                 continue
@@ -209,6 +227,8 @@ class MultiTaskRandomForest:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
                 mean_p = float(np.clip(np.mean(p1), 1e-6, 1.0))
                 mean_y = float(np.mean(yva.values))
                 reliability[head] = {
@@ -227,11 +247,15 @@ class MultiTaskRandomForest:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             for s in samples:
+    pass
     pass
     pass
                 y_states = s.get("Y_post_states")
                 if isinstance(y_states, pd.DataFrame) and "regime" in y_states.columns:
+    pass
     pass
     pass
                     vals = [
@@ -242,6 +266,7 @@ class MultiTaskRandomForest:
                     if vals:
     pass
     pass
+    pass
                         # majority label
                         regimes.append(Counter(vals).most_common(1)[0][0])
                     else:
@@ -250,6 +275,7 @@ class MultiTaskRandomForest:
                     regimes.append("SIDEWAYS")
             y_nr = pd.Series(regimes)
             if y_nr.nunique() >= 2:
+    pass
     pass
     pass
                 X_nr, y_nr = self._cap(X, y_nr)
@@ -282,10 +308,13 @@ class MultiTaskRandomForest:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
                     classes = list(nr_model.classes_)
                     val_true = yva.values
                     scales: dict[str, float] = {}
                     for i, c in enumerate(classes):
+    pass
     pass
     pass
                         p = proba[:, i].astype(float)
@@ -303,9 +332,11 @@ class MultiTaskRandomForest:
         for H in self.horizons:
     pass
     pass
+    pass
             head = f"direction_up_{H}"
             y = pd.Series([int(s.get(head, 0)) for s in samples])
             if y.nunique() < 2:
+    pass
     pass
     pass
                 continue
@@ -338,6 +369,8 @@ class MultiTaskRandomForest:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
                 mean_p = float(np.clip(np.mean(p1), 1e-6, 1.0))
                 mean_y = float(np.mean(yva.values))
                 reliability[head] = {
@@ -353,12 +386,15 @@ class MultiTaskRandomForest:
         if self.cfg.enable_regression:
     pass
     pass
+    pass
             for H in self.horizons:
+    pass
     pass
     pass
                 head = f"return_{H}"
                 y = pd.Series([float(s.get(head, 0.0)) for s in samples])
                 if y.empty:
+    pass
     pass
     pass
                     continue
@@ -386,16 +422,20 @@ class MultiTaskRandomForest:
     def save(self, models_dir: str, prefix: str = "rolling_mtrf") -> dict[str, Any]:
     pass
     pass
+    pass
         os.makedirs(models_dir, exist_ok=True)
         saved: dict[str, str] = {}
         # Save each model
         for name, model in self.models.items():
     pass
     pass
+    pass
             path = os.path.join(models_dir, f"{prefix}_{name}.pkl")
             try:
                 with open(path, "wb") as f:
                     pickle.dump(model, f)
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -414,6 +454,8 @@ class MultiTaskRandomForest:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             with open(meta_path, "w", encoding="utf-8") as f:
                 json.dump(meta, f, indent=2)
         except Exception as e:
@@ -426,12 +468,16 @@ class MultiTaskRandomForest:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             with open(thr_path, "w", encoding="utf-8") as f:
                 json.dump(self.thresholds_, f, indent=2)
         except Exception as e:
             self.logger.warning(f"Failed to save thresholds: {e}")
         try:
             rel_path = os.path.join(models_dir, "reliability.json")
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -449,18 +495,23 @@ class MultiTaskRandomForest:
     def load(models_dir: str, prefix: str = "rolling_mtrf") -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], list[str]]:
     pass
     pass
+    pass
         models: dict[str, Any] = {}
         # Load models
         for fname in os.listdir(models_dir):
     pass
     pass
+    pass
             if fname.startswith(prefix + "_") and fname.endswith(".pkl"):
+    pass
     pass
     pass
                 head = fname[len(prefix) + 1 : -4]
                 try:
                     with open(os.path.join(models_dir, fname), "rb") as f:
                         models[head] = pickle.load(f)
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -477,11 +528,15 @@ class MultiTaskRandomForest:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         except Exception:
             pass
         try:
             with open(os.path.join(models_dir, "reliability.json"), encoding="utf-8") as f:
                 reliability = json.load(f)
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -498,6 +553,8 @@ class MultiTaskRandomForest:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         except Exception:
             pass
         return models, thresholds, reliability, feature_names
@@ -505,12 +562,17 @@ class MultiTaskRandomForest:
     def predict(self, X: pd.DataFrame) -> dict[str, Any]:
     pass
     pass
+    pass
         out: dict[str, Any] = {}
         for name, model in self.models.items():
     pass
     pass
+    pass
             try:
                 if hasattr(model, "predict_proba"):
+    pass
+    except Exception as e:
+        pass
     pass
     except Exception as e:
         pass

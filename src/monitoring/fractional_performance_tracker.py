@@ -19,6 +19,7 @@ class FractionalPerformanceTracker:
     def __init__(self, config: FractionalImplementationsConfig, output_dir: str = "data/fractional_performance"):
     pass
     pass
+    pass
         """Initialize performance tracker.
 
         Args:
@@ -48,6 +49,7 @@ class FractionalPerformanceTracker:
     def _initialize_tracking(self):
     pass
     pass
+    pass
         """Initialize performance tracking."""
         self.logger.info("Initializing fractional performance tracking")
 
@@ -65,9 +67,13 @@ class FractionalPerformanceTracker:
     def _load_existing_data(self):
     pass
     pass
+    pass
         """Load existing performance data."""
         try:
             if self.metrics_file.exists():
+    pass
+    except Exception as e:
+        pass
     pass
     except Exception as e:
         pass
@@ -83,12 +89,14 @@ class FractionalPerformanceTracker:
             if self.alerts_file.exists():
     pass
     pass
+    pass
                 with open(self.alerts_file, 'r') as f:
                     self.performance_alerts = json.load(f)
         except Exception as e:
             self.logger.warning(f"Could not load existing performance data: {e}")
 
     def set_baseline_metrics(self, metrics: Dict[str, Any]):
+    pass
     pass
     pass
         """Set baseline performance metrics.
@@ -101,6 +109,7 @@ class FractionalPerformanceTracker:
         self._save_metrics()
 
     def update_current_metrics(self, metrics: Dict[str, Any]):
+    pass
     pass
     pass
         """Update current performance metrics.
@@ -123,6 +132,7 @@ class FractionalPerformanceTracker:
         if len(self.historical_metrics) > max_history:
     pass
     pass
+    pass
             self.historical_metrics = self.historical_metrics[-max_history:]
 
         # Check for performance alerts
@@ -137,8 +147,10 @@ class FractionalPerformanceTracker:
     def _check_performance_alerts(self):
     pass
     pass
+    pass
         """Check for performance alerts."""
         if not self.baseline_metrics or not self.current_metrics:
+    pass
     pass
     pass
             return
@@ -151,7 +163,9 @@ class FractionalPerformanceTracker:
         for metric in key_metrics:
     pass
     pass
+    pass
             if metric in self.baseline_metrics and metric in self.current_metrics:
+    pass
     pass
     pass
                 baseline = self.baseline_metrics[metric]
@@ -161,9 +175,11 @@ class FractionalPerformanceTracker:
                 if baseline != 0:
     pass
     pass
+    pass
                     degradation = (baseline - current) / abs(baseline)
 
                     if degradation > self.config.alert_threshold:
+    pass
     pass
     pass
                         alert = {
@@ -183,6 +199,7 @@ class FractionalPerformanceTracker:
         for alert in alerts:
     pass
     pass
+    pass
             self.logger.warning(
                 f"Performance alert: {alert['metric']} degraded by "
                 f"{alert['degradation']:.2%} (baseline: {alert['baseline']:.4f}, "
@@ -192,6 +209,7 @@ class FractionalPerformanceTracker:
     def _save_metrics(self):
     pass
     pass
+    pass
         """Save performance metrics to file."""
         try:
             data = {
@@ -199,6 +217,8 @@ class FractionalPerformanceTracker:
                 'current': self.current_metrics,
                 'historical': self.historical_metrics,
                 'last_updated': datetime.now().isoformat()
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -213,9 +233,13 @@ class FractionalPerformanceTracker:
     def _create_dashboard(self):
     pass
     pass
+    pass
         """Create performance dashboard."""
         try:
             if not self.historical_metrics:
+    pass
+    except Exception as e:
+        pass
     pass
     except Exception as e:
         pass
@@ -236,8 +260,10 @@ class FractionalPerformanceTracker:
             if 'sharpe_ratio' in df.columns:
     pass
     pass
+    pass
                 axes[0, 0].plot(df['timestamp'], df['sharpe_ratio'], label='Current')
                 if self.baseline_metrics.get('sharpe_ratio'):
+    pass
     pass
     pass
                     axes[0, 0].axhline(y=self.baseline_metrics['sharpe_ratio'],
@@ -250,8 +276,10 @@ class FractionalPerformanceTracker:
             if 'max_drawdown' in df.columns:
     pass
     pass
+    pass
                 axes[0, 1].plot(df['timestamp'], df['max_drawdown'], label='Current')
                 if self.baseline_metrics.get('max_drawdown'):
+    pass
     pass
     pass
                     axes[0, 1].axhline(y=self.baseline_metrics['max_drawdown'],
@@ -264,8 +292,10 @@ class FractionalPerformanceTracker:
             if 'win_rate' in df.columns:
     pass
     pass
+    pass
                 axes[1, 0].plot(df['timestamp'], df['win_rate'], label='Current')
                 if self.baseline_metrics.get('win_rate'):
+    pass
     pass
     pass
                     axes[1, 0].axhline(y=self.baseline_metrics['win_rate'],
@@ -278,8 +308,10 @@ class FractionalPerformanceTracker:
             if 'profit_factor' in df.columns:
     pass
     pass
+    pass
                 axes[1, 1].plot(df['timestamp'], df['profit_factor'], label='Current')
                 if self.baseline_metrics.get('profit_factor'):
+    pass
     pass
     pass
                     axes[1, 1].axhline(y=self.baseline_metrics['profit_factor'],
@@ -304,9 +336,12 @@ class FractionalPerformanceTracker:
     def _create_html_dashboard(self, df: pd.DataFrame):
     pass
     pass
+    pass
         """Create HTML dashboard."""
         try:
             html_content = f"""
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -341,14 +376,18 @@ class FractionalPerformanceTracker:
             if self.current_metrics:
     pass
     pass
+    pass
                 for metric, value in self.current_metrics.items():
+    pass
     pass
     pass
                     if metric not in ['timestamp', 'check_count']:
     pass
     pass
+    pass
                         baseline = self.baseline_metrics.get(metric, 0)
                         if baseline != 0:
+    pass
     pass
     pass
                             change = (value - baseline) / abs(baseline)
@@ -384,12 +423,14 @@ class FractionalPerformanceTracker:
     def get_performance_summary(self) -> Dict[str, Any]:
     pass
     pass
+    pass
         """Get performance summary.
 
         Returns:
             Dictionary with performance summary
         """
         if not self.baseline_metrics or not self.current_metrics:
+    pass
     pass
     pass
             return {}
@@ -406,7 +447,9 @@ class FractionalPerformanceTracker:
         for metric in self.baseline_metrics:
     pass
     pass
+    pass
             if metric in self.current_metrics:
+    pass
     pass
     pass
                 baseline = self.baseline_metrics[metric]
@@ -415,9 +458,11 @@ class FractionalPerformanceTracker:
                 if baseline != 0:
     pass
     pass
+    pass
                     change = (current - baseline) / abs(baseline)
 
                     if change > 0:
+    pass
     pass
     pass
                         summary['improvements'][metric] = change
@@ -428,8 +473,10 @@ class FractionalPerformanceTracker:
         if summary['degradations']:
     pass
     pass
+    pass
             max_degradation = max(summary['degradations'].values())
             if max_degradation < -0.1:
+    pass
     pass
     pass
                 summary['overall_status'] = 'critical'
@@ -439,6 +486,7 @@ class FractionalPerformanceTracker:
         return summary
 
     def get_alert_summary(self) -> List[Dict[str, Any]]:
+    pass
     pass
     pass
         """Get recent performance alerts.
@@ -453,8 +501,10 @@ class FractionalPerformanceTracker:
         for alert in self.performance_alerts:
     pass
     pass
+    pass
             alert_time = datetime.fromisoformat(alert['timestamp'])
             if alert_time > cutoff_time:
+    pass
     pass
     pass
                 recent_alerts.append(alert)
@@ -462,6 +512,7 @@ class FractionalPerformanceTracker:
         return recent_alerts
 
     def export_performance_report(self, output_file: str = None) -> str:
+    pass
     pass
     pass
         """Export comprehensive performance report.
@@ -473,6 +524,7 @@ class FractionalPerformanceTracker:
             Path to exported report
         """
         if output_file is None:
+    pass
     pass
     pass
             output_file = self.output_dir / f"performance_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"

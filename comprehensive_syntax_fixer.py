@@ -6,29 +6,21 @@ Fixes common syntax errors in Python files.
 
 import os
 import re
-import ast
-from pathlib import Path
 from typing import List, Dict, Set, Tuple
 
 
-import class ComprehensiveSyntaxFixer:
 class ComprehensiveSyntaxFixer:
     """Fixes common syntax errors in Python files."""
 
     def __init__(self):
-    pass
         self.fixed_files = 0
         self.errors_fixed = 0
 
     def fix_file(self, filepath: str) -> bool:
-    pass
         """Fix syntax errors in a single file."""
         try:
             with open(filepath, 'r', encoding='utf-8') as f:
                 content = f.read()
-
-    except Exception as e:
-        pass
             original_content = content
 
             # Apply fixes
@@ -43,7 +35,6 @@ class ComprehensiveSyntaxFixer:
 
             # Only write if changes were made
             if content != original_content:
-    pass
                 with open(filepath, 'w', encoding='utf-8') as f:
                     f.write(content)
                 self.fixed_files += 1
@@ -56,24 +47,18 @@ class ComprehensiveSyntaxFixer:
             return False
 
     def _fix_missing_imports(self, content: str) -> str:
-    pass
         """Fix missing import statements."""
-        lines = content.split('\\n')
+        lines = content.split('\n')
         fixed_lines = []
 
         for i, line in enumerate(lines):
-    pass
             # Fix missing imports after from statements
             if line.strip().startswith('from ') and 'import' in line:
-    pass
                 # Check if next line is missing import
                 if i + 1 < len(lines) and not lines[i + 1].strip().startswith('import') and not lines[i + 1].strip().startswith('from'):
-    pass
                     # Look for the actual import line
                     for j in range(i + 1, min(i + 10, len(lines))):
-    pass
                         if lines[j].strip().startswith('import') or lines[j].strip().startswith('from'):
-    pass
                             break
                         elif lines[j].strip() and not lines[j].strip().startswith('#'):
                             # Insert missing import
@@ -82,65 +67,52 @@ class ComprehensiveSyntaxFixer:
 
             # Fix incomplete import statements
             if line.strip().startswith('from ') and not line.strip().endswith('import'):
-    pass
                 if 'import' not in line:
-    pass
                     # Add missing import keyword
                     line = line + ' import *'
 
             fixed_lines.append(line)
 
-        return '\\n'.join(fixed_lines)
+        return '\n'.join(fixed_lines)
 
     def _fix_indentation_issues(self, content: str) -> str:
-    pass
         """Fix indentation issues."""
-        lines = content.split('\\n')
+        lines = content.split('\n')
         fixed_lines = []
 
         for line in lines:
-    pass
             # Fix mixed tabs and spaces
-            if '\\t' in line and '    ' in line:
-    pass
-                line = line.replace('\\t', '    ')
+            if '\t' in line and '    ' in line:
+                line = line.replace('\t', '    ')
 
             # Fix trailing whitespace
             line = line.rstrip()
 
             fixed_lines.append(line)
 
-        return '\\n'.join(fixed_lines)
+        return '\n'.join(fixed_lines)
 
     def _fix_try_except_blocks(self, content: str) -> str:
-    pass
         """Fix incomplete try-except blocks."""
-        lines = content.split('\\n')
+        lines = content.split('\n')
         fixed_lines = []
 
         for i, line in enumerate(lines):
-    pass
             # Fix missing except blocks after try
             if line.strip().startswith('try:') or line.strip().startswith('try '):
-    pass
                 # Check if next line is properly indented
                 if i + 1 < len(lines):
-    pass
                     next_line = lines[i + 1].strip()
                     if next_line and not next_line.startswith('except') and not next_line.startswith('finally'):
-    pass
                         # Find the end of the try block
                         try_end = i + 1
                         indent_level = len(lines[i + 1]) - len(lines[i + 1].lstrip())
 
                         for j in range(i + 2, len(lines)):
-    pass
                             if lines[j].strip() == '':
-    pass
                                 continue
                             current_indent = len(lines[j]) - len(lines[j].lstrip())
                             if current_indent <= indent_level and lines[j].strip():
-    pass
                                 try_end = j
                                 break
 
@@ -150,168 +122,139 @@ class ComprehensiveSyntaxFixer:
 
             fixed_lines.append(line)
 
-        return '\\n'.join(fixed_lines)
+        return '\n'.join(fixed_lines)
 
     def _fix_function_definitions(self, content: str) -> str:
-    pass
         """Fix incomplete function definitions."""
-        lines = content.split('\\n')
+        lines = content.split('\n')
         fixed_lines = []
 
         for i, line in enumerate(lines):
-    pass
             # Fix function definitions without body
             if line.strip().startswith('def ') and line.strip().endswith(':'):
-    pass
                 # Check if next line is properly indented
                 if i + 1 < len(lines):
-    pass
                     next_line = lines[i + 1].strip()
-                    if next_line and not next_line.startswith('    ') and not next_line.startswith('\\t'):
-    pass
+                    if next_line and not next_line.startswith('    ') and not next_line.startswith('\t'):
                         # Insert pass statement
                         lines.insert(i + 1, '    pass')
 
             fixed_lines.append(line)
 
-        return '\\n'.join(fixed_lines)
+        return '\n'.join(fixed_lines)
 
     def _fix_if_statements(self, content: str) -> str:
-    pass
         """Fix incomplete if statements."""
-        lines = content.split('\\n')
+        lines = content.split('\n')
         fixed_lines = []
 
         for i, line in enumerate(lines):
-    pass
             # Fix if statements without body
             if line.strip().startswith('if ') and line.strip().endswith(':'):
-    pass
                 # Check if next line is properly indented
                 if i + 1 < len(lines):
-    pass
                     next_line = lines[i + 1].strip()
-                    if next_line and not next_line.startswith('    ') and not next_line.startswith('\\t'):
-    pass
+                    if next_line and not next_line.startswith('    ') and not next_line.startswith('\t'):
                         # Insert pass statement
                         lines.insert(i + 1, '    pass')
 
             fixed_lines.append(line)
 
-        return '\\n'.join(fixed_lines)
+        return '\n'.join(fixed_lines)
 
     def _fix_for_statements(self, content: str) -> str:
-    pass
         """Fix incomplete for statements."""
-        lines = content.split('\\n')
+        lines = content.split('\n')
         fixed_lines = []
 
         for i, line in enumerate(lines):
-    pass
             # Fix for statements without body
             if line.strip().startswith('for ') and line.strip().endswith(':'):
-    pass
                 # Check if next line is properly indented
                 if i + 1 < len(lines):
-    pass
                     next_line = lines[i + 1].strip()
-                    if next_line and not next_line.startswith('    ') and not next_line.startswith('\\t'):
-    pass
+                    if next_line and not next_line.startswith('    ') and not next_line.startswith('\t'):
                         # Insert pass statement
                         lines.insert(i + 1, '    pass')
 
             fixed_lines.append(line)
 
-        return '\\n'.join(fixed_lines)
+        return '\n'.join(fixed_lines)
 
     def _fix_parameter_issues(self, content: str) -> str:
-    pass
         """Fix parameter ordering issues."""
-        lines = content.split('\\n')
+        lines = content.split('\n')
         fixed_lines = []
 
         for line in lines:
-    pass
             # Fix parameter without default follows parameter with default
             if 'def ' in line and '=' in line:
-    pass
                 # This is a complex fix that would require parsing
                 # For now, just ensure basic syntax
                 pass
 
             fixed_lines.append(line)
 
-        return '\\n'.join(fixed_lines)
+        return '\n'.join(fixed_lines)
 
     def _fix_syntax_errors(self, content: str) -> str:
-    pass
         """Fix common syntax errors."""
         # Fix invalid decimal literals
-        content = re.sub(r'(\\d+)\\.(\\d+)\\.(\\d+)', r'\\1.\\2\\3', content)
+        content = re.sub(r'(\d+)\.(\d+)\.(\d+)', r'\1.\2\3', content)
 
         # Fix unmatched parentheses
         # This is complex and would require a proper parser
         # For now, just fix obvious cases
 
         # Fix invalid escape sequences
-        content = re.sub(r'\\\([^\\\])', r'\\\\\\1', content)
+        content = re.sub(r'\\([^\\])', r'\\\\\1', content)
 
         return content
 
     def fix_directory(self, directory: str) -> Dict[str, int]:
-    pass
         """Fix syntax errors in all Python files in a directory."""
         results = {'files_fixed': 0, 'errors_fixed': 0}
 
         for root, dirs, files in os.walk(directory):
-    pass
             # Skip certain directories
             dirs[:] = [d for d in dirs if d not in ['__pycache__', '.git', 'test_results', 'log']]
 
             for file in files:
-    pass
                 if file.endswith('.py'):
-    pass
                     filepath = os.path.join(root, file)
 
                     # Skip certain files
                     if any(skip in filepath for skip in ['test_models', 'data_cache']):
-    pass
                         continue
 
                     print(f"Fixing: {filepath}")
                     if self.fix_file(filepath):
-    pass
                         results['files_fixed'] += 1
 
         return results
 
 
 def main():
-    pass
     """Main function."""
     import sys
 
     if len(sys.argv) < 2:
-    pass
         print("Usage: python comprehensive_syntax_fixer.py <directory>")
         sys.exit(1)
 
     directory = sys.argv[1]
 
     if not os.path.exists(directory):
-    pass
         print(f"Directory {directory} does not exist")
         sys.exit(1)
 
     fixer = ComprehensiveSyntaxFixer()
     results = fixer.fix_directory(directory)
 
-    print(f"\\nSyntax fixing completed:")
+    print(f"\nSyntax fixing completed:")
     print(f"Files fixed: {results['files_fixed']}")
     print(f"Errors fixed: {results['errors_fixed']}")
 
 
 if __name__ == '__main__':
-    pass
     main()

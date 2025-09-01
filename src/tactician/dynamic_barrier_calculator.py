@@ -23,6 +23,7 @@ class DynamicBarrierCalculator:
     def __init__(self, config: Dict[str, Any]) -> None:
     pass
     pass
+    pass
         """Initialize the dynamic barrier calculator."""
         self.config = config.get("tactician_triple_barrier", {})
         self.logger = get_logger("DynamicBarrierCalculator")
@@ -39,9 +40,12 @@ class DynamicBarrierCalculator:
     def _load_analyst_config(self) -> Dict[str, Any]:
     pass
     pass
+    pass
         """Load Analyst triple barrier configuration."""
         try:
             # Try to load from Analyst triple barrier labeling component
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -67,7 +71,9 @@ class DynamicBarrierCalculator:
             for config_path in config_paths:
     pass
     pass
+    pass
                 if Path(config_path).exists():
+    pass
     pass
     pass
                     try:
@@ -78,12 +84,16 @@ class DynamicBarrierCalculator:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
                         # Extract Analyst triple barrier settings if available
                         if "analyst" in config_data:
     pass
     pass
+    pass
                             analyst_section = config_data["analyst"]
                             if "triple_barrier" in analyst_section:
+    pass
     pass
     pass
                                 analyst_config.update(analyst_section["triple_barrier"])
@@ -115,6 +125,7 @@ class DynamicBarrierCalculator:
             }
 
     def _initialize_dynamic_barriers(self) -> None:
+    pass
     pass
     pass
         """Initialize dynamic barrier calculation parameters."""
@@ -162,7 +173,10 @@ class DynamicBarrierCalculator:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             if timeframe not in self.timeframes:
+    pass
     pass
     pass
                 self.logger.warning(f"⚠️ Invalid timeframe {timeframe}, using primary timeframe {self.primary_timeframe}")
@@ -189,6 +203,7 @@ class DynamicBarrierCalculator:
             for name, (upper, lower) in barriers.items():
     pass
     pass
+    pass
                 self.logger.info(f"   {name}: Upper={upper:.4f}, Lower={lower:.4f}")
             self.logger.info(f"   Note: Both barrier combinations will be used - position only opens if confidence is high enough for both")
 
@@ -208,11 +223,13 @@ class DynamicBarrierCalculator:
     def get_timeframe_weights(self, timeframe: str) -> Tuple[float, float]:
     pass
     pass
+    pass
         """Get execution and confirmation weights for a timeframe."""
         # Both timeframes are equal - let the ML model decide usage
         return 0.5, 0.5
 
     def calculate_multi_timeframe_barriers(self) -> Dict[str, Dict[str, Tuple[float, float]]]:
+    pass
     pass
     pass
         """Calculate 2 barrier combinations for both 1m and 5m timeframes."""
@@ -223,8 +240,11 @@ class DynamicBarrierCalculator:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             # Calculate 1m barriers (2 combinations)
             if "1m" in self.timeframes:
+    pass
     pass
     pass
                 barriers["1m"] = self.calculate_dynamic_barriers(timeframe="1m")
@@ -233,14 +253,17 @@ class DynamicBarrierCalculator:
             if "5m" in self.timeframes:
     pass
     pass
+    pass
                 barriers["5m"] = self.calculate_dynamic_barriers(timeframe="5m")
 
             self.logger.info(f"📊 Multi-timeframe barriers calculated (2 combinations each):")
             for tf, combinations in barriers.items():
     pass
     pass
+    pass
                 self.logger.info(f"   {tf}:")
                 for name, (upper, lower) in combinations.items():
+    pass
     pass
     pass
                     self.logger.info(f"     {name}: Upper={upper:.4f}, Lower={lower:.4f}")
@@ -253,6 +276,7 @@ class DynamicBarrierCalculator:
             return {}
 
     def get_analyst_barrier_info(self) -> Dict[str, Any]:
+    pass
     pass
     pass
         """Get information about Analyst barriers for comparison."""
@@ -270,9 +294,12 @@ class DynamicBarrierCalculator:
     def validate_barrier_calculation(self, timeframe: str) -> Dict[str, Any]:
     pass
     pass
+    pass
         """Validate barrier calculation for a timeframe."""
         try:
             # Calculate 2 barrier combinations
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -288,12 +315,14 @@ class DynamicBarrierCalculator:
             for barrier_name, (upper, lower) in barriers.items():
     pass
     pass
+    pass
                 # Calculate actual fractions
                 actual_upper_fraction = upper / analyst_upper
                 actual_lower_fraction = lower / analyst_lower
 
                 # Get expected fractions based on barrier name
                 if "50" in barrier_name:
+    pass
     pass
     pass
                     expected_upper_fraction = self.upper_barrier_50_fraction

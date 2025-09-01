@@ -75,15 +75,18 @@ class EventWindowDatasetBuilder:
     def _cosine_sim(self, a: np.ndarray, b: np.ndarray) -> float:
     pass
     pass
+    pass
         na = np.linalg.norm(a)
         nb = np.linalg.norm(b)
         if na == 0 or nb == 0:
+    pass
     pass
     pass
             return 0.0
         return float(np.dot(a, b) / (na * nb))
 
     def _rf_pooled_features(self, seq_df: pd.DataFrame) -> dict[str, float]:
+    pass
     pass
     pass
         # Summaries for RandomForest: mean/std of key numeric features
@@ -105,6 +108,7 @@ class EventWindowDatasetBuilder:
             if col in seq_df.columns:
     pass
     pass
+    pass
                 s = pd.to_numeric(seq_df[col], errors="coerce")
                 out[f"mean_{col}"] = float(np.nanmean(s.values))
                 out[f"std_{col}"] = float(np.nanstd(s.values))
@@ -124,11 +128,15 @@ class EventWindowDatasetBuilder:
         if klines_df.empty or combined_df.empty or event_index.empty:
     pass
     pass
+    pass
             return {"samples": []}
 
         # Try dataset cache
         try:
             if self.cache_dir:
+    pass
+    except Exception as e:
+        pass
     pass
     except Exception as e:
         pass
@@ -140,10 +148,12 @@ class EventWindowDatasetBuilder:
                 if os.path.exists(p) and os.path.exists(meta_p):
     pass
     pass
+    pass
                     with open(meta_p) as f:
                         meta = json.load(f)
                     # Minimal load path: return meta only; samples remain to be regenerated if needed
                     if meta.get("label_index"):
+    pass
     pass
     pass
                         return {
@@ -162,6 +172,7 @@ class EventWindowDatasetBuilder:
         # Infer states for the entire klines_df once
         states_df = self.state_builder.infer_states(klines_df)
         if states_df.empty:
+    pass
     pass
     pass
             return {"samples": []}
@@ -208,6 +219,7 @@ class EventWindowDatasetBuilder:
         if valid_events.empty:
     pass
     pass
+    pass
             return {"samples": []}
 
         # Optional cap per label
@@ -215,11 +227,13 @@ class EventWindowDatasetBuilder:
         for _lab, grp in valid_events.groupby("event_label"):
     pass
     pass
+    pass
             capped.append(grp.head(self.ds_cfg.max_events_per_label))
         valid_events = pd.concat(capped).sort_values("row_index")
 
         # Loop and build windows
         for _, ev in valid_events.iterrows():
+    pass
     pass
     pass
             i0 = int(ev["row_index"])
@@ -231,6 +245,7 @@ class EventWindowDatasetBuilder:
             Y_states = states_df.iloc[post_slice]
             # Numeric sequence (compact set)
             if present_numeric:
+    pass
     pass
     pass
                 X_num = (
@@ -247,8 +262,11 @@ class EventWindowDatasetBuilder:
             if bool(self.ctx_cfg.get("enable_macro_context", True)):
     pass
     pass
+    pass
                 try:
                     macro_cols = []
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -285,6 +303,7 @@ class EventWindowDatasetBuilder:
                     if macro_cols:
     pass
     pass
+    pass
                         macro_vec = np.concatenate(macro_cols, axis=0).astype(float)
                         # replicate across pre timesteps
                         rep = np.repeat(macro_vec.reshape(1, -1), repeats=pre, axis=0)
@@ -301,7 +320,9 @@ class EventWindowDatasetBuilder:
             for t, r in enumerate(ret_seq, start=1):
     pass
     pass
+    pass
                 if r >= self.pt_mult:
+    pass
     pass
     pass
                     tt_pt = t
@@ -313,7 +334,9 @@ class EventWindowDatasetBuilder:
             for s in ev.get("secondary_labels") or []:
     pass
     pass
+    pass
                 if s in label_to_idx:
+    pass
     pass
     pass
                     mh[label_to_idx[s]] = 1.0
@@ -343,13 +366,16 @@ class EventWindowDatasetBuilder:
         if self.ds_cfg.downsample_near_duplicates and len(samples) > 1:
     pass
     pass
+    pass
             kept: list[dict[str, Any]] = []
             vectors: list[np.ndarray] = []
             for s in samples:
     pass
     pass
+    pass
                 v = np.array(list(s["rf_features"].values()), dtype=float)
                 if v.size == 0:
+    pass
     pass
     pass
                     kept.append(s)
@@ -358,11 +384,13 @@ class EventWindowDatasetBuilder:
                 if not vectors:
     pass
     pass
+    pass
                     kept.append(s)
                     vectors.append(v)
                 else:
                     sims = [self._cosine_sim(v, u) for u in vectors if u.size == v.size]
                     if sims and max(sims) >= self.ds_cfg.duplicate_similarity_threshold:
+    pass
     pass
     pass
                         # skip duplicate
@@ -374,6 +402,9 @@ class EventWindowDatasetBuilder:
         # Save minimal meta cache
         try:
             if self.cache_dir:
+    pass
+    except Exception as e:
+        pass
     pass
     except Exception as e:
         pass

@@ -47,6 +47,7 @@ class FinalRegimeClusteringStep:
     def __init__(self, config: dict[str, Any]) -> None:
     pass
     pass
+    pass
         self.config, config
         self.logger, system_logger.getChild("FinalRegimeClusteringStep")
         self.start_time, None
@@ -58,10 +59,13 @@ class FinalRegimeClusteringStep:
     def _initialize_components(self) -> None:
     pass
     pass
+    pass
         """Initialize regime clustering components."""
         self.logger.info("🔧 Initializing final regime clustering components...")
         try:
         # Load optimized parameters from step3
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -77,6 +81,7 @@ class FinalRegimeClusteringStep:
     def _load_optimized_parameters(self) -> None:
     pass
     pass
+    pass
         """Load optimized parameters from step3."""
         try:
         # Load parameter optimization results
@@ -85,7 +90,10 @@ class FinalRegimeClusteringStep:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         if param_file.exists():
+    pass
     pass
     pass
         with open(param_file, 'r') as f:
@@ -118,6 +126,8 @@ class FinalRegimeClusteringStep:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         self.logger.info(f"📋 Optimized parameters loaded: {len(self.optimized_params)} parameters")
         self.logger.info("✅ Final regime clustering step initialized successfully")
         return True
@@ -142,11 +152,14 @@ class FinalRegimeClusteringStep:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         self.start_time, time.time()
 
         # Step 1: Load and prepare data
             data_loaded, await self._load_and_prepare_data()
         if not data_loaded.get("success", False):
+    pass
     pass
     pass
         self.logger.error("Failed to load and prepare data")
@@ -192,6 +205,8 @@ class FinalRegimeClusteringStep:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         # Get data parameters from config
             symbol, self.config.get("SYMBOL", "ETHUSDT")
             exchange, self.config.get("EXCHANGE", "BINANCE")
@@ -204,6 +219,7 @@ class FinalRegimeClusteringStep:
         if not klines_path.exists():
     pass
     pass
+    pass
         self.logger.error(f"❌ Klines file not found: {klines_path}")
         return {
                     "success": False,
@@ -214,6 +230,7 @@ class FinalRegimeClusteringStep:
             df, pd.read_parquet(klines_path)
 
         if df.empty:
+    pass
     pass
     pass
         self.logger.error("❌ Data is empty")
@@ -261,8 +278,11 @@ class FinalRegimeClusteringStep:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         # Ensure timestamp is datetime
         if not pd.api.types.is_datetime64_any_dtype(df["timestamp"]):
+    pass
     pass
     pass
                 df["timestamp"] = pd.to_datetime(df["timestamp"])
@@ -333,6 +353,8 @@ class FinalRegimeClusteringStep:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         # Get optimized HMM parameters
             n_components, self.optimized_params.get("n_components", 4)
             covariance_type, self.optimized_params.get("covariance_type", "full")
@@ -345,12 +367,16 @@ class FinalRegimeClusteringStep:
         if features.empty:
     pass
     pass
+    pass
         self.logger.error("No features available for HMM analysis")
         return {}
 
         # Try to import hmmlearn
         try:
                 from hmmlearn import hmm
+    except Exception as e:
+        pass
+import except Exception as e:
     except Exception as e:
         pass
 import except Exception as e:
@@ -412,6 +438,8 @@ import scaler, StandardScaler
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         # Use volatility and momentum for regime classification
             volatility, features.get("volatility", pd.Series([0] * len(features)))
             momentum, features.get("price_momentum", pd.Series([0] * len(features)))
@@ -425,11 +453,13 @@ import scaler, StandardScaler
         for i in range(len(features)):
     pass
     pass
+    pass
                 vol, volatility.iloc[i] if hasattr(volatility, 'iloc') else volatility[i]
                 mom, momentum.iloc[i] if hasattr(momentum, 'iloc') else momentum[i]
 
         if vol > 0.02:  # High volatility
         if mom > 0.001:
+    pass
     pass
     pass
                         regime, 0  # High volatility bull
@@ -439,6 +469,7 @@ import scaler, StandardScaler
                         regime, 2  # High volatility neutral
                 else:  # Low volatility
         if mom > 0.001:
+    pass
     pass
     pass
                         regime, 3  # Low volatility bull
@@ -479,6 +510,8 @@ import scaler, StandardScaler
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         # Get optimized clustering parameters
             n_clusters, self.optimized_params.get("n_clusters", 20)
             method, self.optimized_params.get("method", "kmeans")
@@ -490,11 +523,13 @@ import scaler, StandardScaler
         if features.empty:
     pass
     pass
+    pass
         self.logger.error("No features available for clustering")
         return {}
 
         # Create composite features with HMM states
         if hmm_results and "state_sequence" in hmm_results:
+    pass
     pass
     pass
                 composite_features, features.copy()
@@ -503,6 +538,7 @@ import scaler, StandardScaler
 
         # Add HMM state interactions
         for col in features.columns:
+    pass
     pass
     pass
                     composite_features[f"{col}_x_hmm_state"] = features[col] * hmm_results["state_sequence"]
@@ -517,6 +553,7 @@ import scaler, StandardScaler
 
         # Perform clustering
         if method == "kmeans":
+    pass
     pass
     pass
                 from sklearn.cluster import KMeans
@@ -572,7 +609,10 @@ import clustering, KMeans
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         if not clustering_results or "cluster_labels" not in clustering_results:
+    pass
     pass
     pass
         self.logger.error("No clustering results available for analysis")
@@ -595,6 +635,7 @@ import clustering, KMeans
         for cluster_id in unique_clusters:
     pass
     pass
+    pass
                 cluster_mask, cluster_labels == cluster_id
                 cluster_data, data[cluster_mask]
                 cluster_features, features[cluster_mask] if not features.empty else pd.DataFrame()
@@ -613,6 +654,7 @@ import clustering, KMeans
         if not cluster_data.empty:
     pass
     pass
+    pass
                     cluster_stats["price_stats"] = {
                         "mean_price": float(cluster_data["close"].mean()),
                         "price_volatility": float(cluster_data["close"].pct_change().std()),
@@ -621,6 +663,7 @@ import clustering, KMeans
 
         # Volume characteristics
         if not cluster_data.empty:
+    pass
     pass
     pass
                     cluster_stats["volume_stats"] = {
@@ -651,6 +694,7 @@ import clustering, KMeans
     def _analyze_regime_transitions(self, cluster_labels: np.ndarray) -> dict[str, Any]:
     pass
     pass
+    pass
         """Analyze regime transition patterns."""
         try:
             transitions = {}
@@ -659,7 +703,10 @@ import clustering, KMeans
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         for i in range(len(cluster_labels) - 1):
+    pass
     pass
     pass
                 current_regime, cluster_labels[i]
@@ -668,9 +715,11 @@ import clustering, KMeans
         if current_regime not in transitions:
     pass
     pass
+    pass
                     transitions[current_regime] = {}
 
         if next_regime not in transitions[current_regime]:
+    pass
     pass
     pass
                     transitions[current_regime][next_regime] = 0
@@ -681,8 +730,10 @@ import clustering, KMeans
         for current_regime in transitions:
     pass
     pass
+    pass
                 total, sum(transitions[current_regime].values())
         for next_regime in transitions[current_regime]:
+    pass
     pass
     pass
                     transitions[current_regime][next_regime] /= total
@@ -701,9 +752,12 @@ import clustering, KMeans
     def _analyze_regime_persistence(self, cluster_labels: np.ndarray) -> dict[str, Any]:
     pass
     pass
+    pass
         """Analyze how long regimes persist."""
         try:
             persistence = {}
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -714,12 +768,15 @@ import clustering, KMeans
         for i in range(1, len(cluster_labels)):
     pass
     pass
+    pass
         if cluster_labels[i] == current_regime:
+    pass
     pass
     pass
                     current_duration += 1
                 else:
         if current_regime not in persistence:
+    pass
     pass
     pass
                         persistence[current_regime] = []
@@ -731,12 +788,14 @@ import clustering, KMeans
         if current_regime not in persistence:
     pass
     pass
+    pass
                 persistence[current_regime] = []
             persistence[current_regime].append(current_duration)
 
         # Calculate statistics
             persistence_stats = {}
         for regime, durations in persistence.items():
+    pass
     pass
     pass
                 persistence_stats[regime] = {
@@ -775,8 +834,11 @@ import clustering, KMeans
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         # Clustering summary
         if clustering_results:
+    pass
     pass
     pass
                 reports["clustering_summary"] = {
@@ -788,6 +850,7 @@ import clustering, KMeans
 
         # Regime analysis summary
         if regime_analysis:
+    pass
     pass
     pass
                 reports["regime_analysis"] = {
@@ -833,6 +896,8 @@ import clustering, KMeans
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         # Create results directory
             results_dir, Path("data / regime_clustering")
             results_dir.mkdir(parents = True, exist_ok = True)
@@ -849,8 +914,10 @@ import clustering, KMeans
         if "cluster_labels" in serializable_results:
     pass
     pass
+    pass
                     serializable_results["cluster_labels"] = serializable_results["cluster_labels"].tolist()
         if "state_sequence" in serializable_results.get("hmm_results", {}):
+    pass
     pass
     pass
                     serializable_results["hmm_results"]["state_sequence"] = serializable_results["hmm_results"]["state_sequence"].tolist()
@@ -918,6 +985,7 @@ import clustering, KMeans
     def _calculate_rsi(self, prices: pd.Series, window: int, 14) -> pd.Series:
     pass
     pass
+    pass
         """Calculate Relative Strength Index."""
         delta, prices.diff()
         gain = (delta.where(delta > 0, 0)).rolling(window = window).mean()
@@ -934,6 +1002,7 @@ import clustering, KMeans
     def _calculate_macd(self, prices: pd.Series, fast: int, 12, slow: int, 26) -> pd.Series:
     pass
     pass
+    pass
         """Calculate MACD."""
         ema_fast, prices.ewm(span = fast).mean()
         ema_slow, prices.ewm(span = slow).mean()
@@ -946,6 +1015,7 @@ import clustering, KMeans
         context="calculate_atr"
     )
     def _calculate_atr(self, df: pd.DataFrame, window: int, 14) -> pd.Series:
+    pass
     pass
     pass
         """Calculate Average True Range."""
@@ -975,6 +1045,8 @@ import clustering, KMeans
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         self.logger.info("✅ Regime clustering cleanup completed")
         return True
 
@@ -997,11 +1069,14 @@ async def run_step(config: dict[str, Any]) -> bool:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         # Create and initialize the step
         step, FinalRegimeClusteringStep(config)
 
         # Initialize the step
         if not await step.initialize():
+    pass
     pass
     pass
             logger.error("Failed to initialize regime clustering step")
@@ -1016,6 +1091,7 @@ async def run_step(config: dict[str, Any]) -> bool:
         if success:
     pass
     pass
+    pass
             logger.info("✅ Step 3.5: Final Regime Clustering completed successfully")
         else:
             logger.error("❌ Step 3.5: Final Regime Clustering failed")
@@ -1027,6 +1103,7 @@ async def run_step(config: dict[str, Any]) -> bool:
         return False
 
 if __name__ == "__main__":
+    pass
     pass
     pass
     # Test the step

@@ -60,11 +60,15 @@ class ConfidenceThresholdsConfig:
 def get_confidence_config() -> ConfidenceThresholdsConfig:
     pass
     pass
+    pass
+    pass
     """Get confidence thresholds configuration."""
     return ConfidenceThresholdsConfig()
 
 
 def get_confidence_search_space() -> dict[str, dict[str, Any]]:
+    pass
+    pass
     pass
     pass
     """Get search space for confidence threshold optimization."""

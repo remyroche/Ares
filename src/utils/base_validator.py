@@ -18,12 +18,16 @@ class BaseValidator(ABC):
     def __init__(self, step_name: str, config: dict[str, Any]) -> None:
     pass
     pass
+    pass
+    pass
         self.step_name: str, step_name
         self.config: dict[str, Any] = config
         self.logger, logging.getLogger(f"AresGlobal.{self.__class__.__name__}")
         self.validation_results: dict[str, dict[str, Any]] = {}
 
     def print(self, message: str) -> None:
+    pass
+    pass
     pass
     pass
         """Proxy print to logger to keep output consistent in terminal."""
@@ -66,6 +70,10 @@ class BaseValidator(ABC):
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             warnings, step_result.get("warnings", [])
 
             critical_errors = [
@@ -83,6 +91,8 @@ class BaseValidator(ABC):
 
             passed, len(critical_errors) == 0
         if not passed:
+    pass
+    pass
     pass
     pass
         self.logger.warning(
@@ -116,6 +126,10 @@ class BaseValidator(ABC):
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             metrics: dict[str, Any] = {
                 "file_path": file_path,
                 "file_type": file_type,
@@ -123,6 +137,8 @@ class BaseValidator(ABC):
             }
 
         if not exists:
+    pass
+    pass
     pass
     pass
         self.logger.warning(
@@ -176,10 +192,16 @@ class BaseValidator(ABC):
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             }
 
         # Check minimum rows
         if len(df) < min_rows:
+    pass
+    pass
     pass
     pass
         self.logger.warning(
@@ -191,9 +213,13 @@ class BaseValidator(ABC):
         if required_columns:
     pass
     pass
+    pass
+    pass
                 missing_cols = [col for col in required_columns if col not in df.columns]
                 metrics["missing_columns"] = missing_cols
         if missing_cols:
+    pass
+    pass
     pass
     pass
         self.logger.warning(
@@ -205,8 +231,12 @@ class BaseValidator(ABC):
         for col in df.columns:
     pass
     pass
+    pass
+    pass
                 null_count, int(df[col].isnull().sum())
         if null_count > 0:
+    pass
+    pass
     pass
     pass
                     metrics["null_counts"][str(col)] = null_count
@@ -217,13 +247,21 @@ class BaseValidator(ABC):
         if check_data_types:
     pass
     pass
+    pass
+    pass
         for col in df.columns:
+    pass
+    pass
     pass
     pass
         if col in ['open', 'high', 'low', 'close', 'volume']:
     pass
     pass
+    pass
+    pass
         if not pd.api.types.is_numeric_dtype(df[col]):
+    pass
+    pass
     pass
     pass
                             metrics["data_type_issues"][col] = f"Expected numeric, got {df[col].dtype}"
@@ -233,13 +271,21 @@ class BaseValidator(ABC):
         if check_value_ranges:
     pass
     pass
+    pass
+    pass
         for col in ['open', 'high', 'low', 'close']:
+    pass
+    pass
     pass
     pass
         if col in df.columns:
     pass
     pass
+    pass
+    pass
         if (df[col] <= 0).any():
+    pass
+    pass
     pass
     pass
                             negative_count = (df[col] <= 0).sum()
@@ -248,6 +294,8 @@ class BaseValidator(ABC):
 
         # Check OHLC consistency
         if all(c in df.columns for c in ['open', 'high', 'low', 'close']):
+    pass
+    pass
     pass
     pass
                             invalid_ohlc = (
@@ -260,6 +308,8 @@ class BaseValidator(ABC):
         if invalid_ohlc > 0:
     pass
     pass
+    pass
+    pass
                                 metrics["value_range_issues"]["ohlc_consistency"] = f"Invalid OHLC: {invalid_ohlc} rows"
                                 metrics["critical_issues"].append(f"OHLC consistency issues: {invalid_ohlc} rows")
 
@@ -267,9 +317,13 @@ class BaseValidator(ABC):
         if check_duplicates:
     pass
     pass
+    pass
+    pass
                 duplicate_count, df.duplicated().sum()
                 metrics["duplicate_rows"] = duplicate_count
         if duplicate_count > 0:
+    pass
+    pass
     pass
     pass
         self.logger.warning(f"⚠️ Found {duplicate_count} duplicate rows")
@@ -280,12 +334,18 @@ class BaseValidator(ABC):
         if check_temporal_consistency and isinstance(df.index, pd.DatetimeIndex):
     pass
     pass
+    pass
+    pass
         if len(df) > 1:
+    pass
+    pass
     pass
     pass
         # Check for gaps in time series
                     time_diff, df.index.to_series().diff().dropna()
         if len(time_diff) > 0:
+    pass
+    pass
     pass
     pass
                         max_gap, time_diff.max()
@@ -300,6 +360,8 @@ class BaseValidator(ABC):
 
         # Check for unusually large gaps
         if expected_gap and max_gap > expected_gap * 10:
+    pass
+    pass
     pass
     pass
                             metrics["critical_issues"].append(f"Large temporal gap detected: {max_gap}")
@@ -347,9 +409,15 @@ class BaseValidator(ABC):
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             }
 
         if not metrics["exists"]:
+    pass
+    pass
     pass
     pass
         self.logger.warning(missing(f"⚠️ Model path does not exist: {model_path}"))
@@ -359,11 +427,17 @@ class BaseValidator(ABC):
         if metrics["is_directory"] and required_files:
     pass
     pass
+    pass
+    pass
         for file_name in required_files:
+    pass
+    pass
     pass
     pass
                     file_path, os.path.join(model_path, file_name)
         if not os.path.exists(file_path):
+    pass
+    pass
     pass
     pass
                         metrics["missing_files"].append(file_name)
@@ -372,8 +446,14 @@ class BaseValidator(ABC):
         if check_model_integrity and metrics["is_file"]:
     pass
     pass
+    pass
+    pass
         try:
                     import pickle
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -385,11 +465,15 @@ class BaseValidator(ABC):
         if hasattr(model, 'predict'):
     pass
     pass
+    pass
+    pass
                         metrics["has_predict_method"] = True
                     else:
                         metrics["integrity_issues"].append("Model missing predict method")
 
         if hasattr(model, 'fit'):
+    pass
+    pass
     pass
     pass
                         metrics["has_fit_method"] = True
@@ -441,9 +525,15 @@ class BaseValidator(ABC):
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             }
 
         if not isinstance(config, dict):
+    pass
+    pass
     pass
     pass
                 metrics["critical_issues"].append("Configuration is not a dictionary")
@@ -453,16 +543,24 @@ class BaseValidator(ABC):
         if required_keys:
     pass
     pass
+    pass
+    pass
         for key in required_keys:
     pass
     pass
+    pass
+    pass
         if key not in config:
+    pass
+    pass
     pass
     pass
                         metrics["missing_keys"].append(key)
 
         # Type validation for common configuration parameters
         if validate_types:
+    pass
+    pass
     pass
     pass
                 type_validations = {
@@ -478,10 +576,16 @@ class BaseValidator(ABC):
         for key, expected_type in type_validations.items():
     pass
     pass
+    pass
+    pass
         if key in config:
     pass
     pass
+    pass
+    pass
         if not isinstance(config[key], expected_type):
+    pass
+    pass
     pass
     pass
                             metrics["type_issues"][key] = f"Expected {expected_type.__name__}, got {type(config[key]).__name__}"
@@ -489,6 +593,8 @@ class BaseValidator(ABC):
 
         # Range validation for numeric parameters
         if validate_ranges:
+    pass
+    pass
     pass
     pass
                 range_validations = {
@@ -500,10 +606,16 @@ class BaseValidator(ABC):
         for key, (min_val, max_val) in range_validations.items():
     pass
     pass
+    pass
+    pass
         if key in config and isinstance(config[key], (int, float)):
     pass
     pass
+    pass
+    pass
         if config[key] < min_val or config[key] > max_val:
+    pass
+    pass
     pass
     pass
                             metrics["range_issues"][key] = f"Value {config[key]} outside range [{min_val}, {max_val}]"
@@ -549,9 +661,15 @@ class BaseValidator(ABC):
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             }
 
         if not isinstance(pipeline_state, dict):
+    pass
+    pass
     pass
     pass
                 metrics["critical_issues"].append("Pipeline state is not a dictionary")
@@ -561,10 +679,16 @@ class BaseValidator(ABC):
         if required_steps:
     pass
     pass
+    pass
+    pass
         for step in required_steps:
     pass
     pass
+    pass
+    pass
         if step not in pipeline_state:
+    pass
+    pass
     pass
     pass
                         metrics["missing_steps"].append(step)
@@ -573,13 +697,21 @@ class BaseValidator(ABC):
         if check_step_completion:
     pass
     pass
+    pass
+    pass
         for step_name, step_info in pipeline_state.items():
+    pass
+    pass
     pass
     pass
         if isinstance(step_info, dict):
     pass
     pass
+    pass
+    pass
         if step_info.get("status") == "FAILED":
+    pass
+    pass
     pass
     pass
                             metrics["failed_steps"].append(step_name)
@@ -588,6 +720,8 @@ class BaseValidator(ABC):
 
         # Check for critical issues
         if metrics["failed_steps"]:
+    pass
+    pass
     pass
     pass
                 metrics["critical_issues"].append(f"Failed steps: {metrics['failed_steps']}")
@@ -627,6 +761,10 @@ class BaseValidator(ABC):
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             is_directory, os.path.isdir(directory) if exists else False
             metrics: dict[str, Any] = {
                 "directory": directory,
@@ -640,6 +778,8 @@ class BaseValidator(ABC):
         if not exists:
     pass
     pass
+    pass
+    pass
         self.logger.warning(
                     missing(f"⚠️ Directory not found: {directory}"),
                 )
@@ -647,6 +787,8 @@ class BaseValidator(ABC):
 
         # Check if it's actually a directory
         if not is_directory:
+    pass
+    pass
     pass
     pass
         self.logger.warning(
@@ -658,15 +800,23 @@ class BaseValidator(ABC):
         if required_files:
     pass
     pass
+    pass
+    pass
         for file_path in required_files:
+    pass
+    pass
     pass
     pass
                     full_path, os.path.join(directory, file_path)
         if not os.path.exists(full_path):
     pass
     pass
+    pass
+    pass
                         metrics["missing_files"].append(file_path)
         if metrics["missing_files"]:
+    pass
+    pass
     pass
     pass
         self.logger.warning(
@@ -679,15 +829,23 @@ class BaseValidator(ABC):
         if required_dirs:
     pass
     pass
+    pass
+    pass
         for subdir in required_dirs:
+    pass
+    pass
     pass
     pass
                     full_path, os.path.join(directory, subdir)
         if not os.path.exists(full_path) or not os.path.isdir(full_path):
     pass
     pass
+    pass
+    pass
                         metrics["missing_dirs"].append(subdir)
         if metrics["missing_dirs"]:
+    pass
+    pass
     pass
     pass
         self.logger.warning(
@@ -726,11 +884,15 @@ class BaseValidator(ABC):
         if passed:
     pass
     pass
+    pass
+    pass
         self.logger.info(f"✅ {validation_name} validation passed")
         else:
         self.logger.warning(failed(f"❌ {validation_name} validation failed"))
 
         if metrics:
+    pass
+    pass
     pass
     pass
         self.logger.debug(f"📊 {validation_name} metrics: {metrics}")

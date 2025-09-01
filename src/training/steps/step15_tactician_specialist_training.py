@@ -58,6 +58,7 @@ pandas, PipelineStandards.safe_import("pandas", None)
 def create_fallback_logger():
     pass
     pass
+    pass
     import logging
     logging.basicConfig(level = logging.INFO)
     return logging.getLogger(__name__)
@@ -65,7 +66,9 @@ def create_fallback_logger():
 def create_fallback_decorator():
     pass
     pass
+    pass
     def decorator(func):
+    pass
     pass
     pass
         return func
@@ -75,9 +78,11 @@ def create_fallback_decorator():
 if system_logger is None:
     pass
     pass
+    pass
     system_logger, create_fallback_logger()
 
 if centralized_decorators is None:
+    pass
     pass
     pass
     PerformanceLevel = "BASIC"
@@ -105,6 +110,7 @@ else:
 if warning_symbols is None:
     pass
     pass
+    pass
     error, lambda msg: print(f"ERROR: {msg}")
 else:
     error, warning_symbols.error
@@ -113,6 +119,7 @@ class TacticianSpecialistTrainingStep:
     """Step 15: Tactician Specialist Models Training with Standardized Data Quality Management."""
 
     def __init__(self, config: dict[str, Any]) -> None:
+    pass
     pass
     pass
         self.config, config
@@ -127,8 +134,11 @@ class TacticianSpecialistTrainingStep:
         if sr_breakout_predictor is not None:
     pass
     pass
+    pass
         try:
                 sr_config, config.copy()
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -148,8 +158,11 @@ class TacticianSpecialistTrainingStep:
         if enhanced_lm_optimizer is not None:
     pass
     pass
+    pass
         try:
         self.enhanced_lm_optimizer, enhanced_lm_optimizer.EnhancedLMOptimizer(config)
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -162,8 +175,11 @@ class TacticianSpecialistTrainingStep:
         if optimized_feature_selection is not None:
     pass
     pass
+    pass
         try:
         self.optimized_feature_selection, optimized_feature_selection.OptimizedFeatureSelectionManager(config)
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -175,6 +191,7 @@ class TacticianSpecialistTrainingStep:
         if model_probability_generator is not None:
     pass
     pass
+    pass
         self.probability_generator, model_probability_generator.ModelProbabilityGenerator()
         else:
         self.logger.warning("⚠️ ModelProbabilityGenerator not available")
@@ -183,11 +200,13 @@ class TacticianSpecialistTrainingStep:
     def _validate_environment(self) -> None:
     pass
     pass
+    pass
         """Validate environment dependencies."""
         self.logger.info("🔍 Validating environment dependencies...")
 
         missing_modules = [module for module, available in dependency_status.items() if not available]
         if missing_modules:
+    pass
     pass
     pass
         self.logger.warning(f"⚠️ Missing optional modules: {missing_modules}")
@@ -211,7 +230,10 @@ class TacticianSpecialistTrainingStep:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         if sr_init_success:
+    pass
     pass
     pass
         self.logger.info(
@@ -240,6 +262,9 @@ class TacticianSpecialistTrainingStep:
     pass
     except Exception as e:
         pass
+    pass
+    except Exception as e:
+        pass
         return labeled_data
 
         self.logger.info(
@@ -251,6 +276,7 @@ class TacticianSpecialistTrainingStep:
         # Check if we have OHLCV data for S / R analysis
             required_cols = ["open", "high", "low", "close", "volume"]
         if not all(col in enhanced_data.columns for col in required_cols):
+    pass
     pass
     pass
         self.logger.warning(
@@ -277,8 +303,11 @@ class TacticianSpecialistTrainingStep:
         for idx in sample_indices:
     pass
     pass
+    pass
         try:
                     row, enhanced_data.loc[idx]
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -289,6 +318,7 @@ class TacticianSpecialistTrainingStep:
                     market_slice, enhanced_data.loc[:idx].tail(lookback_bars)
 
         if len(market_slice) < 20:
+    pass
     pass
     pass
         # Default values if insufficient data
@@ -316,6 +346,7 @@ class TacticianSpecialistTrainingStep:
         # Extract HMM regime information if available
                     hmm_confidence, 0.5
         if "composite_cluster_confidence" in row:
+    pass
     pass
     pass
                         hmm_confidence, float(row.get("composite_cluster_confidence", 0.5))
@@ -367,7 +398,9 @@ class TacticianSpecialistTrainingStep:
         for feature_name, values in sr_features.items():
     pass
     pass
+    pass
         if len(values) > 1:
+    pass
     pass
     pass
                     feature_series, pd.Series(values, index = sample_indices)
@@ -400,6 +433,7 @@ class TacticianSpecialistTrainingStep:
     def _get_timeframe_minutes(self, timeframe: str) -> int:
     pass
     pass
+    pass
         """Convert timeframe string to minutes for adaptive processing.
         Step9 only supports 1m and 5m timeframes.
         """
@@ -407,8 +441,10 @@ class TacticianSpecialistTrainingStep:
         if tf == "1m":
     pass
     pass
+    pass
         return 1
         if tf == "5m":
+    pass
     pass
     pass
         return 5
@@ -434,6 +470,8 @@ class TacticianSpecialistTrainingStep:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         # Extract parameters
             symbol, training_input.get("symbol", "ETHUSDT")
             exchange, training_input.get("exchange", "BINANCE")
@@ -450,8 +488,11 @@ class TacticianSpecialistTrainingStep:
         if os.path.exists(labeled_file_parquet):
     pass
     pass
+    pass
         try:
                         labeled_data, pd.read_parquet(labeled_file_parquet)
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -473,11 +514,13 @@ class TacticianSpecialistTrainingStep:
         if not isinstance(labeled_data, pd.DataFrame):
     pass
     pass
+    pass
                 labeled_data, pd.DataFrame(labeled_data)
 
         # Optionally enhance training data with HMM - aware S / R context
             current_timeframe, training_input.get("timeframe", "1m")
         if current_timeframe not in ["1m", "5m"]:
+    pass
     pass
     pass
         self.logger.warning(
@@ -490,6 +533,8 @@ class TacticianSpecialistTrainingStep:
                     labeled_data,
                     symbol,
                     current_timeframe,
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -512,6 +557,7 @@ class TacticianSpecialistTrainingStep:
             os.makedirs(models_dir, exist_ok = True)
 
         for model_name, model_data in training_results.items():
+    pass
     pass
     pass
                 model_file, f"{models_dir}/{model_name}.pkl"
@@ -559,11 +605,14 @@ class TacticianSpecialistTrainingStep:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         # Prepare data - handle data types properly
             target_column = (
                 "tactician_label" if "tactician_label" in data.columns else "label"
             )
         if target_column not in data.columns:
+    pass
     pass
     pass
                 raise ValueError("Target column for tactician training not found")
@@ -577,6 +626,7 @@ class TacticianSpecialistTrainingStep:
         if datetime_columns:
     pass
     pass
+    pass
         self.logger.info(f"Dropping datetime columns: {datetime_columns}")
                 data, data.drop(columns = datetime_columns)
 
@@ -585,6 +635,7 @@ class TacticianSpecialistTrainingStep:
                 col for col in object_columns if col != target_column
             ]
         if object_columns_to_drop:
+    pass
     pass
     pass
         self.logger.info(f"Dropping object columns: {object_columns_to_drop}")
@@ -596,6 +647,7 @@ class TacticianSpecialistTrainingStep:
             ]
 
         if not feature_columns:
+    pass
     pass
     pass
         self.logger.warning(
@@ -610,7 +662,9 @@ class TacticianSpecialistTrainingStep:
         for col in list(X.columns):
     pass
     pass
+    pass
         if not pd.api.types.is_numeric_dtype(X[col]):
+    pass
     pass
     pass
         self.logger.warning(
@@ -630,6 +684,7 @@ class TacticianSpecialistTrainingStep:
         if self.enhanced_lm_optimizer is not None:
     pass
     pass
+    pass
         self.logger.info("🚀 Applying enhanced LM optimization for tactician models...")
                 model_type = (
                     "classification"
@@ -643,6 +698,8 @@ class TacticianSpecialistTrainingStep:
                         target = y_train,
                         model_type = model_type,
                         architecture="LightGBM",
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -675,6 +732,8 @@ class TacticianSpecialistTrainingStep:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
                 )
         except Exception as _e:  # noqa: BLE001
         self.logger.warning(f"LightGBM training failed: {_e}")
@@ -688,6 +747,8 @@ class TacticianSpecialistTrainingStep:
                     y_test,
                     symbol,
                     exchange,
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -709,6 +770,8 @@ class TacticianSpecialistTrainingStep:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
                 )
         except Exception as _e:  # noqa: BLE001
         self.logger.warning(f"XGBoost training failed: {_e}")
@@ -722,6 +785,8 @@ class TacticianSpecialistTrainingStep:
                     y_test,
                     symbol,
                     exchange,
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -745,6 +810,9 @@ class TacticianSpecialistTrainingStep:
         try:
             from ..multi_output_probability_trainer import MultiOutputProbabilityTrainer
 
+    except Exception as e:
+        pass
+import except Exception as e:
     except Exception as e:
         pass
 import except Exception as e:
@@ -852,6 +920,7 @@ import market_data, pd.DataFrame
         if prob_values:
     pass
     pass
+    pass
                 overall_accuracy, sum(prob_values) / len(prob_values)
 
         # Prepare model data for saving
@@ -871,6 +940,9 @@ import market_data, pd.DataFrame
             model_path, f"models/{exchange}_{symbol}_multi_output_lightgbm_tactician_model.pkl"
         try:
                 from ..model_saving_utils import save_multi_output_model_with_probabilities
+    except Exception as e:
+        pass
+import except Exception as e:
     except Exception as e:
         pass
 import except Exception as e:
@@ -912,6 +984,9 @@ import save_multi_output_model_with_probabilities
 import except Exception as e:
     except Exception as e:
         pass
+import except Exception as e:
+    except Exception as e:
+        pass
             from sklearn.linear_model import LogisticRegression
             from sklearn.metrics import accuracy_score
 
@@ -947,6 +1022,8 @@ import base_model, LogisticRegression
                     calibrated_model, X_test.values, y_test.values, market_data, model_type="classification"
                 )
 
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -995,6 +1072,8 @@ import base_model, LogisticRegression
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
                 )
         self.logger.info(f"✅ Saved Calibrated Logistic tactician model with probabilities to {model_path}")
         except Exception as save_error:
@@ -1027,6 +1106,8 @@ import base_model, LogisticRegression
         """Train XGBoost model."""
         try:
             import xgboost as xgb
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -1105,6 +1186,8 @@ import best_params = {
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         self.logger.info(f"✅ Generated probability outputs for XGBoost model ({symbol})")
         self.logger.info(f"   Probabilities: {price_action_probabilities}")
 
@@ -1144,6 +1227,8 @@ import best_params = {
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
                 )
         self.logger.info(f"✅ Saved XGBoost tactician model with probabilities to {model_path}")
         except Exception as save_error:
@@ -1171,6 +1256,9 @@ import best_params = {
         """Train Random Forest model."""
         try:
             from sklearn.ensemble import RandomForestClassifier
+    except Exception as e:
+        pass
+import except Exception as e:
     except Exception as e:
         pass
 import except Exception as e:
@@ -1210,6 +1298,8 @@ import model, RandomForestClassifier
                     model, X_test.values, y_test.values, market_data, model_type="classification"
                 )
 
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -1254,6 +1344,8 @@ import model, RandomForestClassifier
         try:
                 save_model_with_probabilities(
                     model_data, model_path, price_action_probabilities, save_format="joblib"
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -1437,6 +1529,8 @@ async def run_step(
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         config = {"symbol": symbol, "exchange": exchange, "data_dir": data_dir}
         step, TacticianSpecialistTrainingStep(config)
         await step.initialize()
@@ -1459,6 +1553,7 @@ async def run_step(
         return False
 
 if __name__ == "__main__":
+    pass
     pass
     pass
     # Test the step

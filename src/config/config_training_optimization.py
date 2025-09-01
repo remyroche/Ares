@@ -56,11 +56,15 @@ class TrainingOptimizationConfig:
 def get_training_optimization_config() -> TrainingOptimizationConfig:
     pass
     pass
+    pass
+    pass
     """Get training optimization configuration."""
     return TrainingOptimizationConfig()
 
 
 def get_training_optimization_search_space() -> dict[str, dict[str, Any]]:
+    pass
+    pass
     pass
     pass
     """Get search space for training optimization."""

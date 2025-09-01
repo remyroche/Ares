@@ -23,6 +23,9 @@ try:
 import except Exception as e:
     except Exception as e:
         pass
+import except Exception as e:
+    except Exception as e:
+        pass
 import handle_errors,
         handle_errors,
         validate_data_quality,
@@ -56,7 +59,9 @@ except ImportError as e:
     def handle_errors(*args, **kwargs):
     pass
     pass
+    pass
         def decorator(func):
+    pass
     pass
     pass
         return func
@@ -65,7 +70,9 @@ except ImportError as e:
     def with_tracing_span(*args, **kwargs):
     pass
     pass
+    pass
         def decorator(func):
+    pass
     pass
     pass
         return func
@@ -74,7 +81,9 @@ except ImportError as e:
     def validate_data_quality(*args, **kwargs):
     pass
     pass
+    pass
         def decorator(func):
+    pass
     pass
     pass
         return func
@@ -83,7 +92,9 @@ except ImportError as e:
     def validate_data_structure(*args, **kwargs):
     pass
     pass
+    pass
         def decorator(func):
+    pass
     pass
     pass
         return func
@@ -92,7 +103,9 @@ except ImportError as e:
     def guard_dataframe_nulls(*args, **kwargs):
     pass
     pass
+    pass
         def decorator(func):
+    pass
     pass
     pass
         return func
@@ -101,7 +114,9 @@ except ImportError as e:
     def optimize_memory_usage(*args, **kwargs):
     pass
     pass
+    pass
         def decorator(func):
+    pass
     pass
     pass
         return func
@@ -110,7 +125,9 @@ except ImportError as e:
     def comprehensive_data_validation(*args, **kwargs):
     pass
     pass
+    pass
         def decorator(func):
+    pass
     pass
     pass
         return func
@@ -119,7 +136,9 @@ except ImportError as e:
     def secure_data_processing(*args, **kwargs):
     pass
     pass
+    pass
         def decorator(func):
+    pass
     pass
     pass
         return func
@@ -141,6 +160,7 @@ class MissingDataDownloaderAndGapFiller:
     def __init__(self, data_cache_path: str = "data_cache") -> None:
     pass
     pass
+    pass
         self.data_cache_path, Path(data_cache_path)
         self.data_cache_path.mkdir(exist_ok = True)
 
@@ -148,8 +168,11 @@ class MissingDataDownloaderAndGapFiller:
         if BinanceExchange:
     pass
     pass
+    pass
         try:
         self.exchange, BinanceExchange(CONFIG)
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -181,8 +204,11 @@ class MissingDataDownloaderAndGapFiller:
         if not self._exchange_initialized:
     pass
     pass
+    pass
         try:
                 logger.info("🔧 Initializing Binance exchange connection...")
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -190,8 +216,10 @@ class MissingDataDownloaderAndGapFiller:
         if self.exchange:
     pass
     pass
+    pass
                     success, await self.exchange.initialize()
         if success:
+    pass
     pass
     pass
         self._exchange_initialized, True
@@ -234,6 +262,7 @@ class MissingDataDownloaderAndGapFiller:
         if not await self._ensure_exchange_initialized():
     pass
     pass
+    pass
         return {"success": False, "error": "Exchange not initialized"}
 
         results = {
@@ -256,6 +285,7 @@ class MissingDataDownloaderAndGapFiller:
         if not file_path.exists():
     pass
     pass
+    pass
                 dates_to_download.append(current_date)
             else:
                 logger.debug(f"📁 File already exists: {filename}")
@@ -268,13 +298,17 @@ class MissingDataDownloaderAndGapFiller:
         for date in dates_to_download:
     pass
     pass
+    pass
         try:
                 success, await self._download_single_aggtrades_day(symbol, exchange, date)
     except Exception as e:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         if success:
+    pass
     pass
     pass
                     results["downloaded_days"] += 1
@@ -313,12 +347,15 @@ class MissingDataDownloaderAndGapFiller:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         # Convert date to datetime for API calls
             start_time, datetime.combine(date, datetime.min.time())
             end_time, datetime.combine(date, datetime.max.time())
 
         # Download data using exchange API
         if self.exchange:
+    pass
     pass
     pass
                 data, await self.exchange.fetch_aggtrades(
@@ -328,6 +365,7 @@ class MissingDataDownloaderAndGapFiller:
                 )
 
         if data:
+    pass
     pass
     pass
         # Convert to DataFrame
@@ -345,6 +383,7 @@ class MissingDataDownloaderAndGapFiller:
                     }
 
         if list(df.columns) != list(column_mapping.values()):
+    pass
     pass
     pass
                         df, df.rename(columns = column_mapping)
@@ -376,10 +415,13 @@ class MissingDataDownloaderAndGapFiller:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             files, list(self.data_cache_path.glob(pattern))
 
             total_rows, 0
         for file_path in files:
+    pass
     pass
     pass
                 df, pd.read_parquet(file_path)
@@ -416,6 +458,7 @@ class MissingDataDownloaderAndGapFiller:
         if not await self._ensure_exchange_initialized():
     pass
     pass
+    pass
         return {"success": False, "error": "Exchange not initialized"}
 
         results = {
@@ -438,12 +481,14 @@ class MissingDataDownloaderAndGapFiller:
         if not file_path.exists():
     pass
     pass
+    pass
                 months_to_download.append(current_date)
             else:
                 logger.debug(f"📁 File already exists: {filename}")
 
         # Move to next month
         if current_date.month == 12:
+    pass
     pass
     pass
                 current_date, current_date.replace(year = current_date.year + 1, month = 1)
@@ -456,13 +501,17 @@ class MissingDataDownloaderAndGapFiller:
         for month in months_to_download:
     pass
     pass
+    pass
         try:
                 success, await self._download_single_klines_month(symbol, exchange, month)
     except Exception as e:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         if success:
+    pass
     pass
     pass
                     results["downloaded_months"] += 1
@@ -501,9 +550,12 @@ class MissingDataDownloaderAndGapFiller:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         # Calculate month boundaries
             start_time, month.replace(day = 1)
         if month.month == 12:
+    pass
     pass
     pass
                 end_time, month.replace(year = month.year + 1, month = 1, day = 1) - timedelta(seconds = 1)
@@ -514,6 +566,7 @@ class MissingDataDownloaderAndGapFiller:
         if self.exchange:
     pass
     pass
+    pass
                 data, await self.exchange.fetch_ohlcv(
                     symbol = symbol,
                     timeframe="1m",
@@ -522,6 +575,7 @@ class MissingDataDownloaderAndGapFiller:
                 )
 
         if data:
+    pass
     pass
     pass
         # Convert to DataFrame
@@ -554,10 +608,13 @@ class MissingDataDownloaderAndGapFiller:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             files, list(self.data_cache_path.glob(pattern))
 
             total_rows, 0
         for file_path in files:
+    pass
     pass
     pass
                 df, pd.read_parquet(file_path)
@@ -594,6 +651,7 @@ class MissingDataDownloaderAndGapFiller:
         if not await self._ensure_exchange_initialized():
     pass
     pass
+    pass
         return {"success": False, "error": "Exchange not initialized"}
 
         results = {
@@ -616,12 +674,14 @@ class MissingDataDownloaderAndGapFiller:
         if not file_path.exists():
     pass
     pass
+    pass
                 months_to_download.append(current_date)
             else:
                 logger.debug(f"📁 File already exists: {filename}")
 
         # Move to next month
         if current_date.month == 12:
+    pass
     pass
     pass
                 current_date, current_date.replace(year = current_date.year + 1, month = 1)
@@ -634,13 +694,17 @@ class MissingDataDownloaderAndGapFiller:
         for month in months_to_download:
     pass
     pass
+    pass
         try:
                 success, await self._download_single_futures_month(symbol, exchange, month)
     except Exception as e:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         if success:
+    pass
     pass
     pass
                     results["downloaded_months"] += 1
@@ -679,9 +743,12 @@ class MissingDataDownloaderAndGapFiller:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         # Calculate month boundaries
             start_time, month.replace(day = 1)
         if month.month == 12:
+    pass
     pass
     pass
                 end_time, month.replace(year = month.year + 1, month = 1, day = 1) - timedelta(seconds = 1)
@@ -690,6 +757,7 @@ class MissingDataDownloaderAndGapFiller:
 
         # Download data using exchange API
         if self.exchange:
+    pass
     pass
     pass
                 data, await self.exchange.fetch_funding_rate(
@@ -701,11 +769,13 @@ class MissingDataDownloaderAndGapFiller:
         if data:
     pass
     pass
+    pass
         # Convert to DataFrame
                     df, pd.DataFrame(data)
 
         # Ensure required columns
         if "timestamp" not in df.columns and "fundingTime" in df.columns:
+    pass
     pass
     pass
                         df["timestamp"] = df["fundingTime"]
@@ -737,10 +807,13 @@ class MissingDataDownloaderAndGapFiller:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             files, list(self.data_cache_path.glob(pattern))
 
             total_rows, 0
         for file_path in files:
+    pass
     pass
     pass
                 df, pd.read_parquet(file_path)
@@ -776,6 +849,7 @@ class MissingDataDownloaderAndGapFiller:
         if end_date is None:
     pass
     pass
+    pass
             end_date, datetime.now()
             logger.info(f"📅 No end_date provided, using default: {end_date.date()} (today)")
 
@@ -803,6 +877,7 @@ class MissingDataDownloaderAndGapFiller:
         if not aggtrades_results["success"]:
     pass
     pass
+    pass
             results["errors"].append("Aggtrades download failed")
 
         # Download klines data
@@ -810,6 +885,7 @@ class MissingDataDownloaderAndGapFiller:
         results["download_results"]["klines"] = klines_results
 
         if not klines_results["success"]:
+    pass
     pass
     pass
             results["errors"].append("Klines download failed")
@@ -821,10 +897,12 @@ class MissingDataDownloaderAndGapFiller:
         if not futures_results["success"]:
     pass
     pass
+    pass
             results["errors"].append("Futures download failed")
 
         # Determine overall success
         if results["errors"]:
+    pass
     pass
     pass
             results["success"] = False
@@ -844,7 +922,9 @@ class MissingDataDownloaderAndGapFiller:
         for data_type, download_result in results["download_results"].items():
     pass
     pass
+    pass
         if download_result.get("success"):
+    pass
     pass
     pass
                 logger.info(f"✅ {data_type.title()}: Downloaded successfully")
@@ -854,13 +934,16 @@ class MissingDataDownloaderAndGapFiller:
         if results["errors"]:
     pass
     pass
+    pass
             logger.error("❌ DOWNLOAD ERRORS:")
         for i, error in enumerate(results["errors"], 1):
+    pass
     pass
     pass
                 logger.error(f"  {i}. {error}")
 
         if results["success"]:
+    pass
     pass
     pass
             logger.info("🎉 COMPREHENSIVE DOWNLOAD COMPLETED SUCCESSFULLY!")

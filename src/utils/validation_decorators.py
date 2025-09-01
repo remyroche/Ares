@@ -18,6 +18,8 @@ project_root, Path(__file__).parent.parent.parent
 if str(project_root) not in sys.path:
     pass
     pass
+    pass
+    pass
     sys.path.append(str(project_root))
 
 from src.utils.logger import system_logger
@@ -49,6 +51,8 @@ def validate_file_operation(
     def decorator(func: Callable) -> Callable:
     pass
     pass
+    pass
+    pass
         @functools.wraps(func)
         async def async_wrapper(*args, **kwargs):
             logger, system_logger.getChild(f"ValidationDecorator.{step_name}")
@@ -57,11 +61,17 @@ def validate_file_operation(
         if validate_input:
     pass
     pass
+    pass
+    pass
                 input_files, _extract_file_paths_from_args(args, kwargs, "input")
         for file_path in input_files:
     pass
     pass
+    pass
+    pass
         if file_path and os.path.exists(file_path):
+    pass
+    pass
     pass
     pass
         await _validate_file_operation(
@@ -75,11 +85,17 @@ def validate_file_operation(
         if validate_output:
     pass
     pass
+    pass
+    pass
                 output_files, _extract_file_paths_from_result(result, "output")
         for file_path in output_files:
     pass
     pass
+    pass
+    pass
         if file_path and os.path.exists(file_path):
+    pass
+    pass
     pass
     pass
         await _validate_file_operation(
@@ -92,17 +108,25 @@ def validate_file_operation(
         def sync_wrapper(*args, **kwargs):
     pass
     pass
+    pass
+    pass
             logger, system_logger.getChild(f"ValidationDecorator.{step_name}")
 
         # Validate input files
         if validate_input:
     pass
     pass
+    pass
+    pass
                 input_files, _extract_file_paths_from_args(args, kwargs, "input")
         for file_path in input_files:
     pass
     pass
+    pass
+    pass
         if file_path and os.path.exists(file_path):
+    pass
+    pass
     pass
     pass
                         _validate_file_operation_sync(
@@ -116,11 +140,17 @@ def validate_file_operation(
         if validate_output:
     pass
     pass
+    pass
+    pass
                 output_files, _extract_file_paths_from_result(result, "output")
         for file_path in output_files:
     pass
     pass
+    pass
+    pass
         if file_path and os.path.exists(file_path):
+    pass
+    pass
     pass
     pass
                         _validate_file_operation_sync(
@@ -131,6 +161,8 @@ def validate_file_operation(
 
         # Return appropriate wrapper based on function type
         if inspect.iscoroutinefunction(func):
+    pass
+    pass
     pass
     pass
         return async_wrapper
@@ -157,6 +189,8 @@ def validate_dataframe_operation(
     def decorator(func: Callable) -> Callable:
     pass
     pass
+    pass
+    pass
         @functools.wraps(func)
         async def async_wrapper(*args, **kwargs):
             logger, system_logger.getChild(f"DataFrameValidation.{step_name}")
@@ -165,11 +199,17 @@ def validate_dataframe_operation(
         if validate_before:
     pass
     pass
+    pass
+    pass
                 dataframes, _extract_dataframes_from_args(args, kwargs)
         for i, df in enumerate(dataframes):
     pass
     pass
+    pass
+    pass
         if df is not None:
+    pass
+    pass
     pass
     pass
         await _validate_dataframe_operation(
@@ -183,10 +223,16 @@ def validate_dataframe_operation(
         if validate_after:
     pass
     pass
+    pass
+    pass
         if isinstance(result, dict):
     pass
     pass
+    pass
+    pass
         for key, value in result.items():
+    pass
+    pass
     pass
     pass
         if hasattr(value, 'shape'):  # Likely a DataFrame
@@ -204,17 +250,25 @@ def validate_dataframe_operation(
         def sync_wrapper(*args, **kwargs):
     pass
     pass
+    pass
+    pass
             logger, system_logger.getChild(f"DataFrameValidation.{step_name}")
 
         # Validate input DataFrames
         if validate_before:
     pass
     pass
+    pass
+    pass
                 dataframes, _extract_dataframes_from_args(args, kwargs)
         for i, df in enumerate(dataframes):
     pass
     pass
+    pass
+    pass
         if df is not None:
+    pass
+    pass
     pass
     pass
                         _validate_dataframe_operation_sync(
@@ -228,10 +282,16 @@ def validate_dataframe_operation(
         if validate_after:
     pass
     pass
+    pass
+    pass
         if isinstance(result, dict):
     pass
     pass
+    pass
+    pass
         for key, value in result.items():
+    pass
+    pass
     pass
     pass
         if hasattr(value, 'shape'):  # Likely a DataFrame
@@ -247,6 +307,8 @@ def validate_dataframe_operation(
 
         # Return appropriate wrapper based on function type
         if inspect.iscoroutinefunction(func):
+    pass
+    pass
     pass
     pass
         return async_wrapper
@@ -273,6 +335,8 @@ def validate_step_operation(
     def decorator(func: Callable) -> Callable:
     pass
     pass
+    pass
+    pass
         @functools.wraps(func)
         async def async_wrapper(*args, **kwargs):
             logger, system_logger.getChild(f"StepValidation.{step_name}")
@@ -284,9 +348,13 @@ def validate_step_operation(
         if validate_files:
     pass
     pass
+    pass
+    pass
         await _validate_step_files(step_name, result, logger, log_level)
 
         if validate_dataframes:
+    pass
+    pass
     pass
     pass
         await _validate_step_dataframes(step_name, result, logger, log_level)
@@ -295,6 +363,8 @@ def validate_step_operation(
 
         @functools.wraps(func)
         def sync_wrapper(*args, **kwargs):
+    pass
+    pass
     pass
     pass
             logger, system_logger.getChild(f"StepValidation.{step_name}")
@@ -306,9 +376,13 @@ def validate_step_operation(
         if validate_files:
     pass
     pass
+    pass
+    pass
                 _validate_step_files_sync(step_name, result, logger, log_level)
 
         if validate_dataframes:
+    pass
+    pass
     pass
     pass
                 _validate_step_dataframes_sync(step_name, result, logger, log_level)
@@ -317,6 +391,8 @@ def validate_step_operation(
 
         # Return appropriate wrapper based on function type
         if inspect.iscoroutinefunction(func):
+    pass
+    pass
     pass
     pass
         return async_wrapper
@@ -330,6 +406,8 @@ def validate_step_operation(
 def _extract_file_paths_from_args(args: tuple, kwargs: dict, operation_type: str) -> List[str]:
     pass
     pass
+    pass
+    pass
     """Extract file paths from function arguments."""
     file_paths = []
 
@@ -337,7 +415,11 @@ def _extract_file_paths_from_args(args: tuple, kwargs: dict, operation_type: str
     for arg in args:
     pass
     pass
+    pass
+    pass
         if isinstance(arg, str) and _looks_like_file_path(arg):
+    pass
+    pass
     pass
     pass
             file_paths.append(arg)
@@ -345,7 +427,11 @@ def _extract_file_paths_from_args(args: tuple, kwargs: dict, operation_type: str
         for item in arg:
     pass
     pass
+    pass
+    pass
         if isinstance(item, str) and _looks_like_file_path(item):
+    pass
+    pass
     pass
     pass
                     file_paths.append(item)
@@ -355,10 +441,16 @@ def _extract_file_paths_from_args(args: tuple, kwargs: dict, operation_type: str
     for key, value in kwargs.items():
     pass
     pass
+    pass
+    pass
         if any(file_key in key.lower() for file_key in file_keywords):
     pass
     pass
+    pass
+    pass
         if isinstance(value, str) and _looks_like_file_path(value):
+    pass
+    pass
     pass
     pass
                 file_paths.append(value)
@@ -366,7 +458,11 @@ def _extract_file_paths_from_args(args: tuple, kwargs: dict, operation_type: str
         for item in value:
     pass
     pass
+    pass
+    pass
         if isinstance(item, str) and _looks_like_file_path(item):
+    pass
+    pass
     pass
     pass
                         file_paths.append(item)
@@ -376,10 +472,14 @@ def _extract_file_paths_from_args(args: tuple, kwargs: dict, operation_type: str
 def _extract_file_paths_from_result(result: Any, operation_type: str) -> List[str]:
     pass
     pass
+    pass
+    pass
     """Extract file paths from function result."""
     file_paths = []
 
     if isinstance(result, str) and _looks_like_file_path(result):
+    pass
+    pass
     pass
     pass
         file_paths.append(result)
@@ -387,7 +487,11 @@ def _extract_file_paths_from_result(result: Any, operation_type: str) -> List[st
         for item in result:
     pass
     pass
+    pass
+    pass
         if isinstance(item, str) and _looks_like_file_path(item):
+    pass
+    pass
     pass
     pass
                 file_paths.append(item)
@@ -395,7 +499,11 @@ def _extract_file_paths_from_result(result: Any, operation_type: str) -> List[st
         for key, value in result.items():
     pass
     pass
+    pass
+    pass
         if isinstance(value, str) and _looks_like_file_path(value):
+    pass
+    pass
     pass
     pass
                 file_paths.append(value)
@@ -403,7 +511,11 @@ def _extract_file_paths_from_result(result: Any, operation_type: str) -> List[st
         for item in value:
     pass
     pass
+    pass
+    pass
         if isinstance(item, str) and _looks_like_file_path(item):
+    pass
+    pass
     pass
     pass
                         file_paths.append(item)
@@ -413,11 +525,15 @@ def _extract_file_paths_from_result(result: Any, operation_type: str) -> List[st
 def _extract_dataframes_from_args(args: tuple, kwargs: dict) -> List[Any]:
     pass
     pass
+    pass
+    pass
     """Extract DataFrames from function arguments."""
     dataframes = []
 
     # Look for DataFrames in arguments
     for arg in args:
+    pass
+    pass
     pass
     pass
         if hasattr(arg, 'shape'):  # Likely a DataFrame
@@ -428,7 +544,11 @@ def _extract_dataframes_from_args(args: tuple, kwargs: dict) -> List[Any]:
     for key, value in kwargs.items():
     pass
     pass
+    pass
+    pass
         if any(df_key in key.lower() for df_key in df_keywords):
+    pass
+    pass
     pass
     pass
         if hasattr(value, 'shape'):  # Likely a DataFrame
@@ -439,15 +559,19 @@ def _extract_dataframes_from_args(args: tuple, kwargs: dict) -> List[Any]:
 def _looks_like_file_path(path: str) -> bool:
     pass
     pass
+    pass
+    pass
     """Check if a string looks like a file path."""
     if not isinstance(path, str):
+    pass
+    pass
     pass
     pass
         return False
 
     # Check for common file extensions
     file_extensions = ['.parquet', '.csv', '.json', '.pkl', '.pickle', '.h5', '.hdf5']
-    return any(path.lower().endswith(ext) for ext in file_extensions) or '/' in path or '\\\\' in path
+    return any(path.lower().endswith(ext) for ext in file_extensions) or '/' in path or '\\\\\\' in path
 
 async def _validate_file_operation(
     file_path: str,
@@ -464,12 +588,20 @@ async def _validate_file_operation(
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         result, validator.validate_file_format(file_path, expected_schema, step_name)
 
         if result.is_valid:
     pass
     pass
+    pass
+    pass
         if log_level.upper() == "DEBUG":
+    pass
+    pass
     pass
     pass
                 logger.debug(f"✅ {operation_type.capitalize()} file validation passed: {file_path}")
@@ -477,8 +609,12 @@ async def _validate_file_operation(
         if log_level.upper() in ["WARNING", "ERROR", "CRITICAL"]:
     pass
     pass
+    pass
+    pass
                 logger.warning(f"⚠️ {operation_type.capitalize()} file validation issues: {file_path}")
         for issue in result.issues:
+    pass
+    pass
     pass
     pass
                     logger.warning(f"   - {issue.severity.value.upper()}: {issue.description}")
@@ -501,12 +637,20 @@ def _validate_file_operation_sync(
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         result, validator.validate_file_format(file_path, expected_schema, step_name)
 
         if result.is_valid:
     pass
     pass
+    pass
+    pass
         if log_level.upper() == "DEBUG":
+    pass
+    pass
     pass
     pass
                 logger.debug(f"✅ {operation_type.capitalize()} file validation passed: {file_path}")
@@ -514,8 +658,12 @@ def _validate_file_operation_sync(
         if log_level.upper() in ["WARNING", "ERROR", "CRITICAL"]:
     pass
     pass
+    pass
+    pass
                 logger.warning(f"⚠️ {operation_type.capitalize()} file validation issues: {file_path}")
         for issue in result.issues:
+    pass
+    pass
     pass
     pass
                     logger.warning(f"   - {issue.severity.value.upper()}: {issue.description}")
@@ -537,7 +685,13 @@ async def _validate_dataframe_operation(
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if df is None or df.empty:
+    pass
+    pass
     pass
     pass
             logger.warning(f"⚠️ {operation_type.capitalize()} DataFrame is None or empty")
@@ -552,11 +706,15 @@ async def _validate_dataframe_operation(
         if not high_null_columns.empty:
     pass
     pass
+    pass
+    pass
             issues.append(f"High null ratio in columns: {list(high_null_columns.index)}")
 
         # Check for duplicate rows
         duplicate_count, df.duplicated().sum()
         if duplicate_count > 0:
+    pass
+    pass
     pass
     pass
             issues.append(f"Found {duplicate_count} duplicate rows")
@@ -565,15 +723,23 @@ async def _validate_dataframe_operation(
         if hasattr(df, 'select_dtypes'):
     pass
     pass
+    pass
+    pass
             numeric_cols, df.select_dtypes(include=['number']).columns
         for col in numeric_cols:
+    pass
+    pass
     pass
     pass
         if hasattr(df[col], 'isin'):
     pass
     pass
+    pass
+    pass
                     infinite_count, df[col].isin([float('inf'), float('-inf')]).sum()
         if infinite_count > 0:
+    pass
+    pass
     pass
     pass
                         issues.append(f"Column '{col}' has {infinite_count} infinite values")
@@ -581,16 +747,24 @@ async def _validate_dataframe_operation(
         if issues:
     pass
     pass
+    pass
+    pass
         if log_level.upper() in ["WARNING", "ERROR", "CRITICAL"]:
+    pass
+    pass
     pass
     pass
                 logger.warning(f"⚠️ {operation_type.capitalize()} DataFrame validation issues:")
         for issue in issues:
     pass
     pass
+    pass
+    pass
                     logger.warning(f"   - {issue}")
         else:
         if log_level.upper() == "DEBUG":
+    pass
+    pass
     pass
     pass
                 logger.debug(f"✅ {operation_type.capitalize()} DataFrame validation passed: shape={df.shape}")
@@ -612,7 +786,13 @@ def _validate_dataframe_operation_sync(
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if df is None or df.empty:
+    pass
+    pass
     pass
     pass
             logger.warning(f"⚠️ {operation_type.capitalize()} DataFrame is None or empty")
@@ -627,11 +807,15 @@ def _validate_dataframe_operation_sync(
         if not high_null_columns.empty:
     pass
     pass
+    pass
+    pass
             issues.append(f"High null ratio in columns: {list(high_null_columns.index)}")
 
         # Check for duplicate rows
         duplicate_count, df.duplicated().sum()
         if duplicate_count > 0:
+    pass
+    pass
     pass
     pass
             issues.append(f"Found {duplicate_count} duplicate rows")
@@ -640,15 +824,23 @@ def _validate_dataframe_operation_sync(
         if hasattr(df, 'select_dtypes'):
     pass
     pass
+    pass
+    pass
             numeric_cols, df.select_dtypes(include=['number']).columns
         for col in numeric_cols:
+    pass
+    pass
     pass
     pass
         if hasattr(df[col], 'isin'):
     pass
     pass
+    pass
+    pass
                     infinite_count, df[col].isin([float('inf'), float('-inf')]).sum()
         if infinite_count > 0:
+    pass
+    pass
     pass
     pass
                         issues.append(f"Column '{col}' has {infinite_count} infinite values")
@@ -656,16 +848,24 @@ def _validate_dataframe_operation_sync(
         if issues:
     pass
     pass
+    pass
+    pass
         if log_level.upper() in ["WARNING", "ERROR", "CRITICAL"]:
+    pass
+    pass
     pass
     pass
                 logger.warning(f"⚠️ {operation_type.capitalize()} DataFrame validation issues:")
         for issue in issues:
     pass
     pass
+    pass
+    pass
                     logger.warning(f"   - {issue}")
         else:
         if log_level.upper() == "DEBUG":
+    pass
+    pass
     pass
     pass
                 logger.debug(f"✅ {operation_type.capitalize()} DataFrame validation passed: shape={df.shape}")
@@ -681,6 +881,8 @@ async def _validate_step_files(step_name: str, result: Any, logger: Any, log_lev
 def _validate_step_files_sync(step_name: str, result: Any, logger: Any, log_level: str) -> None:
     pass
     pass
+    pass
+    pass
     """Validate files after step execution (synchronous version)."""
     # This would implement step - specific file validation logic
     pass
@@ -693,6 +895,8 @@ async def _validate_step_dataframes(step_name: str, result: Any, logger: Any, lo
 def _validate_step_dataframes_sync(step_name: str, result: Any, logger: Any, log_level: str) -> None:
     pass
     pass
+    pass
+    pass
     """Validate DataFrames after step execution (synchronous version)."""
     # This would implement step - specific DataFrame validation logic
     pass
@@ -702,10 +906,14 @@ def _validate_step_dataframes_sync(step_name: str, result: Any, logger: Any, log
 def validate_step1_operation(func: Callable) -> Callable:
     pass
     pass
+    pass
+    pass
     """Decorator for step 1 operations."""
     return validate_step_operation("step1", validate_files = True, validate_dataframes = True)(func)
 
 def validate_step1_5_operation(func: Callable) -> Callable:
+    pass
+    pass
     pass
     pass
     """Decorator for step 1.5 operations."""
@@ -714,10 +922,14 @@ def validate_step1_5_operation(func: Callable) -> Callable:
 def validate_step2_operation(func: Callable) -> Callable:
     pass
     pass
+    pass
+    pass
     """Decorator for step 2 operations."""
     return validate_step_operation("step2", validate_files = True, validate_dataframes = True)(func)
 
 def validate_step4_operation(func: Callable) -> Callable:
+    pass
+    pass
     pass
     pass
     """Decorator for step 4 operations."""

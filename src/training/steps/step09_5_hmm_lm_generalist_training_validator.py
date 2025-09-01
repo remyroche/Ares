@@ -23,6 +23,7 @@ class Step9_5HMMLMGeneralistTrainingValidator:
     def __init__(self, config: dict[str, Any]) -> None:
     pass
     pass
+    pass
         self.config, config
         self.logger, logger
 
@@ -50,7 +51,10 @@ class Step9_5HMMLMGeneralistTrainingValidator:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         if not hmm_lm_models_dir.exists():
+    pass
     pass
     pass
         self.logger.warning(
@@ -63,6 +67,7 @@ class Step9_5HMMLMGeneralistTrainingValidator:
         if not model_files:
     pass
     pass
+    pass
         self.logger.warning("⚠️ No HMM LM generalist model files found")
         return False
 
@@ -70,7 +75,9 @@ class Step9_5HMMLMGeneralistTrainingValidator:
         for model_file in model_files:
     pass
     pass
+    pass
         if not self._validate_model_file(model_file):
+    pass
     pass
     pass
         return False
@@ -80,11 +87,13 @@ class Step9_5HMMLMGeneralistTrainingValidator:
         if not metadata_file.exists():
     pass
     pass
+    pass
         self.logger.warning(f"⚠️ HMM LM training metadata file not found: {metadata_file}")
         return False
 
         # Validate metadata file
         if not self._validate_metadata_file(metadata_file):
+    pass
     pass
     pass
         return False
@@ -100,10 +109,13 @@ class Step9_5HMMLMGeneralistTrainingValidator:
     def _validate_model_file(self, model_file: Path) -> bool:
     pass
     pass
+    pass
         """Validate an HMM LM generalist model file."""
         try:
         self.logger.info(f"📁 Validating HMM LM model: {model_file.name}")
 
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -121,8 +133,11 @@ class Step9_5HMMLMGeneralistTrainingValidator:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
                 model, joblib.load(model_file)
         if model is None:
+    pass
     pass
     pass
         self.logger.warning(f"⚠️ Model file is empty: {model_file.name}")
@@ -142,10 +157,13 @@ class Step9_5HMMLMGeneralistTrainingValidator:
     def _validate_metadata_file(self, metadata_file: Path) -> bool:
     pass
     pass
+    pass
         """Validate an HMM LM training metadata file."""
         try:
         self.logger.info(f"📁 Validating metadata file: {metadata_file.name}")
 
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -158,6 +176,7 @@ class Step9_5HMMLMGeneralistTrainingValidator:
         if not isinstance(metadata, dict):
     pass
     pass
+    pass
         self.logger.warning(f"⚠️ Metadata file is not a valid JSON object: {metadata_file.name}")
         return False
 
@@ -165,6 +184,7 @@ class Step9_5HMMLMGeneralistTrainingValidator:
             required_fields = ["training_date", "model_count", "training_metrics"]
             missing_fields = [field for field in required_fields if field not in metadata]
         if missing_fields:
+    pass
     pass
     pass
         self.logger.warning(
@@ -177,6 +197,7 @@ class Step9_5HMMLMGeneralistTrainingValidator:
         if model_count < 1:
     pass
     pass
+    pass
         self.logger.warning(
                     f"⚠️ Invalid model count in {metadata_file.name}: {model_count}"
                 )
@@ -185,6 +206,7 @@ class Step9_5HMMLMGeneralistTrainingValidator:
         # Validate training metrics
             training_metrics, metadata.get("training_metrics", {})
         if not isinstance(training_metrics, dict):
+    pass
     pass
     pass
         self.logger.warning(
@@ -197,11 +219,14 @@ class Step9_5HMMLMGeneralistTrainingValidator:
         for metric in basic_metrics:
     pass
     pass
+    pass
         if metric in training_metrics:
+    pass
     pass
     pass
                     value, training_metrics[metric]
         if isinstance(value, (int, float)) and value < 0:
+    pass
     pass
     pass
         self.logger.warning(
@@ -239,11 +264,14 @@ def step09_5_hmm_lm_generalist_training_validator(
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         result, validator.validate_step9_5_hmm_lm_generalist_training(
             symbol, exchange, data_dir, training_input
         )
 
         if result:
+    pass
     pass
     pass
             logger.info("✅ Step 9.5: HMM LM Generalist Training validation passed")

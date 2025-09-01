@@ -22,6 +22,8 @@ project_root, Path(__file__).parent.parent.parent
 if str(project_root) not in sys.path:
     pass
     pass
+    pass
+    pass
     sys.path.append(str(project_root))
 
 from src.utils.logger import system_logger
@@ -87,10 +89,14 @@ class StatisticalDataValidator:
     def __init__(self, config: Optional[Dict[str, Any]] = None):
     pass
     pass
+    pass
+    pass
         self.config, config or self._get_default_config()
         self.logger, system_logger.getChild("StatisticalDataValidator")
 
     def _get_default_config(self) -> Dict[str, Any]:
+    pass
+    pass
     pass
     pass
         return {
@@ -114,6 +120,8 @@ class StatisticalDataValidator:
         if expected_distributions is None:
     pass
     pass
+    pass
+    pass
         # Fallback implementation for expected_distributions
         # Use sample statistics if no expected distributions provided
             expected_distributions, self._compute_reference_distributions(df)
@@ -121,7 +129,11 @@ class StatisticalDataValidator:
         for column, expected_dist in expected_distributions.items():
     pass
     pass
+    pass
+    pass
         if column in df.columns:
+    pass
+    pass
     pass
     pass
                 actual_dist, df[column].describe()
@@ -130,9 +142,13 @@ class StatisticalDataValidator:
         if 'mean' in expected_dist:
     pass
     pass
+    pass
+    pass
                     mean_diff, abs(actual_dist['mean'] - expected_dist['mean'])
                     mean_tolerance, expected_dist.get('mean_tolerance', self.config['distribution_tolerance'])
         if mean_diff > mean_tolerance:
+    pass
+    pass
     pass
     pass
                         issues.append(
@@ -144,8 +160,12 @@ class StatisticalDataValidator:
         if 'std' in expected_dist:
     pass
     pass
+    pass
+    pass
                     std_ratio, actual_dist['std'] / expected_dist['std']
         if not (0.8 <= std_ratio <= 1.2):
+    pass
+    pass
     pass
     pass
                         issues.append(
@@ -157,9 +177,13 @@ class StatisticalDataValidator:
         if 'skew' in expected_dist:
     pass
     pass
+    pass
+    pass
                     actual_skew, df[column].skew()
                     skew_diff, abs(actual_skew - expected_dist['skew'])
         if skew_diff > 0.5:
+    pass
+    pass
     pass
     pass
                         issues.append(
@@ -172,10 +196,14 @@ class StatisticalDataValidator:
     def _compute_reference_distributions(self, df: pd.DataFrame) -> Dict[str, Dict[str, float]]:
     pass
     pass
+    pass
+    pass
         """Compute reference distributions from the data."""
         distributions = {}
 
         for column in df.select_dtypes(include=[np.number]).columns:
+    pass
+    pass
     pass
     pass
             distributions[column] = {
@@ -190,10 +218,14 @@ class StatisticalDataValidator:
     def validate_outliers(self, df: pd.DataFrame) -> List[str]:
     pass
     pass
+    pass
+    pass
         """Detect and validate outliers using IQR and Z - score methods."""
         issues = []
 
         for column in df.select_dtypes(include=[np.number]).columns:
+    pass
+    pass
     pass
     pass
         # IQR method
@@ -210,6 +242,8 @@ class StatisticalDataValidator:
         if outlier_ratio > self.config['outlier_ratio_threshold']:
     pass
     pass
+    pass
+    pass
                 issues.append(
                     f"High outlier ratio in {column}: {outlier_ratio:.2%} "
                     f"({outlier_count} outliers, threshold: {self.config['outlier_ratio_threshold']:.2%})"
@@ -220,6 +254,8 @@ class StatisticalDataValidator:
             extreme_outliers, len(z_scores[z_scores > self.config['outlier_threshold']])
 
         if extreme_outliers > 0:
+    pass
+    pass
     pass
     pass
                 issues.append(
@@ -235,10 +271,14 @@ class TimeSeriesValidator:
     def __init__(self, config: Optional[Dict[str, Any]] = None):
     pass
     pass
+    pass
+    pass
         self.config, config or self._get_default_config()
         self.logger, system_logger.getChild("TimeSeriesValidator")
 
     def _get_default_config(self) -> Dict[str, Any]:
+    pass
+    pass
     pass
     pass
         return {
@@ -259,6 +299,8 @@ class TimeSeriesValidator:
         if timestamp_col not in df.columns:
     pass
     pass
+    pass
+    pass
             issues.append(f"Timestamp column '{timestamp_col}' not found")
         return issues
 
@@ -266,8 +308,14 @@ class TimeSeriesValidator:
         if not pd.api.types.is_datetime64_any_dtype(df[timestamp_col]):
     pass
     pass
+    pass
+    pass
         try:
                 df[timestamp_col] = pd.to_datetime(df[timestamp_col])
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -280,11 +328,15 @@ class TimeSeriesValidator:
         if expected_interval is None:
     pass
     pass
+    pass
+    pass
         # Fallback implementation for expected_interval
         # Auto - detect interval from most common difference
             df_sorted, df.sort_values(timestamp_col)
             time_diffs, df_sorted[timestamp_col].diff().dropna()
         if len(time_diffs) > 0:
+    pass
+    pass
     pass
     pass
                 expected_interval, time_diffs.mode().iloc[0] if len(time_diffs.mode()) > 0 else pd.Timedelta('1 minute')
@@ -298,6 +350,8 @@ class TimeSeriesValidator:
         if len(large_gaps) > 0:
     pass
     pass
+    pass
+    pass
             issues.append(
                 f"Found {len(large_gaps)} time gaps > {expected_interval * self.config['max_gap_multiplier']}"
             )
@@ -306,6 +360,8 @@ class TimeSeriesValidator:
         duplicate_times, df[timestamp_col].duplicated().sum()
         duplicate_ratio, duplicate_times / len(df)
         if duplicate_ratio > self.config['max_duplicate_ratio']:
+    pass
+    pass
     pass
     pass
             issues.append(
@@ -319,6 +375,8 @@ class TimeSeriesValidator:
         future_times, df[df[timestamp_col] > now + future_tolerance]
 
         if len(future_times) > 0:
+    pass
+    pass
     pass
     pass
             issues.append(
@@ -343,10 +401,14 @@ class FinancialDataValidator:
     def __init__(self, config: Optional[Dict[str, Any]] = None):
     pass
     pass
+    pass
+    pass
         self.config, config or self._get_default_config()
         self.logger, system_logger.getChild("FinancialDataValidator")
 
     def _get_default_config(self) -> Dict[str, Any]:
+    pass
+    pass
     pass
     pass
         return {
@@ -358,12 +420,16 @@ class FinancialDataValidator:
     def validate_financial_data(self, df: pd.DataFrame) -> List[str]:
     pass
     pass
+    pass
+    pass
         """Validate financial data quality."""
         issues = []
 
         # Check OHLC relationships
         ohlc_cols = ['open', 'high', 'low', 'close']
         if all(col in df.columns for col in ohlc_cols):
+    pass
+    pass
     pass
     pass
             invalid_ohlc, df[
@@ -377,6 +443,8 @@ class FinancialDataValidator:
         if len(invalid_ohlc) > 0:
     pass
     pass
+    pass
+    pass
                 issues.append(f"Found {len(invalid_ohlc)} invalid OHLC relationships")
 
         # Check for negative prices
@@ -384,11 +452,17 @@ class FinancialDataValidator:
         for col in price_cols:
     pass
     pass
+    pass
+    pass
         if col in df.columns:
+    pass
+    pass
     pass
     pass
                 negative_prices, df[df[col] < 0]
         if len(negative_prices) > 0:
+    pass
+    pass
     pass
     pass
                     issues.append(f"Found {len(negative_prices)} negative prices in {col}")
@@ -397,9 +471,13 @@ class FinancialDataValidator:
         if 'volume' in df.columns:
     pass
     pass
+    pass
+    pass
             zero_volumes, df[df['volume'] == 0]
             zero_ratio, len(zero_volumes) / len(df)
         if zero_ratio > self.config['zero_volume_ratio_threshold']:
+    pass
+    pass
     pass
     pass
                 issues.append(
@@ -411,10 +489,14 @@ class FinancialDataValidator:
         if 'close' in df.columns and 'open' in df.columns:
     pass
     pass
+    pass
+    pass
             price_changes, abs(df['close'] - df['open']) / df['open']
             extreme_changes, price_changes[price_changes > self.config['max_price_change_ratio']]
 
         if len(extreme_changes) > 0:
+    pass
+    pass
     pass
     pass
                 issues.append(
@@ -426,8 +508,12 @@ class FinancialDataValidator:
         if all(col in df.columns for col in ohlc_cols):
     pass
     pass
+    pass
+    pass
             missing_ohlc, df[ohlc_cols].isnull().any(axis = 1)
         if missing_ohlc.sum() > 0:
+    pass
+    pass
     pass
     pass
                 issues.append(f"Found {missing_ohlc.sum()} records with missing OHLC data")
@@ -440,10 +526,14 @@ class FeatureCorrelationValidator:
     def __init__(self, config: Optional[Dict[str, Any]] = None):
     pass
     pass
+    pass
+    pass
         self.config, config or self._get_default_config()
         self.logger, system_logger.getChild("FeatureCorrelationValidator")
 
     def _get_default_config(self) -> Dict[str, Any]:
+    pass
+    pass
     pass
     pass
         return {
@@ -455,6 +545,8 @@ class FeatureCorrelationValidator:
     def validate_feature_correlations(self, df: pd.DataFrame) -> List[str]:
     pass
     pass
+    pass
+    pass
         """Validate feature correlations for ML training."""
         issues = []
 
@@ -462,6 +554,8 @@ class FeatureCorrelationValidator:
         numeric_df, df.select_dtypes(include=[np.number])
 
         if len(numeric_df.columns) < 2:
+    pass
+    pass
     pass
     pass
         return issues
@@ -474,11 +568,17 @@ class FeatureCorrelationValidator:
         for i in range(len(corr_matrix.columns)):
     pass
     pass
+    pass
+    pass
         for j in range(i + 1, len(corr_matrix.columns)):
+    pass
+    pass
     pass
     pass
                 corr_value, corr_matrix.iloc[i, j]
         if abs(corr_value) > self.config['max_correlation']:
+    pass
+    pass
     pass
     pass
                     high_corr_pairs.append((
@@ -490,9 +590,13 @@ class FeatureCorrelationValidator:
         if high_corr_pairs:
     pass
     pass
+    pass
+    pass
             issues.append(f"Found {len(high_corr_pairs)} highly correlated feature pairs")
         # Show first 5 pairs
         for feat1, feat2, corr in high_corr_pairs[:5]:
+    pass
+    pass
     pass
     pass
                 issues.append(f"  {feat1} - {feat2}: {corr:.3f}")
@@ -506,10 +610,14 @@ class FeatureCorrelationValidator:
     def _check_multicollinearity(self, df: pd.DataFrame) -> List[str]:
     pass
     pass
+    pass
+    pass
         """Check for multicollinearity using Variance Inflation Factor."""
         issues = []
 
         if len(df.columns) < 2:
+    pass
+    pass
     pass
     pass
         return issues
@@ -521,12 +629,20 @@ class FeatureCorrelationValidator:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         for i, col in enumerate(df.columns):
+    pass
+    pass
     pass
     pass
         # Use other features to predict this feature
                 other_cols = [c for c in df.columns if c != col]
         if len(other_cols) > 0:
+    pass
+    pass
     pass
     pass
                     X, df[other_cols]
@@ -555,6 +671,8 @@ import model, LinearRegression
         if high_vif_features:
     pass
     pass
+    pass
+    pass
                 issues.append(f"Found {len(high_vif_features)} features with high VIF")
         for col, vif in high_vif_features[:5]:  # Show first 5
                     issues.append(f"  {col}: VIF = {vif:.2f}")
@@ -570,10 +688,14 @@ class TargetVariableValidator:
     def __init__(self, config: Optional[Dict[str, Any]] = None):
     pass
     pass
+    pass
+    pass
         self.config, config or self._get_default_config()
         self.logger, system_logger.getChild("TargetVariableValidator")
 
     def _get_default_config(self) -> Dict[str, Any]:
+    pass
+    pass
     pass
     pass
         return {
@@ -594,6 +716,8 @@ class TargetVariableValidator:
         if target_col not in df.columns:
     pass
     pass
+    pass
+    pass
             issues.append(f"Target column '{target_col}' not found")
         return issues
 
@@ -604,16 +728,22 @@ class TargetVariableValidator:
         if missing_target > 0:
     pass
     pass
+    pass
+    pass
             issues.append(f"Found {missing_target} missing target values ({missing_target / len(target):.2%})")
 
         # Check for class imbalance (categorical targets)
         if target.dtype in ['object', 'category'] or target.nunique() < 10:
     pass
     pass
+    pass
+    pass
             class_counts, target.value_counts()
             min_class_ratio, class_counts.min() / class_counts.max()
 
         if min_class_ratio < self.config['class_imbalance_threshold']:
+    pass
+    pass
     pass
     pass
                 issues.append(
@@ -625,8 +755,12 @@ class TargetVariableValidator:
         if target.dtype in [np.number] and target.nunique() > 10:
     pass
     pass
+    pass
+    pass
             target_variance, target.var()
         if target_variance < self.config['min_target_variance']:
+    pass
+    pass
     pass
     pass
                 issues.append(
@@ -636,6 +770,8 @@ class TargetVariableValidator:
 
         # Check for target leakage with time - based features
         if timestamp_col and timestamp_col in df.columns:
+    pass
+    pass
     pass
     pass
             time_leakage_issues, self._check_time_based_leakage(df, target_col, timestamp_col)
@@ -662,7 +798,13 @@ class TargetVariableValidator:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if not pd.api.types.is_datetime64_any_dtype(df[timestamp_col]):
+    pass
+    pass
     pass
     pass
                 df[timestamp_col] = pd.to_datetime(df[timestamp_col])
@@ -678,11 +820,17 @@ class TargetVariableValidator:
         for feature in time_features:
     pass
     pass
+    pass
+    pass
         if feature in df_copy.columns:
+    pass
+    pass
     pass
     pass
                     corr, abs(df_copy[feature].corr(df_copy[target_col]))
         if corr > self.config['target_leakage_threshold']:
+    pass
+    pass
     pass
     pass
                         issues.append(
@@ -697,6 +845,8 @@ class TargetVariableValidator:
     def _check_feature_based_leakage(self, df: pd.DataFrame, target_col: str) -> List[str]:
     pass
     pass
+    pass
+    pass
         """Check for target leakage with other features."""
         issues = []
 
@@ -707,7 +857,13 @@ class TargetVariableValidator:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if target_col in numeric_df.columns:
+    pass
+    pass
     pass
     pass
                 numeric_df, numeric_df.drop(columns=[target_col])
@@ -715,8 +871,12 @@ class TargetVariableValidator:
         for col in numeric_df.columns:
     pass
     pass
+    pass
+    pass
                     corr, abs(numeric_df[col].corr(df[target_col]))
         if corr > self.config['target_leakage_threshold']:
+    pass
+    pass
     pass
     pass
                         issues.append(
@@ -734,12 +894,16 @@ class DataDriftDetector:
     def __init__(self, reference_data: pd.DataFrame, config: Optional[Dict[str, Any]] = None):
     pass
     pass
+    pass
+    pass
         self.reference_data, reference_data
         self.config, config or self._get_default_config()
         self.reference_stats, self._compute_statistics(reference_data)
         self.logger, system_logger.getChild("DataDriftDetector")
 
     def _get_default_config(self) -> Dict[str, Any]:
+    pass
+    pass
     pass
     pass
         return {
@@ -751,6 +915,8 @@ class DataDriftDetector:
     def detect_drift(self, current_data: pd.DataFrame) -> DriftReport:
     pass
     pass
+    pass
+    pass
         """Detect data drift between reference and current data."""
         issues = []
         drift_metrics = {}
@@ -760,7 +926,11 @@ class DataDriftDetector:
         for column in self.reference_stats.keys():
     pass
     pass
+    pass
+    pass
         if column in current_stats:
+    pass
+    pass
     pass
     pass
         # Population Stability Index (PSI)
@@ -771,6 +941,8 @@ class DataDriftDetector:
                 drift_metrics[f"{column}_psi"] = psi
 
         if psi > self.config['drift_psi_threshold']:
+    pass
+    pass
     pass
     pass
                     issues.append(f"Drift detected in {column}: PSI={psi:.3f}")
@@ -786,11 +958,15 @@ class DataDriftDetector:
         if ks_pvalue < self.config['drift_ks_threshold']:
     pass
     pass
+    pass
+    pass
                     issues.append(f"Distribution drift in {column}: KS p - value={ks_pvalue:.3f}")
 
         # Overall drift severity
         severity, ValidationSeverity.INFO
         if len(issues) > 5:
+    pass
+    pass
     pass
     pass
             severity, ValidationSeverity.CRITICAL
@@ -808,10 +984,14 @@ class DataDriftDetector:
     def _compute_statistics(self, df: pd.DataFrame) -> Dict[str, Dict[str, float]]:
     pass
     pass
+    pass
+    pass
         """Compute statistics for drift detection."""
         stats = {}
 
         for column in df.select_dtypes(include=[np.number]).columns:
+    pass
+    pass
     pass
     pass
             stats[column] = {
@@ -828,12 +1008,18 @@ class DataDriftDetector:
     def _calculate_psi(self, reference: pd.Series, current: pd.Series) -> float:
     pass
     pass
+    pass
+    pass
         """Calculate Population Stability Index."""
         try:
         # Create bins for both distributions
             combined, pd.concat([reference, current])
             bins, pd.cut(combined, bins = 10, duplicates='drop')
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -851,13 +1037,19 @@ class DataDriftDetector:
         for bin_name in ref_probs.index:
     pass
     pass
+    pass
+    pass
         if bin_name in curr_probs.index:
+    pass
+    pass
     pass
     pass
                     ref_p, ref_probs[bin_name]
                     curr_p, curr_probs[bin_name]
 
         if ref_p > 0 and curr_p > 0:
+    pass
+    pass
     pass
     pass
                         psi += (curr_p - ref_p) * np.log(curr_p / ref_p)
@@ -870,6 +1062,8 @@ class DataDriftDetector:
     def _calculate_ks_test(self, reference: pd.Series, current: pd.Series) -> Tuple[float, float]:
     pass
     pass
+    pass
+    pass
         """Calculate Kolmogorov - Smirnov test statistic and p - value."""
         try:
         # Remove NaN values
@@ -880,7 +1074,13 @@ class DataDriftDetector:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if len(ref_clean) > 0 and len(curr_clean) > 0:
+    pass
+    pass
     pass
     pass
                 ks_stat, p_value, stats.ks_2samp(ref_clean, curr_clean)
@@ -897,6 +1097,8 @@ class DataQualityScorer:
     def __init__(self, weights: Optional[Dict[str, float]] = None):
     pass
     pass
+    pass
+    pass
         self.weights, weights or {
             'completeness': 0.25,
             'consistency': 0.25,
@@ -906,6 +1108,8 @@ class DataQualityScorer:
         self.logger, system_logger.getChild("DataQualityScorer")
 
     def calculate_quality_score(self, df: pd.DataFrame, validation_result: MLValidationResult) -> QualityScore:
+    pass
+    pass
     pass
     pass
         """Calculate overall data quality score."""
@@ -946,6 +1150,8 @@ class DataQualityScorer:
     def _calculate_consistency_score(self, df: pd.DataFrame, validation_result: MLValidationResult) -> float:
     pass
     pass
+    pass
+    pass
         """Calculate consistency score based on validation issues."""
         base_score, 1.0
 
@@ -960,6 +1166,8 @@ class DataQualityScorer:
         return max(base_score, 0.0)
 
     def _calculate_accuracy_score(self, df: pd.DataFrame, validation_result: MLValidationResult) -> float:
+    pass
+    pass
     pass
     pass
         """Calculate accuracy score based on validation issues."""
@@ -978,6 +1186,8 @@ class DataQualityScorer:
     def _calculate_timeliness_score(self, df: pd.DataFrame, validation_result: MLValidationResult) -> float:
     pass
     pass
+    pass
+    pass
         """Calculate timeliness score based on validation issues."""
         base_score, 1.0
 
@@ -988,6 +1198,8 @@ class DataQualityScorer:
         return max(base_score, 0.0)
 
     def _get_grade(self, score: float) -> str:
+    pass
+    pass
     pass
     pass
         """Convert score to letter grade."""
@@ -1001,6 +1213,8 @@ class AdvancedMLValidator:
     """Comprehensive ML data quality validator."""
 
     def __init__(self, config: Optional[Dict[str, Any]] = None):
+    pass
+    pass
     pass
     pass
         self.config, config or self._get_default_config()
@@ -1020,6 +1234,8 @@ class AdvancedMLValidator:
     def _get_default_config(self) -> Dict[str, Any]:
     pass
     pass
+    pass
+    pass
         return {
             "timestamp_column": "timestamp",
             "target_column": "target",
@@ -1035,6 +1251,8 @@ class AdvancedMLValidator:
         }
 
     def set_reference_data(self, reference_data: pd.DataFrame):
+    pass
+    pass
     pass
     pass
         """Set reference data for drift detection."""
@@ -1061,15 +1279,21 @@ class AdvancedMLValidator:
         if self.config["validate_distributions"]:
     pass
     pass
+    pass
+    pass
             result.distribution_issues, self.statistical_validator.validate_data_distributions(df)
 
         if self.config["validate_outliers"]:
+    pass
+    pass
     pass
     pass
             result.outlier_issues, self.statistical_validator.validate_outliers(df)
 
         # Time series validation
         if self.config["validate_time_series"] and timestamp_col in df.columns:
+    pass
+    pass
     pass
     pass
             result.time_series_issues, self.time_series_validator.validate_time_series_quality(
@@ -1080,10 +1304,14 @@ class AdvancedMLValidator:
         if self.config["validate_financial"]:
     pass
     pass
+    pass
+    pass
             result.financial_issues, self.financial_validator.validate_financial_data(df)
 
         # Feature correlation validation
         if self.config["validate_correlations"]:
+    pass
+    pass
     pass
     pass
             result.correlation_issues, self.correlation_validator.validate_feature_correlations(df)
@@ -1092,12 +1320,16 @@ class AdvancedMLValidator:
         if self.config["validate_target"] and target_col:
     pass
     pass
+    pass
+    pass
             result.target_issues, self.target_validator.validate_target_variable(
                 df, target_col, timestamp_col
             )
 
         # Drift detection
         if self.config["detect_drift"] and self.drift_detector:
+    pass
+    pass
     pass
     pass
             result.drift_report, self.drift_detector.detect_drift(df)
@@ -1118,6 +1350,8 @@ class AdvancedMLValidator:
         if result.drift_report:
     pass
     pass
+    pass
+    pass
             total_issues += len(result.drift_report.issues)
 
         result.is_valid, total_issues == 0
@@ -1130,6 +1364,8 @@ class AdvancedMLValidator:
 
         # Log results
         if result.is_valid:
+    pass
+    pass
     pass
     pass
         self.logger.info(f"✅ ML data validation passed (Score: {result.quality_score.overall:.3f}, Grade: {result.quality_score.grade})")

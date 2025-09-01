@@ -63,11 +63,15 @@ class EnsembleConfig:
 def get_ensemble_config() -> EnsembleConfig:
     pass
     pass
+    pass
+    pass
     """Get ensemble configuration."""
     return EnsembleConfig()
 
 
 def get_ensemble_search_space() -> dict[str, dict[str, Any]]:
+    pass
+    pass
     pass
     pass
     """Get search space for ensemble optimization."""

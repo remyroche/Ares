@@ -19,20 +19,25 @@ def handle_missing_data(
     if strategy == "drop":
     pass
     pass
+    pass
         return df.dropna()
     if strategy == "fill":
+    pass
     pass
     pass
         return df.fillna(fill_value)
     if strategy == "mean":
     pass
     pass
+    pass
         return df.fillna(df.mean(numeric_only=True))
     if strategy == "median":
     pass
     pass
+    pass
         return df.fillna(df.median(numeric_only=True))
     if strategy == "mode":
+    pass
     pass
     pass
         mode_vals = df.mode().iloc[0]
@@ -40,12 +45,15 @@ def handle_missing_data(
     if strategy == "ffill":
     pass
     pass
+    pass
         return df.fillna(method="ffill")
     if strategy == "bfill":
     pass
     pass
+    pass
         return df.fillna(method="bfill")
     if strategy == "knn":
+    pass
     pass
     pass
         return df.fillna(df.mean(numeric_only=True))

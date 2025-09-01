@@ -21,6 +21,7 @@ class Step5RegimeDataSplittingValidator(BaseValidator):
     def __init__(self, config: dict[str, Any]) -> None:
     pass
     pass
+    pass
         super().__init__("step05_regime_data_splitting", config)
         self.logger, system_logger.getChild("Validator.Step5Split")
 
@@ -38,11 +39,13 @@ class Step5RegimeDataSplittingValidator(BaseValidator):
         if not os.path.isdir(regime_dir):
     pass
     pass
+    pass
         self.logger.warning(f"⚠️ regime_data directory not found: {regime_dir}")
         return False
 
         files = [f for f in os.listdir(regime_dir) if f.endswith(".parquet")]
         if not files:
+    pass
     pass
     pass
         self.logger.warning("⚠️ No regime parquet files found")
@@ -56,10 +59,13 @@ class Step5RegimeDataSplittingValidator(BaseValidator):
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         self.logger.info(f"✅ Sample regime file loaded: {sample} shape={df.shape}")
             req_cols = ["timestamp", "regime"]
             missing = [c for c in req_cols if c not in df.columns]
         if missing:
+    pass
     pass
     pass
         self.logger.warning(f"⚠️ Missing required columns in sample: {missing}")
@@ -77,6 +83,7 @@ async def run_validator(
     return {"step_name": "step05_regime_data_splitting", "validation_passed": ok}
 
 if __name__ == "__main__":
+    pass
     pass
     pass
     import asyncio

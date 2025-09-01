@@ -23,6 +23,12 @@ def normalize_dual_confidence(
     except Exception as e:
         pass
     pass
+    except Exception as e:
+        pass
+    pass
+    except Exception as e:
+        pass
+    pass
             logger.info(
                 {
                     "msg": "dual_confidence_compute",
@@ -45,9 +51,13 @@ import def _clamp01
 def _clamp01(value: float) -> float:
     pass
     pass
+    pass
+    pass
     return 0.0 if value < 0.0 else min(value, 1.0)
 
 def direction_to_sign(direction: str) -> int:
+    pass
+    pass
     pass
     pass
     """Map a textual direction to a signed integer.
@@ -59,13 +69,19 @@ def direction_to_sign(direction: str) -> int:
     if not isinstance(direction, str):
     pass
     pass
+    pass
+    pass
         return 0
     d, direction.strip().upper()
     if d in {"LONG", "BUY", "UP", "BULL", "BULLISH"}:
     pass
     pass
+    pass
+    pass
         return 1
     if d in {"SHORT", "SELL", "DOWN", "BEAR", "BEARISH"}:
+    pass
+    pass
     pass
     pass
         return - 1
@@ -93,7 +109,11 @@ def aggregate_directional_confidences(
     for m in models:
     pass
     pass
+    pass
+    pass
         if not isinstance(m, dict):
+    pass
+    pass
     pass
     pass
             continue
@@ -103,10 +123,14 @@ def aggregate_directional_confidences(
         if sign == 0:
     pass
     pass
+    pass
+    pass
         # Ignore non - directional inputs for aggregation
             continue
         weight, float(m.get("weight", 1.0))
         if weight <= 0.0:
+    pass
+    pass
     pass
     pass
             continue
@@ -115,6 +139,8 @@ def aggregate_directional_confidences(
         count_active += 1
 
     if count_active == 0 or total_weight == 0.0:
+    pass
+    pass
     pass
     pass
         return {"direction": "HOLD", "confidence": 0.0, "signed_value": 0.0, "count": 0}

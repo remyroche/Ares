@@ -12,6 +12,7 @@ import pandas as pd
 if TYPE_CHECKING:
     pass
     pass
+    pass
     pass  # TODO: Add proper implementation
 @dataclass
 class EventConfig:
@@ -34,6 +35,7 @@ class EventTriggerIndexer:
     """
 
     def __init__(self, config: dict[str, Any]) -> None:
+    pass
     pass
     pass
         self.config = config
@@ -61,7 +63,9 @@ class EventTriggerIndexer:
     def _weighted_intensity(self, label: str, intensity: float) -> float:
     pass
     pass
+    pass
         if not self.event_cfg.use_reliability_weighting:
+    pass
     pass
     pass
             return float(intensity)
@@ -71,11 +75,13 @@ class EventTriggerIndexer:
     def _rising_edge(self, series: pd.Series, threshold: float) -> pd.Series:
     pass
     pass
+    pass
         above = (series >= threshold).astype(int)
         # Rising edge: 0 -> 1 transition
         return (above.diff().fillna(0) > 0).astype(bool)
 
     def _make_windows(self, indices: np.ndarray) -> np.ndarray:
+    pass
     pass
     pass
         pre = self.event_cfg.pre_window
@@ -88,6 +94,7 @@ class EventTriggerIndexer:
     def _interval_iou(a: np.ndarray, b: np.ndarray) -> float:
     pass
     pass
+    pass
         # a, b: [start, end] inclusive windows
         inter_start = max(a[0], b[0])
         inter_end = min(a[1], b[1])
@@ -98,7 +105,9 @@ class EventTriggerIndexer:
     def _nms(self, event_rows: list[dict]) -> list[dict]:
     pass
     pass
+    pass
         if not event_rows:
+    pass
     pass
     pass
             return []
@@ -113,7 +122,9 @@ class EventTriggerIndexer:
         for i, o in enumerate(order):
     pass
     pass
+    pass
             if suppressed[i]:
+    pass
     pass
     pass
                 continue
@@ -123,7 +134,9 @@ class EventTriggerIndexer:
             for j in range(i + 1, len(order)):
     pass
     pass
+    pass
                 if suppressed[j]:
+    pass
     pass
     pass
                     continue
@@ -131,10 +144,12 @@ class EventTriggerIndexer:
                 if self._interval_iou(win_o, windows[o2]) >= iou_thr:
     pass
     pass
+    pass
                     suppressed[j] = True
         return [event_rows[k] for k in keep]
 
     def _apply_cooldown(self, sorted_events: list[dict]) -> list[dict]:
+    pass
     pass
     pass
         # Enforce per-label cooldown on sorted-by-time events
@@ -144,9 +159,11 @@ class EventTriggerIndexer:
         for ev in sorted_events:
     pass
     pass
+    pass
             lab = ev["event_label"]
             last = last_idx_by_label.get(lab, -(10**9))
             if ev["row_index"] - last < cooldown:
+    pass
     pass
     pass
                 continue
@@ -165,6 +182,7 @@ class EventTriggerIndexer:
         if int_cols:
     pass
     pass
+    pass
             return combined_df
         # Try to compute intensities using CompositeHMMRegimeSystem
         try:
@@ -173,8 +191,11 @@ class EventTriggerIndexer:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             labels = candidate_labels
             if labels is None:
+    pass
     pass
     pass
                 labels = meta.all_labels
@@ -184,7 +205,9 @@ class EventTriggerIndexer:
             if act_cols:
     pass
     pass
+    pass
                 for ac in act_cols:
+    pass
     pass
     pass
                     out[ac.replace("active_", "intensity_")] = combined_df[ac].astype(
@@ -202,8 +225,10 @@ class EventTriggerIndexer:
                 for lab in labels:
     pass
     pass
+    pass
                     vals: list[float] = []
                     for i in range(len(price_data)):
+    pass
     pass
     pass
                         p_slice = price_data.iloc[: i + 1]
@@ -211,6 +236,8 @@ class EventTriggerIndexer:
                         feats = {}
                         try:
                             feats.update(meta._calculate_technical_indicators(p_slice))
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -225,12 +252,16 @@ class EventTriggerIndexer:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
                         except Exception as e:
                             self.logger.warning(
                                 f"Volume features failed at i={i} for {lab}: {e}",
                             )
                         try:
                             feats.update(meta._calculate_price_action_patterns(p_slice))
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -245,12 +276,16 @@ class EventTriggerIndexer:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
                         except Exception as e:
                             self.logger.warning(
                                 f"Volatility patterns failed at i={i} for {lab}: {e}",
                             )
                         try:
                             feats.update(meta._calculate_momentum_patterns(p_slice))
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -265,6 +300,8 @@ class EventTriggerIndexer:
                                     lab = p_slice,
                                     v_slice = feats,
                                 ),
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -306,6 +343,7 @@ class EventTriggerIndexer:
         if combined_df is None or combined_df.empty:
     pass
     pass
+    pass
             return pd.DataFrame()
 
         # Ensure intensities are available
@@ -318,6 +356,7 @@ class EventTriggerIndexer:
         if candidate_labels is None:
     pass
     pass
+    pass
             # Look for intensity_ columns: intensity_<LABEL>
             intensity_cols = [
                 c for c in combined_df.columns if c.startswith("intensity_")
@@ -325,6 +364,7 @@ class EventTriggerIndexer:
             candidate_labels = [c.replace("intensity_", "") for c in intensity_cols]
         labels = list(candidate_labels)
         if not labels:
+    pass
     pass
     pass
             return pd.DataFrame()
@@ -336,14 +376,17 @@ class EventTriggerIndexer:
         for lab in labels:
     pass
     pass
+    pass
             thr = float(self.activation_thresholds.get(lab, 0.5))
             inten_col = f"intensity_{lab}"
             if inten_col not in combined_df.columns:
     pass
     pass
+    pass
                 continue
             series = pd.to_numeric(combined_df[inten_col], errors="coerce").fillna(0.0)
             if self.event_cfg.use_rising_edge_only:
+    pass
     pass
     pass
                 edges = self._rising_edge(series = series, threshold = thr)
@@ -359,6 +402,7 @@ class EventTriggerIndexer:
             for ridx in trigger_idx:
     pass
     pass
+    pass
                 ts = base_index[ridx]
                 intensity = float(series.iat[ridx])
                 weighted = self._weighted_intensity(label = lab, intensity = intensity)
@@ -367,12 +411,15 @@ class EventTriggerIndexer:
                 if self.event_cfg.preserve_secondary_labels:
     pass
     pass
+    pass
                     for other_lab, colname in secondary_cols.items():
+    pass
     pass
     pass
                         inten2 = float(combined_df[colname].iat[ridx])
                         thr2 = float(self.activation_thresholds.get(other_lab, 0.5))
                         if inten2 >= thr2:
+    pass
     pass
     pass
                             secondary.append(other_lab)
@@ -391,6 +438,7 @@ class EventTriggerIndexer:
                 )
 
         if not events:
+    pass
     pass
     pass
             return pd.DataFrame()

@@ -11,8 +11,11 @@ import numpy as np
 def _safe_get(d: dict, k: Any, default: float = 0.0) -> float:
     pass
     pass
+    pass
     try:
         v = d.get(k, default)
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -25,9 +28,11 @@ def _safe_get(d: dict, k: Any, default: float = 0.0) -> float:
 def _normalize(weights: dict[str , float]) -> dict[str, float]:
     pass
     pass
+    pass
     vals = np.array([max(0.0, float(v)) for v in weights.values()], dtype=float)
     s = float(vals.sum())
     if s <= 0:
+    pass
     pass
     pass
         return {k: 0.0 for k in weights}
@@ -90,7 +95,9 @@ def aggregate_weights(
     if specialized_candidates:
     pass
     pass
+    pass
         for k in top_k:
+    pass
     pass
     pass
             cand = specialized_candidates.get(k, {})
@@ -103,6 +110,7 @@ def aggregate_weights(
             if k == current_cluster and exit_hazard is not None:
     pass
     pass
+    pass
                 gate *= max(0.0, 1.0 - float(exit_hazard))
             score = max(0.0, float(conf)) * max(0.0, float(rel)) * gate
             weights[f"cluster_{k}"] = score
@@ -112,9 +120,11 @@ def aggregate_weights(
     if generalist_score is not None:
     pass
     pass
+    pass
         # Generalist can be used as a safety net; scale it by (1 - max exit hazard)
         g = 1.0
         if exit_hazard is not None:
+    pass
     pass
     pass
             g = max(0.0, 1.0 - float(exit_hazard))

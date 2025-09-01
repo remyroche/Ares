@@ -24,11 +24,15 @@ class PurgedKFoldTime:
         if not isinstance(X, pd.DataFrame):
     pass
     pass
+    pass
+    pass
             msg = "X must be a pandas DataFrame with an index"
             raise ValueError(msg)
         index, X.index
         n_samples, len(X)
         if self.n_splits < 2 or self.n_splits > n_samples:
+    pass
+    pass
     pass
     pass
             msg = "n_splits must be at least 2 and at most n_samples"
@@ -44,6 +48,8 @@ class PurgedKFoldTime:
         for fold_size in fold_sizes:
     pass
     pass
+    pass
+    pass
             start, stop, current, current + fold_size
             folds.append((start, stop))
             current, stop
@@ -53,8 +59,12 @@ class PurgedKFoldTime:
         for _i, (val_start_i, val_stop_i) in enumerate(folds):
     pass
     pass
+    pass
+    pass
             val_idx, np.arange(val_start_i, val_stop_i)
         if is_time:
+    pass
+    pass
     pass
     pass
                 val_start_time, index[val_start_i]
@@ -94,6 +104,8 @@ class PurgedKFoldTime:
             yield train_idx, val_idx
 
     def get_n_splits(self, X = None, y = None, groups = None) -> int:
+    pass
+    pass
     pass
     pass
         return self.n_splits

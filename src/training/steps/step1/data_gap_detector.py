@@ -33,12 +33,16 @@ class DataGapDetector:
     def __init__(self, data_cache_path: str = "data_cache") -> None:
     pass
     pass
+    pass
         self.data_cache_path, Path(data_cache_path)
         self.data_cache_path.mkdir(exist_ok = True)
 
         # Import the gap filler for immediate gap filling
         try:
             from .missing_data_downloader_and_gap_filler import (
+    except Exception as e:
+        pass
+import except Exception as e:
     except Exception as e:
         pass
 import except Exception as e:
@@ -74,6 +78,7 @@ import MissingDataDownloaderAndGapFiller,
     def detect_missing_data(self, symbol: str, exchange: str, start_date: datetime | None, None, end_date: datetime | None, None) -> dict:
     pass
     pass
+    pass
         """Detect missing data for a specific symbol and exchange.
 
         Args:
@@ -91,9 +96,11 @@ import MissingDataDownloaderAndGapFiller,
         if start_date is None:
     pass
     pass
+    pass
             start_date, datetime.now() - timedelta(days = 365 * 2)
             logger.info(f"📅 No start_date provided, using default: {start_date.date()} (2 years ago)")
         if end_date is None:
+    pass
     pass
     pass
             end_date, datetime.now()
@@ -160,6 +167,7 @@ import MissingDataDownloaderAndGapFiller,
         if total_missing > 0:
     pass
     pass
+    pass
             logger.warning(f"⚠️  {total_missing} missing data files detected!")
         else:
             logger.info("✅ All expected data files are present!")
@@ -167,6 +175,7 @@ import MissingDataDownloaderAndGapFiller,
         return results
 
     def _detect_missing_aggtrades(self, symbol: str, exchange: str, start_date: datetime, end_date: datetime) -> dict:
+    pass
     pass
     pass
         """Detect missing aggtrades daily files."""
@@ -184,11 +193,14 @@ import MissingDataDownloaderAndGapFiller,
         for csv_file in csv_files:
     pass
     pass
+    pass
         try:
         # Extract date from filename
                 date_str, csv_file.stem.split("_")[-1]
                 file_date, datetime.strptime(date_str, "%Y%m%d").date()
                 files_by_date[file_date] = csv_file
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -200,11 +212,14 @@ import MissingDataDownloaderAndGapFiller,
         for parquet_file in parquet_files:
     pass
     pass
+    pass
         try:
         # Extract date from filename
                 date_str, parquet_file.stem.split("_")[-1]
                 file_date, datetime.strptime(date_str, "%Y%m%d").date()
                 files_by_date[file_date] = parquet_file
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -231,6 +246,7 @@ import MissingDataDownloaderAndGapFiller,
     def _detect_missing_klines(self, symbol: str, exchange: str, start_date: datetime, end_date: datetime) -> dict:
     pass
     pass
+    pass
         """Detect missing klines monthly files."""
         # Get both CSV and Parquet files
         csv_pattern, f"klines_{exchange}_{symbol}_1m_*.csv"
@@ -246,11 +262,14 @@ import MissingDataDownloaderAndGapFiller,
         for csv_file in csv_files:
     pass
     pass
+    pass
         try:
         # Extract date from filename
                 date_str, csv_file.stem.split("_")[-1]
                 file_date, datetime.strptime(date_str, "%Y%m").date()
                 files_by_month[file_date] = csv_file
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -262,11 +281,14 @@ import MissingDataDownloaderAndGapFiller,
         for parquet_file in parquet_files:
     pass
     pass
+    pass
         try:
         # Extract date from filename
                 date_str, parquet_file.stem.split("_")[-1]
                 file_date, datetime.strptime(date_str, "%Y%m").date()
                 files_by_month[file_date] = parquet_file
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -281,6 +303,7 @@ import MissingDataDownloaderAndGapFiller,
             expected_months.append(current_date)
         # Move to next month
         if current_date.month == 12:
+    pass
     pass
     pass
                 current_date, current_date.replace(year = current_date.year + 1, month = 1)
@@ -299,6 +322,7 @@ import MissingDataDownloaderAndGapFiller,
     def _detect_missing_futures(self, symbol: str, exchange: str, start_date: datetime, end_date: datetime) -> dict:
     pass
     pass
+    pass
         """Detect missing futures monthly files."""
         # Get both CSV and Parquet files
         csv_pattern, f"futures_{exchange}_{symbol}_*.csv"
@@ -314,11 +338,14 @@ import MissingDataDownloaderAndGapFiller,
         for csv_file in csv_files:
     pass
     pass
+    pass
         try:
         # Extract date from filename
                 date_str, csv_file.stem.split("_")[-1]
                 file_date, datetime.strptime(date_str, "%Y%m").date()
                 files_by_month[file_date] = csv_file
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -330,11 +357,14 @@ import MissingDataDownloaderAndGapFiller,
         for parquet_file in parquet_files:
     pass
     pass
+    pass
         try:
         # Extract date from filename
                 date_str, parquet_file.stem.split("_")[-1]
                 file_date, datetime.strptime(date_str, "%Y%m").date()
                 files_by_month[file_date] = parquet_file
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -349,6 +379,7 @@ import MissingDataDownloaderAndGapFiller,
             expected_months.append(current_date)
         # Move to next month
         if current_date.month == 12:
+    pass
     pass
     pass
                 current_date, current_date.replace(year = current_date.year + 1, month = 1)
@@ -371,6 +402,7 @@ import MissingDataDownloaderAndGapFiller,
         context="data_gap_detector.detect_aggtrades_gaps"
     )
     def detect_aggtrades_gaps(self, symbol: str, exchange: str, min_gap_seconds: int, 10) -> list[dict]:
+    pass
     pass
     pass
         """Detect gaps within aggtrades files.
@@ -398,8 +430,11 @@ import MissingDataDownloaderAndGapFiller,
         for file_path in all_files:
     pass
     pass
+    pass
         try:
         # Read the file
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -407,11 +442,13 @@ import MissingDataDownloaderAndGapFiller,
         if file_path.suffix.lower() == ".csv":
     pass
     pass
+    pass
                     df, pd.read_csv(file_path, parse_dates=["timestamp"])
                 else:
                     df, pd.read_parquet(file_path)
 
         if len(df) < 2:
+    pass
     pass
     pass
                     continue
@@ -428,7 +465,9 @@ import MissingDataDownloaderAndGapFiller,
         for idx, row in gap_rows.iterrows():
     pass
     pass
+    pass
         if idx > 0:
+    pass
     pass
     pass
                         gap_start, df.loc[idx - 1, "timestamp"]
@@ -452,6 +491,7 @@ import MissingDataDownloaderAndGapFiller,
 
     @with_tracing_span("generate_missing_data_report")
     def generate_missing_data_report(self, symbol: str, exchange: str) -> str:
+    pass
     pass
     pass
         """Generate a comprehensive missing data report.
@@ -498,12 +538,14 @@ import MissingDataDownloaderAndGapFiller,
         for date in missing_data["missing_aggtrades_days"][:20]:
     pass
     pass
-            report += f"• {date}\\\n"
+    pass
+            report += f"• {date}\\\\n"
 
         if len(missing_data["missing_aggtrades_days"]) > 20:
     pass
     pass
-            report += f"... and {len(missing_data['missing_aggtrades_days']) - 20} more days\\\n"
+    pass
+            report += f"... and {len(missing_data['missing_aggtrades_days']) - 20} more days\\\\n"
 
         report += f"""
 📋 MISSING KLINES MONTHS (first 10):
@@ -513,12 +555,14 @@ import MissingDataDownloaderAndGapFiller,
         for month in missing_data["missing_klines_months"][:10]:
     pass
     pass
-            report += f"• {month}\\\n"
+    pass
+            report += f"• {month}\\\\n"
 
         if len(missing_data["missing_klines_months"]) > 10:
     pass
     pass
-            report += f"... and {len(missing_data['missing_klines_months']) - 10} more months\\\n"
+    pass
+            report += f"... and {len(missing_data['missing_klines_months']) - 10} more months\\\\n"
 
         report += f"""
 📋 MISSING FUTURES MONTHS (first 10):
@@ -528,12 +572,14 @@ import MissingDataDownloaderAndGapFiller,
         for month in missing_data["missing_futures_months"][:10]:
     pass
     pass
-            report += f"• {month}\\\n"
+    pass
+            report += f"• {month}\\\\n"
 
         if len(missing_data["missing_futures_months"]) > 10:
     pass
     pass
-            report += f"... and {len(missing_data['missing_futures_months']) - 10} more months\\\n"
+    pass
+            report += f"... and {len(missing_data['missing_futures_months']) - 10} more months\\\\n"
 
         report += f"""
 {'='*60}

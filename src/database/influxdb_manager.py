@@ -82,7 +82,9 @@ class InfluxDBManager:
         for col in ["open", "high", "low", "close", "volume"]:
     pass
     pass
+    pass
             if col in df_copy.columns:
+    pass
     pass
     pass
                 df_copy[col] = pd.to_numeric(df_copy[col], errors="coerce")
@@ -129,7 +131,9 @@ class InfluxDBManager:
         if isinstance(df, list):
     pass
     pass
+    pass
             if not df:
+    pass
     pass
     pass
                 return pd.DataFrame()
@@ -138,10 +142,12 @@ class InfluxDBManager:
         if df.empty:
     pass
     pass
+    pass
             return pd.DataFrame()
 
         # Convert timestamp to milliseconds integer as expected by the rest of the application
         if "timestamp" in df.columns:
+    pass
     pass
     pass
             df["timestamp"] = pd.to_datetime(df["timestamp"]).astype("int64") // 1_000_000
@@ -149,6 +155,7 @@ class InfluxDBManager:
             # Validate that timestamps are reasonable (>= 2000-01-01)
             min_reasonable_ts = 946684800000  # 2000-01-01 in milliseconds
             if df["timestamp"].min() < min_reasonable_ts:
+    pass
     pass
     pass
                 self.logger.error(
@@ -162,7 +169,9 @@ class InfluxDBManager:
         for col in ["open", "high", "low", "close", "volume"]:
     pass
     pass
+    pass
             if col in df.columns:
+    pass
     pass
     pass
                 df[col] = pd.to_numeric(df[col], errors="coerce")
@@ -170,6 +179,7 @@ class InfluxDBManager:
         return df
 
     def close(self) -> None:
+    pass
     pass
     pass
         """Closes the InfluxDB client."""

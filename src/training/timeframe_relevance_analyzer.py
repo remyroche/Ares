@@ -32,6 +32,7 @@ class TimeframeRelevanceAnalyzer:
     def __init__(self, config: dict[str, Any]):
     pass
     pass
+    pass
         """Initialize the timeframe relevance analyzer."""
         self.config = config
         self.logger = system_logger.getChild("TimeframeRelevanceAnalyzer")
@@ -98,6 +99,7 @@ class TimeframeRelevanceAnalyzer:
         for timeframe, data in data_dict.items():
     pass
     pass
+    pass
             self.logger.info(f"⏰ Analyzing timeframe: {timeframe}")
 
             timeframe_analysis = await self._analyze_single_timeframe(
@@ -155,11 +157,13 @@ class TimeframeRelevanceAnalyzer:
         if len(data) < self.analysis_config["min_data_points"]:
     pass
     pass
+    pass
             analysis["insufficient_data"] = True
             return analysis
 
         # Calculate volatility metrics
         if 'close' in data.columns:
+    pass
     pass
     pass
             returns = data['close'].pct_change().dropna()
@@ -198,7 +202,9 @@ class TimeframeRelevanceAnalyzer:
         for timeframe, data in data_dict.items():
     pass
     pass
+    pass
             if 'close' in data.columns and len(data) > 0:
+    pass
     pass
     pass
                 returns = data['close'].pct_change().dropna()
@@ -215,10 +221,13 @@ class TimeframeRelevanceAnalyzer:
         for i, tf1 in enumerate(timeframes):
     pass
     pass
+    pass
             for j, tf2 in enumerate(timeframes[i+1:], i+1):
     pass
     pass
+    pass
                 if tf1 in volatility_data and tf2 in volatility_data:
+    pass
     pass
     pass
                     # Calculate correlation of rolling volatilities
@@ -245,7 +254,9 @@ class TimeframeRelevanceAnalyzer:
         for timeframe, data in data_dict.items():
     pass
     pass
+    pass
             if len(data) < self.analysis_config["min_data_points"]:
+    pass
     pass
     pass
                 continue
@@ -281,7 +292,9 @@ class TimeframeRelevanceAnalyzer:
         for timeframe, analysis in timeframe_analysis.items():
     pass
     pass
+    pass
             if analysis.get("insufficient_data", False):
+    pass
     pass
     pass
                 continue
@@ -311,8 +324,10 @@ class TimeframeRelevanceAnalyzer:
         if total_score > 0:
     pass
     pass
+    pass
             normalized_weights = {}
             for timeframe, weight in weights.items():
+    pass
     pass
     pass
                 normalized_weight = weight / total_score
@@ -328,7 +343,9 @@ class TimeframeRelevanceAnalyzer:
             if total_normalized > 0:
     pass
     pass
+    pass
                 for timeframe in normalized_weights:
+    pass
     pass
     pass
                     normalized_weights[timeframe] /= total_normalized
@@ -365,7 +382,9 @@ class TimeframeRelevanceAnalyzer:
         for timeframe, analysis in timeframe_analysis.items():
     pass
     pass
+    pass
             if analysis.get("insufficient_data", False):
+    pass
     pass
     pass
                 recommendations["timeframe_recommendations"][timeframe] = {
@@ -379,6 +398,7 @@ class TimeframeRelevanceAnalyzer:
             volatility = analysis["volatility_metrics"].get("daily_volatility", 0.5)
 
             if relevance_score < 0.3:
+    pass
     pass
     pass
                 recommendations["timeframe_recommendations"][timeframe] = {
@@ -402,6 +422,7 @@ class TimeframeRelevanceAnalyzer:
         # Ensemble recommendations
         weights = ensemble_config.get("optimized_weights", {})
         if weights:
+    pass
     pass
     pass
             recommendations["ensemble_recommendations"] = {
@@ -431,6 +452,7 @@ class TimeframeRelevanceAnalyzer:
     def _calculate_max_drawdown(self, prices: pd.Series) -> float:
     pass
     pass
+    pass
         """Calculate maximum drawdown."""
         peak = prices.expanding().max()
         drawdown = (prices - peak) / peak
@@ -439,12 +461,14 @@ class TimeframeRelevanceAnalyzer:
     def _calculate_volatility_stability(self, returns: pd.Series) -> float:
     pass
     pass
+    pass
         """Calculate volatility regime stability."""
         rolling_vol = returns.rolling(20).std()
         vol_changes = rolling_vol.pct_change().abs()
         return 1.0 - vol_changes.mean()  # Higher is more stable
 
     def _count_volatility_regime_changes(self, returns: pd.Series) -> int:
+    pass
     pass
     pass
         """Count volatility regime changes."""
@@ -462,6 +486,7 @@ class TimeframeRelevanceAnalyzer:
         if 'close' not in data1.columns or 'close' not in data2.columns:
     pass
     pass
+    pass
             return 0.0
 
         returns1 = data1['close'].pct_change().dropna()
@@ -470,6 +495,7 @@ class TimeframeRelevanceAnalyzer:
         # Align data
         common_index = returns1.index.intersection(returns2.index)
         if len(common_index) < 100:
+    pass
     pass
     pass
             return 0.0
@@ -496,10 +522,12 @@ class TimeframeRelevanceAnalyzer:
         if 'close' not in data.columns:
     pass
     pass
+    pass
             return metrics
 
         returns = data['close'].pct_change().dropna()
         if len(returns) < 100:
+    pass
     pass
     pass
             return metrics
@@ -514,6 +542,7 @@ class TimeframeRelevanceAnalyzer:
         # Calculate leverage efficiency
         target_leverage = self.leverage_config["target_leverage"]
         if max_safe_leverage >= target_leverage:
+    pass
     pass
     pass
             metrics["leverage_efficiency"] = target_leverage / max_safe_leverage
@@ -545,6 +574,7 @@ class TimeframeRelevanceAnalyzer:
         if 'close' in data.columns and len(data) > 100:
     pass
     pass
+    pass
             returns = data['close'].pct_change().dropna()
 
             # Signal stability (consistency of directional moves)
@@ -568,6 +598,7 @@ class TimeframeRelevanceAnalyzer:
     def _calculate_signal_persistence(self, returns: pd.Series) -> float:
     pass
     pass
+    pass
         """Calculate signal persistence."""
         # Count consecutive moves in the same direction
         direction = np.sign(returns)
@@ -577,7 +608,9 @@ class TimeframeRelevanceAnalyzer:
         for i in range(1, len(direction)):
     pass
     pass
+    pass
             if direction.iloc[i] == direction.iloc[i-1]:
+    pass
     pass
     pass
                 persistence += 1
@@ -591,6 +624,7 @@ class TimeframeRelevanceAnalyzer:
         """Calculate overall relevance score for a timeframe."""
 
         if analysis.get("insufficient_data", False):
+    pass
     pass
     pass
             return 0.0
@@ -632,6 +666,7 @@ class TimeframeRelevanceAnalyzer:
         if 'close' not in data.columns:
     pass
     pass
+    pass
             return metrics
 
         returns = data['close'].pct_change().dropna()
@@ -657,6 +692,7 @@ class TimeframeRelevanceAnalyzer:
     def _calculate_signal_decay_rate(self, returns: pd.Series) -> float:
     pass
     pass
+    pass
         """Calculate signal decay rate."""
         # Calculate autocorrelation at different lags
         autocorr_1 = returns.autocorr(lag=1)
@@ -667,6 +703,7 @@ class TimeframeRelevanceAnalyzer:
         if autocorr_1 > 0:
     pass
     pass
+    pass
             decay_rate = (autocorr_1 - autocorr_10) / 10.0
         else:
             decay_rate = 0.0
@@ -674,6 +711,7 @@ class TimeframeRelevanceAnalyzer:
         return min(1.0, max(0.0, decay_rate))
 
     def _calculate_signal_noise_ratio(self, returns: pd.Series) -> float:
+    pass
     pass
     pass
         """Calculate signal-to-noise ratio."""
@@ -687,12 +725,14 @@ class TimeframeRelevanceAnalyzer:
         if noise_power > 0:
     pass
     pass
+    pass
             snr = signal_power / noise_power
             return min(1.0, snr / 10.0)  # Normalize
         else:
             return 0.0
 
     def _calculate_signal_consistency(self, returns: pd.Series) -> float:
+    pass
     pass
     pass
         """Calculate signal consistency."""
@@ -707,9 +747,11 @@ class TimeframeRelevanceAnalyzer:
     def _analyze_signal_decay(self, signal_quality: dict[str, Any]) -> dict[str, Any]:
     pass
     pass
+    pass
         """Analyze signal decay across timeframes."""
         decay_rates = {}
         for timeframe, metrics in signal_quality.items():
+    pass
     pass
     pass
             decay_rates[timeframe] = metrics.get("signal_decay_rate", 0.0)
@@ -722,13 +764,16 @@ class TimeframeRelevanceAnalyzer:
     def _calculate_optimal_holding_period(self, decay_rates: dict[str, float]) -> dict[str, int]:
     pass
     pass
+    pass
         """Calculate optimal holding period for each timeframe."""
         holding_periods = {}
 
         for timeframe, decay_rate in decay_rates.items():
     pass
     pass
+    pass
             if decay_rate > 0:
+    pass
     pass
     pass
                 # Optimal holding period is inversely related to decay rate
@@ -742,10 +787,12 @@ class TimeframeRelevanceAnalyzer:
     def _calculate_optimal_signal_horizon(self, signal_quality: dict[str, Any]) -> dict[str, int]:
     pass
     pass
+    pass
         """Calculate optimal signal horizon for each timeframe."""
         horizons = {}
 
         for timeframe, metrics in signal_quality.items():
+    pass
     pass
     pass
             decay_rate = metrics.get("signal_decay_rate", 0.5)
@@ -766,7 +813,9 @@ class TimeframeRelevanceAnalyzer:
         for timeframe, weight in weights.items():
     pass
     pass
+    pass
             if timeframe in timeframe_analysis:
+    pass
     pass
     pass
                 analysis = timeframe_analysis[timeframe]
@@ -774,6 +823,7 @@ class TimeframeRelevanceAnalyzer:
                 volatility = analysis["volatility_metrics"].get("daily_volatility", 0.5)
 
                 if weight > 0.3:
+    pass
     pass
     pass
                     justifications[timeframe] = f"High relevance ({relevance_score:.2f}) and low volatility ({volatility:.3f})"
@@ -798,7 +848,9 @@ class TimeframeRelevanceAnalyzer:
         for timeframe, weight in weights.items():
     pass
     pass
+    pass
             if timeframe in timeframe_analysis:
+    pass
     pass
     pass
                 analysis = timeframe_analysis[timeframe]
@@ -810,6 +862,7 @@ class TimeframeRelevanceAnalyzer:
                 total_weight += weight
 
         if total_weight > 0:
+    pass
     pass
     pass
             avg_volatility = total_volatility / total_weight
@@ -827,6 +880,7 @@ class TimeframeRelevanceAnalyzer:
     def _calculate_safe_leverage(self, analysis_results: dict[str, Any]) -> int:
     pass
     pass
+    pass
         """Calculate safe maximum leverage based on analysis."""
         timeframe_analysis = analysis_results["timeframe_analysis"]
 
@@ -834,7 +888,9 @@ class TimeframeRelevanceAnalyzer:
         for analysis in timeframe_analysis.values():
     pass
     pass
+    pass
             if not analysis.get("insufficient_data", False):
+    pass
     pass
     pass
                 leverage = analysis["leverage_metrics"].get("max_safe_leverage", 0)
@@ -843,11 +899,13 @@ class TimeframeRelevanceAnalyzer:
         if max_safe_leverages:
     pass
     pass
+    pass
             return min(max_safe_leverages)
         else:
             return 10  # Conservative default
 
     def _calculate_position_sizing(self, analysis_results: dict[str, Any]) -> dict[str, float]:
+    pass
     pass
     pass
         """Calculate position sizing recommendations."""
@@ -859,10 +917,12 @@ class TimeframeRelevanceAnalyzer:
         for metrics in volatility_analysis.get("timeframe_volatilities", {}).values():
     pass
     pass
+    pass
             avg_volatility += metrics.get("daily_vol", 0.5)
             count += 1
 
         if count > 0:
+    pass
     pass
     pass
             avg_volatility /= count
@@ -879,6 +939,7 @@ class TimeframeRelevanceAnalyzer:
     def _calculate_stop_loss_recommendations(self, analysis_results: dict[str, Any]) -> dict[str, float]:
     pass
     pass
+    pass
         """Calculate stop-loss recommendations."""
         timeframe_analysis = analysis_results["timeframe_analysis"]
 
@@ -886,13 +947,16 @@ class TimeframeRelevanceAnalyzer:
         for analysis in timeframe_analysis.values():
     pass
     pass
+    pass
             if not analysis.get("insufficient_data", False):
+    pass
     pass
     pass
                 drawdown = analysis["volatility_metrics"].get("max_drawdown", 0.1)
                 max_drawdowns.append(drawdown)
 
         if max_drawdowns:
+    pass
     pass
     pass
             avg_drawdown = np.mean(max_drawdowns)
@@ -939,6 +1003,7 @@ class TimeframeRelevanceAnalyzer:
         if not filepath.exists():
     pass
     pass
+    pass
             self.logger.warning(f"⚠️ No timeframe analysis found for {symbol} on {exchange}")
             return {}
 
@@ -946,6 +1011,8 @@ class TimeframeRelevanceAnalyzer:
             with open(filepath, 'r') as f:
                 results = json.load(f)
 
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:

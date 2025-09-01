@@ -28,6 +28,7 @@ class RegimeExpertOrchestrator:
     def __init__(self, config: dict[str, Any]):
     pass
     pass
+    pass
         self.config = config
         self.logger = system_logger.getChild("RegimeExpertOrchestrator")
 
@@ -97,6 +98,8 @@ class RegimeExpertOrchestrator:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             # Load regime ensembles
             # Note: This would typically load the trained models from Step 5
             self.logger.info("Regime Expert Orchestrator initialized successfully")
@@ -109,10 +112,12 @@ class RegimeExpertOrchestrator:
     def get_current_regime_from_cluster(self, cluster_id: int) -> str:
     pass
     pass
+    pass
         """Map composite_cluster_id to regime name."""
         return self.cluster_mapping.get(cluster_id, "UNKNOWN")
 
     def get_regime_expert(self, cluster_id: int) -> Optional[Any]:
+    pass
     pass
     pass
         """Get the appropriate regime expert for the given cluster ID."""
@@ -132,9 +137,12 @@ class RegimeExpertOrchestrator:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             regime_info = get_current_regime_info(exchange, symbol, timeframe)
 
             if regime_info is None or regime_info.get("cluster_id", -1) == -1:
+    pass
     pass
     pass
                 return None
@@ -179,8 +187,11 @@ class RegimeExpertOrchestrator:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             # Special handling for cluster -1 (transitions)
             if cluster_id == -1:
+    pass
     pass
     pass
                 return await self._handle_transition_prediction(
@@ -189,6 +200,7 @@ class RegimeExpertOrchestrator:
 
             expert = regime_info.get("expert")
             if expert is None:
+    pass
     pass
     pass
                 self.logger.warning("No expert available for current regime")
@@ -222,6 +234,8 @@ class RegimeExpertOrchestrator:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             intensity_scores = self._get_current_intensity_scores(regime_info)
 
             # Analyze the transition
@@ -236,6 +250,7 @@ class RegimeExpertOrchestrator:
 
             # Combine predictions from multiple regime experts if intensity threshold is met
             if analysis.intensity_threshold_met:
+    pass
     pass
     pass
                 combined_prediction = await self._get_combined_regime_predictions(
@@ -296,12 +311,14 @@ class RegimeExpertOrchestrator:
         for regime_name, weight in analysis.regime_weights.items():
     pass
     pass
+    pass
             if weight < 0.1:  # Skip regimes with very low weight
                 continue
 
             # Map regime name back to cluster ID
             cluster_id = self._get_cluster_id_from_regime_name(regime_name)
             if cluster_id is None:
+    pass
     pass
     pass
                 continue
@@ -311,10 +328,13 @@ class RegimeExpertOrchestrator:
             if expert is None:
     pass
     pass
+    pass
                 continue
 
             try:
                 prediction = expert.get_prediction(features)
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -344,6 +364,7 @@ class RegimeExpertOrchestrator:
         if total_weight > 0:
     pass
     pass
+    pass
             combined_prediction["weighted_prediction"] /= total_weight
 
         return combined_prediction
@@ -351,11 +372,14 @@ class RegimeExpertOrchestrator:
     def _get_cluster_id_from_regime_name(self, regime_name: str) -> Optional[int]:
     pass
     pass
+    pass
         """Map regime name back to cluster ID."""
         for cluster_id, name in self.cluster_mapping.items():
     pass
     pass
+    pass
             if name == regime_name:
+    pass
     pass
     pass
                 return cluster_id
@@ -370,6 +394,9 @@ class RegimeExpertOrchestrator:
         """Integrate Step 9.5 (HMM-LM Generalist) predictions with regime expert."""
         try:
             if not self.use_step9_5 or step09_5_prediction is None:
+    pass
+    except Exception as e:
+        pass
     pass
     except Exception as e:
         pass
@@ -391,6 +418,7 @@ class RegimeExpertOrchestrator:
             )
 
             if current_prediction is None:
+    pass
     pass
     pass
                 return None
@@ -429,6 +457,9 @@ class RegimeExpertOrchestrator:
     except Exception as e:
         pass
     pass
+    except Exception as e:
+        pass
+    pass
                 return None
 
     except Exception as e:
@@ -444,6 +475,7 @@ class RegimeExpertOrchestrator:
             )
 
             if current_prediction is None:
+    pass
     pass
     pass
                 return None
@@ -488,10 +520,13 @@ class RegimeExpertOrchestrator:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             regime_info = await self.get_current_regime_info(
                 exchange, symbol, timeframe
             )
             if regime_info is None:
+    pass
     pass
     pass
                 self.logger.warning("Could not determine current regime")
@@ -506,10 +541,12 @@ class RegimeExpertOrchestrator:
             if strategic_decision is None:
     pass
     pass
+    pass
                 return None
 
             # Check if we should consider trading
             if strategic_decision.get("confidence", 0.0) < self.min_regime_confidence:
+    pass
     pass
     pass
                 return {
@@ -526,6 +563,7 @@ class RegimeExpertOrchestrator:
             if step09_5_prediction is not None:
     pass
     pass
+    pass
                 step09_5_integration = await self.integrate_step9_5_prediction(
                     regime_info, step09_5_prediction
                 )
@@ -533,6 +571,7 @@ class RegimeExpertOrchestrator:
             # Tier 2: Integrate Step 10 (event timing)
             step10_integration = None
             if step10_prediction is not None:
+    pass
     pass
     pass
                 step10_integration = await self.integrate_step10_prediction(
@@ -580,6 +619,7 @@ class RegimeExpertOrchestrator:
         if step09_5_integration and step09_5_integration.get("should_trade", False):
     pass
     pass
+    pass
             transition_prob = step09_5_integration.get("regime_transition_prob", 0.0)
             if transition_prob > 0.7:  # High probability of regime change
                 final_decision["action"] = "HOLD"
@@ -590,8 +630,10 @@ class RegimeExpertOrchestrator:
         if step10_integration and step10_integration.get("should_execute", False):
     pass
     pass
+    pass
             optimal_timing = step10_integration.get("optimal_timing", 0)
             if optimal_timing > 0:
+    pass
     pass
     pass
                 final_decision["timing"] = f"delay_{optimal_timing}_bars"
@@ -617,6 +659,8 @@ class RegimeExpertOrchestrator:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             )
 
             while True:
@@ -626,9 +670,11 @@ class RegimeExpertOrchestrator:
                 if decision is not None:
     pass
     pass
+    pass
                     final_decision = decision.get("final_decision", {})
 
                     if final_decision.get("action") != "HOLD":
+    pass
     pass
     pass
                         self.logger.info(f"Trading signal: {final_decision}")

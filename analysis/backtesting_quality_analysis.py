@@ -45,12 +45,14 @@ class BacktestingQualityAnalyzer:
     def __init__(self):
     pass
     pass
+    pass
         self.backtest_data, None
         self.trades_data, None
         self.report = {}
 
 
     def load_backtest_data(self, data_path):
+    pass
     pass
     pass
         """Load backtest data and results."""
@@ -60,7 +62,10 @@ class BacktestingQualityAnalyzer:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             if data_path.endswith('.pkl'):
+    pass
     pass
     pass
                 with open(data_path, 'rb') as f:
@@ -76,6 +81,7 @@ class BacktestingQualityAnalyzer:
             if self.backtest_data is not None:
     pass
     pass
+    pass
                 print(f"✅ Backtest data loaded successfully")
                 return True
             else:
@@ -87,6 +93,7 @@ class BacktestingQualityAnalyzer:
 
 
     def _load_from_directory(self, data_dir):
+    pass
     pass
     pass
         """Load backtest data from directory structure."""
@@ -102,12 +109,16 @@ class BacktestingQualityAnalyzer:
         for pattern in patterns:
     pass
     pass
+    pass
             files = glob.glob(os.path.join(data_dir, pattern))
             if files:
     pass
     pass
+    pass
                 try:
                     self.backtest_data = pd.read_csv(files[0])
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -122,8 +133,11 @@ class BacktestingQualityAnalyzer:
         if trades_files:
     pass
     pass
+    pass
             try:
                 self.trades_data = pd.read_csv(trades_files[0])
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -136,14 +150,16 @@ class BacktestingQualityAnalyzer:
     def analyze_backtest_quality(self):
     pass
     pass
+    pass
         """Comprehensive backtest quality analysis."""
         if self.backtest_data is None:
+    pass
     pass
     pass
             print(warning("No backtest data loaded. Please load backtest data first."))
             return
 
-        print("\\\n" + "="*60)
+        print("\\\\n" + "="*60)
         print("🔍 BACKTESTING QUALITY ANALYSIS REPORT")
         print("="*60)
 
@@ -172,8 +188,9 @@ class BacktestingQualityAnalyzer:
     def _analyze_performance_metrics(self):
     pass
     pass
+    pass
         """Analyze performance metrics quality."""
-        print("\\\n📊 PERFORMANCE METRICS ANALYSIS")
+        print("\\\\n📊 PERFORMANCE METRICS ANALYSIS")
         print("-" * 40)
 
         # Look for common performance metrics
@@ -191,16 +208,20 @@ class BacktestingQualityAnalyzer:
         for metric_name, possible_names in performance_metrics.items():
     pass
     pass
+    pass
             for name in possible_names:
     pass
     pass
+    pass
                 if name in self.backtest_data.columns:
+    pass
     pass
     pass
                     found_metrics[metric_name] = name
                     break
 
         if not found_metrics:
+    pass
     pass
     pass
             print("No standard performance metrics found.")
@@ -212,15 +233,18 @@ class BacktestingQualityAnalyzer:
         for metric_name, column_name in found_metrics.items():
     pass
     pass
+    pass
             values, self.backtest_data[column_name].dropna()
 
         if len(values) > 0:
+    pass
     pass
     pass
                 value, values.iloc[-1] if len(values) > 0 else 0
 
         # Determine if performance is good based on metric type
         if metric_name in ['total_return', 'sharpe_ratio', 'win_rate', 'profit_factor', 'calmar_ratio', 'sortino_ratio']:
+    pass
     pass
     pass
             performance_quality = 'excellent' if value >= 0.5 else 'good' if value >= 0.2 else 'fair' if value >= 0 else 'poor'
@@ -249,6 +273,7 @@ class BacktestingQualityAnalyzer:
         for metric_name, analysis in performance_analysis.items():
     pass
     pass
+    pass
             print(f"{metric_name:<20} {analysis['value']:<12.4f} {analysis['quality']:<12} {analysis['score']:<8.1f}")
 
         self.report['performance_metrics'] = performance_analysis
@@ -257,8 +282,9 @@ class BacktestingQualityAnalyzer:
     def _analyze_risk_metrics(self):
     pass
     pass
+    pass
         """Analyze risk metrics quality."""
-        print("\\\n⚠️ RISK METRICS ANALYSIS")
+        print("\\\\n⚠️ RISK METRICS ANALYSIS")
         print("-" * 40)
 
         # Look for risk metrics
@@ -274,16 +300,20 @@ class BacktestingQualityAnalyzer:
         for metric_name, possible_names in risk_metrics.items():
     pass
     pass
+    pass
         for name in possible_names:
     pass
     pass
+    pass
         if name in self.backtest_data.columns:
+    pass
     pass
     pass
                     found_risk_metrics[metric_name] = name
                     break
 
         if not found_risk_metrics:
+    pass
     pass
     pass
             print("No standard risk metrics found.")
@@ -295,15 +325,18 @@ class BacktestingQualityAnalyzer:
         for metric_name, column_name in found_risk_metrics.items():
     pass
     pass
+    pass
             values, self.backtest_data[column_name].dropna()
 
         if len(values) > 0:
+    pass
     pass
     pass
                 value, values.iloc[-1] if len(values) > 0 else 0
 
         # Determine risk quality based on metric type
         if metric_name == 'volatility':
+    pass
     pass
     pass
             risk_quality = 'excellent' if value <= 0.15 else 'good' if value <= 0.25 else 'fair' if value <= 0.35 else 'poor'
@@ -334,6 +367,7 @@ class BacktestingQualityAnalyzer:
         for metric_name, analysis in risk_analysis.items():
     pass
     pass
+    pass
             print(f"{metric_name:<20} {analysis['value']:<12.4f} {analysis['quality']:<12} {analysis['score']:<8.1f}")
 
         self.report['risk_metrics'] = risk_analysis
@@ -342,11 +376,13 @@ class BacktestingQualityAnalyzer:
     def _analyze_trading_consistency(self):
     pass
     pass
+    pass
         """Analyze trading consistency and patterns."""
-        print("\\\n🔄 TRADING CONSISTENCY ANALYSIS")
+        print("\\\\n🔄 TRADING CONSISTENCY ANALYSIS")
         print("-" * 40)
 
         if self.trades_data is None:
+    pass
     pass
     pass
             print("No trades data available for consistency analysis.")
@@ -362,6 +398,7 @@ class BacktestingQualityAnalyzer:
         if len(available_cols) < 3:
     pass
     pass
+    pass
             print("Insufficient trade data for consistency analysis.")
             return
 
@@ -370,11 +407,13 @@ class BacktestingQualityAnalyzer:
         if total_trades == 0:
     pass
     pass
+    pass
             print("No trades found in the data.")
             return
 
         # Analyze trade distribution
         if 'side' in self.trades_data.columns:
+    pass
     pass
     pass
             side_counts, self.trades_data['side'].value_counts()
@@ -394,9 +433,11 @@ class BacktestingQualityAnalyzer:
         if 'pnl' in self.trades_data.columns:
     pass
     pass
+    pass
             pnl_values, self.trades_data['pnl'].dropna()
 
         if len(pnl_values) > 0:
+    pass
     pass
     pass
                 winning_trades = (pnl_values > 0).sum()
@@ -410,6 +451,7 @@ class BacktestingQualityAnalyzer:
 
         # Consistency score based on coefficient of variation
         if pnl_cv != float('inf'):
+    pass
     pass
     pass
                     consistency_score, max(0, 100 - pnl_cv * 2)
@@ -429,6 +471,7 @@ class BacktestingQualityAnalyzer:
         if 'timestamp' in self.trades_data.columns:
     pass
     pass
+    pass
         try:
         self.trades_data['timestamp'] = pd.to_datetime(self.trades_data['timestamp'])
                 time_diff, self.trades_data['timestamp'].diff().dropna()
@@ -437,7 +480,10 @@ class BacktestingQualityAnalyzer:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         if len(time_diff) > 0:
+    pass
     pass
     pass
                     avg_time_between_trades, time_diff.mean()
@@ -445,6 +491,7 @@ class BacktestingQualityAnalyzer:
 
         # Time consistency score
         if time_consistency != float('inf'):
+    pass
     pass
     pass
                         time_consistency_score, max(0, 100 - time_consistency * 50)
@@ -463,13 +510,16 @@ class BacktestingQualityAnalyzer:
         if consistency_analysis:
     pass
     pass
+    pass
             print(f"{'Consistency Metric':<25} {'Value':<15} {'Score':<8}")
             print("-" * 50)
 
         for metric, analysis in consistency_analysis.items():
     pass
     pass
+    pass
         if 'balance_score' in analysis:
+    pass
     pass
     pass
                     print(f"{'Trade Balance':<25} {analysis['buy_trades']}/{analysis['sell_trades']:<15} {analysis['balance_score']:<8.1f}")
@@ -486,11 +536,13 @@ class BacktestingQualityAnalyzer:
     def _analyze_data_quality(self):
     pass
     pass
+    pass
         """Analyze backtest data quality."""
-        print("\\\n📋 BACKTEST DATA QUALITY ANALYSIS")
+        print("\\\\n📋 BACKTEST DATA QUALITY ANALYSIS")
         print("-" * 40)
 
         if self.backtest_data is None:
+    pass
     pass
     pass
             print("No backtest data available for quality analysis.")
@@ -524,6 +576,7 @@ class BacktestingQualityAnalyzer:
         if 'timestamp' in self.backtest_data.columns:
     pass
     pass
+    pass
         try:
         self.backtest_data['timestamp'] = pd.to_datetime(self.backtest_data['timestamp'])
                 time_diff, self.backtest_data['timestamp'].diff().dropna()
@@ -532,7 +585,10 @@ class BacktestingQualityAnalyzer:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         if len(time_diff) > 0:
+    pass
     pass
     pass
         # Check for gaps in data
@@ -551,11 +607,13 @@ class BacktestingQualityAnalyzer:
         if 'equity' in self.backtest_data.columns and 'drawdown' in self.backtest_data.columns:
     pass
     pass
+    pass
         # Check if drawdown is consistent with equity
             equity, self.backtest_data['equity'].dropna()
             drawdown, self.backtest_data['drawdown'].dropna()
 
         if len(equity) > 0 and len(drawdown) > 0:
+    pass
     pass
     pass
                 min_len, min(len(equity), len(drawdown))
@@ -565,6 +623,7 @@ class BacktestingQualityAnalyzer:
         # Check if drawdown is always negative
                 positive_drawdown = (drawdown_aligned > 0).sum()
         if positive_drawdown > 0:
+    pass
     pass
     pass
                     logical_issues += positive_drawdown
@@ -585,6 +644,7 @@ class BacktestingQualityAnalyzer:
         if 'time_consistency' in data_quality_analysis:
     pass
     pass
+    pass
             print(f"{'Time Consistency':<25} {data_quality_analysis['time_consistency']['large_gaps']:<15} {data_quality_analysis['time_consistency']['gap_score']:<8.1f}")
 
         print(f"{'Logical Consistency':<25} {logical_issues:<15} {logical_score:<8.1f}")
@@ -595,13 +655,15 @@ class BacktestingQualityAnalyzer:
     def _calculate_backtest_quality_metrics(self):
     pass
     pass
+    pass
         """Calculate overall backtest quality metrics."""
-        print("\\\n📈 OVERALL BACKTEST QUALITY METRICS")
+        print("\\\\n📈 OVERALL BACKTEST QUALITY METRICS")
         print("-" * 50)
 
         # Calculate composite quality scores
         performance_score, 0
         if self.report.get('performance_metrics'):
+    pass
     pass
     pass
             performance_scores = [analysis['score'] for analysis in self.report['performance_metrics'].values()]
@@ -611,6 +673,7 @@ class BacktestingQualityAnalyzer:
         if self.report.get('risk_metrics'):
     pass
     pass
+    pass
             risk_scores = [analysis['score'] for analysis in self.report['risk_metrics'].values()]
             risk_score, np.mean(risk_scores) if risk_scores else 0
 
@@ -618,19 +681,24 @@ class BacktestingQualityAnalyzer:
         if self.report.get('trading_consistency'):
     pass
     pass
+    pass
             consistency_scores = []
         for analysis in self.report['trading_consistency'].values():
     pass
     pass
+    pass
         if 'balance_score' in analysis:
+    pass
     pass
     pass
                     consistency_scores.append(analysis['balance_score'])
         if 'consistency_score' in analysis:
     pass
     pass
+    pass
                     consistency_scores.append(analysis['consistency_score'])
         if 'time_consistency_score' in analysis:
+    pass
     pass
     pass
                     consistency_scores.append(analysis['time_consistency_score'])
@@ -641,23 +709,29 @@ class BacktestingQualityAnalyzer:
         if self.report.get('data_quality'):
     pass
     pass
+    pass
             quality_scores = []
         for analysis in self.report['data_quality'].values():
     pass
     pass
+    pass
         if 'quality_score' in analysis:
+    pass
     pass
     pass
                     quality_scores.append(analysis['quality_score'])
         if 'completeness_score' in analysis:
     pass
     pass
+    pass
                     quality_scores.append(analysis['completeness_score'])
         if 'gap_score' in analysis:
     pass
     pass
+    pass
                     quality_scores.append(analysis['gap_score'])
         if 'logical_score' in analysis:
+    pass
     pass
     pass
                     quality_scores.append(analysis['logical_score'])
@@ -685,7 +759,9 @@ class BacktestingQualityAnalyzer:
         for metric, score in quality_metrics.items():
     pass
     pass
+    pass
         if score >= 80:
+    pass
     pass
     pass
                 status = "✅ Excellent"
@@ -699,9 +775,10 @@ class BacktestingQualityAnalyzer:
             metric_name, metric.replace('_', ' ').title()
             print(f"{metric_name:<30} {score:<10.1f} {status:<15}")
 
-        print(f"\\\nOverall Backtest Quality: {backtest_score:.1f}/100")
+        print(f"\\\\nOverall Backtest Quality: {backtest_score:.1f}/100")
 
         if backtest_score >= 80:
+    pass
     pass
     pass
             print("🎉 Excellent backtest quality!")
@@ -718,8 +795,9 @@ class BacktestingQualityAnalyzer:
     def _generate_backtest_recommendations(self):
     pass
     pass
+    pass
         """Generate recommendations based on backtest analysis."""
-        print("\\\n💡 BACKTEST RECOMMENDATIONS")
+        print("\\\\n💡 BACKTEST RECOMMENDATIONS")
         print("-" * 40)
 
         recommendations = []
@@ -729,7 +807,9 @@ class BacktestingQualityAnalyzer:
         for metric_name, analysis in performance_metrics.items():
     pass
     pass
+    pass
         if analysis['score'] < 60:
+    pass
     pass
     pass
                 recommendations.append(f"📊 {metric_name}: Poor performance (score: {analysis['score']:.1f})")
@@ -739,7 +819,9 @@ class BacktestingQualityAnalyzer:
         for metric_name, analysis in risk_metrics.items():
     pass
     pass
+    pass
         if analysis['score'] < 60:
+    pass
     pass
     pass
                 recommendations.append(f"⚠️ {metric_name}: High risk (score: {analysis['score']:.1f})")
@@ -749,11 +831,14 @@ class BacktestingQualityAnalyzer:
         for metric, analysis in trading_consistency.items():
     pass
     pass
+    pass
         if 'balance_score' in analysis and analysis['balance_score'] < 60:
+    pass
     pass
     pass
                 recommendations.append(f"🔄 Trade balance: Unbalanced trading (score: {analysis['balance_score']:.1f})")
         if 'consistency_score' in analysis and analysis['consistency_score'] < 60:
+    pass
     pass
     pass
                 recommendations.append(f"🔄 PnL consistency: Inconsistent returns (score: {analysis['consistency_score']:.1f})")
@@ -763,9 +848,11 @@ class BacktestingQualityAnalyzer:
         if data_quality.get('missing_values', {}).get('missing_percentage', 0) > 10:
     pass
     pass
+    pass
             recommendations.append("📋 High missing values in backtest data")
 
         if data_quality.get('completeness', {}).get('completeness_score', 0) < 60:
+    pass
     pass
     pass
             recommendations.append("📋 Incomplete backtest data")
@@ -773,10 +860,12 @@ class BacktestingQualityAnalyzer:
         if not recommendations:
     pass
     pass
+    pass
             print("✅ No major issues detected. Backtest quality is good!")
         else:
             print("Recommendations for improvement:")
         for rec in recommendations:
+    pass
     pass
     pass
                 print(f"  {rec}")
@@ -787,11 +876,14 @@ class BacktestingQualityAnalyzer:
     def _create_backtest_visualizations(self):
     pass
     pass
+    pass
         """Create visualizations for the backtest report."""
-        print("\\\n📈 GENERATING BACKTEST VISUALIZATIONS...")
+        print("\\\\n📈 GENERATING BACKTEST VISUALIZATIONS...")
 
         try:
             fig, axes, plt.subplots(2, 2, figsize=(15, 12))
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -801,6 +893,7 @@ class BacktestingQualityAnalyzer:
         # 1. Performance metrics
             performance_analysis, self.report.get('performance_metrics', {})
         if performance_analysis:
+    pass
     pass
     pass
                 metrics, list(performance_analysis.keys())
@@ -819,6 +912,7 @@ class BacktestingQualityAnalyzer:
         if risk_analysis:
     pass
     pass
+    pass
                 metrics, list(risk_analysis.keys())
                 scores = [risk_analysis[metric]['score'] for metric in metrics]
 
@@ -835,13 +929,16 @@ class BacktestingQualityAnalyzer:
         if consistency_analysis:
     pass
     pass
+    pass
                 consistency_scores = []
                 metric_names = []
 
         for metric, analysis in consistency_analysis.items():
     pass
     pass
+    pass
         if 'balance_score' in analysis:
+    pass
     pass
     pass
                         consistency_scores.append(analysis['balance_score'])
@@ -849,15 +946,18 @@ class BacktestingQualityAnalyzer:
         if 'consistency_score' in analysis:
     pass
     pass
+    pass
                         consistency_scores.append(analysis['consistency_score'])
                         metric_names.append('PnL Consistency')
         if 'time_consistency_score' in analysis:
+    pass
     pass
     pass
                         consistency_scores.append(analysis['time_consistency_score'])
                         metric_names.append('Timing Consistency')
 
         if consistency_scores:
+    pass
     pass
     pass
                     colors = ['green' if score >= 80 else 'orange' if score >= 60 else 'red' for score in consistency_scores]
@@ -871,6 +971,7 @@ class BacktestingQualityAnalyzer:
         # 4. Overall quality pie chart
             quality_metrics, self.report.get('quality_metrics', {})
         if quality_metrics:
+    pass
     pass
     pass
                 overall_score, quality_metrics.get('overall_backtest_score', 0)
@@ -891,56 +992,62 @@ class BacktestingQualityAnalyzer:
     def save_report(self, filename='backtesting_quality_report.txt'):
     pass
     pass
+    pass
         """Save the analysis report to a file."""
         with open(filename, 'w') as f:
-            f.write("BACKTESTING QUALITY ANALYSIS REPORT\\\n")
-            f.write("=" * 50 + "\\\n\\\n")
+            f.write("BACKTESTING QUALITY ANALYSIS REPORT\\\\n")
+            f.write("=" * 50 + "\\\\n\\\\n")
 
         # Overall quality
             quality_metrics, self.report.get('quality_metrics', {})
             overall_score, quality_metrics.get('overall_backtest_score', 0)
-            f.write(f"Overall Backtest Quality: {overall_score:.1f}/100\\\n\\\n")
+            f.write(f"Overall Backtest Quality: {overall_score:.1f}/100\\\\n\\\\n")
 
         # Performance metrics
             performance_metrics, self.report.get('performance_metrics', {})
-            f.write("PERFORMANCE METRICS:\\\n")
+            f.write("PERFORMANCE METRICS:\\\\n")
         for metric, analysis in performance_metrics.items():
     pass
     pass
-                f.write(f"{metric}: {analysis['value']:.4f} (score: {analysis['score']:.1f})\\\n")
-            f.write("\\\n")
+    pass
+                f.write(f"{metric}: {analysis['value']:.4f} (score: {analysis['score']:.1f})\\\\n")
+            f.write("\\\\n")
 
         # Risk metrics
             risk_metrics, self.report.get('risk_metrics', {})
-            f.write("RISK METRICS:\\\n")
+            f.write("RISK METRICS:\\\\n")
         for metric, analysis in risk_metrics.items():
     pass
     pass
-                f.write(f"{metric}: {analysis['value']:.4f} (score: {analysis['score']:.1f})\\\n")
-            f.write("\\\n")
+    pass
+                f.write(f"{metric}: {analysis['value']:.4f} (score: {analysis['score']:.1f})\\\\n")
+            f.write("\\\\n")
 
         # Data quality
             data_quality, self.report.get('data_quality', {})
-            f.write("DATA QUALITY:\\\n")
-            f.write(f"Missing values: {data_quality.get('missing_values', {}).get('missing_percentage', 0):.2f}%\\\n")
-            f.write(f"Completeness: {data_quality.get('completeness', {}).get('completeness_score', 0):.1f}%\\\n")
-            f.write("\\\n")
+            f.write("DATA QUALITY:\\\\n")
+            f.write(f"Missing values: {data_quality.get('missing_values', {}).get('missing_percentage', 0):.2f}%\\\\n")
+            f.write(f"Completeness: {data_quality.get('completeness', {}).get('completeness_score', 0):.1f}%\\\\n")
+            f.write("\\\\n")
 
         # Recommendations
             recommendations, self.report.get('recommendations', [])
         if recommendations:
     pass
     pass
-                f.write("RECOMMENDATIONS:\\\n")
+    pass
+                f.write("RECOMMENDATIONS:\\\\n")
         for rec in recommendations:
     pass
     pass
-                    f.write(f"- {rec}\\\n")
-            f.write("\\\n")
+    pass
+                    f.write(f"- {rec}\\\\n")
+            f.write("\\\\n")
 
         print(f"✅ Report saved as '{filename}'")
 
 def main():
+    pass
     pass
     pass
     """Main function to run the analysis."""
@@ -959,10 +1066,13 @@ def main():
     for path in data_paths:
     pass
     pass
+    pass
         if os.path.exists(path):
     pass
     pass
+    pass
         if analyzer.load_backtest_data(path):
+    pass
     pass
     pass
                 data_loaded, True
@@ -971,9 +1081,11 @@ def main():
     if not data_loaded:
     pass
     pass
+    pass
         print(warning("Could not find backtest data file. Please specify the path to your backtest data.")))
         print("Common locations checked:")
         for path in data_paths:
+    pass
     pass
     pass
             print(f"  - {path}")
@@ -986,6 +1098,7 @@ def main():
     analyzer.save_report()
 
 if __name__ == "__main__":
+    pass
     pass
     pass
     main()

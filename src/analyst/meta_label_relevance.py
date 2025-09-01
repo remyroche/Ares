@@ -37,8 +37,10 @@ def compute_mutual_information(
     if Xn.empty:
     pass
     pass
+    pass
         return {}
     if task == "classification":
+    pass
     pass
     pass
         from sklearn.feature_selection import mutual_info_classif
@@ -97,8 +99,10 @@ import Xn = X.select_dtypes
     if len(Xn) == 0:
     pass
     pass
+    pass
         return {}
     if len(Xn) > max_samples:
+    pass
     pass
     pass
         Xn = Xn.sample(n=max_samples, random_state=1337)
@@ -107,7 +111,9 @@ import Xn = X.select_dtypes
     if model is None:
     pass
     pass
+    pass
         if task == "classification":
+    pass
     pass
     pass
             model = LGBMClassifier(
@@ -125,11 +131,13 @@ import Xn = X.select_dtypes
     if isinstance(sv, list) and len(sv) > 0:
     pass
     pass
+    pass
         sv = sv[-1]
     import numpy as _np
 
     magnitudes = _np.abs(_np.array(sv))
     if magnitudes.ndim == 1:
+    pass
     pass
     pass
         magnitudes = magnitudes.reshape(-1, 1)
@@ -166,6 +174,7 @@ def evaluate_sharpe_lift(
     gated_excess = gated_r - risk_free_rate
 
     def _sharpe(x: pd.Series) -> float:
+    pass
     pass
     pass
         mu = float(x.mean())
@@ -214,8 +223,10 @@ class MetaLabelRelevanceEvaluator:
         for name in label_names:
     pass
     pass
+    pass
             col = f"intensity_{name}"
             if col in df.columns:
+    pass
     pass
     pass
                 thr = float(thresholds.get(name, 0.5))
@@ -241,6 +252,7 @@ class MetaLabelRelevanceEvaluator:
         if returns_col not in df.columns:
     pass
     pass
+    pass
             return {
                 "active_labels": label_names,
                 "inactive_labels": [],
@@ -250,6 +262,7 @@ class MetaLabelRelevanceEvaluator:
         # Build binary gating per label
         G = self._gating_from_intensity(df, label_names, thresholds)
         if G.empty:
+    pass
     pass
     pass
             return {
@@ -271,10 +284,13 @@ class MetaLabelRelevanceEvaluator:
         for i in range(len(labels)):
     pass
     pass
+    pass
             for j in range(i + 1, len(labels)):
     pass
     pass
+    pass
                 if self.max_pairs is not None and count >= self.max_pairs:
+    pass
     pass
     pass
                     break
@@ -304,6 +320,7 @@ class MetaLabelRelevanceEvaluator:
         for name in labels:
     pass
     pass
+    pass
             mi_ok = float(mi_scores.get(name, 0.0)) >= self.mi_threshold
             sr_ok = (
                 float(
@@ -316,6 +333,7 @@ class MetaLabelRelevanceEvaluator:
             if mi_ok or sr_ok:
     pass
     pass
+    pass
                 active.add(name)
                 continue
             # Check complementarity: exists any partner with synergy or pair Sharpe lift beyond min threshold
@@ -323,7 +341,9 @@ class MetaLabelRelevanceEvaluator:
             for other in labels:
     pass
     pass
+    pass
                 if other == name:
+    pass
     pass
     pass
                     continue
@@ -332,8 +352,10 @@ class MetaLabelRelevanceEvaluator:
                 if not res:
     pass
     pass
+    pass
                     continue
                 if res.get("synergy_mi", 0.0) > self.synergy_mi_threshold:
+    pass
     pass
     pass
                     complementary = True
@@ -341,9 +363,11 @@ class MetaLabelRelevanceEvaluator:
                 if res.get("delta_sharpe_pair", 0.0) > self.sharpe_min_delta:
     pass
     pass
+    pass
                     complementary = True
                     break
             if complementary:
+    pass
     pass
     pass
                 active.add(name)
@@ -369,6 +393,8 @@ class MetaLabelRelevanceEvaluator:
                     f,
                     indent=2,
                 )
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:

@@ -35,6 +35,7 @@ logger, system_logger.getChild("Step1Runner")
 def main() -> None:
     pass
     pass
+    pass
     """Main function to run step1 processes."""
     start_time, datetime.now()
 
@@ -64,8 +65,10 @@ def main() -> None:
     if args.start_date:
     pass
     pass
+    pass
         start_date, datetime.strptime(args.start_date, "%Y-%m-%d")
     if args.end_date:
+    pass
     pass
     pass
         end_date, datetime.strptime(args.end_date, "%Y-%m-%d")
@@ -74,6 +77,7 @@ def main() -> None:
     orchestrator, Step1Orchestrator()
 
     if args.mode == "complete":
+    pass
     pass
     pass
         # Run complete step1 process
@@ -87,6 +91,7 @@ def main() -> None:
 
         # Print report
         if "report" in results:
+    pass
     pass
     pass
             print(results["report"])
@@ -104,12 +109,14 @@ def main() -> None:
         if results["success"]:
     pass
     pass
+    pass
             logger.info("✅ STEP1 COMPLETED SUCCESSFULLY!")
             print("✅ Step1 completed successfully!")
         else:
             logger.error("❌ STEP1 COMPLETED WITH ERRORS!")
             print("❌ Step1 completed with errors:")
         for error in results["errors"]:
+    pass
     pass
     pass
                 logger.error(f"  - {error}")
@@ -134,10 +141,12 @@ def main() -> None:
         if aggtrades_gaps:
     pass
     pass
+    pass
             print(f"Found {len(aggtrades_gaps)} gaps in aggtrades data:")
         for gap in aggtrades_gaps[:10]:  # Show first 10
                 print(f"  - {gap['file']}: {gap['gap_start']} to {gap['gap_end']}")
         if len(aggtrades_gaps) > 10:
+    pass
     pass
     pass
                 print(f"  ... and {len(aggtrades_gaps) - 10} more gaps")
@@ -167,10 +176,12 @@ def main() -> None:
         if preparation_results["ready"]:
     pass
     pass
+    pass
             print("✅ Data preparation completed successfully")
         else:
             print("❌ Data preparation encountered issues:")
         for issue in preparation_results["issues"]:
+    pass
     pass
     pass
                 print(f"  - {issue}")
@@ -182,15 +193,18 @@ def main() -> None:
         if health_result["healthy"]:
     pass
     pass
+    pass
             print("✅ Health check passed")
         else:
             print("❌ Health check found issues:")
         for issue in health_result["issues"]:
     pass
     pass
+    pass
                 print(f"  - {issue}")
 
         for recommendation in health_result["recommendations"]:
+    pass
     pass
     pass
             print(f"  💡 {recommendation}")
@@ -204,6 +218,7 @@ def main() -> None:
         print(f"Klines files: {status['data_available']['klines']}")
         print("Resampled data:")
         for timeframe, available in status["resampled_data"].items():
+    pass
     pass
     pass
             print(f"  - {timeframe}: {'✅' if available else '❌'}")
@@ -221,10 +236,12 @@ def main() -> None:
         if "report" in download_results:
     pass
     pass
+    pass
             print(download_results["report"])
 
         # Print summary
         if download_results["success"]:
+    pass
     pass
     pass
             print("✅ Download completed successfully!")
@@ -233,9 +250,11 @@ def main() -> None:
         for error in download_results["errors"]:
     pass
     pass
+    pass
                 print(f"  - {error}")
 
 if __name__ == "__main__":
+    pass
     pass
     pass
     main()

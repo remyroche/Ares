@@ -61,7 +61,11 @@ class PositionSizingConfig:
     def __post_init__(self):
     pass
     pass
+    pass
+    pass
         if self.confidence_thresholds is None:
+    pass
+    pass
     pass
     pass
             self.confidence_thresholds , {
@@ -74,6 +78,8 @@ class PositionSizingConfig:
         if self.position_size_multipliers is None:
     pass
     pass
+    pass
+    pass
             self.position_size_multipliers = {
                 "low_confidence": 0.5,
                 "medium_confidence": 1.0,
@@ -82,6 +88,8 @@ class PositionSizingConfig:
             }
 
         if self.volatility_thresholds is None:
+    pass
+    pass
     pass
     pass
             self.volatility_thresholds = {
@@ -93,6 +101,8 @@ class PositionSizingConfig:
         if self.volatility_multipliers is None:
     pass
     pass
+    pass
+    pass
             self.volatility_multipliers = {
                 "low_volatility": 1.2,
                 "medium_volatility": 1.0,
@@ -102,6 +112,8 @@ class PositionSizingConfig:
         if self.lss_thresholds is None:
     pass
     pass
+    pass
+    pass
             self.lss_thresholds = {
                 "very_safe": 80,
                 "safe": 60,
@@ -109,6 +121,8 @@ class PositionSizingConfig:
             }
 
         if self.lss_multipliers is None:
+    pass
+    pass
     pass
     pass
             self.lss_multipliers = {
@@ -121,6 +135,8 @@ class PositionSizingConfig:
         if self.drawdown_thresholds is None:
     pass
     pass
+    pass
+    pass
             self.drawdown_thresholds = {
                 "light": 0.05,
                 "moderate": 0.15,
@@ -128,6 +144,8 @@ class PositionSizingConfig:
             }
 
         if self.position_size_reductions is None:
+    pass
+    pass
     pass
     pass
             self.position_size_reductions = {
@@ -140,11 +158,15 @@ class PositionSizingConfig:
 def get_position_sizing_config() -> PositionSizingConfig:
     pass
     pass
+    pass
+    pass
     """Get position sizing configuration."""
     return PositionSizingConfig()
 
 
 def get_position_sizing_search_space() -> dict[str, dict[str, Any]]:
+    pass
+    pass
     pass
     pass
     """Get search space for position sizing optimization."""

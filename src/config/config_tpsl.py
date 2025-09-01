@@ -63,7 +63,11 @@ class TPSLConfig:
     def __post_init__(self):
     pass
     pass
+    pass
+    pass
         if self.volatility_thresholds is None:
+    pass
+    pass
     pass
     pass
             self.volatility_thresholds , {
@@ -75,6 +79,8 @@ class TPSLConfig:
         if self.volatility_tp_multipliers is None:
     pass
     pass
+    pass
+    pass
             self.volatility_tp_multipliers = {
                 "low_volatility": 0.8,
                 "medium_volatility": 1.0,
@@ -82,6 +88,8 @@ class TPSLConfig:
             }
 
         if self.volatility_sl_multipliers is None:
+    pass
+    pass
     pass
     pass
             self.volatility_sl_multipliers = {
@@ -93,6 +101,8 @@ class TPSLConfig:
         if self.confidence_tp_multipliers is None:
     pass
     pass
+    pass
+    pass
             self.confidence_tp_multipliers = {
                 "low_confidence": 0.8,
                 "medium_confidence": 1.0,
@@ -101,6 +111,8 @@ class TPSLConfig:
             }
 
         if self.confidence_sl_multipliers is None:
+    pass
+    pass
     pass
     pass
             self.confidence_sl_multipliers = {
@@ -114,11 +126,15 @@ class TPSLConfig:
 def get_tpsl_config() -> TPSLConfig:
     pass
     pass
+    pass
+    pass
     """Get TP/SL configuration."""
     return TPSLConfig()
 
 
 def get_tpsl_search_space() -> dict[str, dict[str, Any]]:
+    pass
+    pass
     pass
     pass
     """Get search space for TP/SL optimization."""

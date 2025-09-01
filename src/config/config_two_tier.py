@@ -77,12 +77,18 @@ class TwoTierConfig:
     def __post_init__(self):
     pass
     pass
+    pass
+    pass
         if self.tier1_timeframes is None:
+    pass
+    pass
     pass
     pass
             self.tier1_timeframes , ["1m", "5m", "15m", "1h"]
 
         if self.tier2_timeframes is None:
+    pass
+    pass
     pass
     pass
             self.tier2_timeframes = ["4h", "1d"]
@@ -91,11 +97,15 @@ class TwoTierConfig:
 def get_two_tier_config() -> TwoTierConfig:
     pass
     pass
+    pass
+    pass
     """Get two-tier configuration."""
     return TwoTierConfig()
 
 
 def get_two_tier_search_space() -> dict[str, dict[str, Any]]:
+    pass
+    pass
     pass
     pass
     """Get search space for two-tier optimization."""

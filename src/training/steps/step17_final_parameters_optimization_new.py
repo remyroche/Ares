@@ -34,6 +34,7 @@ class FinalParametersOptimizationStepNew:
     def __init__(self, config: dict[str, Any]) -> None:
     pass
     pass
+    pass
         self.config, config
         self.logger, system_logger
         self.config_manager, get_config_manager()
@@ -51,6 +52,7 @@ class FinalParametersOptimizationStepNew:
         # Validate configuration
         is_valid, errors, self.config_manager.validate_config()
         if not is_valid:
+    pass
     pass
     pass
         self.logger.error(f"Configuration validation failed: {errors}")
@@ -88,6 +90,8 @@ class FinalParametersOptimizationStepNew:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         # Extract parameters
             symbol, training_input.get("symbol", "ETHUSDT")
             exchange, training_input.get("exchange", "BINANCE")
@@ -108,6 +112,7 @@ import with heartbeat
                     data_dir,
                 )
         if not calibration_results:
+    pass
     pass
     pass
                 msg = "Calibration results not found"
@@ -146,6 +151,7 @@ import with heartbeat
                     optimization_results,
                 )
         if not validation_passed:
+    pass
     pass
     pass
         self.logger.warning(
@@ -233,7 +239,10 @@ import with heartbeat
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         for category in categories:
+    pass
     pass
     pass
         self.logger.info(f"Optimizing {category} parameters...")
@@ -248,6 +257,7 @@ import with heartbeat
 
         # Update the configuration with optimized parameters
         if category_results and "best_params" in category_results:
+    pass
     pass
     pass
                     update_optimizable_config(category, category_results["best_params"])
@@ -278,7 +288,10 @@ import with heartbeat
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         if not search_space:
+    pass
     pass
     pass
         self.logger.warning(f"No search space found for category: {category}")
@@ -295,6 +308,7 @@ import with heartbeat
 
         # Define objective function for this category
             def objective(trial):
+    pass
     pass
     pass
         return self._objective_function(
@@ -344,10 +358,14 @@ import with heartbeat
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         for param_name, param_config in search_space.items():
     pass
     pass
+    pass
         if param_config["type"] == "float":
+    pass
     pass
     pass
                     params[param_name] = trial.suggest_float(
@@ -393,11 +411,14 @@ import with heartbeat
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         # For now, we'll use a simple scoring based on parameter ranges and calibration results
 
             base_score, 0.0
 
         if category == "confidence":
+    pass
     pass
     pass
         # Higher confidence thresholds generally lead to better precision
@@ -442,6 +463,7 @@ import with heartbeat
     def _evaluate_confidence_params(self, params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
     pass
     pass
+    pass
         """Evaluate confidence threshold parameters."""
         score, 0.0
 
@@ -449,8 +471,10 @@ import with heartbeat
         if "base_entry_threshold" in params:
     pass
     pass
+    pass
             threshold, params["base_entry_threshold"]
         if 0.6 <= threshold <= 0.8:
+    pass
     pass
     pass
                 score += 0.3
@@ -463,14 +487,17 @@ import with heartbeat
         if "analyst_confidence_threshold" in params and "tactician_confidence_threshold" in params:
     pass
     pass
+    pass
             analyst_thresh, params["analyst_confidence_threshold"]
             tactician_thresh, params["tactician_confidence_threshold"]
 
         if tactician_thresh > analyst_thresh:
     pass
     pass
+    pass
                 score += 0.2
         if 0.1 <= (tactician_thresh - analyst_thresh) <= 0.2:
+    pass
     pass
     pass
                 score += 0.1
@@ -480,6 +507,7 @@ import with heartbeat
     def _evaluate_position_sizing_params(self, params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
     pass
     pass
+    pass
         """Evaluate position sizing parameters."""
         score, 0.0
 
@@ -487,8 +515,10 @@ import with heartbeat
         if "base_position_size" in params:
     pass
     pass
+    pass
             base_size, params["base_position_size"]
         if 0.02 <= base_size <= 0.1:
+    pass
     pass
     pass
                 score += 0.3
@@ -501,8 +531,10 @@ import with heartbeat
         if "max_position_size" in params:
     pass
     pass
+    pass
             max_size, params["max_position_size"]
         if 0.15 <= max_size <= 0.3:
+    pass
     pass
     pass
                 score += 0.2
@@ -514,6 +546,7 @@ import with heartbeat
     def _evaluate_leverage_params(self, params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
     pass
     pass
+    pass
         """Evaluate leverage parameters."""
         score, 0.0
 
@@ -521,8 +554,10 @@ import with heartbeat
         if "safe_leverage_multiplier" in params:
     pass
     pass
+    pass
             multiplier, params["safe_leverage_multiplier"]
         if 0.7 <= multiplier <= 0.9:
+    pass
     pass
     pass
                 score += 0.3
@@ -536,6 +571,7 @@ import with heartbeat
     def _evaluate_tpsl_params(self, params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
     pass
     pass
+    pass
         """Evaluate TP / SL parameters."""
         score, 0.0
 
@@ -543,9 +579,11 @@ import with heartbeat
         if "tp_long" in params and "sl_long" in params:
     pass
     pass
+    pass
             tp, params["tp_long"]
             sl, params["sl_long"]
         if tp > sl and tp / sl >= 1.5:
+    pass
     pass
     pass
                 score += 0.3
@@ -559,6 +597,7 @@ import with heartbeat
     def _evaluate_ensemble_params(self, params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
     pass
     pass
+    pass
         """Evaluate ensemble parameters."""
         score, 0.0
 
@@ -566,8 +605,10 @@ import with heartbeat
         if "analyst_weight" in params and "tactician_weight" in params and "strategist_weight" in params:
     pass
     pass
+    pass
             weights = [params["analyst_weight"], params["tactician_weight"], params["strategist_weight"]]
         if abs(sum(weights) - 1.0) < 0.1:
+    pass
     pass
     pass
                 score += 0.3
@@ -577,6 +618,7 @@ import with heartbeat
         return score
 
     def _evaluate_sr_params(self, params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
+    pass
     pass
     pass
         """Evaluate S / R parameters."""
@@ -590,6 +632,7 @@ import with heartbeat
         if abs(sum(weights) - 1.0) < 0.1:
     pass
     pass
+    pass
             score += 0.3
         else:
             score += 0.1
@@ -599,6 +642,7 @@ import with heartbeat
     def _evaluate_two_tier_params(self, params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
     pass
     pass
+    pass
         """Evaluate two - tier system parameters."""
         score, 0.0
 
@@ -606,9 +650,11 @@ import with heartbeat
         if "tier1_weight" in params and "tier2_weight" in params:
     pass
     pass
+    pass
             tier1_weight, params["tier1_weight"]
             tier2_weight, params["tier2_weight"]
         if abs((tier1_weight + tier2_weight) - 1.0) < 0.1:
+    pass
     pass
     pass
                 score += 0.3
@@ -619,8 +665,10 @@ import with heartbeat
         if "direction_threshold" in params:
     pass
     pass
+    pass
             threshold, params["direction_threshold"]
         if 0.6 <= threshold <= 0.8:
+    pass
     pass
     pass
                 score += 0.2
@@ -630,8 +678,10 @@ import with heartbeat
         if "timing_threshold" in params:
     pass
     pass
+    pass
             threshold, params["timing_threshold"]
         if 0.7 <= threshold <= 0.9:
+    pass
     pass
     pass
                 score += 0.2
@@ -643,6 +693,7 @@ import with heartbeat
     def _evaluate_technical_indicators_params(self, params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
     pass
     pass
+    pass
         """Evaluate technical indicator parameters."""
         score, 0.0
 
@@ -650,8 +701,10 @@ import with heartbeat
         if "rsi_period" in params:
     pass
     pass
+    pass
             rsi_period, params["rsi_period"]
         if 10 <= rsi_period <= 20:
+    pass
     pass
     pass
                 score += 0.2
@@ -662,9 +715,11 @@ import with heartbeat
         if "macd_fast_period" in params and "macd_slow_period" in params:
     pass
     pass
+    pass
             fast, params["macd_fast_period"]
             slow, params["macd_slow_period"]
         if fast < slow and 8 <= fast <= 16 and 20 <= slow <= 30:
+    pass
     pass
     pass
                 score += 0.2
@@ -675,9 +730,11 @@ import with heartbeat
         if "adx_trend_threshold" in params and "adx_sideways_threshold" in params:
     pass
     pass
+    pass
             trend, params["adx_trend_threshold"]
             sideways, params["adx_sideways_threshold"]
         if trend > sideways:
+    pass
     pass
     pass
                 score += 0.2
@@ -688,8 +745,10 @@ import with heartbeat
         if "volatility_threshold" in params:
     pass
     pass
+    pass
             vol_thresh, params["volatility_threshold"]
         if 0.015 <= vol_thresh <= 0.035:
+    pass
     pass
     pass
                 score += 0.2
@@ -701,11 +760,13 @@ import with heartbeat
     def _evaluate_system_monitoring_params(self, params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
     pass
     pass
+    pass
         """Evaluate system monitoring parameters."""
         score, 0.0
 
         # Monitoring intervals should be reasonable
         if "analysis_interval" in params:
+    pass
     pass
     pass
             interval, params["analysis_interval"]
@@ -718,8 +779,10 @@ import with heartbeat
         if "max_history" in params:
     pass
     pass
+    pass
             max_hist, params["max_history"]
         if 50 <= max_hist <= 200:
+    pass
     pass
     pass
                 score += 0.2
@@ -730,8 +793,10 @@ import with heartbeat
         if "memory_threshold" in params:
     pass
     pass
+    pass
             mem_thresh, params["memory_threshold"]
         if 0.7 <= mem_thresh <= 0.9:
+    pass
     pass
     pass
                 score += 0.2
@@ -742,8 +807,10 @@ import with heartbeat
         if "learning_rate" in params:
     pass
     pass
+    pass
             lr, params["learning_rate"]
         if 0.005 <= lr <= 0.05:
+    pass
     pass
     pass
                 score += 0.2
@@ -755,6 +822,7 @@ import with heartbeat
     def _evaluate_training_optimization_params(self, params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
     pass
     pass
+    pass
         """Evaluate training optimization parameters."""
         score, 0.0
 
@@ -762,9 +830,11 @@ import with heartbeat
         if "adx_trend_threshold" in params and "adx_sideways_threshold" in params:
     pass
     pass
+    pass
             trend, params["adx_trend_threshold"]
             sideways, params["adx_sideways_threshold"]
         if trend > sideways and 20.0 <= trend <= 35.0 and 15.0 <= sideways <= 30.0:
+    pass
     pass
     pass
                 score += 0.2
@@ -775,9 +845,11 @@ import with heartbeat
         if "min_label_balance" in params and "max_label_balance" in params:
     pass
     pass
+    pass
             min_balance, params["min_label_balance"]
             max_balance, params["max_label_balance"]
         if min_balance < max_balance and 0.03 <= min_balance <= 0.1 and 0.9 <= max_balance <= 0.98:
+    pass
     pass
     pass
                 score += 0.2
@@ -788,8 +860,10 @@ import with heartbeat
         if "stability_threshold" in params:
     pass
     pass
+    pass
             stability, params["stability_threshold"]
         if 0.6 <= stability <= 0.9:
+    pass
     pass
     pass
                 score += 0.2
@@ -800,8 +874,10 @@ import with heartbeat
         if "lgb_learning_rate" in params:
     pass
     pass
+    pass
             lr, params["lgb_learning_rate"]
         if 0.01 <= lr <= 0.2:
+    pass
     pass
     pass
                 score += 0.2
@@ -812,8 +888,10 @@ import with heartbeat
         if "model_performance_threshold" in params:
     pass
     pass
+    pass
             perf_thresh, params["model_performance_threshold"]
         if 0.6 <= perf_thresh <= 0.85:
+    pass
     pass
     pass
                 score += 0.2
@@ -825,6 +903,7 @@ import with heartbeat
     def _evaluate_regime_transitions_params(self, params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
     pass
     pass
+    pass
         """Evaluate regime transition parameters."""
         score, 0.0
 
@@ -832,8 +911,10 @@ import with heartbeat
         if "transition_intensity_threshold" in params:
     pass
     pass
+    pass
             threshold, params["transition_intensity_threshold"]
         if 0.2 <= threshold <= 0.5:
+    pass
     pass
     pass
                 score += 0.2
@@ -844,8 +925,10 @@ import with heartbeat
         if "transition_confidence_threshold" in params:
     pass
     pass
+    pass
             confidence_thresh, params["transition_confidence_threshold"]
         if 0.6 <= confidence_thresh <= 0.9:
+    pass
     pass
     pass
                 score += 0.2
@@ -854,6 +937,7 @@ import with heartbeat
 
         # Model blending during transitions
         if "step09_5_weight" in params and "step10_weight" in params and "regime_expert_weight" in params:
+    pass
     pass
     pass
             step09_5_w, params["step09_5_weight"]
@@ -869,8 +953,10 @@ import with heartbeat
         if "transition_lookback_periods" in params:
     pass
     pass
+    pass
             lookback, params["transition_lookback_periods"]
         if 3 <= lookback <= 10:
+    pass
     pass
     pass
                 score += 0.2
@@ -881,8 +967,10 @@ import with heartbeat
         if "transition_risk_multiplier" in params:
     pass
     pass
+    pass
             risk_mult, params["transition_risk_multiplier"]
         if 1.0 <= risk_mult <= 1.5:
+    pass
     pass
     pass
                 score += 0.2
@@ -900,9 +988,12 @@ import with heartbeat
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             calibration_file, f"{calibration_dir}/{exchange}_{symbol}_calibration_results.pkl"
 
         if not os.path.exists(calibration_file):
+    pass
     pass
     pass
         self.logger.warning(f"Calibration file not found: {calibration_file}")
@@ -923,9 +1014,12 @@ import with heartbeat
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             previous_file, f"{optimization_dir}/{exchange}_{symbol}_final_parameters_new.pkl"
 
         if os.path.exists(previous_file):
+    pass
     pass
     pass
         with open(previous_file, "rb") as f:
@@ -939,6 +1033,9 @@ import with heartbeat
         """Validate optimization results."""
         try:
         if not optimization_results:
+    pass
+    except Exception as e:
+        pass
     pass
     except Exception as e:
         pass
@@ -964,7 +1061,9 @@ import with heartbeat
         for category in expected_categories:
     pass
     pass
+    pass
         if category not in optimization_results:
+    pass
     pass
     pass
         self.logger.warning(f"Missing optimization results for category: {category}")
@@ -980,6 +1079,8 @@ import with heartbeat
         """Save optimization results."""
         try:
             optimization_dir, f"{data_dir}/optimization_results"
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -1012,12 +1113,16 @@ import with heartbeat
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             }
 
         for category, results in optimization_results.items():
     pass
     pass
+    pass
         if results and "best_value" in results:
+    pass
     pass
     pass
                     report["summary"][category] = {
@@ -1033,11 +1138,14 @@ import with heartbeat
     def _setup_optimization_storage(self) -> None:
     pass
     pass
+    pass
         """Setup optimization storage."""
         try:
         # Ensure optimization directories exist
             os.makedirs("data / optimization_results", exist_ok = True)
             os.makedirs("data / calibration_results", exist_ok = True)
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -1062,6 +1170,8 @@ import with heartbeat
         try:
         self.logger.info("🚀 Delivering step12 results for tactician confidence optimization...")
 
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -1155,10 +1265,13 @@ import with heartbeat
         for path in step12_paths:
     pass
     pass
+    pass
         try:
         # Ensure directory exists
                     os.makedirs(os.path.dirname(path), exist_ok = True)
 
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -1195,12 +1308,16 @@ import with heartbeat
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         # Extract confidence optimization results
         if "confidence" in optimization_results:
     pass
     pass
+    pass
                 confidence_results, optimization_results["confidence"]
         if "best_value" in confidence_results:
+    pass
     pass
     pass
         # Extract ML confidence factors
@@ -1214,8 +1331,10 @@ import with heartbeat
         if "position_sizing" in optimization_results:
     pass
     pass
+    pass
                 position_results, optimization_results["position_sizing"]
         if "best_value" in position_results:
+    pass
     pass
     pass
         # Extract confidence thresholds
@@ -1230,8 +1349,10 @@ import with heartbeat
         if "tpsl" in optimization_results:
     pass
     pass
+    pass
                 tpsl_results, optimization_results["tpsl"]
         if "best_value" in tpsl_results:
+    pass
     pass
     pass
                     tactician_results["position_opening"] = {
@@ -1244,8 +1365,10 @@ import with heartbeat
         if "ensemble" in optimization_results:
     pass
     pass
+    pass
                 ensemble_results, optimization_results["ensemble"]
         if "best_value" in ensemble_results:
+    pass
     pass
     pass
                     tactician_results.update({
@@ -1261,6 +1384,7 @@ import with heartbeat
         if "ml_confidence_factors" not in tactician_results:
     pass
     pass
+    pass
                 tactician_results["ml_confidence_factors"] = {
                     "price_deviation_prediction": 1.35,
                     "price_direction_prediction": 1.28,
@@ -1268,6 +1392,7 @@ import with heartbeat
                 }
 
         if "position_monitor" not in tactician_results:
+    pass
     pass
     pass
                 tactician_results["position_monitor"] = {
@@ -1278,6 +1403,7 @@ import with heartbeat
                 }
 
         if "position_opening" not in tactician_results:
+    pass
     pass
     pass
                 tactician_results["position_opening"] = {

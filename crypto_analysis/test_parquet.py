@@ -11,6 +11,7 @@ import os
 def test_parquet_functionality():
     pass
     pass
+    pass
     """Test Parquet read/write functionality"""
     print("🧪 Testing Parquet Functionality")
     print("=" * 50)
@@ -23,7 +24,9 @@ def test_parquet_functionality():
     for symbol in symbols:
     pass
     pass
+    pass
         for date in dates:
+    pass
     pass
     pass
             data.append({
@@ -55,7 +58,9 @@ def test_parquet_functionality():
         pass
     except Exception as e:
         pass
-        print(f"\\\n📝 Writing to Parquet: {parquet_path}")
+    except Exception as e:
+        pass
+        print(f"\\\\n📝 Writing to Parquet: {parquet_path}")
         df.to_parquet(parquet_path, compression='snappy', engine='pyarrow', index=True)
 
         # Check file size
@@ -64,7 +69,7 @@ def test_parquet_functionality():
         print(f"Compression ratio: {df.memory_usage(deep=True).sum() / (file_size * 1024 * 1024):.1f}x")
 
         # Read from Parquet
-        print(f"\\\n📖 Reading from Parquet...")
+        print(f"\\\\n📖 Reading from Parquet...")
         loaded_df = pd.read_parquet(parquet_path)
 
         # Verify data integrity
@@ -73,7 +78,7 @@ def test_parquet_functionality():
         print(f"Data content match: {df.equals(loaded_df)}")
 
         # Test performance
-        print(f"\\\n⚡ Performance test:")
+        print(f"\\\\n⚡ Performance test:")
         import time
 
         start_time = time.time()
@@ -88,10 +93,11 @@ def test_parquet_functionality():
         print(f"Read time: {read_time:.3f} seconds")
 
         # Test with different compression
-        print(f"\\\n🗜️  Compression comparison:")
+        print(f"\\\\n🗜️  Compression comparison:")
         compressions = ['snappy', 'gzip', 'brotli']
 
         for compression in compressions:
+    pass
     pass
     pass
             test_file = f"test_{compression}.parquet"
@@ -107,7 +113,7 @@ def test_parquet_functionality():
             # Clean up test file
             os.remove(test_file)
 
-        print(f"\\\n✅ Parquet functionality test completed successfully!")
+        print(f"\\\\n✅ Parquet functionality test completed successfully!")
 
     except Exception as e:
         print(f"❌ Error testing Parquet: {e}")
@@ -117,6 +123,7 @@ def test_parquet_functionality():
         if os.path.exists(parquet_path):
     pass
     pass
+    pass
             os.remove(parquet_path)
 
     return True
@@ -124,8 +131,9 @@ def test_parquet_functionality():
 def test_data_structure():
     pass
     pass
+    pass
     """Test the expected data structure for our crypto analysis"""
-    print(f"\\\n📊 Testing Expected Data Structure")
+    print(f"\\\\n📊 Testing Expected Data Structure")
     print("=" * 50)
 
     # Create sample data with our expected structure
@@ -136,7 +144,9 @@ def test_data_structure():
     for symbol in symbols:
     pass
     pass
+    pass
         for date in dates:
+    pass
     pass
     pass
             data.append({
@@ -159,18 +169,20 @@ def test_data_structure():
     for col in ['open', 'high', 'low', 'close', 'volume', 'quote_asset_volume']:
     pass
     pass
+    pass
         df[col] = df[col].astype('float64')
 
     print("Expected columns and data types:")
     for col, dtype in df.dtypes.items():
     pass
     pass
+    pass
         print(f"  {col:20}: {dtype}")
 
-    print(f"\\\nSample data:")
+    print(f"\\\\nSample data:")
     print(df.head())
 
-    print(f"\\\nData info:")
+    print(f"\\\\nData info:")
     print(f"  Records: {len(df):,}")
     print(f"  Symbols: {df['symbol'].nunique()}")
     print(f"  Date range: {df.index.min()} to {df.index.max()}")
@@ -181,6 +193,7 @@ def test_data_structure():
 if __name__ == "__main__":
     pass
     pass
+    pass
     print("🚀 Parquet Functionality Test Suite")
     print("=" * 60)
 
@@ -188,8 +201,8 @@ if __name__ == "__main__":
     test_parquet_functionality()
     test_data_structure()
 
-    print(f"\\\n🎉 All tests completed!")
-    print(f"\\\n💡 The data downloader will save data in this exact format.")
+    print(f"\\\\n🎉 All tests completed!")
+    print(f"\\\\n💡 The data downloader will save data in this exact format.")
     print(f"   - Efficient Parquet compression (typically 3-5x smaller than CSV)")
     print(f"   - Fast read/write performance")
     print(f"   - Preserves data types and datetime index")

@@ -27,6 +27,8 @@ try:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
     XGBOOST_AVAILABLE = True
 except ImportError:
     XGBOOST_AVAILABLE = False
@@ -34,6 +36,8 @@ except ImportError:
 
 try:
     import catboost as cb
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -46,6 +50,9 @@ except ImportError:
 # Import existing model architectures from step6
 try:
     from .steps.step09_hmm_based_training import (
+    except Exception as e:
+        pass
+import except Exception as e:
     except Exception as e:
         pass
 import except Exception as e:
@@ -125,6 +132,7 @@ class MultiOutputModelConfig:
         if probability_targets is None:
     pass
     pass
+    pass
             self.probability_targets = [
                 "triple_barrier_probability",
                 "direction_probability",
@@ -136,6 +144,7 @@ class MultiOutputModelConfig:
 
         # Default probability configuration
         if probability_config is None:
+    pass
     pass
     pass
             self.probability_config = {
@@ -153,11 +162,13 @@ class MultiOutputModelConfig:
         if supported_model_types is None:
     pass
     pass
+    pass
             self.supported_model_types = [
                 "LightGBM", "RandomForest", "XGBoost", "CatBoost", "NeuralNetwork"
             ]
             # Add existing models if available
             if EXISTING_MODELS_AVAILABLE:
+    pass
     pass
     pass
                 self.supported_model_types.extend(["CNN", "TCN", "Transformer"])
@@ -187,6 +198,7 @@ class MultiOutputNeuralNetwork(nn.Module):
         prev_size = input_size
 
         for hidden_size in hidden_sizes:
+    pass
     pass
     pass
             layers.extend([
@@ -219,6 +231,7 @@ class MultiOutputNeuralNetwork(nn.Module):
     def forward(self, x):
     pass
     pass
+    pass
         shared_features = self.shared_layers(x)
         direction_pred = self.direction_head(shared_features)
         profit_pred = self.profit_head(shared_features)
@@ -229,6 +242,7 @@ class MultiOutputModelTrainer:
     """Multi-output model trainer for direction and profit prediction with comprehensive SR features."""
 
     def __init__(self, config: MultiOutputModelConfig):
+    pass
     pass
     pass
         self.config = config
@@ -267,6 +281,7 @@ class MultiOutputModelTrainer:
         if self.config.enable_probability_outputs:
     pass
     pass
+    pass
             from .multi_output_probability_trainer import ProbabilityTargetGenerator
 import self.probability_target_generator = ProbabilityTargetGenerator
             self.probability_target_generator = ProbabilityTargetGenerator(self.config.probability_config)
@@ -296,9 +311,12 @@ import self.probability_target_generator = ProbabilityTargetGenerator
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             # Load step7 matrix operations results
             step07_results_path = Path(step07_output_path) / "matrix_operations_results.json"
             if not step07_results_path.exists():
+    pass
     pass
     pass
                 self.logger.warning(f"⚠️ Step7 results not found at: {step07_results_path}")
@@ -363,9 +381,12 @@ import self.probability_target_generator = ProbabilityTargetGenerator
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             # Load step02_5 SR optimization results
             step02_5_results_path = Path(step02_5_output_path) / "sr_optimization_results.json"
             if not step02_5_results_path.exists():
+    pass
     pass
     pass
                 self.logger.warning(f"⚠️ Step2_5 results not found at: {step02_5_results_path}")
@@ -393,6 +414,7 @@ import self.probability_target_generator = ProbabilityTargetGenerator
     def convert_sr_levels_to_features(self, current_price: float) -> dict[str, float]:
     pass
     pass
+    pass
         """
         Convert SR levels from step02_5 to ML features.
 
@@ -405,6 +427,8 @@ import self.probability_target_generator = ProbabilityTargetGenerator
         try:
             features = {}
 
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -436,6 +460,7 @@ import self.probability_target_generator = ProbabilityTargetGenerator
             if all_levels:
     pass
     pass
+    pass
                 price_range = max([level.get("price", current_price) for level in all_levels]) - min([level.get("price", current_price) for level in all_levels])
                 price_range = max(price_range, current_price * 0.01)  # Minimum range
 
@@ -464,8 +489,10 @@ import self.probability_target_generator = ProbabilityTargetGenerator
     def _calculate_nearest_distance(self, levels: list, current_price: float) -> float:
     pass
     pass
+    pass
         """Calculate distance to nearest level."""
         if not levels:
+    pass
     pass
     pass
             return 1.0  # Far away if no levels
@@ -474,6 +501,7 @@ import self.probability_target_generator = ProbabilityTargetGenerator
         return min(distances) if distances else 1.0
 
     def _get_default_sr_level_features(self) -> dict[str, float]:
+    pass
     pass
     pass
         """Return default SR level features when conversion fails."""
@@ -487,6 +515,7 @@ import self.probability_target_generator = ProbabilityTargetGenerator
         }
 
     def validate_feature_completeness(self, features_df: pd.DataFrame) -> dict[str, list[str]]:
+    pass
     pass
     pass
         """
@@ -529,19 +558,24 @@ import self.probability_target_generator = ProbabilityTargetGenerator
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             }
 
             missing_features = {}
             for category, features in required_features.items():
     pass
     pass
+    pass
                 missing = [f for f in features if f not in features_df.columns]
                 if missing:
+    pass
     pass
     pass
                     missing_features[category] = missing
 
             if missing_features:
+    pass
     pass
     pass
                 self.logger.warning(f"⚠️ Missing SR features: {missing_features}")
@@ -571,11 +605,14 @@ import self.probability_target_generator = ProbabilityTargetGenerator
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             # Create a copy to avoid modifying original data
             data_with_sr = data.copy()
 
             # Add step7 SR features if available
             if self.step07_features:
+    pass
     pass
     pass
                 self.logger.info(f"📊 Adding {len(self.step07_features)} step7 SR features...")
@@ -584,7 +621,9 @@ import self.probability_target_generator = ProbabilityTargetGenerator
                 for feature in self.step07_features:
     pass
     pass
+    pass
                     if feature not in data_with_sr.columns:
+    pass
     pass
     pass
                         data_with_sr[feature] = 0.5  # Default neutral value
@@ -595,10 +634,12 @@ import self.probability_target_generator = ProbabilityTargetGenerator
             if self.step02_5_sr_levels:
     pass
     pass
+    pass
                 self.logger.info("📊 Adding step02_5 SR level features...")
 
                 # Get current prices for SR level feature calculation
                 if 'close' in data_with_sr.columns:
+    pass
     pass
     pass
                     current_prices = data_with_sr['close'].values
@@ -609,6 +650,7 @@ import self.probability_target_generator = ProbabilityTargetGenerator
                 # Calculate SR level features for each row
                 sr_level_features_list = []
                 for i, current_price in enumerate(current_prices):
+    pass
     pass
     pass
                     sr_level_features = self.convert_sr_levels_to_features(current_price)
@@ -628,6 +670,7 @@ import self.probability_target_generator = ProbabilityTargetGenerator
             if missing_features:
     pass
     pass
+    pass
                 self.logger.warning(f"⚠️ Some SR features are missing: {missing_features}")
 
             # Store SR feature columns for later use
@@ -641,6 +684,7 @@ import self.probability_target_generator = ProbabilityTargetGenerator
             return data
 
     def _create_combined_sr_features(self, data: pd.DataFrame) -> pd.DataFrame:
+    pass
     pass
     pass
         """
@@ -658,7 +702,10 @@ import self.probability_target_generator = ProbabilityTargetGenerator
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             if 'sr_proximity' in data.columns and 'sr_zone_width' in data.columns:
+    pass
     pass
     pass
                 data['sr_proximity_zone_ratio'] = data['sr_proximity'] / (data['sr_zone_width'] + 1e-8)
@@ -667,10 +714,12 @@ import self.probability_target_generator = ProbabilityTargetGenerator
             if 'sr_strength' in data.columns and 'sr_enhanced_strength' in data.columns:
     pass
     pass
+    pass
                 data['sr_strength_enhanced_ratio'] = data['sr_strength'] / (data['sr_enhanced_strength'] + 1e-8)
 
             # Combined level features
             if 'sr_support_level_count' in data.columns and 'sr_resistance_level_count' in data.columns:
+    pass
     pass
     pass
                 data['sr_support_resistance_ratio'] = data['sr_support_level_count'] / (data['sr_resistance_level_count'] + 1e-8)
@@ -678,6 +727,7 @@ import self.probability_target_generator = ProbabilityTargetGenerator
 
             # Combined distance features
             if 'sr_nearest_support_distance' in data.columns and 'sr_nearest_resistance_distance' in data.columns:
+    pass
     pass
     pass
                 data['sr_nearest_level_distance'] = np.minimum(
@@ -690,10 +740,12 @@ import self.probability_target_generator = ProbabilityTargetGenerator
             if 'sr_momentum_pct' in data.columns and 'sr_volatility_pct' in data.columns:
     pass
     pass
+    pass
                 data['sr_momentum_volatility_ratio'] = data['sr_momentum_pct'] / (data['sr_volatility_pct'] + 1e-8)
 
             # SR trend features
             if 'sr_trend_pct' in data.columns and 'sr_momentum_pct' in data.columns:
+    pass
     pass
     pass
                 data['sr_trend_momentum_alignment'] = np.sign(data['sr_trend_pct']) * np.sign(data['sr_momentum_pct'])
@@ -706,6 +758,7 @@ import self.probability_target_generator = ProbabilityTargetGenerator
             return data
 
     def _analyze_sr_features(self, features_df: pd.DataFrame) -> dict[str, Any]:
+    pass
     pass
     pass
         """
@@ -723,9 +776,12 @@ import self.probability_target_generator = ProbabilityTargetGenerator
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             sr_columns = [col for col in features_df.columns if 'sr_' in col.lower()]
 
             if not sr_columns:
+    pass
     pass
     pass
                 return {"sr_feature_count": 0, "sr_feature_categories": {}}
@@ -746,7 +802,9 @@ import self.probability_target_generator = ProbabilityTargetGenerator
             for category, cols in categories.items():
     pass
     pass
+    pass
                 if cols:
+    pass
     pass
     pass
                     category_stats[category] = {
@@ -801,11 +859,13 @@ import self.probability_target_generator = ProbabilityTargetGenerator
         if data.empty:
     pass
     pass
+    pass
             raise ValueError("Input data is empty")
 
         required_columns = [direction_column, profit_column]
         missing_columns = [col for col in required_columns if col not in data.columns]
         if missing_columns:
+    pass
     pass
     pass
             raise ValueError(f"Missing required columns: {missing_columns}")
@@ -815,6 +875,7 @@ import self.probability_target_generator = ProbabilityTargetGenerator
 
         # Use enhanced data-driven feature selection if enabled
         if use_enhanced_feature_selection:
+    pass
     pass
     pass
             try:
@@ -849,12 +910,14 @@ import self.probability_target_generator = ProbabilityTargetGenerator
         if self.config.use_profit_features and not use_enhanced_feature_selection:
     pass
     pass
+    pass
             self.logger.info("🔧 Applying profit-based feature engineering...")
             data = self.profit_feature_engine.apply_all_features(data)
             self.logger.info(f"✅ Added profit-based features")
 
         # Select features
         if feature_columns is None:
+    pass
     pass
     pass
             # Use all columns except targets and metadata
@@ -878,6 +941,7 @@ import self.probability_target_generator = ProbabilityTargetGenerator
         if direction_target.dtype in ['object', 'string']:
     pass
     pass
+    pass
             # Assume positive direction is 1, negative is 0
             direction_target = (direction_target > self.config.direction_threshold).astype(int)
 
@@ -890,12 +954,14 @@ import self.probability_target_generator = ProbabilityTargetGenerator
     def get_feature_importance_summary(self) -> Dict[str, Any]:
     pass
     pass
+    pass
         """Get a summary of feature importance scores from data-driven selection.
 
         Returns:
             Dictionary containing feature importance summaries by method
         """
         if not hasattr(self, 'feature_importance') or not self.feature_importance:
+    pass
     pass
     pass
             return {}
@@ -905,7 +971,9 @@ import self.probability_target_generator = ProbabilityTargetGenerator
         for method, scores in self.feature_importance.items():
     pass
     pass
+    pass
             if isinstance(scores, dict) and len(scores) > 0:
+    pass
     pass
     pass
                 scores_series = pd.Series(scores)
@@ -931,6 +999,7 @@ import self.probability_target_generator = ProbabilityTargetGenerator
     ) -> Dict[str, Any]:
         """Train XGBoost multi-output model."""
         if not XGBOOST_AVAILABLE:
+    pass
     pass
     pass
             raise ImportError("XGBoost is not available. Please install xgboost package.")
@@ -1020,6 +1089,7 @@ import self.probability_target_generator = ProbabilityTargetGenerator
     ) -> Dict[str, Any]:
         """Train CatBoost multi-output model."""
         if not CATBOOST_AVAILABLE:
+    pass
     pass
     pass
             raise ImportError("CatBoost is not available. Please install catboost package.")
@@ -1127,6 +1197,7 @@ import self.probability_target_generator = ProbabilityTargetGenerator
         if missing_features:
     pass
     pass
+    pass
             self.logger.warning(f"⚠️ Missing SR features: {missing_features}")
 
         # NEW: Log SR feature statistics
@@ -1150,6 +1221,7 @@ import self.probability_target_generator = ProbabilityTargetGenerator
         for fold, (train_idx, val_idx) in enumerate(tscv.split(X)):
     pass
     pass
+    pass
             self.logger.info(f"🔄 Training fold {fold + 1}/{self.config.n_splits}")
 
             X_train, X_val = X[train_idx], X[val_idx]
@@ -1163,6 +1235,7 @@ import self.probability_target_generator = ProbabilityTargetGenerator
 
             # Train model based on type
             if self.config.model_type == "LightGBM":
+    pass
     pass
     pass
                 model_result = self._train_lightgbm_multi_output(
@@ -1205,12 +1278,14 @@ import self.probability_target_generator = ProbabilityTargetGenerator
             if model_result:
     pass
     pass
+    pass
                 direction_metrics.append(model_result["direction_metrics"])
                 profit_metrics.append(model_result["profit_metrics"])
                 combined_metrics.append(model_result["combined_metrics"])
 
         # Aggregate results
         if direction_metrics and profit_metrics:
+    pass
     pass
     pass
             final_model = self._train_final_model(
@@ -1524,6 +1599,7 @@ import self.probability_target_generator = ProbabilityTargetGenerator
         if self.config.model_type == "LightGBM":
     pass
     pass
+    pass
             direction_model = lgb.LGBMClassifier(
                 n_estimators=100,
                 learning_rate=0.1,
@@ -1579,8 +1655,10 @@ import self.probability_target_generator = ProbabilityTargetGenerator
     def _aggregate_metrics(self, metrics_list: List[Dict[str, float]]) -> Dict[str, float]:
     pass
     pass
+    pass
         """Aggregate metrics across folds."""
         if not metrics_list:
+    pass
     pass
     pass
             return {}
@@ -1589,8 +1667,10 @@ import self.probability_target_generator = ProbabilityTargetGenerator
         for key in metrics_list[0].keys():
     pass
     pass
+    pass
             values = [metrics[key] for metrics in metrics_list if key in metrics]
             if values:
+    pass
     pass
     pass
                 aggregated[key] = np.mean(values)
@@ -1616,6 +1696,7 @@ import self.probability_target_generator = ProbabilityTargetGenerator
         if model_name not in self.models:
     pass
     pass
+    pass
             raise ValueError(f"Model '{model_name}' not found")
 
         model = self.models[model_name]
@@ -1628,11 +1709,13 @@ import self.probability_target_generator = ProbabilityTargetGenerator
         if model["model_type"] in ["LightGBM", "RandomForest"]:
     pass
     pass
+    pass
             direction_pred = model["direction_model"].predict(X_scaled)
             profit_pred = model["profit_model"].predict(X_scaled)
 
             # Calculate price predictions if current prices are provided
             if current_prices is not None:
+    pass
     pass
     pass
                 # Price prediction = current_price * (1 + profit_prediction)
@@ -1679,6 +1762,7 @@ import direction_pred, profit_pred, price_pred = self.predict
         if model["model_type"] in ["LightGBM", "RandomForest"]:
     pass
     pass
+    pass
             direction_prob = model["direction_model"].predict_proba(X_scaled)[:, 1]
         else:
             # Fallback: use prediction as probability
@@ -1686,6 +1770,7 @@ import direction_pred, profit_pred, price_pred = self.predict
 
         # Use current prices or default to ones
         if current_prices is None:
+    pass
     pass
     pass
             current_prices = np.ones_like(profit_pred)
@@ -1727,6 +1812,7 @@ import direction_pred, profit_pred, price_pred = self.predict
         if model_name not in self.models:
     pass
     pass
+    pass
             raise ValueError(f"Model '{model_name}' not found")
 
         os.makedirs(save_path, exist_ok=True)
@@ -1736,6 +1822,7 @@ import direction_pred, profit_pred, price_pred = self.predict
 
         # Save model components
         if model["model_type"] in ["LightGBM", "RandomForest"]:
+    pass
     pass
     pass
             joblib.dump(model["direction_model"], f"{save_path}/direction_model.pkl")
@@ -1767,12 +1854,14 @@ import direction_pred, profit_pred, price_pred = self.predict
         if os.path.exists(f"{load_path}/direction_model.pkl"):
     pass
     pass
+    pass
             direction_model = joblib.load(f"{load_path}/direction_model.pkl")
             profit_model = joblib.load(f"{load_path}/profit_model.pkl")
             scaler = joblib.load(f"{load_path}/scaler.pkl")
 
             # Determine model type
             if hasattr(direction_model, 'feature_importances_'):
+    pass
     pass
     pass
                 model_type = "RandomForest" if hasattr(direction_model, 'estimators_') else "LightGBM"
@@ -1789,6 +1878,7 @@ import direction_pred, profit_pred, price_pred = self.predict
 
             # Load metadata
             if os.path.exists(f"{load_path}/metadata.json"):
+    pass
     pass
     pass
                 with open(f"{load_path}/metadata.json", "r") as f:
@@ -1819,6 +1909,7 @@ import direction_pred, profit_pred, price_pred = self.predict
             Dictionary containing all 4 probability targets
         """
         if not self.config.enable_probability_outputs:
+    pass
     pass
     pass
             self.logger.warning("Probability outputs not enabled in config")
@@ -1854,6 +1945,7 @@ import direction_pred, profit_pred, price_pred = self.predict
         if not self.config.enable_probability_outputs:
     pass
     pass
+    pass
             self.logger.warning("Probability outputs not enabled, using standard training")
             return self._train_standard_multi_output(X_train, X_val, y_train, y_val, feature_names)
 
@@ -1870,6 +1962,7 @@ import direction_pred, profit_pred, price_pred = self.predict
         for prob_type in self.config.probability_targets:
     pass
     pass
+    pass
             self.logger.info(f"🔧 Training model for {prob_type}")
 
             # Get target values
@@ -1878,6 +1971,7 @@ import direction_pred, profit_pred, price_pred = self.predict
 
             # Train model based on config using existing architectures
             if self.config.model_type == "LightGBM":
+    pass
     pass
     pass
                 model = self._train_lightgbm_probability_model(
@@ -1942,6 +2036,9 @@ import direction_pred, profit_pred, price_pred = self.predict
         # Handle class imbalance
         try:
             from sklearn.utils.class_weight import compute_class_weight
+    except Exception as e:
+        pass
+import except Exception as e:
     except Exception as e:
         pass
 import except Exception as e:
@@ -2174,9 +2271,11 @@ import class_weights = compute_class_weight
     def _create_sequences(self, data: np.ndarray, sequence_length: int) -> np.ndarray:
     pass
     pass
+    pass
         """Create sequences for time series models."""
         sequences = []
         for i in range(len(data) - sequence_length):
+    pass
     pass
     pass
             sequences.append(data[i:i + sequence_length])
@@ -2194,6 +2293,7 @@ import class_weights = compute_class_weight
         for prob_type, model_info in trained_models.items():
     pass
     pass
+    pass
             model = model_info["model"]
 
             try:
@@ -2202,11 +2302,15 @@ import class_weights = compute_class_weight
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
                 if hasattr(model, 'predict_proba'):
+    pass
     pass
     pass
                     proba = model.predict_proba(X_test)
                     if proba.shape[1] > 1:
+    pass
     pass
     pass
                         # Binary classification, get positive class probability

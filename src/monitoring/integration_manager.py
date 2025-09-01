@@ -35,6 +35,7 @@ class MonitoringIntegrationManager:
     def __init__(self, config: Dict[str, Any]) -> None:
     pass
     pass
+    pass
         self.config = config
         self.logger = system_logger.getChild("MonitoringIntegrationManager")
         self.integration_config = config.get("monitoring_integration", {})

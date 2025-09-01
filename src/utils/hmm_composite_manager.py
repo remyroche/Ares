@@ -33,6 +33,8 @@ class HMMCompositeManager:
     def __init__(self) -> None:
     pass
     pass
+    pass
+    pass
         self.logger, system_logger.getChild("HMMCompositeManager")
         self._cache: dict[str, dict[str, Any]] = {}  # Simple cache to avoid repeated file checks / loads
         # Use shared global sets so multiple instances do not re - log the same events
@@ -72,6 +74,8 @@ class HMMCompositeManager:
     def _check_files_exist(self, file_paths: dict[str, str]) -> tuple[bool, list[str]]:
     pass
     pass
+    pass
+    pass
         """Check if all required files exist."""
         missing_files: list[str] = []
         all_exist, True
@@ -79,7 +83,11 @@ class HMMCompositeManager:
         for file_type, file_path in file_paths.items():
     pass
     pass
+    pass
+    pass
         if not os.path.exists(file_path):
+    pass
+    pass
     pass
     pass
                 all_exist, False
@@ -90,9 +98,13 @@ class HMMCompositeManager:
     def _cleanup_cache_if_needed(self) -> None:
     pass
     pass
+    pass
+    pass
         """Clean up cache if it's been too long since last cleanup."""
         current_time, time.time()
         if current_time - self._last_cleanup > self._cleanup_interval:
+    pass
+    pass
     pass
     pass
         # Remove old cache entries (older than 1 hour)
@@ -105,8 +117,14 @@ class HMMCompositeManager:
         for key in old_keys:
     pass
     pass
+    pass
+    pass
         try:
                     del self._cache[key]
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -154,9 +172,13 @@ class HMMCompositeManager:
         if cache_key in self._cache:
     pass
     pass
+    pass
+    pass
         return self._cache[cache_key]["data"]  # type: ignore[return - value]
 
         if not os.path.exists(block_states_path):
+    pass
+    pass
     pass
     pass
         self.logger.info(
@@ -170,9 +192,15 @@ class HMMCompositeManager:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Cache for subsequent calls and log only once per key
         self._cache[cache_key] = {"data": df, "timestamp": time.time()}
         if cache_key not in self._logged_loads:
+    pass
+    pass
     pass
     pass
         self.logger.info(
@@ -221,9 +249,13 @@ class HMMCompositeManager:
         if cache_key in self._cache:
     pass
     pass
+    pass
+    pass
         return self._cache[cache_key]["data"]  # type: ignore[return - value]
 
         if not os.path.exists(composite_path):
+    pass
+    pass
     pass
     pass
             event_key = (
@@ -232,7 +264,11 @@ class HMMCompositeManager:
         if auto_create:
     pass
     pass
+    pass
+    pass
         if event_key not in self._logged_events:
+    pass
+    pass
     pass
     pass
         self.logger.info(
@@ -242,6 +278,8 @@ class HMMCompositeManager:
         # Return None to indicate they need to be created
         return None
         if event_key not in self._logged_events:
+    pass
+    pass
     pass
     pass
         self.logger.info(
@@ -256,9 +294,15 @@ class HMMCompositeManager:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Cache for subsequent calls and log only once per key
         self._cache[cache_key] = {"data": df, "timestamp": time.time()}
         if cache_key not in self._logged_loads:
+    pass
+    pass
     pass
     pass
         self.logger.info(
@@ -305,9 +349,13 @@ class HMMCompositeManager:
         if cache_key in self._cache:
     pass
     pass
+    pass
+    pass
         return self._cache[cache_key]["data"]  # type: ignore[return - value]
 
         if not os.path.exists(meta_path):
+    pass
+    pass
     pass
     pass
         self.logger.info(f"HMM meta not found for {exchange}_{symbol}_{timeframe}")
@@ -320,9 +368,15 @@ class HMMCompositeManager:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Cache for subsequent calls and log only once per key
         self._cache[cache_key] = {"data": meta, "timestamp": time.time()}
         if cache_key not in self._logged_loads:
+    pass
+    pass
     pass
     pass
         self.logger.info(
@@ -369,9 +423,13 @@ class HMMCompositeManager:
         if cache_key in self._cache:
     pass
     pass
+    pass
+    pass
         return self._cache[cache_key]["data"]  # type: ignore[return - value]
 
         if not os.path.exists(intensity_path):
+    pass
+    pass
     pass
     pass
         self.logger.info(
@@ -385,9 +443,15 @@ class HMMCompositeManager:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Cache for subsequent calls and log only once per key
         self._cache[cache_key] = {"data": df, "timestamp": time.time()}
         if cache_key not in self._logged_loads:
+    pass
+    pass
     pass
     pass
         self.logger.info(
@@ -434,9 +498,13 @@ class HMMCompositeManager:
         if cache_key in self._cache:
     pass
     pass
+    pass
+    pass
         return self._cache[cache_key]["data"]  # type: ignore[return - value]
 
         if not os.path.exists(basic_meta_path):
+    pass
+    pass
     pass
     pass
         self.logger.info(
@@ -451,9 +519,15 @@ class HMMCompositeManager:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Cache for subsequent calls and log only once per key
         self._cache[cache_key] = {"data": meta, "timestamp": time.time()}
         if cache_key not in self._logged_loads:
+    pass
+    pass
     pass
     pass
         self.logger.info(
@@ -501,12 +575,16 @@ class HMMCompositeManager:
         if all_exist and not force_rerun:
     pass
     pass
+    pass
+    pass
         self.logger.info(
                 f"✅ All HMM composite cluster files already exist for {exchange}_{symbol}_{timeframe} - skipping creation",
             )
         return True
 
         if not all_exist:
+    pass
+    pass
     pass
     pass
         self.logger.info(
@@ -531,6 +609,8 @@ class HMMCompositeManager:
         )
 
         if success:
+    pass
+    pass
     pass
     pass
         self.logger.info(
@@ -576,6 +656,8 @@ class HMMCompositeManager:
         if df is not None and not force_rerun:
     pass
     pass
+    pass
+    pass
         return df
 
         # If files don't exist or force_rerun is True, create them
@@ -589,6 +671,8 @@ class HMMCompositeManager:
         )
 
         if success:
+    pass
+    pass
     pass
     pass
         # Try to load the newly created files
@@ -621,11 +705,19 @@ class HMMCompositeManager:
         for file_type, file_path in file_paths.items():
     pass
     pass
+    pass
+    pass
         if os.path.exists(file_path):
+    pass
+    pass
     pass
     pass
         try:
                     stat, os.stat(file_path)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -681,6 +773,8 @@ class HMMCompositeManager:
         if not all_exist:
     pass
     pass
+    pass
+    pass
             validation_results["valid"] = False
             validation_results["errors"].extend(
                 [f"Missing file: {f}" for f in missing_files],
@@ -690,7 +784,11 @@ class HMMCompositeManager:
         for file_type, file_path in file_paths.items():
     pass
     pass
+    pass
+    pass
         if os.path.exists(file_path):
+    pass
+    pass
     pass
     pass
         try:
@@ -699,10 +797,18 @@ class HMMCompositeManager:
     except Exception as e:
         pass
     pass
+    except Exception as e:
+        pass
+    pass
+    except Exception as e:
+        pass
+    pass
                         df, pd.read_parquet(file_path)
     except Exception as e:
         pass
         if df.empty:
+    pass
+    pass
     pass
     pass
                             validation_results["warnings"].append(
@@ -736,6 +842,8 @@ class HMMCompositeManager:
         if exchange is None and symbol is None and timeframe is None:
     pass
     pass
+    pass
+    pass
         # Fallback implementation for exchange is None and symbol is None and timeframe
         # Clear all cache
         self._cache.clear()
@@ -746,15 +854,23 @@ class HMMCompositeManager:
         for key in list(self._cache.keys()):
     pass
     pass
+    pass
+    pass
         if exchange and exchange not in key:
+    pass
+    pass
     pass
     pass
                     continue
         if symbol and symbol not in key:
     pass
     pass
+    pass
+    pass
                     continue
         if timeframe and timeframe not in key:
+    pass
+    pass
     pass
     pass
                     continue
@@ -763,8 +879,14 @@ class HMMCompositeManager:
         for key in keys_to_remove:
     pass
     pass
+    pass
+    pass
         try:
                     del self._cache[key]
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -777,6 +899,8 @@ class HMMCompositeManager:
             )
 
     def get_cache_stats(self) -> dict[str, Any]:
+    pass
+    pass
     pass
     pass
         """
@@ -806,9 +930,13 @@ _hmm_composite_manager: HMMCompositeManager | None, None
 def get_hmm_composite_manager() -> HMMCompositeManager:
     pass
     pass
+    pass
+    pass
     """Get the global HMM composite manager instance."""
     global _hmm_composite_manager
     if _hmm_composite_manager is None:
+    pass
+    pass
     pass
     pass
         # Fallback implementation for _hmm_composite_manager

@@ -199,12 +199,18 @@ HIGH_TF = {"15m", "30m"}
 def _tf_band(timeframe: str) -> str:
     pass
     pass
+    pass
+    pass
     tf = timeframe.strip().lower()
     if tf in ("1m", "5m"):
     pass
     pass
+    pass
+    pass
         return "low"
     if tf in ("15m", "30m"):
+    pass
+    pass
     pass
     pass
         return "high"
@@ -225,12 +231,16 @@ def get_model_choice_for_label(
     if not cfg:
     pass
     pass
+    pass
+    pass
         return "lightgbm", {"num_leaves": 48}
     key, params = cfg.get(band, cfg.get("high"))
     return key, dict(params or {})
 
 
 def build_model(model_key: str, params: dict[str, Any]) -> Any:
+    pass
+    pass
     pass
     pass
     """Instantiate a model from a key and params. Returns a fitted-ready estimator.
@@ -314,14 +324,26 @@ def build_model(model_key: str, params: dict[str, Any]) -> Any:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         }
 
         if key == "hmm_gaussian":
     pass
     pass
+    pass
+    pass
             try:
                 class HMMWrapper:
                     def __init__(self, n_states: int = 4):
+    pass
+    except Exception as e:
+        pass
+    pass
+    except Exception as e:
+        pass
     pass
     except Exception as e:
         pass
@@ -340,7 +362,11 @@ def build_model(model_key: str, params: dict[str, Any]) -> Any:
                     def fit(self, x: Any, y: Any) -> HMMWrapper:
     pass
     pass
+    pass
+    pass
                         if isinstance(x, pd.DataFrame | pd.Series):
+    pass
+    pass
     pass
     pass
                             x_arr = x.to_numpy()
@@ -355,11 +381,15 @@ def build_model(model_key: str, params: dict[str, Any]) -> Any:
                     def predict_proba(self, x: Any) -> np.ndarray:
     pass
     pass
+    pass
+    pass
                         x_arr = x.values if hasattr(x, "values") else np.asarray(x)
                         states = self.hmm.predict(x_arr)
                         return self.decoder.predict_proba(states.reshape(-1, 1))
 
                     def predict(self, x: Any) -> np.ndarray:
+    pass
+    pass
     pass
     pass
                         proba = self.predict_proba(x)
@@ -390,6 +420,8 @@ def build_model(model_key: str, params: dict[str, Any]) -> Any:
 
 
 def select_model_for_label_timeframe(label: str, timeframe: str):
+    pass
+    pass
     pass
     pass
     key, params = get_model_choice_for_label(label, timeframe)

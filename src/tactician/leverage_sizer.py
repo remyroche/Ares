@@ -23,13 +23,16 @@ class LeverageSizer:
     def __init__(self, config: dict[str, Any]) -> None:
     pass
     pass
+    pass
         self.config: dict[str, Any] = config
         self.logger = system_logger.getChild("LeverageSizer")
         # Backward-compatibility shim for legacy self.print calls
         if not hasattr(self, "print"):
     pass
     pass
+    pass
             def _shim_print(message: str) -> None:
+    pass
     pass
     pass
                 with contextlib.suppress(Exception):
@@ -83,6 +86,7 @@ class LeverageSizer:
         if not self._validate_configuration():
     pass
     pass
+    pass
             return False
 
         self.is_initialized = True
@@ -90,6 +94,7 @@ class LeverageSizer:
         return True
 
     def _validate_configuration(self) -> bool:
+    pass
     pass
     pass
         """Validate leverage sizer configuration."""
@@ -103,11 +108,15 @@ class LeverageSizer:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             ]
             for key in required_keys:
     pass
     pass
+    pass
                 if not hasattr(self, key):
+    pass
     pass
     pass
                     self.logger.error(f"Missing required configuration key: {key}")
@@ -117,10 +126,12 @@ class LeverageSizer:
             if self.min_leverage <= 0 or self.min_leverage >= self.max_leverage:
     pass
     pass
+    pass
                 self.logger.error("Invalid leverage range configuration")
                 return False
 
             if self.liquidation_buffer <= 0 or self.liquidation_buffer >= 1:
+    pass
     pass
     pass
                 self.logger.error("Invalid liquidation_buffer configuration")
@@ -135,6 +146,7 @@ class LeverageSizer:
     def refresh_step17_configuration(self, step17_results: dict[str, Any]) -> None:
     pass
     pass
+    pass
         """
         Refresh configuration from step17 optimization results.
         This method is called automatically when step17 completes.
@@ -144,6 +156,9 @@ class LeverageSizer:
         """
         try:
             if "leverage" in step17_results:
+    pass
+    except Exception as e:
+        pass
     pass
     except Exception as e:
         pass
@@ -209,11 +224,14 @@ class LeverageSizer:
         if not self.is_initialized:
     pass
     pass
+    pass
             self.logger.error("Leverage sizer not initialized")
             return {}
 
         try:
             # NEW: Extract combined confidence from Tactician multi-output predictions
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -226,6 +244,7 @@ class LeverageSizer:
 
             # NEW: Use combined confidence for leverage sizing if available
             if combined_confidence >= self.leverage_combined_threshold:
+    pass
     pass
     pass
                 # Calculate base ML leverage
@@ -305,10 +324,13 @@ class LeverageSizer:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             target_levels = [0.5, 1.0, 1.5, 2.0]
             confidences = []
 
             for level in target_levels:
+    pass
     pass
     pass
                 closest_level = min(
@@ -324,6 +346,7 @@ class LeverageSizer:
             # Get average adverse risk
             adverse_risks = []
             for level in target_levels:
+    pass
     pass
     pass
                 closest_level = min(
@@ -369,6 +392,8 @@ class LeverageSizer:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             # Assume worst-case scenario: 10% price move against position
             worst_case_move = 0.10
 
@@ -376,11 +401,13 @@ class LeverageSizer:
             if market_health_analysis:
     pass
     pass
+    pass
                 vol_analysis = market_health_analysis.get("volatility_analysis", {})
                 current_vol = float(vol_analysis.get("current_volatility", 0.02))
 
                 # If volatility is high, increase the worst-case scenario
                 if current_vol > 0.03:
+    pass
     pass
     pass
                     worst_case_move = min(0.20, current_vol * 2)
@@ -407,6 +434,8 @@ class LeverageSizer:
         """Calculate weighted leverage using ML and liquidation risk models."""
         try:
             # Calculate weighted leverage
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -442,8 +471,11 @@ class LeverageSizer:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             # Apply market health modifiers
             if market_health_analysis:
+    pass
     pass
     pass
                 volatility_modifier = market_health_analysis.get("volatility_modifier", 1.0)
@@ -454,6 +486,7 @@ class LeverageSizer:
 
             # Apply strategist risk parameters
             if strategist_risk_parameters:
+    pass
     pass
     pass
                 risk_modifier = strategist_risk_parameters.get("leverage_modifier", 1.0)
@@ -488,11 +521,14 @@ class LeverageSizer:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             key_levels = [0.5, 1.0, 1.5, 2.0]
             avg_confidence = 0.0
             avg_risk = 0.0
 
             for level in key_levels:
+    pass
     pass
     pass
                 closest_level = min(
@@ -509,6 +545,7 @@ class LeverageSizer:
 
             # NEW: Include combined confidence in leverage reason
             if combined_confidence < self.leverage_combined_threshold:
+    pass
     pass
     pass
                 return (
@@ -534,6 +571,7 @@ class LeverageSizer:
         if limit:
     pass
     pass
+    pass
             return self.leverage_sizing_history[-limit:]
         return self.leverage_sizing_history.copy()
 
@@ -546,6 +584,8 @@ class LeverageSizer:
         """Stop the leverage sizer."""
         try:
             self.logger.info("Stopping leverage sizer...")
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -564,6 +604,8 @@ class LeverageSizer:
         """Cleanup leverage sizer resources."""
         try:
             self.logger.info("Cleaning up leverage sizer...")
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -598,12 +640,16 @@ async def setup_leverage_sizer(
     except Exception as e:
         pass
     pass
+    except Exception as e:
+        pass
+    pass
             config = {}
 
     except Exception as e:
         pass
         leverage_sizer = LeverageSizer(config)
         if await leverage_sizer.initialize():
+    pass
     pass
     pass
             return leverage_sizer

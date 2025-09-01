@@ -26,6 +26,7 @@ class TwoTierIntegration:
     def __init__(self):
     pass
     pass
+    pass
         self.logger = system_logger.getChild("TwoTierIntegration")
 
         # Configuration
@@ -78,6 +79,7 @@ class TwoTierIntegration:
         if not self.config["enable_two_tier"]:
     pass
     pass
+    pass
             self.logger.info(
                 "⚠️ Two-tier integration disabled, returning original prediction",
             )
@@ -111,6 +113,7 @@ class TwoTierIntegration:
 
         # Tier 2: Add precise timing from 1m+5m
         if tier1_result["should_trade"]:
+    pass
     pass
     pass
             self.logger.info("⏰ Processing Tier 2 (precise timing)...")
@@ -189,6 +192,7 @@ class TwoTierIntegration:
         if base_confidence > threshold:
     pass
     pass
+    pass
             direction = "LONG" if base_prediction == "BUY" else "SHORT"
             should_trade = True
             self.logger.debug(
@@ -250,13 +254,16 @@ class TwoTierIntegration:
         if regime == "SR_ZONE_ACTION":
     pass
     pass
+    pass
             price = current_data.get("price", 0)
             sr_levels = current_data.get("sr_levels", [])
             if sr_levels:
     pass
     pass
+    pass
                 nearest_level = min(sr_levels, key=lambda x: abs(x - price))
                 if price > nearest_level:
+    pass
     pass
     pass
                     base_strategy = (
@@ -320,6 +327,7 @@ class TwoTierIntegration:
         if "SR_" in strategy:
     pass
     pass
+    pass
             base_signal += 0.1  # SR strategies need stronger confirmation
             self.logger.debug("📊 SR strategy adjustment: +0.1")
         elif "MOMENTUM" in strategy:
@@ -344,6 +352,7 @@ class TwoTierIntegration:
         self.logger.debug(f"🔧 Getting strategy-specific timing for: {strategy}")
 
         if strategy == "SR_BREAKOUT_UP":
+    pass
     pass
     pass
             should_execute = timing_signal > 0.8
@@ -428,10 +437,12 @@ class TwoTierIntegration:
         if not tier1_result["should_trade"]:
     pass
     pass
+    pass
             self.logger.debug("📊 Tier 1 says no trade, final decision: HOLD")
             return "HOLD"
 
         if not tier2_result["should_execute"]:
+    pass
     pass
     pass
             self.logger.debug(
@@ -466,6 +477,7 @@ class TwoTierIntegration:
         if tier1_confidence > 0.8:
     pass
     pass
+    pass
             tier1_multiplier = 1.2
         elif tier1_confidence > 0.6:
             tier1_multiplier = 1.0
@@ -474,6 +486,7 @@ class TwoTierIntegration:
 
         # Adjust based on Tier 2 timing
         if tier2_confidence > 0.9:
+    pass
     pass
     pass
             tier2_multiplier = 1.3

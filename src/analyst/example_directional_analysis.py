@@ -35,6 +35,7 @@ async def create_sample_market_data() -> pd.DataFrame:
     for ret in returns[1:]:
     pass
     pass
+    pass
         new_price = prices[-1] * (1 + ret)
         prices.append(new_price)
 
@@ -97,6 +98,8 @@ async def demonstrate_directional_analysis():
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         )
 
         print("✅ Analysis completed successfully!")
@@ -119,12 +122,14 @@ async def demonstrate_directional_analysis():
         for magnitude, analysis in adversarial.items():
     pass
     pass
-            print(f"\\\n   For {magnitude} movement:")
+    pass
+            print(f"\\\\n   For {magnitude} movement:")
             print(f"     Risk Score: {analysis['risk_score']:.2%}")
             print(f"     Recommended Stop Loss: {analysis['recommended_stop_loss']:.1f}%")
             print("     Adverse Probabilities:")
 
             for level, prob in analysis['adverse_probabilities'].items():
+    pass
     pass
     pass
                 if prob > 0.1:  # Only show significant probabilities
@@ -145,6 +150,7 @@ async def demonstrate_directional_analysis():
         for level_info in risk['risk_levels']:
     pass
     pass
+    pass
             print(f"   {level_info['magnitude']}: Risk {level_info['risk_score']:.2%}, Stop Loss {level_info['stop_loss']:.1f}%")
 
         print()
@@ -162,6 +168,7 @@ async def demonstrate_directional_analysis():
     await predictor.stop()
 
 def print_usage_example():
+    pass
     pass
     pass
     """
@@ -202,6 +209,7 @@ if (primary_direction["direction"] == "up" and
 """)
 
 if __name__ == "__main__":
+    pass
     pass
     pass
     print("🎯 ML Directional Prediction with Adversarial Analysis")

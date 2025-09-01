@@ -31,8 +31,10 @@ class FinalParametersOptimizationStep:
     def _validate_environment(self) -> None:
     pass
     pass
+    pass
         """Validate environment dependencies and configuration."""
         if not dependency_status["all_available"]:
+    pass
     pass
     pass
             missing_modules, dependency_status["missing_modules"]
@@ -40,6 +42,7 @@ class FinalParametersOptimizationStep:
         # Continue with available modules, using fallbacks where needed
 
 def __init__(self, config: dict[str, Any]) -> None:
+    pass
     pass
     pass
         self.config, config
@@ -59,6 +62,7 @@ def __init__(self, config: dict[str, Any]) -> None:
         # Validate Optuna configuration
         validation_errors, self._validate_optuna_config()
         if validation_errors:
+    pass
     pass
     pass
         self.logger.warning(
@@ -97,6 +101,8 @@ def __init__(self, config: dict[str, Any]) -> None:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         # Extract parameters
             symbol, training_input.get("symbol", "ETHUSDT")
             exchange, training_input.get("exchange", "BINANCE")
@@ -117,6 +123,7 @@ import with heartbeat
                     data_dir,
                 )
         if not calibration_results:
+    pass
     pass
     pass
                 msg = "Calibration results not found"
@@ -145,8 +152,13 @@ import with heartbeat
     pass
     except Exception as e:
         pass
+    pass
+    except Exception as e:
+        pass
         try:
         return len(obj)  # type: ignore[arg - type]
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -177,6 +189,8 @@ import with heartbeat
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         if isinstance(optimization_results, dict)
                     else []
                 )
@@ -196,6 +210,7 @@ import with heartbeat
                     optimization_results,
                 )
         if not validation_passed:
+    pass
     pass
     pass
         self.logger.warning(
@@ -261,9 +276,12 @@ import with heartbeat
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             calibration_file, f"{calibration_dir}/{exchange}_{symbol}_calibration_results.pkl"
 
         if not os.path.exists(calibration_file):
+    pass
     pass
     pass
         self.print(missing(f"Calibration file not found: {calibration_file}"))
@@ -284,9 +302,12 @@ import with heartbeat
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             previous_file, f"{optimization_dir}/{exchange}_{symbol}_final_parameters.pkl"
 
         if os.path.exists(previous_file):
+    pass
     pass
     pass
         with open(previous_file, "rb") as f:
@@ -313,6 +334,8 @@ import with heartbeat
 
             optimization_results = {}
 
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -383,15 +406,19 @@ import with heartbeat
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         # Load validation frame once
             val_df, self._load_validation_frame()
         if val_df is None or "label" not in val_df.columns:
+    pass
     pass
     pass
                 msg = "Validation frame not available for optimization"
                 raise RuntimeError(msg)
 
             def objective(trial):
+    pass
     pass
     pass
                 params = {
@@ -522,10 +549,12 @@ import with heartbeat
         if previous_results and "confidence_thresholds" in previous_results:
     pass
     pass
+    pass
                 prev_params, previous_results["confidence_thresholds"].get(
                     "optimized_parameters",
                 )
         if prev_params:
+    pass
     pass
     pass
                 study.enqueue_trial(prev_params)
@@ -561,7 +590,10 @@ import with heartbeat
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             def objective(trial):
+    pass
     pass
     pass
                 params = {
@@ -613,10 +645,12 @@ import with heartbeat
         if previous_results and "volatility_parameters" in previous_results:
     pass
     pass
+    pass
                 prev_params, previous_results["volatility_parameters"].get(
                     "optimized_parameters",
                 )
         if prev_params:
+    pass
     pass
     pass
                 study.enqueue_trial(prev_params)
@@ -647,7 +681,10 @@ import with heartbeat
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             def objective(trial):
+    pass
     pass
     pass
                 params = {
@@ -714,10 +751,12 @@ import with heartbeat
         if previous_results and "position_sizing_parameters" in previous_results:
     pass
     pass
+    pass
                 prev_params, previous_results["position_sizing_parameters"].get(
                     "optimized_parameters",
                 )
         if prev_params:
+    pass
     pass
     pass
                 study.enqueue_trial(prev_params)
@@ -750,7 +789,10 @@ import with heartbeat
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             def objective(trial):
+    pass
     pass
     pass
                 params = {
@@ -812,10 +854,12 @@ import with heartbeat
         if previous_results and "risk_management_parameters" in previous_results:
     pass
     pass
+    pass
                 prev_params, previous_results["risk_management_parameters"].get(
                     "optimized_parameters",
                 )
         if prev_params:
+    pass
     pass
     pass
                 study.enqueue_trial(prev_params)
@@ -848,7 +892,10 @@ import with heartbeat
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             def objective(trial):
+    pass
     pass
     pass
                 params = {
@@ -897,10 +944,12 @@ import with heartbeat
         if previous_results and "ensemble_parameters" in previous_results:
     pass
     pass
+    pass
                 prev_params, previous_results["ensemble_parameters"].get(
                     "optimized_parameters",
                 )
         if prev_params:
+    pass
     pass
     pass
                 study.enqueue_trial(prev_params)
@@ -931,7 +980,10 @@ import with heartbeat
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             def objective(trial):
+    pass
     pass
     pass
                 params = {
@@ -982,10 +1034,12 @@ import with heartbeat
         if previous_results and "regime_specific_parameters" in previous_results:
     pass
     pass
+    pass
                 prev_params, previous_results["regime_specific_parameters"].get(
                     "optimized_parameters",
                 )
         if prev_params:
+    pass
     pass
     pass
                 study.enqueue_trial(prev_params)
@@ -1019,7 +1073,10 @@ import with heartbeat
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             def objective(trial):
+    pass
     pass
     pass
                 params = {
@@ -1075,10 +1132,12 @@ import with heartbeat
         if previous_results and "timing_parameters" in previous_results:
     pass
     pass
+    pass
                 prev_params, previous_results["timing_parameters"].get(
                     "optimized_parameters",
                 )
         if prev_params:
+    pass
     pass
     pass
                 study.enqueue_trial(prev_params)
@@ -1102,15 +1161,18 @@ import with heartbeat
     def _validate_optuna_config(self) -> list[str]:
     pass
     pass
+    pass
         """Validate Optuna configuration."""
         errors = []
 
         if not hasattr(self, "optuna_config"):
     pass
     pass
+    pass
             errors.append("Optuna config not loaded")
 
         if not hasattr(self, "optimizable_params"):
+    pass
     pass
     pass
             errors.append("Optimizable parameters not loaded")
@@ -1120,12 +1182,15 @@ import with heartbeat
     def _setup_optimization_storage(self) -> None:
     pass
     pass
+    pass
         """Setup optimization storage and directories."""
         try:
         # Create optimization storage directory
             storage_dir = "data / optimization_storage"
             os.makedirs(storage_dir, exist_ok = True)
 
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -1151,12 +1216,16 @@ import with heartbeat
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             ]
 
         for section in required_sections:
     pass
     pass
+    pass
         if section not in results:
+    pass
     pass
     pass
         self.print(missing("Missing required section: {section}"))
@@ -1164,6 +1233,7 @@ import with heartbeat
 
                 section_data, results[section]
         if "optimized_parameters" not in section_data:
+    pass
     pass
     pass
         self.print(missing("Missing optimized_parameters in {section}"))
@@ -1180,6 +1250,8 @@ import with heartbeat
         """Save optimization results to files."""
         try:
             optimization_dir, f"{data_dir}/optimization_results"
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -1222,6 +1294,8 @@ import with heartbeat
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         for section in results.values()
                     ),
                 },
@@ -1235,7 +1309,9 @@ import with heartbeat
         for section_name, section_data in results.items():
     pass
     pass
+    pass
         if "optimized_parameters" in section_data:
+    pass
     pass
     pass
                     params, section_data["optimized_parameters"]
@@ -1271,7 +1347,10 @@ import with heartbeat
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         if "confidence_thresholds" in results:
+    pass
     pass
     pass
                 conf_params, results["confidence_thresholds"].get(
@@ -1281,11 +1360,13 @@ import with heartbeat
         if conf_params.get("analyst_confidence_threshold", 0) < 0.6:
     pass
     pass
+    pass
                 recommendations.append(
                     "Consider increasing analyst confidence threshold for better signal quality",
                 )
 
         if conf_params.get("ensemble_confidence_threshold", 0) < 0.7:
+    pass
     pass
     pass
                 recommendations.append(
@@ -1296,11 +1377,13 @@ import with heartbeat
         if conf_params.get("enhanced_prediction_confidence_threshold", 0) < 0.6:
     pass
     pass
+    pass
                 recommendations.append(
                     "Consider increasing enhanced prediction confidence threshold for better signal quality",
                 )
 
         if conf_params.get("enhanced_prediction_price_threshold", 0) < 0.5:
+    pass
     pass
     pass
                 recommendations.append(
@@ -1310,11 +1393,13 @@ import with heartbeat
         if conf_params.get("analyst_ml_weight", 0) < 0.4:
     pass
     pass
+    pass
                 recommendations.append(
                     "Consider increasing analyst ML weight for better market analysis integration",
                 )
 
         if conf_params.get("tactician_ml_weight", 0) < 0.2:
+    pass
     pass
     pass
                 recommendations.append(
@@ -1324,11 +1409,13 @@ import with heartbeat
         if conf_params.get("position_sizing_confidence_multiplier", 0) > 2.0:
     pass
     pass
+    pass
                 recommendations.append(
                     "High position sizing confidence multiplier detected - consider reducing for risk management",
                 )
 
         if conf_params.get("leverage_sizing_risk_multiplier", 0) > 1.3:
+    pass
     pass
     pass
                 recommendations.append(
@@ -1339,6 +1426,7 @@ import with heartbeat
         if "position_sizing_parameters" in results:
     pass
     pass
+    pass
                 pos_params, results["position_sizing_parameters"].get(
                     "optimized_parameters",
                     {},
@@ -1346,11 +1434,13 @@ import with heartbeat
         if pos_params.get("max_position_size", 0) > 0.3:
     pass
     pass
+    pass
                 recommendations.append(
                     "High max position size detected - consider reducing for risk management",
                 )
 
         if pos_params.get("kelly_multiplier", 0) > 0.4:
+    pass
     pass
     pass
                 recommendations.append(
@@ -1361,11 +1451,13 @@ import with heartbeat
         if "risk_management_parameters" in results:
     pass
     pass
+    pass
                 risk_params, results["risk_management_parameters"].get(
                     "optimized_parameters",
                     {},
                 )
         if risk_params.get("stop_loss_atr_multiplier", 0) > 3.0:
+    pass
     pass
     pass
                 recommendations.append(
@@ -1383,6 +1475,8 @@ import with heartbeat
         """Evaluate win rate based on parameters."""
         try:
         # Simulate win rate evaluation using calibration data
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -1408,6 +1502,8 @@ import with heartbeat
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         return max(1.0, base_profit_factor + position_size_factor + risk_factor)
         except Exception:
         self.print(error("Error evaluating profit factor: {e}"))
@@ -1421,6 +1517,8 @@ import with heartbeat
             base_sharpe, 1.2
             volatility_factor, params.get("target_volatility", 0.15) * 0.5
             confidence_factor, params.get("analyst_confidence_threshold", 0.7) * 0.3
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -1442,6 +1540,8 @@ import with heartbeat
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         return min(0.5, base_drawdown + position_size_factor + risk_factor)
         except Exception:
         self.print(error("Error evaluating max drawdown: {e}"))
@@ -1454,6 +1554,8 @@ import with heartbeat
         # Simulate enhanced prediction performance evaluation
             base_performance, 0.6
 
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -1510,6 +1612,8 @@ import with heartbeat
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         # Higher confidence and position size should lead to larger wins
             avg_win = (base_avg_win + confidence_factor + position_size_factor + volatility_factor
             )
@@ -1528,6 +1632,8 @@ import with heartbeat
             position_size_factor, params.get("base_position_size", 0.05) * 0.3
             risk_factor, params.get("max_position_size", 0.25) * 0.1
 
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -1551,6 +1657,8 @@ import with heartbeat
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         return target_vol * multiplier * 10  # Scale for optimization
         except Exception:
         self.print(error("Error evaluating volatility performance: {e}"))
@@ -1565,6 +1673,8 @@ import with heartbeat
             kelly_mult, params.get("kelly_multiplier", 0.25)
             confidence_scaling = (1.0 if params.get("confidence_based_scaling", True) else 0.8
             )
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -1588,6 +1698,8 @@ import with heartbeat
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         return (sl_multiplier + trailing_multiplier) * dynamic_sl
         except Exception:
         self.print(error("Error evaluating risk management performance: {e}"))
@@ -1601,6 +1713,8 @@ import with heartbeat
             analyst_weight, params.get("analyst_weight", 0.4)
             tactician_weight, params.get("tactician_weight", 0.3)
             agreement, params.get("min_ensemble_agreement", 0.7)
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -1622,6 +1736,8 @@ import with heartbeat
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         return (bull_mult + bear_mult + sideways_mult) / 3.0
         except Exception:
         self.print(error("Error evaluating regime performance: {e}"))
@@ -1638,6 +1754,8 @@ import with heartbeat
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         return (
                 1.0 / (base_cooldown + high_conf_cooldown) * 100
             )  # Inverse relationship
@@ -1648,10 +1766,14 @@ import with heartbeat
     def _select_best_pareto_solution(self, pareto_front: list) -> Any:
     pass
     pass
+    pass
         """Select the best solution from Pareto front."""
         try:
         # Use configurable weights for composite score
             from src.training.steps.step17_final_parameters_optimization.hyperparameter_optimization_config import (
+    except Exception as e:
+        pass
+import except Exception as e:
     except Exception as e:
         pass
 import except Exception as e:
@@ -1678,6 +1800,7 @@ import get_hyperparameter_config,
         for solution in pareto_front:
     pass
     pass
+    pass
                 composite_score = (solution.values[0] * weights.get("win_rate", 0.25)
                     + solution.values[1] * weights.get("profit_factor", 0.25)
                     + solution.values[2] * weights.get("sharpe_ratio", 0.25)
@@ -1685,6 +1808,7 @@ import get_hyperparameter_config,
                     + solution.values[4] * weights.get("enhanced_prediction_performance", 0.15)
                 )
         if composite_score > best_score:
+    pass
     pass
     pass
                     best_score, composite_score
@@ -1696,6 +1820,7 @@ import get_hyperparameter_config,
 
     # Default parameter getters
     def _get_default_confidence_thresholds(self) -> dict[str, Any]:
+    pass
     pass
     pass
         """Get default confidence thresholds."""
@@ -1727,6 +1852,7 @@ import get_hyperparameter_config,
     def _get_default_volatility_parameters(self) -> dict[str, Any]:
     pass
     pass
+    pass
         """Get default volatility parameters."""
         return {
             "optimized_parameters": {
@@ -1744,6 +1870,7 @@ import get_hyperparameter_config,
         }
 
     def _get_default_position_sizing_parameters(self) -> dict[str, Any]:
+    pass
     pass
     pass
         """Get default position sizing parameters."""
@@ -1766,6 +1893,7 @@ import get_hyperparameter_config,
     def _get_default_risk_management_parameters(self) -> dict[str, Any]:
     pass
     pass
+    pass
         """Get default risk management parameters."""
         return {
             "optimized_parameters": {
@@ -1786,6 +1914,7 @@ import get_hyperparameter_config,
     def _get_default_ensemble_parameters(self) -> dict[str, Any]:
     pass
     pass
+    pass
         """Get default ensemble parameters."""
         return {
             "optimized_parameters": {
@@ -1802,6 +1931,7 @@ import get_hyperparameter_config,
         }
 
     def _get_default_regime_parameters(self) -> dict[str, Any]:
+    pass
     pass
     pass
         """Get default regime parameters."""
@@ -1821,6 +1951,7 @@ import get_hyperparameter_config,
         }
 
     def _get_default_timing_parameters(self) -> dict[str, Any]:
+    pass
     pass
     pass
         """Get default timing parameters."""
@@ -1843,8 +1974,11 @@ import get_hyperparameter_config,
     def _load_validation_frame(self) -> pd.DataFrame | None:
     pass
     pass
+    pass
         try:
             exchange, self.config.get("exchange", "BINANCE")
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -1855,9 +1989,11 @@ import get_hyperparameter_config,
         if os.path.exists(path):
     pass
     pass
+    pass
         with open(path, "rb") as f:
                     df, pickle.load(f)
         if isinstance(df, pd.DataFrame):
+    pass
     pass
     pass
         return df
@@ -1881,6 +2017,9 @@ import get_hyperparameter_config,
 import except Exception as e:
     except Exception as e:
         pass
+import except Exception as e:
+    except Exception as e:
+        pass
         # Choose an ensemble if available; else pick first calibrated model
         # Analyst ensembles
 import ens, None
@@ -1889,8 +2028,10 @@ import ens, None
         if analyst_ensembles:
     pass
     pass
+    pass
         # Pick any regime with calibrated ensemble
         for payload in analyst_ensembles.values():
+    pass
     pass
     pass
                     ce = (payload.get("calibrated_ensemble")
@@ -1898,6 +2039,7 @@ import ens, None
                         else None
                     )
         if ce is not None:
+    pass
     pass
     pass
                         ens, ce
@@ -1909,6 +2051,7 @@ import ens, None
             y, val_df["label"].astype(int)
 
         if ens is not None and hasattr(ens, "predict_proba"):
+    pass
     pass
     pass
                 proba, ens.predict_proba(X)
@@ -2070,6 +2213,8 @@ async def run_step(symbol: str, exchange: str = "BINANCE", data_dir: str = "data
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         config = {"symbol": symbol, "exchange": exchange, "data_dir": data_dir}
         step, FinalParametersOptimizationStep(config)
         await step.initialize()
@@ -2092,6 +2237,7 @@ async def run_step(symbol: str, exchange: str = "BINANCE", data_dir: str = "data
         return False
 
 if __name__ == "__main__":
+    pass
     pass
     pass
     # Test the step

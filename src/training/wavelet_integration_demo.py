@@ -46,6 +46,7 @@ class WaveletIntegrationDemo:
     def __init__(self, config: dict[str, Any]) -> None:
     pass
     pass
+    pass
         self.config = config
         self.logger = system_logger.getChild("WaveletIntegrationDemo")
 
@@ -60,6 +61,8 @@ class WaveletIntegrationDemo:
         try:
             self.logger.info(
                 "🚀 Initializing comprehensive wavelet integration demo...",
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -94,6 +97,8 @@ class WaveletIntegrationDemo:
         """Create realistic sample data for demonstration."""
         try:
             # Create sample OHLCV data
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -153,7 +158,9 @@ class WaveletIntegrationDemo:
     ) -> None:
         """Demonstrate the use of price differences instead of raw prices."""
         try:
-            self.logger.info("\\\n" + "=" * 60)
+            self.logger.info("\\\\n" + "=" * 60)
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -205,7 +212,9 @@ class WaveletIntegrationDemo:
     ) -> None:
         """Demonstrate complete feature integration from advanced_feature_engineering.py."""
         try:
-            self.logger.info("\\\n" + "=" * 60)
+            self.logger.info("\\\\n" + "=" * 60)
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -252,7 +261,9 @@ class WaveletIntegrationDemo:
             for category, features in feature_categories.items():
     pass
     pass
+    pass
                 if features:
+    pass
     pass
     pass
                     self.logger.info(f"📊 {category}: {len(features)} features")
@@ -268,7 +279,9 @@ class WaveletIntegrationDemo:
     ) -> None:
         """Demonstrate the complete wavelet workflow."""
         try:
-            self.logger.info("\\\n" + "=" * 60)
+            self.logger.info("\\\\n" + "=" * 60)
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -296,6 +309,7 @@ class WaveletIntegrationDemo:
             if precompute_success:
     pass
     pass
+    pass
                 self.logger.info("✅ Wavelet features pre-computed successfully")
             else:
                 self.print(problem("⚠️ Wavelet pre-computation had issues"))
@@ -309,6 +323,7 @@ class WaveletIntegrationDemo:
             )
 
             if backtest_results and "error" not in backtest_results:
+    pass
     pass
     pass
                 self.logger.info("✅ Backtesting with cached features completed")
@@ -332,7 +347,9 @@ class WaveletIntegrationDemo:
     ) -> None:
         """Demonstrate live trading integration with wavelet features."""
         try:
-            self.logger.info("\\\n" + "=" * 60)
+            self.logger.info("\\\\n" + "=" * 60)
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -367,6 +384,7 @@ class WaveletIntegrationDemo:
             if live_wavelet_features:
     pass
     pass
+    pass
                 # Example: Use wavelet energy features for trading decision
                 energy_features = {
                     k: v
@@ -376,11 +394,13 @@ class WaveletIntegrationDemo:
                 if energy_features:
     pass
     pass
+    pass
                     avg_energy = np.mean(list(energy_features.values()))
                     self.logger.info(f"📊 Average wavelet energy: {avg_energy:.6f}")
 
                     # Simple trading logic based on wavelet energy
                     if avg_energy > 0.001:
+    pass
     pass
     pass
                         self.logger.info(
@@ -398,7 +418,9 @@ class WaveletIntegrationDemo:
     ) -> None:
         """Demonstrate extensive wavelet techniques for labelling and ML training."""
         try:
-            self.logger.info("\\\n" + "=" * 60)
+            self.logger.info("\\\\n" + "=" * 60)
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -410,6 +432,7 @@ class WaveletIntegrationDemo:
             wavelet_analyzer = self.feature_engineer.wavelet_analyzer
 
             if wavelet_analyzer:
+    pass
     pass
     pass
                 # Demonstrate different wavelet techniques
@@ -482,10 +505,13 @@ class WaveletIntegrationDemo:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             # Create sample data
             price_data, volume_data = await self.create_sample_data()
 
             if price_data.empty:
+    pass
     pass
     pass
                 self.print(failed("❌ Failed to create sample data"))
@@ -500,7 +526,7 @@ class WaveletIntegrationDemo:
             await self.demonstrate_live_trading_integration(price_data, volume_data)
             await self.demonstrate_extensive_wavelet_techniques(price_data)
 
-            self.logger.info("\\\n" + "=" * 60)
+            self.logger.info("\\\\n" + "=" * 60)
             self.logger.info("✅ COMPREHENSIVE WAVELET INTEGRATION DEMO COMPLETED")
             self.logger.info("=" * 60)
 
@@ -522,6 +548,8 @@ async def main() -> None:
     """Main function to run the wavelet integration demo."""
     try:
         # Load configuration
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -577,6 +605,7 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
+    pass
     pass
     pass
     asyncio.run(main())

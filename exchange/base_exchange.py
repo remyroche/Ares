@@ -179,10 +179,13 @@ class BaseExchange(IExchangeClient, ABC):
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         except Exception:
             market_id = symbol
 
         if not self.exchange:
+    pass
     pass
     pass
             return False
@@ -196,11 +199,15 @@ class BaseExchange(IExchangeClient, ABC):
         for method, args, kwargs in attempts:
     pass
     pass
+    pass
             if hasattr(self.exchange, method):
+    pass
     pass
     pass
                 try:
                     await getattr(self.exchange, method)(*args, **kwargs)
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -218,10 +225,13 @@ class BaseExchange(IExchangeClient, ABC):
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         except Exception:
             market_id = symbol
 
         if not self.exchange:
+    pass
     pass
     pass
             return False
@@ -235,11 +245,15 @@ class BaseExchange(IExchangeClient, ABC):
         for method, args, kwargs in attempts:
     pass
     pass
+    pass
             if hasattr(self.exchange, method):
+    pass
     pass
     pass
                 try:
                     await getattr(self.exchange, method)(*args, **kwargs)
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -254,22 +268,27 @@ class BaseExchange(IExchangeClient, ABC):
         if self.exchange and hasattr(self.exchange, "close"):
     pass
     pass
+    pass
             await self.exchange.close()
 
     def _convert_timestamp(self, timestamp: Any) -> datetime:
+    pass
     pass
     pass
         """Convert exchange timestamp to datetime."""
         if isinstance(timestamp, (int, float)):
     pass
     pass
+    pass
             # Assume milliseconds if timestamp is large
             if timestamp > 1e10:
+    pass
     pass
     pass
                 timestamp = timestamp / 1000
             return datetime.fromtimestamp(timestamp)
         if isinstance(timestamp, str):
+    pass
     pass
     pass
             # Try to parse as ISO format, fall back to common formats
@@ -279,12 +298,17 @@ class BaseExchange(IExchangeClient, ABC):
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             except ValueError:
                 for fmt in ["%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S"]:
     pass
     pass
+    pass
                     try:
                         return datetime.strptime(timestamp, fmt)
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -327,15 +351,20 @@ class BaseExchange(IExchangeClient, ABC):
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             if hasattr(self, "get_ticker"):
+    pass
     pass
     pass
                 ticker = await self.get_ticker(symbol)  # type: ignore[attr-defined]
                 if ticker:
     pass
     pass
+    pass
                     last = ticker.get("last") or ticker.get("mark") or ticker.get("close")
                     if last is not None:
+    pass
     pass
     pass
                         return float(last)
@@ -344,9 +373,11 @@ class BaseExchange(IExchangeClient, ABC):
                     if bid is not None and ask is not None:
     pass
     pass
+    pass
                         return (float(bid) + float(ask)) / 2.0
             # Fallback to order book mid
             if hasattr(self, "get_order_book"):
+    pass
     pass
     pass
                 book = await self.get_order_book(symbol, 5)  # type: ignore[attr-defined]
@@ -357,12 +388,15 @@ class BaseExchange(IExchangeClient, ABC):
                 if best_bid is not None and best_ask is not None:
     pass
     pass
+    pass
                     return (best_bid + best_ask) / 2.0
                 if best_bid is not None:
     pass
     pass
+    pass
                     return best_bid
                 if best_ask is not None:
+    pass
     pass
     pass
                     return best_ask
@@ -378,12 +412,16 @@ class BaseExchange(IExchangeClient, ABC):
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             # Try common ccxt fields
             if isinstance(risk, list) and risk:
     pass
     pass
+    pass
                 # Find matching symbol
                 for position in risk:
+    pass
     pass
     pass
                     inst = position.get("symbol") or position.get("info", {}).get("symbol")
@@ -398,11 +436,13 @@ class BaseExchange(IExchangeClient, ABC):
                         if liq:
     pass
     pass
+    pass
                             return float(liq)
                 # Otherwise take first
                 pos0 = risk[0]
                 liq = pos0.get("liquidationPrice") or pos0.get("liqPrice") or pos0.get("liquidation_price")
                 if liq:
+    pass
     pass
     pass
                     return float(liq)
@@ -419,11 +459,15 @@ class BaseExchange(IExchangeClient, ABC):
     except Exception as e:
         pass
     pass
+    except Exception as e:
+        pass
+    pass
                 return {}
     except Exception as e:
         pass
             market_id = await self._get_market_id(symbol) if symbol else None  # type: ignore[arg-type]
             if market_id:
+    pass
     pass
     pass
                 return await self.exchange.fetch_ticker(market_id)  # type: ignore[union-attr]
@@ -437,6 +481,9 @@ class BaseExchange(IExchangeClient, ABC):
         """Default order book fetch using ccxt if underlying client is set."""
         try:
             if not self.exchange:
+    pass
+    except Exception as e:
+        pass
     pass
     except Exception as e:
         pass

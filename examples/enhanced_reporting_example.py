@@ -27,12 +27,14 @@ async def example_paper_trading():
     if not launcher:
     pass
     pass
+    pass
         print(failed("Failed to setup enhanced trading launcher"))
         return
 
     # Launch paper trading
     success = await launcher.launch_paper_trading()
     if not success:
+    pass
     pass
     pass
         print(failed("Failed to launch paper trading"))
@@ -178,6 +180,7 @@ async def example_paper_trading():
     for trade in trades:
     pass
     pass
+    pass
         success = await launcher.execute_trade(
             symbol=trade["symbol"],
             side=trade["side"],
@@ -190,6 +193,7 @@ async def example_paper_trading():
         if success:
     pass
     pass
+    pass
             print(
                 f"✅ Executed {trade['side']} trade: {trade['quantity']} {trade['symbol']} @ ${trade['price']:.2f}",
             )
@@ -198,7 +202,7 @@ async def example_paper_trading():
 
     # Get performance metrics
     metrics = launcher.get_performance_metrics()
-    print("\\\n📊 Performance Metrics:")
+    print("\\\\n📊 Performance Metrics:")
     print(f"Total Trades: {metrics.get('total_trades', 0)}")
     print(f"Total PnL: ${metrics.get('total_pnl', 0):.2f}")
     print(f"Win Rate: {metrics.get('win_rate', 0):.2%}")
@@ -206,13 +210,13 @@ async def example_paper_trading():
 
     # Get portfolio summary
     portfolio = launcher.get_portfolio_summary()
-    print("\\\n💼 Portfolio Summary:")
+    print("\\\\n💼 Portfolio Summary:")
     print(f"Total Value: ${portfolio.get('total_value', 0):.2f}")
     print(f"Positions Count: {portfolio.get('positions_count', 0)}")
 
     # Generate comprehensive report
     report = await launcher.generate_comprehensive_report("example")
-    print(f"\\\n📋 Generated comprehensive report with {len(report)} sections")
+    print(f"\\\\n📋 Generated comprehensive report with {len(report)} sections")
 
     # Stop launcher
     await launcher.stop()
@@ -220,7 +224,7 @@ async def example_paper_trading():
 
 async def example_backtesting():
     """Example of backtesting with enhanced reporting."""
-    print("\\\n🚀 Starting Backtesting Example with Enhanced Reporting...")
+    print("\\\\n🚀 Starting Backtesting Example with Enhanced Reporting...")
 
     # Get configuration
     config = get_enhanced_reporting_config()
@@ -228,6 +232,7 @@ async def example_backtesting():
     # Setup enhanced trading launcher
     launcher = await setup_enhanced_trading_launcher(config)
     if not launcher:
+    pass
     pass
     pass
         print(failed("Failed to setup enhanced trading launcher"))
@@ -325,11 +330,12 @@ async def example_backtesting():
     if results:
     pass
     pass
+    pass
         print("✅ Backtest completed successfully")
 
         # Display results
         performance_metrics = results.get("performance_metrics", {})
-        print("\\\n📊 Backtest Results:")
+        print("\\\\n📊 Backtest Results:")
         print(f"Total Trades: {performance_metrics.get('total_trades', 0)}")
         print(f"Total PnL: ${performance_metrics.get('total_pnl', 0):.2f}")
         print(f"Win Rate: {performance_metrics.get('win_rate', 0):.2%}")
@@ -339,12 +345,12 @@ async def example_backtesting():
 
         # Get trade history
         trade_history = launcher.get_trade_history()
-        print(f"\\\n📈 Trade History: {len(trade_history)} trades")
+        print(f"\\\\n📈 Trade History: {len(trade_history)} trades")
 
         # Get portfolio summary
         portfolio = launcher.get_portfolio_summary()
         print(
-            f"\\\n💼 Final Portfolio Value: ${portfolio.get('final_portfolio_value', 0):.2f}",
+            f"\\\\n💼 Final Portfolio Value: ${portfolio.get('final_portfolio_value', 0):.2f}",
         )
 
     else:
@@ -365,17 +371,20 @@ async def main():
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         await example_paper_trading()
 
         # Run backtesting example
         await example_backtesting()
 
-        print("\\\n🎉 All examples completed successfully!")
+        print("\\\\n🎉 All examples completed successfully!")
 
     except Exception:
         print(warning("Error running examples: {e}"))
 
 if __name__ == "__main__":
+    pass
     pass
     pass
     asyncio.run(main())

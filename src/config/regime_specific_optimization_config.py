@@ -182,8 +182,12 @@ class RegimeSpecificOptimizationConfig:
     def __post_init__(self):
     pass
     pass
+    pass
+    pass
         """Initialize regime mapping."""
         if not self.regime_id_to_name:
+    pass
+    pass
     pass
     pass
             self._initialize_regime_mapping()
@@ -191,8 +195,12 @@ class RegimeSpecificOptimizationConfig:
     def _initialize_regime_mapping(self):
     pass
     pass
+    pass
+    pass
         """Initialize regime ID to name mapping."""
         for i, regime_name in enumerate(self.regime_constraints.keys()):
+    pass
+    pass
     pass
     pass
             self.regime_id_to_name[i] = regime_name
@@ -201,10 +209,14 @@ class RegimeSpecificOptimizationConfig:
     def get_regime_constraints(self, regime_name: str) -> Optional[RegimeSpecificConstraints]:
     pass
     pass
+    pass
+    pass
         """Get constraints for a specific regime."""
         return self.regime_constraints.get(regime_name)
 
     def get_regime_id(self, regime_name: str) -> Optional[int]:
+    pass
+    pass
     pass
     pass
         """Get regime ID for a regime name."""
@@ -213,10 +225,14 @@ class RegimeSpecificOptimizationConfig:
     def get_regime_name(self, regime_id: int) -> Optional[str]:
     pass
     pass
+    pass
+    pass
         """Get regime name for a regime ID."""
         return self.regime_id_to_name.get(regime_id)
 
     def add_regime_constraints(self, regime_name: str, constraints: RegimeSpecificConstraints):
+    pass
+    pass
     pass
     pass
         """Add constraints for a new regime."""
@@ -226,8 +242,12 @@ class RegimeSpecificOptimizationConfig:
     def update_regime_constraints(self, regime_name: str, constraints: RegimeSpecificConstraints):
     pass
     pass
+    pass
+    pass
         """Update constraints for an existing regime."""
         if regime_name in self.regime_constraints:
+    pass
+    pass
     pass
     pass
             self.regime_constraints[regime_name] = constraints
@@ -284,11 +304,15 @@ DEFAULT_REGIME_SPECIFIC_OPTIMIZATION_CONFIG = RegimeSpecificOptimizationConfig()
 def get_regime_specific_optimization_config() -> RegimeSpecificOptimizationConfig:
     pass
     pass
+    pass
+    pass
     """Get default regime-specific optimization configuration."""
     return DEFAULT_REGIME_SPECIFIC_OPTIMIZATION_CONFIG
 
 
 def create_regime_specific_config_from_dict(config_dict: Dict[str, Any]) -> RegimeSpecificOptimizationConfig:
+    pass
+    pass
     pass
     pass
     """Create regime-specific optimization configuration from dictionary."""
@@ -299,7 +323,11 @@ def create_regime_specific_config_from_dict(config_dict: Dict[str, Any]) -> Regi
     for key, value in config_dict.items():
     pass
     pass
+    pass
+    pass
         if hasattr(config, key) and key != "regime_constraints":
+    pass
+    pass
     pass
     pass
             setattr(config, key, value)
@@ -308,7 +336,11 @@ def create_regime_specific_config_from_dict(config_dict: Dict[str, Any]) -> Regi
     if "regime_constraints" in config_dict:
     pass
     pass
+    pass
+    pass
         for regime_name, constraints_dict in config_dict["regime_constraints"].items():
+    pass
+    pass
     pass
     pass
             constraints = RegimeSpecificConstraints(**constraints_dict)
@@ -321,6 +353,8 @@ def create_regime_specific_config_from_dict(config_dict: Dict[str, Any]) -> Regi
 
 
 def get_regime_specific_parameter_search_space(param_category: str) -> Dict[str, Dict[str, Any]]:
+    pass
+    pass
     pass
     pass
     """Get parameter search space for regime-specific optimization."""
@@ -375,6 +409,8 @@ def merge_optuna_configs(
     for regime_name, constraints in regime_config.regime_constraints.items():
     pass
     pass
+    pass
+    pass
         regime_constraints_dict[regime_name] = {
             "tp_multiplier_range": constraints.tp_multiplier_range,
             "sl_multiplier_range": constraints.sl_multiplier_range,
@@ -407,10 +443,14 @@ def get_regime_optimization_config_for_regime(
     if base_config is None:
     pass
     pass
+    pass
+    pass
         base_config = DEFAULT_REGIME_SPECIFIC_OPTIMIZATION_CONFIG
 
     regime_constraints = base_config.get_regime_constraints(regime_name)
     if regime_constraints is None:
+    pass
+    pass
     pass
     pass
         # Use default constraints if regime not found
@@ -437,6 +477,8 @@ def get_regime_optimization_config_for_regime(
 def validate_regime_optimization_config(config: RegimeSpecificOptimizationConfig) -> bool:
     pass
     pass
+    pass
+    pass
     """Validate regime-specific optimization configuration."""
 
     try:
@@ -445,7 +487,13 @@ def validate_regime_optimization_config(config: RegimeSpecificOptimizationConfig
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if not config.objectives:
+    pass
+    pass
     pass
     pass
             print("❌ No objectives specified")
@@ -456,11 +504,15 @@ def validate_regime_optimization_config(config: RegimeSpecificOptimizationConfig
         if abs(weight_sum - 1.0) > 0.01:
     pass
     pass
+    pass
+    pass
             print(f"❌ Objective weights must sum to 1.0, got {weight_sum}")
             return False
 
         # Check regime constraints
         if not config.regime_constraints:
+    pass
+    pass
     pass
     pass
             print("❌ No regime constraints specified")
@@ -470,7 +522,11 @@ def validate_regime_optimization_config(config: RegimeSpecificOptimizationConfig
         for regime_name, constraints in config.regime_constraints.items():
     pass
     pass
+    pass
+    pass
             if constraints.tp_multiplier_range[0] >= constraints.tp_multiplier_range[1]:
+    pass
+    pass
     pass
     pass
                 print(f"❌ Invalid TP multiplier range for {regime_name}")
@@ -479,10 +535,14 @@ def validate_regime_optimization_config(config: RegimeSpecificOptimizationConfig
             if constraints.sl_multiplier_range[0] >= constraints.sl_multiplier_range[1]:
     pass
     pass
+    pass
+    pass
                 print(f"❌ Invalid SL multiplier range for {regime_name}")
                 return False
 
             if constraints.position_size_range[0] >= constraints.position_size_range[1]:
+    pass
+    pass
     pass
     pass
                 print(f"❌ Invalid position size range for {regime_name}")
@@ -492,16 +552,22 @@ def validate_regime_optimization_config(config: RegimeSpecificOptimizationConfig
         if config.n_trials_per_regime < 10:
     pass
     pass
+    pass
+    pass
             print("❌ n_trials_per_regime must be at least 10")
             return False
 
         if config.cv_folds < 2:
     pass
     pass
+    pass
+    pass
             print("❌ cv_folds must be at least 2")
             return False
 
         if config.min_sample_size < 10:
+    pass
+    pass
     pass
     pass
             print("❌ min_sample_size must be at least 10")

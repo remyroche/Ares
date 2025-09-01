@@ -21,6 +21,7 @@ project_root, Path(__file__).parent.parent.parent
 if str(project_root) not in sys.path:
     pass
     pass
+    pass
 	sys.path.insert(0, str(project_root))
 
 from src.config import CONFIG
@@ -31,6 +32,7 @@ class Step16SavingValidator(BaseValidator):
 	"""Validator for Step 16: Saving."""
 
     def __init__(self, config: Dict[str, Any]) -> None:
+    pass
     pass
     pass
 		super().__init__("step16_saving", config)
@@ -67,6 +69,7 @@ class Step16SavingValidator(BaseValidator):
 		if not error_passed:
     pass
     pass
+    pass
 			self.print(error("❌ Saving step had errors"))
 			return False
 
@@ -77,6 +80,7 @@ class Step16SavingValidator(BaseValidator):
 			data_dir,
 		)
 		if not model_files_passed:
+    pass
     pass
     pass
 			self.print(failed("❌ Final model files validation failed"))
@@ -91,6 +95,7 @@ class Step16SavingValidator(BaseValidator):
 		if not completeness_passed:
     pass
     pass
+    pass
 			self.print(failed("❌ Pipeline completeness validation failed"))
 			return False
 
@@ -99,12 +104,14 @@ class Step16SavingValidator(BaseValidator):
 		if not integrity_passed:
     pass
     pass
+    pass
 			self.print(failed("❌ File integrity validation failed"))
 			return False
 
 		# 5. Validate final model quality
 		quality_passed, self._validate_final_model_quality(symbol, exchange, data_dir)
 		if not quality_passed:
+    pass
     pass
     pass
 			self.print(failed("❌ Final model quality validation failed"))
@@ -117,6 +124,7 @@ class Step16SavingValidator(BaseValidator):
 		self.validation_results["outcome_favorability"] = outcome_metrics
 
 		if not outcome_passed:
+    pass
     pass
     pass
 			self.print(error("⚠️ Saving outcome is not favorable"))
@@ -148,6 +156,8 @@ class Step16SavingValidator(BaseValidator):
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
 			expected_files = [
 				f"{data_dir}/{exchange}_{symbol}_final_model.pkl",
 				f"{data_dir}/{exchange}_{symbol}_final_model_metadata.json",
@@ -159,6 +169,7 @@ class Step16SavingValidator(BaseValidator):
 			for file_path in expected_files:
     pass
     pass
+    pass
 				file_passed, file_metrics, self.validate_file_exists(
 					file_path,
 					"final_model_files",
@@ -168,9 +179,11 @@ class Step16SavingValidator(BaseValidator):
 				if not file_passed:
     pass
     pass
+    pass
 					missing_files.append(file_path)
 
 			if missing_files:
+    pass
     pass
     pass
 				self.print(missing(f"❌ Missing final model files: {missing_files}"))
@@ -206,6 +219,8 @@ class Step16SavingValidator(BaseValidator):
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
 			pipeline_files = [
 				f"{data_dir}/{exchange}_{symbol}_historical_data.pkl",  # legacy bundle
 				f"{data_dir}/{exchange}_{symbol}_regime_classification.parquet",  # preferred
@@ -235,12 +250,15 @@ class Step16SavingValidator(BaseValidator):
 			for file_path in pipeline_files:
     pass
     pass
+    pass
 				if not os.path.exists(file_path):
+    pass
     pass
     pass
 					missing_pipeline_files.append(file_path)
 
 			if missing_pipeline_files:
+    pass
     pass
     pass
 				self.logger.warning(
@@ -253,6 +271,7 @@ class Step16SavingValidator(BaseValidator):
 			if os.path.exists(summary_file):
     pass
     pass
+    pass
 				import json as _json
 
 				with open(summary_file) as f:
@@ -262,9 +281,11 @@ class Step16SavingValidator(BaseValidator):
 				if "completed_steps" in summary:
     pass
     pass
+    pass
 					completed_steps, summary["completed_steps"]
 					expected_steps, 16
 					if len(completed_steps) < expected_steps:
+    pass
     pass
     pass
 						self.logger.warning(
@@ -275,8 +296,10 @@ class Step16SavingValidator(BaseValidator):
 				if "training_status" in summary:
     pass
     pass
+    pass
 					status, summary["training_status"]
 					if status != "COMPLETED":
+    pass
     pass
     pass
 						self.logger.warning(
@@ -315,9 +338,12 @@ class Step16SavingValidator(BaseValidator):
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
 			model_file, f"{data_dir}/{exchange}_{symbol}_final_model.pkl"
 
 			if os.path.exists(model_file):
+    pass
     pass
     pass
 				try:
@@ -328,11 +354,14 @@ class Step16SavingValidator(BaseValidator):
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
 					# Unwrap model if saved as a wrapper dict
 					model, self._unwrap_estimator(loaded)
 
 					# Check if model has required methods
 					if not callable(getattr(model, "predict", None)):
+    pass
     pass
     pass
 						self.print(missing("❌ Final model missing predict method"))
@@ -359,9 +388,12 @@ class Step16SavingValidator(BaseValidator):
 			if os.path.exists(metadata_file):
     pass
     pass
+    pass
 				try:
 					import json as _json
 
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -378,6 +410,7 @@ class Step16SavingValidator(BaseValidator):
 					if missing_fields:
     pass
     pass
+    pass
 						self.logger.warning(
 							f"⚠️ Missing metadata fields: {missing_fields}",
 						)
@@ -392,9 +425,12 @@ class Step16SavingValidator(BaseValidator):
 			if os.path.exists(config_file):
     pass
     pass
+    pass
 				try:
 					import json as _json
 
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -404,6 +440,7 @@ class Step16SavingValidator(BaseValidator):
 
 					# Check config completeness
 					if len(config) < 5:
+    pass
     pass
     pass
 						self.logger.warning(
@@ -426,6 +463,7 @@ class Step16SavingValidator(BaseValidator):
 	def _unwrap_estimator(self, artifact: Any) -> Any:
     pass
     pass
+    pass
 		"""Unwrap model artifacts that may have been saved as dicts or wrappers.
 		Tries common keys and patterns to retrieve an estimator with predict.
 		"""
@@ -433,7 +471,10 @@ class Step16SavingValidator(BaseValidator):
 			if callable(getattr(artifact, "predict", None)):
     pass
     pass
+    pass
 				return artifact
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -441,21 +482,27 @@ class Step16SavingValidator(BaseValidator):
 			if isinstance(artifact, dict):
     pass
     pass
+    pass
 				for key in ("model", "estimator", "clf", "pipeline"):
     pass
     pass
+    pass
 					if key in artifact:
+    pass
     pass
     pass
 						inner, artifact[key]
 						if callable(getattr(inner, "predict", None)):
     pass
     pass
+    pass
 							return inner
 						if isinstance(inner, dict):
     pass
     pass
+    pass
 							for inner_key in ("model", "estimator", "clf"):
+    pass
     pass
     pass
 								if inner_key in inner and callable(
@@ -465,16 +512,20 @@ class Step16SavingValidator(BaseValidator):
 			if hasattr(artifact, "best_estimator_"):
     pass
     pass
+    pass
 				inner, getattr(artifact, "best_estimator_", None)
 				if callable(getattr(inner, "predict", None)):
+    pass
     pass
     pass
 					return inner
 			if isinstance(artifact, (list, tuple)) and artifact:
     pass
     pass
+    pass
 				first, artifact[0]
 				if callable(getattr(first, "predict", None)):
+    pass
     pass
     pass
 					return first
@@ -505,9 +556,12 @@ class Step16SavingValidator(BaseValidator):
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
 			metadata_file, f"{data_dir}/{exchange}_{symbol}_final_model_metadata.json"
 
 			if os.path.exists(metadata_file):
+    pass
     pass
     pass
 				import json as _json
@@ -517,6 +571,7 @@ class Step16SavingValidator(BaseValidator):
 
 				# Check model performance metrics
 				if "final_accuracy" in metadata:
+    pass
     pass
     pass
 					final_acc, float(metadata["final_accuracy"])
@@ -530,6 +585,7 @@ class Step16SavingValidator(BaseValidator):
 					if not acc_passed:
     pass
     pass
+    pass
 						self.logger.error(
 							f"❌ Final model accuracy too low: {final_acc:.3f}",
 						)
@@ -539,8 +595,10 @@ class Step16SavingValidator(BaseValidator):
 				if "model_complexity" in metadata:
     pass
     pass
+    pass
 					complexity, int(metadata["model_complexity"])
 					if complexity > 1_000_000:
+    pass
     pass
     pass
 						self.print(error(f"⚠️ High model complexity: {complexity}"))
@@ -551,8 +609,10 @@ class Step16SavingValidator(BaseValidator):
 				if "version" in metadata:
     pass
     pass
+    pass
 					version, str(metadata["version"])
 					if not version or version == "0.00":
+    pass
     pass
     pass
 						self.print(invalid("⚠️ Invalid model version"))
@@ -561,10 +621,12 @@ class Step16SavingValidator(BaseValidator):
 				if "training_date" in metadata:
     pass
     pass
+    pass
 					_, metadata["training_date"]  # Could add date validation here
 
 				# Check model type
 				if "model_type" in metadata:
+    pass
     pass
     pass
 					model_type, metadata["model_type"]
@@ -574,12 +636,15 @@ class Step16SavingValidator(BaseValidator):
 				if "is_ensemble" in metadata:
     pass
     pass
+    pass
 					is_ensemble, bool(metadata["is_ensemble"])
 					if is_ensemble and "ensemble_size" in metadata:
     pass
     pass
+    pass
 						ensemble_size, int(metadata["ensemble_size"])
 						if ensemble_size < 3:
+    pass
     pass
     pass
 							self.logger.warning(
@@ -590,8 +655,10 @@ class Step16SavingValidator(BaseValidator):
 				if "is_calibrated" in metadata:
     pass
     pass
+    pass
 					is_calibrated, bool(metadata["is_calibrated"])
 					if not is_calibrated:
+    pass
     pass
     pass
 						self.print(error("⚠️ Final model is not calibrated"))
@@ -600,13 +667,16 @@ class Step16SavingValidator(BaseValidator):
 				if "validation_metrics" in metadata:
     pass
     pass
+    pass
 					val_metrics, metadata["validation_metrics"]
 
 					if "cross_validation_score" in val_metrics:
     pass
     pass
+    pass
 						cv_score, float(val_metrics["cross_validation_score"])
 						if cv_score < 0.6:
+    pass
     pass
     pass
 							self.logger.warning(
@@ -616,8 +686,10 @@ class Step16SavingValidator(BaseValidator):
 					if "test_accuracy" in val_metrics:
     pass
     pass
+    pass
 						test_acc, float(val_metrics["test_accuracy"])
 						if test_acc < 0.6:
+    pass
     pass
     pass
 							self.print(error(f"⚠️ Low test accuracy: {test_acc:.3f}"))
@@ -657,6 +729,7 @@ async def run_validator(
 	}
 
 if __name__ == "__main__":
+    pass
     pass
     pass
 	import asyncio as _asyncio

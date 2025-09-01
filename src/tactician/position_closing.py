@@ -25,6 +25,7 @@ class PositionCloser:
     def __init__(self, config: Dict[str, Any]) -> None:
     pass
     pass
+    pass
         """
         Initialize Position Closer.
 
@@ -76,8 +77,11 @@ class PositionCloser:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             # Validate configuration
             if not self._validate_configuration():
+    pass
     pass
     pass
                 self.logger.error(invalid("Invalid position closer configuration"))
@@ -93,6 +97,7 @@ class PositionCloser:
     def _validate_configuration(self) -> bool:
     pass
     pass
+    pass
         """
         Validate position closer configuration.
 
@@ -105,6 +110,9 @@ class PositionCloser:
     except Exception as e:
         pass
     pass
+    except Exception as e:
+        pass
+    pass
                 self.logger.error(invalid("ATR multiplier must be positive"))
                 return False
 
@@ -113,10 +121,12 @@ class PositionCloser:
             if not 0 <= self.confidence_threshold <= 1:
     pass
     pass
+    pass
                 self.logger.error(invalid("Confidence threshold must be between 0 and 1"))
                 return False
 
             if self.min_hold_time < 0:
+    pass
     pass
     pass
                 self.logger.error(invalid("Minimum hold time must be non-negative"))
@@ -131,6 +141,7 @@ class PositionCloser:
     def refresh_step17_configuration(self, step17_results: dict[str, Any]) -> None:
     pass
     pass
+    pass
         """
         Refresh configuration from step17 optimization results.
         This method is called automatically when step17 completes.
@@ -140,6 +151,9 @@ class PositionCloser:
         """
         try:
             if "tpsl" in step17_results:
+    pass
+    except Exception as e:
+        pass
     pass
     except Exception as e:
         pass
@@ -195,7 +209,10 @@ class PositionCloser:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             if model_confidence < self.confidence_threshold:
+    pass
     pass
     pass
                 self.logger.info(f"Closing position due to low confidence: {model_confidence:.3f}")
@@ -205,11 +222,13 @@ class PositionCloser:
             if self._should_close_by_atr(position_data, atr_value, current_price):
     pass
     pass
+    pass
                 self.logger.info("Closing position due to ATR-based exit rule")
                 return True
 
             # Check minimum hold time
             if self._should_close_by_time(position_data):
+    pass
     pass
     pass
                 self.logger.info("Closing position due to minimum hold time")
@@ -244,7 +263,10 @@ class PositionCloser:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             if entry_price <= 0:
+    pass
     pass
     pass
                 return False
@@ -254,6 +276,7 @@ class PositionCloser:
 
             # For long positions
             if position_data.get("side", "").upper() == "LONG":
+    pass
     pass
     pass
                 stop_loss = entry_price - atr_exit_distance
@@ -273,6 +296,7 @@ class PositionCloser:
     def _should_close_by_time(self, position_data: Dict[str, Any]) -> bool:
     pass
     pass
+    pass
         """
         Check if position should be closed based on minimum hold time.
 
@@ -288,12 +312,16 @@ class PositionCloser:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             if not entry_time:
+    pass
     pass
     pass
                 return False
 
             if isinstance(entry_time, str):
+    pass
     pass
     pass
                 entry_time = datetime.fromisoformat(entry_time.replace('Z', '+00:00'))
@@ -332,6 +360,8 @@ class PositionCloser:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             # Record closure
             closure_record = {
                 "position_id": position_data.get("position_id"),
@@ -358,6 +388,7 @@ class PositionCloser:
     def _calculate_pnl(self, position_data: Dict[str, Any]) -> float:
     pass
     pass
+    pass
         """
         Calculate position PnL.
 
@@ -373,6 +404,8 @@ class PositionCloser:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             current_price = position_data.get("current_price", 0)
             quantity = position_data.get("quantity", 0)
             side = position_data.get("side", "").upper()
@@ -380,9 +413,11 @@ class PositionCloser:
             if entry_price <= 0 or current_price <= 0 or quantity <= 0:
     pass
     pass
+    pass
                 return 0.0
 
             if side == "LONG":
+    pass
     pass
     pass
                 return (current_price - entry_price) * quantity
@@ -398,6 +433,7 @@ class PositionCloser:
     def get_closed_positions(self) -> List[Dict[str, Any]]:
     pass
     pass
+    pass
         """
         Get list of closed positions.
 
@@ -407,6 +443,7 @@ class PositionCloser:
         return self.closed_positions.copy()
 
     def get_position_history(self) -> List[Dict[str, Any]]:
+    pass
     pass
     pass
         """
@@ -420,6 +457,7 @@ class PositionCloser:
     def get_performance_metrics(self) -> Dict[str, Any]:
     pass
     pass
+    pass
         """
         Get performance metrics for closed positions.
 
@@ -428,6 +466,9 @@ class PositionCloser:
         """
         try:
             if not self.closed_positions:
+    pass
+    except Exception as e:
+        pass
     pass
     except Exception as e:
         pass
@@ -472,8 +513,11 @@ class PositionCloser:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             # Save position history if needed
             if self.position_history:
+    pass
     pass
     pass
                 self.logger.info(f"Saving {len(self.position_history)} position records")

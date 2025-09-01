@@ -1,0 +1,1682 @@
+Analyzing: ./test_mock_data_generation.py
+Error analyzing ./test_mock_data_generation.py: expected an indented block after 'for' statement on line 44 (<unknown>, line 45)
+Analyzing: ./test_multi_output_final_integration.py
+Error analyzing ./test_multi_output_final_integration.py: invalid syntax (<unknown>, line 29)
+Analyzing: ./validation_decorators_example.py
+Error analyzing ./validation_decorators_example.py: invalid syntax (<unknown>, line 15)
+Analyzing: ./test_steps_1_7_compatibility.py
+Error analyzing ./test_steps_1_7_compatibility.py: invalid syntax (<unknown>, line 30)
+Analyzing: ./check_trade_data.py
+Error analyzing ./check_trade_data.py: expected an indented block after 'if' statement on line 16 (<unknown>, line 17)
+Analyzing: ./create_regime_splits.py
+Error analyzing ./create_regime_splits.py: expected an indented block after 'for' statement on line 32 (<unknown>, line 33)
+Analyzing: ./create_30m_hmm_artifacts.py
+Error analyzing ./create_30m_hmm_artifacts.py: expected an indented block after 'try' statement on line 36 (<unknown>, line 38)
+Analyzing: ./test_sr_training_integration.py
+Error analyzing ./test_sr_training_integration.py: invalid syntax (<unknown>, line 20)
+Analyzing: ./verify_training_modes.py
+Error analyzing ./verify_training_modes.py: unmatched ')' (<unknown>, line 22)
+Analyzing: ./enhanced_step1_implementation_example.py
+Error analyzing ./enhanced_step1_implementation_example.py: invalid syntax (<unknown>, line 30)
+Analyzing: ./example_cluster_validation.py
+Error analyzing ./example_cluster_validation.py: invalid syntax (<unknown>, line 20)
+Analyzing: ./fix_metadata_and_naming.py
+Error analyzing ./fix_metadata_and_naming.py: invalid syntax (<unknown>, line 10)
+Analyzing: ./complete_remaining_steps_integration.py
+Error analyzing ./complete_remaining_steps_integration.py: invalid syntax (<unknown>, line 13)
+Analyzing: ./test_enhanced_triple_barrier_minimal.py
+Error analyzing ./test_enhanced_triple_barrier_minimal.py: expected an indented block after 'for' statement on line 27 (<unknown>, line 28)
+Analyzing: ./update_aggtrades_gaps.py
+Error analyzing ./update_aggtrades_gaps.py: invalid syntax (<unknown>, line 23)
+Analyzing: ./test_sr_optimization_integration.py
+Error analyzing ./test_sr_optimization_integration.py: invalid syntax (<unknown>, line 15)
+Analyzing: ./test_multi_output_core_only.py
+Error analyzing ./test_multi_output_core_only.py: expected an indented block after 'try' statement on line 24 (<unknown>, line 26)
+Analyzing: ./final_targeted_fix_v3.py
+Error analyzing ./final_targeted_fix_v3.py: expected an indented block after 'if' statement on line 93 (<unknown>, line 94)
+Analyzing: ./test_corrected_timeframes.py
+Error analyzing ./test_corrected_timeframes.py: invalid syntax (<unknown>, line 26)
+Analyzing: ./example_hmm_optimization.py
+Error analyzing ./example_hmm_optimization.py: invalid syntax (<unknown>, line 21)
+Analyzing: ./test_tactician_multi_outcome_predictions_updated.py
+Error analyzing ./test_tactician_multi_outcome_predictions_updated.py: invalid syntax (<unknown>, line 25)
+Analyzing: ./test_enhanced_dynamic_feature_selection.py
+Error analyzing ./test_enhanced_dynamic_feature_selection.py: invalid syntax (<unknown>, line 22)
+Analyzing: ./targeted_fix.py
+Analyzing: ./test_enhanced_implementations.py
+Error analyzing ./test_enhanced_implementations.py: invalid syntax (<unknown>, line 18)
+Analyzing: ./enhanced_validation_logging.py
+Analyzing: ./test_step17_comprehensive_integration.py
+Error analyzing ./test_step17_comprehensive_integration.py: unindent does not match any outer indentation level (<unknown>, line 26)
+Analyzing: ./example_enhanced_multi_timeframe_optimization.py
+Error analyzing ./example_enhanced_multi_timeframe_optimization.py: invalid syntax (<unknown>, line 18)
+Analyzing: ./test_advanced_models_integration.py
+Error analyzing ./test_advanced_models_integration.py: invalid syntax (<unknown>, line 29)
+Analyzing: ./quick_error_scanner.py
+Error analyzing ./quick_error_scanner.py: invalid syntax (<unknown>, line 13)
+Analyzing: ./fix_unused_imports.py
+Error analyzing ./fix_unused_imports.py: invalid syntax (<unknown>, line 11)
+Analyzing: ./simulate_regime_merging_from_existing_data.py
+Error analyzing ./simulate_regime_merging_from_existing_data.py: invalid syntax (<unknown>, line 6)
+Analyzing: ./standardize_utility_modules.py
+Error analyzing ./standardize_utility_modules.py: invalid syntax (<unknown>, line 10)
+Analyzing: ./test_centralized_decorators.py
+Error analyzing ./test_centralized_decorators.py: unmatched ')' (<unknown>, line 34)
+Analyzing: ./test_data_quality_and_formatting.py
+Error analyzing ./test_data_quality_and_formatting.py: invalid syntax (<unknown>, line 21)
+Analyzing: ./optimize_hmm_regime_parameters.py
+Error analyzing ./optimize_hmm_regime_parameters.py: invalid syntax (<unknown>, line 34)
+Analyzing: ./validate_sr_strategist_analyst_integration.py
+Error analyzing ./validate_sr_strategist_analyst_integration.py: invalid syntax (<unknown>, line 11)
+Analyzing: ./validate_sr_training_integration.py
+Error analyzing ./validate_sr_training_integration.py: invalid syntax (<unknown>, line 11)
+Analyzing: ./test_advanced_ml_validation.py
+Error analyzing ./test_advanced_ml_validation.py: invalid syntax (<unknown>, line 23)
+Analyzing: ./test_dynamic_tactician_barriers.py
+Error analyzing ./test_dynamic_tactician_barriers.py: invalid syntax (<unknown>, line 21)
+Analyzing: ./final_utils_fix.py
+Error analyzing ./final_utils_fix.py: expected an indented block after 'if' statement on line 26 (<unknown>, line 27)
+Analyzing: ./test_ml_profit_integration.py
+Error analyzing ./test_ml_profit_integration.py: invalid syntax (<unknown>, line 23)
+Analyzing: ./test_advanced_sr_methods.py
+Error analyzing ./test_advanced_sr_methods.py: expected an indented block after function definition on line 23 (<unknown>, line 24)
+Analyzing: ./test_step1_5_column_verification.py
+Error analyzing ./test_step1_5_column_verification.py: invalid syntax (<unknown>, line 16)
+Analyzing: ./test_multi_output_training.py
+Error analyzing ./test_multi_output_training.py: unmatched ')' (<unknown>, line 26)
+Analyzing: ./download_futures_only.py
+Error analyzing ./download_futures_only.py: invalid syntax (<unknown>, line 18)
+Analyzing: ./update_all_steps_mlflow_integration.py
+Error analyzing ./update_all_steps_mlflow_integration.py: invalid syntax (<unknown>, line 16)
+Analyzing: ./detect_and_fill_gaps_immediate.py
+Error analyzing ./detect_and_fill_gaps_immediate.py: unexpected indent (<unknown>, line 9)
+Analyzing: ./test_step1_step1_5_step2_pipeline.py
+Error analyzing ./test_step1_step1_5_step2_pipeline.py: invalid syntax (<unknown>, line 27)
+Analyzing: ./validate_sr_script_compatibility.py
+Error analyzing ./validate_sr_script_compatibility.py: invalid syntax (<unknown>, line 21)
+Analyzing: ./example_enhanced_decorators.py
+Error analyzing ./example_enhanced_decorators.py: invalid syntax (<unknown>, line 21)
+Analyzing: ./test_pipeline_minimal.py
+Error analyzing ./test_pipeline_minimal.py: expected an indented block after function definition on line 24 (<unknown>, line 25)
+Analyzing: ./test_pytorch_integration.py
+Error analyzing ./test_pytorch_integration.py: unmatched ')' (<unknown>, line 54)
+Analyzing: ./test_enhanced_decorator_system.py
+Error analyzing ./test_enhanced_decorator_system.py: expected an indented block after 'try' statement on line 20 (<unknown>, line 22)
+Analyzing: ./validate_sr_script_compatibility_simple.py
+Error analyzing ./validate_sr_script_compatibility_simple.py: invalid syntax (<unknown>, line 15)
+Analyzing: ./fix_remaining_25.py
+Error analyzing ./fix_remaining_25.py: expected an indented block after 'if' statement on line 80 (<unknown>, line 81)
+Analyzing: ./test_optimized_parameters_usage.py
+Error analyzing ./test_optimized_parameters_usage.py: invalid syntax (<unknown>, line 25)
+Analyzing: ./validate_advanced_sr_methods.py
+Error analyzing ./validate_advanced_sr_methods.py: invalid syntax (<unknown>, line 10)
+Analyzing: ./test_step1_5_simple.py
+Error analyzing ./test_step1_5_simple.py: expected an indented block after function definition on line 17 (<unknown>, line 18)
+Analyzing: ./validate_sr_imports.py
+Error analyzing ./validate_sr_imports.py: invalid syntax (<unknown>, line 14)
+Analyzing: ./fix_syntax_errors_enhanced.py
+Error analyzing ./fix_syntax_errors_enhanced.py: invalid syntax (<unknown>, line 12)
+Analyzing: ./comprehensive_gap_filler.py
+Error analyzing ./comprehensive_gap_filler.py: expected an indented block after function definition on line 27 (<unknown>, line 28)
+Analyzing: ./test_sr_levels_system.py
+Error analyzing ./test_sr_levels_system.py: invalid syntax (<unknown>, line 27)
+Analyzing: ./test_fully_migrated_tactician.py
+Error analyzing ./test_fully_migrated_tactician.py: expected an indented block after 'for' statement on line 40 (<unknown>, line 41)
+Analyzing: ./test_enhanced_prediction_integration.py
+Error analyzing ./test_enhanced_prediction_integration.py: invalid syntax (<unknown>, line 24)
+Analyzing: ./test_tactician_multi_output_system.py
+Error analyzing ./test_tactician_multi_output_system.py: expected an indented block after 'for' statement on line 30 (<unknown>, line 31)
+Analyzing: ./test_enhanced_triple_barrier.py
+Error analyzing ./test_enhanced_triple_barrier.py: invalid syntax (<unknown>, line 14)
+Analyzing: ./download_missing_aggtrades_days.py
+Error analyzing ./download_missing_aggtrades_days.py: invalid syntax (<unknown>, line 18)
+Analyzing: ./download_missing_aggtrades_2023_2024.py
+Error analyzing ./download_missing_aggtrades_2023_2024.py: unmatched ')' (<unknown>, line 9)
+Analyzing: ./test_ml_profit_integration_simple.py
+Error analyzing ./test_ml_profit_integration_simple.py: invalid syntax (<unknown>, line 16)
+Analyzing: ./test_regime_specific_triple_barrier_optimization.py
+Error analyzing ./test_regime_specific_triple_barrier_optimization.py: unindent does not match any outer indentation level (<unknown>, line 22)
+Analyzing: ./test_probability_framework.py
+Error analyzing ./test_probability_framework.py: invalid syntax (<unknown>, line 28)
+Analyzing: ./debug_metadata_detection.py
+Error analyzing ./debug_metadata_detection.py: invalid syntax (<unknown>, line 9)
+Analyzing: ./run_30m_hmm_step.py
+Error analyzing ./run_30m_hmm_step.py: unexpected indent (<unknown>, line 7)
+Analyzing: ./test_centralized_sr_logic.py
+Error analyzing ./test_centralized_sr_logic.py: expected an indented block after function definition on line 30 (<unknown>, line 31)
+Analyzing: ./ares_launcher.py
+Error analyzing ./ares_launcher.py: unmatched ')' (<unknown>, line 100)
+Analyzing: ./extract_feature_details.py
+Error analyzing ./extract_feature_details.py: invalid syntax (<unknown>, line 8)
+Analyzing: ./sr_weight_optimization_backtest.py
+Error analyzing ./sr_weight_optimization_backtest.py: unmatched ')' (<unknown>, line 26)
+Analyzing: ./demo_step1_5_enhancement.py
+Error analyzing ./demo_step1_5_enhancement.py: invalid syntax (<unknown>, line 17)
+Analyzing: ./debug_low_variance_features.py
+Error analyzing ./debug_low_variance_features.py: invalid syntax (<unknown>, line 7)
+Analyzing: ./test_sr_backtesting_validation.py
+Error analyzing ./test_sr_backtesting_validation.py: invalid syntax (<unknown>, line 26)
+Analyzing: ./enhanced_step1_5_implementation_example.py
+Error analyzing ./enhanced_step1_5_implementation_example.py: invalid syntax (<unknown>, line 29)
+Analyzing: ./test_advanced_models_core.py
+Error analyzing ./test_advanced_models_core.py: expected an indented block after 'try' statement on line 22 (<unknown>, line 24)
+Analyzing: ./validate_sr_reporting_implementation.py
+Error analyzing ./validate_sr_reporting_implementation.py: expected an indented block after 'for' statement on line 44 (<unknown>, line 45)
+Analyzing: ./implement_feature_specific_validation.py
+Error analyzing ./implement_feature_specific_validation.py: unexpected indent (<unknown>, line 7)
+Analyzing: ./analyze_strict_thresholds.py
+Error analyzing ./analyze_strict_thresholds.py: expected an indented block after 'for' statement on line 136 (<unknown>, line 137)
+Analyzing: ./consolidate_aggtrades.py
+Error analyzing ./consolidate_aggtrades.py: expected an indented block after 'if' statement on line 19 (<unknown>, line 20)
+Analyzing: ./simple_validation_test.py
+Error analyzing ./simple_validation_test.py: expected an indented block after 'if' statement on line 22 (<unknown>, line 23)
+Analyzing: ./test_tactician_4_barrier_system.py
+Error analyzing ./test_tactician_4_barrier_system.py: invalid syntax (<unknown>, line 25)
+Analyzing: ./test_profit_feature_engineering.py
+Error analyzing ./test_profit_feature_engineering.py: invalid syntax (<unknown>, line 14)
+Analyzing: ./demo_pipeline_testing.py
+Error analyzing ./demo_pipeline_testing.py: invalid syntax (<unknown>, line 15)
+Analyzing: ./check_existing_data.py
+Error analyzing ./check_existing_data.py: expected an indented block after 'if' statement on line 15 (<unknown>, line 16)
+Analyzing: ./automated_syntax_fixer.py
+Error analyzing ./automated_syntax_fixer.py: expected an indented block after function definition on line 31 (<unknown>, line 32)
+Analyzing: ./universal_syntax_fixer.py
+Error analyzing ./universal_syntax_fixer.py: expected an indented block after 'if' statement on line 176 (<unknown>, line 177)
+Analyzing: ./test_step17_optimized_tactician.py
+Error analyzing ./test_step17_optimized_tactician.py: expected an indented block after 'try' statement on line 40 (<unknown>, line 42)
+Analyzing: ./test_scenario_based_tactician_implementation.py
+Error analyzing ./test_scenario_based_tactician_implementation.py: expected an indented block after 'for' statement on line 36 (<unknown>, line 37)
+Analyzing: ./test_step2_with_existing_data.py
+Error analyzing ./test_step2_with_existing_data.py: invalid syntax (<unknown>, line 16)
+Analyzing: ./test_simple_profit_integration.py
+Error analyzing ./test_simple_profit_integration.py: expected an indented block after 'for' statement on line 26 (<unknown>, line 27)
+Analyzing: ./comprehensive_fix.py
+Error analyzing ./comprehensive_fix.py: expected an indented block after 'for' statement on line 106 (<unknown>, line 107)
+Analyzing: ./feature_analysis_script.py
+Error analyzing ./feature_analysis_script.py: invalid syntax (<unknown>, line 8)
+Analyzing: ./test_enhanced_outlier_handler_and_schema.py
+Error analyzing ./test_enhanced_outlier_handler_and_schema.py: invalid syntax (<unknown>, line 20)
+Analyzing: ./gap_filler_clean.py
+Error analyzing ./gap_filler_clean.py: expected an indented block after function definition on line 18 (<unknown>, line 19)
+Analyzing: ./test_optimized_step17.py
+Error analyzing ./test_optimized_step17.py: unindent does not match any outer indentation level (<unknown>, line 27)
+Analyzing: ./download_missing_data.py
+Error analyzing ./download_missing_data.py: expected an indented block after 'try' statement on line 26 (<unknown>, line 28)
+Analyzing: ./complete_remaining_16_steps.py
+Error analyzing ./complete_remaining_16_steps.py: invalid syntax (<unknown>, line 10)
+Analyzing: ./test_centralized_decorators_simple.py
+Error analyzing ./test_centralized_decorators_simple.py: unmatched ')' (<unknown>, line 36)
+Analyzing: ./validate_mlflow_integration.py
+Error analyzing ./validate_mlflow_integration.py: expected an indented block after 'if' statement on line 72 (<unknown>, line 73)
+Analyzing: ./simple_advanced_validation_test.py
+Error analyzing ./simple_advanced_validation_test.py: invalid syntax (<unknown>, line 13)
+Analyzing: ./run_step2_direct.py
+Error analyzing ./run_step2_direct.py: expected an indented block after 'try' statement on line 16 (<unknown>, line 18)
+Analyzing: ./test_critical_bug_fixes.py
+Error analyzing ./test_critical_bug_fixes.py: expected an indented block after 'for' statement on line 43 (<unknown>, line 44)
+Analyzing: ./test_enhanced_missing_value_handler.py
+Error analyzing ./test_enhanced_missing_value_handler.py: invalid syntax (<unknown>, line 20)
+Analyzing: ./optimize_hmm_regime_parameters_advanced.py
+Error analyzing ./optimize_hmm_regime_parameters_advanced.py: expected an indented block after function definition on line 48 (<unknown>, line 49)
+Analyzing: ./example_pytorch_trading.py
+Error analyzing ./example_pytorch_trading.py: expected an indented block after function definition on line 27 (<unknown>, line 28)
+Analyzing: ./example_diverse_lookback_optimization.py
+Error analyzing ./example_diverse_lookback_optimization.py: invalid syntax (<unknown>, line 15)
+Analyzing: ./test_pipeline_with_ares_launcher.py
+Error analyzing ./test_pipeline_with_ares_launcher.py: invalid syntax (<unknown>, line 27)
+Analyzing: ./test_standardized_pipeline.py
+Error analyzing ./test_standardized_pipeline.py: invalid syntax (<unknown>, line 31)
+Analyzing: ./fix_partially_integrated_steps.py
+Error analyzing ./fix_partially_integrated_steps.py: invalid syntax (<unknown>, line 10)
+Analyzing: ./create_correct_mock_data.py
+Error analyzing ./create_correct_mock_data.py: expected an indented block after 'for' statement on line 55 (<unknown>, line 56)
+Analyzing: ./run_syntax_fix.py
+Error analyzing ./run_syntax_fix.py: expected an indented block after 'for' statement on line 32 (<unknown>, line 33)
+Analyzing: ./fix_import_errors.py
+Error analyzing ./fix_import_errors.py: unterminated triple-quoted string literal (detected at line 202) (<unknown>, line 156)
+Analyzing: ./debug_hmm_combinations.py
+Error analyzing ./debug_hmm_combinations.py: invalid syntax (<unknown>, line 9)
+Analyzing: ./validate_sr_implementation.py
+Error analyzing ./validate_sr_implementation.py: expected an indented block after 'for' statement on line 45 (<unknown>, line 46)
+Analyzing: ./test_enhanced_pipeline.py
+Error analyzing ./test_enhanced_pipeline.py: invalid syntax (<unknown>, line 22)
+Analyzing: ./consolidate_data.py
+Error analyzing ./consolidate_data.py: expected an indented block after 'if' statement on line 36 (<unknown>, line 37)
+Analyzing: ./validate_enhanced_sr_strength.py
+Error analyzing ./validate_enhanced_sr_strength.py: invalid syntax (<unknown>, line 10)
+Analyzing: ./test_simple_profit_features.py
+Analyzing: ./test_sr_data_integration.py
+Error analyzing ./test_sr_data_integration.py: expected an indented block after 'for' statement on line 57 (<unknown>, line 58)
+Analyzing: ./test_surrogate_optimization.py
+Error analyzing ./test_surrogate_optimization.py: invalid syntax (<unknown>, line 12)
+Analyzing: ./test_multi_output_minimal.py
+Error analyzing ./test_multi_output_minimal.py: expected an indented block after 'try' statement on line 22 (<unknown>, line 24)
+Analyzing: ./test_pipeline_flow.py
+Error analyzing ./test_pipeline_flow.py: invalid syntax (<unknown>, line 20)
+Analyzing: ./analyze_validation_issues.py
+Error analyzing ./analyze_validation_issues.py: expected an indented block after 'for' statement on line 27 (<unknown>, line 28)
+Analyzing: ./test_comprehensive_security.py
+Error analyzing ./test_comprehensive_security.py: invalid syntax (<unknown>, line 33)
+Analyzing: ./final_fix.py
+Error analyzing ./final_fix.py: expected an indented block after 'for' statement on line 116 (<unknown>, line 117)
+Analyzing: ./cleanup_script.py
+Error analyzing ./cleanup_script.py: expected an indented block after function definition on line 18 (<unknown>, line 19)
+Analyzing: ./comprehensive_syntax_fixer.py
+Analyzing: ./download_aggtrades_range.py
+Error analyzing ./download_aggtrades_range.py: unmatched ')' (<unknown>, line 8)
+Analyzing: ./fix_remaining_issues.py
+Error analyzing ./fix_remaining_issues.py: expected an indented block after 'if' statement on line 36 (<unknown>, line 37)
+Analyzing: ./fix_syntax_errors.py
+Error analyzing ./fix_syntax_errors.py: expected an indented block after 'if' statement on line 31 (<unknown>, line 32)
+Analyzing: ./test_tactician_multi_outcome_predictions.py
+Error analyzing ./test_tactician_multi_outcome_predictions.py: invalid syntax (<unknown>, line 20)
+Analyzing: ./test_enhanced_sr_optimization.py
+Error analyzing ./test_enhanced_sr_optimization.py: invalid syntax (<unknown>, line 28)
+Analyzing: ./fix_data_issues.py
+Error analyzing ./fix_data_issues.py: expected an indented block after 'for' statement on line 24 (<unknown>, line 25)
+Analyzing: ./targeted_syntax_fixer.py
+Error analyzing ./targeted_syntax_fixer.py: expected an indented block after function definition on line 24 (<unknown>, line 25)
+Analyzing: ./debug_clustering.py
+Error analyzing ./debug_clustering.py: invalid syntax (<unknown>, line 6)
+Analyzing: ./test_advanced_optimization_engine.py
+Error analyzing ./test_advanced_optimization_engine.py: unindent does not match any outer indentation level (<unknown>, line 26)
+Analyzing: ./run_fixed_hmm_regime_discovery.py
+Error analyzing ./run_fixed_hmm_regime_discovery.py: expected an indented block after 'try' statement on line 35 (<unknown>, line 37)
+Analyzing: ./identify_deleted_aggtrades.py
+Error analyzing ./identify_deleted_aggtrades.py: expected an indented block after 'for' statement on line 33 (<unknown>, line 34)
+Analyzing: ./debug_interaction_flow.py
+Error analyzing ./debug_interaction_flow.py: invalid syntax (<unknown>, line 6)
+Analyzing: ./test_4_barrier_system_simple.py
+Error analyzing ./test_4_barrier_system_simple.py: expected an indented block after 'for' statement on line 79 (<unknown>, line 80)
+Analyzing: ./example_matrix_diverse_lookback_optimization.py
+Error analyzing ./example_matrix_diverse_lookback_optimization.py: invalid syntax (<unknown>, line 15)
+Analyzing: ./final_targeted_fix_v2.py
+Error analyzing ./final_targeted_fix_v2.py: expected an indented block after 'if' statement on line 85 (<unknown>, line 86)
+Analyzing: ./convert_csv_to_parquet.py
+Error analyzing ./convert_csv_to_parquet.py: expected an indented block after 'if' statement on line 17 (<unknown>, line 18)
+Analyzing: ./verify_aggtrades_downloads.py
+Error analyzing ./verify_aggtrades_downloads.py: expected an indented block after 'if' statement on line 45 (<unknown>, line 46)
+Analyzing: ./fix_remaining_files.py
+Error analyzing ./fix_remaining_files.py: expected an indented block after 'for' statement on line 33 (<unknown>, line 34)
+Analyzing: ./diagnose_regime_data.py
+Error analyzing ./diagnose_regime_data.py: unexpected indent (<unknown>, line 7)
+Analyzing: ./test_ml_profit_integration_complete.py
+Error analyzing ./test_ml_profit_integration_complete.py: invalid syntax (<unknown>, line 17)
+Analyzing: ./test_fractional_implementations.py
+Error analyzing ./test_fractional_implementations.py: invalid syntax (<unknown>, line 9)
+Analyzing: ./fix_remaining_errors.py
+Error analyzing ./fix_remaining_errors.py: unterminated triple-quoted string literal (detected at line 313) (<unknown>, line 267)
+Analyzing: ./fix_aggtrades_gaps.py
+Error analyzing ./fix_aggtrades_gaps.py: invalid syntax (<unknown>, line 19)
+Analyzing: ./test_probabilistic_bayesian_optimization.py
+Error analyzing ./test_probabilistic_bayesian_optimization.py: invalid syntax (<unknown>, line 21)
+Analyzing: ./test_multi_output_integration.py
+Error analyzing ./test_multi_output_integration.py: invalid syntax (<unknown>, line 30)
+Analyzing: ./enhanced_validation_wrapper.py
+Error analyzing ./enhanced_validation_wrapper.py: invalid syntax (<unknown>, line 5)
+Analyzing: ./standardize_remaining_steps.py
+Error analyzing ./standardize_remaining_steps.py: invalid syntax (<unknown>, line 10)
+Analyzing: ./test_hmm_cluster_relevance.py
+Error analyzing ./test_hmm_cluster_relevance.py: invalid syntax (<unknown>, line 26)
+Analyzing: ./test_full_dynamic_tactician_implementation.py
+Error analyzing ./test_full_dynamic_tactician_implementation.py: invalid syntax (<unknown>, line 24)
+Analyzing: ./validate_sr_unified_regime_integration.py
+Error analyzing ./validate_sr_unified_regime_integration.py: expected an indented block after function definition on line 20 (<unknown>, line 21)
+Analyzing: ./test_multi_output_prediction.py
+Error analyzing ./test_multi_output_prediction.py: invalid syntax (<unknown>, line 28)
+Analyzing: ./test_vif_validation.py
+Error analyzing ./test_vif_validation.py: invalid syntax (<unknown>, line 20)
+Analyzing: ./fix_decorator_application.py
+Error analyzing ./fix_decorator_application.py: invalid syntax (<unknown>, line 11)
+Analyzing: ./test_enhanced_tactician_precision.py
+Error analyzing ./test_enhanced_tactician_precision.py: invalid syntax (<unknown>, line 22)
+Analyzing: ./test_new_config_structure.py
+Error analyzing ./test_new_config_structure.py: unexpected indent (<unknown>, line 14)
+Analyzing: ./fix_exception_handling.py
+Error analyzing ./fix_exception_handling.py: invalid syntax (<unknown>, line 7)
+Analyzing: ./test_optimized_parameters_integration.py
+Error analyzing ./test_optimized_parameters_integration.py: invalid syntax (<unknown>, line 35)
+Analyzing: ./test_comprehensive_validation.py
+Error analyzing ./test_comprehensive_validation.py: unmatched ')' (<unknown>, line 24)
+Analyzing: ./example_lookback_optimization.py
+Error analyzing ./example_lookback_optimization.py: invalid syntax (<unknown>, line 15)
+Analyzing: ./simulate_regime_merging_optimization.py
+Error analyzing ./simulate_regime_merging_optimization.py: invalid syntax (<unknown>, line 6)
+Analyzing: ./conservative_syntax_fixer.py
+Error analyzing ./conservative_syntax_fixer.py: expected an indented block after function definition on line 26 (<unknown>, line 27)
+Analyzing: ./optimize_hmm_regime_parameters_enhanced.py
+Error analyzing ./optimize_hmm_regime_parameters_enhanced.py: expected an indented block after function definition on line 32 (<unknown>, line 33)
+Analyzing: ./final_targeted_fix.py
+Error analyzing ./final_targeted_fix.py: expected an indented block after 'if' statement on line 81 (<unknown>, line 82)
+Analyzing: ./kelly_criterion_formula.py
+Error analyzing ./kelly_criterion_formula.py: invalid syntax (<unknown>, line 20)
+Analyzing: ./multi_objective_hmm_optimizer.py
+Error analyzing ./multi_objective_hmm_optimizer.py: expected an indented block after 'for' statement on line 84 (<unknown>, line 85)
+Analyzing: ./test_enhanced_hmm_capabilities.py
+Error analyzing ./test_enhanced_hmm_capabilities.py: invalid syntax (<unknown>, line 16)
+Analyzing: ./complete_remaining_steps.py
+Error analyzing ./complete_remaining_steps.py: invalid syntax (<unknown>, line 10)
+Analyzing: ./syntax_error_scanner.py
+Error analyzing ./syntax_error_scanner.py: expected an indented block after function definition on line 26 (<unknown>, line 27)
+Analyzing: ./feature_specific_validation.py
+Error analyzing ./feature_specific_validation.py: invalid syntax (<unknown>, line 2)
+Analyzing: ./fix_utils_syntax.py
+Error analyzing ./fix_utils_syntax.py: expected an indented block after 'for' statement on line 45 (<unknown>, line 46)
+Analyzing: ./tactician_kelly_usage_example.py
+Error analyzing ./tactician_kelly_usage_example.py: invalid syntax (<unknown>, line 11)
+Analyzing: ./download_missing_futures.py
+Error analyzing ./download_missing_futures.py: unmatched ')' (<unknown>, line 10)
+Analyzing: ./test_enhanced_old_decorators.py
+Error analyzing ./test_enhanced_old_decorators.py: expected an indented block after 'try' statement on line 20 (<unknown>, line 22)
+Analyzing: ./test_multi_output_working.py
+Error analyzing ./test_multi_output_working.py: invalid syntax (<unknown>, line 28)
+Analyzing: ./example_enhanced_optimization.py
+Error analyzing ./example_enhanced_optimization.py: invalid syntax (<unknown>, line 15)
+Analyzing: ./fix_multi_timeframe_data.py
+Error analyzing ./fix_multi_timeframe_data.py: expected an indented block after 'if' statement on line 31 (<unknown>, line 32)
+Analyzing: ./test_comprehensive_sr_integration.py
+Error analyzing ./test_comprehensive_sr_integration.py: invalid syntax (<unknown>, line 20)
+Analyzing: ./test_vif_validation_simple.py
+Error analyzing ./test_vif_validation_simple.py: expected an indented block after 'try' statement on line 21 (<unknown>, line 23)
+Analyzing: ./download_specific_missing_data.py
+Error analyzing ./download_specific_missing_data.py: invalid syntax (<unknown>, line 19)
+Analyzing: ./cleanup_actions.py
+Error analyzing ./cleanup_actions.py: expected an indented block after 'for' statement on line 30 (<unknown>, line 31)
+Analyzing: ./fix_remaining_indentation.py
+Error analyzing ./fix_remaining_indentation.py: expected an indented block after 'if' statement on line 23 (<unknown>, line 24)
+Analyzing: ./fix_all_remaining_files.py
+Error analyzing ./fix_all_remaining_files.py: expected an indented block after 'if' statement on line 68 (<unknown>, line 69)
+Analyzing: ./diagnose_interaction_features.py
+Error analyzing ./diagnose_interaction_features.py: invalid syntax (<unknown>, line 6)
+Analyzing: ./comprehensive_gap_filler_v2.py
+Error analyzing ./comprehensive_gap_filler_v2.py: expected an indented block after function definition on line 24 (<unknown>, line 25)
+Analyzing: ./run_pipeline_simple.py
+Error analyzing ./run_pipeline_simple.py: expected an indented block after 'try' statement on line 51 (<unknown>, line 53)
+Analyzing: ./final_fix_script.py
+Error analyzing ./final_fix_script.py: expected an indented block after 'if' statement on line 49 (<unknown>, line 50)
+Analyzing: ./download_remaining_aggtrades.py
+Error analyzing ./download_remaining_aggtrades.py: unmatched ')' (<unknown>, line 9)
+Analyzing: ./test_step2_profit_integration.py
+Error analyzing ./test_step2_profit_integration.py: expected an indented block after 'for' statement on line 27 (<unknown>, line 28)
+Analyzing: ./diagnose_feature_pipeline.py
+Error analyzing ./diagnose_feature_pipeline.py: expected an indented block after 'for' statement on line 176 (<unknown>, line 177)
+Analyzing: ./test_comprehensive_data_quality_validation.py
+Error analyzing ./test_comprehensive_data_quality_validation.py: invalid syntax (<unknown>, line 15)
+Analyzing: ./scripts/optimize_fractional_differentiation_params.py
+Error analyzing ./scripts/optimize_fractional_differentiation_params.py: expected an indented block after function definition on line 20 (<unknown>, line 21)
+Analyzing: ./scripts/verify_timeframe_data.py
+Error analyzing ./scripts/verify_timeframe_data.py: expected an indented block after function definition on line 30 (<unknown>, line 31)
+Analyzing: ./scripts/update_entire_repository_logging.py
+Error analyzing ./scripts/update_entire_repository_logging.py: invalid syntax (<unknown>, line 17)
+Analyzing: ./scripts/analyze_sr_position.py
+Error analyzing ./scripts/analyze_sr_position.py: expected an indented block after function definition on line 34 (<unknown>, line 35)
+Analyzing: ./scripts/diagnose_feature_quality.py
+Error analyzing ./scripts/diagnose_feature_quality.py: invalid syntax (<unknown>, line 26)
+Analyzing: ./scripts/verify_feature_calculations.py
+Error analyzing ./scripts/verify_feature_calculations.py: expected an indented block after function definition on line 25 (<unknown>, line 26)
+Analyzing: ./scripts/launch_advanced_monitoring.py
+Error analyzing ./scripts/launch_advanced_monitoring.py: invalid syntax (<unknown>, line 17)
+Analyzing: ./scripts/test_fractional_labeling_implementation.py
+Error analyzing ./scripts/test_fractional_labeling_implementation.py: invalid syntax (<unknown>, line 11)
+Analyzing: ./scripts/validate_fix_simple.py
+Error analyzing ./scripts/validate_fix_simple.py: expected an indented block after function definition on line 30 (<unknown>, line 31)
+Analyzing: ./scripts/test_combined_fractional_system.py
+Error analyzing ./scripts/test_combined_fractional_system.py: expected an indented block after function definition on line 19 (<unknown>, line 20)
+Analyzing: ./scripts/mock_production_integration_test.py
+Error analyzing ./scripts/mock_production_integration_test.py: invalid syntax (<unknown>, line 11)
+Analyzing: ./scripts/unified_optuna_optimization_demo.py
+Error analyzing ./scripts/unified_optuna_optimization_demo.py: invalid syntax (<unknown>, line 42)
+Analyzing: ./scripts/run_enhanced_training.py
+Error analyzing ./scripts/run_enhanced_training.py: invalid syntax (<unknown>, line 30)
+Analyzing: ./scripts/test_nan_fix.py
+Error analyzing ./scripts/test_nan_fix.py: inconsistent use of tabs and spaces in indentation (<unknown>, line 28)
+Analyzing: ./scripts/setup_challenger_model.py
+Error analyzing ./scripts/setup_challenger_model.py: invalid syntax (<unknown>, line 28)
+Analyzing: ./scripts/test_fractional_differentiation_integration.py
+Error analyzing ./scripts/test_fractional_differentiation_integration.py: invalid syntax (<unknown>, line 11)
+Analyzing: ./scripts/post_steps_cleaner.py
+Error analyzing ./scripts/post_steps_cleaner.py: invalid syntax (<unknown>, line 16)
+Analyzing: ./scripts/training_cli.py
+Error analyzing ./scripts/training_cli.py: expected an indented block after function definition on line 55 (<unknown>, line 56)
+Analyzing: ./scripts/test_sr_level_fix.py
+Error analyzing ./scripts/test_sr_level_fix.py: expected an indented block after 'try' statement on line 31 (<unknown>, line 33)
+Analyzing: ./scripts/train_multi_timeframe_hmm_ensemble.py
+Error analyzing ./scripts/train_multi_timeframe_hmm_ensemble.py: invalid syntax (<unknown>, line 14)
+Analyzing: ./scripts/assess_data_quality.py
+Error analyzing ./scripts/assess_data_quality.py: invalid syntax (<unknown>, line 32)
+Analyzing: ./scripts/validate_multicollinearity_fix.py
+Error analyzing ./scripts/validate_multicollinearity_fix.py: unindent does not match any outer indentation level (<unknown>, line 70)
+Analyzing: ./scripts/compare_agg_trades_formats.py
+Error analyzing ./scripts/compare_agg_trades_formats.py: invalid syntax (<unknown>, line 18)
+Analyzing: ./scripts/demo_enhanced_training_manager.py
+Error analyzing ./scripts/demo_enhanced_training_manager.py: unmatched ')' (<unknown>, line 24)
+Analyzing: ./scripts/test_critical_fixes.py
+Error analyzing ./scripts/test_critical_fixes.py: invalid syntax (<unknown>, line 32)
+Analyzing: ./scripts/fix_multicollinearity_issue.py
+Error analyzing ./scripts/fix_multicollinearity_issue.py: invalid syntax (<unknown>, line 18)
+Analyzing: ./scripts/mock_combined_fractional_test.py
+Error analyzing ./scripts/mock_combined_fractional_test.py: invalid syntax (<unknown>, line 11)
+Analyzing: ./scripts/regenerate_timeframes.py
+Error analyzing ./scripts/regenerate_timeframes.py: invalid syntax (<unknown>, line 18)
+Analyzing: ./scripts/test_production_integration.py
+Error analyzing ./scripts/test_production_integration.py: expected an indented block after function definition on line 21 (<unknown>, line 22)
+Analyzing: ./scripts/download_missing_timeframes.py
+Error analyzing ./scripts/download_missing_timeframes.py: invalid syntax (<unknown>, line 20)
+Analyzing: ./scripts/test_strength_weighted_sr_position.py
+Error analyzing ./scripts/test_strength_weighted_sr_position.py: invalid syntax (<unknown>, line 20)
+Analyzing: ./scripts/update_logging_warnings.py
+Error analyzing ./scripts/update_logging_warnings.py: invalid syntax (<unknown>, line 17)
+Analyzing: ./scripts/debug_analysis.py
+Error analyzing ./scripts/debug_analysis.py: unexpected indent (<unknown>, line 2)
+Analyzing: ./scripts/launch_with_monitoring.py
+Error analyzing ./scripts/launch_with_monitoring.py: invalid syntax (<unknown>, line 13)
+Analyzing: ./scripts/blank_training_run.py
+Error analyzing ./scripts/blank_training_run.py: invalid syntax (<unknown>, line 29)
+Analyzing: ./scripts/launch_full_test_run.py
+Error analyzing ./scripts/launch_full_test_run.py: invalid syntax (<unknown>, line 14)
+Analyzing: ./scripts/show_timeframe_config.py
+Error analyzing ./scripts/show_timeframe_config.py: invalid syntax (<unknown>, line 17)
+Analyzing: ./scripts/analyze_timeframe_incremental.py
+Error analyzing ./scripts/analyze_timeframe_incremental.py: invalid syntax (<unknown>, line 36)
+Analyzing: ./scripts/fix_consolidated_data.py
+Error analyzing ./scripts/fix_consolidated_data.py: expected an indented block after 'if' statement on line 29 (<unknown>, line 30)
+Analyzing: ./scripts/analyze_sr_position_enhanced.py
+Error analyzing ./scripts/analyze_sr_position_enhanced.py: invalid syntax (<unknown>, line 34)
+Analyzing: ./scripts/launch_portfolio_manager.py
+Error analyzing ./scripts/launch_portfolio_manager.py: invalid syntax (<unknown>, line 14)
+Analyzing: ./scripts/investigate_high_vif_features.py
+Error analyzing ./scripts/investigate_high_vif_features.py: inconsistent use of tabs and spaces in indentation (<unknown>, line 25)
+Analyzing: ./scripts/optimize_fractional_labeling_params.py
+Error analyzing ./scripts/optimize_fractional_labeling_params.py: invalid syntax (<unknown>, line 12)
+Analyzing: ./scripts/fix_corrupted_data.py
+Error analyzing ./scripts/fix_corrupted_data.py: invalid syntax (<unknown>, line 21)
+Analyzing: ./scripts/database_migration.py
+Error analyzing ./scripts/database_migration.py: invalid syntax (<unknown>, line 38)
+Analyzing: ./scripts/consolidate_binance_15m.py
+Error analyzing ./scripts/consolidate_binance_15m.py: inconsistent use of tabs and spaces in indentation (<unknown>, line 25)
+Analyzing: ./scripts/simple_data_loader.py
+Error analyzing ./scripts/simple_data_loader.py: invalid syntax (<unknown>, line 18)
+Analyzing: ./scripts/configure_optimization_settings.py
+Error analyzing ./scripts/configure_optimization_settings.py: expected an indented block after function definition on line 38 (<unknown>, line 39)
+Analyzing: ./scripts/advanced_syntax_repair.py
+Error analyzing ./scripts/advanced_syntax_repair.py: invalid syntax (<unknown>, line 16)
+Analyzing: ./scripts/run_enhanced_backtesting.py
+Error analyzing ./scripts/run_enhanced_backtesting.py: invalid syntax (<unknown>, line 27)
+Analyzing: ./scripts/analyze_timeframe.py
+Error analyzing ./scripts/analyze_timeframe.py: expected an indented block after 'if' statement on line 43 (<unknown>, line 44)
+Analyzing: ./scripts/validate_fractional_differentiation_performance.py
+Error analyzing ./scripts/validate_fractional_differentiation_performance.py: expected an indented block after function definition on line 20 (<unknown>, line 21)
+Analyzing: ./scripts/analyze_hmm_regimes.py
+Error analyzing ./scripts/analyze_hmm_regimes.py: expected an indented block after function definition on line 29 (<unknown>, line 30)
+Analyzing: ./scripts/regenerate_pickle_files.py
+Error analyzing ./scripts/regenerate_pickle_files.py: invalid syntax (<unknown>, line 24)
+Analyzing: ./scripts/run_multi_timeframe_training.py
+Error analyzing ./scripts/run_multi_timeframe_training.py: invalid syntax (<unknown>, line 22)
+Analyzing: ./scripts/fix_multicollinearity.py
+Error analyzing ./scripts/fix_multicollinearity.py: invalid syntax (<unknown>, line 19)
+Analyzing: ./scripts/test_vif_fixes.py
+Error analyzing ./scripts/test_vif_fixes.py: expected an indented block after function definition on line 29 (<unknown>, line 30)
+Analyzing: ./scripts/optimize_partitions.py
+Error analyzing ./scripts/optimize_partitions.py: expected an indented block after function definition on line 26 (<unknown>, line 27)
+Analyzing: ./scripts/analyze_small_files.py
+Error analyzing ./scripts/analyze_small_files.py: invalid syntax (<unknown>, line 22)
+Analyzing: ./scripts/download_mexc_agg_trades.py
+Error analyzing ./scripts/download_mexc_agg_trades.py: expected an indented block after 'if' statement on line 70 (<unknown>, line 71)
+Analyzing: ./scripts/migrate_parquet_datasets.py
+Error analyzing ./scripts/migrate_parquet_datasets.py: invalid syntax (<unknown>, line 42)
+Analyzing: ./scripts/run_event_bus_example.py
+Error analyzing ./scripts/run_event_bus_example.py: invalid syntax (<unknown>, line 23)
+Analyzing: ./scripts/surgical_pass2.py
+Error analyzing ./scripts/surgical_pass2.py: invalid syntax (<unknown>, line 8)
+Analyzing: ./scripts/resume_training.py
+Error analyzing ./scripts/resume_training.py: invalid syntax (<unknown>, line 29)
+Analyzing: ./scripts/run_feature_diagnostic.py
+Error analyzing ./scripts/run_feature_diagnostic.py: invalid syntax (<unknown>, line 26)
+Analyzing: ./scripts/run_sr_optimization.py
+Error analyzing ./scripts/run_sr_optimization.py: invalid syntax (<unknown>, line 39)
+Analyzing: ./scripts/optimize_combined_parameters.py
+Error analyzing ./scripts/optimize_combined_parameters.py: expected an indented block after function definition on line 21 (<unknown>, line 22)
+Analyzing: ./scripts/bot_monitor.py
+Error analyzing ./scripts/bot_monitor.py: invalid syntax (<unknown>, line 16)
+Analyzing: ./scripts/fix_multicollinearity_simple.py
+Error analyzing ./scripts/fix_multicollinearity_simple.py: invalid syntax (<unknown>, line 18)
+Analyzing: ./scripts/mock_baseline_analysis.py
+Error analyzing ./scripts/mock_baseline_analysis.py: invalid syntax (<unknown>, line 11)
+Analyzing: ./scripts/check_notifications.py
+Error analyzing ./scripts/check_notifications.py: invalid syntax (<unknown>, line 13)
+Analyzing: ./scripts/bulk_steps_fixer.py
+Error analyzing ./scripts/bulk_steps_fixer.py: invalid syntax (<unknown>, line 19)
+Analyzing: ./scripts/rename_data_files.py
+Error analyzing ./scripts/rename_data_files.py: invalid syntax (<unknown>, line 15)
+Analyzing: ./scripts/investigate_regime_calculations.py
+Error analyzing ./scripts/investigate_regime_calculations.py: expected an indented block after function definition on line 30 (<unknown>, line 31)
+Analyzing: ./scripts/establish_baseline_performance.py
+Error analyzing ./scripts/establish_baseline_performance.py: invalid syntax (<unknown>, line 19)
+Analyzing: ./backtesting/ares_data_downloader_clean.py
+Error analyzing ./backtesting/ares_data_downloader_clean.py: invalid syntax (<unknown>, line 36)
+Analyzing: ./backtesting/ares_data_downloader_optimized.py
+Error analyzing ./backtesting/ares_data_downloader_optimized.py: invalid syntax (<unknown>, line 63)
+Analyzing: ./code_quality/tools/batch_import_cleaner.py
+Analyzing: ./code_quality/tools/code_quality_analyzer.py
+Analyzing: ./src/tasks.py
+Error analyzing ./src/tasks.py: invalid syntax (<unknown>, line 13)
+Analyzing: ./src/ares_pipeline.py
+Error analyzing ./src/ares_pipeline.py: invalid syntax (<unknown>, line 24)
+Analyzing: ./src/config.py
+Error analyzing ./src/config.py: invalid syntax (<unknown>, line 14)
+Analyzing: ./src/config_optuna.py
+Error analyzing ./src/config_optuna.py: invalid syntax (<unknown>, line 16)
+Analyzing: ./src/paper_trader.py
+Error analyzing ./src/paper_trader.py: invalid syntax (<unknown>, line 13)
+Analyzing: ./src/monitoring/error_detection_system.py
+Error analyzing ./src/monitoring/error_detection_system.py: invalid syntax (<unknown>, line 15)
+Analyzing: ./src/monitoring/monitoring_integration_example.py
+Error analyzing ./src/monitoring/monitoring_integration_example.py: invalid syntax (<unknown>, line 15)
+Analyzing: ./src/monitoring/tracking_system.py
+Error analyzing ./src/monitoring/tracking_system.py: invalid syntax (<unknown>, line 14)
+Analyzing: ./src/monitoring/correlation_manager.py
+Error analyzing ./src/monitoring/correlation_manager.py: invalid syntax (<unknown>, line 18)
+Analyzing: ./src/monitoring/report_scheduler.py
+Error analyzing ./src/monitoring/report_scheduler.py: invalid syntax (<unknown>, line 17)
+Analyzing: ./src/monitoring/fractional_system_monitor.py
+Error analyzing ./src/monitoring/fractional_system_monitor.py: invalid syntax (<unknown>, line 17)
+Analyzing: ./src/monitoring/enhanced_ml_tracker.py
+Error analyzing ./src/monitoring/enhanced_ml_tracker.py: invalid syntax (<unknown>, line 14)
+Analyzing: ./src/monitoring/performance_dashboard.py
+Error analyzing ./src/monitoring/performance_dashboard.py: invalid syntax (<unknown>, line 17)
+Analyzing: ./src/monitoring/integration_manager.py
+Error analyzing ./src/monitoring/integration_manager.py: invalid syntax (<unknown>, line 14)
+Analyzing: ./src/monitoring/performance_monitor.py
+Error analyzing ./src/monitoring/performance_monitor.py: invalid syntax (<unknown>, line 15)
+Analyzing: ./src/monitoring/surrogate_optimization_monitor.py
+Error analyzing ./src/monitoring/surrogate_optimization_monitor.py: invalid syntax (<unknown>, line 27)
+Analyzing: ./src/monitoring/metrics_dashboard.py
+Error analyzing ./src/monitoring/metrics_dashboard.py: invalid syntax (<unknown>, line 18)
+Analyzing: ./src/monitoring/fractional_performance_tracker.py
+Error analyzing ./src/monitoring/fractional_performance_tracker.py: invalid syntax (<unknown>, line 15)
+Analyzing: ./src/monitoring/csv_exporter.py
+Error analyzing ./src/monitoring/csv_exporter.py: invalid syntax (<unknown>, line 16)
+Analyzing: ./src/monitoring/regime_sr_tracker.py
+Error analyzing ./src/monitoring/regime_sr_tracker.py: invalid syntax (<unknown>, line 15)
+Analyzing: ./src/monitoring/advanced_tracer.py
+Error analyzing ./src/monitoring/advanced_tracer.py: invalid syntax (<unknown>, line 16)
+Analyzing: ./src/monitoring/__init__.py
+Error analyzing ./src/monitoring/__init__.py: invalid syntax (<unknown>, line 18)
+Analyzing: ./src/monitoring/trade_conditions_monitor.py
+Error analyzing ./src/monitoring/trade_conditions_monitor.py: invalid syntax (<unknown>, line 15)
+Analyzing: ./src/monitoring/ml_monitor.py
+Error analyzing ./src/monitoring/ml_monitor.py: invalid syntax (<unknown>, line 16)
+Analyzing: ./src/backtesting/enhanced_backtester.py
+Error analyzing ./src/backtesting/enhanced_backtester.py: invalid syntax (<unknown>, line 21)
+Analyzing: ./src/launcher/enhanced_trading_launcher.py
+Error analyzing ./src/launcher/enhanced_trading_launcher.py: invalid syntax (<unknown>, line 16)
+Analyzing: ./src/components/modular_analyst.py
+Error analyzing ./src/components/modular_analyst.py: invalid syntax (<unknown>, line 9)
+Analyzing: ./src/components/modular_tactician.py
+Error analyzing ./src/components/modular_tactician.py: invalid syntax (<unknown>, line 9)
+Analyzing: ./src/components/modular_supervisor.py
+Error analyzing ./src/components/modular_supervisor.py: invalid syntax (<unknown>, line 9)
+Analyzing: ./src/components/__init__.py
+Error analyzing ./src/components/__init__.py: invalid syntax (<unknown>, line 8)
+Analyzing: ./src/components/modular_strategist.py
+Error analyzing ./src/components/modular_strategist.py: expected an indented block after function definition on line 15 (<unknown>, line 16)
+Analyzing: ./src/interfaces/event_bus.py
+Error analyzing ./src/interfaces/event_bus.py: invalid syntax (<unknown>, line 13)
+Analyzing: ./src/interfaces/base_interfaces.py
+Error analyzing ./src/interfaces/base_interfaces.py: expected an indented block after function definition on line 100 (<unknown>, line 101)
+Analyzing: ./src/interfaces/__init__.py
+Error analyzing ./src/interfaces/__init__.py: invalid syntax (<unknown>, line 4)
+Analyzing: ./src/interfaces/enhanced_event_bus.py
+Error analyzing ./src/interfaces/enhanced_event_bus.py: invalid syntax (<unknown>, line 18)
+Analyzing: ./src/trading/live_wavelet_analyzer.py
+Error analyzing ./src/trading/live_wavelet_analyzer.py: expected an indented block after function definition on line 45 (<unknown>, line 46)
+Analyzing: ./src/trading/live_wavelet_demo.py
+Error analyzing ./src/trading/live_wavelet_demo.py: expected an indented block after function definition on line 28 (<unknown>, line 29)
+Analyzing: ./src/trading/live_wavelet_integration.py
+Error analyzing ./src/trading/live_wavelet_integration.py: expected an indented block after function definition on line 28 (<unknown>, line 29)
+Analyzing: ./src/trading/sr_trading_intelligence.py
+Error analyzing ./src/trading/sr_trading_intelligence.py: invalid syntax (<unknown>, line 20)
+Analyzing: ./src/supervisor/enhanced_prediction_service.py
+Error analyzing ./src/supervisor/enhanced_prediction_service.py: invalid syntax (<unknown>, line 21)
+Analyzing: ./src/supervisor/performance_monitor.py
+Error analyzing ./src/supervisor/performance_monitor.py: invalid syntax (<unknown>, line 10)
+Analyzing: ./src/supervisor/global_portfolio_manager.py
+Error analyzing ./src/supervisor/global_portfolio_manager.py: invalid syntax (<unknown>, line 8)
+Analyzing: ./src/supervisor/performance_reporter.py
+Error analyzing ./src/supervisor/performance_reporter.py: invalid syntax (<unknown>, line 11)
+Analyzing: ./src/supervisor/exchange_ab_tester.py
+Error analyzing ./src/supervisor/exchange_ab_tester.py: expected an indented block after function definition on line 46 (<unknown>, line 47)
+Analyzing: ./src/supervisor/multi_exchange_ab_tester.py
+Error analyzing ./src/supervisor/multi_exchange_ab_tester.py: invalid syntax (<unknown>, line 20)
+Analyzing: ./src/supervisor/dynamic_weighter.py
+Error analyzing ./src/supervisor/dynamic_weighter.py: invalid syntax (<unknown>, line 6)
+Analyzing: ./src/supervisor/enhanced_model_monitor.py
+Error analyzing ./src/supervisor/enhanced_model_monitor.py: invalid syntax (<unknown>, line 20)
+Analyzing: ./src/supervisor/exchange_volume_adapter.py
+Error analyzing ./src/supervisor/exchange_volume_adapter.py: unmatched ')' (<unknown>, line 19)
+Analyzing: ./src/supervisor/monitoring.py
+Error analyzing ./src/supervisor/monitoring.py: invalid syntax (<unknown>, line 10)
+Analyzing: ./src/supervisor/main.py
+Error analyzing ./src/supervisor/main.py: invalid syntax (<unknown>, line 19)
+Analyzing: ./src/supervisor/ab_tester.py
+Error analyzing ./src/supervisor/ab_tester.py: invalid syntax (<unknown>, line 10)
+Analyzing: ./src/supervisor/risk_allocator.py
+Error analyzing ./src/supervisor/risk_allocator.py: invalid syntax (<unknown>, line 11)
+Analyzing: ./src/supervisor/pnl_loss_functions.py
+Error analyzing ./src/supervisor/pnl_loss_functions.py: invalid syntax (<unknown>, line 7)
+Analyzing: ./src/supervisor/__init__.py
+Error analyzing ./src/supervisor/__init__.py: invalid syntax (<unknown>, line 11)
+Analyzing: ./src/supervisor/supervisor.py
+Error analyzing ./src/supervisor/supervisor.py: invalid syntax (<unknown>, line 10)
+Analyzing: ./src/supervisor/model_behavior_tracker.py
+Error analyzing ./src/supervisor/model_behavior_tracker.py: expected an indented block after function definition on line 81 (<unknown>, line 82)
+Analyzing: ./src/supervisor/optimizer.py
+Error analyzing ./src/supervisor/optimizer.py: invalid syntax (<unknown>, line 10)
+Analyzing: ./src/pipelines/live_trading_pipeline.py
+Error analyzing ./src/pipelines/live_trading_pipeline.py: unmatched ')' (<unknown>, line 13)
+Analyzing: ./src/pipelines/improved_pipeline_executor.py
+Error analyzing ./src/pipelines/improved_pipeline_executor.py: invalid syntax (<unknown>, line 9)
+Analyzing: ./src/pipelines/base_pipeline.py
+Error analyzing ./src/pipelines/base_pipeline.py: invalid syntax (<unknown>, line 11)
+Analyzing: ./src/pipelines/__init__.py
+Error analyzing ./src/pipelines/__init__.py: invalid syntax (<unknown>, line 10)
+Analyzing: ./src/pipelines/components/monitoring_manager.py
+Error analyzing ./src/pipelines/components/monitoring_manager.py: unmatched ')' (<unknown>, line 13)
+Analyzing: ./src/pipelines/components/__init__.py
+Error analyzing ./src/pipelines/components/__init__.py: invalid syntax (<unknown>, line 17)
+Analyzing: ./src/pipelines/components/lifecycle_manager.py
+Error analyzing ./src/pipelines/components/lifecycle_manager.py: unmatched ')' (<unknown>, line 13)
+Analyzing: ./src/pipelines/components/data_manager.py
+Error analyzing ./src/pipelines/components/data_manager.py: invalid syntax (<unknown>, line 9)
+Analyzing: ./src/sentinel/sentinel.py
+Error analyzing ./src/sentinel/sentinel.py: unmatched ')' (<unknown>, line 16)
+Analyzing: ./src/sentinel/__init__.py
+Analyzing: ./src/transition/seq2seq_trainer.py
+Error analyzing ./src/transition/seq2seq_trainer.py: invalid syntax (<unknown>, line 17)
+Analyzing: ./src/transition/combined_features_builder.py
+Error analyzing ./src/transition/combined_features_builder.py: expected an indented block after function definition on line 31 (<unknown>, line 32)
+Analyzing: ./src/transition/baseline_rf.py
+Error analyzing ./src/transition/baseline_rf.py: invalid syntax (<unknown>, line 13)
+Analyzing: ./src/transition/inference_combiner.py
+Error analyzing ./src/transition/inference_combiner.py: invalid syntax (<unknown>, line 10)
+Analyzing: ./src/transition/rolling_inference.py
+Error analyzing ./src/transition/rolling_inference.py: expected an indented block after function definition on line 54 (<unknown>, line 55)
+Analyzing: ./src/transition/event_trigger_indexer.py
+Error analyzing ./src/transition/event_trigger_indexer.py: expected an indented block after function definition on line 37 (<unknown>, line 38)
+Analyzing: ./src/transition/multitask_rf.py
+Error analyzing ./src/transition/multitask_rf.py: expected an indented block after function definition on line 34 (<unknown>, line 35)
+Analyzing: ./src/transition/rolling_window_dataset.py
+Error analyzing ./src/transition/rolling_window_dataset.py: expected an indented block after function definition on line 75 (<unknown>, line 76)
+Analyzing: ./src/transition/path_targets.py
+Error analyzing ./src/transition/path_targets.py: expected an indented block after function definition on line 31 (<unknown>, line 32)
+Analyzing: ./src/transition/state_sequence_builder.py
+Error analyzing ./src/transition/state_sequence_builder.py: expected 'except' or 'finally' block (<unknown>, line 50)
+Analyzing: ./src/transition/event_window_dataset.py
+Error analyzing ./src/transition/event_window_dataset.py: expected an indented block after function definition on line 75 (<unknown>, line 76)
+Analyzing: ./src/custom_types/base_types.py
+Error analyzing ./src/custom_types/base_types.py: invalid syntax (<unknown>, line 13)
+Analyzing: ./src/custom_types/config_types.py
+Error analyzing ./src/custom_types/config_types.py: invalid syntax (<unknown>, line 12)
+Analyzing: ./src/custom_types/trading_types.py
+Error analyzing ./src/custom_types/trading_types.py: invalid syntax (<unknown>, line 8)
+Analyzing: ./src/custom_types/ml_types.py
+Error analyzing ./src/custom_types/ml_types.py: invalid syntax (<unknown>, line 12)
+Analyzing: ./src/custom_types/validation.py
+Error analyzing ./src/custom_types/validation.py: invalid syntax (<unknown>, line 18)
+Analyzing: ./src/custom_types/__init__.py
+Error analyzing ./src/custom_types/__init__.py: invalid syntax (<unknown>, line 9)
+Analyzing: ./src/custom_types/protocol_types.py
+Error analyzing ./src/custom_types/protocol_types.py: invalid syntax (<unknown>, line 16)
+Analyzing: ./src/custom_types/data_types.py
+Error analyzing ./src/custom_types/data_types.py: invalid syntax (<unknown>, line 8)
+Analyzing: ./src/optimization/parameter_optimizer.py
+Error analyzing ./src/optimization/parameter_optimizer.py: invalid syntax (<unknown>, line 18)
+Analyzing: ./src/optimization/backtesting_evaluator.py
+Error analyzing ./src/optimization/backtesting_evaluator.py: invalid syntax (<unknown>, line 14)
+Analyzing: ./src/reports/paper_trading_reporter.py
+Analyzing: ./src/protocols/trading_protocols.py
+Error analyzing ./src/protocols/trading_protocols.py: unmatched ')' (<unknown>, line 21)
+Analyzing: ./src/integration/paper_trading_integration.py
+Error analyzing ./src/integration/paper_trading_integration.py: invalid syntax (<unknown>, line 18)
+Analyzing: ./src/tactician/position_sizer.py
+Error analyzing ./src/tactician/position_sizer.py: invalid syntax (<unknown>, line 20)
+Analyzing: ./src/tactician/sr_weight_optimizer.py
+Error analyzing ./src/tactician/sr_weight_optimizer.py: invalid syntax (<unknown>, line 18)
+Analyzing: ./src/tactician/position_closing.py
+Error analyzing ./src/tactician/position_closing.py: invalid syntax (<unknown>, line 14)
+Analyzing: ./src/tactician/sr_backtesting_validator.py
+Error analyzing ./src/tactician/sr_backtesting_validator.py: invalid syntax (<unknown>, line 22)
+Analyzing: ./src/tactician/ml_target_updater.py
+Error analyzing ./src/tactician/ml_target_updater.py: invalid syntax (<unknown>, line 18)
+Analyzing: ./src/tactician/position_division_strategy.py
+Error analyzing ./src/tactician/position_division_strategy.py: invalid syntax (<unknown>, line 12)
+Analyzing: ./src/tactician/enhanced_prediction_integrator.py
+Error analyzing ./src/tactician/enhanced_prediction_integrator.py: unmatched ')' (<unknown>, line 12)
+Analyzing: ./src/tactician/tactician.py
+Error analyzing ./src/tactician/tactician.py: invalid syntax (<unknown>, line 10)
+Analyzing: ./src/tactician/comprehensive_enhanced_scenario_predictor.py
+Error analyzing ./src/tactician/comprehensive_enhanced_scenario_predictor.py: expected an indented block after function definition on line 28 (<unknown>, line 29)
+Analyzing: ./src/tactician/enhanced_execution_manager.py
+Error analyzing ./src/tactician/enhanced_execution_manager.py: unexpected indent (<unknown>, line 6)
+Analyzing: ./src/tactician/tactics_orchestrator.py
+Error analyzing ./src/tactician/tactics_orchestrator.py: invalid syntax (<unknown>, line 21)
+Analyzing: ./src/tactician/position_monitor.py
+Error analyzing ./src/tactician/position_monitor.py: invalid syntax (<unknown>, line 24)
+Analyzing: ./src/tactician/enhanced_order_manager.py
+Error analyzing ./src/tactician/enhanced_order_manager.py: invalid syntax (<unknown>, line 19)
+Analyzing: ./src/tactician/sr_data_integration.py
+Error analyzing ./src/tactician/sr_data_integration.py: invalid syntax (<unknown>, line 27)
+Analyzing: ./src/tactician/dynamic_barrier_calculator.py
+Error analyzing ./src/tactician/dynamic_barrier_calculator.py: invalid syntax (<unknown>, line 7)
+Analyzing: ./src/tactician/scenario_based_predictor.py
+Error analyzing ./src/tactician/scenario_based_predictor.py: expected an indented block after function definition on line 26 (<unknown>, line 27)
+Analyzing: ./src/tactician/leverage_sizer.py
+Error analyzing ./src/tactician/leverage_sizer.py: invalid syntax (<unknown>, line 16)
+Analyzing: ./src/tactician/sr_levels_manager.py
+Error analyzing ./src/tactician/sr_levels_manager.py: invalid syntax (<unknown>, line 24)
+Analyzing: ./src/tactician/step17_optimized_tactician.py
+Error analyzing ./src/tactician/step17_optimized_tactician.py: invalid syntax (<unknown>, line 15)
+Analyzing: ./src/tactician/sr_data_integration_simple.py
+Error analyzing ./src/tactician/sr_data_integration_simple.py: invalid syntax (<unknown>, line 26)
+Analyzing: ./src/tactician/sr_breakout_predictor.py
+Error analyzing ./src/tactician/sr_breakout_predictor.py: invalid syntax (<unknown>, line 15)
+Analyzing: ./src/tactician/enhanced_scenario_based_predictor.py
+Error analyzing ./src/tactician/enhanced_scenario_based_predictor.py: expected an indented block after function definition on line 30 (<unknown>, line 31)
+Analyzing: ./src/tactician/sr_detection_optimization.py
+Error analyzing ./src/tactician/sr_detection_optimization.py: invalid syntax (<unknown>, line 29)
+Analyzing: ./src/tactician/__init__.py
+Error analyzing ./src/tactician/__init__.py: invalid syntax (<unknown>, line 10)
+Analyzing: ./src/tactician/ml_target_validator.py
+Error analyzing ./src/tactician/ml_target_validator.py: invalid syntax (<unknown>, line 13)
+Analyzing: ./src/tactician/async_order_executor.py
+Error analyzing ./src/tactician/async_order_executor.py: invalid syntax (<unknown>, line 18)
+Analyzing: ./src/tactician/ml_tactics_manager.py
+Error analyzing ./src/tactician/ml_tactics_manager.py: expected an indented block after function definition on line 18 (<unknown>, line 19)
+Analyzing: ./src/tactician/fully_migrated_tactician.py
+Error analyzing ./src/tactician/fully_migrated_tactician.py: invalid syntax (<unknown>, line 17)
+Analyzing: ./src/tracking/trade_tracker.py
+Error analyzing ./src/tracking/trade_tracker.py: expected an indented block after function definition on line 170 (<unknown>, line 171)
+Analyzing: ./src/training/model_trainer.py
+Error analyzing ./src/training/model_trainer.py: invalid syntax (<unknown>, line 25)
+Analyzing: ./src/training/enhanced_lm_config.py
+Error analyzing ./src/training/enhanced_lm_config.py: invalid syntax (<unknown>, line 15)
+Analyzing: ./src/training/enhanced_training_manager.py
+Error analyzing ./src/training/enhanced_training_manager.py: invalid syntax (<unknown>, line 22)
+Analyzing: ./src/training/data_cleaning.py
+Error analyzing ./src/training/data_cleaning.py: expected an indented block after 'if' statement on line 19 (<unknown>, line 20)
+Analyzing: ./src/training/enhanced_training_manager_enhanced.py
+Error analyzing ./src/training/enhanced_training_manager_enhanced.py: invalid syntax (<unknown>, line 15)
+Analyzing: ./src/training/enhanced_dynamic_feature_selection.py
+Error analyzing ./src/training/enhanced_dynamic_feature_selection.py: invalid syntax (<unknown>, line 15)
+Analyzing: ./src/training/multi_output_probability_trainer.py
+Error analyzing ./src/training/multi_output_probability_trainer.py: unmatched ')' (<unknown>, line 30)
+Analyzing: ./src/training/data_access_utils.py
+Error analyzing ./src/training/data_access_utils.py: invalid syntax (<unknown>, line 15)
+Analyzing: ./src/training/gpu_acceleration_m1.py
+Error analyzing ./src/training/gpu_acceleration_m1.py: invalid syntax (<unknown>, line 17)
+Analyzing: ./src/training/regularization.py
+Error analyzing ./src/training/regularization.py: invalid syntax (<unknown>, line 14)
+Analyzing: ./src/training/feature_engineering_optimizer.py
+Error analyzing ./src/training/feature_engineering_optimizer.py: invalid syntax (<unknown>, line 29)
+Analyzing: ./src/training/feature_integration.py
+Error analyzing ./src/training/feature_integration.py: invalid syntax (<unknown>, line 18)
+Analyzing: ./src/training/feature_engineering.py
+Error analyzing ./src/training/feature_engineering.py: invalid syntax (<unknown>, line 6)
+Analyzing: ./src/training/wavelet_integration_demo.py
+Error analyzing ./src/training/wavelet_integration_demo.py: invalid syntax (<unknown>, line 22)
+Analyzing: ./src/training/enhanced_feature_engineering_optimizer.py
+Error analyzing ./src/training/enhanced_feature_engineering_optimizer.py: invalid syntax (<unknown>, line 28)
+Analyzing: ./src/training/enhanced_matrix_operations.py
+Error analyzing ./src/training/enhanced_matrix_operations.py: invalid syntax (<unknown>, line 14)
+Analyzing: ./src/training/model_saving_utils.py
+Error analyzing ./src/training/model_saving_utils.py: invalid syntax (<unknown>, line 18)
+Analyzing: ./src/training/probabilistic_model_integration.py
+Error analyzing ./src/training/probabilistic_model_integration.py: invalid syntax (<unknown>, line 18)
+Analyzing: ./src/training/enhanced_lm_optimizer.py
+Error analyzing ./src/training/enhanced_lm_optimizer.py: invalid syntax (<unknown>, line 30)
+Analyzing: ./src/training/step_orchestrator.py
+Error analyzing ./src/training/step_orchestrator.py: invalid syntax (<unknown>, line 16)
+Analyzing: ./src/training/enhanced_training_manager_optimized.py
+Error analyzing ./src/training/enhanced_training_manager_optimized.py: invalid syntax (<unknown>, line 19)
+Analyzing: ./src/training/early_stage_optimization.py
+Error analyzing ./src/training/early_stage_optimization.py: invalid syntax (<unknown>, line 27)
+Analyzing: ./src/training/multi_objective_optimizer.py
+Error analyzing ./src/training/multi_objective_optimizer.py: invalid syntax (<unknown>, line 15)
+Analyzing: ./src/training/data_sharing_manager.py
+Error analyzing ./src/training/data_sharing_manager.py: invalid syntax (<unknown>, line 16)
+Analyzing: ./src/training/bayesian_optimizer.py
+Error analyzing ./src/training/bayesian_optimizer.py: invalid syntax (<unknown>, line 14)
+Analyzing: ./src/training/memory_profiler.py
+Error analyzing ./src/training/memory_profiler.py: invalid syntax (<unknown>, line 18)
+Analyzing: ./src/training/integration_guide.py
+Error analyzing ./src/training/integration_guide.py: invalid syntax (<unknown>, line 13)
+Analyzing: ./src/training/matrix_diverse_lookback_optimizer.py
+Error analyzing ./src/training/matrix_diverse_lookback_optimizer.py: invalid syntax (<unknown>, line 26)
+Analyzing: ./src/training/unified_data_orchestrator.py
+Error analyzing ./src/training/unified_data_orchestrator.py: invalid syntax (<unknown>, line 39)
+Analyzing: ./src/training/timeframe_relevance_analyzer.py
+Error analyzing ./src/training/timeframe_relevance_analyzer.py: invalid syntax (<unknown>, line 20)
+Analyzing: ./src/training/comprehensive_sr_training_pipeline.py
+Error analyzing ./src/training/comprehensive_sr_training_pipeline.py: unmatched ')' (<unknown>, line 28)
+Analyzing: ./src/training/dual_model_system.py
+Error analyzing ./src/training/dual_model_system.py: invalid syntax (<unknown>, line 14)
+Analyzing: ./src/training/performance_comparison.py
+Error analyzing ./src/training/performance_comparison.py: invalid syntax (<unknown>, line 24)
+Analyzing: ./src/training/steps_1_7_comprehensive_executor.py
+Error analyzing ./src/training/steps_1_7_comprehensive_executor.py: unmatched ')' (<unknown>, line 30)
+Analyzing: ./src/training/adaptive_optimizer.py
+Error analyzing ./src/training/adaptive_optimizer.py: invalid syntax (<unknown>, line 13)
+Analyzing: ./src/training/demo_pipeline_execution.py
+Error analyzing ./src/training/demo_pipeline_execution.py: invalid syntax (<unknown>, line 16)
+Analyzing: ./src/training/launcher_integration_patch.py
+Error analyzing ./src/training/launcher_integration_patch.py: invalid syntax (<unknown>, line 14)
+Analyzing: ./src/training/optimized_feature_selection_manager.py
+Error analyzing ./src/training/optimized_feature_selection_manager.py: invalid syntax (<unknown>, line 26)
+Analyzing: ./src/training/feature_selection_manager.py
+Error analyzing ./src/training/feature_selection_manager.py: invalid syntax (<unknown>, line 16)
+Analyzing: ./src/training/progress_manager.py
+Error analyzing ./src/training/progress_manager.py: invalid syntax (<unknown>, line 16)
+Analyzing: ./src/training/comprehensive_pipeline_executor.py
+Error analyzing ./src/training/comprehensive_pipeline_executor.py: unmatched ')' (<unknown>, line 29)
+Analyzing: ./src/training/wavelet_feature_selection_demo.py
+Error analyzing ./src/training/wavelet_feature_selection_demo.py: invalid syntax (<unknown>, line 22)
+Analyzing: ./src/training/multi_output_model_trainer.py
+Error analyzing ./src/training/multi_output_model_trainer.py: unmatched ')' (<unknown>, line 87)
+Analyzing: ./src/training/calibration_manager.py
+Error analyzing ./src/training/calibration_manager.py: invalid syntax (<unknown>, line 7)
+Analyzing: ./src/training/model_probability_generator.py
+Error analyzing ./src/training/model_probability_generator.py: invalid syntax (<unknown>, line 15)
+Analyzing: ./src/training/training_orchestrator.py
+Error analyzing ./src/training/training_orchestrator.py: invalid syntax (<unknown>, line 7)
+Analyzing: ./src/training/advanced_neural_models.py
+Error analyzing ./src/training/advanced_neural_models.py: expected an indented block after 'for' statement on line 51 (<unknown>, line 52)
+Analyzing: ./src/training/comprehensive_feature_optimizer.py
+Error analyzing ./src/training/comprehensive_feature_optimizer.py: expected an indented block after function definition on line 54 (<unknown>, line 55)
+Analyzing: ./src/training/model_specific_pruning.py
+Error analyzing ./src/training/model_specific_pruning.py: invalid syntax (<unknown>, line 16)
+Analyzing: ./src/training/matrix_enhancement_manager.py
+Error analyzing ./src/training/matrix_enhancement_manager.py: invalid syntax (<unknown>, line 25)
+Analyzing: ./src/training/factory.py
+Error analyzing ./src/training/factory.py: invalid syntax (<unknown>, line 10)
+Analyzing: ./src/training/training_manager.py
+Error analyzing ./src/training/training_manager.py: invalid syntax (<unknown>, line 13)
+Analyzing: ./src/training/enhanced_matrix_gpu_integration.py
+Error analyzing ./src/training/enhanced_matrix_gpu_integration.py: invalid syntax (<unknown>, line 18)
+Analyzing: ./src/training/enhanced_coarse_optimizer.py
+Error analyzing ./src/training/enhanced_coarse_optimizer.py: invalid syntax (<unknown>, line 22)
+Analyzing: ./src/training/hmm_regime_barrier_optimizer.py
+Error analyzing ./src/training/hmm_regime_barrier_optimizer.py: expected an indented block after 'if' statement on line 131 (<unknown>, line 132)
+Analyzing: ./src/training/ensemble_manager.py
+Error analyzing ./src/training/ensemble_manager.py: invalid syntax (<unknown>, line 7)
+Analyzing: ./src/training/data_quality_monitor.py
+Error analyzing ./src/training/data_quality_monitor.py: unmatched ')' (<unknown>, line 28)
+Analyzing: ./src/training/model_training_integrator.py
+Error analyzing ./src/training/model_training_integrator.py: invalid syntax (<unknown>, line 26)
+Analyzing: ./src/training/di_training_manager.py
+Error analyzing ./src/training/di_training_manager.py: invalid syntax (<unknown>, line 16)
+Analyzing: ./src/training/__init__.py
+Analyzing: ./src/training/probability_calculators.py
+Error analyzing ./src/training/probability_calculators.py: expected an indented block after function definition on line 19 (<unknown>, line 20)
+Analyzing: ./src/training/wavelet_feature_selection_workflow.py
+Error analyzing ./src/training/wavelet_feature_selection_workflow.py: invalid syntax (<unknown>, line 33)
+Analyzing: ./src/training/data_efficiency_optimizer.py
+Error analyzing ./src/training/data_efficiency_optimizer.py: invalid syntax (<unknown>, line 20)
+Analyzing: ./src/training/optimization_manager.py
+Error analyzing ./src/training/optimization_manager.py: invalid syntax (<unknown>, line 7)
+Analyzing: ./src/training/validator.py
+Error analyzing ./src/training/validator.py: invalid syntax (<unknown>, line 7)
+Analyzing: ./src/training/tpsl_optimizer.py
+Error analyzing ./src/training/tpsl_optimizer.py: expected an indented block after 'try' statement on line 8 (<unknown>, line 9)
+Analyzing: ./src/training/vectorized_training_pipeline.py
+Error analyzing ./src/training/vectorized_training_pipeline.py: invalid syntax (<unknown>, line 17)
+Analyzing: ./src/training/enhanced_optimization_orchestrator.py
+Error analyzing ./src/training/enhanced_optimization_orchestrator.py: invalid syntax (<unknown>, line 15)
+Analyzing: ./src/training/enhanced_multi_timeframe_optimizer.py
+Error analyzing ./src/training/enhanced_multi_timeframe_optimizer.py: expected an indented block after function definition on line 26 (<unknown>, line 27)
+Analyzing: ./src/training/data_manager.py
+Error analyzing ./src/training/data_manager.py: invalid syntax (<unknown>, line 12)
+Analyzing: ./src/training/probabilistic_bayesian_optimizer.py
+Error analyzing ./src/training/probabilistic_bayesian_optimizer.py: expected an indented block after function definition on line 52 (<unknown>, line 53)
+Analyzing: ./src/training/diverse_lookback_optimizer.py
+Error analyzing ./src/training/diverse_lookback_optimizer.py: invalid syntax (<unknown>, line 27)
+Analyzing: ./src/training/wavelet_caching_workflow.py
+Error analyzing ./src/training/wavelet_caching_workflow.py: invalid syntax (<unknown>, line 16)
+Analyzing: ./src/training/optimized_backtester.py
+Error analyzing ./src/training/optimized_backtester.py: invalid syntax (<unknown>, line 19)
+Analyzing: ./src/training/optimization/cached_optimizer.py
+Error analyzing ./src/training/optimization/cached_optimizer.py: invalid syntax (<unknown>, line 18)
+Analyzing: ./src/training/optimization/transfer_learning_system.py
+Error analyzing ./src/training/optimization/transfer_learning_system.py: invalid syntax (<unknown>, line 28)
+Analyzing: ./src/training/optimization/progressive_optimizer.py
+Error analyzing ./src/training/optimization/progressive_optimizer.py: invalid syntax (<unknown>, line 16)
+Analyzing: ./src/training/optimization/problem_specific_strategies.py
+Error analyzing ./src/training/optimization/problem_specific_strategies.py: invalid syntax (<unknown>, line 29)
+Analyzing: ./src/training/optimization/parallel_optimizer.py
+Error analyzing ./src/training/optimization/parallel_optimizer.py: invalid syntax (<unknown>, line 15)
+Analyzing: ./src/training/optimization/rollback_manager.py
+Error analyzing ./src/training/optimization/rollback_manager.py: invalid syntax (<unknown>, line 12)
+Analyzing: ./src/training/optimization/computational_optimization_manager.py
+Error analyzing ./src/training/optimization/computational_optimization_manager.py: invalid syntax (<unknown>, line 30)
+Analyzing: ./src/training/optimization/advanced_surrogate_models.py
+Error analyzing ./src/training/optimization/advanced_surrogate_models.py: invalid syntax (<unknown>, line 24)
+Analyzing: ./src/training/optimization/adaptive_trial_allocator.py
+Error analyzing ./src/training/optimization/adaptive_trial_allocator.py: invalid syntax (<unknown>, line 15)
+Analyzing: ./src/training/optimization/__init__.py
+Error analyzing ./src/training/optimization/__init__.py: unexpected indent (<unknown>, line 8)
+Analyzing: ./src/training/tests/test_regime_change_prediction.py
+Error analyzing ./src/training/tests/test_regime_change_prediction.py: invalid syntax (<unknown>, line 12)
+Analyzing: ./src/training/steps/step04_triple_barrier_method_validator.py
+Error analyzing ./src/training/steps/step04_triple_barrier_method_validator.py: invalid syntax (<unknown>, line 18)
+Analyzing: ./src/training/steps/multi_timeframe_hmm_ensemble.py
+Error analyzing ./src/training/steps/multi_timeframe_hmm_ensemble.py: invalid syntax (<unknown>, line 35)
+Analyzing: ./src/training/steps/update_steps_for_unified_data.py
+Error analyzing ./src/training/steps/update_steps_for_unified_data.py: invalid syntax (<unknown>, line 14)
+Analyzing: ./src/training/steps/fractional_feature_selector.py
+Error analyzing ./src/training/steps/fractional_feature_selector.py: invalid syntax (<unknown>, line 16)
+Analyzing: ./src/training/steps/step06_feature_interaction_engineering.py
+Error analyzing ./src/training/steps/step06_feature_interaction_engineering.py: expected an indented block after function definition on line 38 (<unknown>, line 39)
+Analyzing: ./src/training/steps/step13_analyst_ensemble_creation_validator.py
+Error analyzing ./src/training/steps/step13_analyst_ensemble_creation_validator.py: expected an indented block after function definition on line 17 (<unknown>, line 18)
+Analyzing: ./src/training/steps/step20_ab_testing_validator.py
+Error analyzing ./src/training/steps/step20_ab_testing_validator.py: invalid syntax (<unknown>, line 10)
+Analyzing: ./src/training/steps/step14_tactician_labeling_validator.py
+Error analyzing ./src/training/steps/step14_tactician_labeling_validator.py: invalid syntax (<unknown>, line 15)
+Analyzing: ./src/training/steps/step10_unified_regime_intelligence.py
+Error analyzing ./src/training/steps/step10_unified_regime_intelligence.py: invalid decimal literal (<unknown>, line 2384)
+Analyzing: ./src/training/steps/step18_walk_forward_validation_validator.py
+Error analyzing ./src/training/steps/step18_walk_forward_validation_validator.py: invalid syntax (<unknown>, line 12)
+Analyzing: ./src/training/steps/step14_tactician_labeling.py
+Error analyzing ./src/training/steps/step14_tactician_labeling.py: invalid syntax (<unknown>, line 19)
+Analyzing: ./src/training/steps/hmm_feature_enhancer.py
+Error analyzing ./src/training/steps/hmm_feature_enhancer.py: invalid syntax (<unknown>, line 9)
+Analyzing: ./src/training/steps/step09_5_multi_timeframe_hmm_ensemble.py
+Error analyzing ./src/training/steps/step09_5_multi_timeframe_hmm_ensemble.py: invalid syntax (<unknown>, line 25)
+Analyzing: ./src/training/steps/step11_analyst_creation_validator.py
+Error analyzing ./src/training/steps/step11_analyst_creation_validator.py: invalid syntax (<unknown>, line 12)
+Analyzing: ./src/training/steps/step09_5_multi_timeframe_hmm_ensemble_validator.py
+Error analyzing ./src/training/steps/step09_5_multi_timeframe_hmm_ensemble_validator.py: invalid syntax (<unknown>, line 20)
+Analyzing: ./src/training/steps/step09_hmm_based_training_enhanced.py
+Error analyzing ./src/training/steps/step09_hmm_based_training_enhanced.py: invalid syntax (<unknown>, line 23)
+Analyzing: ./src/training/steps/step09_hmm_based_training_validator.py
+Error analyzing ./src/training/steps/step09_hmm_based_training_validator.py: invalid syntax (<unknown>, line 19)
+Analyzing: ./src/training/steps/step01_5_data_converter.py
+Error analyzing ./src/training/steps/step01_5_data_converter.py: invalid syntax (<unknown>, line 25)
+Analyzing: ./src/training/steps/step20_ab_testing.py
+Error analyzing ./src/training/steps/step20_ab_testing.py: invalid syntax (<unknown>, line 12)
+Analyzing: ./src/training/steps/step03_parameter_optimization_validator.py
+Error analyzing ./src/training/steps/step03_parameter_optimization_validator.py: invalid syntax (<unknown>, line 18)
+Analyzing: ./src/training/steps/step17_final_parameters_optimization_new.py
+Error analyzing ./src/training/steps/step17_final_parameters_optimization_new.py: invalid syntax (<unknown>, line 16)
+Analyzing: ./src/training/steps/enhanced_step1_data_collection.py
+Error analyzing ./src/training/steps/enhanced_step1_data_collection.py: invalid syntax (<unknown>, line 28)
+Analyzing: ./src/training/steps/step19_monte_carlo_validation_validator.py
+Error analyzing ./src/training/steps/step19_monte_carlo_validation_validator.py: invalid syntax (<unknown>, line 10)
+Analyzing: ./src/training/steps/feature_artifact_loader.py
+Analyzing: ./src/training/steps/step02_5_sr_optimization_validator.py
+Error analyzing ./src/training/steps/step02_5_sr_optimization_validator.py: invalid syntax (<unknown>, line 24)
+Analyzing: ./src/training/steps/data_downloader.py
+Error analyzing ./src/training/steps/data_downloader.py: invalid syntax (<unknown>, line 15)
+Analyzing: ./src/training/steps/step03_hmm_regime_discovery_validator.py
+Error analyzing ./src/training/steps/step03_hmm_regime_discovery_validator.py: unindent does not match any outer indentation level (<unknown>, line 41)
+Analyzing: ./src/training/steps/step16_confidence_calibration.py
+Error analyzing ./src/training/steps/step16_confidence_calibration.py: invalid syntax (<unknown>, line 18)
+Analyzing: ./src/training/steps/step04_regime_data_splitting_validator.py
+Error analyzing ./src/training/steps/step04_regime_data_splitting_validator.py: invalid syntax (<unknown>, line 17)
+Analyzing: ./src/training/steps/step21_saving.py
+Error analyzing ./src/training/steps/step21_saving.py: invalid syntax (<unknown>, line 27)
+Analyzing: ./src/training/steps/step05_labeling.py
+Error analyzing ./src/training/steps/step05_labeling.py: invalid syntax (<unknown>, line 30)
+Analyzing: ./src/training/steps/combined_fractional_system.py
+Error analyzing ./src/training/steps/combined_fractional_system.py: invalid syntax (<unknown>, line 18)
+Analyzing: ./src/training/steps/step09_5_hmm_lm_generalist_training_validator.py
+Error analyzing ./src/training/steps/step09_5_hmm_lm_generalist_training_validator.py: invalid syntax (<unknown>, line 12)
+Analyzing: ./src/training/steps/step10_unified_regime_intelligence_validator.py
+Error analyzing ./src/training/steps/step10_unified_regime_intelligence_validator.py: unindent does not match any outer indentation level (<unknown>, line 31)
+Analyzing: ./src/training/steps/step03_5_final_regime_clustering_validator.py
+Error analyzing ./src/training/steps/step03_5_final_regime_clustering_validator.py: invalid syntax (<unknown>, line 18)
+Analyzing: ./src/training/steps/vectorized_advanced_feature_engineering.py
+Error analyzing ./src/training/steps/vectorized_advanced_feature_engineering.py: invalid decimal literal (<unknown>, line 89)
+Analyzing: ./src/training/steps/precompute_wavelet_features.py
+Error analyzing ./src/training/steps/precompute_wavelet_features.py: invalid syntax (<unknown>, line 18)
+Analyzing: ./src/training/steps/step02_feature_engineering_validator.py
+Error analyzing ./src/training/steps/step02_feature_engineering_validator.py: invalid syntax (<unknown>, line 22)
+Analyzing: ./src/training/steps/step02_5_sr_optimization.py
+Error analyzing ./src/training/steps/step02_5_sr_optimization.py: invalid syntax (<unknown>, line 26)
+Analyzing: ./src/training/steps/step08_regime_data_splitting.py
+Error analyzing ./src/training/steps/step08_regime_data_splitting.py: invalid syntax (<unknown>, line 20)
+Analyzing: ./src/training/steps/step21_saving_validator.py
+Error analyzing ./src/training/steps/step21_saving_validator.py: invalid syntax (<unknown>, line 11)
+Analyzing: ./src/training/steps/step02_data_reading_validator.py
+Error analyzing ./src/training/steps/step02_data_reading_validator.py: invalid syntax (<unknown>, line 19)
+Analyzing: ./src/training/steps/step07_enhanced_matrix_operations.py
+Error analyzing ./src/training/steps/step07_enhanced_matrix_operations.py: invalid decimal literal (<unknown>, line 600)
+Analyzing: ./src/training/steps/step19_monte_carlo_validation.py
+Error analyzing ./src/training/steps/step19_monte_carlo_validation.py: invalid syntax (<unknown>, line 12)
+Analyzing: ./src/training/steps/step03_hmm_regime_discovery.py
+Error analyzing ./src/training/steps/step03_hmm_regime_discovery.py: invalid decimal literal (<unknown>, line 2039)
+Analyzing: ./src/training/steps/step01_data_collection.py
+Error analyzing ./src/training/steps/step01_data_collection.py: invalid syntax (<unknown>, line 22)
+Analyzing: ./src/training/steps/unified_data_loader.py
+Error analyzing ./src/training/steps/unified_data_loader.py: invalid syntax (<unknown>, line 20)
+Analyzing: ./src/training/steps/step02_data_reading.py
+Error analyzing ./src/training/steps/step02_data_reading.py: invalid syntax (<unknown>, line 23)
+Analyzing: ./src/training/steps/step03_parameter_optimization.py
+Error analyzing ./src/training/steps/step03_parameter_optimization.py: invalid syntax (<unknown>, line 25)
+Analyzing: ./src/training/steps/step11_analyst_creation.py
+Error analyzing ./src/training/steps/step11_analyst_creation.py: invalid syntax (<unknown>, line 28)
+Analyzing: ./src/training/steps/step12_analyst_enhancement_validator.py
+Error analyzing ./src/training/steps/step12_analyst_enhancement_validator.py: invalid syntax (<unknown>, line 15)
+Analyzing: ./src/training/steps/step09_hmm_based_training.py
+Error analyzing ./src/training/steps/step09_hmm_based_training.py: invalid decimal literal (<unknown>, line 5354)
+Analyzing: ./src/training/steps/step01_5_data_converter_validator.py
+Error analyzing ./src/training/steps/step01_5_data_converter_validator.py: invalid syntax (<unknown>, line 27)
+Analyzing: ./src/training/steps/step01_data_collection_validator.py
+Error analyzing ./src/training/steps/step01_data_collection_validator.py: inconsistent use of tabs and spaces in indentation (<unknown>, line 17)
+Analyzing: ./src/training/steps/vectorized_labelling_orchestrator.py
+Error analyzing ./src/training/steps/vectorized_labelling_orchestrator.py: expected an indented block after function definition on line 76 (<unknown>, line 77)
+Analyzing: ./src/training/steps/step06_feature_engineering_validator.py
+Error analyzing ./src/training/steps/step06_feature_engineering_validator.py: invalid syntax (<unknown>, line 13)
+Analyzing: ./src/training/steps/step04_regime_data_splitting.py
+Error analyzing ./src/training/steps/step04_regime_data_splitting.py: invalid syntax (<unknown>, line 25)
+Analyzing: ./src/training/steps/step09_5_hmm_lm_generalist_training.py
+Error analyzing ./src/training/steps/step09_5_hmm_lm_generalist_training.py: invalid syntax (<unknown>, line 19)
+Analyzing: ./src/training/steps/backtesting_with_cached_features.py
+Error analyzing ./src/training/steps/backtesting_with_cached_features.py: invalid syntax (<unknown>, line 18)
+Analyzing: ./src/training/steps/integrated_data_quality_pipeline.py
+Error analyzing ./src/training/steps/integrated_data_quality_pipeline.py: invalid syntax (<unknown>, line 19)
+Analyzing: ./src/training/steps/enhanced_step1_5_data_converter.py
+Error analyzing ./src/training/steps/enhanced_step1_5_data_converter.py: invalid syntax (<unknown>, line 29)
+Analyzing: ./src/training/steps/step17_final_parameters_optimization.py
+Error analyzing ./src/training/steps/step17_final_parameters_optimization.py: invalid syntax (<unknown>, line 15)
+Analyzing: ./src/training/steps/step03_5_final_regime_clustering.py
+Error analyzing ./src/training/steps/step03_5_final_regime_clustering.py: invalid syntax (<unknown>, line 24)
+Analyzing: ./src/training/steps/sr_outcome_model_trainer.py
+Error analyzing ./src/training/steps/sr_outcome_model_trainer.py: invalid syntax (<unknown>, line 29)
+Analyzing: ./src/training/steps/step06_feature_engineering.py
+Error analyzing ./src/training/steps/step06_feature_engineering.py: invalid syntax (<unknown>, line 27)
+Analyzing: ./src/training/steps/step16_confidence_calibration_validator.py
+Error analyzing ./src/training/steps/step16_confidence_calibration_validator.py: invalid syntax (<unknown>, line 10)
+Analyzing: ./src/training/steps/step12_analyst_enhancement.py
+Error analyzing ./src/training/steps/step12_analyst_enhancement.py: invalid syntax (<unknown>, line 28)
+Analyzing: ./src/training/steps/raw_data_quality_checker.py
+Error analyzing ./src/training/steps/raw_data_quality_checker.py: invalid syntax (<unknown>, line 22)
+Analyzing: ./src/training/steps/step17_final_parameters_optimization_validator.py
+Error analyzing ./src/training/steps/step17_final_parameters_optimization_validator.py: invalid syntax (<unknown>, line 9)
+Analyzing: ./src/training/steps/step18_walk_forward_validation.py
+Error analyzing ./src/training/steps/step18_walk_forward_validation.py: invalid syntax (<unknown>, line 12)
+Analyzing: ./src/training/steps/step15_tactician_specialist_training.py
+Error analyzing ./src/training/steps/step15_tactician_specialist_training.py: invalid syntax (<unknown>, line 28)
+Analyzing: ./src/training/steps/__init__.py
+Error analyzing ./src/training/steps/__init__.py: invalid syntax (<unknown>, line 10)
+Analyzing: ./src/training/steps/step08_regime_data_splitting_validator.py
+Error analyzing ./src/training/steps/step08_regime_data_splitting_validator.py: invalid syntax (<unknown>, line 19)
+Analyzing: ./src/training/steps/step15_tactician_specialist_training_validator.py
+Error analyzing ./src/training/steps/step15_tactician_specialist_training_validator.py: invalid syntax (<unknown>, line 13)
+Analyzing: ./src/training/steps/step05_labeling_validator.py
+Error analyzing ./src/training/steps/step05_labeling_validator.py: invalid syntax (<unknown>, line 17)
+Analyzing: ./src/training/steps/fractional_differentiation.py
+Error analyzing ./src/training/steps/fractional_differentiation.py: invalid decimal literal (<unknown>, line 35)
+Analyzing: ./src/training/steps/step13_analyst_ensemble_creation.py
+Error analyzing ./src/training/steps/step13_analyst_ensemble_creation.py: invalid syntax (<unknown>, line 15)
+Analyzing: ./src/training/steps/step07_enhanced_matrix_operations_validator.py
+Error analyzing ./src/training/steps/step07_enhanced_matrix_operations_validator.py: invalid syntax (<unknown>, line 16)
+Analyzing: ./src/training/steps/step05_regime_data_splitting_validator.py
+Error analyzing ./src/training/steps/step05_regime_data_splitting_validator.py: invalid syntax (<unknown>, line 19)
+Analyzing: ./src/training/steps/optimized_step_executor.py
+Analyzing: ./src/training/steps/step04_triple_barrier_method.py
+Error analyzing ./src/training/steps/step04_triple_barrier_method.py: invalid syntax (<unknown>, line 16)
+Analyzing: ./src/training/steps/step17_final_parameters_optimization/evaluation_engine.py
+Error analyzing ./src/training/steps/step17_final_parameters_optimization/evaluation_engine.py: unmatched ')' (<unknown>, line 20)
+Analyzing: ./src/training/steps/step17_final_parameters_optimization/advanced_optimization_engine.py
+Error analyzing ./src/training/steps/step17_final_parameters_optimization/advanced_optimization_engine.py: invalid syntax (<unknown>, line 36)
+Analyzing: ./src/training/steps/step17_final_parameters_optimization/optimized_optuna_optimization_enhanced.py
+Error analyzing ./src/training/steps/step17_final_parameters_optimization/optimized_optuna_optimization_enhanced.py: invalid syntax (<unknown>, line 35)
+Analyzing: ./src/training/steps/step17_final_parameters_optimization/optimized_optuna_optimization.py
+Error analyzing ./src/training/steps/step17_final_parameters_optimization/optimized_optuna_optimization.py: invalid decimal literal (<unknown>, line 116)
+Analyzing: ./src/training/steps/step17_final_parameters_optimization/optimized_step17_implementation.py
+Error analyzing ./src/training/steps/step17_final_parameters_optimization/optimized_step17_implementation.py: invalid syntax (<unknown>, line 34)
+Analyzing: ./src/training/steps/step17_final_parameters_optimization/hyperparameter_optimization_config.py
+Error analyzing ./src/training/steps/step17_final_parameters_optimization/hyperparameter_optimization_config.py: invalid syntax (<unknown>, line 16)
+Analyzing: ./src/training/steps/step17_final_parameters_optimization/comprehensive_parameter_integration.py
+Error analyzing ./src/training/steps/step17_final_parameters_optimization/comprehensive_parameter_integration.py: invalid syntax (<unknown>, line 31)
+Analyzing: ./src/training/steps/step17_final_parameters_optimization/sr_optuna_optimization.py
+Error analyzing ./src/training/steps/step17_final_parameters_optimization/sr_optuna_optimization.py: expected an indented block after 'try' statement on line 121 (<unknown>, line 122)
+Analyzing: ./src/training/steps/step17_final_parameters_optimization/efficiency_optimizer.py
+Error analyzing ./src/training/steps/step17_final_parameters_optimization/efficiency_optimizer.py: invalid syntax (<unknown>, line 23)
+Analyzing: ./src/training/steps/step17_final_parameters_optimization/step17_probabilistic_bayesian_optimization.py
+Error analyzing ./src/training/steps/step17_final_parameters_optimization/step17_probabilistic_bayesian_optimization.py: invalid syntax (<unknown>, line 32)
+Analyzing: ./src/training/steps/step17_final_parameters_optimization/__init__.py
+Error analyzing ./src/training/steps/step17_final_parameters_optimization/__init__.py: unexpected indent (<unknown>, line 9)
+Analyzing: ./src/training/steps/step17_final_parameters_optimization/regime_specific_triple_barrier_optimization.py
+Error analyzing ./src/training/steps/step17_final_parameters_optimization/regime_specific_triple_barrier_optimization.py: invalid syntax (<unknown>, line 34)
+Analyzing: ./src/training/steps/step1/missing_data_downloader_and_gap_filler.py
+Error analyzing ./src/training/steps/step1/missing_data_downloader_and_gap_filler.py: invalid syntax (<unknown>, line 21)
+Analyzing: ./src/training/steps/step1/data_quality_dashboard.py
+Error analyzing ./src/training/steps/step1/data_quality_dashboard.py: invalid syntax (<unknown>, line 21)
+Analyzing: ./src/training/steps/step1/test_missing_data_downloader.py
+Error analyzing ./src/training/steps/step1/test_missing_data_downloader.py: expected an indented block after 'if' statement on line 53 (<unknown>, line 54)
+Analyzing: ./src/training/steps/step1/validate_and_fix_aggtrades_format.py
+Error analyzing ./src/training/steps/step1/validate_and_fix_aggtrades_format.py: invalid syntax (<unknown>, line 22)
+Analyzing: ./src/training/steps/step1/comprehensive_gap_filler.py
+Error analyzing ./src/training/steps/step1/comprehensive_gap_filler.py: expected an indented block after function definition on line 28 (<unknown>, line 29)
+Analyzing: ./src/training/steps/step1/aggtrades_validator.py
+Error analyzing ./src/training/steps/step1/aggtrades_validator.py: invalid syntax (<unknown>, line 21)
+Analyzing: ./src/training/steps/step1/step1_orchestrator.py
+Error analyzing ./src/training/steps/step1/step1_orchestrator.py: invalid syntax (<unknown>, line 20)
+Analyzing: ./src/training/steps/step1/data_resampler.py
+Error analyzing ./src/training/steps/step1/data_resampler.py: invalid syntax (<unknown>, line 26)
+Analyzing: ./src/training/steps/step1/run_step1.py
+Error analyzing ./src/training/steps/step1/run_step1.py: invalid syntax (<unknown>, line 19)
+Analyzing: ./src/training/steps/step1/test_enhanced_data_quality_system.py
+Error analyzing ./src/training/steps/step1/test_enhanced_data_quality_system.py: expected an indented block after function definition on line 33 (<unknown>, line 34)
+Analyzing: ./src/training/steps/step1/gap_filler_pipeline.py
+Error analyzing ./src/training/steps/step1/gap_filler_pipeline.py: expected an indented block after function definition on line 31 (<unknown>, line 32)
+Analyzing: ./src/training/steps/step1/data_gap_detector.py
+Error analyzing ./src/training/steps/step1/data_gap_detector.py: invalid syntax (<unknown>, line 21)
+Analyzing: ./src/training/steps/step1/data_quality_monitor.py
+Error analyzing ./src/training/steps/step1/data_quality_monitor.py: invalid syntax (<unknown>, line 22)
+Analyzing: ./src/training/steps/step1/__init__.py
+Error analyzing ./src/training/steps/step1/__init__.py: invalid syntax (<unknown>, line 19)
+Analyzing: ./src/training/steps/step1/enhanced_data_quality_manager.py
+Error analyzing ./src/training/steps/step1/enhanced_data_quality_manager.py: invalid syntax (<unknown>, line 21)
+Analyzing: ./src/training/steps/step4_analyst_labeling_feature_engineering_components/optimized_triple_barrier_labeling.py
+Error analyzing ./src/training/steps/step4_analyst_labeling_feature_engineering_components/optimized_triple_barrier_labeling.py: invalid syntax (<unknown>, line 10)
+Analyzing: ./src/training/steps/step4_analyst_labeling_feature_engineering_components/regime_specific_triple_barrier_optimizer.py
+Error analyzing ./src/training/steps/step4_analyst_labeling_feature_engineering_components/regime_specific_triple_barrier_optimizer.py: invalid syntax (<unknown>, line 34)
+Analyzing: ./src/training/steps/step4_analyst_labeling_feature_engineering_components/regime_aware_triple_barrier_labeling.py
+Error analyzing ./src/training/steps/step4_analyst_labeling_feature_engineering_components/regime_aware_triple_barrier_labeling.py: invalid syntax (<unknown>, line 22)
+Analyzing: ./src/training/steps/step4_analyst_labeling_feature_engineering_components/fractional_triple_barrier_labeling.py
+Error analyzing ./src/training/steps/step4_analyst_labeling_feature_engineering_components/fractional_triple_barrier_labeling.py: invalid syntax (<unknown>, line 13)
+Analyzing: ./src/training/steps/step4_analyst_labeling_feature_engineering_components/profit_based_feature_engineering.py
+Error analyzing ./src/training/steps/step4_analyst_labeling_feature_engineering_components/profit_based_feature_engineering.py: invalid syntax (<unknown>, line 21)
+Analyzing: ./src/training/steps/step4_analyst_labeling_feature_engineering_components/__init__.py
+Error analyzing ./src/training/steps/step4_analyst_labeling_feature_engineering_components/__init__.py: invalid syntax (<unknown>, line 14)
+Analyzing: ./src/training/steps/multi_timeframe_training/multi_timeframe_training_manager.py
+Error analyzing ./src/training/steps/multi_timeframe_training/multi_timeframe_training_manager.py: invalid syntax (<unknown>, line 15)
+Analyzing: ./src/training/steps/multi_timeframe_training/__init__.py
+Error analyzing ./src/training/steps/multi_timeframe_training/__init__.py: unexpected indent (<unknown>, line 8)
+Analyzing: ./src/training/steps/analyst_training_components/regime_specific_tpsl_optimizer.py
+Error analyzing ./src/training/steps/analyst_training_components/regime_specific_tpsl_optimizer.py: invalid syntax (<unknown>, line 31)
+Analyzing: ./src/training/steps/analyst_training_components/__init__.py
+Error analyzing ./src/training/steps/analyst_training_components/__init__.py: unexpected indent (<unknown>, line 8)
+Analyzing: ./src/training/steps/data_preparation_components/aggtrades_data_formatting.py
+Error analyzing ./src/training/steps/data_preparation_components/aggtrades_data_formatting.py: expected an indented block after 'with' statement on line 16 (<unknown>, line 17)
+Analyzing: ./src/training/steps/data_preparation_components/training_validation_config.py
+Error analyzing ./src/training/steps/data_preparation_components/training_validation_config.py: expected an indented block after function definition on line 175 (<unknown>, line 176)
+Analyzing: ./src/training/steps/data_preparation_components/__init__.py
+Error analyzing ./src/training/steps/data_preparation_components/__init__.py: unexpected indent (<unknown>, line 8)
+Analyzing: ./src/training/examples/optimized_training_example.py
+Error analyzing ./src/training/examples/optimized_training_example.py: invalid syntax (<unknown>, line 13)
+Analyzing: ./src/training/examples/__init__.py
+Analyzing: ./src/training/core/stage_registry.py
+Error analyzing ./src/training/core/stage_registry.py: invalid syntax (<unknown>, line 7)
+Analyzing: ./src/training/core/checkpoint_manager.py
+Error analyzing ./src/training/core/checkpoint_manager.py: unmatched ')' (<unknown>, line 24)
+Analyzing: ./src/training/core/stage_context.py
+Error analyzing ./src/training/core/stage_context.py: unmatched ')' (<unknown>, line 17)
+Analyzing: ./src/training/core/pipeline_base.py
+Error analyzing ./src/training/core/pipeline_base.py: unmatched ')' (<unknown>, line 21)
+Analyzing: ./src/training/core/pipeline_orchestrator.py
+Error analyzing ./src/training/core/pipeline_orchestrator.py: unmatched ')' (<unknown>, line 23)
+Analyzing: ./src/training/core/__init__.py
+Error analyzing ./src/training/core/__init__.py: unexpected indent (<unknown>, line 7)
+Analyzing: ./src/exchange/binance.py
+Error analyzing ./src/exchange/binance.py: invalid syntax (<unknown>, line 10)
+Analyzing: ./src/core/di_integration.py
+Error analyzing ./src/core/di_integration.py: invalid syntax (<unknown>, line 19)
+Analyzing: ./src/core/injectable_base.py
+Error analyzing ./src/core/injectable_base.py: invalid syntax (<unknown>, line 16)
+Analyzing: ./src/core/di_launcher.py
+Error analyzing ./src/core/di_launcher.py: invalid syntax (<unknown>, line 18)
+Analyzing: ./src/core/enhanced_factories.py
+Error analyzing ./src/core/enhanced_factories.py: invalid syntax (<unknown>, line 19)
+Analyzing: ./src/core/generic_base.py
+Error analyzing ./src/core/generic_base.py: invalid syntax (<unknown>, line 10)
+Analyzing: ./src/core/service_registry.py
+Error analyzing ./src/core/service_registry.py: invalid syntax (<unknown>, line 23)
+Analyzing: ./src/core/enhanced_dependency_injection.py
+Error analyzing ./src/core/enhanced_dependency_injection.py: invalid syntax (<unknown>, line 9)
+Analyzing: ./src/core/dependency_injection.py
+Error analyzing ./src/core/dependency_injection.py: invalid syntax (<unknown>, line 9)
+Analyzing: ./src/core/config_service.py
+Error analyzing ./src/core/config_service.py: invalid syntax (<unknown>, line 14)
+Analyzing: ./src/core/__init__.py
+Error analyzing ./src/core/__init__.py: invalid syntax (<unknown>, line 4)
+Analyzing: ./src/config/sr_optimization_config.py
+Error analyzing ./src/config/sr_optimization_config.py: invalid syntax (<unknown>, line 14)
+Analyzing: ./src/config/training_modes.py
+Error analyzing ./src/config/training_modes.py: invalid syntax (<unknown>, line 13)
+Analyzing: ./src/config/system.py
+Error analyzing ./src/config/system.py: invalid syntax (<unknown>, line 9)
+Analyzing: ./src/config/fractional_implementations_config.py
+Error analyzing ./src/config/fractional_implementations_config.py: invalid syntax (<unknown>, line 9)
+Analyzing: ./src/config/constants.py
+Error analyzing ./src/config/constants.py: invalid syntax (<unknown>, line 10)
+Analyzing: ./src/config/computational_optimization_config.py
+Error analyzing ./src/config/computational_optimization_config.py: invalid syntax (<unknown>, line 10)
+Analyzing: ./src/config/environment.py
+Error analyzing ./src/config/environment.py: invalid syntax (<unknown>, line 6)
+Analyzing: ./src/config/label_model_mapping.py
+Error analyzing ./src/config/label_model_mapping.py: invalid syntax (<unknown>, line 16)
+Analyzing: ./src/config/config_confidence.py
+Error analyzing ./src/config/config_confidence.py: invalid syntax (<unknown>, line 12)
+Analyzing: ./src/config/multi_timeframe_hmm_ensemble_config.py
+Error analyzing ./src/config/multi_timeframe_hmm_ensemble_config.py: invalid syntax (<unknown>, line 14)
+Analyzing: ./src/config/enhanced_feature_selection_config.py
+Error analyzing ./src/config/enhanced_feature_selection_config.py: invalid syntax (<unknown>, line 7)
+Analyzing: ./src/config/config.py
+Error analyzing ./src/config/config.py: invalid syntax (<unknown>, line 12)
+Analyzing: ./src/config/m1_gpu_config.py
+Error analyzing ./src/config/m1_gpu_config.py: invalid syntax (<unknown>, line 12)
+Analyzing: ./src/config/config_tpsl.py
+Error analyzing ./src/config/config_tpsl.py: invalid syntax (<unknown>, line 12)
+Analyzing: ./src/config/config_regime_transitions.py
+Error analyzing ./src/config/config_regime_transitions.py: invalid syntax (<unknown>, line 12)
+Analyzing: ./src/config/config_position_sizing.py
+Error analyzing ./src/config/config_position_sizing.py: invalid syntax (<unknown>, line 12)
+Analyzing: ./src/config/enhanced_multi_timeframe_config.py
+Error analyzing ./src/config/enhanced_multi_timeframe_config.py: invalid syntax (<unknown>, line 10)
+Analyzing: ./src/config/config_manager.py
+Error analyzing ./src/config/config_manager.py: invalid syntax (<unknown>, line 25)
+Analyzing: ./src/config/typed_config.py
+Error analyzing ./src/config/typed_config.py: invalid syntax (<unknown>, line 13)
+Analyzing: ./src/config/config_sr.py
+Error analyzing ./src/config/config_sr.py: invalid syntax (<unknown>, line 12)
+Analyzing: ./src/config/matrix_diverse_lookback_config.py
+Analyzing: ./src/config/diverse_lookback_config.py
+Analyzing: ./src/config/computational_optimization.py
+Error analyzing ./src/config/computational_optimization.py: invalid syntax (<unknown>, line 8)
+Analyzing: ./src/config/multi_output_config.py
+Error analyzing ./src/config/multi_output_config.py: invalid syntax (<unknown>, line 12)
+Analyzing: ./src/config/config_two_tier.py
+Error analyzing ./src/config/config_two_tier.py: invalid syntax (<unknown>, line 12)
+Analyzing: ./src/config/config_technical_indicators.py
+Error analyzing ./src/config/config_technical_indicators.py: invalid syntax (<unknown>, line 12)
+Analyzing: ./src/config/enhanced_reporting_config.py
+Error analyzing ./src/config/enhanced_reporting_config.py: invalid syntax (<unknown>, line 13)
+Analyzing: ./src/config/config_system_monitoring.py
+Error analyzing ./src/config/config_system_monitoring.py: invalid syntax (<unknown>, line 12)
+Analyzing: ./src/config/training.py
+Error analyzing ./src/config/training.py: invalid syntax (<unknown>, line 9)
+Analyzing: ./src/config/enhanced_matrix_config.py
+Error analyzing ./src/config/enhanced_matrix_config.py: invalid syntax (<unknown>, line 12)
+Analyzing: ./src/config/validation.py
+Error analyzing ./src/config/validation.py: invalid syntax (<unknown>, line 7)
+Analyzing: ./src/config/enhanced_prediction_service_config.py
+Error analyzing ./src/config/enhanced_prediction_service_config.py: invalid syntax (<unknown>, line 10)
+Analyzing: ./src/config/config_training_optimization.py
+Error analyzing ./src/config/config_training_optimization.py: invalid syntax (<unknown>, line 12)
+Analyzing: ./src/config/__init__.py
+Error analyzing ./src/config/__init__.py: invalid syntax (<unknown>, line 6)
+Analyzing: ./src/config/feature_engineering_optimization_config.py
+Analyzing: ./src/config/config_leverage.py
+Error analyzing ./src/config/config_leverage.py: invalid syntax (<unknown>, line 12)
+Analyzing: ./src/config/enhanced_feature_optimization_config.py
+Analyzing: ./src/config/regime_specific_optimization_config.py
+Error analyzing ./src/config/regime_specific_optimization_config.py: unmatched ')' (<unknown>, line 18)
+Analyzing: ./src/config/trading.py
+Error analyzing ./src/config/trading.py: invalid syntax (<unknown>, line 8)
+Analyzing: ./src/config/config_ensemble.py
+Error analyzing ./src/config/config_ensemble.py: invalid syntax (<unknown>, line 13)
+Analyzing: ./src/utils/lookahead_bias_detector_example.py
+Error analyzing ./src/utils/lookahead_bias_detector_example.py: expected an indented block after 'if' statement on line 151 (<unknown>, line 152)
+Analyzing: ./src/utils/observability.py
+Error analyzing ./src/utils/observability.py: invalid syntax (<unknown>, line 8)
+Analyzing: ./src/utils/comprehensive_file_validation.py
+Error analyzing ./src/utils/comprehensive_file_validation.py: invalid syntax (<unknown>, line 23)
+Analyzing: ./src/utils/step_dependency_validator.py
+Error analyzing ./src/utils/step_dependency_validator.py: invalid syntax (<unknown>, line 15)
+Analyzing: ./src/utils/enhanced_validation_decorators.py
+Error analyzing ./src/utils/enhanced_validation_decorators.py: invalid syntax (<unknown>, line 23)
+Analyzing: ./src/utils/data_quality_framework.py
+Error analyzing ./src/utils/data_quality_framework.py: invalid syntax (<unknown>, line 18)
+Analyzing: ./src/utils/vif_calculator.py
+Error analyzing ./src/utils/vif_calculator.py: invalid syntax (<unknown>, line 16)
+Analyzing: ./src/utils/model_performance_monitor.py
+Error analyzing ./src/utils/model_performance_monitor.py: invalid syntax (<unknown>, line 21)
+Analyzing: ./src/utils/data_quality_validator.py
+Error analyzing ./src/utils/data_quality_validator.py: invalid decimal literal (<unknown>, line 60)
+Analyzing: ./src/utils/state_manager.py
+Error analyzing ./src/utils/state_manager.py: invalid syntax (<unknown>, line 16)
+Analyzing: ./src/utils/structured_logging.py
+Error analyzing ./src/utils/structured_logging.py: invalid syntax (<unknown>, line 8)
+Analyzing: ./src/utils/async_utils.py
+Error analyzing ./src/utils/async_utils.py: invalid syntax (<unknown>, line 13)
+Analyzing: ./src/utils/vif_validation_decorators.py
+Error analyzing ./src/utils/vif_validation_decorators.py: invalid syntax (<unknown>, line 18)
+Analyzing: ./src/utils/enhanced_data_quality_decorators.py
+Error analyzing ./src/utils/enhanced_data_quality_decorators.py: invalid syntax (<unknown>, line 10)
+Analyzing: ./src/utils/enhanced_config_management.py
+Error analyzing ./src/utils/enhanced_config_management.py: invalid syntax (<unknown>, line 16)
+Analyzing: ./src/utils/time_utils.py
+Error analyzing ./src/utils/time_utils.py: expected an indented block after 'if' statement on line 23 (<unknown>, line 24)
+Analyzing: ./src/utils/data_preprocessing.py
+Error analyzing ./src/utils/data_preprocessing.py: invalid syntax (<unknown>, line 20)
+Analyzing: ./src/utils/feature_output_validator.py
+Error analyzing ./src/utils/feature_output_validator.py: invalid syntax (<unknown>, line 36)
+Analyzing: ./src/utils/intelligent_feature_cache.py
+Error analyzing ./src/utils/intelligent_feature_cache.py: parameter without a default follows parameter with a default (<unknown>, line 32)
+Analyzing: ./src/utils/parallel_processing_optimizer.py
+Error analyzing ./src/utils/parallel_processing_optimizer.py: invalid syntax (<unknown>, line 36)
+Analyzing: ./src/utils/decorators.py
+Error analyzing ./src/utils/decorators.py: invalid syntax (<unknown>, line 23)
+Analyzing: ./src/utils/data_loader.py
+Error analyzing ./src/utils/data_loader.py: invalid syntax (<unknown>, line 23)
+Analyzing: ./src/utils/enhanced_memory_management.py
+Error analyzing ./src/utils/enhanced_memory_management.py: invalid syntax (<unknown>, line 16)
+Analyzing: ./src/utils/standardized_model_manager.py
+Error analyzing ./src/utils/standardized_model_manager.py: invalid syntax (<unknown>, line 20)
+Analyzing: ./src/utils/advanced_decorators.py
+Error analyzing ./src/utils/advanced_decorators.py: invalid syntax (<unknown>, line 16)
+Analyzing: ./src/utils/training_pipeline_decorators.py
+Error analyzing ./src/utils/training_pipeline_decorators.py: invalid syntax (<unknown>, line 15)
+Analyzing: ./src/utils/decorator_config.py
+Error analyzing ./src/utils/decorator_config.py: invalid syntax (<unknown>, line 7)
+Analyzing: ./src/utils/enhanced_decorators.py
+Error analyzing ./src/utils/enhanced_decorators.py: expected an indented block after function definition on line 25 (<unknown>, line 26)
+Analyzing: ./src/utils/standardized_config_manager.py
+Error analyzing ./src/utils/standardized_config_manager.py: invalid syntax (<unknown>, line 16)
+Analyzing: ./src/utils/optimization_integration_test.py
+Error analyzing ./src/utils/optimization_integration_test.py: invalid syntax (<unknown>, line 17)
+Analyzing: ./src/utils/enhanced_mlflow_integration.py
+Error analyzing ./src/utils/enhanced_mlflow_integration.py: invalid syntax (<unknown>, line 25)
+Analyzing: ./src/utils/purged_kfold.py
+Error analyzing ./src/utils/purged_kfold.py: invalid syntax (<unknown>, line 17)
+Analyzing: ./src/utils/centralized_decorators.py
+Error analyzing ./src/utils/centralized_decorators.py: invalid syntax (<unknown>, line 22)
+Analyzing: ./src/utils/warning_symbols.py
+Error analyzing ./src/utils/warning_symbols.py: expected an indented block after 'if' statement on line 98 (<unknown>, line 99)
+Analyzing: ./src/utils/config_loader.py
+Error analyzing ./src/utils/config_loader.py: invalid syntax (<unknown>, line 10)
+Analyzing: ./src/utils/centralized_decorators_v2.py
+Error analyzing ./src/utils/centralized_decorators_v2.py: invalid syntax (<unknown>, line 13)
+Analyzing: ./src/utils/vif_validation_decorators_simple.py
+Error analyzing ./src/utils/vif_validation_decorators_simple.py: invalid syntax (<unknown>, line 17)
+Analyzing: ./src/utils/decorator_compatibility.py
+Error analyzing ./src/utils/decorator_compatibility.py: invalid syntax (<unknown>, line 8)
+Analyzing: ./src/utils/validation_decorators.py
+Error analyzing ./src/utils/validation_decorators.py: invalid syntax (<unknown>, line 27)
+Analyzing: ./src/utils/enhanced_pipeline_decorators.py
+Error analyzing ./src/utils/enhanced_pipeline_decorators.py: invalid syntax (<unknown>, line 20)
+Analyzing: ./src/utils/error_handler.py
+Error analyzing ./src/utils/error_handler.py: invalid syntax (<unknown>, line 22)
+Analyzing: ./src/utils/data_validation.py
+Error analyzing ./src/utils/data_validation.py: invalid syntax (<unknown>, line 11)
+Analyzing: ./src/utils/parquet_utils.py
+Error analyzing ./src/utils/parquet_utils.py: invalid syntax (<unknown>, line 13)
+Analyzing: ./src/utils/standardized_error_handler.py
+Error analyzing ./src/utils/standardized_error_handler.py: invalid syntax (<unknown>, line 16)
+Analyzing: ./src/utils/comprehensive_logger.py
+Error analyzing ./src/utils/comprehensive_logger.py: invalid syntax (<unknown>, line 19)
+Analyzing: ./src/utils/validator_orchestrator.py
+Error analyzing ./src/utils/validator_orchestrator.py: invalid syntax (<unknown>, line 23)
+Analyzing: ./src/utils/hmm_composite_manager.py
+Error analyzing ./src/utils/hmm_composite_manager.py: invalid syntax (<unknown>, line 26)
+Analyzing: ./src/utils/signal_handler.py
+Error analyzing ./src/utils/signal_handler.py: invalid syntax (<unknown>, line 16)
+Analyzing: ./src/utils/data_optimizer.py
+Error analyzing ./src/utils/data_optimizer.py: invalid syntax (<unknown>, line 20)
+Analyzing: ./src/utils/configuration_security.py
+Error analyzing ./src/utils/configuration_security.py: invalid syntax (<unknown>, line 20)
+Analyzing: ./src/utils/security_framework.py
+Error analyzing ./src/utils/security_framework.py: invalid syntax (<unknown>, line 25)
+Analyzing: ./src/utils/centralized_decorators_simple.py
+Error analyzing ./src/utils/centralized_decorators_simple.py: expected an indented block after function definition on line 22 (<unknown>, line 23)
+Analyzing: ./src/utils/enhanced_missing_value_handler.py
+Error analyzing ./src/utils/enhanced_missing_value_handler.py: invalid syntax (<unknown>, line 19)
+Analyzing: ./src/utils/trading_decorators.py
+Error analyzing ./src/utils/trading_decorators.py: invalid syntax (<unknown>, line 66)
+Analyzing: ./src/utils/data_formatting_framework.py
+Error analyzing ./src/utils/data_formatting_framework.py: invalid syntax (<unknown>, line 18)
+Analyzing: ./src/utils/enhanced_data_quality_validator.py
+Error analyzing ./src/utils/enhanced_data_quality_validator.py: invalid syntax (<unknown>, line 16)
+Analyzing: ./src/utils/data_quality_decorators.py
+Error analyzing ./src/utils/data_quality_decorators.py: invalid syntax (<unknown>, line 22)
+Analyzing: ./src/utils/quality_alert_system.py
+Error analyzing ./src/utils/quality_alert_system.py: invalid syntax (<unknown>, line 30)
+Analyzing: ./src/utils/mlflow_utils.py
+Error analyzing ./src/utils/mlflow_utils.py: invalid syntax (<unknown>, line 13)
+Analyzing: ./src/utils/base_validator.py
+Error analyzing ./src/utils/base_validator.py: invalid syntax (<unknown>, line 14)
+Analyzing: ./src/utils/confidence.py
+Error analyzing ./src/utils/confidence.py: expected an indented block after 'if' statement on line 21 (<unknown>, line 22)
+Analyzing: ./src/utils/pipeline_standards.py
+Error analyzing ./src/utils/pipeline_standards.py: invalid syntax (<unknown>, line 45)
+Analyzing: ./src/utils/enhanced_error_handling.py
+Error analyzing ./src/utils/enhanced_error_handling.py: invalid syntax (<unknown>, line 16)
+Analyzing: ./src/utils/prometheus_metrics.py
+Error analyzing ./src/utils/prometheus_metrics.py: invalid syntax (<unknown>, line 9)
+Analyzing: ./src/utils/__init__.py
+Analyzing: ./src/utils/decorator_registry.py
+Error analyzing ./src/utils/decorator_registry.py: parameter without a default follows parameter with a default (<unknown>, line 13)
+Analyzing: ./src/utils/steps_1_7_compatibility_framework.py
+Error analyzing ./src/utils/steps_1_7_compatibility_framework.py: invalid syntax (<unknown>, line 21)
+Analyzing: ./src/utils/advanced_ml_validation.py
+Error analyzing ./src/utils/advanced_ml_validation.py: invalid syntax (<unknown>, line 31)
+Analyzing: ./src/utils/model_manager.py
+Error analyzing ./src/utils/model_manager.py: invalid syntax (<unknown>, line 24)
+Analyzing: ./src/utils/domain_errors.py
+Error analyzing ./src/utils/domain_errors.py: invalid syntax (<unknown>, line 5)
+Analyzing: ./src/utils/database_security.py
+Error analyzing ./src/utils/database_security.py: invalid syntax (<unknown>, line 22)
+Analyzing: ./src/utils/enhanced_outlier_handler.py
+Error analyzing ./src/utils/enhanced_outlier_handler.py: invalid syntax (<unknown>, line 19)
+Analyzing: ./src/utils/enhanced_error_handler.py
+Error analyzing ./src/utils/enhanced_error_handler.py: invalid syntax (<unknown>, line 40)
+Analyzing: ./src/utils/logger.py
+Error analyzing ./src/utils/logger.py: invalid syntax (<unknown>, line 24)
+Analyzing: ./src/utils/lookahead_bias_detector.py
+Error analyzing ./src/utils/lookahead_bias_detector.py: invalid syntax (<unknown>, line 16)
+Analyzing: ./src/utils/comprehensive_data_quality_validator.py
+Error analyzing ./src/utils/comprehensive_data_quality_validator.py: invalid syntax (<unknown>, line 25)
+Analyzing: ./src/utils/data_type_optimizer.py
+Error analyzing ./src/utils/data_type_optimizer.py: invalid syntax (<unknown>, line 17)
+Analyzing: ./src/strategist/strategist.py
+Error analyzing ./src/strategist/strategist.py: unmatched ')' (<unknown>, line 20)
+Analyzing: ./src/strategist/__init__.py
+Analyzing: ./src/validation/critical_path_validators.py
+Error analyzing ./src/validation/critical_path_validators.py: invalid syntax (<unknown>, line 13)
+Analyzing: ./src/analyst/order_book_analyzer.py
+Error analyzing ./src/analyst/order_book_analyzer.py: unexpected indent (<unknown>, line 5)
+Analyzing: ./src/analyst/advanced_feature_engineering.py
+Error analyzing ./src/analyst/advanced_feature_engineering.py: unmatched ')' (<unknown>, line 27)
+Analyzing: ./src/analyst/multi_timeframe_regime_integration.py
+Error analyzing ./src/analyst/multi_timeframe_regime_integration.py: invalid syntax (<unknown>, line 33)
+Analyzing: ./src/analyst/feature_engineering_orchestrator.py
+Error analyzing ./src/analyst/feature_engineering_orchestrator.py: invalid syntax (<unknown>, line 15)
+Analyzing: ./src/analyst/meta_labeling_system.py
+Error analyzing ./src/analyst/meta_labeling_system.py: unmatched ')' (<unknown>, line 16)
+Analyzing: ./src/analyst/autoencoder_feature_generator.py
+Error analyzing ./src/analyst/autoencoder_feature_generator.py: unmatched ')' (<unknown>, line 54)
+Analyzing: ./src/analyst/enhanced_prediction_integrator.py
+Error analyzing ./src/analyst/enhanced_prediction_integrator.py: invalid syntax (<unknown>, line 13)
+Analyzing: ./src/analyst/predictive_ensembles.py
+Error analyzing ./src/analyst/predictive_ensembles.py: invalid syntax (<unknown>, line 5)
+Analyzing: ./src/analyst/regime_runtime.py
+Error analyzing ./src/analyst/regime_runtime.py: expected an indented block after 'if' statement on line 17 (<unknown>, line 18)
+Analyzing: ./src/analyst/liquidation_risk_model.py
+Error analyzing ./src/analyst/liquidation_risk_model.py: unexpected indent (<unknown>, line 6)
+Analyzing: ./src/analyst/multi_timeframe_feature_engineering.py
+Error analyzing ./src/analyst/multi_timeframe_feature_engineering.py: invalid syntax (<unknown>, line 31)
+Analyzing: ./src/analyst/dynamic_regime_mapper.py
+Error analyzing ./src/analyst/dynamic_regime_mapper.py: expected an indented block after function definition on line 18 (<unknown>, line 19)
+Analyzing: ./src/analyst/enhanced_regime_predictor.py
+Error analyzing ./src/analyst/enhanced_regime_predictor.py: invalid syntax (<unknown>, line 23)
+Analyzing: ./src/analyst/decision_aggregator.py
+Error analyzing ./src/analyst/decision_aggregator.py: expected an indented block after 'if' statement on line 34 (<unknown>, line 35)
+Analyzing: ./src/analyst/data_utils.py
+Error analyzing ./src/analyst/data_utils.py: invalid syntax (<unknown>, line 11)
+Analyzing: ./src/analyst/unified_regime_intelligence_runtime.py
+Error analyzing ./src/analyst/unified_regime_intelligence_runtime.py: invalid syntax (<unknown>, line 19)
+Analyzing: ./src/analyst/example_directional_analysis.py
+Error analyzing ./src/analyst/example_directional_analysis.py: expected an indented block after 'for' statement on line 35 (<unknown>, line 36)
+Analyzing: ./src/analyst/regime_expert_orchestrator.py
+Error analyzing ./src/analyst/regime_expert_orchestrator.py: invalid syntax (<unknown>, line 13)
+Analyzing: ./src/analyst/meta_label_relevance.py
+Error analyzing ./src/analyst/meta_label_relevance.py: invalid syntax (<unknown>, line 15)
+Analyzing: ./src/analyst/ml_confidence_predictor.py
+Error analyzing ./src/analyst/ml_confidence_predictor.py: invalid syntax (<unknown>, line 12)
+Analyzing: ./src/analyst/di_analyst.py
+Error analyzing ./src/analyst/di_analyst.py: invalid syntax (<unknown>, line 21)
+Analyzing: ./src/analyst/__init__.py
+Analyzing: ./src/analyst/unified_regime_classifier.py
+Error analyzing ./src/analyst/unified_regime_classifier.py: invalid syntax (<unknown>, line 17)
+Analyzing: ./src/analyst/analyst.py
+Error analyzing ./src/analyst/analyst.py: unmatched ')' (<unknown>, line 31)
+Analyzing: ./src/analyst/predictive_ensembles/multi_timeframe_ensemble.py
+Error analyzing ./src/analyst/predictive_ensembles/multi_timeframe_ensemble.py: invalid syntax (<unknown>, line 26)
+Analyzing: ./src/analyst/predictive_ensembles/enhanced_ensemble_orchestrator.py
+Error analyzing ./src/analyst/predictive_ensembles/enhanced_ensemble_orchestrator.py: invalid syntax (<unknown>, line 16)
+Analyzing: ./src/analyst/predictive_ensembles/ensemble_orchestrator.py
+Error analyzing ./src/analyst/predictive_ensembles/ensemble_orchestrator.py: invalid syntax (<unknown>, line 18)
+Analyzing: ./src/analyst/predictive_ensembles/two_tier_integration.py
+Error analyzing ./src/analyst/predictive_ensembles/two_tier_integration.py: invalid syntax (<unknown>, line 17)
+Analyzing: ./src/analyst/predictive_ensembles/__init__.py
+Error analyzing ./src/analyst/predictive_ensembles/__init__.py: invalid syntax (<unknown>, line 6)
+Analyzing: ./src/analyst/predictive_ensembles/regime_ensembles/volatile_regime_ensemble.py
+Error analyzing ./src/analyst/predictive_ensembles/regime_ensembles/volatile_regime_ensemble.py: unexpected indent (<unknown>, line 2)
+Analyzing: ./src/analyst/predictive_ensembles/regime_ensembles/__init__.py
+Error analyzing ./src/analyst/predictive_ensembles/regime_ensembles/__init__.py: invalid syntax (<unknown>, line 7)
+Analyzing: ./src/analyst/predictive_ensembles/regime_ensembles/base_ensemble.py
+Error analyzing ./src/analyst/predictive_ensembles/regime_ensembles/base_ensemble.py: invalid syntax (<unknown>, line 17)
+Analyzing: ./src/database/efficient_features_database.py
+Error analyzing ./src/database/efficient_features_database.py: unmatched ')' (<unknown>, line 26)
+Analyzing: ./src/database/influxdb_manager.py
+Error analyzing ./src/database/influxdb_manager.py: invalid syntax (<unknown>, line 10)
+Analyzing: ./src/database/precomputed_features_manager.py
+Error analyzing ./src/database/precomputed_features_manager.py: invalid syntax (<unknown>, line 12)
+Analyzing: ./src/database/migration_utils.py
+Error analyzing ./src/database/migration_utils.py: unmatched ')' (<unknown>, line 26)
+Analyzing: ./src/database/firestore_manager.py
+Error analyzing ./src/database/firestore_manager.py: invalid syntax (<unknown>, line 14)
+Analyzing: ./src/database/sqlite_manager.py
+Error analyzing ./src/database/sqlite_manager.py: invalid syntax (<unknown>, line 15)
+Analyzing: ./analysis/model_training_quality_analysis.py
+Error analyzing ./analysis/model_training_quality_analysis.py: invalid syntax (<unknown>, line 20)
+Analyzing: ./analysis/backtesting_quality_analysis.py
+Error analyzing ./analysis/backtesting_quality_analysis.py: invalid syntax (<unknown>, line 9)
+Analyzing: ./analysis/missing_values_analysis.py
+Error analyzing ./analysis/missing_values_analysis.py: unexpected indent (<unknown>, line 12)
+Analyzing: ./analysis/data_collection_quality_analysis.py
+Error analyzing ./analysis/data_collection_quality_analysis.py: invalid syntax (<unknown>, line 21)
+Analyzing: ./analysis/data_preparation_quality_analysis.py
+Error analyzing ./analysis/data_preparation_quality_analysis.py: invalid syntax (<unknown>, line 18)
+Analyzing: ./GUI/api_server.py
+Error analyzing ./GUI/api_server.py: invalid syntax (<unknown>, line 12)
+Analyzing: ./docs/enhanced_mlflow_step_integration_template.py
+Error analyzing ./docs/enhanced_mlflow_step_integration_template.py: unmatched ')' (<unknown>, line 25)
+Analyzing: ./examples/enhanced_step1_7_usage_example.py
+Error analyzing ./examples/enhanced_step1_7_usage_example.py: unexpected indent (<unknown>, line 9)
+Analyzing: ./examples/enhanced_nan_analysis_example.py
+Error analyzing ./examples/enhanced_nan_analysis_example.py: invalid syntax (<unknown>, line 11)
+Analyzing: ./examples/surrogate_training_integration.py
+Error analyzing ./examples/surrogate_training_integration.py: invalid syntax (<unknown>, line 15)
+Analyzing: ./examples/problem_specific_and_transfer_learning_example.py
+Error analyzing ./examples/problem_specific_and_transfer_learning_example.py: invalid syntax (<unknown>, line 19)
+Analyzing: ./examples/regime_expert_usage_example.py
+Error analyzing ./examples/regime_expert_usage_example.py: invalid syntax (<unknown>, line 12)
+Analyzing: ./examples/enhanced_reporting_example.py
+Error analyzing ./examples/enhanced_reporting_example.py: unmatched ')' (<unknown>, line 14)
+Analyzing: ./examples/enhanced_trading_integration_example.py
+Error analyzing ./examples/enhanced_trading_integration_example.py: invalid syntax (<unknown>, line 20)
+Analyzing: ./examples/data_quality_example.py
+Error analyzing ./examples/data_quality_example.py: invalid syntax (<unknown>, line 16)
+Analyzing: ./examples/enhanced_training_integration_example.py
+Error analyzing ./examples/enhanced_training_integration_example.py: unexpected indent (<unknown>, line 7)
+Analyzing: ./examples/surrogate_optimization_example.py
+Error analyzing ./examples/surrogate_optimization_example.py: invalid syntax (<unknown>, line 22)
+Analyzing: ./examples/autoencoder_feature_analysis_example.py
+Error analyzing ./examples/autoencoder_feature_analysis_example.py: invalid syntax (<unknown>, line 14)
+Analyzing: ./crypto_analysis/data_downloader.py
+Error analyzing ./crypto_analysis/data_downloader.py: expected an indented block after function definition on line 28 (<unknown>, line 29)
+Analyzing: ./crypto_analysis/data_analyzer.py
+Error analyzing ./crypto_analysis/data_analyzer.py: expected an indented block after function definition on line 28 (<unknown>, line 29)
+Analyzing: ./crypto_analysis/run_analysis.py
+Error analyzing ./crypto_analysis/run_analysis.py: invalid syntax (<unknown>, line 12)
+Analyzing: ./crypto_analysis/test_parquet.py
+Error analyzing ./crypto_analysis/test_parquet.py: expected an indented block after 'for' statement on line 24 (<unknown>, line 25)
+Analyzing: ./exchange/mexc_optimized.py
+Error analyzing ./exchange/mexc_optimized.py: invalid syntax (<unknown>, line 4)
+Analyzing: ./exchange/okx.py
+Error analyzing ./exchange/okx.py: invalid syntax (<unknown>, line 8)
+Analyzing: ./exchange/gateio.py
+Error analyzing ./exchange/gateio.py: invalid syntax (<unknown>, line 8)
+Analyzing: ./exchange/mexc.py
+Error analyzing ./exchange/mexc.py: invalid syntax (<unknown>, line 8)
+Analyzing: ./exchange/factory.py
+Error analyzing ./exchange/factory.py: invalid syntax (<unknown>, line 10)
+Analyzing: ./exchange/__init__.py
+Analyzing: ./exchange/binance.py
+Error analyzing ./exchange/binance.py: invalid syntax (<unknown>, line 3)
+Analyzing: ./exchange/base_exchange.py
+Error analyzing ./exchange/base_exchange.py: invalid syntax (<unknown>, line 9)
+================================================================================
+CODE QUALITY ANALYSIS REPORT
+================================================================================
+Files analyzed: 20
+Unused imports found: 8
+Dead code issues found: 18
+Formatting issues found: 0
+
+
+File: ./comprehensive_syntax_fixer.py
+-------------------------------
+
+Unused Imports:
+  - {'type': 'import', 'name': 'ast', 'asname': None, 'lineno': 9, 'used_name': 'ast'} (line 9)
+  - {'type': 'from_import', 'module': 'pathlib', 'name': 'Path', 'asname': None, 'lineno': 10, 'used_name': 'Path'} (line 10)
+  - {'type': 'from_import', 'module': 'typing', 'name': 'List', 'asname': None, 'lineno': 11, 'used_name': 'List'} (line 11)
+  - {'type': 'from_import', 'module': 'typing', 'name': 'Set', 'asname': None, 'lineno': 11, 'used_name': 'Set'} (line 11)
+  - {'type': 'from_import', 'module': 'typing', 'name': 'Tuple', 'asname': None, 'lineno': 11, 'used_name': 'Tuple'} (line 11)
+
+Long Lines:
+  - Line is 136 characters (max 120) (line 60)
+
+File: ./code_quality/tools/code_quality_analyzer.py
+---------------------------------------------
+
+Unused Imports:
+  - {'type': 'import', 'name': 'sys', 'asname': None, 'lineno': 9, 'used_name': 'sys'} (line 9)
+  - {'type': 'from_import', 'module': 'pathlib', 'name': 'Path', 'asname': None, 'lineno': 10, 'used_name': 'Path'} (line 10)
+  - {'type': 'from_import', 'module': 'typing', 'name': 'Tuple', 'asname': None, 'lineno': 11, 'used_name': 'Tuple'} (line 11)
+
+File: ./src/config/matrix_diverse_lookback_config.py
+----------------------------------------------
+
+Dead Code:
+  - Function 'get_vector_operation_settings' appears to be unused (line 581)
+  - Function 'get_file_output_settings' appears to be unused (line 647)
+  - Function 'get_matrix_diverse_lookback_config' appears to be unused (line 11)
+  - Function 'get_integration_settings' appears to be unused (line 694)
+  - Function 'get_matrix_optimization_objectives' appears to be unused (line 529)
+
+Long Lines:
+  - Line is 141 characters (max 120) (line 709)
+
+File: ./src/config/diverse_lookback_config.py
+---------------------------------------
+
+Dead Code:
+  - Function 'get_high_leverage_period_priorities' appears to be unused (line 368)
+  - Function 'get_diverse_period_selection_strategy' appears to be unused (line 204)
+  - Function 'get_period_insight_mapping' appears to be unused (line 276)
+  - Function 'get_diverse_lookback_config' appears to be unused (line 12)
+
+File: ./src/config/feature_engineering_optimization_config.py
+-------------------------------------------------------
+
+Dead Code:
+  - Function 'get_optimization_output_schema' appears to be unused (line 248)
+  - Function 'get_optimized_timeframe_config' appears to be unused (line 135)
+  - Function 'get_feature_engineering_optimization_config' appears to be unused (line 12)
+  - Function 'get_feature_optimization_validation_rules' appears to be unused (line 207)
+
+File: ./src/config/enhanced_feature_optimization_config.py
+----------------------------------------------------
+
+Dead Code:
+  - Function 'get_meta_optimization_objectives' appears to be unused (line 227)
+  - Function 'get_enhanced_output_schema' appears to be unused (line 378)
+  - Function 'get_enhanced_feature_optimization_config' appears to be unused (line 12)
+  - Function 'get_parameter_importance_weights' appears to be unused (line 278)
+  - Function 'get_optimization_strategies' appears to be unused (line 333)

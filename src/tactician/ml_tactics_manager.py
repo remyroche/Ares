@@ -18,6 +18,7 @@ class MLTacticsManager:
     def __init__(self, config: dict[str, Any]) -> None:
     pass
     pass
+    pass
         """
         Initialize ML tactics manager.
 
@@ -128,8 +129,11 @@ class MLTacticsManager:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             # Validate configuration
             if not self._validate_configuration():
+    pass
     pass
     pass
                 self.logger.error(invalid("Invalid configuration for ML tactics manager"))
@@ -157,6 +161,7 @@ class MLTacticsManager:
     def _validate_configuration(self) -> bool:
     pass
     pass
+    pass
         """
         Validate ML tactics manager configuration.
 
@@ -169,6 +174,9 @@ class MLTacticsManager:
     except Exception as e:
         pass
     pass
+    except Exception as e:
+        pass
+    pass
                 self.logger.error(invalid("Invalid confidence_threshold configuration"))
                 return False
 
@@ -177,16 +185,19 @@ class MLTacticsManager:
             if self.regime_threshold <= 0 or self.regime_threshold > 1:
     pass
     pass
+    pass
                 self.logger.error(invalid("Invalid regime_threshold configuration"))
                 return False
 
             if self.ml_weight <= 0 or self.ml_weight > 1:
     pass
     pass
+    pass
                 self.logger.error(invalid("Invalid ml_weight configuration"))
                 return False
 
             if self.regime_weight <= 0 or self.regime_weight > 1:
+    pass
     pass
     pass
                 self.logger.error(invalid("Invalid regime_weight configuration"))
@@ -196,7 +207,9 @@ class MLTacticsManager:
             for barrier_type, config in self.barrier_config.items():
     pass
     pass
+    pass
                 if config["profit_target_multiplier"] <= 0 or config["stop_loss_multiplier"] <= 0:
+    pass
     pass
     pass
                     self.logger.error(invalid(f"Invalid barrier configuration for {barrier_type}"))
@@ -206,7 +219,9 @@ class MLTacticsManager:
             for threshold_type, threshold in self.green_light_thresholds.items():
     pass
     pass
+    pass
                 if threshold <= 0 or threshold > 1:
+    pass
     pass
     pass
                     self.logger.error(invalid(f"Invalid green light threshold for {threshold_type}"))
@@ -215,7 +230,9 @@ class MLTacticsManager:
             for threshold_type, threshold in self.exit_thresholds.items():
     pass
     pass
+    pass
                 if threshold <= 0 or threshold > 1:
+    pass
     pass
     pass
                     self.logger.error(invalid(f"Invalid exit threshold for {threshold_type}"))
@@ -230,7 +247,9 @@ class MLTacticsManager:
             for weight_name, weight in self.confidence_weights.items():
     pass
     pass
+    pass
                 if weight < 0 or weight > 1:
+    pass
     pass
     pass
                     self.logger.error(invalid(f"Invalid confidence weight for {weight_name}: {weight}"))
@@ -245,6 +264,7 @@ class MLTacticsManager:
     def refresh_step17_configuration(self, step17_results: dict[str, Any]) -> None:
     pass
     pass
+    pass
         """
         Refresh configuration from step17 optimization results.
         This method is called automatically when step17 completes.
@@ -254,6 +274,9 @@ class MLTacticsManager:
         """
         try:
             if "ml_tactics" in step17_results:
+    pass
+    except Exception as e:
+        pass
     pass
     except Exception as e:
         pass
@@ -328,6 +351,9 @@ class MLTacticsManager:
 import except Exception as e:
     except Exception as e:
         pass
+import except Exception as e:
+    except Exception as e:
+        pass
 import self.scenario_predictor = ScenarioBasedPredictor
             self.scenario_predictor = ScenarioBasedPredictor(self.config)
             await self.scenario_predictor.initialize()
@@ -355,8 +381,11 @@ import self.scenario_predictor = ScenarioBasedPredictor
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             # Initialize models for each barrier type
             for barrier_type in ["fifty_percent", "twenty_five_percent", "fifty_percent_5m", "twenty_five_percent_5m"]:
+    pass
     pass
     pass
                 self.multi_output_models[barrier_type] = {
@@ -372,6 +401,7 @@ import self.scenario_predictor = ScenarioBasedPredictor
 
             # If no pre-trained models, use fallback models
             if not self.is_trained:
+    pass
     pass
     pass
                 self.logger.warning("No pre-trained models found, using fallback models")
@@ -398,6 +428,8 @@ import self.scenario_predictor = ScenarioBasedPredictor
         """
         try:
             # This would load actual trained models from disk
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -429,8 +461,11 @@ import self.scenario_predictor = ScenarioBasedPredictor
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             # Create simple fallback models for each barrier type
             for barrier_type in ["fifty_percent", "twenty_five_percent", "fifty_percent_5m", "twenty_five_percent_5m"]:
+    pass
     pass
     pass
                 self.multi_output_models[barrier_type]["is_trained"] = True
@@ -472,8 +507,11 @@ import self.scenario_predictor = ScenarioBasedPredictor
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             # Validate tactics input
             if not self._validate_tactics_input(tactics_input):
+    pass
     pass
     pass
                 return {}
@@ -482,6 +520,7 @@ import self.scenario_predictor = ScenarioBasedPredictor
             ml_predictions = self._get_ml_predictions()
 
             if not ml_predictions:
+    pass
     pass
     pass
                 self.logger.warning(warning("⚠️ No ML predictions available"))
@@ -552,6 +591,7 @@ import self.scenario_predictor = ScenarioBasedPredictor
     def _validate_tactics_input(self, tactics_input: dict[str, Any]) -> bool:
     pass
     pass
+    pass
         """
         Validate ML tactics input parameters.
 
@@ -568,10 +608,14 @@ import self.scenario_predictor = ScenarioBasedPredictor
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             for field in required_fields:
     pass
     pass
+    pass
                 if field not in tactics_input:
+    pass
     pass
     pass
                     self.logger.error(
@@ -581,6 +625,7 @@ import self.scenario_predictor = ScenarioBasedPredictor
 
             # Validate specific field values
             if tactics_input.get("current_price", 0) <= 0:
+    pass
     pass
     pass
                 self.logger.error(invalid("Invalid current_price value"))
@@ -600,6 +645,7 @@ import self.scenario_predictor = ScenarioBasedPredictor
     def _get_ml_predictions(self) -> dict[str, Any] | None:
     pass
     pass
+    pass
         """
         Get ML predictions.
 
@@ -608,6 +654,8 @@ import self.scenario_predictor = ScenarioBasedPredictor
         """
         try:
             # This would typically retrieve ML predictions from the analyst or other sources
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -678,6 +726,8 @@ import self.scenario_predictor = ScenarioBasedPredictor
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             location_prediction = regime_info.get("location_prediction", {})
 
             # Determine dominant regime
@@ -740,6 +790,8 @@ import self.scenario_predictor = ScenarioBasedPredictor
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             confidence = entry_prediction.get("confidence", 0)
             direction = entry_prediction.get("direction", "NEUTRAL")
             strength = entry_prediction.get("strength", 0)
@@ -748,7 +800,9 @@ import self.scenario_predictor = ScenarioBasedPredictor
             if confidence >= self.confidence_threshold:
     pass
     pass
+    pass
                 if direction == "LONG" and strength > 0.6:
+    pass
     pass
     pass
                     decision = "ENTER_LONG"
@@ -795,6 +849,8 @@ import self.scenario_predictor = ScenarioBasedPredictor
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             confidence = sizing_prediction.get("confidence", 0)
             size_multiplier = sizing_prediction.get("size_multiplier", 1.0)
             risk_level = sizing_prediction.get("risk_level", "MEDIUM")
@@ -803,7 +859,9 @@ import self.scenario_predictor = ScenarioBasedPredictor
             if confidence >= self.confidence_threshold:
     pass
     pass
+    pass
                 if risk_level == "LOW":
+    pass
     pass
     pass
                     adjusted_multiplier = size_multiplier * 1.2
@@ -853,6 +911,8 @@ import self.scenario_predictor = ScenarioBasedPredictor
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             confidence = leverage_prediction.get("confidence", 0)
             leverage_multiplier = leverage_prediction.get("leverage_multiplier", 1.0)
             risk_level = leverage_prediction.get("risk_level", "MEDIUM")
@@ -861,7 +921,9 @@ import self.scenario_predictor = ScenarioBasedPredictor
             if confidence >= self.confidence_threshold:
     pass
     pass
+    pass
                 if risk_level == "LOW":
+    pass
     pass
     pass
                     adjusted_leverage = leverage_multiplier * 1.3
@@ -911,6 +973,8 @@ import self.scenario_predictor = ScenarioBasedPredictor
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             confidence = directional_prediction.get("confidence", 0)
             direction = directional_prediction.get("direction", "NEUTRAL")
             strength = directional_prediction.get("strength", 0)
@@ -919,7 +983,9 @@ import self.scenario_predictor = ScenarioBasedPredictor
             if confidence >= self.confidence_threshold:
     pass
     pass
+    pass
                 if direction == "UP" and strength > 0.6:
+    pass
     pass
     pass
                     decision = "BULLISH"
@@ -967,6 +1033,8 @@ import self.scenario_predictor = ScenarioBasedPredictor
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             )
 
             confidence = liquidation_prediction.get("confidence", 0)
@@ -977,7 +1045,9 @@ import self.scenario_predictor = ScenarioBasedPredictor
             if confidence >= self.confidence_threshold:
     pass
     pass
+    pass
                 if risk_level == "HIGH":
+    pass
     pass
     pass
                     decision = "REDUCE_POSITION"
@@ -1022,6 +1092,8 @@ import self.scenario_predictor = ScenarioBasedPredictor
         try:
             sizing_decisions = self._make_ml_sizing_decisions(ml_predictions)
 
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -1072,6 +1144,8 @@ import self.scenario_predictor = ScenarioBasedPredictor
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             base_leverage = 1.0  # 1x base leverage
             leverage_multiplier = leverage_decisions.get("leverage_multiplier", 1.0)
 
@@ -1099,6 +1173,7 @@ import self.scenario_predictor = ScenarioBasedPredictor
     def _get_regime_tactics(self, regime: str, confidence: float) -> dict[str, Any]:
     pass
     pass
+    pass
         """Get tactics for a specific regime."""
         tactics = {
             "BULL_TREND": {"position_multiplier": 1.2, "risk_tolerance": "HIGH"},
@@ -1110,6 +1185,7 @@ import self.scenario_predictor = ScenarioBasedPredictor
         )
 
     def _get_location_tactics(self, location: str, confidence: float) -> dict[str, Any]:
+    pass
     pass
     pass
         """Get tactics for a specific location."""
@@ -1138,6 +1214,7 @@ import self.scenario_predictor = ScenarioBasedPredictor
     def get_ml_decisions(self) -> dict[str, Any]:
     pass
     pass
+    pass
         """
         Get the latest ML decisions.
 
@@ -1159,6 +1236,8 @@ import self.scenario_predictor = ScenarioBasedPredictor
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             self.is_initialized = False
             self.logger.info("✅ ML Tactics Manager stopped successfully")
 
@@ -1174,6 +1253,8 @@ import self.scenario_predictor = ScenarioBasedPredictor
         """Cleanup ML tactics manager resources."""
         try:
             self.logger.info("Cleaning up ML Tactics Manager...")
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -1215,6 +1296,9 @@ import self.scenario_predictor = ScenarioBasedPredictor
     except Exception as e:
         pass
     pass
+    except Exception as e:
+        pass
+    pass
                 self.logger.warning("Models not trained, using fallback predictions")
                 return self._generate_fallback_predictions()
 
@@ -1229,6 +1313,7 @@ import self.scenario_predictor = ScenarioBasedPredictor
             for barrier_type in ["fifty_percent", "twenty_five_percent", "fifty_percent_5m", "twenty_five_percent_5m"]:
     pass
     pass
+    pass
                 barrier_prediction = await self._generate_barrier_prediction(
                     barrier_type=barrier_type,
                     market_data=market_data,
@@ -1238,6 +1323,7 @@ import self.scenario_predictor = ScenarioBasedPredictor
                 )
 
                 if barrier_prediction:
+    pass
     pass
     pass
                     predictions[barrier_type] = barrier_prediction
@@ -1299,6 +1385,8 @@ import self.scenario_predictor = ScenarioBasedPredictor
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             multi_output_predictions = await self.generate_multi_output_predictions(
                 market_data, analyst_barriers, symbol, timeframe, analyst_confidence
             )
@@ -1306,6 +1394,7 @@ import self.scenario_predictor = ScenarioBasedPredictor
             # Generate scenario-based predictions
             scenario_predictions = None
             if self.scenario_predictor:
+    pass
     pass
     pass
                 # Extract features for scenario prediction
@@ -1377,6 +1466,8 @@ import self.scenario_predictor = ScenarioBasedPredictor
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             base_green_light = multi_output_predictions.get("green_light_signal", {}).get("signal", "RED")
             base_confidence = multi_output_predictions.get("combined_confidence", 0.0)
 
@@ -1387,6 +1478,7 @@ import self.scenario_predictor = ScenarioBasedPredictor
 
             # Multi-output system requirements
             if base_green_light == "GREEN":
+    pass
     pass
     pass
                 reasoning.append("Multi-output system: GREEN")
@@ -1403,6 +1495,7 @@ import self.scenario_predictor = ScenarioBasedPredictor
             if scenario_predictions:
     pass
     pass
+    pass
                 scenario_analysis = scenario_predictions.get("scenario_analysis", {})
                 profit_zone_prob = scenario_analysis.get("profit_zone_probability", 0.0)
                 risk_zone_prob = scenario_analysis.get("risk_zone_probability", 0.0)
@@ -1410,6 +1503,7 @@ import self.scenario_predictor = ScenarioBasedPredictor
 
                 # Get thresholds from scenario predictor
                 if self.scenario_predictor:
+    pass
     pass
     pass
                     thresholds = self.scenario_predictor.decision_thresholds
@@ -1429,6 +1523,7 @@ import self.scenario_predictor = ScenarioBasedPredictor
                 )
 
                 if scenario_conditions_met:
+    pass
     pass
     pass
                     reasoning.append(f"Scenario analysis: FAVORABLE (Profit: {profit_zone_prob:.2f}, Risk: {risk_zone_prob:.2f})")
@@ -1493,6 +1588,8 @@ import self.scenario_predictor = ScenarioBasedPredictor
         """
         try:
             # Extract Analyst barriers
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -1568,10 +1665,13 @@ import self.scenario_predictor = ScenarioBasedPredictor
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             features = self._extract_features(market_data)
 
             # Generate prediction using model
             if self.multi_output_models[barrier_type]["model"] == "fallback":
+    pass
     pass
     pass
                 # Use fallback prediction
@@ -1584,6 +1684,7 @@ import self.scenario_predictor = ScenarioBasedPredictor
 
             # Apply calibration if available
             if self.multi_output_models[barrier_type]["calibrator"]:
+    pass
     pass
     pass
                 confidence = self._calibrate_prediction(barrier_type, confidence)
@@ -1607,6 +1708,7 @@ import self.scenario_predictor = ScenarioBasedPredictor
     def _extract_features(self, market_data: pd.DataFrame) -> np.ndarray:
     pass
     pass
+    pass
         """
         Extract features from market data for prediction.
 
@@ -1623,7 +1725,10 @@ import self.scenario_predictor = ScenarioBasedPredictor
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             if len(market_data) < 20:
+    pass
     pass
     pass
                 # Not enough data, return default features
@@ -1685,6 +1790,7 @@ import self.scenario_predictor = ScenarioBasedPredictor
     def _generate_fallback_confidence(self, barrier_type: str, features: np.ndarray) -> float:
     pass
     pass
+    pass
         """
         Generate fallback confidence score.
 
@@ -1701,10 +1807,13 @@ import self.scenario_predictor = ScenarioBasedPredictor
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             base_confidence = 0.5
 
             # Adjust based on price momentum
             if len(features) > 0:
+    pass
     pass
     pass
                 momentum = features[0]
@@ -1717,6 +1826,7 @@ import self.scenario_predictor = ScenarioBasedPredictor
             if len(features) > 1:
     pass
     pass
+    pass
                 volatility = features[1]
                 if volatility < 0.01:  # Low volatility
                     base_confidence += 0.1
@@ -1725,6 +1835,7 @@ import self.scenario_predictor = ScenarioBasedPredictor
 
             # Adjust based on RSI
             if len(features) > 5:
+    pass
     pass
     pass
                 rsi = features[5]
@@ -1737,6 +1848,7 @@ import self.scenario_predictor = ScenarioBasedPredictor
             if barrier_type == "twenty_five_percent":
     pass
     pass
+    pass
                 base_confidence *= 0.9  # Slightly lower for smaller barriers
 
             return np.clip(base_confidence, 0.0, 1.0)
@@ -1746,6 +1858,7 @@ import self.scenario_predictor = ScenarioBasedPredictor
             return 0.5
 
     def _determine_direction(self, features: np.ndarray) -> str:
+    pass
     pass
     pass
         """
@@ -1763,8 +1876,12 @@ import self.scenario_predictor = ScenarioBasedPredictor
     except Exception as e:
         pass
     pass
+    except Exception as e:
+        pass
+    pass
                 momentum = features[0]
                 if momentum > 0:
+    pass
     pass
     pass
                     return "UP"
@@ -1780,6 +1897,7 @@ import self.scenario_predictor = ScenarioBasedPredictor
             return "UP"
 
     def _predict_with_model(self, barrier_type: str, features: np.ndarray) -> float:
+    pass
     pass
     pass
         """
@@ -1798,6 +1916,8 @@ import self.scenario_predictor = ScenarioBasedPredictor
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             # For now, return fallback confidence
             return self._generate_fallback_confidence(barrier_type, features)
 
@@ -1806,6 +1926,7 @@ import self.scenario_predictor = ScenarioBasedPredictor
             return 0.5
 
     def _calibrate_prediction(self, barrier_type: str, confidence: float) -> float:
+    pass
     pass
     pass
         """
@@ -1820,6 +1941,8 @@ import self.scenario_predictor = ScenarioBasedPredictor
         """
         try:
             # This would use the actual calibrator
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -1852,19 +1975,24 @@ import self.scenario_predictor = ScenarioBasedPredictor
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             combined_confidence = analyst_confidence * self.confidence_weights["analyst_weight"]
 
             # Add Tactician confidences with their respective weights
             for barrier_type, prediction in predictions.items():
     pass
     pass
+    pass
                 if prediction and "confidence" in prediction:
+    pass
     pass
     pass
                     confidence = prediction["confidence"]
 
                     # Get weight for this barrier type
                     if barrier_type == "fifty_percent":
+    pass
     pass
     pass
                         weight = self.confidence_weights["fifty_percent_1m_weight"]
@@ -1906,6 +2034,8 @@ import self.scenario_predictor = ScenarioBasedPredictor
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             fifty_percent_ok = False
             twenty_five_percent_ok = False
 
@@ -1914,13 +2044,16 @@ import self.scenario_predictor = ScenarioBasedPredictor
             if "fifty_percent" in predictions and predictions["fifty_percent"]:
     pass
     pass
+    pass
                 fifty_percent_confidences.append(predictions["fifty_percent"]["confidence"])
             if "fifty_percent_5m" in predictions and predictions["fifty_percent_5m"]:
+    pass
     pass
     pass
                 fifty_percent_confidences.append(predictions["fifty_percent_5m"]["confidence"])
 
             if fifty_percent_confidences:
+    pass
     pass
     pass
                 fifty_percent_ok = max(fifty_percent_confidences) >= self.green_light_thresholds["fifty_percent"]
@@ -1930,13 +2063,16 @@ import self.scenario_predictor = ScenarioBasedPredictor
             if "twenty_five_percent" in predictions and predictions["twenty_five_percent"]:
     pass
     pass
+    pass
                 twenty_five_percent_confidences.append(predictions["twenty_five_percent"]["confidence"])
             if "twenty_five_percent_5m" in predictions and predictions["twenty_five_percent_5m"]:
+    pass
     pass
     pass
                 twenty_five_percent_confidences.append(predictions["twenty_five_percent_5m"]["confidence"])
 
             if twenty_five_percent_confidences:
+    pass
     pass
     pass
                 twenty_five_percent_ok = max(twenty_five_percent_confidences) >= self.green_light_thresholds["twenty_five_percent"]
@@ -1946,6 +2082,7 @@ import self.scenario_predictor = ScenarioBasedPredictor
 
             # Determine signal
             if fifty_percent_ok and twenty_five_percent_ok and combined_ok:
+    pass
     pass
     pass
                 signal = "GREEN_LIGHT"
@@ -1980,6 +2117,7 @@ import self.scenario_predictor = ScenarioBasedPredictor
             }
 
     def _generate_fallback_predictions(self) -> dict[str, Any]:
+    pass
     pass
     pass
         """
@@ -2064,6 +2202,8 @@ import self.scenario_predictor = ScenarioBasedPredictor
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             # Check exit thresholds (MTF unified)
             fifty_percent_exit = False
             twenty_five_percent_exit = False
@@ -2073,13 +2213,16 @@ import self.scenario_predictor = ScenarioBasedPredictor
             if "fifty_percent" in current_predictions and current_predictions["fifty_percent"]:
     pass
     pass
+    pass
                 fifty_percent_confidences.append(current_predictions["fifty_percent"]["confidence"])
             if "fifty_percent_5m" in current_predictions and current_predictions["fifty_percent_5m"]:
+    pass
     pass
     pass
                 fifty_percent_confidences.append(current_predictions["fifty_percent_5m"]["confidence"])
 
             if fifty_percent_confidences:
+    pass
     pass
     pass
                 fifty_percent_exit = min(fifty_percent_confidences) <= self.exit_thresholds["fifty_percent"]
@@ -2089,13 +2232,16 @@ import self.scenario_predictor = ScenarioBasedPredictor
             if "twenty_five_percent" in current_predictions and current_predictions["twenty_five_percent"]:
     pass
     pass
+    pass
                 twenty_five_percent_confidences.append(current_predictions["twenty_five_percent"]["confidence"])
             if "twenty_five_percent_5m" in current_predictions and current_predictions["twenty_five_percent_5m"]:
+    pass
     pass
     pass
                 twenty_five_percent_confidences.append(current_predictions["twenty_five_percent_5m"]["confidence"])
 
             if twenty_five_percent_confidences:
+    pass
     pass
     pass
                 twenty_five_percent_exit = min(twenty_five_percent_confidences) <= self.exit_thresholds["twenty_five_percent"]
@@ -2104,6 +2250,7 @@ import self.scenario_predictor = ScenarioBasedPredictor
 
             # Determine exit signal
             if combined_exit or (fifty_percent_exit and twenty_five_percent_exit):
+    pass
     pass
     pass
                 exit_signal = "EXIT"
@@ -2160,7 +2307,10 @@ async def setup_ml_tactics_manager(
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         if await manager.initialize():
+    pass
     pass
     pass
             return manager

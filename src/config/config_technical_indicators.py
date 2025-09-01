@@ -106,11 +106,15 @@ class TechnicalIndicatorsConfig:
 def get_technical_indicators_config() -> TechnicalIndicatorsConfig:
     pass
     pass
+    pass
+    pass
     """Get technical indicators configuration."""
     return TechnicalIndicatorsConfig()
 
 
 def get_technical_indicators_search_space() -> dict[str, dict[str, Any]]:
+    pass
+    pass
     pass
     pass
     """Get search space for technical indicators optimization."""

@@ -20,6 +20,9 @@ try:
 import except Exception as e:
     except Exception as e:
         pass
+import except Exception as e:
+    except Exception as e:
+        pass
 import DBSCAN_AVAILABLE = True
     DBSCAN_AVAILABLE = True
 except ImportError:
@@ -38,6 +41,7 @@ class SRBreakoutPredictor:
     """
 
     def __init__(self, config: dict[str, Any]) -> None:
+    pass
     pass
     pass
         """
@@ -283,13 +287,17 @@ class SRBreakoutPredictor:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             if not self._validate_configuration():
+    pass
     pass
     pass
                 return False
 
             # Initialize components
             if not await self._initialize_components():
+    pass
     pass
     pass
                 return False
@@ -299,6 +307,7 @@ class SRBreakoutPredictor:
 
             # Initialize reporting system
             if self.reporting_enabled:
+    pass
     pass
     pass
                 self._initialize_reporting_system()
@@ -312,6 +321,7 @@ class SRBreakoutPredictor:
     def _validate_configuration(self) -> bool:
     pass
     pass
+    pass
         """Validate SR breakout predictor configuration."""
         try:
             required_keys = [
@@ -323,11 +333,15 @@ class SRBreakoutPredictor:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             ]
             for key in required_keys:
     pass
     pass
+    pass
                 if not hasattr(self, key):
+    pass
     pass
     pass
                     self.logger.error(f"Missing required configuration key: {key}")
@@ -337,10 +351,12 @@ class SRBreakoutPredictor:
             if self.sr_proximity_threshold <= 0:
     pass
     pass
+    pass
                 self.logger.error("Invalid sr_proximity_threshold")
                 return False
 
             if self.breakout_confidence_threshold <= 0 or self.breakout_confidence_threshold >= 1:
+    pass
     pass
     pass
                 self.logger.error("Invalid breakout_confidence_threshold")
@@ -349,10 +365,12 @@ class SRBreakoutPredictor:
             if self.min_sr_strength <= 0 or self.min_sr_strength >= 1:
     pass
     pass
+    pass
                 self.logger.error("Invalid min_sr_strength")
                 return False
 
             if self.max_sr_levels <= 0:
+    pass
     pass
     pass
                 self.logger.error("Invalid max_sr_levels")
@@ -372,12 +390,15 @@ class SRBreakoutPredictor:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             # Note: regime_classifier is currently commented out due to import issues
             # if hasattr(self, "regime_classifier"):
             #     await self.regime_classifier.initialize()
 
             # Load optimized parameters if enabled
             if self.use_optimized_params:
+    pass
     pass
     pass
                 await self._load_optimized_parameters()
@@ -397,15 +418,19 @@ class SRBreakoutPredictor:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             optimization_file = self.sr_config.get("optimization_results_file", "optimization_results.json")
 
             if os.path.exists(optimization_file):
+    pass
     pass
     pass
                 with open(optimization_file, 'r') as f:
                     data = json.load(f)
 
                 if data.get("best_result"):
+    pass
     pass
     pass
                     best_result = data["best_result"]
@@ -439,6 +464,9 @@ class SRBreakoutPredictor:
     except Exception as e:
         pass
     pass
+    except Exception as e:
+        pass
+    pass
                 return
 
     except Exception as e:
@@ -446,6 +474,7 @@ class SRBreakoutPredictor:
             # Apply method weights
             method_weights = self.optimized_params.get("method_weights", {})
             if method_weights:
+    pass
     pass
     pass
                 self.model_weights.update(method_weights)
@@ -456,6 +485,7 @@ class SRBreakoutPredictor:
             if strength_weights:
     pass
     pass
+    pass
                 self.strength_score_weights.update(strength_weights)
                 self.logger.info(f"Applied optimized strength weights: {strength_weights}")
 
@@ -464,11 +494,14 @@ class SRBreakoutPredictor:
             if dbscan_params:
     pass
     pass
+    pass
                 if "eps" in dbscan_params:
+    pass
     pass
     pass
                     self.dbscan_eps = dbscan_params["eps"]
                 if "min_samples" in dbscan_params:
+    pass
     pass
     pass
                     self.dbscan_min_samples = dbscan_params["min_samples"]
@@ -479,8 +512,10 @@ class SRBreakoutPredictor:
             if advanced_params:
     pass
     pass
+    pass
                 # Apply Fibonacci parameters
                 if "fibonacci_sensitivity" in advanced_params:
+    pass
     pass
     pass
                     self.fibonacci_sensitivity = advanced_params["fibonacci_sensitivity"]
@@ -490,11 +525,13 @@ class SRBreakoutPredictor:
                 if "elliott_confidence_threshold" in advanced_params:
     pass
     pass
+    pass
                     self.elliott_confidence_threshold = advanced_params["elliott_confidence_threshold"]
                     self.logger.info(f"Applied optimized Elliott confidence threshold: {self.elliott_confidence_threshold}")
 
                 # Apply Order Flow parameters
                 if "order_flow_hvn_threshold" in advanced_params:
+    pass
     pass
     pass
                     self.order_flow_hvn_threshold = advanced_params["order_flow_hvn_threshold"]
@@ -505,6 +542,7 @@ class SRBreakoutPredictor:
             # Apply timeframe weights
             timeframe_weights = self.optimized_params.get("timeframe_weights", {})
             if timeframe_weights:
+    pass
     pass
     pass
                 self.timeframe_weights = timeframe_weights
@@ -521,12 +559,15 @@ class SRBreakoutPredictor:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             await self._apply_optimized_parameters()
             self.logger.info("✅ Set optimized parameters directly")
         except Exception as e:
             self.logger.error(f"Failed to set optimized parameters: {e}")
 
     def get_current_parameters(self) -> dict[str, Any]:
+    pass
     pass
     pass
         """Get current parameters for comparison."""
@@ -548,9 +589,12 @@ class SRBreakoutPredictor:
     def _initialize_reporting_system(self) -> None:
     pass
     pass
+    pass
         """Initialize the reporting system."""
         try:
             import os
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -576,6 +620,7 @@ import report_path = Path
     def _generate_report_id(self) -> str:
     pass
     pass
+    pass
         """Generate a unique report ID."""
         from datetime import datetime
         import uuid
@@ -587,10 +632,13 @@ import report_path = Path
     def _calculate_comprehensive_metrics(self, market_data: pd.DataFrame, sr_context: dict[str, Any]) -> dict[str, Any]:
     pass
     pass
+    pass
         """Calculate comprehensive metrics for reporting."""
         try:
             current_price = sr_context.get("current_price", market_data["close"].iloc[-1])
 
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -708,10 +756,13 @@ import report_path = Path
     def _calculate_data_quality_score(self, market_data: pd.DataFrame) -> float:
     pass
     pass
+    pass
         """Calculate data quality score (0-1)."""
         try:
             score = 1.0
 
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -722,6 +773,7 @@ import report_path = Path
 
             # Check for sufficient data points
             if len(market_data) < 50:
+    pass
     pass
     pass
                 score -= 0.2
@@ -742,6 +794,7 @@ import report_path = Path
     def _calculate_sr_confidence_score(self, sr_context: dict[str, Any]) -> float:
     pass
     pass
+    pass
         """Calculate S/R confidence score (0-1)."""
         try:
             score = 0.5  # Base score
@@ -750,9 +803,12 @@ import report_path = Path
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             # Factor in number of levels
             total_levels = len(sr_context.get("support_levels", [])) + len(sr_context.get("resistance_levels", []))
             if total_levels >= 5:
+    pass
     pass
     pass
                 score += 0.2
@@ -768,6 +824,7 @@ import report_path = Path
             if clustering_result.get("n_clusters", 0) > 0:
     pass
     pass
+    pass
                 score += 0.1
 
             return min(1.0, score)
@@ -779,6 +836,7 @@ import report_path = Path
     def _calculate_overall_quality_score(self, market_metrics: dict, sr_metrics: dict, clustering_metrics: dict, advanced_metrics: dict) -> float:
     pass
     pass
+    pass
         """Calculate overall analysis quality score (0-1)."""
         try:
             score = 0.5  # Base score
@@ -787,8 +845,11 @@ import report_path = Path
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             # Market data quality
             if market_metrics.get("data_points", 0) >= 100:
+    pass
     pass
     pass
                 score += 0.1
@@ -797,10 +858,12 @@ import report_path = Path
             if sr_metrics.get("total_levels", 0) >= 3:
     pass
     pass
+    pass
                 score += 0.1
 
             # Clustering quality
             if clustering_metrics.get("total_clusters", 0) > 0:
+    pass
     pass
     pass
                 score += 0.1
@@ -809,8 +872,10 @@ import report_path = Path
             if advanced_metrics.get("fibonacci_analysis", {}).get("levels_detected", 0) > 0:
     pass
     pass
+    pass
                 score += 0.1
             if advanced_metrics.get("elliott_wave_analysis", {}).get("waves_detected", 0) > 0:
+    pass
     pass
     pass
                 score += 0.1
@@ -825,6 +890,9 @@ import report_path = Path
         """Generate detailed metrics report."""
         try:
             if not self.reporting_enabled:
+    pass
+    except Exception as e:
+        pass
     pass
     except Exception as e:
         pass
@@ -878,6 +946,7 @@ import report_path = Path
             if len(self.metrics_history) > 100:
     pass
     pass
+    pass
                 self.metrics_history = self.metrics_history[-100:]
 
             # Save report to file
@@ -894,6 +963,8 @@ import report_path = Path
         """Save report to file in specified format."""
         try:
             import os
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -938,10 +1009,13 @@ import report_path = Path
     def _save_metrics_to_csv(self, metrics: dict[str, Any], file_path: Path) -> None:
     pass
     pass
+    pass
         """Save metrics to CSV format."""
         try:
             import csv
 
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -985,9 +1059,12 @@ import report_path = Path
     def _save_html_report(self, report: dict[str, Any], file_path: Path) -> None:
     pass
     pass
+    pass
         """Save HTML report."""
         try:
             html_content = f"""
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -1075,6 +1152,7 @@ import report_path = Path
         if self.metrics_history:
     pass
     pass
+    pass
             return self.metrics_history[-1]
         return {}
 
@@ -1090,11 +1168,14 @@ import report_path = Path
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             from pathlib import Path
             from datetime import datetime, timedelta
 
 import if not self.reporting_enabled:
             if not self.reporting_enabled:
+    pass
     pass
     pass
                 return
@@ -1105,18 +1186,23 @@ import if not self.reporting_enabled:
             for subdir in ["json", "csv", "html"]:
     pass
     pass
+    pass
                 subdir_path = report_path / subdir
                 if subdir_path.exists():
+    pass
     pass
     pass
                     for file_path in subdir_path.iterdir():
     pass
     pass
+    pass
                         if file_path.is_file():
+    pass
     pass
     pass
                             file_time = datetime.fromtimestamp(file_path.stat().st_mtime)
                             if file_time < cutoff_date:
+    pass
     pass
     pass
                                 file_path.unlink()
@@ -1135,12 +1221,16 @@ import if not self.reporting_enabled:
     except Exception as e:
         pass
     pass
+    except Exception as e:
+        pass
+    pass
                 self.logger.warning("Reporting is disabled. Enable it in configuration to generate reports.")
                 return {}
 
     except Exception as e:
         pass
             if sr_context is None:
+    pass
     pass
     pass
                 # Generate SR context if not provided
@@ -1156,6 +1246,7 @@ import if not self.reporting_enabled:
             return {}
 
     def get_reporting_status(self) -> dict[str, Any]:
+    pass
     pass
     pass
         """Get reporting system status."""
@@ -1203,12 +1294,15 @@ import if not self.reporting_enabled:
         if not self.is_initialized:
     pass
     pass
+    pass
             self.logger.error("SR breakout predictor not initialized")
             return {}
 
         try:
             self.logger.info("Predicting SR breakouts...")
 
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -1245,6 +1339,7 @@ import if not self.reporting_enabled:
 
             # Generate detailed report for predictions
             if self.reporting_enabled:
+    pass
     pass
     pass
                 await self._generate_detailed_report(market_data, predictions)
@@ -1296,11 +1391,14 @@ import if not self.reporting_enabled:
         if not self.is_initialized:
     pass
     pass
+    pass
             self.logger.error("SR breakout predictor not initialized")
             return {}
 
         try:
             # Detect support and resistance levels
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -1325,8 +1423,10 @@ import if not self.reporting_enabled:
             for level in clustered_support:
     pass
     pass
+    pass
                 level_id = f"{level['price']:.4f}"
                 if level_id in enhanced_strength_support:
+    pass
     pass
     pass
                     level['enhanced_strength'] = enhanced_strength_support[level_id]['comprehensive_strength']
@@ -1338,8 +1438,10 @@ import if not self.reporting_enabled:
             for level in clustered_resistance:
     pass
     pass
+    pass
                 level_id = f"{level['price']:.4f}"
                 if level_id in enhanced_strength_resistance:
+    pass
     pass
     pass
                     level['enhanced_strength'] = enhanced_strength_resistance[level_id]['comprehensive_strength']
@@ -1403,6 +1505,8 @@ import if not self.reporting_enabled:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             except Exception as e:
                 self.logger.warning(f"Error generating detailed report: {e}")
                 context["report_id"] = "report_generation_failed"
@@ -1410,6 +1514,7 @@ import if not self.reporting_enabled:
             return context
 
     def extract_ml_features(self, market_data: pd.DataFrame, current_price: float) -> dict[str, float]:
+    pass
     pass
     pass
         """
@@ -1429,6 +1534,8 @@ import if not self.reporting_enabled:
         try:
             self.logger.info("🔧 Extracting comprehensive SR features for ML training...")
 
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -1469,12 +1576,14 @@ import if not self.reporting_enabled:
             if support_levels:
     pass
     pass
+    pass
                 support_distances = [abs(level.get("price", current_price) - current_price) / current_price for level in support_levels]
                 features["sr_nearest_support_distance"] = min(support_distances) if support_distances else 1.0
             else:
                 features["sr_nearest_support_distance"] = 1.0
 
             if resistance_levels:
+    pass
     pass
     pass
                 resistance_distances = [abs(level.get("price", current_price) - current_price) / current_price for level in resistance_levels]
@@ -1484,6 +1593,7 @@ import if not self.reporting_enabled:
 
             # Zone features
             if support_levels and resistance_levels:
+    pass
     pass
     pass
                 support_prices = [level.get("price", current_price) for level in support_levels]
@@ -1509,6 +1619,7 @@ import if not self.reporting_enabled:
             if support_levels:
     pass
     pass
+    pass
                 support_strengths = [level.get("enhanced_strength", level.get("strength", 0.5)) for level in support_levels]
                 features.update({
                     "sr_enhanced_support_strength": np.mean(support_strengths) if support_strengths else 0.5,
@@ -1521,6 +1632,7 @@ import if not self.reporting_enabled:
                 })
 
             if resistance_levels:
+    pass
     pass
     pass
                 resistance_strengths = [level.get("enhanced_strength", level.get("strength", 0.5)) for level in resistance_levels]
@@ -1585,6 +1697,7 @@ import if not self.reporting_enabled:
             if len(market_data) >= 20:
     pass
     pass
+    pass
                 returns = market_data['close'].pct_change().dropna()
                 features.update({
                     "sr_momentum_pct": returns.tail(10).mean() * 100,
@@ -1640,6 +1753,7 @@ import if not self.reporting_enabled:
             return self._get_default_sr_features()
 
     def _get_default_sr_features(self) -> dict[str, float]:
+    pass
     pass
     pass
         """Return default SR features when extraction fails."""
@@ -1703,9 +1817,12 @@ import if not self.reporting_enabled:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             vwap_available = self._validate_vwap_data(market_data)
 
             if self.sr_detection_method == "fractal":
+    pass
     pass
     pass
                 return await self._detect_fractal_support_levels(market_data)
@@ -1731,9 +1848,12 @@ import if not self.reporting_enabled:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             vwap_available = self._validate_vwap_data(market_data)
 
             if self.sr_detection_method == "fractal":
+    pass
     pass
     pass
                 return await self._detect_fractal_resistance_levels(market_data)
@@ -1760,6 +1880,8 @@ import if not self.reporting_enabled:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             # Always detect support levels using price data
             price_support = await self._detect_fractal_support_levels_price(market_data)
 
@@ -1771,6 +1893,7 @@ import if not self.reporting_enabled:
             support_levels = self._deduplicate_sr_levels(all_support)
 
             if 'vwap' in market_data.columns:
+    pass
     pass
     pass
                 self.logger.info(f"✅ Detected {len(price_support)} price-based and {len(vwap_support)} VWAP-based fractal support levels")
@@ -1793,11 +1916,14 @@ import if not self.reporting_enabled:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             # Find local minima in price data
             low_prices = market_data['low'].rolling(window=5, center=True).min()
 
             # Identify significant support levels
             for i in range(2, len(market_data) - 2):
+    pass
     pass
     pass
                 if (market_data['low'].iloc[i] == low_prices.iloc[i] and
@@ -1829,11 +1955,14 @@ import if not self.reporting_enabled:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             # Find local minima in VWAP data
             vwap_low_prices = market_data['vwap'].rolling(window=5, center=True).min()
 
             # Identify significant support levels
             for i in range(2, len(market_data) - 2):
+    pass
     pass
     pass
                 if (market_data['vwap'].iloc[i] == vwap_low_prices.iloc[i] and
@@ -1865,6 +1994,8 @@ import if not self.reporting_enabled:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             # Always detect resistance levels using price data
             price_resistance = await self._detect_fractal_resistance_levels_price(market_data)
 
@@ -1876,6 +2007,7 @@ import if not self.reporting_enabled:
             resistance_levels = self._deduplicate_sr_levels(all_resistance)
 
             if 'vwap' in market_data.columns:
+    pass
     pass
     pass
                 self.logger.info(f"✅ Detected {len(price_resistance)} price-based and {len(vwap_resistance)} VWAP-based fractal resistance levels")
@@ -1898,11 +2030,14 @@ import if not self.reporting_enabled:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             # Find local maxima in price data
             high_prices = market_data['high'].rolling(window=5, center=True).max()
 
             # Identify significant resistance levels
             for i in range(2, len(market_data) - 2):
+    pass
     pass
     pass
                 if (market_data['high'].iloc[i] == high_prices.iloc[i] and
@@ -1934,11 +2069,14 @@ import if not self.reporting_enabled:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             # Find local maxima in VWAP data
             vwap_high_prices = market_data['vwap'].rolling(window=5, center=True).max()
 
             # Identify significant resistance levels
             for i in range(2, len(market_data) - 2):
+    pass
     pass
     pass
                 if (market_data['vwap'].iloc[i] == vwap_high_prices.iloc[i] and
@@ -1964,9 +2102,13 @@ import if not self.reporting_enabled:
     def _deduplicate_sr_levels(self, levels: list[dict[str, Any]]) -> list[dict[str, Any]]:
     pass
     pass
+    pass
         """Deduplicate support/resistance levels based on price proximity and data source."""
         try:
             if not levels:
+    pass
+    except Exception as e:
+        pass
     pass
     except Exception as e:
         pass
@@ -1982,10 +2124,12 @@ import if not self.reporting_enabled:
             for i, level in enumerate(sorted_levels):
     pass
     pass
+    pass
                 is_duplicate = False
 
                 # Check if this level is too close to any previously added level
                 for existing_level in deduplicated:
+    pass
     pass
     pass
                     price_diff = abs(level["price"] - existing_level["price"]) / existing_level["price"]
@@ -1994,8 +2138,10 @@ import if not self.reporting_enabled:
                     if price_diff < 0.005:
     pass
     pass
+    pass
                         # Keep the one with higher strength or better data source
                         if level.get("strength", 0) > existing_level.get("strength", 0):
+    pass
     pass
     pass
                             # Replace existing level with current one
@@ -2006,12 +2152,14 @@ import if not self.reporting_enabled:
                             if level.get("data_source") == "vwap" and existing_level.get("data_source") == "price":
     pass
     pass
+    pass
                                 deduplicated.remove(existing_level)
                                 deduplicated.append(level)
                         is_duplicate = True
                         break
 
                 if not is_duplicate:
+    pass
     pass
     pass
                     deduplicated.append(level)
@@ -2032,6 +2180,8 @@ import if not self.reporting_enabled:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             # Always detect support levels using price data
             price_support = await self._detect_volume_support_levels_price(market_data)
 
@@ -2043,6 +2193,7 @@ import if not self.reporting_enabled:
             support_levels = self._deduplicate_sr_levels(all_support)
 
             if 'vwap' in market_data.columns:
+    pass
     pass
     pass
                 self.logger.info(f"✅ Detected {len(price_support)} price-based and {len(vwap_support)} VWAP-based volume support levels")
@@ -2065,11 +2216,14 @@ import if not self.reporting_enabled:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             # Calculate volume-weighted average price
             vwap = (market_data['close'] * market_data['volume']).cumsum() / market_data['volume'].cumsum()
 
             # Find support levels near VWAP using price data
             for i in range(len(market_data)):
+    pass
     pass
     pass
                 if market_data['low'].iloc[i] <= vwap.iloc[i] * 1.01:  # Within 1% of VWAP
@@ -2098,8 +2252,11 @@ import if not self.reporting_enabled:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             # Find support levels near VWAP using VWAP data
             for i in range(len(market_data)):
+    pass
     pass
     pass
                 if market_data['vwap'].iloc[i] <= market_data['vwap'].rolling(window=20).mean().iloc[i] * 1.01:  # Within 1% of VWAP mean
@@ -2128,6 +2285,8 @@ import if not self.reporting_enabled:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             # Always detect resistance levels using price data
             price_resistance = await self._detect_volume_resistance_levels_price(market_data)
 
@@ -2139,6 +2298,7 @@ import if not self.reporting_enabled:
             resistance_levels = self._deduplicate_sr_levels(all_resistance)
 
             if 'vwap' in market_data.columns:
+    pass
     pass
     pass
                 self.logger.info(f"✅ Detected {len(price_resistance)} price-based and {len(vwap_resistance)} VWAP-based volume resistance levels")
@@ -2161,11 +2321,14 @@ import if not self.reporting_enabled:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             # Calculate volume-weighted average price
             vwap = (market_data['close'] * market_data['volume']).cumsum() / market_data['volume'].cumsum()
 
             # Find resistance levels near VWAP using price data
             for i in range(len(market_data)):
+    pass
     pass
     pass
                 if market_data['high'].iloc[i] >= vwap.iloc[i] * 0.99:  # Within 1% of VWAP
@@ -2194,8 +2357,11 @@ import if not self.reporting_enabled:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             # Find resistance levels near VWAP using VWAP data
             for i in range(len(market_data)):
+    pass
     pass
     pass
                 if market_data['vwap'].iloc[i] >= market_data['vwap'].rolling(window=20).mean().iloc[i] * 0.99:  # Within 1% of VWAP mean
@@ -2224,6 +2390,8 @@ import if not self.reporting_enabled:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             # Always detect support levels using price data
             price_support = await self._detect_pivot_support_levels_price(market_data)
 
@@ -2235,6 +2403,7 @@ import if not self.reporting_enabled:
             support_levels = self._deduplicate_sr_levels(all_support)
 
             if 'vwap' in market_data.columns:
+    pass
     pass
     pass
                 self.logger.info(f"✅ Detected {len(price_support)} price-based and {len(vwap_support)} VWAP-based pivot support levels")
@@ -2257,6 +2426,8 @@ import if not self.reporting_enabled:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             # Calculate pivot points using price data
             pivot = (market_data['high'] + market_data['low'] + market_data['close']) / 3
             s1 = 2 * pivot - market_data['high']
@@ -2264,6 +2435,7 @@ import if not self.reporting_enabled:
 
             # Find support levels
             for i in range(len(market_data)):
+    pass
     pass
     pass
                 support_level = {
@@ -2291,6 +2463,8 @@ import if not self.reporting_enabled:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             # Calculate pivot points using VWAP data
             vwap_pivot = (market_data['vwap'].rolling(window=20).max() + market_data['vwap'].rolling(window=20).min() + market_data['vwap']) / 3
             vwap_s1 = 2 * vwap_pivot - market_data['vwap'].rolling(window=20).max()
@@ -2298,6 +2472,7 @@ import if not self.reporting_enabled:
 
             # Find support levels
             for i in range(len(market_data)):
+    pass
     pass
     pass
                 support_level = {
@@ -2325,6 +2500,8 @@ import if not self.reporting_enabled:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             # Always detect resistance levels using price data
             price_resistance = await self._detect_pivot_resistance_levels_price(market_data)
 
@@ -2336,6 +2513,7 @@ import if not self.reporting_enabled:
             resistance_levels = self._deduplicate_sr_levels(all_resistance)
 
             if 'vwap' in market_data.columns:
+    pass
     pass
     pass
                 self.logger.info(f"✅ Detected {len(price_resistance)} price-based and {len(vwap_resistance)} VWAP-based pivot resistance levels")
@@ -2358,6 +2536,8 @@ import if not self.reporting_enabled:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             # Calculate pivot points using price data
             pivot = (market_data['high'] + market_data['low'] + market_data['close']) / 3
             r1 = 2 * pivot - market_data['low']
@@ -2365,6 +2545,7 @@ import if not self.reporting_enabled:
 
             # Find resistance levels
             for i in range(len(market_data)):
+    pass
     pass
     pass
                 resistance_level = {
@@ -2392,6 +2573,8 @@ import if not self.reporting_enabled:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             # Calculate pivot points using VWAP data
             vwap_pivot = (market_data['vwap'].rolling(window=20).max() + market_data['vwap'].rolling(window=20).min() + market_data['vwap']) / 3
             vwap_r1 = 2 * vwap_pivot - market_data['vwap'].rolling(window=20).min()
@@ -2399,6 +2582,7 @@ import if not self.reporting_enabled:
 
             # Find resistance levels
             for i in range(len(market_data)):
+    pass
     pass
     pass
                 resistance_level = {
@@ -2426,6 +2610,8 @@ import if not self.reporting_enabled:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             # Always detect support levels using price data
             price_support = await self._detect_atr_support_levels_price(market_data)
 
@@ -2437,6 +2623,7 @@ import if not self.reporting_enabled:
             support_levels = self._deduplicate_sr_levels(all_support)
 
             if 'vwap' in market_data.columns:
+    pass
     pass
     pass
                 self.logger.info(f"✅ Detected {len(price_support)} price-based and {len(vwap_support)} VWAP-based ATR support levels")
@@ -2459,6 +2646,8 @@ import if not self.reporting_enabled:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             # Calculate ATR using price data
             high_low = market_data['high'] - market_data['low']
             high_close = np.abs(market_data['high'] - market_data['close'].shift())
@@ -2469,6 +2658,7 @@ import if not self.reporting_enabled:
 
             # Find support levels
             for i in range(len(market_data)):
+    pass
     pass
     pass
                 support_level = {
@@ -2496,6 +2686,8 @@ import if not self.reporting_enabled:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             # Calculate ATR using VWAP data
             vwap_high_low = market_data['vwap'].rolling(window=20).max() - market_data['vwap'].rolling(window=20).min()
             vwap_high_close = np.abs(market_data['vwap'].rolling(window=20).max() - market_data['vwap'])
@@ -2506,6 +2698,7 @@ import if not self.reporting_enabled:
 
             # Find support levels
             for i in range(len(market_data)):
+    pass
     pass
     pass
                 support_level = {
@@ -2533,6 +2726,8 @@ import if not self.reporting_enabled:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             # Always detect resistance levels using price data
             price_resistance = await self._detect_atr_resistance_levels_price(market_data)
 
@@ -2544,6 +2739,7 @@ import if not self.reporting_enabled:
             resistance_levels = self._deduplicate_sr_levels(all_resistance)
 
             if 'vwap' in market_data.columns:
+    pass
     pass
     pass
                 self.logger.info(f"✅ Detected {len(price_resistance)} price-based and {len(vwap_resistance)} VWAP-based ATR resistance levels")
@@ -2566,6 +2762,8 @@ import if not self.reporting_enabled:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             # Calculate ATR using price data
             high_low = market_data['high'] - market_data['low']
             high_close = np.abs(market_data['high'] - market_data['close'].shift())
@@ -2576,6 +2774,7 @@ import if not self.reporting_enabled:
 
             # Find resistance levels
             for i in range(len(market_data)):
+    pass
     pass
     pass
                 resistance_level = {
@@ -2603,6 +2802,8 @@ import if not self.reporting_enabled:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             # Calculate ATR using VWAP data
             vwap_high_low = market_data['vwap'].rolling(window=20).max() - market_data['vwap'].rolling(window=20).min()
             vwap_high_close = np.abs(market_data['vwap'].rolling(window=20).max() - market_data['vwap'])
@@ -2613,6 +2814,7 @@ import if not self.reporting_enabled:
 
             # Find resistance levels
             for i in range(len(market_data)):
+    pass
     pass
     pass
                 resistance_level = {
@@ -2644,6 +2846,8 @@ import if not self.reporting_enabled:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             high = market_data['high'].max()
             low = market_data['low'].min()
             swing_range = high - low
@@ -2659,9 +2863,11 @@ import if not self.reporting_enabled:
             for level in retracement_levels:
     pass
     pass
+    pass
                 fib_price = low + level * swing_range
                 # Only include levels that meet sensitivity threshold
                 if abs(fib_price - low) >= sensitivity_threshold or abs(fib_price - high) >= sensitivity_threshold:
+    pass
     pass
     pass
                     fib_levels[f'fib_{int(level * 1000)}'] = fib_price
@@ -2670,6 +2876,7 @@ import if not self.reporting_enabled:
             if self.fibonacci_sensitivity > 0.6:  # Only include extensions for higher sensitivity
                 extension_levels = [1.272, 1.618, 2.618]
                 for level in extension_levels:
+    pass
     pass
     pass
                     fib_price = high + (level - 1) * swing_range
@@ -2691,6 +2898,8 @@ import if not self.reporting_enabled:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             prices = market_data['close'].values
             highs = market_data['high'].values
             lows = market_data['low'].values
@@ -2699,6 +2908,7 @@ import if not self.reporting_enabled:
             wave_points = self._find_elliott_wave_points(prices, highs, lows)
 
             if len(wave_points) >= 5:
+    pass
     pass
     pass
                 # Calculate wave levels
@@ -2726,6 +2936,7 @@ import if not self.reporting_enabled:
                 if pattern_confidence >= self.elliott_confidence_threshold:
     pass
     pass
+    pass
                     self.logger.info(f"✅ Detected Elliott Wave pattern with confidence {pattern_confidence:.3f} (threshold: {self.elliott_confidence_threshold})")
                 else:
                     self.logger.info(f"⚠️ Elliott Wave pattern confidence {pattern_confidence:.3f} below threshold {self.elliott_confidence_threshold}")
@@ -2745,6 +2956,7 @@ import if not self.reporting_enabled:
     def _find_elliott_wave_points(self, prices: np.ndarray, highs: np.ndarray, lows: np.ndarray) -> list[dict[str, Any]]:
     pass
     pass
+    pass
         """Find potential Elliott Wave points in price data."""
         wave_points = []
 
@@ -2752,8 +2964,10 @@ import if not self.reporting_enabled:
         for i in range(2, len(prices) - 2):
     pass
     pass
+    pass
             # Peak detection
             if highs[i] > highs[i-1] and highs[i] > highs[i-2] and highs[i] > highs[i+1] and highs[i] > highs[i+2]:
+    pass
     pass
     pass
                 wave_points.append({
@@ -2776,9 +2990,13 @@ import if not self.reporting_enabled:
     def _calculate_elliott_pattern_confidence(self, wave_points: list[dict[str, Any]]) -> float:
     pass
     pass
+    pass
         """Calculate confidence score for Elliott Wave pattern."""
         try:
             if len(wave_points) < 5:
+    pass
+    except Exception as e:
+        pass
     pass
     except Exception as e:
         pass
@@ -2796,6 +3014,7 @@ import if not self.reporting_enabled:
             if 0.5 <= wave2_retracement <= 0.786:
     pass
     pass
+    pass
                 confidence_factors.append(1.0)
             else:
                 confidence_factors.append(0.5)
@@ -2806,6 +3025,7 @@ import if not self.reporting_enabled:
             if wave3_ratio >= 1.618:
     pass
     pass
+    pass
                 confidence_factors.append(1.0)
             else:
                 confidence_factors.append(0.7)
@@ -2813,6 +3033,7 @@ import if not self.reporting_enabled:
             # Wave 4 should retrace 23.6-38.2% of wave 3
             wave4_retracement = (wave_points[3]['high'] - wave_points[4]['low']) / wave3_range
             if 0.236 <= wave4_retracement <= 0.382:
+    pass
     pass
     pass
                 confidence_factors.append(1.0)
@@ -2831,6 +3052,8 @@ import if not self.reporting_enabled:
         """Analyze order flow to identify institutional S/R levels (POC, HVN, etc.)."""
         try:
             # Volume Profile Analysis
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -2875,6 +3098,8 @@ import if not self.reporting_enabled:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             price_range = market_data['high'].max() - market_data['low'].min()
             num_bins = 50
             bin_size = price_range / num_bins
@@ -2884,11 +3109,13 @@ import if not self.reporting_enabled:
             for i in range(num_bins):
     pass
     pass
+    pass
                 price_level = market_data['low'].min() + i * bin_size
                 volume_profile[price_level] = 0
 
             # Calculate volume at each price level
             for idx, row in market_data.iterrows():
+    pass
     pass
     pass
                 price = row['close']
@@ -2914,9 +3141,11 @@ import if not self.reporting_enabled:
             for level, volume in sorted_levels:
     pass
     pass
+    pass
                 cumulative_volume += volume
                 value_area_levels.append(level)
                 if cumulative_volume >= target_volume:
+    pass
     pass
     pass
                     break
@@ -2956,8 +3185,11 @@ import if not self.reporting_enabled:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             # Calculate bid/ask imbalance (simplified - using volume as proxy)
             for i in range(1, len(market_data)):
+    pass
     pass
     pass
                 current_volume = market_data['volume'].iloc[i]
@@ -2967,6 +3199,7 @@ import if not self.reporting_enabled:
 
                 # Volume spike
                 if current_volume > prev_volume * 2:
+    pass
     pass
     pass
                     imbalance = {
@@ -3006,13 +3239,17 @@ import if not self.reporting_enabled:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             # Use optimized timeframe weights
             timeframes = list(self.timeframe_weights.keys())
 
             for tf in timeframes:
     pass
     pass
+    pass
                 if tf in market_data:
+    pass
     pass
     pass
                     # Detect S/R levels for this timeframe
@@ -3023,8 +3260,10 @@ import if not self.reporting_enabled:
                     for level in tf_support:
     pass
     pass
+    pass
                         level_key = f"{level['price']:.2f}"
                         if level_key not in confluence_levels:
+    pass
     pass
     pass
                             confluence_levels[level_key] = {
@@ -3043,13 +3282,16 @@ import if not self.reporting_enabled:
                         if level.get('method') not in confluence_levels[level_key]['methods']:
     pass
     pass
+    pass
                             confluence_levels[level_key]['methods'].append(level.get('method', 'unknown'))
 
                     for level in tf_resistance:
     pass
     pass
+    pass
                         level_key = f"{level['price']:.2f}"
                         if level_key not in confluence_levels:
+    pass
     pass
     pass
                             confluence_levels[level_key] = {
@@ -3066,6 +3308,7 @@ import if not self.reporting_enabled:
                         weighted_strength = level.get('strength', 0.5) * tf_weight
                         confluence_levels[level_key]['strength'] += weighted_strength
                         if level.get('method') not in confluence_levels[level_key]['methods']:
+    pass
     pass
     pass
                             confluence_levels[level_key]['methods'].append(level.get('method', 'unknown'))
@@ -3095,12 +3338,15 @@ import if not self.reporting_enabled:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             current_price = market_data['vwap'].iloc[-1] if 'vwap' in market_data.columns else market_data['close'].iloc[-1]
             basic_context = await self.get_sr_context(market_data, current_price)
 
             # Multi-timeframe confluence (if data provided)
             mtf_confluence = {}
             if multi_timeframe_data:
+    pass
     pass
     pass
                 mtf_confluence = await self.detect_multi_timeframe_confluence(multi_timeframe_data)
@@ -3131,9 +3377,12 @@ import if not self.reporting_enabled:
     def _calculate_level_strength(self, market_data: pd.DataFrame, index: int, level_type: str) -> float:
     pass
     pass
+    pass
         """Calculate the strength of a support/resistance level."""
         try:
             # Base strength calculation
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -3146,6 +3395,7 @@ import if not self.reporting_enabled:
 
             # Price movement factor
             if level_type == "support":
+    pass
     pass
     pass
                 price_factor = 1.0 - (market_data['low'].iloc[index] - market_data['close'].iloc[index]) / market_data['close'].iloc[index]
@@ -3174,7 +3424,10 @@ import if not self.reporting_enabled:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             for level in sr_levels:
+    pass
     pass
     pass
                 level_price = level['price']
@@ -3187,6 +3440,7 @@ import if not self.reporting_enabled:
                 for i in range(1, len(lookback_data)):
     pass
     pass
+    pass
                     high = lookback_data['high'].iloc[i]
                     low = lookback_data['low'].iloc[i]
                     prev_high = lookback_data['high'].iloc[i-1]
@@ -3196,8 +3450,10 @@ import if not self.reporting_enabled:
                     if (low <= level_price <= high) or (prev_low <= level_price <= prev_high):
     pass
     pass
+    pass
                         # Additional check: price actually approached the level
                         if abs(high - level_price) / level_price < 0.01 or abs(low - level_price) / level_price < 0.01:
+    pass
     pass
     pass
                             touch_count += 1
@@ -3221,7 +3477,10 @@ import if not self.reporting_enabled:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             for level in sr_levels:
+    pass
     pass
     pass
                 level_price = level['price']
@@ -3230,6 +3489,7 @@ import if not self.reporting_enabled:
 
                 # Calculate age in periods
                 if isinstance(level_timestamp, pd.Timestamp):
+    pass
     pass
     pass
                     age_periods = len(market_data) - market_data.index.get_loc(level_timestamp)
@@ -3263,7 +3523,10 @@ import if not self.reporting_enabled:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             for level in sr_levels:
+    pass
     pass
     pass
                 level_price = level['price']
@@ -3277,6 +3540,7 @@ import if not self.reporting_enabled:
                 for i in range(1, len(lookback_data)):
     pass
     pass
+    pass
                     high = lookback_data['high'].iloc[i]
                     low = lookback_data['low'].iloc[i]
                     close = lookback_data['close'].iloc[i]
@@ -3284,6 +3548,7 @@ import if not self.reporting_enabled:
 
                     # Check if price touched the level
                     if low <= level_price <= high:
+    pass
     pass
     pass
                         touches += 1
@@ -3294,16 +3559,19 @@ import if not self.reporting_enabled:
                             if close > level_price + (level_price * self.bounce_rate_threshold):
     pass
     pass
+    pass
                                 bounces += 1
                         else:  # Resistance level
                             # Price bounced down from resistance
                             if close < level_price - (level_price * self.bounce_rate_threshold):
     pass
     pass
+    pass
                                 bounces += 1
 
                 # Calculate bounce rate - handle untested levels properly
                 if touches == 0:
+    pass
     pass
     pass
                     # Level hasn't been tested yet - give neutral score
@@ -3340,7 +3608,10 @@ import if not self.reporting_enabled:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             for i, level in enumerate(sr_levels):
+    pass
     pass
     pass
                 level_price = level['price']
@@ -3351,7 +3622,9 @@ import if not self.reporting_enabled:
                 for j, other_level in enumerate(sr_levels):
     pass
     pass
+    pass
                     if i != j:
+    pass
     pass
     pass
                         distance = abs(level_price - other_level['price']) / level_price
@@ -3359,6 +3632,7 @@ import if not self.reporting_enabled:
 
                 # Calculate isolation score (higher = more isolated)
                 if min_distance == float('inf'):
+    pass
     pass
     pass
                     isolation_score = 1.0  # Only level
@@ -3388,6 +3662,9 @@ import if not self.reporting_enabled:
     except Exception as e:
         pass
     pass
+    except Exception as e:
+        pass
+    pass
                 self.logger.warning("DBSCAN not available, returning unclustered levels")
                 return {
                     'clusters': {},
@@ -3400,6 +3677,7 @@ import if not self.reporting_enabled:
     except Exception as e:
         pass
             if not self.enable_dbscan_clustering or len(sr_levels) < 3:
+    pass
     pass
     pass
                 return {
@@ -3435,19 +3713,23 @@ import if not self.reporting_enabled:
             for i, level in enumerate(sr_levels):
     pass
     pass
+    pass
                 cluster_id = cluster_labels[i]
 
                 if cluster_id == -1:
+    pass
     pass
     pass
                     # Noise points (weak levels) - filter out if enabled
                     if not self.dbscan_enable_noise_filtering:
     pass
     pass
+    pass
                         significant_levels.append(level)
                     continue
 
                 if cluster_id not in clustered_levels:
+    pass
     pass
     pass
                     clustered_levels[cluster_id] = {
@@ -3465,11 +3747,13 @@ import if not self.reporting_enabled:
             for cluster_id, cluster_data in clustered_levels.items():
     pass
     pass
+    pass
                 levels = cluster_data['levels']
 
                 # Calculate cluster center (weighted average by strength)
                 total_strength = sum(level.get('strength', 0.5) for level in levels)
                 if total_strength > 0:
+    pass
     pass
     pass
                     cluster_price = sum(level['price'] * level.get('strength', 0.5) for level in levels) / total_strength
@@ -3517,6 +3801,9 @@ import if not self.reporting_enabled:
     except Exception as e:
         pass
     pass
+    except Exception as e:
+        pass
+    pass
                 # Return basic strength calculation
                 return {f"{level['price']:.4f}": level.get('strength', 0.5) for level in sr_levels}
 
@@ -3533,6 +3820,7 @@ import if not self.reporting_enabled:
             for level in sr_levels:
     pass
     pass
+    pass
                 level_price = level['price']
                 level_id = f"{level_price:.4f}"
 
@@ -3546,7 +3834,10 @@ import if not self.reporting_enabled:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
                     if not isinstance(touch_count_data, dict):
+    pass
     pass
     pass
                         touch_count_data = {'touch_count': 1}
@@ -3555,16 +3846,19 @@ import if not self.reporting_enabled:
                     if not isinstance(age_data, dict):
     pass
     pass
+    pass
                         age_data = {'age_score': 0.5}
 
                     bounce_data = bounce_rates.get(level_id, {})
                     if not isinstance(bounce_data, dict):
     pass
     pass
+    pass
                         bounce_data = {'bounce_strength': 0.5, 'is_untested': False}
 
                     isolation_data = isolation_scores.get(level_id, {})
                     if not isinstance(isolation_data, dict):
+    pass
     pass
     pass
                         isolation_data = {'isolation_score': 0.5}
@@ -3575,6 +3869,7 @@ import if not self.reporting_enabled:
 
                     # Handle untested levels properly for bounce factor
                     if bounce_data.get('is_untested', False):
+    pass
     pass
     pass
                         bounce_factor = 0.5  # Neutral score for untested levels
@@ -3655,8 +3950,11 @@ import if not self.reporting_enabled:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             # Calculate support breakout probabilities
             for i, level in enumerate(support_levels):
+    pass
     pass
     pass
                 distance = (current_price - level["price"]) / current_price
@@ -3668,6 +3966,7 @@ import if not self.reporting_enabled:
 
             # Calculate resistance breakout probabilities
             for i, level in enumerate(resistance_levels):
+    pass
     pass
     pass
                 distance = (level["price"] - current_price) / current_price
@@ -3697,8 +3996,11 @@ import if not self.reporting_enabled:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             # Calculate support confidence scores
             for i, level in enumerate(support_levels):
+    pass
     pass
     pass
                 confidence = level.get("confidence", 0.5) * level.get("strength", 0.5)
@@ -3706,6 +4008,7 @@ import if not self.reporting_enabled:
 
             # Calculate resistance confidence scores
             for i, level in enumerate(resistance_levels):
+    pass
     pass
     pass
                 confidence = level.get("confidence", 0.5) * level.get("strength", 0.5)
@@ -3731,11 +4034,14 @@ import if not self.reporting_enabled:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             # Calculate proximity to nearest support and resistance
             # Use VWAP if available, otherwise fall back to close price
             current_price = market_data['vwap'].iloc[-1] if 'vwap' in market_data.columns else market_data['close'].iloc[-1]
 
             if support_levels:
+    pass
     pass
     pass
                 nearest_support = min(support_levels, key=lambda x: abs(x["price"] - current_price))
@@ -3746,6 +4052,7 @@ import if not self.reporting_enabled:
                 features["support_strength"] = 0.0
 
             if resistance_levels:
+    pass
     pass
     pass
                 nearest_resistance = min(resistance_levels, key=lambda x: abs(x["price"] - current_price))
@@ -3783,6 +4090,9 @@ import if not self.reporting_enabled:
     except Exception as e:
         pass
     pass
+    except Exception as e:
+        pass
+    pass
                 return None
 
     except Exception as e:
@@ -3791,6 +4101,7 @@ import if not self.reporting_enabled:
             best_score = float('-inf')
 
             for level in levels:
+    pass
     pass
     pass
                 # Calculate distance score (closer is better)
@@ -3805,6 +4116,7 @@ import if not self.reporting_enabled:
                 combined_score = (distance_score * 0.6) + (strength * 0.4)
 
                 if combined_score > best_score:
+    pass
     pass
     pass
                     best_score = combined_score
@@ -3828,6 +4140,9 @@ import if not self.reporting_enabled:
     except Exception as e:
         pass
     pass
+    except Exception as e:
+        pass
+    pass
                 return 1.0
 
     except Exception as e:
@@ -3842,9 +4157,13 @@ import if not self.reporting_enabled:
     def _calculate_pivot_levels(self, market_data: pd.DataFrame) -> dict[str, Any]:
     pass
     pass
+    pass
         """Calculate pivot point levels."""
         try:
             if len(market_data) < 1:
+    pass
+    except Exception as e:
+        pass
     pass
     except Exception as e:
         pass
@@ -3860,12 +4179,15 @@ import if not self.reporting_enabled:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
                 low = market_data['low'].iloc[-1]
                 close = market_data['close'].iloc[-1]
             except (IndexError, KeyError) as e:
                 self.logger.warning(f"Error accessing market data for pivot calculation: {e}")
                 # Use fallback values
                 if 'high' in market_data.columns and len(market_data) > 0:
+    pass
     pass
     pass
                     high = market_data['high'].iloc[0]
@@ -3875,11 +4197,13 @@ import if not self.reporting_enabled:
                 if 'low' in market_data.columns and len(market_data) > 0:
     pass
     pass
+    pass
                     low = market_data['low'].iloc[0]
                 else:
                     low = 100.0
 
                 if 'close' in market_data.columns and len(market_data) > 0:
+    pass
     pass
     pass
                     close = market_data['close'].iloc[0]
@@ -3912,6 +4236,8 @@ import if not self.reporting_enabled:
         try:
             features: dict[str, float] = {}
 
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -3974,6 +4300,7 @@ import if not self.reporting_enabled:
             if sr_context:
     pass
     pass
+    pass
                 nearest_support = sr_context.get("nearest_support", current_price)
                 nearest_resistance = sr_context.get("nearest_resistance", current_price)
 
@@ -3991,6 +4318,7 @@ import if not self.reporting_enabled:
                 # Pivot level features
                 pivot_levels = sr_context.get("pivot_levels", {})
                 if pivot_levels:
+    pass
     pass
     pass
                     features["nearest_pivot_strength"] = pivot_levels.get(
@@ -4025,6 +4353,8 @@ import if not self.reporting_enabled:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             price_change_1m = features.get("price_change_1m", 0)
             price_change_5m = features.get("price_change_5m", 0)
             volume_ratio = features.get("volume_ratio", 1.0)
@@ -4040,6 +4370,7 @@ import if not self.reporting_enabled:
 
             # Breakout conditions
             if is_near_resistance and price_change_1m > 0.001 and volume_ratio > 1.2:
+    pass
     pass
     pass
                 return "breakout"
@@ -4072,11 +4403,14 @@ import if not self.reporting_enabled:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             confidence = 0.5
 
             # Volume factor
             volume_ratio = features.get("volume_ratio", 1.0)
             if volume_ratio > 1.5:
+    pass
     pass
     pass
                 confidence += 0.2
@@ -4096,11 +4430,13 @@ import if not self.reporting_enabled:
             if min_proximity < self.sr_proximity_threshold:
     pass
     pass
+    pass
                 confidence += 0.2
 
             # RSI factor
             rsi = features.get("rsi", 50)
             if rsi < 30 or rsi > 70:
+    pass
     pass
     pass
                 confidence += 0.1
@@ -4112,6 +4448,7 @@ import if not self.reporting_enabled:
             return 0.5
 
     def _calculate_rsi(self, prices: pd.Series, period: int = 14) -> pd.Series:
+    pass
     pass
     pass
         """Calculate RSI indicator."""
@@ -4145,9 +4482,13 @@ import if not self.reporting_enabled:
     def _calculate_market_trend(self, market_data: pd.DataFrame) -> float:
     pass
     pass
+    pass
         """Calculate market trend strength."""
         try:
             if len(market_data) < 20:
+    pass
+    except Exception as e:
+        pass
     pass
     except Exception as e:
         pass
@@ -4171,9 +4512,13 @@ import if not self.reporting_enabled:
     def _calculate_momentum_strength(self, market_data: pd.DataFrame) -> float:
     pass
     pass
+    pass
         """Calculate momentum strength."""
         try:
             if len(market_data) < 10:
+    pass
+    except Exception as e:
+        pass
     pass
     except Exception as e:
         pass
@@ -4203,9 +4548,12 @@ import if not self.reporting_enabled:
     def _update_performance_metrics(self, predictions: dict[str, Any]) -> None:
     pass
     pass
+    pass
         """Update performance metrics for SR breakout predictions."""
         try:
             # Store prediction in history
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -4214,6 +4562,7 @@ import if not self.reporting_enabled:
 
             # Keep only recent predictions
             if len(self.prediction_history) > 1000:
+    pass
     pass
     pass
                 self.prediction_history = self.prediction_history[-1000:]
@@ -4254,6 +4603,9 @@ import if not self.reporting_enabled:
     except Exception as e:
         pass
     pass
+    except Exception as e:
+        pass
+    pass
                 return False
 
     except Exception as e:
@@ -4289,6 +4641,9 @@ import if not self.reporting_enabled:
         """
         try:
             if not sr_context:
+    pass
+    except Exception as e:
+        pass
     pass
     except Exception as e:
         pass
@@ -4357,11 +4712,14 @@ import if not self.reporting_enabled:
         if not self.is_initialized:
     pass
     pass
+    pass
             self.logger.error("SR breakout predictor not initialized")
             return {}
 
         try:
             # Extract features for prediction
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -4421,11 +4779,14 @@ import if not self.reporting_enabled:
         if not self.is_initialized:
     pass
     pass
+    pass
             self.logger.error("SR breakout predictor not initialized")
             return {}
 
         try:
             # Get current price
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -4485,11 +4846,14 @@ import if not self.reporting_enabled:
         if not self.is_initialized:
     pass
     pass
+    pass
             self.logger.error("SR breakout predictor not initialized")
             return {}
 
         try:
             features = {}
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -4509,7 +4873,9 @@ import if not self.reporting_enabled:
             for lookback in [20, 50, 100]:
     pass
     pass
+    pass
                 if len(market_data) >= lookback:
+    pass
     pass
     pass
                     lookback_data = market_data.tail(lookback)
@@ -4523,6 +4889,7 @@ import if not self.reporting_enabled:
 
                     # Add to features with lookback suffix
                     for feature_name, feature_value in lookback_features.items():
+    pass
     pass
     pass
                         features[f"{feature_name}_{lookback}"] = pd.Series([feature_value] * len(market_data), index=market_data.index)
@@ -4543,6 +4910,8 @@ import if not self.reporting_enabled:
         """Generate comprehensive SR features matching sr_base_tokens requirements."""
         try:
             features = {}
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -4572,6 +4941,7 @@ import if not self.reporting_enabled:
 
             # 4. Normalized distance (as percentage)
             if nearest_resistance > nearest_support and current_price > 0:
+    pass
     pass
     pass
                 zone_width_pct = (nearest_resistance - nearest_support) / current_price
@@ -4613,6 +4983,7 @@ import if not self.reporting_enabled:
             for feature_name, feature_value in base_features.items():
     pass
     pass
+    pass
                 features[f"sr_{feature_name}"] = pd.Series([feature_value] * len(market_data), index=market_data.index)
 
             return features
@@ -4624,9 +4995,12 @@ import if not self.reporting_enabled:
     def _calculate_multi_timeframe_sr_score(self, market_data: pd.DataFrame) -> float:
     pass
     pass
+    pass
         """Calculate multi-timeframe SR score."""
         try:
             # Calculate SR strength across different timeframes
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -4637,7 +5011,9 @@ import if not self.reporting_enabled:
             for tf in timeframes:
     pass
     pass
+    pass
                 if len(market_data) >= tf:
+    pass
     pass
     pass
                     tf_data = market_data.tail(tf)
@@ -4655,9 +5031,12 @@ import if not self.reporting_enabled:
     def _calculate_clarity_factor(self, sr_context: dict[str, Any]) -> float:
     pass
     pass
+    pass
         """Calculate SR clarity factor."""
         try:
             support_strength = sr_context.get("support_strength", 0.5)
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -4668,6 +5047,7 @@ import if not self.reporting_enabled:
             # Clarity increases with strength and decreases with zone width
             clarity = (support_strength + resistance_strength) / 2
             if zone_width > 0:
+    pass
     pass
     pass
                 clarity *= (1.0 - min(zone_width, 0.5))
@@ -4681,9 +5061,12 @@ import if not self.reporting_enabled:
     def _calculate_directional_pressure(self, market_data: pd.DataFrame, sr_context: dict[str, Any]) -> float:
     pass
     pass
+    pass
         """Calculate directional pressure towards SR levels using percentages."""
         try:
             current_price = market_data['close'].iloc[-1]
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -4693,6 +5076,7 @@ import if not self.reporting_enabled:
 
             # Calculate pressure based on distance and momentum (using percentages)
             if current_price > 0:
+    pass
     pass
     pass
                 support_distance_pct = (current_price - nearest_support) / current_price
@@ -4708,6 +5092,7 @@ import if not self.reporting_enabled:
             if momentum < 0:
     pass
     pass
+    pass
                 pressure = 1.0 / (1.0 + support_distance_pct)
             else:
                 pressure = 1.0 / (1.0 + resistance_distance_pct)
@@ -4721,9 +5106,12 @@ import if not self.reporting_enabled:
     def _calculate_sr_score(self, sr_context: dict[str, Any]) -> float:
     pass
     pass
+    pass
         """Calculate overall SR score using percentages."""
         try:
             support_strength = sr_context.get("support_strength", 0.5)
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -4745,9 +5133,13 @@ import if not self.reporting_enabled:
     def _calculate_delta_sr_score(self, market_data: pd.DataFrame, sr_context: dict[str, Any]) -> float:
     pass
     pass
+    pass
         """Calculate change in SR score over time."""
         try:
             if len(market_data) < 20:
+    pass
+    except Exception as e:
+        pass
     pass
     except Exception as e:
         pass
@@ -4771,9 +5163,12 @@ import if not self.reporting_enabled:
     def _calculate_isolation_score(self, sr_context: dict[str, Any]) -> float:
     pass
     pass
+    pass
         """Calculate isolation score for SR levels."""
         try:
             # Use isolation data from enhanced strength calculation
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -4784,6 +5179,7 @@ import if not self.reporting_enabled:
             if not support_levels and not resistance_levels:
     pass
     pass
+    pass
                 return 0.5
 
             # Calculate average isolation score
@@ -4791,7 +5187,9 @@ import if not self.reporting_enabled:
             for level in support_levels + resistance_levels:
     pass
     pass
+    pass
                 if "strength_factors" in level and "isolation_score" in level["strength_factors"]:
+    pass
     pass
     pass
                     isolation_scores.append(level["strength_factors"]["isolation_score"])
@@ -4805,6 +5203,7 @@ import if not self.reporting_enabled:
     def _determine_sr_level(self, current_price: float, sr_context: dict[str, Any]) -> float:
     pass
     pass
+    pass
         """Determine current SR level position as percentage."""
         try:
             nearest_support = sr_context.get("nearest_support", current_price)
@@ -4812,9 +5211,12 @@ import if not self.reporting_enabled:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             nearest_resistance = sr_context.get("nearest_resistance", current_price)
 
             if nearest_resistance > nearest_support and current_price > 0:
+    pass
     pass
     pass
                 # Calculate position as percentage within the SR zone
@@ -4831,9 +5233,12 @@ import if not self.reporting_enabled:
     def _predict_sr_outcome(self, market_data: pd.DataFrame, sr_context: dict[str, Any]) -> float:
     pass
     pass
+    pass
         """Predict SR outcome based on current market conditions as percentage."""
         try:
             current_price = market_data['close'].iloc[-1]
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -4843,6 +5248,7 @@ import if not self.reporting_enabled:
 
             # Calculate outcome as percentage position within SR zone
             if nearest_resistance > nearest_support and current_price > 0:
+    pass
     pass
     pass
                 support_distance_pct = (current_price - nearest_support) / current_price
@@ -4871,19 +5277,25 @@ import if not self.reporting_enabled:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             if "fractal_weight" in weights:
+    pass
     pass
     pass
                 self.model_weights["fractal"] = weights["fractal_weight"]
             if "volume_weight" in weights:
     pass
     pass
+    pass
                 self.model_weights["volume"] = weights["volume_weight"]
             if "pivot_weight" in weights:
     pass
     pass
+    pass
                 self.model_weights["pivot"] = weights["pivot_weight"]
             if "atr_weight" in weights:
+    pass
     pass
     pass
                 self.model_weights["atr"] = weights["atr_weight"]
@@ -4892,20 +5304,25 @@ import if not self.reporting_enabled:
             if "touch_count_weight" in weights:
     pass
     pass
+    pass
                 self.strength_score_weights["touch_count"] = weights["touch_count_weight"]
             if "total_volume_weight" in weights:
+    pass
     pass
     pass
                 self.strength_score_weights["total_volume"] = weights["total_volume_weight"]
             if "level_age_weight" in weights:
     pass
     pass
+    pass
                 self.strength_score_weights["level_age"] = weights["level_age_weight"]
             if "bounce_rate_weight" in weights:
     pass
     pass
+    pass
                 self.strength_score_weights["bounce_rate"] = weights["bounce_rate_weight"]
             if "isolation_score_weight" in weights:
+    pass
     pass
     pass
                 self.strength_score_weights["isolation_score"] = weights["isolation_score_weight"]
@@ -4914,12 +5331,15 @@ import if not self.reporting_enabled:
             if "fibonacci_sensitivity" in weights:
     pass
     pass
+    pass
                 self.fibonacci_sensitivity = weights["fibonacci_sensitivity"]
             if "elliott_confidence_threshold" in weights:
     pass
     pass
+    pass
                 self.elliott_confidence_threshold = weights["elliott_confidence_threshold"]
             if "order_flow_hvn_threshold" in weights:
+    pass
     pass
     pass
                 self.order_flow_hvn_threshold = weights["order_flow_hvn_threshold"]
@@ -4929,13 +5349,16 @@ import if not self.reporting_enabled:
             for tf in ["1m", "5m", "15m", "1h", "4h", "1d"]:
     pass
     pass
+    pass
                 weight_key = f"tf_{tf}_weight"
                 if weight_key in weights:
+    pass
     pass
     pass
                     timeframe_weights[tf] = weights[weight_key]
 
             if timeframe_weights:
+    pass
     pass
     pass
                 self.timeframe_weights.update(timeframe_weights)
@@ -4980,6 +5403,8 @@ import if not self.reporting_enabled:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             # Get S/R context
             sr_context = await self.get_sr_context(market_data, current_price)
 
@@ -4989,6 +5414,7 @@ import if not self.reporting_enabled:
             if not outcome:
     pass
     pass
+    pass
                 return None
 
             # Determine direction based on outcome
@@ -4996,8 +5422,10 @@ import if not self.reporting_enabled:
             if outcome.get("outcome") == "breakout":
     pass
     pass
+    pass
                 # Determine if breaking up or down
                 if sr_context.get("resistance_proximity", 1.0) < sr_context.get("support_proximity", 1.0):
+    pass
     pass
     pass
                     direction = "up"  # Breaking resistance
@@ -5024,6 +5452,8 @@ import if not self.reporting_enabled:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             self.is_initialized = False
             self.logger.info("✅ SR breakout predictor stopped successfully")
         except Exception as e:
@@ -5042,6 +5472,8 @@ import if not self.reporting_enabled:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             await self.stop()
             self.sr_predictions.clear()
             self.prediction_history.clear()
@@ -5053,6 +5485,7 @@ import if not self.reporting_enabled:
     def _calculate_comparison_metrics(self, support_levels: list[dict[str, Any]], resistance_levels: list[dict[str, Any]], current_price: float) -> dict[str, Any]:
     pass
     pass
+    pass
         """Calculate comparison metrics between price and VWAP approaches."""
         try:
             comparison = {
@@ -5060,6 +5493,8 @@ import if not self.reporting_enabled:
                 "detection_efficiency": {},
                 "level_quality": {},
                 "recommendations": {}
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -5122,12 +5557,15 @@ import if not self.reporting_enabled:
     def _analyze_data_sources(self, support_levels: list[dict[str, Any]], resistance_levels: list[dict[str, Any]]) -> dict[str, Any]:
     pass
     pass
+    pass
         """Analyze the distribution and characteristics of data sources."""
         try:
             analysis = {
                 "data_source_distribution": {},
                 "source_characteristics": {},
                 "method_effectiveness": {}
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -5174,9 +5612,13 @@ import if not self.reporting_enabled:
     def _calculate_overlap_rate(self, price_levels: list[dict[str, Any]], vwap_levels: list[dict[str, Any]]) -> float:
     pass
     pass
+    pass
         """Calculate the overlap rate between price and VWAP detected levels."""
         try:
             if not price_levels or not vwap_levels:
+    pass
+    except Exception as e:
+        pass
     pass
     except Exception as e:
         pass
@@ -5191,7 +5633,9 @@ import if not self.reporting_enabled:
             for price_level in price_levels:
     pass
     pass
+    pass
                 for vwap_level in vwap_levels:
+    pass
     pass
     pass
                     price_diff = abs(price_level["price"] - vwap_level["price"]) / price_level["price"]
@@ -5207,9 +5651,13 @@ import if not self.reporting_enabled:
     def _calculate_quality_score(self, levels: list[dict[str, Any]]) -> float:
     pass
     pass
+    pass
         """Calculate a quality score for a set of levels based on strength and confidence."""
         try:
             if not levels:
+    pass
+    except Exception as e:
+        pass
     pass
     except Exception as e:
         pass
@@ -5221,6 +5669,7 @@ import if not self.reporting_enabled:
             # Weighted average of strength and confidence
             total_score = 0.0
             for level in levels:
+    pass
     pass
     pass
                 strength = level.get("strength", 0)
@@ -5238,6 +5687,7 @@ import if not self.reporting_enabled:
     def _analyze_method_effectiveness(self, levels: list[dict[str, Any]]) -> dict[str, Any]:
     pass
     pass
+    pass
         """Analyze the effectiveness of different detection methods."""
         try:
             method_stats = {}
@@ -5246,13 +5696,17 @@ import if not self.reporting_enabled:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             for level in levels:
+    pass
     pass
     pass
                 method = level.get("method", "unknown")
                 data_source = level.get("data_source", "unknown")
 
                 if method not in method_stats:
+    pass
     pass
     pass
                     method_stats[method] = {
@@ -5271,6 +5725,7 @@ import if not self.reporting_enabled:
             for method in method_stats:
     pass
     pass
+    pass
                 count = method_stats[method]["count"]
                 method_stats[method]["avg_strength"] = method_stats[method]["total_strength"] / count
                 method_stats[method]["avg_confidence"] = method_stats[method]["total_confidence"] / count
@@ -5284,6 +5739,7 @@ import if not self.reporting_enabled:
     def _generate_comparison_recommendations(self, comparison: dict[str, Any]) -> dict[str, Any]:
     pass
     pass
+    pass
         """Generate recommendations based on comparison analysis."""
         try:
             recommendations = {
@@ -5295,6 +5751,8 @@ import if not self.reporting_enabled:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             }
 
             # Determine primary approach
@@ -5302,6 +5760,7 @@ import if not self.reporting_enabled:
             price_quality = comparison["level_quality"]["price_quality_score"]
 
             if vwap_quality > price_quality:
+    pass
     pass
     pass
                 recommendations["primary_approach"] = "vwap"
@@ -5316,9 +5775,11 @@ import if not self.reporting_enabled:
             if comparison["detection_efficiency"]["overlap_rate"] < 0.3:
     pass
     pass
+    pass
                 recommendations["optimization_suggestions"].append("Low overlap between approaches - consider adjusting detection parameters")
 
             if abs(vwap_quality - price_quality) < 0.1:
+    pass
     pass
     pass
                 recommendations["optimization_suggestions"].append("Similar performance - both approaches are viable")
@@ -5326,9 +5787,11 @@ import if not self.reporting_enabled:
             if comparison["detection_efficiency"]["vwap_detection_rate"] < 0.2:
     pass
     pass
+    pass
                 recommendations["optimization_suggestions"].append("Low VWAP detection rate - check VWAP calculation and parameters")
 
             if comparison["detection_efficiency"]["price_detection_rate"] < 0.2:
+    pass
     pass
     pass
                 recommendations["optimization_suggestions"].append("Low price detection rate - check price-based detection parameters")
@@ -5342,9 +5805,13 @@ import if not self.reporting_enabled:
     def _validate_vwap_data(self, market_data: pd.DataFrame) -> bool:
     pass
     pass
+    pass
         """Validate that VWAP data is available and properly formatted."""
         try:
             if 'vwap' not in market_data.columns:
+    pass
+    except Exception as e:
+        pass
     pass
     except Exception as e:
         pass
@@ -5357,10 +5824,12 @@ import if not self.reporting_enabled:
             if market_data['vwap'].isnull().all():
     pass
     pass
+    pass
                 self.logger.warning("⚠️ VWAP column contains only null values")
                 return False
 
             if len(market_data['vwap'].dropna()) < 20:
+    pass
     pass
     pass
                 self.logger.warning("⚠️ Insufficient VWAP data (less than 20 non-null values)")
@@ -5369,6 +5838,7 @@ import if not self.reporting_enabled:
             # Check for reasonable VWAP values
             vwap_values = market_data['vwap'].dropna()
             if vwap_values.min() <= 0:
+    pass
     pass
     pass
                 self.logger.warning("⚠️ VWAP contains non-positive values")
@@ -5384,6 +5854,7 @@ import if not self.reporting_enabled:
     def _get_detection_summary(self, price_levels: list, vwap_levels: list, method_name: str, level_type: str) -> str:
     pass
     pass
+    pass
         """Generate a summary of detection results for both price and VWAP approaches."""
         try:
             total_levels = len(price_levels) + len(vwap_levels)
@@ -5392,12 +5863,16 @@ import if not self.reporting_enabled:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             if total_levels == 0:
+    pass
     pass
     pass
                 return f"❌ No {level_type} levels detected using {method_name} method"
 
             if len(vwap_levels) == 0:
+    pass
     pass
     pass
                 return f"⚠️ {method_name} {level_type}: {len(price_levels)} price-based levels (VWAP not available)"
@@ -5427,12 +5902,15 @@ async def setup_sr_breakout_predictor(
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         sr_config = config.copy() if config else {}
         sr_config["sr_breakout_predictor"] = sr_config.get("sr_breakout_predictor", {})
         sr_config["sr_breakout_predictor"]["use_optimized_params"] = True
 
         predictor = SRBreakoutPredictor(sr_config)
         if await predictor.initialize():
+    pass
     pass
     pass
             return predictor
@@ -5443,6 +5921,7 @@ async def setup_sr_breakout_predictor(
 
 
 def ensure_optimized_sr_config(config: dict[str, Any]) -> dict[str, Any]:
+    pass
     pass
     pass
     """

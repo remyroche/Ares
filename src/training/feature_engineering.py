@@ -24,6 +24,7 @@ class FeatureGenerator:
         if custom_features:
     pass
     pass
+    pass
             self.feature_functions.extend(custom_features)
 
     @validate_call_or_runtime_types
@@ -32,8 +33,10 @@ class FeatureGenerator:
     def generate(self, data: pd.DataFrame) -> pd.DataFrame:
     pass
     pass
+    pass
         features = pd.DataFrame(index=data.index)
         for func in self.feature_functions:
+    pass
     pass
     pass
             feat = func(data)
@@ -41,6 +44,7 @@ class FeatureGenerator:
         return features.fillna(0)  # Default - can be replaced by handle_missing_data
 
     def generate_labels(self, data: pd.DataFrame) -> pd.Series:
+    pass
     pass
     pass
         # Example: simple trend-following label
@@ -51,6 +55,7 @@ class FeatureGenerator:
     @guard_dataframe_nulls(mode="warn", arg_index=1)
     @with_tracing_span("FeatureGenerator.price_features", log_args=False)
     def price_features(self, data: pd.DataFrame) -> pd.DataFrame:
+    pass
     pass
     pass
         return pd.DataFrame(
@@ -68,6 +73,7 @@ class FeatureGenerator:
     def moving_averages(self, data: pd.DataFrame) -> pd.DataFrame:
     pass
     pass
+    pass
         return pd.DataFrame(
             {
                 "ma_5": data["close"].rolling(5).mean(),
@@ -83,6 +89,7 @@ class FeatureGenerator:
     def volatility_features(self, data: pd.DataFrame) -> pd.DataFrame:
     pass
     pass
+    pass
         return pd.DataFrame(
             {
                 "volatility_5": data["close"].rolling(5).std(),
@@ -95,6 +102,7 @@ class FeatureGenerator:
     @guard_dataframe_nulls(mode="warn", arg_index=1)
     @with_tracing_span("FeatureGenerator.volume_features", log_args=False)
     def volume_features(self, data: pd.DataFrame) -> pd.DataFrame:
+    pass
     pass
     pass
         vol_ma_5 = data["volume"].rolling(5).mean()
@@ -112,6 +120,7 @@ class FeatureGenerator:
     def technical_indicators(self, data: pd.DataFrame) -> pd.DataFrame:
     pass
     pass
+    pass
         return pd.DataFrame(
             {
                 "rsi": self._calculate_rsi(data["close"]),
@@ -121,6 +130,7 @@ class FeatureGenerator:
         )
 
     def _calculate_rsi(self, prices: pd.Series, period: int = 14) -> pd.Series:
+    pass
     pass
     pass
         delta = prices.diff()

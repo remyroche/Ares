@@ -33,6 +33,7 @@ class Step8TacticianLabelingValidator(BaseValidator):
     def __init__(self, config: dict[str, Any]) -> None:
     pass
     pass
+    pass
         super().__init__("step08_tactician_labeling", config)
 
     async def validate(
@@ -65,6 +66,7 @@ class Step8TacticianLabelingValidator(BaseValidator):
         if not error_passed:
     pass
     pass
+    pass
         self.print(error("❌ Tactician labeling step had errors"))
         return False
 
@@ -75,6 +77,7 @@ class Step8TacticianLabelingValidator(BaseValidator):
             data_dir,
         )
         if not labeling_files_passed:
+    pass
     pass
     pass
         self.print(failed("❌ Tactician labeling files validation failed"))
@@ -89,6 +92,7 @@ class Step8TacticianLabelingValidator(BaseValidator):
         if not signal_quality_passed:
     pass
     pass
+    pass
         self.print(failed("❌ Signal quality validation failed"))
         return False
 
@@ -99,6 +103,7 @@ class Step8TacticianLabelingValidator(BaseValidator):
             data_dir,
         )
         if not consistency_passed:
+    pass
     pass
     pass
         self.print(failed("❌ Labeling consistency validation failed"))
@@ -113,6 +118,7 @@ class Step8TacticianLabelingValidator(BaseValidator):
         if not distribution_passed:
     pass
     pass
+    pass
         self.print(failed("❌ Signal distribution validation failed"))
         return False
 
@@ -123,6 +129,7 @@ class Step8TacticianLabelingValidator(BaseValidator):
         self.validation_results["outcome_favorability"] = outcome_metrics
 
         if not outcome_passed:
+    pass
     pass
     pass
         self.print(error("⚠️ Tactician labeling outcome is not favorable"))
@@ -158,7 +165,10 @@ class Step8TacticianLabelingValidator(BaseValidator):
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         for file_path in expected_files:
+    pass
     pass
     pass
                 file_passed, _file_metrics, self.validate_file_exists(
@@ -168,9 +178,11 @@ class Step8TacticianLabelingValidator(BaseValidator):
         if not file_passed:
     pass
     pass
+    pass
                     missing_files.append(file_path)
 
         if missing_files:
+    pass
     pass
     pass
         self.logger.error(
@@ -211,15 +223,22 @@ class Step8TacticianLabelingValidator(BaseValidator):
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         if os.path.exists(signals_parquet) or os.path.exists(signals_pickle):
+    pass
     pass
     pass
         if os.path.exists(signals_parquet):
     pass
     pass
+    pass
         # Prefer dataset scan if labeled partition exists
         try:
                         from src.training.enhanced_training_manager_optimized import (
+    except Exception as e:
+        pass
+import except Exception as e:
     except Exception as e:
         pass
 import except Exception as e:
@@ -234,6 +253,7 @@ import ParquetDatasetManager,
         if os.path.isdir(part_base):
     pass
     pass
+    pass
                             filters: list[tuple[str, str, Any]] = [
                                 ("exchange", "==", exchange),
                                 ("symbol", "==", symbol),
@@ -243,8 +263,10 @@ import ParquetDatasetManager,
         if t0 is not None:
     pass
     pass
+    pass
                                 filters.append(("timestamp", ">=", int(t0)))
         if t1 is not None:
+    pass
     pass
     pass
                                 filters.append(("timestamp", "<", int(t1)))
@@ -292,6 +314,7 @@ import with log_io_operation
         if not isinstance(signals_data, pd.DataFrame):
     pass
     pass
+    pass
                     signals_data, pd.DataFrame(signals_data)
 
         # Check for required signal columns
@@ -301,6 +324,7 @@ import with log_io_operation
                 ]
 
         if missing_columns:
+    pass
     pass
     pass
         self.logger.error(
@@ -316,10 +340,12 @@ import with log_io_operation
         if len(unique_signals) < 2:
     pass
     pass
+    pass
         self.print(error("❌ Insufficient signal diversity"))
         return False
 
         if len(unique_signals) > 10:
+    pass
     pass
     pass
         self.print(error(f"⚠️ Many signal types: {len(unique_signals)}"))
@@ -344,10 +370,12 @@ import with log_io_operation
         if "confidence" in signals_data.columns:
     pass
     pass
+    pass
                     confidence, signals_data["confidence"]
 
         # Check confidence range (should be 0 - 1 or similar)
         if confidence.min() < 0 or confidence.max() > 1:
+    pass
     pass
     pass
         self.logger.warning(
@@ -361,9 +389,11 @@ import with log_io_operation
         if low_confidence > total_signals * 0.8:
     pass
     pass
+    pass
         self.print(error("⚠️ Too many low confidence signals"))
 
         if high_confidence < total_signals * 0.1:
+    pass
     pass
     pass
         self.print(error("⚠️ Too few high confidence signals"))
@@ -373,6 +403,7 @@ import with log_io_operation
                 change_ratio, signal_changes / total_signals
 
         if change_ratio > 0.5:
+    pass
     pass
     pass
         self.logger.warning(
@@ -419,14 +450,21 @@ import with log_io_operation
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         if os.path.exists(labels_parquet) or os.path.exists(labels_pickle):
+    pass
     pass
     pass
         if os.path.exists(labels_parquet):
     pass
     pass
+    pass
         try:
                         from src.training.enhanced_training_manager_optimized import (
+    except Exception as e:
+        pass
+import except Exception as e:
     except Exception as e:
         pass
 import except Exception as e:
@@ -441,6 +479,7 @@ import ParquetDatasetManager,
         if os.path.isdir(part_base):
     pass
     pass
+    pass
                             filters = [
                                 ("exchange", "==", exchange),
                                 ("symbol", "==", symbol),
@@ -450,8 +489,10 @@ import ParquetDatasetManager,
         if t0 is not None:
     pass
     pass
+    pass
                                 filters.append(("timestamp", ">=", int(t0)))
         if t1 is not None:
+    pass
     pass
     pass
                                 filters.append(("timestamp", "<", int(t1)))
@@ -497,10 +538,12 @@ import with log_io_operation
         if not isinstance(labels_data, pd.DataFrame):
     pass
     pass
+    pass
                     labels_data, pd.DataFrame(labels_data)
 
         # Check for required label columns
         if "label" not in labels_data.columns:
+    pass
     pass
     pass
         self.print(error("❌ No label column found in tactician labels"))
@@ -512,6 +555,7 @@ import with log_io_operation
                 unique_labels, labels.unique()
 
         if len(unique_labels) < 2:
+    pass
     pass
     pass
         self.print(error("❌ Insufficient label diversity"))
@@ -527,12 +571,17 @@ import with log_io_operation
         if os.path.exists(signals_parquet) or os.path.exists(signals_pickle):
     pass
     pass
+    pass
         if os.path.exists(signals_parquet):
+    pass
     pass
     pass
         try:
                             from src.utils.logger import log_io_operation
 
+    except Exception as e:
+        pass
+import except Exception as e:
     except Exception as e:
         pass
 import except Exception as e:
@@ -564,10 +613,12 @@ import with log_io_operation
         if not isinstance(signals_data, pd.DataFrame):
     pass
     pass
+    pass
                         signals_data, pd.DataFrame(signals_data)
 
         # Check if labels and signals have same length
         if len(labels) != len(signals_data):
+    pass
     pass
     pass
         self.logger.error(
@@ -577,6 +628,7 @@ import with log_io_operation
 
         # Check for reasonable label - signal correlation
         if "signal" in signals_data.columns:
+    pass
     pass
     pass
                         signals, signals_data["signal"]
@@ -590,9 +642,12 @@ import with log_io_operation
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
                             )[0, 1]
 
         if abs(correlation) < 0.1:
+    pass
     pass
     pass
         self.logger.warning(
@@ -620,6 +675,7 @@ import with log_io_operation
         if balance_ratio < 0.1:
     pass
     pass
+    pass
         self.logger.warning(
                         f"⚠️ Imbalanced label distribution: {balance_ratio:.3f}",
                     )
@@ -627,6 +683,7 @@ import with log_io_operation
         # Check for missing labels
                 null_labels, labels.isnull().sum()
         if null_labels > 0:
+    pass
     pass
     pass
         self.print(missing(f"⚠️ Found {null_labels} missing labels"))
@@ -669,7 +726,10 @@ import with log_io_operation
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         if os.path.exists(metadata_file):
+    pass
     pass
     pass
                 import json
@@ -681,13 +741,16 @@ import with log_io_operation
         if "signal_distribution" in metadata:
     pass
     pass
+    pass
                     signal_dist, metadata["signal_distribution"]
 
         # Check for reasonable signal distribution
         for signal_type, count in signal_dist.items():
     pass
     pass
+    pass
         if count < 10:
+    pass
     pass
     pass
         self.logger.warning(
@@ -696,6 +759,7 @@ import with log_io_operation
 
         # Check signal frequency
         if "signal_frequency" in metadata:
+    pass
     pass
     pass
                     signal_freq, metadata["signal_frequency"]
@@ -713,9 +777,11 @@ import with log_io_operation
         if "signal_quality_score" in metadata:
     pass
     pass
+    pass
                     quality_score, metadata["signal_quality_score"]
 
         if quality_score < 0.6:
+    pass
     pass
     pass
         self.logger.warning(
@@ -726,9 +792,11 @@ import with log_io_operation
         if "labeling_accuracy" in metadata:
     pass
     pass
+    pass
                     labeling_acc, metadata["labeling_accuracy"]
 
         if labeling_acc < 0.7:
+    pass
     pass
     pass
         self.logger.warning(
@@ -739,9 +807,11 @@ import with log_io_operation
         if "signal_consistency" in metadata:
     pass
     pass
+    pass
                     consistency, metadata["signal_consistency"]
 
         if consistency < 0.6:
+    pass
     pass
     pass
         self.logger.warning(
@@ -754,15 +824,18 @@ import with log_io_operation
         if os.path.exists(signals_file):
     pass
     pass
+    pass
         with open(signals_file, "rb") as f:
                     signals_data, pickle.load(f)
 
         if not isinstance(signals_data, pd.DataFrame):
     pass
     pass
+    pass
                     signals_data, pd.DataFrame(signals_data)
 
         if "signal" in signals_data.columns:
+    pass
     pass
     pass
                     signals, signals_data["signal"]
@@ -772,6 +845,7 @@ import with log_io_operation
                     unique_clusters, signal_changes.nunique()
 
         if unique_clusters < 5:
+    pass
     pass
     pass
         self.print(error(f"⚠️ Few signal clusters: {unique_clusters}"))
@@ -785,6 +859,7 @@ import with log_io_operation
                     avg_persistence, signal_persistence.mean()
 
         if avg_persistence < 5:
+    pass
     pass
     pass
         self.logger.warning(
@@ -829,6 +904,7 @@ async def run_validator(
     }
 
 if __name__ == "__main__":
+    pass
     pass
     pass
     import asyncio as _asyncio

@@ -35,8 +35,11 @@ _warning_logger, logging.getLogger("Ares.Warnings")
 if not _warning_logger.handlers:
     pass
     pass
+    pass
     try:
         fh, logging.FileHandler("log / python_warnings.log")
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -73,14 +76,18 @@ class VectorizedLabellingOrchestrator:
     def __init__(self, config: dict[str, Any]) -> None:
     pass
     pass
+    pass
         self.config, config
         self.logger, system_logger.getChild("VectorizedLabellingOrchestrator")
         self.feature_error_logger, logging.getLogger("Ares.FeatureError")
         if not self.feature_error_logger.handlers:
     pass
     pass
+    pass
         try:
                 fh, logging.FileHandler("log / feature_errors.log")
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -186,8 +193,11 @@ class VectorizedLabellingOrchestrator:
     def _log_feature_sample(self, stage: str, df: pd.DataFrame, step_no: str) -> None:
     pass
     pass
+    pass
         try:
             os.makedirs("log / features_samples", exist_ok = True)
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -200,20 +210,26 @@ class VectorizedLabellingOrchestrator:
         if self._debug_raw_ohlcv is not None:
     pass
     pass
+    pass
         for c in ["open", "high", "low", "close", "volume"]:
     pass
     pass
+    pass
         if c in self._debug_raw_ohlcv.columns and c not in sample.columns:
+    pass
     pass
     pass
                         sample[c] = self._debug_raw_ohlcv[c]
         if self._debug_price_returns is not None:
     pass
     pass
+    pass
         for c in self._debug_price_returns.columns:
     pass
     pass
+    pass
         if c not in sample.columns:
+    pass
     pass
     pass
                         sample[c] = self._debug_price_returns[c]
@@ -223,7 +239,7 @@ class VectorizedLabellingOrchestrator:
             other = [c for c in sample.columns if c not in cols_raw + cols_ret]
             sample, sample[cols_raw + cols_ret + other]
         with open(fname, "w") as f:
-                f.write(f"Stage: {stage} | Step: {step_no} | Shape: {sample.shape}\\\n")
+                f.write(f"Stage: {stage} | Step: {step_no} | Shape: {sample.shape}\\\\n")
                 f.write(sample.head(50).to_string())
         self.logger.info(f"Feature sample written: {fname}")
         except Exception as e:
@@ -232,8 +248,11 @@ class VectorizedLabellingOrchestrator:
     def _log_feature_errors(self, stage: str, df: pd.DataFrame) -> None:
     pass
     pass
+    pass
         try:
             numeric, df.select_dtypes(include=[np.number])
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -243,6 +262,7 @@ class VectorizedLabellingOrchestrator:
             any_nan, int(nan_counts.sum())
             any_inf, int(inf_counts.sum())
         if any_nan or any_inf:
+    pass
     pass
     pass
         self.feature_error_logger.info(
@@ -262,6 +282,8 @@ class VectorizedLabellingOrchestrator:
         try:
         self.logger.info("🚀 Initializing vectorized labeling orchestrator...")
 
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -293,6 +315,9 @@ import OptimizedTripleBarrierLabeling,
 import except Exception as e:
     except Exception as e:
         pass
+import except Exception as e:
+    except Exception as e:
+        pass
 import VectorizedAdvancedFeatureEngineering,
                     VectorizedAdvancedFeatureEngineering,
                 )
@@ -310,6 +335,9 @@ import VectorizedAdvancedFeatureEngineering,
         # Initialize autoencoder generator with error handling
         try:
                 from src.analyst.autoencoder_feature_generator import (
+    except Exception as e:
+        pass
+import except Exception as e:
     except Exception as e:
         pass
 import except Exception as e:
@@ -390,6 +418,9 @@ import OptimizedTripleBarrierLabeling,
     pass
     except Exception as e:
         pass
+    pass
+    except Exception as e:
+        pass
         self.logger.error("Vectorized labeling orchestrator not initialized")
         return {}
 
@@ -405,10 +436,14 @@ import OptimizedTripleBarrierLabeling,
     except Exception as e:
         pass
     pass
+    except Exception as e:
+        pass
+    pass
                     baseline_cols |= set(getattr(volume_data, "columns", []))
     except Exception as e:
         pass
         if order_flow_data is not None:
+    pass
     pass
     pass
                     baseline_cols |= set(getattr(order_flow_data, "columns", []))
@@ -417,6 +452,7 @@ import OptimizedTripleBarrierLabeling,
 
         # 1. Stationary checks
         if self.enable_stationary_checks and self.stationarity_checker is not None:
+    pass
     pass
     pass
         self.logger.info("📊 Performing stationary checks...")
@@ -437,8 +473,10 @@ import OptimizedTripleBarrierLabeling,
         if self.keep_close_returns and "close_returns" in price_data.columns:
     pass
     pass
+    pass
                 context_cols.append("close_returns")
         if selected_volume_col in volume_data.columns:
+    pass
     pass
     pass
                 context_cols.append(selected_volume_col)
@@ -451,10 +489,14 @@ import OptimizedTripleBarrierLabeling,
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         except Exception:
         self._debug_raw_ohlcv, None
         try:
                 ret_cols = [c for c in price_data.columns if c.endswith("_returns")]
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -477,6 +519,7 @@ import OptimizedTripleBarrierLabeling,
         if self.advanced_feature_engineer is not None:
     pass
     pass
+    pass
         if (
                     not hasattr(self.advanced_feature_engineer, "is_initialized")
                     or not getattr(self.advanced_feature_engineer, "is_initialized")
@@ -486,6 +529,8 @@ import OptimizedTripleBarrierLabeling,
                     )
         try:
         await self.advanced_feature_engineer.initialize()
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -509,6 +554,7 @@ import OptimizedTripleBarrierLabeling,
         if len(advanced_features) < 10:
     pass
     pass
+    pass
         self.logger.warning(
                         f"⚠️ Very few features generated: {list(advanced_features.keys())}",
                     )
@@ -523,6 +569,9 @@ import OptimizedTripleBarrierLabeling,
             labeled_data, None
         try:
         if self.auto_recalculate_hmm_barriers and self.hmm_barrier_regime_column in price_data.columns:
+    pass
+    except Exception as e:
+        pass
     pass
     except Exception as e:
         pass
@@ -552,6 +601,7 @@ import OptimizedTripleBarrierLabeling,
                     )
                 else:
         if self.auto_recalculate_hmm_barriers:
+    pass
     pass
     pass
         self.logger.warning(
@@ -587,6 +637,7 @@ import OptimizedTripleBarrierLabeling,
         if self.enable_feature_selection and self.feature_selector is not None:
     pass
     pass
+    pass
         self.logger.info("🎯 Performing feature selection...")
                 context_cols, self._get_present_context_columns(combined_data)
                 selection_input, combined_data.drop(
@@ -597,6 +648,7 @@ import OptimizedTripleBarrierLabeling,
                     labeled_data["label"] if "label" in labeled_data.columns else None,
                 )
         if isinstance(selected, pd.DataFrame) and selected.shape[1] > 0:
+    pass
     pass
     pass
                     preserved, combined_data[[c for c in context_cols if c in combined_data.columns]].copy()  # noqa: E501
@@ -620,6 +672,7 @@ import OptimizedTripleBarrierLabeling,
 
         # 6. Data normalization
         if self.enable_data_normalization and self.data_normalizer is not None:
+    pass
     pass
     pass
         self.logger.info("📏 Starting data normalization...")
@@ -652,6 +705,8 @@ import OptimizedTripleBarrierLabeling,
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         self.logger.info(
                     f"✅ Mutual information analysis completed in {mi_analysis_time:.2f}s",
                 )
@@ -668,8 +723,10 @@ import OptimizedTripleBarrierLabeling,
         if self.autoencoder_generator is not None:
     pass
     pass
+    pass
                 autoencoder_input_data, combined_data.copy()
         if "label" in autoencoder_input_data.columns:
+    pass
     pass
     pass
                     autoencoder_input_data, autoencoder_input_data.drop(columns=["label"])
@@ -697,6 +754,7 @@ import OptimizedTripleBarrierLabeling,
         if isinstance(autoencoder_features, pd.DataFrame):
     pass
     pass
+    pass
         self.logger.info(
                         f"📊 Autoencoder output shape: {autoencoder_features.shape}",
                     )
@@ -714,6 +772,8 @@ import OptimizedTripleBarrierLabeling,
         try:
                 ae_df = (
                     autoencoder_features
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -759,10 +819,13 @@ import OptimizedTripleBarrierLabeling,
         for c in context_cols:
     pass
     pass
+    pass
         if c not in final_data.columns and c in combined_data.columns:
     pass
     pass
+    pass
         if c not in {"open", "high", "low", "close", "volume"}:
+    pass
     pass
     pass
                         final_data[c] = combined_data[c]
@@ -792,9 +855,12 @@ import OptimizedTripleBarrierLabeling,
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
                 }
                 to_drop = [c for c in final_data.columns if c in baseline_raw and c != "label"]
         if to_drop:
+    pass
     pass
     pass
         self.logger.warning(
@@ -822,6 +888,8 @@ import OptimizedTripleBarrierLabeling,
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         except Exception as e:
         self.logger.warning(f"⚠️ Failed to log dataframe columns: {e}")
 
@@ -833,8 +901,11 @@ import OptimizedTripleBarrierLabeling,
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
                 ]
         if drop_baseline:
+    pass
     pass
     pass
         self.logger.warning(
@@ -849,11 +920,13 @@ import OptimizedTripleBarrierLabeling,
         if self.enable_memory_efficient_types:
     pass
     pass
+    pass
         self.logger.info("💾 Optimizing memory usage...")
                 final_data, self._optimize_memory_usage_vectorized(final_data)
 
         # 10. Save data
         if self.enable_parquet_saving:
+    pass
     pass
     pass
         self.logger.info("💾 Saving data as Parquet...")
@@ -866,6 +939,8 @@ import OptimizedTripleBarrierLabeling,
         # Return with metadata
         try:
                 ctx_cols, self._get_present_context_columns(final_data)
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -899,6 +974,8 @@ import OptimizedTripleBarrierLabeling,
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         finally:
         # Ensure we always return a consistent structure
         return {}
@@ -917,6 +994,8 @@ import OptimizedTripleBarrierLabeling,
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         # Remove metadata columns first
             labeled_data, self._remove_metadata_columns(labeled_data)
 
@@ -926,6 +1005,8 @@ import OptimizedTripleBarrierLabeling,
         # Attach context columns from stationarity stage if missing
         try:
                 _, self._get_present_context_columns(labeled_data)
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -943,6 +1024,7 @@ import OptimizedTripleBarrierLabeling,
         if not advanced_features:
     pass
     pass
+    pass
         return labeled_data
 
         # Build a features DataFrame aligned to labeled_data index
@@ -953,21 +1035,27 @@ import OptimizedTripleBarrierLabeling,
             def _as_1d_array(value: Any) -> np.ndarray | None:
     pass
     pass
+    pass
         if isinstance(value, pd.Series):
+    pass
     pass
     pass
         return value.values.reshape(-1)
         if isinstance(value, np.ndarray):
     pass
     pass
+    pass
         if value.ndim == 1:
+    pass
     pass
     pass
         return value
         if value.ndim == 2:
     pass
     pass
+    pass
         if value.shape[0] == 1 or value.shape[1] == 1:
+    pass
     pass
     pass
         return value.reshape(-1)
@@ -975,8 +1063,11 @@ import OptimizedTripleBarrierLabeling,
         if value.ndim > 2:
     pass
     pass
+    pass
         try:
         return value.reshape(-1)
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -986,8 +1077,11 @@ import OptimizedTripleBarrierLabeling,
         if isinstance(value, list):
     pass
     pass
+    pass
         try:
                         arr, np.asarray(value)
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -995,16 +1089,20 @@ import OptimizedTripleBarrierLabeling,
         if arr.ndim == 1:
     pass
     pass
+    pass
         return arr
         if arr.ndim == 2:
+    pass
     pass
     pass
         if arr.shape[0] == 1 or arr.shape[1] == 1:
     pass
     pass
+    pass
         return arr.reshape(-1)
         return arr[:, 0] if arr.shape[1] > 0 else None
         if arr.ndim > 2:
+    pass
     pass
     pass
         return arr.reshape(-1)
@@ -1014,8 +1112,12 @@ import OptimizedTripleBarrierLabeling,
         if isinstance(value, (int, float)):
     pass
     pass
+    pass
         try:
         if np.isnan(value) or np.isinf(value):
+    pass
+    except Exception as e:
+        pass
     pass
     except Exception as e:
         pass
@@ -1030,9 +1132,13 @@ import OptimizedTripleBarrierLabeling,
         if isinstance(value, (str, bool)):
     pass
     pass
+    pass
         return None
         try:
         if hasattr(value, "__len__") and len(value) > 1:
+    pass
+    except Exception as e:
+        pass
     pass
     except Exception as e:
         pass
@@ -1043,12 +1149,15 @@ import OptimizedTripleBarrierLabeling,
         if arr2.ndim == 1:
     pass
     pass
+    pass
         return arr2
         if arr2.ndim == 2:
     pass
     pass
+    pass
         return arr2[:, 0] if arr2.shape[1] > 0 else None
         if arr2.ndim > 2:
+    pass
     pass
     pass
         return arr2.reshape(-1)
@@ -1066,13 +1175,16 @@ import OptimizedTripleBarrierLabeling,
         for feature_name, feature_value in advanced_features.items():
     pass
     pass
+    pass
                 arr, _as_1d_array(feature_value)
         if arr is None:
+    pass
     pass
     pass
                     skipped_scalars.append(feature_name)
                     scalar_offenders.append(feature_name)
         if len(skipped_scalars) <= 5:
+    pass
     pass
     pass
         self.logger.debug(
@@ -1083,6 +1195,7 @@ import OptimizedTripleBarrierLabeling,
 
         # Align array length to labeled_data length
         if len(arr) > num_rows:
+    pass
     pass
     pass
                     arr, arr[-num_rows:]
@@ -1099,11 +1212,14 @@ import OptimizedTripleBarrierLabeling,
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
                     added_columns.append(feature_name)
         except Exception:
                     continue
 
         if not features_df.empty:
+    pass
     pass
     pass
         # Drop columns that are entirely NaN
@@ -1112,10 +1228,12 @@ import OptimizedTripleBarrierLabeling,
         if not features_df.empty:
     pass
     pass
+    pass
         # Remove constant columns
                 nunique, features_df.nunique(dropna = True)
                 constant_cols, nunique[nunique <= 1].index.tolist()
         if constant_cols:
+    pass
     pass
     pass
         self.logger.warning(
@@ -1153,11 +1271,14 @@ import OptimizedTripleBarrierLabeling,
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
                 }
                 drop_baseline = [
                     c for c in combined_data.columns if c in baseline_cols and c != "label"
                 ]
         if drop_baseline:
+    pass
     pass
     pass
         self.logger.warning(
@@ -1180,7 +1301,10 @@ import OptimizedTripleBarrierLabeling,
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         if skip_ratio > 0.05:
+    pass
     pass
     pass
         self.logger.warning(
@@ -1188,6 +1312,7 @@ import OptimizedTripleBarrierLabeling,
                         f"review feature generators. Sample skipped: {skipped_scalars[:10]}",
                     )
         if self.strict_feature_shapes and scalar_offenders:
+    pass
     pass
     pass
         self.logger.warning(
@@ -1208,11 +1333,14 @@ import OptimizedTripleBarrierLabeling,
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         except Exception:
         self.logger.exception(f"Error combining features and labels: {e}")
         return labeled_data
 
     def _ensure_ohlcv_data(self, data: pd.DataFrame) -> pd.DataFrame:
+    pass
     pass
     pass
         """Ensure OHLCV data is present in the dataset."""
@@ -1222,23 +1350,29 @@ import OptimizedTripleBarrierLabeling,
         if missing_ohlcv:
     pass
     pass
+    pass
         self.logger.warning(f"⚠️ Missing OHLCV columns: {missing_ohlcv}")
         if "avg_price" in data.columns:
     pass
     pass
+    pass
         if "open" not in data.columns:
+    pass
     pass
     pass
                     data["open"] = data["avg_price"]
         if "high" not in data.columns:
     pass
     pass
+    pass
                     data["high"] = data["avg_price"]
         if "low" not in data.columns:
     pass
     pass
+    pass
                     data["low"] = data["avg_price"]
         if "close" not in data.columns:
+    pass
     pass
     pass
                     data["close"] = data["avg_price"]
@@ -1246,11 +1380,13 @@ import OptimizedTripleBarrierLabeling,
         if "trade_volume" in data.columns and "volume" not in data.columns:
     pass
     pass
+    pass
                 data["volume"] = data["trade_volume"]
 
         return data
 
     def _remove_metadata_columns(self, data: pd.DataFrame) -> pd.DataFrame:
+    pass
     pass
     pass
         """Remove metadata columns that are not actual features."""
@@ -1269,12 +1405,14 @@ import OptimizedTripleBarrierLabeling,
         if columns_to_remove:
     pass
     pass
+    pass
         self.logger.info(f"🗑️ Removing metadata columns: {columns_to_remove}")
             data, data.drop(columns = columns_to_remove)
 
         return data
 
     def _remove_datetime_columns(self, data: pd.DataFrame) -> pd.DataFrame:
+    pass
     pass
     pass
         """Remove datetime columns to prevent dtype conflicts in ML training."""
@@ -1284,7 +1422,10 @@ import OptimizedTripleBarrierLabeling,
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         for col in data.columns:
+    pass
     pass
     pass
         try:
@@ -1297,10 +1438,13 @@ import OptimizedTripleBarrierLabeling,
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         except (AttributeError, TypeError):
                     continue
 
         if datetime_columns:
+    pass
     pass
     pass
         self.logger.info(f"Removing datetime columns: {datetime_columns}")
@@ -1308,6 +1452,7 @@ import OptimizedTripleBarrierLabeling,
 
             timestamp_columns = [col for col in data.columns if col.lower() == "timestamp"]
         if timestamp_columns:
+    pass
     pass
     pass
         self.logger.info(f"Removing timestamp columns: {timestamp_columns}")
@@ -1330,8 +1475,11 @@ import OptimizedTripleBarrierLabeling,
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         # Basic price features
         if "close" in price_data.columns:
+    pass
     pass
     pass
                 close, price_data["close"]
@@ -1357,6 +1505,7 @@ import OptimizedTripleBarrierLabeling,
         if "volume" in volume_data.columns:
     pass
     pass
+    pass
                 volume, volume_data["volume"]
                 features["volume_ma_5"] = volume.rolling(5).mean()
                 features["volume_ma_20"] = volume.rolling(20).mean()
@@ -1365,6 +1514,7 @@ import OptimizedTripleBarrierLabeling,
 
         # OHLCV features if available
         if all(col in price_data.columns for col in ["open", "high", "low", "close"]):
+    pass
     pass
     pass
                 high, price_data["high"]
@@ -1381,6 +1531,7 @@ import OptimizedTripleBarrierLabeling,
 
         # Technical indicators
         if "close" in price_data.columns:
+    pass
     pass
     pass
                 close, price_data["close"]
@@ -1403,7 +1554,9 @@ import OptimizedTripleBarrierLabeling,
         for key in list(features.keys()):
     pass
     pass
+    pass
         if isinstance(features[key], pd.Series):
+    pass
     pass
     pass
                     features[key] = (
@@ -1418,6 +1571,7 @@ import OptimizedTripleBarrierLabeling,
         return {}
 
     def _remove_raw_ohlcv_columns(self, data: pd.DataFrame) -> pd.DataFrame:
+    pass
     pass
     pass
         """Remove raw OHLCV columns to prevent data leakage in ML training."""
@@ -1437,6 +1591,8 @@ import OptimizedTripleBarrierLabeling,
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         # Treat these as context inputs; engineered variants should be used instead
                 "funding_rate",
                 "volume_ratio",
@@ -1447,6 +1603,7 @@ import OptimizedTripleBarrierLabeling,
 
             ohlcv_columns_found = [col for col in data.columns if col in raw_ohlcv_columns]
         if ohlcv_columns_found:
+    pass
     pass
     pass
         self.logger.warning(
@@ -1466,6 +1623,7 @@ import OptimizedTripleBarrierLabeling,
     def _remove_stationarity_transform_columns(self, data: pd.DataFrame) -> pd.DataFrame:
     pass
     pass
+    pass
         """Remove intermediate stationarity helper columns that are not final engineered features."""
         try:
         # Preserve configured context columns (e.g., close_returns and selected volume rep)
@@ -1474,12 +1632,16 @@ import OptimizedTripleBarrierLabeling,
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         if self.keep_close_returns and "close_returns" in data.columns:
+    pass
     pass
     pass
                 preserve.add("close_returns")
             chosen_vol, self._choose_volume_context_column(data)
         if chosen_vol in data.columns:
+    pass
     pass
     pass
                 preserve.add(chosen_vol)
@@ -1492,6 +1654,7 @@ import OptimizedTripleBarrierLabeling,
                 and c not in preserve
             ]
         if to_drop:
+    pass
     pass
     pass
         self.logger.info(
@@ -1514,9 +1677,12 @@ import OptimizedTripleBarrierLabeling,
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             final_data, final_data.loc[:, ~final_data.columns.duplicated()]
 
         if "label" not in final_data.columns and "label" in labeled_data.columns:
+    pass
     pass
     pass
                 final_data["label"] = labeled_data["label"]
@@ -1527,6 +1693,7 @@ import OptimizedTripleBarrierLabeling,
 
         # Drop stationarity helper columns (keep engineered features only)
         if "label" in final_data.columns:
+    pass
     pass
     pass
                 features_only, final_data.drop(columns=["label"])  # type: ignore[call - overload]
@@ -1544,6 +1711,7 @@ import OptimizedTripleBarrierLabeling,
     def _optimize_memory_usage_vectorized(self, data: pd.DataFrame) -> pd.DataFrame:
     pass
     pass
+    pass
         """Optimize memory usage using efficient data types."""
         try:
             optimized_data, data.copy()
@@ -1552,13 +1720,19 @@ import OptimizedTripleBarrierLabeling,
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         for col in optimized_data.select_dtypes(include=[np.number]).columns:
+    pass
     pass
     pass
                 col_min, optimized_data[col].min()
                 col_max, optimized_data[col].max()
         try:
         if col_min >= 0 and col_max <= 255:
+    pass
+    except Exception as e:
+        pass
     pass
     except Exception as e:
         pass
@@ -1578,7 +1752,9 @@ import OptimizedTripleBarrierLabeling,
         for col in optimized_data.select_dtypes(include=["object"]).columns:
     pass
     pass
+    pass
         if optimized_data[col].nunique(dropna = True) < 255:
+    pass
     pass
     pass
                     optimized_data[col] = optimized_data[col].astype("category")
@@ -1592,9 +1768,12 @@ import OptimizedTripleBarrierLabeling,
     def _save_data_as_parquet(self, data: pd.DataFrame) -> None:
     pass
     pass
+    pass
         """Save data as Parquet file."""
         try:
             output_dir = "data / vectorized_features"
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -1613,8 +1792,11 @@ import OptimizedTripleBarrierLabeling,
     def _log_feature_dict_summary(self, stage: str, features: dict[str, Any], step_no: str) -> None:
     pass
     pass
+    pass
         try:
             os.makedirs("log / features_samples", exist_ok = True)
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -1628,11 +1810,15 @@ import OptimizedTripleBarrierLabeling,
         for k, v in features.items():
     pass
     pass
+    pass
                 t, type(v).__name__
                 type_counts[t] = type_counts.get(t, 0) + 1
                 summary = ""
         try:
         if isinstance(v, (int, float, np.integer, np.floating)):
+    pass
+    except Exception as e:
+        pass
     pass
     except Exception as e:
         pass
@@ -1653,21 +1839,23 @@ import OptimizedTripleBarrierLabeling,
                     summary = "<unavailable>"
                 lines.append(f"{k}: type={t} {summary}")
         with open(fname, "w") as f:
-                f.write(f"Stage: {stage} | Step: {step_no} | Total features: {total}\\\n")
+                f.write(f"Stage: {stage} | Step: {step_no} | Total features: {total}\\\\n")
         if type_counts:
+    pass
     pass
     pass
                     f.write(
                         "Type counts: "
                         + ", ".join([f"{k}={v}" for k, v in sorted(type_counts.items())])
-                        + "\\\n"
+                        + "\\\\n"
                     )
                 cap, 1000
-                f.writelines(line + "\\\n" for line in lines[:cap])
+                f.writelines(line + "\\\\n" for line in lines[:cap])
         if len(lines) > cap:
     pass
     pass
-                    f.write(f"... ({len(lines) - cap} more)\\\n")
+    pass
+                    f.write(f"... ({len(lines) - cap} more)\\\\n")
         self.logger.info(f"Feature list written: {fname}")
         except Exception as e:
         self.logger.warning(f"Failed to write feature list for {stage}: {e}")
@@ -1675,8 +1863,11 @@ import OptimizedTripleBarrierLabeling,
     def _log_dataframe_columns(self, stage: str, df: pd.DataFrame, step_no: str) -> None:
     pass
     pass
+    pass
         try:
             os.makedirs("log / features_samples", exist_ok = True)
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -1690,14 +1881,15 @@ import OptimizedTripleBarrierLabeling,
             nan_total, int(numeric.isna().sum().sum()) if not numeric.empty else 0
             inf_total, int(np.isinf(numeric).sum().sum()) if not numeric.empty else 0
         with open(fname, "w") as f:
-                f.write(f"Stage: {stage} | Step: {step_no} | Columns: {len(cols)}\\\n")
-                f.write(f"NaN_total={nan_total} | Inf_total={inf_total}\\\n")
-                f.writelines(f"{c}: {dtypes.get(c, 'unknown')}\\\n" for c in cols)
+                f.write(f"Stage: {stage} | Step: {step_no} | Columns: {len(cols)}\\\\n")
+                f.write(f"NaN_total={nan_total} | Inf_total={inf_total}\\\\n")
+                f.writelines(f"{c}: {dtypes.get(c, 'unknown')}\\\\n" for c in cols)
         self.logger.info(f"Column inventory written: {fname}")
         except Exception as e:
         self.logger.warning(f"Failed to write column inventory for {stage}: {e}")
 
     def _categorize_features(self, features: dict[str, Any]) -> dict[str, int]:
+    pass
     pass
     pass
         categories: dict[str, int] = {
@@ -1712,6 +1904,7 @@ import OptimizedTripleBarrierLabeling,
             "other": 0,
         }
         for name in features:
+    pass
     pass
     pass
             lname, name.lower()
@@ -1779,8 +1972,10 @@ import OptimizedTripleBarrierLabeling,
     def _list_other_features(self, features: dict[str, Any]) -> list[str]:
     pass
     pass
+    pass
         other: list[str] = []
         for name in features:
+    pass
     pass
     pass
             lname, name.lower()
@@ -1803,16 +1998,20 @@ import OptimizedTripleBarrierLabeling,
         if any(x in lname for x in ["momentum", "roc"]):
     pass
     pass
+    pass
                 continue
         if "volatility" in lname:
+    pass
     pass
     pass
                 continue
         if any(x in lname for x in ["corr", "correlation"]):
     pass
     pass
+    pass
                 continue
         if any(x in lname for x in ["liquidity", "depth", "spread", "imbalance"]):
+    pass
     pass
     pass
                 continue
@@ -1872,13 +2071,17 @@ import OptimizedTripleBarrierLabeling,
         for name, value in features.items():
     pass
     pass
+    pass
         try:
                 series: pd.Series | None, None
     except Exception as e:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         if isinstance(value, pd.Series):
+    pass
     pass
     pass
                     series, value.copy()
@@ -1889,6 +2092,7 @@ import OptimizedTripleBarrierLabeling,
                     continue
 
         if len(series) > num_rows:
+    pass
     pass
     pass
                     series, series.iloc[-num_rows:]
@@ -1904,6 +2108,7 @@ import OptimizedTripleBarrierLabeling,
         if before_nan:
     pass
     pass
+    pass
                     series, series.fillna(method="ffill").fillna(method="bfill").fillna(0)
                     report["filled_nan"] += before_nan
                 series, series.astype(np.float32)
@@ -1916,8 +2121,11 @@ import OptimizedTripleBarrierLabeling,
     def _log_feature_format_report(self, stage: str, report: dict[str, Any], step_no: str) -> None:
     pass
     pass
+    pass
         try:
             os.makedirs("log / features_samples", exist_ok = True)
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -1932,6 +2140,7 @@ import OptimizedTripleBarrierLabeling,
         self.logger.warning(f"Failed to write feature format report: {e}")
 
     def _choose_volume_context_column(self, df: pd.DataFrame) -> str:
+    pass
     pass
     pass
         """Local helper to choose volume context column consistent with settings."""
@@ -1970,7 +2179,9 @@ import OptimizedTripleBarrierLabeling,
         for c in order_map.get(pref, []) or []:
     pass
     pass
+    pass
         if c in available:
+    pass
     pass
     pass
         return c
@@ -1984,15 +2195,18 @@ import OptimizedTripleBarrierLabeling,
         if c in available:
     pass
     pass
+    pass
         return c
         return "volume"
 
     def _get_present_context_columns(self, df: pd.DataFrame) -> list[str]:
     pass
     pass
+    pass
         """Return the list of context columns present in a given DataFrame, according to config."""
         cols: list[str] = []
         if self.keep_close_returns and "close_returns" in df.columns:
+    pass
     pass
     pass
             cols.append("close_returns")
@@ -2006,8 +2220,10 @@ import OptimizedTripleBarrierLabeling,
         if c in df.columns:
     pass
     pass
+    pass
                 chosen, self._choose_volume_context_column(df)
         if c == chosen:
+    pass
     pass
     pass
                     cols.append(c)
@@ -2016,15 +2232,20 @@ import OptimizedTripleBarrierLabeling,
         if "label" in df.columns:
     pass
     pass
+    pass
             cols.append("label")
         return list(dict.fromkeys(cols))
 
     def _run_mutual_information_analysis(self, df: pd.DataFrame) -> None:
     pass
     pass
+    pass
         """Compute mutual information diagnostics (best - effort)."""
         try:
             from sklearn.feature_selection import (
+    except Exception as e:
+        pass
+import except Exception as e:
     except Exception as e:
         pass
 import except Exception as e:
@@ -2038,6 +2259,7 @@ import mutual_info_classif,
 
 import if df is None or df.empty:
         if df is None or df.empty:
+    pass
     pass
     pass
                 return
@@ -2058,14 +2280,18 @@ import if df is None or df.empty:
         if len(feature_names) == 0:
     pass
     pass
+    pass
         self.logger.warning("MI: no numeric features available after exclusions")
                 return
 
             def discretize_features(X: np.ndarray, bins: int) -> np.ndarray:
     pass
     pass
+    pass
         try:
                     disc, KBinsDiscretizer(n_bins = bins, encode="ordinal", strategy="quantile")
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -2082,8 +2308,11 @@ import if df is None or df.empty:
         for meta_col in meta_label_cols:
     pass
     pass
+    pass
         try:
                     y, df[meta_col].shift(1).fillna(0).astype(int).values
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -2091,10 +2320,12 @@ import if df is None or df.empty:
         if np.unique(y).size < 2:
     pass
     pass
+    pass
         self.logger.info(f"MI(classif): skip {meta_col} (single class)")
                         continue
                     per_bins: dict[str, list[float]] = {}
         for bins in [5, 10, 20]:
+    pass
     pass
     pass
                         Xd, discretize_features(X_full.values, bins)
@@ -2116,12 +2347,14 @@ import if df is None or df.empty:
         if classif_reports:
     pass
     pass
+    pass
         with open(f"log / mi/{ts}_mi_classif_meta_labels.json", "w") as f:
                     f.write(json.dumps(classif_reports, indent = 2))
 
         # Regression - like MI for label / returns
             regression_reports: dict[str, dict[str, Any]] = {}
         if "label" in df.columns and df["label"].nunique() > 1:
+    pass
     pass
     pass
                 y_name = "label"
@@ -2131,13 +2364,17 @@ import if df is None or df.empty:
         if y_name is not None:
     pass
     pass
+    pass
         try:
                     y_series, df[y_name].shift(1).replace([np.inf, -np.inf], np.nan).fillna(0)
     except Exception as e:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         if y_series.empty or y_series.isna().all():
+    pass
     pass
     pass
         self.logger.warning(f"MI(regress) {y_name}: No valid data available")
@@ -2149,8 +2386,11 @@ import if df is None or df.empty:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
                         is_all_nan, X_full.isna().all().all()
         if is_empty or is_all_nan:
+    pass
     pass
     pass
         self.logger.warning(
@@ -2167,13 +2407,17 @@ import if df is None or df.empty:
         for bins in [5, 10, 20]:
     pass
     pass
+    pass
         try:
                             Xd, discretize_features(X_full.values, bins)
     except Exception as e:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         if Xd.shape[0] != len(y):
+    pass
     pass
     pass
                                 min_len, min(Xd.shape[0], len(y))
@@ -2182,6 +2426,7 @@ import if df is None or df.empty:
                             else:
                                 y_aligned, y
         if Xd.size == 0 or len(y_aligned) == 0:
+    pass
     pass
     pass
         self.logger.warning(
@@ -2199,6 +2444,7 @@ import if df is None or df.empty:
         if not per_bins_r:
     pass
     pass
+    pass
         self.logger.warning(
                             f"MI(regress) {y_name}: No successful discretization bins",
                         )
@@ -2206,6 +2452,8 @@ import if df is None or df.empty:
 
         try:
                         agg_r, np.mean(np.vstack([per_bins_r[b] for b in per_bins_r]), axis = 0)
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -2229,6 +2477,7 @@ import if df is None or df.empty:
         if regression_reports:
     pass
     pass
+    pass
         with open(f"log / mi/{ts}_mi_regression.json", "w") as f:
                     f.write(json.dumps(regression_reports, indent = 2))
 
@@ -2242,6 +2491,7 @@ class VectorizedStationarityChecker:
     """Check and transform data for stationarity using vectorized operations."""
 
     def __init__(self, config: dict[str, Any]) -> None:
+    pass
     pass
     pass
         self.config, config
@@ -2262,7 +2512,10 @@ class VectorizedStationarityChecker:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         if not price_stationary:
+    pass
     pass
     pass
         self.logger.info("📈 Transforming price data for stationarity...")
@@ -2272,6 +2525,7 @@ class VectorizedStationarityChecker:
         if not volume_stationary:
     pass
     pass
+    pass
         self.logger.info("📊 Transforming volume data for stationarity...")
                 volume_data, self._transform_volume_stationarity_vectorized(volume_data)
 
@@ -2279,8 +2533,10 @@ class VectorizedStationarityChecker:
         if order_flow_data is not None:
     pass
     pass
+    pass
                 order_flow_stationary, self._check_order_flow_stationarity_vectorized(order_flow_data)  # noqa: E501
         if not order_flow_stationary:
+    pass
     pass
     pass
         self.logger.info("🔄 Transforming order flow data for stationarity...")
@@ -2309,8 +2565,11 @@ class VectorizedStationarityChecker:
     def _check_price_stationarity_vectorized(self, price_data: pd.DataFrame) -> bool:
     pass
     pass
+    pass
         try:
             returns, price_data["close"].pct_change().dropna()
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -2336,14 +2595,18 @@ class VectorizedStationarityChecker:
     def _transform_price_stationarity_vectorized(self, price_data: pd.DataFrame) -> pd.DataFrame:
     pass
     pass
+    pass
         try:
             transformed_data, price_data.copy()
     except Exception as e:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             required_columns = ["open", "high", "low", "close", "volume"]
         if not all(col in transformed_data.columns for col in required_columns):
+    pass
     pass
     pass
         self.logger.warning(
@@ -2359,6 +2622,7 @@ class VectorizedStationarityChecker:
 
         # Log
         for c in ["close", "open", "high", "low"]:
+    pass
     pass
     pass
                 transformed_data[f"{c}_log"] = np.log(transformed_data[c].replace(0, np.nan)).replace([np.inf, -np.inf], np.nan)  # noqa: E501
@@ -2380,8 +2644,12 @@ class VectorizedStationarityChecker:
     def _check_volume_stationarity_vectorized(self, volume_data: pd.DataFrame) -> bool:
     pass
     pass
+    pass
         try:
         if "volume" not in volume_data.columns:
+    pass
+    except Exception as e:
+        pass
     pass
     except Exception as e:
         pass
@@ -2411,13 +2679,17 @@ class VectorizedStationarityChecker:
     def _transform_volume_stationarity_vectorized(self, volume_data: pd.DataFrame) -> pd.DataFrame:
     pass
     pass
+    pass
         try:
             transformed_data, volume_data.copy()
     except Exception as e:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         if "volume" not in transformed_data.columns:
+    pass
     pass
     pass
         self.logger.warning(
@@ -2449,13 +2721,17 @@ class VectorizedStationarityChecker:
     def _check_order_flow_stationarity_vectorized(self, order_flow_data: pd.DataFrame) -> bool:
     pass
     pass
+    pass
         try:
             numeric_cols, order_flow_data.select_dtypes(include=[np.number]).columns
     except Exception as e:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         if len(numeric_cols) == 0:
+    pass
     pass
     pass
         return True
@@ -2473,8 +2749,11 @@ class VectorizedStationarityChecker:
     def _transform_order_flow_stationarity_vectorized(self, order_flow_data: pd.DataFrame) -> pd.DataFrame:
     pass
     pass
+    pass
         try:
             transformed_data, order_flow_data.copy()
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -2483,7 +2762,9 @@ class VectorizedStationarityChecker:
         for col in numeric_cols:
     pass
     pass
+    pass
         if (transformed_data[col] > 0).all():
+    pass
     pass
     pass
                     transformed_data[f"{col}_log"] = np.log(transformed_data[col])
@@ -2506,6 +2787,7 @@ class VectorizedFeatureSelector:
     """Vectorized feature selector using multiple selection methods."""
 
     def __init__(self, config: dict[str, Any]) -> None:
+    pass
     pass
     pass
         self.config, config
@@ -2558,13 +2840,17 @@ class VectorizedFeatureSelector:
     def _remove_datetime_columns(self, data: pd.DataFrame) -> pd.DataFrame:
     pass
     pass
+    pass
         try:
             datetime_columns: list[str] = []
     except Exception as e:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         for col in data.columns:
+    pass
     pass
     pass
         try:
@@ -2577,10 +2863,13 @@ class VectorizedFeatureSelector:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         except (AttributeError, TypeError):
                     continue
 
         if datetime_columns:
+    pass
     pass
     pass
         self.logger.info(f"Removing datetime columns: {datetime_columns}")
@@ -2588,6 +2877,7 @@ class VectorizedFeatureSelector:
 
             timestamp_columns = [col for col in data.columns if col.lower() == "timestamp"]
         if timestamp_columns:
+    pass
     pass
     pass
         self.logger.info(f"Removing timestamp columns: {timestamp_columns}")
@@ -2612,6 +2902,8 @@ class VectorizedFeatureSelector:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         self.logger.info(
                 f"🔍 Analyzing {len(data.columns)} features before selection...",
             )
@@ -2619,7 +2911,9 @@ class VectorizedFeatureSelector:
         for col in data.columns:
     pass
     pass
+    pass
         if col in data.columns:
+    pass
     pass
     pass
                     feature_analysis[col] = {
@@ -2652,10 +2946,12 @@ class VectorizedFeatureSelector:
         if len(nan_features) > 0:
     pass
     pass
+    pass
         self.logger.info(
                     f"📊 Found NaN values in {len(nan_features)} features:",
                 )
         for feature, count in nan_features.items():
+    pass
     pass
     pass
                     percentage = (int(count) / max(1, len(data))) * 100
@@ -2670,11 +2966,14 @@ class VectorizedFeatureSelector:
         if self.enable_constant_removal:
     pass
     pass
+    pass
                 constant_to_drop: list[str] = []
         for col in data.columns:
     pass
     pass
+    pass
         if data[col].nunique() <= 1:
+    pass
     pass
     pass
                         constant_to_drop.append(col)
@@ -2683,8 +2982,10 @@ class VectorizedFeatureSelector:
         if variance < 1e - 10:
     pass
     pass
+    pass
                             constant_to_drop.append(col)
         if constant_to_drop:
+    pass
     pass
     pass
         self.logger.info(
@@ -2694,6 +2995,7 @@ class VectorizedFeatureSelector:
                     data, data.drop(columns = constant_to_drop)
 
         if self.enable_safety_checks and len(data.columns) < self.min_features_to_keep:
+    pass
     pass
     pass
         self.logger.warning(
@@ -2710,9 +3012,11 @@ class VectorizedFeatureSelector:
         if correlated_features:
     pass
     pass
+    pass
                     removal_percentage, len(correlated_features) / max(1, len(data.columns))
                     should_remove, False
         if removal_percentage <= self.max_removal_percentage:
+    pass
     pass
     pass
                         should_remove, True
@@ -2720,11 +3024,13 @@ class VectorizedFeatureSelector:
         if len(data.columns) - len(correlated_features) >= self.min_features_to_keep:
     pass
     pass
+    pass
                             should_remove, True
         self.logger.info(
                                 f"✅ Allowing small correlated feature removal ({removal_percentage:.2f}%) despite being above threshold",
                             )
         if should_remove and len(data.columns) - len(correlated_features) >= self.min_features_to_keep:
+    pass
     pass
     pass
         self.logger.info(
@@ -2755,9 +3061,11 @@ class VectorizedFeatureSelector:
         if all_low_mi_features:
     pass
     pass
+    pass
                     max_features_to_remove, int(len(data.columns) * self.max_removal_percentage)
                     low_mi_features, all_low_mi_features[:max_features_to_remove]
         if len(data.columns) - len(low_mi_features) >= self.min_features_to_keep:
+    pass
     pass
     pass
         self.logger.info(
@@ -2790,9 +3098,11 @@ class VectorizedFeatureSelector:
         if all_low_importance_features:
     pass
     pass
+    pass
                     max_features_to_remove, int(len(data.columns) * self.max_removal_percentage)
                     low_importance_features, all_low_importance_features[:max_features_to_remove]
         if len(data.columns) - len(low_importance_features) >= self.min_features_to_keep:
+    pass
     pass
     pass
         self.logger.info(
@@ -2819,8 +3129,10 @@ class VectorizedFeatureSelector:
         if final_features == 0:
     pass
     pass
+    pass
         self.logger.error("No features remaining after selection!")
         if self.return_original_on_failure:
+    pass
     pass
     pass
         self.logger.info("Returning original data as fallback.")
@@ -2834,6 +3146,7 @@ class VectorizedFeatureSelector:
         if self.return_original_on_failure:
     pass
     pass
+    pass
         self.logger.info("Returning original data as fallback due to error.")
         return self._remove_datetime_columns(original_data)
             raise
@@ -2841,9 +3154,13 @@ class VectorizedFeatureSelector:
     def _remove_correlated_features_vectorized(self, data: pd.DataFrame) -> list[str]:
     pass
     pass
+    pass
         try:
             from sklearn.impute import SimpleImputer
 
+    except Exception as e:
+        pass
+import except Exception as e:
     except Exception as e:
         pass
 import except Exception as e:
@@ -2863,10 +3180,13 @@ import imputer, SimpleImputer
         for i in range(len(correlation_matrix.columns)):
     pass
     pass
+    pass
         for j in range(i + 1, len(correlation_matrix.columns)):
     pass
     pass
+    pass
         if bool(high_correlation.iloc[i, j]):
+    pass
     pass
     pass
                         to_drop.append(correlation_matrix.columns[j])
@@ -2881,6 +3201,9 @@ import imputer, SimpleImputer
     ) -> list[str]:
         try:
             from sklearn.feature_selection import mutual_info_classif
+    except Exception as e:
+        pass
+import except Exception as e:
     except Exception as e:
         pass
 import except Exception as e:
@@ -2902,6 +3225,7 @@ import imputer, SimpleImputer
         if max_removal_percentage is not None:
     pass
     pass
+    pass
                 max_features_to_remove, int(len(data.columns) * max_removal_percentage)
         return [col for col, _ in sorted_features[:max_features_to_remove]]
 
@@ -2915,6 +3239,8 @@ import imputer, SimpleImputer
     ) -> list[str]:
         try:
             import lightgbm as lgb
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -2951,6 +3277,7 @@ import imputer, SimpleImputer
         if max_removal_percentage is not None:
     pass
     pass
+    pass
                 max_features_to_remove, int(len(data.columns) * max_removal_percentage)
         return [col for col, _ in sorted_features[:max_features_to_remove]]
 
@@ -2966,6 +3293,7 @@ class VectorizedDataNormalizer:
     """Normalize data using various scaling methods with vectorized operations."""
 
     def __init__(self, config: dict[str, Any]) -> None:
+    pass
     pass
     pass
         self.config, config
@@ -3002,6 +3330,8 @@ class VectorizedDataNormalizer:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         self.logger.info("✅ Data normalization completed")
         return data
         except Exception as e:
@@ -3011,13 +3341,17 @@ class VectorizedDataNormalizer:
     def _remove_datetime_columns(self, data: pd.DataFrame) -> pd.DataFrame:
     pass
     pass
+    pass
         try:
             datetime_columns: list[str] = []
     except Exception as e:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         for col in data.columns:
+    pass
     pass
     pass
         try:
@@ -3030,10 +3364,13 @@ class VectorizedDataNormalizer:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         except (AttributeError, TypeError):
                     continue
 
         if datetime_columns:
+    pass
     pass
     pass
         self.logger.info(f"Removing datetime columns: {datetime_columns}")
@@ -3041,6 +3378,7 @@ class VectorizedDataNormalizer:
 
             timestamp_columns = [col for col in data.columns if col.lower() == "timestamp"]
         if timestamp_columns:
+    pass
     pass
     pass
         self.logger.info(f"Removing timestamp columns: {timestamp_columns}")
@@ -3055,8 +3393,11 @@ class VectorizedDataNormalizer:
     def _clip_outliers_vectorized(self, data: pd.DataFrame) -> pd.DataFrame:
     pass
     pass
+    pass
         try:
             clipped_data, data.copy()
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -3064,8 +3405,11 @@ class VectorizedDataNormalizer:
         for col in clipped_data.select_dtypes(include=[np.number]).columns:
     pass
     pass
+    pass
         try:
                     Q1, clipped_data[col].quantile(0.25)
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -3086,9 +3430,13 @@ class VectorizedDataNormalizer:
     def _apply_robust_scaling_vectorized(self, data: pd.DataFrame) -> pd.DataFrame:
     pass
     pass
+    pass
         try:
             from sklearn.preprocessing import RobustScaler
 
+    except Exception as e:
+        pass
+import except Exception as e:
     except Exception as e:
         pass
 import except Exception as e:
@@ -3101,15 +3449,18 @@ import scaler, RobustScaler
         if self.keep_close_returns and "close_returns" in data.columns:
     pass
     pass
+    pass
                 exclude.add("close_returns")
             chosen_vol_col, self._choose_volume_context_column(data)
         if chosen_vol_col in data.columns:
+    pass
     pass
     pass
                 exclude.add(chosen_vol_col)
             exclude |= {c for c in self.context_non_feature_columns if c in data.columns}
             scale_cols = [c for c in numeric_cols if c not in exclude]
         if scale_cols:
+    pass
     pass
     pass
                 data[scale_cols] = scaler.fit_transform(data[scale_cols])
@@ -3121,9 +3472,13 @@ import scaler, RobustScaler
     def _apply_standard_scaling_vectorized(self, data: pd.DataFrame) -> pd.DataFrame:
     pass
     pass
+    pass
         try:
             from sklearn.preprocessing import StandardScaler
 
+    except Exception as e:
+        pass
+import except Exception as e:
     except Exception as e:
         pass
 import except Exception as e:
@@ -3133,6 +3488,7 @@ import scaler, StandardScaler
             scaler, StandardScaler()
             numeric_data, data.select_dtypes(include=[np.number])
         if len(numeric_data.columns) > 0:
+    pass
     pass
     pass
                 scaled_data, scaler.fit_transform(numeric_data)
@@ -3145,9 +3501,13 @@ import scaler, StandardScaler
     def _apply_minmax_scaling_vectorized(self, data: pd.DataFrame) -> pd.DataFrame:
     pass
     pass
+    pass
         try:
             from sklearn.preprocessing import MinMaxScaler
 
+    except Exception as e:
+        pass
+import except Exception as e:
     except Exception as e:
         pass
 import except Exception as e:
@@ -3159,6 +3519,7 @@ import scaler, MinMaxScaler
         if len(numeric_data.columns) > 0:
     pass
     pass
+    pass
                 scaled_data, scaler.fit_transform(numeric_data)
                 data[numeric_data.columns] = scaled_data
         return data
@@ -3167,6 +3528,7 @@ import scaler, MinMaxScaler
         return data
 
     def _choose_volume_context_column(self, df: pd.DataFrame) -> str:
+    pass
     pass
     pass
         available, set(df.columns)
@@ -3204,7 +3566,9 @@ import scaler, MinMaxScaler
         for c in order_map.get(pref, []) or []:
     pass
     pass
+    pass
         if c in available:
+    pass
     pass
     pass
         return c
@@ -3216,6 +3580,7 @@ import scaler, MinMaxScaler
             "volume",
         ]:
         if c in available:
+    pass
     pass
     pass
         return c

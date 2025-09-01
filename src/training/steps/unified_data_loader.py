@@ -22,6 +22,9 @@ try:
 import except Exception as e:
     except Exception as e:
         pass
+import except Exception as e:
+    except Exception as e:
+        pass
     from src.utils.logger import system_logger
     from src.utils.centralized_decorators import (
 import guard_dataframe_nulls,
@@ -37,7 +40,9 @@ except ImportError:
     def handle_errors(*args, **kwargs):
     pass
     pass
+    pass
         def decorator(func):
+    pass
     pass
     pass
         return func
@@ -46,7 +51,9 @@ except ImportError:
     def guard_dataframe_nulls(*args, **kwargs):
     pass
     pass
+    pass
         def decorator(func):
+    pass
     pass
     pass
         return func
@@ -55,7 +62,9 @@ except ImportError:
     def with_tracing_span(*args, **kwargs):
     pass
     pass
+    pass
         def decorator(func):
+    pass
     pass
     pass
         return func
@@ -64,7 +73,9 @@ except ImportError:
     def secure_file_path(*args, **kwargs):
     pass
     pass
+    pass
         def decorator(func):
+    pass
     pass
     pass
         return func
@@ -73,7 +84,9 @@ except ImportError:
     def validate_dataframe_schema(*args, **kwargs):
     pass
     pass
+    pass
         def decorator(func):
+    pass
     pass
     pass
         return func
@@ -82,7 +95,9 @@ except ImportError:
     def validate_file_size(*args, **kwargs):
     pass
     pass
+    pass
         def decorator(func):
+    pass
     pass
     pass
         return func
@@ -91,7 +106,9 @@ except ImportError:
     def sanitize_string(*args, **kwargs):
     pass
     pass
+    pass
         def decorator(func):
+    pass
     pass
     pass
         return func
@@ -104,6 +121,7 @@ class UnifiedDataLoader:
     """Secure data loader for step01_5 unified data with comprehensive validation."""
 
     def __init__(self, config: Optional[dict[str, Any]] = None) -> None:
+    pass
     pass
     pass
         """Initialize the unified data loader.
@@ -177,12 +195,15 @@ class UnifiedDataLoader:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         self.logger.info(f"📊 Loading unified data for {exchange}_{symbol}_{timeframe}")
 
         # Construct unified data path
             unified_path, self._get_unified_data_path(symbol, exchange, timeframe, data_dir)
 
         if not os.path.exists(unified_path):
+    pass
     pass
     pass
         self.logger.error(f"❌ Unified data path does not exist: {unified_path}")
@@ -196,6 +217,9 @@ class UnifiedDataLoader:
 import except Exception as e:
     except Exception as e:
         pass
+import except Exception as e:
+    except Exception as e:
+        pass
 import pdm, ParquetDatasetManager
                 pdm, ParquetDatasetManager(logger = self.logger)
 
@@ -204,14 +228,17 @@ import pdm, ParquetDatasetManager
         if start_date or end_date:
     pass
     pass
+    pass
                     filters = []
         if start_date:
+    pass
     pass
     pass
         # Convert start_date to timestamp
                         start_ts, pd.Timestamp(start_date).timestamp() * 1000
                         filters.append(["timestamp", ">=", start_ts])
         if end_date:
+    pass
     pass
     pass
         # Convert end_date to timestamp
@@ -233,12 +260,14 @@ import pdm, ParquetDatasetManager
         if df is None or df.empty:
     pass
     pass
+    pass
         self.logger.error("❌ No data loaded from unified dataset")
         return None
 
         # Validate loaded data
             validation_result, await self._validate_unified_data(df, symbol, exchange, timeframe)
         if not validation_result["valid"]:
+    pass
     pass
     pass
         self.logger.error(f"❌ Data validation failed: {validation_result['reason']}")
@@ -274,10 +303,13 @@ import pdm, ParquetDatasetManager
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         # Check required columns
             required_columns = ["timestamp", "open", "high", "low", "close", "volume"]
             missing_columns = [col for col in required_columns if col not in df.columns]
         if missing_columns:
+    pass
     pass
     pass
                 validation_result["valid"] = False
@@ -288,6 +320,7 @@ import pdm, ParquetDatasetManager
         if not pd.api.types.is_numeric_dtype(df["timestamp"]):
     pass
     pass
+    pass
                 validation_result["valid"] = False
                 validation_result["reason"] = "Timestamp column must be numeric"
         return validation_result
@@ -296,7 +329,9 @@ import pdm, ParquetDatasetManager
         for col in price_columns:
     pass
     pass
+    pass
         if not pd.api.types.is_numeric_dtype(df[col]):
+    pass
     pass
     pass
                     validation_result["valid"] = False
@@ -307,7 +342,9 @@ import pdm, ParquetDatasetManager
         for col in price_columns:
     pass
     pass
+    pass
         if (df[col] < 0).any():
+    pass
     pass
     pass
                     validation_result["valid"] = False
@@ -318,12 +355,14 @@ import pdm, ParquetDatasetManager
         if (df["volume"] < 0).any():
     pass
     pass
+    pass
                 validation_result["valid"] = False
                 validation_result["reason"] = "Negative volumes found"
         return validation_result
 
         # Check timestamp ordering
         if not df["timestamp"].is_monotonic_increasing:
+    pass
     pass
     pass
                 validation_result["valid"] = False
@@ -334,12 +373,14 @@ import pdm, ParquetDatasetManager
         if len(df) > self.max_rows:
     pass
     pass
+    pass
                 validation_result["valid"] = False
                 validation_result["reason"] = f"Too many rows: {len(df)} > {self.max_rows}"
         return validation_result
 
         # Check metadata columns if present
         if "symbol" in df.columns and df["symbol"].iloc[0] != symbol:
+    pass
     pass
     pass
                 validation_result["valid"] = False
@@ -349,11 +390,13 @@ import pdm, ParquetDatasetManager
         if "exchange" in df.columns and df["exchange"].iloc[0] != exchange:
     pass
     pass
+    pass
                 validation_result["valid"] = False
                 validation_result["reason"] = f"Exchange mismatch: expected {exchange}, got {df['exchange'].iloc[0]}"
         return validation_result
 
         if "timeframe" in df.columns and df["timeframe"].iloc[0] != timeframe:
+    pass
     pass
     pass
                 validation_result["valid"] = False
@@ -389,18 +432,24 @@ import pdm, ParquetDatasetManager
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         for root, _dirs, files in os.walk(unified_path):
+    pass
     pass
     pass
         for file in files:
     pass
     pass
+    pass
         if file.endswith(".parquet"):
+    pass
     pass
     pass
                         parquet_files.append(os.path.join(root, file))
 
         if not parquet_files:
+    pass
     pass
     pass
         self.logger.error(f"❌ No parquet files found in {unified_path}")
@@ -411,8 +460,11 @@ import pdm, ParquetDatasetManager
         for file_path in sorted(parquet_files):
     pass
     pass
+    pass
         try:
                     df, pd.read_parquet(file_path, columns = columns)
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -425,6 +477,7 @@ import pdm, ParquetDatasetManager
         if not dfs:
     pass
     pass
+    pass
         self.logger.error("❌ No valid parquet files could be loaded")
         return None
 
@@ -435,7 +488,9 @@ import pdm, ParquetDatasetManager
         if start_date or end_date:
     pass
     pass
+    pass
         if "timestamp" in combined_df.columns:
+    pass
     pass
     pass
         # Convert timestamps to datetime for filtering
@@ -444,10 +499,12 @@ import pdm, ParquetDatasetManager
         if start_date:
     pass
     pass
+    pass
                         start_dt, pd.Timestamp(start_date)
                         combined_df, combined_df[combined_df["datetime"] >= start_dt]
 
         if end_date:
+    pass
     pass
     pass
                         end_dt, pd.Timestamp(end_date)
@@ -458,6 +515,7 @@ import pdm, ParquetDatasetManager
 
         # Sort by timestamp
         if "timestamp" in combined_df.columns:
+    pass
     pass
     pass
                 combined_df, combined_df.sort_values("timestamp").reset_index(drop = True)
@@ -511,7 +569,10 @@ import pdm, ParquetDatasetManager
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         if not os.path.exists(unified_path):
+    pass
     pass
     pass
         return None
@@ -524,10 +585,13 @@ import pdm, ParquetDatasetManager
         for root, _dirs, files in os.walk(unified_path):
     pass
     pass
+    pass
         for file in files:
     pass
     pass
+    pass
         if file.endswith(".parquet"):
+    pass
     pass
     pass
                         file_count += 1
@@ -542,10 +606,14 @@ import pdm, ParquetDatasetManager
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         for i, part in enumerate(path_parts):
     pass
     pass
+    pass
         if part.startswith("year="):
+    pass
     pass
     pass
                                     year, int(part.split("=")[1])
@@ -556,8 +624,10 @@ import pdm, ParquetDatasetManager
         if date_range["start"] is None or date < date_range["start"]:
     pass
     pass
+    pass
                                         date_range["start"] = date
         if date_range["end"] is None or date > date_range["end"]:
+    pass
     pass
     pass
                                         date_range["end"] = date
@@ -584,6 +654,7 @@ _unified_data_loader, None
 def get_unified_data_loader(config: Optional[dict[str, Any]] = None) -> UnifiedDataLoader:
     pass
     pass
+    pass
     """Get or create a global unified data loader instance.
 
     Args:
@@ -594,6 +665,7 @@ def get_unified_data_loader(config: Optional[dict[str, Any]] = None) -> UnifiedD
     """
     global _unified_data_loader
     if _unified_data_loader is None:
+    pass
     pass
     pass
         _unified_data_loader, UnifiedDataLoader(config)

@@ -30,6 +30,9 @@ try:
 import except Exception as e:
     except Exception as e:
         pass
+import except Exception as e:
+    except Exception as e:
+        pass
 import retry_with_backoff, circuit_breaker, categorize_errors,
         retry_with_backoff, circuit_breaker, categorize_errors,
         RetryableError, NonRetryableError, DATA_OPERATION_ERRORS
@@ -59,6 +62,9 @@ try:
 import except Exception as e:
     except Exception as e:
         pass
+import except Exception as e:
+    except Exception as e:
+        pass
 import except ImportError:
 except ImportError:
     download_all_data_with_consolidation, None
@@ -72,6 +78,7 @@ class EnhancedStep1DataCollection:
     """
 
     def __init__(self, config: Optional[Step1Config] = None):
+    pass
     pass
     pass
         self.config, config or Step1Config()
@@ -92,6 +99,7 @@ class EnhancedStep1DataCollection:
         if config_issues:
     pass
     pass
+    pass
             raise ValueError(f"Configuration validation failed: {config_issues}")
 
         # Initialize directories
@@ -100,10 +108,12 @@ class EnhancedStep1DataCollection:
     def _initialize_directories(self):
     pass
     pass
+    pass
         """Initialize required directories."""
         directories = [self.config.data_dir, self.config.backup_dir, self.config.temp_dir]
 
         for directory in directories:
+    pass
     pass
     pass
             os.makedirs(directory, exist_ok = True)
@@ -129,12 +139,15 @@ class EnhancedStep1DataCollection:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         await self._initialize_directories()
 
         # Download data with enhanced resilience
             download_success, await self._download_data_with_resilience(training_input)
 
         if not download_success:
+    pass
     pass
     pass
         self.logger.error("❌ Data download failed")
@@ -146,6 +159,7 @@ class EnhancedStep1DataCollection:
             processing_success, await self._process_and_validate_data(training_input)
 
         if processing_success:
+    pass
     pass
     pass
         self.logger.info("✅ Enhanced data collection completed successfully")
@@ -179,6 +193,8 @@ class EnhancedStep1DataCollection:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             exchange, training_input.get("exchange", self.config.exchange)
             timeframe, training_input.get("timeframe", self.config.timeframe)
 
@@ -189,8 +205,12 @@ class EnhancedStep1DataCollection:
         if download_all_data_with_consolidation is None:
     pass
     pass
+    pass
         try:
                     from src.training.steps.data_downloader import download_all_data_with_consolidation as _dl
+    except Exception as e:
+        pass
+import except Exception as e:
     except Exception as e:
         pass
 import except Exception as e:
@@ -205,6 +225,7 @@ import download_all_data_with_consolidation, _dl
         if download_all_data_with_consolidation:
     pass
     pass
+    pass
         # Use the existing data downloader if available
                 success, await download_all_data_with_consolidation(
                     symbol = symbol,
@@ -213,6 +234,7 @@ import download_all_data_with_consolidation, _dl
                 )
 
         if success:
+    pass
     pass
     pass
         self.logger.info("✅ Data download completed successfully")
@@ -250,6 +272,8 @@ import download_all_data_with_consolidation, _dl
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             exchange, training_input.get("exchange", self.config.exchange)
             timeframe, training_input.get("timeframe", self.config.timeframe)
 
@@ -261,13 +285,16 @@ import download_all_data_with_consolidation, _dl
         if os.path.exists(klines_file):
     pass
     pass
+    pass
                 files_to_process.append(("klines", klines_file))
         if os.path.exists(aggtrades_file):
+    pass
     pass
     pass
                 files_to_process.append(("aggtrades", aggtrades_file))
 
         if not files_to_process:
+    pass
     pass
     pass
         self.logger.warning("No data files found for processing")
@@ -279,12 +306,14 @@ import download_all_data_with_consolidation, _dl
         for data_type, file_path in files_to_process:
     pass
     pass
+    pass
         self.logger.info(f"🔍 Processing {data_type} data: {file_path}")
 
         # Process with streaming
                 processed_data, await self._process_file_streaming(file_path)
 
         if processed_data.empty:
+    pass
     pass
     pass
         self.logger.warning(f"⚠️ No data processed for {data_type}")
@@ -297,6 +326,7 @@ import download_all_data_with_consolidation, _dl
                 )
 
         if not quality_result.passed:
+    pass
     pass
     pass
         self.logger.warning(f"⚠️ Quality issues in {data_type}: {quality_result.issues}")
@@ -327,6 +357,9 @@ import download_all_data_with_consolidation, _dl
     except Exception as e:
         pass
     pass
+    except Exception as e:
+        pass
+    pass
                 chunk_count += 1
     except Exception as e:
         pass
@@ -340,6 +373,7 @@ import download_all_data_with_consolidation, _dl
         if not quality_result.passed:
     pass
     pass
+    pass
         self.logger.warning(f"Quality issues in chunk {chunk_count}: {quality_result.issues}")
 
         # Process chunk
@@ -348,6 +382,7 @@ import download_all_data_with_consolidation, _dl
 
         # Check memory pressure
         if self.memory_monitor.is_memory_pressure(self.config.max_memory_mb * 0.8):
+    pass
     pass
     pass
         self.logger.warning("Memory pressure detected, processing existing chunks")
@@ -359,6 +394,7 @@ import download_all_data_with_consolidation, _dl
 
         # Combine chunks
         if chunks:
+    pass
     pass
     pass
             result, pd.concat(chunks, ignore_index = True)
@@ -373,6 +409,7 @@ import download_all_data_with_consolidation, _dl
         if chunk.empty:
     pass
     pass
+    pass
         return chunk
 
         # Optimize data types for memory efficiency
@@ -380,6 +417,7 @@ import download_all_data_with_consolidation, _dl
 
         # Process in parallel if chunk is large enough
         if len(chunk) > 1000:
+    pass
     pass
     pass
         with ThreadPoolExecutor(max_workers = self.config.max_workers) as executor:
@@ -401,6 +439,7 @@ import download_all_data_with_consolidation, _dl
     def _process_chunk_sync(self, chunk: pd.DataFrame) -> pd.DataFrame:
     pass
     pass
+    pass
         """Synchronous chunk processing."""
         # Add any specific processing logic here
         # For now, just return the chunk as - is
@@ -414,6 +453,8 @@ import download_all_data_with_consolidation, _dl
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             aggtrades_file, os.path.join(data_dir, f"aggtrades_{exchange}_{symbol}_consolidated.parquet")
 
             files_info = []
@@ -421,13 +462,17 @@ import download_all_data_with_consolidation, _dl
         for file_path, file_type in [(klines_file, "klines"), (aggtrades_file, "aggtrades")]:
     pass
     pass
+    pass
         if os.path.exists(file_path):
+    pass
     pass
     pass
         try:
         # Get file size
                         file_size, os.path.getsize(file_path) / (1024 * 1024)  # MB
 
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -453,8 +498,10 @@ import download_all_data_with_consolidation, _dl
         if files_info:
     pass
     pass
+    pass
         self.logger.info(f"📊 Downloaded data summary: {len(files_info)} files")
         for info in files_info:
+    pass
     pass
     pass
         self.logger.info(f"   - {info['type']}: {info['size_mb']:.1f}MB, {len(info['columns'])} columns")
@@ -465,10 +512,12 @@ import download_all_data_with_consolidation, _dl
     def get_memory_stats(self) -> Dict[str, Any]:
     pass
     pass
+    pass
         """Get memory statistics."""
         return self.memory_monitor.get_memory_stats()
 
     def get_quality_summary(self) -> Dict[str, Any]:
+    pass
     pass
     pass
         """Get quality validation summary."""
@@ -497,6 +546,7 @@ async def run_enhanced_step1(
 
 # Example usage
 if __name__ == "__main__":
+    pass
     pass
     pass
     import asyncio
@@ -539,6 +589,8 @@ if __name__ == "__main__":
         try:
             result, await step1.execute(training_input, pipeline_state)
 
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:

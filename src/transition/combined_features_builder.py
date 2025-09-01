@@ -31,6 +31,7 @@ class CombinedFeaturesBuilder:
     def __init__(self, config: dict[str, Any] | None = None) -> None:
     pass
     pass
+    pass
         self.logger = system_logger.getChild("CombinedFeaturesBuilder")
         cf = (
             (config or {}).get("combined_features", {})
@@ -42,6 +43,7 @@ class CombinedFeaturesBuilder:
         )
 
     def _rsi(self, close: pd.Series, window: int = 14) -> pd.Series:
+    pass
     pass
     pass
         delta = close.diff()
@@ -95,7 +97,9 @@ class CombinedFeaturesBuilder:
     def build(self, ohlcv: pd.DataFrame) -> pd.DataFrame:
     pass
     pass
+    pass
         if ohlcv is None or ohlcv.empty:
+    pass
     pass
     pass
             return pd.DataFrame(
@@ -106,6 +110,7 @@ class CombinedFeaturesBuilder:
         df["log_returns"] = np.log(df["close"] / df["close"].shift(1))
         df["volatility_20"] = df["log_returns"].rolling(20, min_periods=2).std()
         if "volume" in df.columns:
+    pass
     pass
     pass
             vol_ma = df["volume"].rolling(20, min_periods=1).mean()

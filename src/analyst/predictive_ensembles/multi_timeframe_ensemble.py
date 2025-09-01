@@ -100,6 +100,8 @@ class MultiTimeframeEnsemble:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             )
             self.logger.info(f"📈 Model type: {model_type}")
             self.logger.info(f"⏰ Available timeframes: {list(prepared_data.keys())}")
@@ -115,11 +117,13 @@ class MultiTimeframeEnsemble:
             for i, timeframe in enumerate(self.active_timeframes, 1):
     pass
     pass
+    pass
                 self.logger.info(
                     f"🔄 [{i}/{len(self.active_timeframes)}] Training {timeframe} timeframe...",
                 )
 
                 if timeframe not in prepared_data:
+    pass
     pass
     pass
                     self.logger.warning(
@@ -137,6 +141,7 @@ class MultiTimeframeEnsemble:
                 tf_training_time = time.time() - tf_start_time
 
                 if success:
+    pass
     pass
     pass
                     self.logger.info(
@@ -175,6 +180,7 @@ class MultiTimeframeEnsemble:
             if len(timeframe_predictions) > 1:
     pass
     pass
+    pass
                 self.logger.info(
                     f"🧠 Training meta-learner with {len(timeframe_predictions)} timeframes...",
                 )
@@ -189,6 +195,7 @@ class MultiTimeframeEnsemble:
                 meta_training_time = time.time() - meta_start_time
 
                 if success:
+    pass
     pass
     pass
                     self.trained = True
@@ -212,7 +219,9 @@ class MultiTimeframeEnsemble:
                     for tf, stats in training_stats.items():
     pass
     pass
+    pass
                         if stats.get("success"):
+    pass
     pass
     pass
                             self.logger.info(
@@ -248,6 +257,8 @@ class MultiTimeframeEnsemble:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             self.logger.info(f"📊 Data shape: {data.shape}")
             self.logger.info(f"📈 Data columns: {list(data.columns)}")
 
@@ -255,6 +266,7 @@ class MultiTimeframeEnsemble:
             X, y = self._prepare_features_target(data)
 
             if len(X) == 0:
+    pass
     pass
     pass
                 self.print(warning("⚠️ No valid data for {timeframe}"))
@@ -267,6 +279,7 @@ class MultiTimeframeEnsemble:
             if model_type == "xgboost":
     pass
     pass
+    pass
                 model = self._train_xgboost_model(X, y)
             elif model_type == "lstm":
                 model = self._train_lstm_model(X, y)
@@ -277,6 +290,7 @@ class MultiTimeframeEnsemble:
                 return False
 
             if model is not None:
+    pass
     pass
     pass
                 self.timeframe_models[timeframe] = {
@@ -302,10 +316,13 @@ class MultiTimeframeEnsemble:
     def _train_xgboost_model(self, X: pd.DataFrame, y: pd.Series) -> Any | None:
     pass
     pass
+    pass
         """Train XGBoost model."""
         try:
             self.logger.info("🌳 Training XGBoost model...")
 
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -324,6 +341,7 @@ class MultiTimeframeEnsemble:
             skf = StratifiedKFold(n_splits=3, shuffle=True, random_state=42)
 
             for fold, (train_idx, val_idx) in enumerate(skf.split(X, y), 1):
+    pass
     pass
     pass
                 self.logger.info(
@@ -352,10 +370,13 @@ class MultiTimeframeEnsemble:
     def _train_lstm_model(self, X: pd.DataFrame, y: pd.Series) -> Any | None:
     pass
     pass
+    pass
         """Train LSTM model (simplified for now)."""
         try:
             self.logger.info("🧠 Training LSTM model (simplified)...")
 
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -391,6 +412,8 @@ import model = MLPClassifier
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             model = RandomForestClassifier(
                 n_estimators=100,
                 max_depth=10,
@@ -417,11 +440,14 @@ import model = MLPClassifier
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             # First, explicitly drop any datetime columns
             datetime_columns = data.select_dtypes(
                 include=["datetime64[ns]", "datetime64", "datetime"],
             ).columns.tolist()
             if datetime_columns:
+    pass
     pass
     pass
                 self.logger.info(f"Dropping datetime columns: {datetime_columns}")
@@ -435,6 +461,7 @@ import model = MLPClassifier
                 col for col in object_columns if col not in target_columns
             ]
             if object_columns_to_drop:
+    pass
     pass
     pass
                 self.logger.info(f"Dropping object columns: {object_columns_to_drop}")
@@ -451,7 +478,9 @@ import model = MLPClassifier
             for col in X.columns:
     pass
     pass
+    pass
                 if not pd.api.types.is_numeric_dtype(X[col]):
+    pass
     pass
     pass
                     self.logger.warning(
@@ -468,10 +497,12 @@ import model = MLPClassifier
             if missing_before > 0:
     pass
     pass
+    pass
                 self.logger.info(f"🔧 Filled {missing_before} missing values")
 
             # Final check - ensure X is purely numeric
             if X.select_dtypes(include=[np.number]).shape[1] != X.shape[1]:
+    pass
     pass
     pass
                 self.print(error("Non-numeric columns still present in feature matrix"))
@@ -480,6 +511,7 @@ import model = MLPClassifier
 
             # Get target
             if "target" in data.columns:
+    pass
     pass
     pass
                 y = data["target"]
@@ -510,6 +542,9 @@ import model = MLPClassifier
     except Exception as e:
         pass
     pass
+    except Exception as e:
+        pass
+    pass
                 self.print(warning("⚠️ No trained model for {timeframe}"))
                 return [], []
 
@@ -523,6 +558,7 @@ import model = MLPClassifier
             if len(X) == 0:
     pass
     pass
+    pass
                 self.print(warning("⚠️ No valid features for {timeframe}"))
                 return [], []
 
@@ -531,6 +567,7 @@ import model = MLPClassifier
 
             # Get prediction probabilities for confidence
             if hasattr(model, "predict_proba"):
+    pass
     pass
     pass
                 probas = model.predict_proba(X)
@@ -564,6 +601,8 @@ import model = MLPClassifier
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             self.logger.info(f"📊 Timeframes: {list(timeframe_predictions.keys())}")
 
             # Prepare meta-learner data
@@ -575,6 +614,7 @@ import model = MLPClassifier
             )
 
             if len(meta_data) == 0:
+    pass
     pass
     pass
                 self.print(error("❌ No valid meta-learner data"))
@@ -638,12 +678,16 @@ import model = MLPClassifier
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             # Find common timestamps across all timeframes
             all_timestamps = set()
             for timeframe in timeframe_predictions:
     pass
     pass
+    pass
                 if timeframe in prepared_data:
+    pass
     pass
     pass
                     all_timestamps.update(prepared_data[timeframe].index)
@@ -656,18 +700,22 @@ import model = MLPClassifier
             for timestamp in sorted(all_timestamps):
     pass
     pass
+    pass
                 row_data = {"timestamp": timestamp}
 
                 # Add predictions and confidences from each timeframe
                 for timeframe in self.active_timeframes:
     pass
     pass
+    pass
                     if timeframe in timeframe_predictions:
+    pass
     pass
     pass
                         # Find prediction for this timestamp
                         pred_idx = 0  # Simplified - in practice, match by timestamp
                         if pred_idx < len(timeframe_predictions[timeframe]):
+    pass
     pass
     pass
                             row_data[f"{timeframe}_prediction"] = timeframe_predictions[
@@ -717,6 +765,9 @@ import model = MLPClassifier
     except Exception as e:
         pass
     pass
+    except Exception as e:
+        pass
+    pass
                 self.print(warning("⚠️ Multi-timeframe ensemble not trained"))
                 return {"prediction": "HOLD", "confidence": 0.0}
 
@@ -733,7 +784,9 @@ import model = MLPClassifier
             for timeframe in self.active_timeframes:
     pass
     pass
+    pass
                 if timeframe in self.timeframe_models:
+    pass
     pass
     pass
                     self.logger.debug(f"📊 Getting prediction for {timeframe}...")
@@ -750,6 +803,7 @@ import model = MLPClassifier
 
             # Use meta-learner to combine predictions
             if self.meta_learner and len(timeframe_predictions) > 0:
+    pass
     pass
     pass
                 self.logger.debug("🧠 Combining predictions with meta-learner...")
@@ -797,6 +851,9 @@ import model = MLPClassifier
     except Exception as e:
         pass
     pass
+    except Exception as e:
+        pass
+    pass
                 self.print(warning("⚠️ No trained model for {timeframe}"))
                 return "HOLD", 0.0
 
@@ -811,6 +868,7 @@ import model = MLPClassifier
             if len(X) == 0:
     pass
     pass
+    pass
                 self.print(warning("⚠️ No valid features for {timeframe}"))
                 return "HOLD", 0.0
 
@@ -819,6 +877,7 @@ import model = MLPClassifier
 
             # Get confidence
             if hasattr(model, "predict_proba"):
+    pass
     pass
     pass
                 probas = model.predict_proba(X)
@@ -846,9 +905,12 @@ import model = MLPClassifier
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             # Prepare meta-features
             meta_features = []
             for timeframe in self.active_timeframes:
+    pass
     pass
     pass
                 pred = timeframe_predictions.get(timeframe, "HOLD")
@@ -878,6 +940,7 @@ import model = MLPClassifier
             if hasattr(self.meta_learner, "predict_proba"):
     pass
     pass
+    pass
                 probas = self.meta_learner.predict_proba(meta_features_scaled)
                 confidence = np.max(probas[0])
             else:
@@ -900,6 +963,9 @@ import model = MLPClassifier
         """Simple combination of predictions (fallback)."""
         try:
             if not timeframe_predictions:
+    pass
+    except Exception as e:
+        pass
     pass
     except Exception as e:
         pass
@@ -943,9 +1009,12 @@ import model = MLPClassifier
     def save_model(self, path: str) -> bool:
     pass
     pass
+    pass
         """Save multi-timeframe ensemble model."""
         try:
             self.logger.info(f"💾 Saving multi-timeframe ensemble to {path}")
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -956,12 +1025,14 @@ import model = MLPClassifier
             for timeframe, model_info in self.timeframe_models.items():
     pass
     pass
+    pass
                 model_path = os.path.join(path, f"{timeframe}_model.joblib")
                 joblib.dump(model_info["model"], model_path)
                 self.logger.debug(f"💾 Saved {timeframe} model")
 
             # Save meta-learner
             if self.meta_learner:
+    pass
     pass
     pass
                 meta_path = os.path.join(path, "meta_learner.joblib")
@@ -996,6 +1067,7 @@ import model = MLPClassifier
     def load_model(self, path: str) -> bool:
     pass
     pass
+    pass
         """Load multi-timeframe ensemble model."""
         try:
             self.logger.info(f"📂 Loading multi-timeframe ensemble from {path}")
@@ -1004,9 +1076,12 @@ import model = MLPClassifier
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             # Load ensemble info
             info_path = os.path.join(path, "ensemble_info.joblib")
             if os.path.exists(info_path):
+    pass
     pass
     pass
                 ensemble_info = joblib.load(info_path)
@@ -1022,8 +1097,10 @@ import model = MLPClassifier
             for timeframe in self.active_timeframes:
     pass
     pass
+    pass
                 model_path = os.path.join(path, f"{timeframe}_model.joblib")
                 if os.path.exists(model_path):
+    pass
     pass
     pass
                     cached_model = joblib.load(model_path)
@@ -1042,16 +1119,19 @@ import model = MLPClassifier
             if os.path.exists(meta_path):
     pass
     pass
+    pass
                 self.meta_learner = joblib.load(meta_path)
 
                 scaler_path = os.path.join(path, "meta_scaler.joblib")
                 if os.path.exists(scaler_path):
     pass
     pass
+    pass
                     self.meta_scaler = joblib.load(scaler_path)
 
                 encoder_path = os.path.join(path, "meta_encoder.joblib")
                 if os.path.exists(encoder_path):
+    pass
     pass
     pass
                     self.meta_label_encoder = joblib.load(encoder_path)

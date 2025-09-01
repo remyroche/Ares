@@ -17,10 +17,14 @@ class ParquetUtils:
     def __init__(self) -> None:
     pass
     pass
+    pass
+    pass
         self.logger, system_logger.getChild("ParquetUtils")
 
     @handle_file_operations(default_return={"valid": False, "error": "validation_error"}, context="ParquetUtils.validate_parquet_file")
     def validate_parquet_file(self, file_path: str) -> dict[str, Any]:
+    pass
+    pass
     pass
     pass
         """
@@ -47,6 +51,8 @@ class ParquetUtils:
         if not os.path.exists(file_path):
     pass
     pass
+    pass
+    pass
             result["error"] = f"File does not exist: {file_path}"
         return result
 
@@ -63,6 +69,10 @@ class ParquetUtils:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Convert dtypes to str to ensure JSON - serializable values
             result["dtypes"] = {k: str(v) for k, v in sample_df.dtypes.to_dict().items()}
             result["valid"] = True
@@ -71,6 +81,10 @@ class ParquetUtils:
         finally:
         try:
                 del sample_df  # type: ignore[name - defined]
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -109,10 +123,16 @@ class ParquetUtils:
         for idx, engine in enumerate(engines, start = 1):
     pass
     pass
+    pass
+    pass
         try:
                 strategy_msg = (
                     f"   Trying strategy {idx}/{len(engines)}: "
                     f"{'default' if engine is None else engine} engine"
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -123,9 +143,13 @@ class ParquetUtils:
         if engine is not None:
     pass
     pass
+    pass
+    pass
                     read_kwargs["engine"] = engine
                 df, pd.read_parquet(file_path, columns = columns, **read_kwargs)
         if nrows is not None and len(df) > nrows:
+    pass
+    pass
     pass
     pass
                     df, df.head(nrows)
@@ -142,6 +166,8 @@ class ParquetUtils:
     def repair_parquet_file(self, file_path: str, backup_path: str | None, None) -> bool:
     pass
     pass
+    pass
+    pass
         """
         Attempt to repair a corrupted parquet file.
 
@@ -156,12 +182,16 @@ class ParquetUtils:
         if backup_path:
     pass
     pass
+    pass
+    pass
             shutil.copy2(file_path, backup_path)
         self.logger.info(f"📁 Created backup: {backup_path}")
 
         # Try to read and rewrite the file
         df, self.safe_read_parquet(file_path)
         if df is not None:
+    pass
+    pass
     pass
     pass
         # Write back to the same file
@@ -173,6 +203,8 @@ class ParquetUtils:
         return False
 
 def get_parquet_utils() -> ParquetUtils:
+    pass
+    pass
     pass
     pass
     """Get a fresh instance of ParquetUtils to avoid global state issues."""

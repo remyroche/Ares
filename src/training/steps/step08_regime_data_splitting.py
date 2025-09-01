@@ -40,6 +40,7 @@ pandas, PipelineStandards.safe_import("pandas", None)
 def create_fallback_logger():
     pass
     pass
+    pass
     import logging
     logging.basicConfig(level = logging.INFO)
     return logging.getLogger(__name__)
@@ -47,7 +48,9 @@ def create_fallback_logger():
 def create_fallback_decorator():
     pass
     pass
+    pass
     def decorator(func):
+    pass
     pass
     pass
         return func
@@ -57,9 +60,11 @@ def create_fallback_decorator():
 if system_logger is None:
     pass
     pass
+    pass
     system_logger, create_fallback_logger()
 
 if centralized_decorators is None:
+    pass
     pass
     pass
     auto_fix_data_quality_issues, create_fallback_decorator()
@@ -103,6 +108,7 @@ else:
 if enhanced_mlflow is None:
     pass
     pass
+    pass
     with_enhanced_mlflow_logging, create_fallback_decorator()
     log_step_report, lambda * args, **kwargs: "fallback_report"
     create_detailed_step_report, lambda * args, **kwargs: {}
@@ -123,6 +129,7 @@ class RegimeDataSplittingStep:
     def __init__(self, config: dict[str, Any]) -> None:
     pass
     pass
+    pass
         self.config, config
         self.logger, system_logger.getChild("Step8.RegimeSplit")
         self.standards, pipeline_standards
@@ -133,11 +140,13 @@ class RegimeDataSplittingStep:
     def _validate_environment(self) -> None:
     pass
     pass
+    pass
         """Validate environment dependencies."""
         self.logger.info("🔍 Validating environment dependencies...")
 
         missing_modules = [module for module, available in dependency_status.items() if not available]
         if missing_modules:
+    pass
     pass
     pass
         self.logger.warning(f"⚠️ Missing optional modules: {missing_modules}")
@@ -170,6 +179,9 @@ class RegimeDataSplittingStep:
 import except Exception as e:
     except Exception as e:
         pass
+import except Exception as e:
+    except Exception as e:
+        pass
 import BLANK_TRAINING_LOOKBACK_DAYS,
                 BLANK_TRAINING_LOOKBACK_DAYS,
             )
@@ -197,6 +209,7 @@ import BLANK_TRAINING_LOOKBACK_DAYS,
         if "composite_cluster_id" not in unified_data.columns:
     pass
     pass
+    pass
         self.logger.error("🚨 HMM composite_cluster_id column is missing from unified data")
         self.logger.error("   This is a critical failure - HMM composite clusters are paramount")
         self.logger.error("   Please ensure step03_hmm_regime_discovery completed successfully")
@@ -205,6 +218,7 @@ import BLANK_TRAINING_LOOKBACK_DAYS,
         # Verify HMM composite clusters are not all null
             composite_clusters, unified_data["composite_cluster_id"].dropna()
         if composite_clusters.empty:
+    pass
     pass
     pass
         self.logger.error("🚨 HMM composite_cluster_id column contains only null values")
@@ -225,6 +239,7 @@ import BLANK_TRAINING_LOOKBACK_DAYS,
             success, self._save_unified_regime_dataset(unified_data, unique_clusters)
 
         if not success:
+    pass
     pass
     pass
         self.logger.error("🚨 Failed to save unified regime dataset")
@@ -256,6 +271,8 @@ import BLANK_TRAINING_LOOKBACK_DAYS,
         """Log step 8 artifacts and create detailed report."""
         try:
             symbol, self.config.get("symbol", "ETHUSDT")
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -341,6 +358,7 @@ import BLANK_TRAINING_LOOKBACK_DAYS,
         if summary:
     pass
     pass
+    pass
                 summary_report_name, log_step_report(
                     config = self.config,
                     step_name="step08_regime_data_splitting",
@@ -383,9 +401,12 @@ import BLANK_TRAINING_LOOKBACK_DAYS,
     def _save_unified_regime_dataset(self, unified_data: pd.DataFrame, unique_clusters: list) -> bool:
     pass
     pass
+    pass
         """Save unified dataset with regime labels."""
         try:
             data_dir, self.config.get("data_dir", "data / training")
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -444,6 +465,7 @@ import BLANK_TRAINING_LOOKBACK_DAYS,
     def _create_regime_statistics(self, unified_data: pd.DataFrame, unique_clusters: list) -> dict[str, Any]:
     pass
     pass
+    pass
         """Create statistics for the unified regime dataset."""
         try:
             stats = {
@@ -461,15 +483,19 @@ import BLANK_TRAINING_LOOKBACK_DAYS,
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             }
 
         # Calculate statistics for each regime
         for cluster_id in unique_clusters:
     pass
     pass
+    pass
                 regime_data, unified_data[unified_data["composite_cluster_id"] == cluster_id]
 
         if len(regime_data) > 0:
+    pass
     pass
     pass
                     regime_stats = {
@@ -483,6 +509,7 @@ import BLANK_TRAINING_LOOKBACK_DAYS,
 
         # Add price statistics if available
         if 'close' in regime_data.columns:
+    pass
     pass
     pass
                         regime_stats["price_stats"] = {
@@ -503,6 +530,7 @@ import BLANK_TRAINING_LOOKBACK_DAYS,
     @with_tracing_span("step08_regime_splitting._create_regime_summary", log_args = False)
     @handle_errors(exceptions=(Exception,), default_return={}, context="create_regime_summary")
     def _create_regime_summary(self, unified_data: pd.DataFrame, unique_clusters: list) -> dict[str, Any]:
+    pass
     pass
     pass
         """Create a summary of the unified regime dataset."""
@@ -612,6 +640,7 @@ async def run_step(
     if data_dir is None:
     pass
     pass
+    pass
         data_dir, pipeline_standards.build_path("processed_data", exchange, symbol)
 
     config = {
@@ -629,6 +658,7 @@ async def run_step(
     return result.get("success", False)
 
 if __name__ == "__main__":
+    pass
     pass
     pass
     async def _test() -> None:

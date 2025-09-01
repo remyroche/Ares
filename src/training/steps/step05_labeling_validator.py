@@ -27,6 +27,7 @@ class Step5LabelingValidator(BaseValidator):
     def __init__(self, config: dict[str, Any]) -> None:
     pass
     pass
+    pass
         super().__init__("step05_labeling", config)
         self.logger, system_logger.getChild("Validator.Step5")
 
@@ -54,7 +55,10 @@ class Step5LabelingValidator(BaseValidator):
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         if not labeled_data_dir.exists():
+    pass
     pass
     pass
         self.logger.warning(
@@ -67,6 +71,7 @@ class Step5LabelingValidator(BaseValidator):
         if not labeled_files:
     pass
     pass
+    pass
         self.logger.warning("⚠️ No labeled data files found")
         return False
 
@@ -74,7 +79,9 @@ class Step5LabelingValidator(BaseValidator):
         for labeled_file in labeled_files:
     pass
     pass
+    pass
         if not await self._validate_labeled_file(labeled_file):
+    pass
     pass
     pass
         return False
@@ -84,11 +91,13 @@ class Step5LabelingValidator(BaseValidator):
         if not metadata_file.exists():
     pass
     pass
+    pass
         self.logger.warning(f"⚠️ Labeling metadata file not found: {metadata_file}")
         return False
 
         # Validate metadata file
         if not await self._validate_metadata_file(metadata_file):
+    pass
     pass
     pass
         return False
@@ -119,9 +128,12 @@ class Step5LabelingValidator(BaseValidator):
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         # Use BaseValidator's file validation
             file_exists, file_metrics, self.validate_file_exists(str(labeled_file), "labeled file")
         if not file_exists:
+    pass
     pass
     pass
         return False
@@ -143,6 +155,7 @@ class Step5LabelingValidator(BaseValidator):
         if not df_valid:
     pass
     pass
+    pass
         self.logger.warning(f"⚠️ DataFrame validation failed for {labeled_file.name}")
         return False
 
@@ -150,8 +163,10 @@ class Step5LabelingValidator(BaseValidator):
         if "label" in df.columns:
     pass
     pass
+    pass
                 unique_labels, df["label"].nunique()
         if unique_labels < 2:
+    pass
     pass
     pass
         self.logger.warning(f"⚠️ Insufficient label diversity in {labeled_file.name}: {unique_labels} labels")
@@ -185,9 +200,12 @@ class Step5LabelingValidator(BaseValidator):
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         # Use BaseValidator's file validation
             file_exists, file_metrics, self.validate_file_exists(str(metadata_file), "metadata file")
         if not file_exists:
+    pass
     pass
     pass
         return False
@@ -199,6 +217,7 @@ class Step5LabelingValidator(BaseValidator):
         if not isinstance(metadata, dict):
     pass
     pass
+    pass
         self.logger.warning("⚠️ Metadata file should contain a dictionary")
         return False
 
@@ -206,6 +225,7 @@ class Step5LabelingValidator(BaseValidator):
             required_fields = ["labeling_method", "label_distribution", "total_samples", "labeling_timestamp"]
             missing_fields = [field for field in required_fields if field not in metadata]
         if missing_fields:
+    pass
     pass
     pass
         self.logger.warning(f"⚠️ Missing required fields in metadata: {missing_fields}")
@@ -216,12 +236,14 @@ class Step5LabelingValidator(BaseValidator):
         if not isinstance(label_distribution, dict):
     pass
     pass
+    pass
         self.logger.warning("⚠️ Label distribution should be a dictionary")
         return False
 
         # Validate total samples
             total_samples, metadata.get("total_samples", 0)
         if not isinstance(total_samples, int) or total_samples <= 0:
+    pass
     pass
     pass
         self.logger.warning(f"⚠️ Invalid total_samples: {total_samples}")
@@ -242,6 +264,7 @@ class Step5LabelingValidator(BaseValidator):
     def validate_step_prerequisites(self, symbol: str, exchange: str, timeframe: str) -> Dict[str, Any]:
     pass
     pass
+    pass
         """Validate prerequisites for Step 5 using BaseValidator methods."""
         validation_result = {
             "validation_passed": True,
@@ -259,7 +282,10 @@ class Step5LabelingValidator(BaseValidator):
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         if not step04_files:
+    pass
     pass
     pass
                 validation_result["validation_passed"] = False
@@ -271,8 +297,10 @@ class Step5LabelingValidator(BaseValidator):
         for file_path in step04_files:
     pass
     pass
+    pass
                     file_valid, file_metrics, self.validate_file_exists(str(file_path), "step4 output file")
         if not file_valid:
+    pass
     pass
     pass
                         validation_result["warnings"].append(f"File validation failed: {file_path}")
@@ -287,6 +315,7 @@ class Step5LabelingValidator(BaseValidator):
         return validation_result
 
     def validate_step_output(self, symbol: str, exchange: str, timeframe: str) -> Dict[str, Any]:
+    pass
     pass
     pass
         """Validate Step 5 output files and content using BaseValidator methods."""
@@ -309,11 +338,14 @@ class Step5LabelingValidator(BaseValidator):
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         # Check if all expected files exist using BaseValidator
             missing_files = []
             existing_files = []
 
         for filename in expected_files:
+    pass
     pass
     pass
                 file_path, output_dir / filename
@@ -322,11 +354,13 @@ class Step5LabelingValidator(BaseValidator):
         if file_valid:
     pass
     pass
+    pass
                     existing_files.append(str(file_path))
                 else:
                     missing_files.append(filename)
 
         if missing_files:
+    pass
     pass
     pass
                 validation_result["validation_passed"] = False
@@ -341,14 +375,19 @@ class Step5LabelingValidator(BaseValidator):
         if existing_files:
     pass
     pass
+    pass
         for file_path in existing_files:
+    pass
     pass
     pass
         if file_path.endswith(".parquet"):
     pass
     pass
+    pass
         try:
                             df, pd.read_parquet(file_path)
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -386,6 +425,8 @@ async def run_validator(
 
     try:
         # Extract parameters
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -445,6 +486,7 @@ async def run_validator(
         }
 
 if __name__ == "__main__":
+    pass
     pass
     pass
     # Test the validator

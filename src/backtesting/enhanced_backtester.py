@@ -42,6 +42,7 @@ class EnhancedBacktester:
 	def __init__(self, config: dict[str, Any]) -> None:
     pass
     pass
+    pass
 		"""
 		Initialize enhanced backtester.
 
@@ -101,11 +102,14 @@ class EnhancedBacktester:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
 			# Load backtester configuration
 			await self._load_backtester_configuration()
 
 			# Validate configuration
 			if not self._validate_configuration():
+    pass
     pass
     pass
 				self.logger.error(invalid("Invalid configuration for enhanced backtester"))
@@ -116,6 +120,7 @@ class EnhancedBacktester:
 
 			# Initialize detailed reporting
 			if self.enable_detailed_reporting:
+    pass
     pass
     pass
 				await self._initialize_detailed_reporting()
@@ -138,6 +143,8 @@ class EnhancedBacktester:
 		"""Load backtester configuration."""
 		try:
 			# Set default parameters
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -168,9 +175,11 @@ class EnhancedBacktester:
 	def _validate_configuration(self) -> bool:
     pass
     pass
+    pass
 		"""Validate backtester configuration."""
 		try:
 			if self.initial_balance <= 0:
+    pass
     pass
     pass
 				self.logger.error(initialization_error("Initial balance must be positive"))
@@ -180,7 +189,10 @@ class EnhancedBacktester:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
 			if self.commission_rate < 0 or self.commission_rate > 0.1:
+    pass
     pass
     pass
 				self.logger.error(error("Commission rate must be between 0 and 0.1"))
@@ -189,10 +201,12 @@ class EnhancedBacktester:
 			if self.slippage_rate < 0 or self.slippage_rate > 0.1:
     pass
     pass
+    pass
 				self.logger.error(error("Slippage rate must be between 0 and 0.1"))
 				return False
 
 			if self.max_position_size <= 0 or self.max_position_size > 1.0:
+    pass
     pass
     pass
 				self.logger.error(error("Max position size must be between 0 and 1"))
@@ -213,6 +227,8 @@ class EnhancedBacktester:
 		"""Initialize backtesting state."""
 		try:
 			self.portfolio_value = float(self.initial_balance)
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -244,8 +260,13 @@ class EnhancedBacktester:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
 			try:
 				from src.reports.paper_trading_reporter import (
+    except Exception as e:
+        pass
+import except Exception as e:
     except Exception as e:
         pass
 import except Exception as e:
@@ -265,6 +286,7 @@ import setup_paper_trading_reporter as _setup_reporter,
 
 			self.reporter = await _setup_reporter(self.config)
 			if self.reporter:
+    pass
     pass
     pass
 				self.logger.info("✅ Detailed reporting initialized successfully")
@@ -317,12 +339,15 @@ import setup_paper_trading_reporter as _setup_reporter,
 		if trade_metadata is None:
     pass
     pass
+    pass
 			trade_metadata = {}
 
 		for index, row in strategy_signals.iterrows():
     pass
     pass
+    pass
 			if not self.is_running:
+    pass
     pass
     pass
 				break
@@ -333,6 +358,7 @@ import setup_paper_trading_reporter as _setup_reporter,
 			symbol = str(row.get("symbol", "UNKNOWN"))
 
 			if signal != 0 and price > 0:
+    pass
     pass
     pass
 				trade_result = await self._execute_backtest_trade(
@@ -346,6 +372,7 @@ import setup_paper_trading_reporter as _setup_reporter,
 				if trade_result:
     pass
     pass
+    pass
 					results["trades"].append(trade_result)
 					# Optional: also log to dedicated backtest log if available
 					try:  # pragma: no cover - best-effort logging
@@ -356,9 +383,13 @@ import setup_paper_trading_reporter as _setup_reporter,
 import except Exception as e:
     except Exception as e:
         pass
+import except Exception as e:
+    except Exception as e:
+        pass
 import cl = get_comprehensive_logger
 						cl = get_comprehensive_logger()
 						if cl:
+    pass
     pass
     pass
 							cl.log_backtest(
@@ -379,8 +410,11 @@ import cl = get_comprehensive_logger
 		if self.reporter:
     pass
     pass
+    pass
 			try:
 				results["detailed_analysis"] = await self._generate_detailed_analysis()
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -397,9 +431,13 @@ import cl = get_comprehensive_logger
 import except Exception as e:
     except Exception as e:
         pass
+import except Exception as e:
+    except Exception as e:
+        pass
 import cl = get_comprehensive_logger
 			cl = get_comprehensive_logger()
 			if cl:
+    pass
     pass
     pass
 				cl.log_backtest("Backtest completed successfully")
@@ -420,6 +458,7 @@ import cl = get_comprehensive_logger
 		if trade_metadata is None:
     pass
     pass
+    pass
 			trade_metadata = {}
 
 		# Extract trade metadata for tracking (optional fields)
@@ -434,6 +473,7 @@ import cl = get_comprehensive_logger
 		# Position sizing
 		position_size = float(self.portfolio_value * self.max_position_size)
 		if price <= 0:
+    pass
     pass
     pass
 			return None
@@ -494,6 +534,7 @@ import cl = get_comprehensive_logger
 		if total_with_fees > self.portfolio_value:
     pass
     pass
+    pass
 			self.logger.warning(
 				f"Insufficient balance for buy trade: ${total_with_fees:.2f} > ${self.portfolio_value:.2f}",
 			)
@@ -504,6 +545,7 @@ import cl = get_comprehensive_logger
 
 		# Update position aggregate
 		if symbol not in self.current_position:
+    pass
     pass
     pass
 			self.current_position[symbol] = {
@@ -550,6 +592,7 @@ import cl = get_comprehensive_logger
 
 		# Record detailed trade if reporting is enabled
 		if self.enable_detailed_reporting and self.reporter:
+    pass
     pass
     pass
 			await self._record_detailed_backtest_trade(
@@ -619,6 +662,7 @@ import cl = get_comprehensive_logger
 		if new_quantity > 0:
     pass
     pass
+    pass
 			remaining_ratio = new_quantity / old_quantity
 			new_total_cost = old_total_cost * remaining_ratio
 			new_avg_price = new_total_cost / new_quantity if new_quantity > 0 else 0.0
@@ -632,6 +676,7 @@ import cl = get_comprehensive_logger
 
 		# Remove position if fully closed
 		if new_quantity <= 0:
+    pass
     pass
     pass
 			del self.current_position[symbol]
@@ -671,6 +716,7 @@ import cl = get_comprehensive_logger
 		if self.enable_detailed_reporting and self.reporter:
     pass
     pass
+    pass
 			await self._record_detailed_backtest_trade(
 				symbol=symbol,
 				side="short",
@@ -707,6 +753,7 @@ import cl = get_comprehensive_logger
 		if not self.reporter:
     pass
     pass
+    pass
 			return
 
 		# Prepare trade data structure
@@ -732,6 +779,7 @@ import cl = get_comprehensive_logger
 		}
 
 		if side == "long":
+    pass
     pass
     pass
 			trade_data.update(
@@ -768,6 +816,8 @@ import cl = get_comprehensive_logger
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
 			market_indicators = trade_metadata.get("market_indicators", {})
 			ml_confidence = trade_metadata.get("ml_confidence", {})
 			await self.reporter.record_trade(trade_data, market_indicators=market_indicators, ml_confidence=ml_confidence)  # type: ignore[attr-defined]
@@ -778,13 +828,16 @@ import cl = get_comprehensive_logger
 	def _update_equity_curve(self) -> None:
     pass
     pass
+    pass
 		"""Update equity curve and drawdown."""
 		# Calculate current portfolio value (cash + simplistic mark-to-market)
 		current_value = float(self.portfolio_value)
 		for position in self.current_position.values():
     pass
     pass
+    pass
 			if position["quantity"] > 0:
+    pass
     pass
     pass
 				# Simplified: assume current price equals avg_price for unrealized
@@ -800,8 +853,10 @@ import cl = get_comprehensive_logger
 	def _calculate_performance_metrics(self) -> dict[str, Any]:
     pass
     pass
+    pass
 		"""Calculate comprehensive performance metrics."""
 		if not self.trade_history:
+    pass
     pass
     pass
 			return {
@@ -833,8 +888,10 @@ import cl = get_comprehensive_logger
 		if len(self.equity_curve) > 1:
     pass
     pass
+    pass
 			returns: list[float] = []
 			for i in range(1, len(self.equity_curve)):
+    pass
     pass
     pass
 				prev = self.equity_curve[i - 1]
@@ -842,8 +899,10 @@ import cl = get_comprehensive_logger
 				if prev > 0:
     pass
     pass
+    pass
 					returns.append((curr - prev) / prev)
 			if returns:
+    pass
     pass
     pass
 				avg_return = float(np.mean(returns))
@@ -886,7 +945,10 @@ import cl = get_comprehensive_logger
 			if self.reporter:
     pass
     pass
+    pass
 				return await self.reporter.generate_detailed_report("backtest_analysis")  # type: ignore[attr-defined]
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -897,6 +959,7 @@ import cl = get_comprehensive_logger
 			return {}
 
 	def get_backtest_results(self) -> dict[str, Any]:
+    pass
     pass
     pass
 		"""Get comprehensive backtest results."""
@@ -923,13 +986,17 @@ import cl = get_comprehensive_logger
 		if export_formats is None:
     pass
     pass
+    pass
 			export_formats = ["json", "csv", "html"]
 
 		if self.reporter:
     pass
     pass
+    pass
 			try:
 				return await self.reporter.generate_detailed_report(report_type, export_formats)  # type: ignore[attr-defined]
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -973,7 +1040,9 @@ import cl = get_comprehensive_logger
 		for format_type in export_formats:
     pass
     pass
+    pass
 			if format_type == "json":
+    pass
     pass
     pass
 				filename = f"backtest_report_{timestamp}.json"
@@ -985,6 +1054,7 @@ import cl = get_comprehensive_logger
 		return report_data
 
 	def stop(self) -> None:
+    pass
     pass
     pass
 		"""Stop backtesting."""
@@ -1013,8 +1083,11 @@ async def setup_enhanced_backtester(
 		if config is None:
     pass
     pass
+    pass
 			config = {}
 
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -1023,6 +1096,7 @@ async def setup_enhanced_backtester(
 		success = await backtester.initialize()
 
 		if success:
+    pass
     pass
     pass
 			return backtester

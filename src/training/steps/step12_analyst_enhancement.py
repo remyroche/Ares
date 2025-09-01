@@ -32,12 +32,16 @@ try:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
 except ImportError:
     shap, None
 
 # Import new model architectures
 try:
     import torch
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -103,6 +107,9 @@ def _normalized_numpy_bitgen_ctor(bit_generator_name, state = None, *args, **kwa
     except Exception as e:
         pass
     pass
+    except Exception as e:
+        pass
+    pass
             name_candidate, name_candidate.__name__
     except Exception as e:
         pass
@@ -118,9 +125,13 @@ def _normalized_numpy_bitgen_ctor(bit_generator_name, state = None, *args, **kwa
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
     except (TypeError, ValueError):
         try:
         return _NP_ORIGINAL_BITGEN_CTOR(name_candidate)  # type: ignore[misc]
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -133,13 +144,18 @@ def _normalized_numpy_bitgen_ctor(bit_generator_name, state = None, *args, **kwa
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
                 bitgen_cls, getattr(_np.random, name_candidate, None)
         if bitgen_cls is None and name_candidate == "MT19937":
+    pass
     pass
     pass
         try:
                         import numpy.random._mt19937 as _mt  # type: ignore[attr - defined]
 
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -150,6 +166,7 @@ def _normalized_numpy_bitgen_ctor(bit_generator_name, state = None, *args, **kwa
         if bitgen_cls is not None:
     pass
     pass
+    pass
         return bitgen_cls()
         except Exception:
                 pass
@@ -158,9 +175,11 @@ def _normalized_numpy_bitgen_ctor(bit_generator_name, state = None, *args, **kwa
 def _enable_numpy_rng_unpickle_compat(logger = None) -> None:
     pass
     pass
+    pass
     """Enable compatibility for unpickling NumPy RNG BitGenerators (idempotent)."""
     global _NUMPY_RNG_UNPICKLE_PATCHED, _NP_ORIGINAL_BITGEN_CTOR
     if _NUMPY_RNG_UNPICKLE_PATCHED:
+    pass
     pass
     pass
         return
@@ -171,8 +190,11 @@ def _enable_numpy_rng_unpickle_compat(logger = None) -> None:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         original_ctor, getattr(np_random_pickle, "__bit_generator_ctor", None)
         if original_ctor is None:
+    pass
     pass
     pass
             _NUMPY_RNG_UNPICKLE_PATCHED, True
@@ -184,10 +206,12 @@ def _enable_numpy_rng_unpickle_compat(logger = None) -> None:
         if logger is not None:
     pass
     pass
+    pass
             logger.info("Applied NumPy RNG unpickle compatibility shim")
     except Exception as _shim_exc:  # noqa: BLE001
         _NUMPY_RNG_UNPICKLE_PATCHED, True
         if logger is not None:
+    pass
     pass
     pass
             logger.warning(
@@ -208,6 +232,7 @@ class AnalystEnhancementStep:
     """
 
     def __init__(self, config: dict[str, Any]) -> None:
+    pass
     pass
     pass
         """Initializes the AnalystEnhancementStep.
@@ -251,8 +276,10 @@ class AnalystEnhancementStep:
     def _validate_environment(self) -> None:
     pass
     pass
+    pass
         """Validate environment dependencies and configuration."""
         if not dependency_status["all_available"]:
+    pass
     pass
     pass
             missing_modules, dependency_status["missing_modules"]
@@ -260,6 +287,7 @@ class AnalystEnhancementStep:
         # Continue with available modules, using fallbacks where needed
 
     def _safe_get_device(self) -> str:
+    pass
     pass
     pass
         """Safely determine the best device to use with timeout protection."""
@@ -277,8 +305,13 @@ class AnalystEnhancementStep:
     pass
     except Exception as e:
         pass
+    pass
+    except Exception as e:
+        pass
         try:
                     is_available, torch.backends.mps.is_available()
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -299,7 +332,10 @@ class AnalystEnhancementStep:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         if err:
+    pass
     pass
     pass
         self.logger.error(failed(f"MPS check failed: {err}, using CPU"))
@@ -355,6 +391,8 @@ class AnalystEnhancementStep:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             models_dir: str, os.path.join(data_dir, "models")
         # Use the main data_dir for regime data
             regime_data_dir: str, data_dir
@@ -376,14 +414,18 @@ class AnalystEnhancementStep:
         if not hmm_models:
     pass
     pass
+    pass
                 msg, f"No HMM - based models found in {models_dir}. Step 5 must complete successfully first."
                 raise ValueError(msg)
 
         if isinstance(hmm_models, dict):
     pass
     pass
+    pass
         try:
                     timeframes_count: int, len(hmm_models)
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -403,6 +445,9 @@ class AnalystEnhancementStep:
         try:
                 from src.training.steps.unified_data_loader import UnifiedDataLoader
 
+    except Exception as e:
+        pass
+import except Exception as e:
     except Exception as e:
         pass
 import except Exception as e:
@@ -451,6 +496,8 @@ import data_loader, UnifiedDataLoader
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         self.logger.info(
                         f"✅ Loaded data for regime {regime_name}: train={X_train.shape}, val={X_val.shape}"
                     )
@@ -469,6 +516,7 @@ import data_loader, UnifiedDataLoader
                     f"🔄 Starting model enhancement loop for regime: {regime_name}",
                 )
         for i, (model_name, model_data) in enumerate(regime_models.items(), 1):
+    pass
     pass
     pass
         self.logger.info(
@@ -506,6 +554,7 @@ import data_loader, UnifiedDataLoader
         for regime_name, regime_models in hmm_models.items():
     pass
     pass
+    pass
                 task, asyncio.create_task(enhance_regime_models(regime_name, regime_models))
                 tasks.append(task)
 
@@ -518,6 +567,7 @@ import data_loader, UnifiedDataLoader
         for batch_idx, i in enumerate(range(0, len(tasks), max_concurrent), 1):
     pass
     pass
+    pass
                 batch, tasks[i : i + max_concurrent]
         self.logger.info(
                     f"🔄 Processing batch {batch_idx}: regimes {i + 1}-{min(i + max_concurrent, len(tasks))}",
@@ -527,7 +577,9 @@ import data_loader, UnifiedDataLoader
         for result in results:
     pass
     pass
+    pass
         if isinstance(result, Exception):
+    pass
     pass
     pass
         self.logger.error(
@@ -580,11 +632,13 @@ import data_loader, UnifiedDataLoader
     def _load_models(self, models_dir: str) -> dict[str, Any]:
     pass
     pass
+    pass
         """Loads all analyst models from the specified directory, supporting both traditional and HMM composite regime structures."""
         # Ensure NumPy RNG pickles created under different versions can be loaded
         _enable_numpy_rng_unpickle_compat(self.logger)
         analyst_models: dict[str, Any] = {}
         if not os.path.exists(models_dir):
+    pass
     pass
     pass
         return analyst_models
@@ -594,8 +648,10 @@ import data_loader, UnifiedDataLoader
         for item in os.listdir(models_dir):
     pass
     pass
+    pass
             item_path, os.path.join(models_dir, item)
         if os.path.isdir(item_path):
+    pass
     pass
     pass
         # Check if this looks like a regime - specific directory
@@ -609,20 +665,25 @@ import data_loader, UnifiedDataLoader
         if has_regime_specific_structure:
     pass
     pass
+    pass
         self.logger.info("🔄 Loading models with regime - specific structure")
         # Load regime - specific models
         for regime_dir in os.listdir(models_dir):
+    pass
     pass
     pass
                 regime_path, os.path.join(models_dir, regime_dir)
         if os.path.isdir(regime_path):
     pass
     pass
+    pass
                     regime_models: dict[str, Any] = {}
         for model_file in os.listdir(regime_path):
     pass
     pass
+    pass
         if model_file.endswith((".pkl", ".joblib")):
+    pass
     pass
     pass
                             model_name, model_file.replace(".pkl", "")
@@ -630,6 +691,9 @@ import data_loader, UnifiedDataLoader
                             model_path, os.path.join(regime_path, model_file)
         try:
         if model_file.endswith(".joblib"):
+    pass
+    except Exception as e:
+        pass
     pass
     except Exception as e:
         pass
@@ -647,6 +711,7 @@ import data_loader, UnifiedDataLoader
         if regime_models:
     pass
     pass
+    pass
                         analyst_models[regime_dir] = regime_models
         else:
         self.logger.info("🔄 Loading models with traditional structure")
@@ -654,7 +719,9 @@ import data_loader, UnifiedDataLoader
         for model_file in os.listdir(models_dir):
     pass
     pass
+    pass
         if model_file.endswith((".pkl", ".joblib")):
+    pass
     pass
     pass
                     model_name, model_file.replace(".pkl", "")
@@ -662,6 +729,9 @@ import data_loader, UnifiedDataLoader
                     model_path, os.path.join(models_dir, model_file)
         try:
         if model_file.endswith(".joblib"):
+    pass
+    except Exception as e:
+        pass
     pass
     except Exception as e:
         pass
@@ -694,9 +764,14 @@ import data_loader, UnifiedDataLoader
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         # Try to load from unified data loader first (more efficient)
         try:
                 from src.config.constants import (
+    except Exception as e:
+        pass
+import except Exception as e:
     except Exception as e:
         pass
 import except Exception as e:
@@ -722,9 +797,11 @@ import BLANK_TRAINING_LOOKBACK_DAYS,
         if historical_data is not None and not historical_data.empty:
     pass
     pass
+    pass
         # For HMM - based training, we use all data since models are trained on composite clusters
         # Filter by timeframe if timeframe information is available
         if "timeframe" in historical_data.columns:
+    pass
     pass
     pass
                         timeframe_data, historical_data[
@@ -734,6 +811,7 @@ import BLANK_TRAINING_LOOKBACK_DAYS,
                         timeframe_data, historical_data
 
         if not timeframe_data.empty:
+    pass
     pass
     pass
         self.logger.info(
@@ -747,6 +825,7 @@ import BLANK_TRAINING_LOOKBACK_DAYS,
 
         # Extract features and target
         if "label" in timeframe_data.columns:
+    pass
     pass
     pass
                             X_train, train_data.drop(
@@ -793,6 +872,7 @@ import BLANK_TRAINING_LOOKBACK_DAYS,
         if os.path.exists(hmm_data_path):
     pass
     pass
+    pass
         # Load HMM composite data
                 hmm_data: pd.DataFrame, pd.read_parquet(hmm_data_path)
 
@@ -803,6 +883,7 @@ import BLANK_TRAINING_LOOKBACK_DAYS,
                 )
 
         if os.path.exists(intensity_path):
+    pass
     pass
     pass
                     intensity_data: pd.DataFrame, pd.read_parquet(intensity_path)
@@ -838,7 +919,9 @@ import BLANK_TRAINING_LOOKBACK_DAYS,
         for possible_target in target_candidates:
     pass
     pass
+    pass
         if possible_target in data.columns:
+    pass
     pass
     pass
                         target_column, possible_target
@@ -846,6 +929,7 @@ import BLANK_TRAINING_LOOKBACK_DAYS,
                         break
 
         if target_column is None:
+    pass
     pass
     pass
         self.logger.warning(
@@ -856,6 +940,7 @@ import BLANK_TRAINING_LOOKBACK_DAYS,
                     target_created: bool, self._create_target_from_data(data, timeframe_name)
 
         if target_created:
+    pass
     pass
     pass
                         target_column = "label"
@@ -907,6 +992,7 @@ import BLANK_TRAINING_LOOKBACK_DAYS,
         if len(unique_targets) <= 1:
     pass
     pass
+    pass
         # Emit mode - aware structured warning
         self.logger.warning(
                         f"⚠️ Target has only {len(unique_targets)} unique values: {unique_targets}",
@@ -932,9 +1018,11 @@ import BLANK_TRAINING_LOOKBACK_DAYS,
         if len(data.columns) > 1:
     pass
     pass
+    pass
         # Use the first numeric column as a proxy target
                         proxy_column: str, data.columns[0]
         if proxy_column != "label":
+    pass
     pass
     pass
                             proxy_values, data[proxy_column]
@@ -981,6 +1069,7 @@ import BLANK_TRAINING_LOOKBACK_DAYS,
     def _create_target_from_data(self, data: pd.DataFrame, regime_name: str) -> bool:
     pass
     pass
+    pass
         """Attempts to create a meaningful target column from available data.
 
         Args:
@@ -999,6 +1088,8 @@ import BLANK_TRAINING_LOOKBACK_DAYS,
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         for col in data.columns
         if any(
                     price_term in col.lower()
@@ -1009,12 +1100,14 @@ import BLANK_TRAINING_LOOKBACK_DAYS,
         if price_columns:
     pass
     pass
+    pass
         # Use the first price column to create a target
                 price_col, price_columns[0]
                 price_values, data[price_col]
 
         # Create a simple momentum - based target
         if len(price_values) > 1:
+    pass
     pass
     pass
         # Calculate price changes
@@ -1026,6 +1119,7 @@ import BLANK_TRAINING_LOOKBACK_DAYS,
 
         # Ensure we have at least 2 classes
         if target.nunique() >= 2:
+    pass
     pass
     pass
                         data["label"] = target
@@ -1040,6 +1134,7 @@ import BLANK_TRAINING_LOOKBACK_DAYS,
         if volume_columns:
     pass
     pass
+    pass
                 volume_col, volume_columns[0]
                 volume_values, data[volume_col]
 
@@ -1047,10 +1142,12 @@ import BLANK_TRAINING_LOOKBACK_DAYS,
         if len(volume_values) > 1:
     pass
     pass
+    pass
                     volume_median, float(volume_values.median())
                     target = (volume_values > volume_median).astype(int)
 
         if target.nunique() >= 2:
+    pass
     pass
     pass
                         data["label"] = target
@@ -1063,16 +1160,20 @@ import BLANK_TRAINING_LOOKBACK_DAYS,
         for col in data.columns:
     pass
     pass
+    pass
         if col != "label" and str(data[col].dtype) in ["int64", "float64"]:
+    pass
     pass
     pass
                     series, data[col]
         if series.dropna().std() > 0:
     pass
     pass
+    pass
                         median_val, float(series.median())
                         target = (series > median_val).astype(int)
         if target.nunique() >= 2:
+    pass
     pass
     pass
                             data["label"] = target
@@ -1100,6 +1201,7 @@ import BLANK_TRAINING_LOOKBACK_DAYS,
         if isinstance(model_data, dict):
     pass
     pass
+    pass
             original_accuracy, model_data.get("accuracy", "N / A")
             initial_model, model_data.get("model")
         else:
@@ -1113,6 +1215,7 @@ import BLANK_TRAINING_LOOKBACK_DAYS,
 
         # Check if we have valid targets for training
         if y_train.nunique() <= 1:
+    pass
     pass
     pass
         self.logger.warning(
@@ -1150,6 +1253,7 @@ import BLANK_TRAINING_LOOKBACK_DAYS,
         if len(allow_features) != X_train.shape[1]:
     pass
     pass
+    pass
         self.logger.info(
                 f"Feature isolation excluded {X_train.shape[1]-len(allow_features)} non - feature columns",
             )
@@ -1160,6 +1264,7 @@ import BLANK_TRAINING_LOOKBACK_DAYS,
         # Different architectures require different enhancement strategies
 
         if model_name == "tcn":
+    pass
     pass
     pass
         # TCN (Temporal Convolutional Network) - Neural network specific enhancements
@@ -1218,6 +1323,8 @@ import BLANK_TRAINING_LOOKBACK_DAYS,
                 f"🔄 TCN enhancement: Temporal convolution optimization for {timeframe_name}",
             )
 
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -1284,6 +1391,8 @@ import BLANK_TRAINING_LOOKBACK_DAYS,
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         # Transformer - specific hyperparameter optimization
             best_params, await self._optimize_transformer_hyperparameters(
                 X_train, y_train, X_val, y_val,
@@ -1346,6 +1455,8 @@ import BLANK_TRAINING_LOOKBACK_DAYS,
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         # LightGBM - specific hyperparameter optimization
             best_params, await self._optimize_lightgbm_hyperparameters(
                 X_train, y_train, X_val, y_val,
@@ -1404,6 +1515,8 @@ import BLANK_TRAINING_LOOKBACK_DAYS,
                 f"🔄 CNN enhancement: Convolution optimization for {timeframe_name}",
             )
 
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -1504,8 +1617,10 @@ import BLANK_TRAINING_LOOKBACK_DAYS,
     def _get_model_instance(self, model_name: str, params: dict[str, Any]):
     pass
     pass
+    pass
         """Factory function to get a model instance from its name and parameters."""
         if model_name in ["xgboost", "lightgbm"] and self.device == "mps":
+    pass
     pass
     pass
         # LightGBM does not support 'mps' device. Force CPU for tree learners on Apple Silicon.
@@ -1513,8 +1628,10 @@ import BLANK_TRAINING_LOOKBACK_DAYS,
         if model_name == "random_forest":
     pass
     pass
+    pass
         return RandomForestClassifier(**params, random_state = 42, n_jobs=-1)
         if model_name == "lightgbm":
+    pass
     pass
     pass
         # Ensure CPU execution to avoid 'Unknown device type mps'
@@ -1525,13 +1642,16 @@ import BLANK_TRAINING_LOOKBACK_DAYS,
         if model_name == "xgboost":
     pass
     pass
+    pass
         # Remove eval_metric and device from params if they exist to avoid duplicate / unsupported parameters
             xgb_params, params.copy()
         if "eval_metric" in xgb_params:
     pass
     pass
+    pass
                 del xgb_params["eval_metric"]
         if "device" in xgb_params:
+    pass
     pass
     pass
                 del xgb_params["device"]
@@ -1548,11 +1668,13 @@ import BLANK_TRAINING_LOOKBACK_DAYS,
         if model_name == "svm":
     pass
     pass
+    pass
             from sklearn.svm import SVC
 
 import return SVC
         return SVC(**params, random_state = 42, probability = True)
         if model_name == "neural_network":
+    pass
     pass
     pass
             from sklearn.neural_network import MLPClassifier
@@ -1608,6 +1730,7 @@ import return MLPClassifier
         def objective(trial: optuna.trial.Trial) -> float:
     pass
     pass
+    pass
             nonlocal trial_count
             trial_count += 1
         self.logger.info(
@@ -1626,6 +1749,7 @@ import return MLPClassifier
         if y_train.nunique() <= 1:
     pass
     pass
+    pass
         self.logger.warning(
                     f"Target has only {y_train.nunique()} unique values, skipping optimization",
                 )
@@ -1633,6 +1757,7 @@ import return MLPClassifier
 
         # Build model params for this trial
         if model_name == "lightgbm":
+    pass
     pass
     pass
         # Align pruning metric and study direction for LightGBM using logloss (minimize)
@@ -1717,10 +1842,12 @@ import return MLPClassifier
         if model_name == "lightgbm":
     pass
     pass
+    pass
         # LightGBM supports callbacks. Train with eval_set so pruning can observe logloss.
                 use_pruning, pruning_callback is not None
                 fit_kwargs = {"eval_set": [(X_val, y_val)]}
         if use_pruning:
+    pass
     pass
     pass
                     fit_kwargs["callbacks"] = [pruning_callback]
@@ -1739,6 +1866,7 @@ import return MLPClassifier
                     )
 
                 def timeout_handler(signum, frame) -> Never:
+    pass
     pass
     pass
                     msg = "LightGBM training timed out"
@@ -1762,6 +1890,8 @@ import try:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         with warnings.catch_warnings():
                         warnings.simplefilter("ignore")
                         model.fit(X_train, y_train, **fit_kwargs)
@@ -1777,6 +1907,7 @@ import try:
         if model_name == "svm":
     pass
     pass
+    pass
         self.logger.info(
                         {
                             "msg": "Training model",
@@ -1790,6 +1921,7 @@ import try:
             accuracy, accuracy_score(y_val, preds)
         # Return metric aligned with study direction: for LightGBM use logloss (minimize); others use accuracy (maximize)
         if model_name == "svm":
+    pass
     pass
     pass
         self.logger.info(
@@ -1810,6 +1942,7 @@ import try:
                         },
                     )
         if model_name == "lightgbm":
+    pass
     pass
     pass
                 from sklearn.metrics import log_loss
@@ -1837,6 +1970,7 @@ import labels_sorted, sorted
             def progress_callback(study, trial) -> None:
     pass
     pass
+    pass
                 completed_trials, len(study.trials)
         if completed_trials % 1 == 0:  # Log every trial for better visibility
         self.logger.info(
@@ -1853,6 +1987,8 @@ import labels_sorted, sorted
         # Bound parallelism to avoid CPU thrashing or potential thread deadlocks on macOS
         try:
                 import platform
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -1898,6 +2034,7 @@ import labels_sorted, sorted
         if not study.best_trial:
     pass
     pass
+    pass
         self.logger.warning(
                     "Optuna study found no best trial, possibly due to all trials being pruned. Returning empty params.",
                 )
@@ -1914,6 +2051,7 @@ import labels_sorted, sorted
         with contextlib.suppress(Exception):
                 pass
         if model_name == "svm":
+    pass
     pass
     pass
         self.logger.info(
@@ -1961,6 +2099,8 @@ import labels_sorted, sorted
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         except Exception as e:
         self.logger.warning(f"Stability check failed: {e}")
 
@@ -1968,6 +2108,7 @@ import labels_sorted, sorted
 
         # Enhanced tiered feature selection strategy for large feature sets
         if total_features > 200:
+    pass
     pass
     pass
         # Use tiered selection with stability selection for large feature sets
@@ -1994,11 +2135,13 @@ import labels_sorted, sorted
     def _log_mutual_information_warnings(self, X: pd.DataFrame, y: pd.Series) -> None:
     pass
     pass
+    pass
         """Compute MI for each feature vs target and warn on near - zero scores.
         Threshold: in blank mode -> absolute threshold 1e - 5.
         Full mode -> bottom 20% percentile flagged.
         """
         if X.empty or y is None or len(X.columns) == 0:
+    pass
     pass
     pass
             return
@@ -2018,11 +2161,13 @@ import labels_sorted, sorted
         if blank_mode:
     pass
     pass
+    pass
             low, mi_series[mi_series <= 1e - 5]
         else:
             threshold, mi_series.quantile(0.20)
             low, mi_series[mi_series <= threshold]
         if not low.empty:
+    pass
     pass
     pass
             names, low.sort_values().index.tolist()
@@ -2033,10 +2178,12 @@ import labels_sorted, sorted
     def _log_feature_stability_warnings(self, X: pd.DataFrame) -> None:
     pass
     pass
+    pass
         """Check 4 - fold CV stability: warn if std of fold means >> expected standard error.
         Criterion: std_of_means > 3 * (global_std / sqrt(k)).
         """
         if X.empty:
+    pass
     pass
     pass
             return
@@ -2045,8 +2192,11 @@ import labels_sorted, sorted
         for col in X.columns:
     pass
     pass
+    pass
         try:
                 vals, X[col].astype(float).values
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -2056,18 +2206,22 @@ import labels_sorted, sorted
         if not np.isfinite(gstd) or gstd == 0.0:
     pass
     pass
+    pass
                     continue
                 fold_means = []
         for train_idx, _ in kf.split(vals):
+    pass
     pass
     pass
                     fold_vals, vals[train_idx]
         if fold_vals.size == 0:
     pass
     pass
+    pass
                         continue
                     fold_means.append(float(np.nanmean(fold_vals)))
         if len(fold_means) < 2:
+    pass
     pass
     pass
                     continue
@@ -2076,10 +2230,12 @@ import labels_sorted, sorted
         if std_of_means > 3.0 * expected_se:
     pass
     pass
+    pass
                     unstable.append(col)
         except Exception:
                 continue
         if unstable:
+    pass
     pass
     pass
         self.logger.warning(
@@ -2237,6 +2393,7 @@ import labels_sorted, sorted
         if len(selected_features) > total_max_features:
     pass
     pass
+    pass
             selected_features, await self._apply_stable_final_pruning(
                 selected_features,
                 X_val[selected_features],
@@ -2293,7 +2450,10 @@ import labels_sorted, sorted
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         if optimal_features:
+    pass
     pass
     pass
         return optimal_features, {"method": "stable_shap", **shap_summary}
@@ -2328,11 +2488,13 @@ import labels_sorted, sorted
         if not tier_1_features:
     pass
     pass
+    pass
         return []
 
         # Get available features
         available_features = [f for f in tier_1_features if f in X_val.columns]
         if not available_features:
+    pass
     pass
     pass
         return []
@@ -2356,10 +2518,12 @@ import labels_sorted, sorted
         if not tier_2_features:
     pass
     pass
+    pass
         return []
 
         available_features = [f for f in tier_2_features if f in X_val.columns]
         if not available_features:
+    pass
     pass
     pass
         return []
@@ -2384,10 +2548,12 @@ import labels_sorted, sorted
         if not tier_3_features:
     pass
     pass
+    pass
         return []
 
         available_features = [f for f in tier_3_features if f in X_val.columns]
         if not available_features:
+    pass
     pass
     pass
         return []
@@ -2412,10 +2578,12 @@ import labels_sorted, sorted
         if not tier_4_features:
     pass
     pass
+    pass
         return []
 
         available_features = [f for f in tier_4_features if f in X_val.columns]
         if not available_features:
+    pass
     pass
     pass
         return []
@@ -2440,10 +2608,12 @@ import labels_sorted, sorted
         if not tier_5_features:
     pass
     pass
+    pass
         return []
 
         available_features = [f for f in tier_5_features if f in X_val.columns]
         if not available_features:
+    pass
     pass
     pass
         return []
@@ -2477,6 +2647,7 @@ import labels_sorted, sorted
         for i in range(n_bootstrap_samples):
     pass
     pass
+    pass
         try:
         # Create bootstrap sample (with replacement) from training data only
                 bootstrap_indices, np.random.choice(
@@ -2486,6 +2657,8 @@ import labels_sorted, sorted
                 X_bootstrap, X_train.iloc[bootstrap_indices][available_features]
                 y_bootstrap, y_train.iloc[bootstrap_indices]
 
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -2504,6 +2677,7 @@ import labels_sorted, sorted
 
         # Count selected features
         for feature in selected_features_bootstrap:
+    pass
     pass
     pass
                     feature_selection_freq[feature] += 1
@@ -2529,6 +2703,7 @@ import labels_sorted, sorted
         if len(stable_features) < min_features_per_tier:
     pass
     pass
+    pass
         # Add top features by stability score to meet minimum
             sorted_features, sorted(
                 feature_stability.items(), key = lambda x: x[1], reverse = True
@@ -2537,6 +2712,7 @@ import labels_sorted, sorted
 
         # Limit to requested count
         if len(stable_features) > count:
+    pass
     pass
     pass
         # Sort by stability and take top features
@@ -2564,7 +2740,10 @@ import labels_sorted, sorted
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         if hasattr(model, "feature_importances_"):
+    pass
     pass
     pass
         # Tree - based models
@@ -2583,10 +2762,12 @@ import labels_sorted, sorted
         if selection_criteria == "stability":
     pass
     pass
+    pass
         # Select based on feature stability (lower variance for normalized features)
                 feature_variance, X_bootstrap[available_features].var()
         return feature_variance.nsmallest(count).index.tolist()
         if selection_criteria == "significance":
+    pass
     pass
     pass
         # Select based on absolute mean (higher values indicate more significant interactions)
@@ -2597,10 +2778,12 @@ import labels_sorted, sorted
         if selection_criteria == "temporal":
     pass
     pass
+    pass
         # Select based on variance (higher variance indicates more temporal information)
                 feature_variance, X_bootstrap[available_features].var()
         return feature_variance.nlargest(count).index.tolist()
         if selection_criteria == "market_logic":
+    pass
     pass
     pass
         # Select based on absolute mean (causality features should have meaningful values)
@@ -2618,6 +2801,7 @@ import labels_sorted, sorted
         self, selected_features: list, X_val_subset: pd.DataFrame, y_val: pd.Series, max_features: int, n_bootstrap_samples: int, stability_threshold: float, ) -> list[str]:
         """Apply final pruning with stability selection to meet maximum feature count."""
         if len(selected_features) <= max_features:
+    pass
     pass
     pass
         return selected_features
@@ -2664,6 +2848,7 @@ import labels_sorted, sorted
         for i in range(n_bootstrap_samples):
     pass
     pass
+    pass
         try:
         # Create bootstrap sample from training data only (prevent look - ahead bias)
                 bootstrap_indices, np.random.choice(
@@ -2673,6 +2858,8 @@ import labels_sorted, sorted
                 X_bootstrap, X_train.iloc[bootstrap_indices]
                 y_bootstrap, y_train.iloc[bootstrap_indices]
 
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -2700,6 +2887,7 @@ import labels_sorted, sorted
         if shap_importance is not None:
     pass
     pass
+    pass
         # Select top features based on SHAP importance
                     top_features, sorted(
                         shap_importance.items(), key = lambda x: x[1], reverse = True
@@ -2707,6 +2895,7 @@ import labels_sorted, sorted
 
         # Count selected features
         for feature, importance in top_features:
+    pass
     pass
     pass
                         feature_selection_freq[feature] += 1
@@ -2733,6 +2922,7 @@ import labels_sorted, sorted
         if len(stable_features) < min_features:
     pass
     pass
+    pass
             sorted_features, sorted(
                 feature_stability.items(), key = lambda x: x[1], reverse = True
             )
@@ -2740,6 +2930,7 @@ import labels_sorted, sorted
 
         # Limit to maximum features
         if len(stable_features) > max_features:
+    pass
     pass
     pass
             stable_features, sorted(
@@ -2751,8 +2942,10 @@ import labels_sorted, sorted
         for feature in stable_features:
     pass
     pass
+    pass
             shap_values = [shap_val for f, shap_val in shap_values_all if f == feature]
         if shap_values:
+    pass
     pass
     pass
                 feature_shap_avg[feature] = np.mean(shap_values)
@@ -2767,6 +2960,8 @@ import labels_sorted, sorted
         try:
             top_by_stability, sorted(
                 feature_stability.items(), key = lambda x: x[1], reverse = True
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -2802,10 +2997,12 @@ import labels_sorted, sorted
         if not enable_adaptive:
     pass
     pass
+    pass
         return min(default_size, total_samples)
 
         # Adaptive sizing based on dataset size
         if total_samples <= 10000:
+    pass
     pass
     pass
         # Small dataset: use 20% of data, but at least min_size
@@ -2836,10 +3033,16 @@ import labels_sorted, sorted
     pass
     except Exception as e:
         pass
+    pass
+    except Exception as e:
+        pass
         # Try TreeExplainer with proper import
         try:
                     from shap.explainers import TreeExplainer
 
+    except Exception as e:
+        pass
+import except Exception as e:
     except Exception as e:
         pass
 import except Exception as e:
@@ -2853,12 +3056,14 @@ import explainer, TreeExplainer
         if isinstance(shap_values, list):
     pass
     pass
+    pass
                         shap_array, np.asarray(shap_values)
                     else:
                         shap_array, np.asarray(shap_values)
 
         # Handle different SHAP output shapes
         if shap_array.ndim == 2:
+    pass
     pass
     pass
                         feature_importance, np.mean(np.abs(shap_array), axis = 0)
@@ -2888,6 +3093,9 @@ import feature_importance, permutation_importance
         try:
                     from shap.explainers import KernelExplainer
 
+    except Exception as e:
+        pass
+import except Exception as e:
     except Exception as e:
         pass
 import except Exception as e:
@@ -2938,6 +3146,7 @@ import feature_importance, permutation_importance
         for i in range(n_bootstrap_samples):
     pass
     pass
+    pass
         try:
         # Create bootstrap sample from training data only
                 bootstrap_indices, np.random.choice(
@@ -2947,6 +3156,8 @@ import feature_importance, permutation_importance
                 X_bootstrap, X_train.iloc[bootstrap_indices]
                 y_bootstrap, y_train.iloc[bootstrap_indices]
 
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -2978,6 +3189,7 @@ import feature_importance, permutation_importance
         for feature in selected_features_bootstrap:
     pass
     pass
+    pass
                     feature_selection_freq[feature] += 1
 
         except Exception as e:
@@ -3001,6 +3213,7 @@ import feature_importance, permutation_importance
         if len(stable_features) < min_features:
     pass
     pass
+    pass
             sorted_features, sorted(
                 feature_stability.items(), key = lambda x: x[1], reverse = True
             )
@@ -3008,6 +3221,7 @@ import feature_importance, permutation_importance
 
         # Limit to maximum features
         if len(stable_features) > max_features:
+    pass
     pass
     pass
             stable_features, sorted(
@@ -3038,9 +3252,13 @@ import feature_importance, permutation_importance
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         # Method 1: Variance - based selection
         try:
                 feature_variance, X_val[feature_names].var()
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -3056,6 +3274,9 @@ import feature_importance, permutation_importance
         try:
                 from sklearn.feature_selection import SelectKBest, f_classif
 
+    except Exception as e:
+        pass
+import except Exception as e:
     except Exception as e:
         pass
 import except Exception as e:
@@ -3080,6 +3301,9 @@ import selector, SelectKBest
 import except Exception as e:
     except Exception as e:
         pass
+import except Exception as e:
+    except Exception as e:
+        pass
 import mi_scores, mutual_info_classif
                 mi_scores, mutual_info_classif(
                     X_train[feature_names], y_train, random_state = 42
@@ -3094,6 +3318,9 @@ import mi_scores, mutual_info_classif
         # Method 4: Model - based importance (if available)
         try:
         if hasattr(model, "feature_importances_"):
+    pass
+    except Exception as e:
+        pass
     pass
     except Exception as e:
         pass
@@ -3120,11 +3347,14 @@ import mi_scores, mutual_info_classif
         if methods:
     pass
     pass
+    pass
                 feature_votes = {}
         for method_features in methods:
     pass
     pass
+    pass
         for feature in method_features:
+    pass
     pass
     pass
                         feature_votes[feature] = feature_votes.get(feature, 0) + 1
@@ -3145,6 +3375,7 @@ import mi_scores, mutual_info_classif
     def _categorize_features_by_tier(self, feature_names: list) -> dict:
     pass
     pass
+    pass
         """Categorize features into tiers based on naming patterns (enhanced with data - driven methods)."""
         categories = {
             "tier_1": [],  # Core features
@@ -3155,6 +3386,7 @@ import mi_scores, mutual_info_classif
         }
 
         for feature in feature_names:
+    pass
     pass
     pass
             feature_lower, feature.lower()
@@ -3238,6 +3470,8 @@ import mi_scores, mutual_info_classif
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         # Stage 1: Data quality filtering
             X_clean, data[feature_columns].copy()
 
@@ -3251,7 +3485,9 @@ import mi_scores, mutual_info_classif
         for col in X_clean.columns:
     pass
     pass
+    pass
         if np.isinf(X_clean[col]).any():
+    pass
     pass
     pass
                     inf_features.append(col)
@@ -3266,6 +3502,9 @@ import mi_scores, mutual_info_classif
         try:
                 from src.utils.vif_calculator import calculate_vif_robust
 
+    except Exception as e:
+        pass
+import except Exception as e:
     except Exception as e:
         pass
 import except Exception as e:
@@ -3287,9 +3526,12 @@ import vif_scores, calculate_vif_robust
         if target_column and target_column in data.columns:
     pass
     pass
+    pass
         try:
                     y, data[target_column]
 
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -3301,6 +3543,7 @@ import task_type = "classification" if len
                     task_type = "classification" if len(y.unique()) < 10 else "regression"
 
         if task_type == "classification":
+    pass
     pass
     pass
                         mi_scores, mutual_info_classif(X_clean, y, random_state = 42)
@@ -3321,9 +3564,13 @@ import task_type = "classification" if len
         if target_column and target_column in data.columns and len(X_clean.columns) > 50:
     pass
     pass
+    pass
         try:
                     from src.analyst.meta_label_relevance import compute_shap_importance
 
+    except Exception as e:
+        pass
+import except Exception as e:
     except Exception as e:
         pass
 import except Exception as e:
@@ -3334,6 +3581,7 @@ import shap_scores, compute_shap_importance
                     shap_scores, compute_shap_importance(X_clean, y, task = task_type)
 
         if shap_scores:
+    pass
     pass
     pass
         # Remove bottom 20% of features by SHAP importance
@@ -3351,6 +3599,7 @@ import shap_scores, compute_shap_importance
         if target_column and target_column in data.columns and len(X_clean.columns) > 30:
     pass
     pass
+    pass
         try:
                     from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 
@@ -3359,9 +3608,13 @@ import shap_scores, compute_shap_importance
 import except Exception as e:
     except Exception as e:
         pass
+import except Exception as e:
+    except Exception as e:
+        pass
         # Train RF for feature importance
 import if task_type == "classification":
         if task_type == "classification":
+    pass
     pass
     pass
                         rf, RandomForestClassifier(n_estimators = 100, random_state = 42, n_jobs=-1)
@@ -3402,11 +3655,13 @@ import if task_type == "classification":
         for regime_name, models in enhanced_models.items():
     pass
     pass
+    pass
             regime_models_dir, os.path.join(enhanced_models_dir, regime_name)
             os.makedirs(regime_models_dir, exist_ok = True)
             json_summary[regime_name] = {}
 
         for model_name, model_data in models.items():
+    pass
     pass
     pass
             model_file, os.path.join(regime_models_dir, f"{model_name}.joblib")
@@ -3429,6 +3684,7 @@ import if task_type == "classification":
         return enhanced_models_dir
 
     def _apply_quantization(self, model: torch.nn.Module) -> torch.nn.Module:
+    pass
     pass
     pass
         """Applies dynamic quantization to a PyTorch model for CPU / MPS inference."""
@@ -3465,7 +3721,9 @@ import if task_type == "classification":
         def get_activation(name):
     pass
     pass
+    pass
             def hook(model, input, output) -> None:
+    pass
     pass
     pass
                 activations[name] = torch.sqrt(torch.mean(input[0] ** 2, dim = 0))
@@ -3476,7 +3734,9 @@ import if task_type == "classification":
         for name, module in model.named_modules():
     pass
     pass
+    pass
         if isinstance(module, nn.Linear):
+    pass
     pass
     pass
                 hooks.append(module.register_forward_hook(get_activation(name)))
@@ -3485,13 +3745,16 @@ import if task_type == "classification":
         for hook in hooks:
     pass
     pass
+    pass
             hook.remove()
 
         # 2. Calculate importance and prune
         for name, module in model.named_modules():
     pass
     pass
+    pass
         if isinstance(module, nn.Linear) and name in activations:
+    pass
     pass
     pass
                 W, module.weight.data
@@ -3511,6 +3774,8 @@ import if task_type == "classification":
                 prune.remove(module, "weight")
         try:
                 total, W.numel()
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -3564,6 +3829,7 @@ import if task_type == "classification":
         for data, targets in train_loader:
     pass
     pass
+    pass
                 data, targets, data.to(self.device), targets.to(self.device)
 
         # Get teacher's logits (outputs before softmax)
@@ -3610,10 +3876,13 @@ import if task_type == "classification":
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             from catboost import CatBoostClassifier
 
 import def objective
             def objective(trial: optuna.Trial) -> float:
+    pass
     pass
     pass
                 params = {
@@ -3628,6 +3897,7 @@ import def objective
         # Subsample for speed
                 frac, min(1.0, 30000 / max(1, len(X_train)))
         if frac < 1.0:
+    pass
     pass
     pass
                     Xs, ys, X_train.sample(frac = frac, random_state = 42), y_train.loc[Xs.index]
@@ -3656,8 +3926,11 @@ import def objective
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         # Check if this is a new architecture model
         if regime_name.startswith("hmm_"):
+    pass
     pass
     pass
         # For new architectures, use architecture - specific feature selection
@@ -3734,6 +4007,9 @@ import def objective
     except Exception as e:
         pass
     pass
+    except Exception as e:
+        pass
+    pass
                     from sklearn.feature_selection import mutual_info_classif
 
 import except Exception as e:
@@ -3746,6 +4022,7 @@ import X =
                     )
                     y, data.get("label")
         if y is not None and not X.empty:
+    pass
     pass
     pass
                         mi, mutual_info_classif(
@@ -3763,6 +4040,7 @@ import X =
 
         # Apply final pruning if we exceed total_max_features
         if len(selected_features) > total_max_features:
+    pass
     pass
     pass
                 selected_features, await self._apply_final_pruning_pre_training(
@@ -3785,6 +4063,8 @@ import X =
         # Extract timeframe from regime name
             timeframe, regime_name.replace("hmm_", "")
 
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -3861,10 +4141,13 @@ import X =
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             from sklearn.ensemble import RandomForestClassifier
 
 import def objective
             def objective(trial: optuna.Trial) -> float:
+    pass
     pass
     pass
                 params = {
@@ -3905,10 +4188,13 @@ import def objective
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             from sklearn.linear_model import LogisticRegression
 
 import def objective
             def objective(trial: optuna.Trial) -> float:
+    pass
     pass
     pass
                 penalty, trial.suggest_categorical(
@@ -3955,6 +4241,8 @@ import def objective
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             from sklearn.kernel_approximation import RBFSampler
             from sklearn.pipeline import make_pipeline
             from sklearn.preprocessing import StandardScaler
@@ -3962,6 +4250,7 @@ import def objective
 
 import def objective
             def objective(trial: optuna.Trial) -> float:
+    pass
     pass
     pass
                 gamma, trial.suggest_float("gamma", 1e - 4, 1.0, log = True)
@@ -4235,6 +4524,8 @@ import with_enhanced_mlflow_logging,
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         # Phase 1: Configuration
         logger.info("📋 Phase 1: Loading configuration...")
         try:
@@ -4242,6 +4533,8 @@ import with_enhanced_mlflow_logging,
                 "symbol": symbol,
                 "exchange": exchange,
                 "data_dir": data_dir,
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -4257,6 +4550,8 @@ import with_enhanced_mlflow_logging,
         logger.info("🔧 Phase 2: Initializing Analyst Enhancement Step...")
         try:
             step, AnalystEnhancementStep(config)
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -4280,6 +4575,8 @@ import with_enhanced_mlflow_logging,
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             }
             pipeline_state = {}
             logger.info(f"✅ Training input prepared: {len(training_input)} parameters")
@@ -4297,11 +4594,15 @@ import with_enhanced_mlflow_logging,
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         if isinstance(result, dict):
+    pass
     pass
     pass
                 status, result.get("status", "UNKNOWN")
         if status == "SUCCESS":
+    pass
     pass
     pass
                     logger.info("✅ Model enhancement completed successfully")
@@ -4326,6 +4627,8 @@ import with_enhanced_mlflow_logging,
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         except Exception as e:
             logger.exception(f"❌ Enhancement validation failed: {e}")
         # Don't fail the entire step for validation issues
@@ -4343,6 +4646,7 @@ import with_enhanced_mlflow_logging,
         logger.info(f"Successful phases: {successful_phases}/{total_phases}")
         logger.info("Phase status:")
         for phase, status in step_phases.items():
+    pass
     pass
     pass
             status_emoji = "✅" if status else "❌"

@@ -72,6 +72,7 @@ class EnhancedHMMBasedTrainingStep:
     def __init__(self, config: dict[str, Any]) -> None:
     pass
     pass
+    pass
         self.config, config
         self.logger, system_logger
         self.models = {}
@@ -107,6 +108,7 @@ class EnhancedHMMBasedTrainingStep:
         for timeframe, model_config in specialist_config.items():
     pass
     pass
+    pass
         self.model_architectures[timeframe] = model_config.get(
                 "architecture", "LightGBM",
             )
@@ -118,6 +120,7 @@ class EnhancedHMMBasedTrainingStep:
 
         # Fallback to default if config not available
         if not self.model_architectures:
+    pass
     pass
     pass
         self.model_architectures = {
@@ -273,6 +276,7 @@ class EnhancedHMMBasedTrainingStep:
     def print(self, message: str) -> None:
     pass
     pass
+    pass
         """Print message using logger."""
         self.logger.info(message)
 
@@ -287,6 +291,7 @@ class EnhancedHMMBasedTrainingStep:
 
         # Initialize multi - output probability trainer if enabled
         if self.enable_multi_output:
+    pass
     pass
     pass
             from ..multi_output_probability_trainer import MultiOutputProbabilityTrainer
@@ -390,6 +395,7 @@ import multi_output_config = {
         if regime_key:
     pass
     pass
+    pass
         self.logger.info(f"   - Regime: {regime_key}")
 
         # Check for multi - output targets
@@ -401,9 +407,13 @@ import multi_output_config = {
         if has_profit and self.enable_multi_output:
     pass
     pass
+    pass
         try:
                 from src.training.enhanced_matrix_operations import EnhancedMatrixOperations
 
+    except Exception as e:
+        pass
+import except Exception as e:
     except Exception as e:
         pass
 import except Exception as e:
@@ -418,6 +428,7 @@ import self.logger.info
         # Create dummy target for feature selection
                 dummy_target, pd.Series(0, index = data.index)
         if "direction" in data.columns:
+    pass
     pass
     pass
                     dummy_target, data["direction"]
@@ -473,6 +484,7 @@ import self.logger.info
         if has_single_target:
     pass
     pass
+    pass
             label_col = "target" if "target" in data.columns else "label"
             prepared_data["single_target"] = data[label_col].fillna(0)
 
@@ -480,11 +492,13 @@ import self.logger.info
         if has_direction and has_profit:
     pass
     pass
+    pass
             prepared_data["direction_target"] = data["direction"].fillna(0)
             prepared_data["profit_target"] = data["potential_profit_pct"].fillna(0)
 
         # Convert direction to binary if needed
         if prepared_data["direction_target"].dtype in ['object', 'string']:
+    pass
     pass
     pass
                 prepared_data["direction_target"] = (prepared_data["direction_target"] > 0).astype(int)
@@ -530,6 +544,7 @@ import self.logger.info
         if prepared_data["has_multi_output"] and self.multi_output_trainer:
     pass
     pass
+    pass
         self.logger.info("🎯 Training multi - output probability model")
 
         # Prepare data for multi - output training
@@ -570,6 +585,7 @@ import self.logger.info
         if multi_output_result:
     pass
     pass
+    pass
                 results["multi_output_results"] = multi_output_result
         self.logger.info("✅ Multi - output probability model training completed successfully")
             else:
@@ -577,6 +593,7 @@ import self.logger.info
 
         # Train single - output model for backward compatibility
         if prepared_data["has_single_output"]:
+    pass
     pass
     pass
         self.logger.info("🎯 Training single - output model (backward compatibility)")
@@ -589,6 +606,7 @@ import self.logger.info
             )
 
         if single_output_result:
+    pass
     pass
     pass
                 results["single_output_results"] = single_output_result
@@ -622,6 +640,8 @@ import self.logger.info
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         self.logger.info(f"   🌳 Training {architecture} single - output model")
 
         # Prepare data
@@ -636,6 +656,7 @@ import self.logger.info
         for fold, (train_idx, val_idx) in enumerate(tscv.split(X)):
     pass
     pass
+    pass
                 X_train, X_val, X[train_idx], X[val_idx]
                 y_train, y_val, y[train_idx], y[val_idx]
 
@@ -646,6 +667,7 @@ import self.logger.info
 
         # Train model based on architecture
         if architecture == "LightGBM":
+    pass
     pass
     pass
                     model, lgb.LGBMClassifier(
@@ -684,6 +706,7 @@ import self.logger.info
             X_scaled, scaler.fit_transform(X)
 
         if architecture == "LightGBM":
+    pass
     pass
     pass
                 final_model, lgb.LGBMClassifier(
@@ -753,6 +776,7 @@ import self.logger.info
         for regime_key, regime_info in regime_data.items():
     pass
     pass
+    pass
             regime_desc, regime_info.get("description", "Unknown")
         self.logger.info(f"   🎯 Processing regime {regime_key}: {regime_desc}")
 
@@ -762,6 +786,7 @@ import self.logger.info
             test_data, regime_info.get("test")
 
         if train_data is None or len(train_data) < self.validation_config["min_samples_per_split"]:
+    pass
     pass
     pass
         self.logger.warning(f"   ⚠️ Insufficient data for regime {regime_key}")
@@ -781,6 +806,7 @@ import self.logger.info
             )
 
         if model_result:
+    pass
     pass
     pass
                 regime_results[regime_key] = model_result
@@ -810,6 +836,7 @@ import self.logger.info
         if prediction_type == "multi_output" and self.multi_output_trainer:
     pass
     pass
+    pass
         try:
         # Create market data for prediction
                 market_data, pd.DataFrame({
@@ -817,6 +844,8 @@ import self.logger.info
                     'volume': np.random.randn(len(features))
                 })
 
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -857,8 +886,11 @@ import self.logger.info
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         # Save multi - output models
         if results.get("multi_output_results") and self.multi_output_trainer:
+    pass
     pass
     pass
                 multi_output_dir, os.path.join(save_path, "multi_output_models")
@@ -871,6 +903,7 @@ import self.logger.info
 
         # Save single - output models
         if results.get("single_output_results"):
+    pass
     pass
     pass
                 single_output_dir, os.path.join(save_path, "single_output_models")
@@ -921,11 +954,15 @@ import self.logger.info
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         if os.path.exists(multi_output_dir) and self.multi_output_trainer:
+    pass
     pass
     pass
                 model_path, os.path.join(multi_output_dir, f"{model_name}_multi_output.pkl")
         if os.path.exists(model_path):
+    pass
     pass
     pass
                     import joblib
@@ -937,10 +974,12 @@ import self.logger.info
         if os.path.exists(single_output_dir):
     pass
     pass
+    pass
                 model_path, os.path.join(single_output_dir, f"{model_name}_single.pkl")
                 scaler_path, os.path.join(single_output_dir, f"{model_name}_scaler.pkl")
 
         if os.path.exists(model_path) and os.path.exists(scaler_path):
+    pass
     pass
     pass
                     import joblib
@@ -982,6 +1021,8 @@ async def run_enhanced_step(
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         logger.info(f"🚀 Starting Enhanced HMM - Based Training for {symbol}")
 
         # Load configuration
@@ -999,6 +1040,7 @@ async def run_enhanced_step(
         if not os.path.exists(labeled_path):
     pass
     pass
+    pass
             logger.error(f"❌ Labeled data not found: {labeled_path}")
         return False
 
@@ -1014,6 +1056,7 @@ async def run_enhanced_step(
         )
 
         if results:
+    pass
     pass
     pass
         # Save models

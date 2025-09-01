@@ -22,6 +22,7 @@ import error,
 if TYPE_CHECKING:
     pass
     pass
+    pass
     from src.analyst.analyst import Analyst
     from src.tactician.tactician import Tactician
 
@@ -38,6 +39,7 @@ class Strategist:
     """
 
     def __init__(self, config: dict[str, Any]) -> None:
+    pass
     pass
     pass
         """
@@ -101,8 +103,11 @@ class Strategist:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             # Validate configuration
             if not self._validate_configuration():
+    pass
     pass
     pass
                 self.logger.error(invalid("Invalid configuration for strategist"))
@@ -131,7 +136,10 @@ class Strategist:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             if self.enable_risk_management:
+    pass
     pass
     pass
                 self.logger.info("Initializing risk management components...")
@@ -153,6 +161,7 @@ class Strategist:
     def _validate_configuration(self) -> bool:
     pass
     pass
+    pass
         """Validate strategist configuration."""
         try:
             required_keys = ["strategy_interval", "max_strategy_history"]
@@ -160,10 +169,14 @@ class Strategist:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             for key in required_keys:
     pass
     pass
+    pass
                 if key not in self.strategist_config:
+    pass
     pass
     pass
                     self.logger.error(missing(f"Missing required configuration key: {key}"))
@@ -173,6 +186,7 @@ class Strategist:
             # No position sizing validation in Strategist
 
             if self.min_confidence_threshold < 0 or self.min_confidence_threshold > 1:
+    pass
     pass
     pass
                 self.logger.error(invalid("Invalid min_confidence_threshold value"))
@@ -216,6 +230,9 @@ class Strategist:
     except Exception as e:
         pass
     pass
+    except Exception as e:
+        pass
+    pass
                 self.logger.error("Invalid market data for strategy generation")
                 return None
 
@@ -233,10 +250,12 @@ class Strategist:
             if analysis_results:
     pass
     pass
+    pass
                 base_strategy = await self._integrate_analysis_results(base_strategy, analysis_results)
 
             # Apply risk management
             if self.enable_risk_management:
+    pass
     pass
     pass
                 base_strategy = await self._apply_risk_management(base_strategy, current_price)
@@ -262,9 +281,13 @@ class Strategist:
     def _validate_market_data(self, market_data: pd.DataFrame) -> bool:
     pass
     pass
+    pass
         """Validate market data for strategy generation."""
         try:
             if market_data is None or market_data.empty:
+    pass
+    except Exception as e:
+        pass
     pass
     except Exception as e:
         pass
@@ -279,11 +302,13 @@ class Strategist:
             if missing_columns:
     pass
     pass
+    pass
                 self.logger.error(f"Missing required columns: {missing_columns}")
                 return False
 
             # Check for sufficient data points
             if len(market_data) < 20:
+    pass
     pass
     pass
                 self.logger.error("Insufficient market data points for strategy generation")
@@ -303,10 +328,13 @@ class Strategist:
     def _extract_market_indicators(self, market_data: pd.DataFrame, current_price: float) -> dict[str, Any]:
     pass
     pass
+    pass
         """Extract key market indicators from market data."""
         try:
             indicators = {}
 
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -351,9 +379,12 @@ class Strategist:
     def _calculate_rsi(self, prices: pd.Series, period: int = 14) -> float:
     pass
     pass
+    pass
         """Calculate Relative Strength Index."""
         try:
             delta = prices.diff()
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -403,6 +434,8 @@ class Strategist:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             }
 
             # Do not use handcrafted feature weights for direction/confidence
@@ -427,6 +460,9 @@ class Strategist:
     except Exception as e:
         pass
     pass
+    except Exception as e:
+        pass
+    pass
                 return strategy
 
     except Exception as e:
@@ -434,6 +470,7 @@ class Strategist:
             # Integrate market health analysis
             market_health = analysis_results.get("market_health", {})
             if market_health:
+    pass
     pass
     pass
                 health_score = market_health.get("health_score", 0.5)
@@ -446,9 +483,11 @@ class Strategist:
             if liquidation_risk:
     pass
     pass
+    pass
                 risk_level = liquidation_risk.get("risk_level", "MEDIUM")
                 strategy["liquidation_risk"] = risk_level
                 if risk_level == "HIGH":
+    pass
     pass
     pass
                     strategy["confidence"] *= 0.8  # Reduce confidence for high risk
@@ -457,6 +496,7 @@ class Strategist:
             # Integrate trading decision from dual model system (ML/HMM-driven)
             trading_decision = analysis_results.get("trading_decision", {})
             if trading_decision:
+    pass
     pass
     pass
                 decision_confidence = trading_decision.get("final_confidence", 0.0)
@@ -488,6 +528,9 @@ class Strategist:
     except Exception as e:
         pass
     pass
+    except Exception as e:
+        pass
+    pass
                 return strategy
 
     except Exception as e:
@@ -496,6 +539,7 @@ class Strategist:
             volatility = strategy["indicators"]["price_volatility"]
 
             if strategy["direction"] == "LONG":
+    pass
     pass
     pass
                 # Stop loss: 2x volatility below current price
@@ -511,6 +555,7 @@ class Strategist:
             # Adjust confidence based on risk-reward ratio
             risk_reward_ratio = 2.0  # 2:1 risk-reward ratio
             if risk_reward_ratio >= 2.0:
+    pass
     pass
     pass
                 strategy["confidence"] *= 1.1  # Boost confidence for good risk-reward
@@ -538,6 +583,8 @@ class Strategist:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             self.current_strategy = strategy.copy()
 
             # Add to history
@@ -545,6 +592,7 @@ class Strategist:
 
             # Limit history size
             if len(self.strategy_history) > self.max_strategy_history:
+    pass
     pass
     pass
                 self.strategy_history = self.strategy_history[-self.max_strategy_history:]
@@ -562,6 +610,7 @@ class Strategist:
     def get_strategy_results(self) -> dict[str, Any]:
     pass
     pass
+    pass
         """
         Get current strategy results.
 
@@ -573,6 +622,7 @@ class Strategist:
     def get_current_strategy(self) -> dict[str, Any]:
     pass
     pass
+    pass
         """
         Get current strategy.
 
@@ -582,6 +632,7 @@ class Strategist:
         return self.current_strategy.copy()
 
     def get_strategy_history(self, limit: int | None = None) -> list[dict[str, Any]]:
+    pass
     pass
     pass
         """
@@ -597,6 +648,7 @@ class Strategist:
         if limit:
     pass
     pass
+    pass
             history = history[-limit:]
         return history
 
@@ -609,6 +661,8 @@ class Strategist:
         """Stop the strategist and cleanup resources."""
         try:
             self.logger.info("🛑 Stopping Strategist...")
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:

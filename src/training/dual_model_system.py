@@ -50,6 +50,7 @@ class DualModelSystem:
     def __init__(self, config: dict[str, Any]) -> None:
     pass
     pass
+    pass
         """Initialize Dual Model System.
 
         Args:
@@ -63,7 +64,9 @@ class DualModelSystem:
         if not hasattr(self, "print"):
     pass
     pass
+    pass
             def _shim_print(message: str) -> None:
+    pass
     pass
     pass
                 with contextlib.suppress(Exception):
@@ -162,11 +165,14 @@ class DualModelSystem:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             # Load dual model configuration
             await self._load_dual_model_configuration()
 
             # Validate configuration
             if not self._validate_configuration():
+    pass
     pass
     pass
                 self.logger.error("Invalid configuration for dual model system")
@@ -200,6 +206,8 @@ class DualModelSystem:
         """Load dual model configuration."""
         try:
             # Set default dual model parameters
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -261,6 +269,7 @@ class DualModelSystem:
     def _validate_configuration(self) -> bool:
     pass
     pass
+    pass
         """Validate dual model configuration.
 
         Returns:
@@ -273,7 +282,10 @@ class DualModelSystem:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             if not self.analyst_timeframes:
+    pass
     pass
     pass
                 self.logger.error("Analyst timeframes cannot be empty")
@@ -283,11 +295,13 @@ class DualModelSystem:
             if not self.tactician_timeframes:
     pass
     pass
+    pass
                 self.logger.error("Tactician timeframes cannot be empty")
                 return False
 
             # Validate confidence thresholds
             if not (0.0 <= self.analyst_confidence_threshold <= 1.0):
+    pass
     pass
     pass
                 self.logger.error(
@@ -296,6 +310,7 @@ class DualModelSystem:
                 return False
 
             if not (0.0 <= self.tactician_confidence_threshold <= 1.0):
+    pass
     pass
     pass
                 self.logger.error(
@@ -307,11 +322,13 @@ class DualModelSystem:
             if self.enter_signal_validity_duration <= 0:
     pass
     pass
+    pass
                 self.logger.error("Enter signal validity duration must be positive")
                 return False
 
             # Validate signal check interval
             if self.signal_check_interval <= 0:
+    pass
     pass
     pass
                 self.logger.error("Signal check interval must be positive")
@@ -334,6 +351,8 @@ class DualModelSystem:
         """Initialize ML Confidence Predictor with meta-labeling integration."""
         try:
             # Get configuration for ML confidence predictor with meta-labeling and feature engineering
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -449,9 +468,12 @@ class DualModelSystem:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             analyst_model_path = "models/analyst_model.pkl"
 
             if os.path.exists(analyst_model_path):
+    pass
     pass
     pass
                 import pickle
@@ -483,9 +505,12 @@ class DualModelSystem:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             tactician_model_path = "models/tactician_model.pkl"
 
             if os.path.exists(tactician_model_path):
+    pass
     pass
     pass
                 import pickle
@@ -599,6 +624,9 @@ class DualModelSystem:
     except Exception as e:
         pass
     pass
+    except Exception as e:
+        pass
+    pass
                 msg = "Dual Model System not initialized"
                 raise ValueError(msg)
 
@@ -608,6 +636,7 @@ class DualModelSystem:
 
             # Check if we have an open position for exit logic
             if current_position:
+    pass
     pass
     pass
                 return await self._make_exit_decision(
@@ -636,6 +665,8 @@ class DualModelSystem:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             analyst_decision = await self._get_analyst_decision(
                 market_data,
                 current_price,
@@ -643,6 +674,7 @@ class DualModelSystem:
 
             # Check if we have a valid ENTER signal
             if not analyst_decision["should_trade"]:
+    pass
     pass
     pass
                 return {
@@ -686,6 +718,7 @@ class DualModelSystem:
             should_execute = final_confidence > 0.216  # Minimum threshold
 
             if should_execute:
+    pass
     pass
     pass
                 # Store the ENTER signal
@@ -748,6 +781,8 @@ class DualModelSystem:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             analyst_exit_decision = await self._get_analyst_exit_decision(
                 market_data,
                 current_price,
@@ -765,6 +800,7 @@ class DualModelSystem:
             analyst_confidence = analyst_exit_decision["confidence"]
 
             if analyst_confidence < self.close_signal_threshold:
+    pass
     pass
     pass
                 exit_signal = "CLOSE"
@@ -816,7 +852,10 @@ class DualModelSystem:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             if self.ml_confidence_predictor:
+    pass
     pass
     pass
                 # Use the new dual model system prediction method
@@ -829,6 +868,7 @@ class DualModelSystem:
                 )
 
                 if analyst_predictions:
+    pass
     pass
     pass
                     return self._analyze_analyst_confidence(
@@ -846,6 +886,7 @@ class DualModelSystem:
                 if confidence_predictions:
     pass
     pass
+    pass
                     return self._analyze_analyst_confidence(
                         confidence_predictions,
                         current_price,
@@ -853,6 +894,7 @@ class DualModelSystem:
 
             # Fallback to model-based decision
             if self.analyst_model:
+    pass
     pass
     pass
                 return await self._get_model_based_analyst_decision(
@@ -893,6 +935,8 @@ class DualModelSystem:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             )
             adversarial_confidences = confidence_predictions.get(
                 "adversarial_confidences",
@@ -906,10 +950,12 @@ class DualModelSystem:
             for target_str, confidence in price_target_confidences.items():
     pass
     pass
+    pass
                 target = float(target_str.replace("%", ""))
 
                 # Check if target is above 0.3%
                 if target >= 0.3:
+    pass
     pass
     pass
                     # Find corresponding adversarial confidence
@@ -923,13 +969,16 @@ class DualModelSystem:
                     if adversarial_confidence < (confidence * 0.5):
     pass
     pass
+    pass
                         best_confidence = max(confidence, best_confidence)
 
             # If no suitable target found, use overall confidence
             if best_confidence == 0.0:
     pass
     pass
+    pass
                 if price_target_confidences:
+    pass
     pass
     pass
                     best_confidence = max(price_target_confidences.values())
@@ -938,6 +987,7 @@ class DualModelSystem:
 
             # Determine direction and strategy
             if best_confidence > self.analyst_confidence_threshold:
+    pass
     pass
     pass
                 direction = "LONG"
@@ -984,6 +1034,9 @@ class DualModelSystem:
     except Exception as e:
         pass
     pass
+    except Exception as e:
+        pass
+    pass
                 return {
                     "should_trade": False,
                     "direction": "HOLD",
@@ -1001,6 +1054,7 @@ class DualModelSystem:
             for timeframe in self.analyst_timeframes:
     pass
     pass
+    pass
                 # Use meta-labeling enhanced predictions
                 predictions = (
                     await self.ml_confidence_predictor.predict_with_meta_labeling(
@@ -1012,6 +1066,7 @@ class DualModelSystem:
 
                 # Extract meta-labels
                 if "meta_labels" in predictions:
+    pass
     pass
     pass
                     analyst_meta_labels[timeframe] = predictions["meta_labels"]
@@ -1051,7 +1106,10 @@ class DualModelSystem:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             if self.ml_confidence_predictor:
+    pass
     pass
     pass
                 # Use the new dual model system prediction method
@@ -1064,6 +1122,7 @@ class DualModelSystem:
                 )
 
                 if tactician_predictions:
+    pass
     pass
     pass
                     return self._analyze_tactician_confidence(
@@ -1082,6 +1141,7 @@ class DualModelSystem:
                 if confidence_predictions:
     pass
     pass
+    pass
                     return self._analyze_tactician_confidence(
                         confidence_predictions,
                         current_price,
@@ -1090,6 +1150,7 @@ class DualModelSystem:
 
             # Fallback to model-based decision
             if self.tactician_model:
+    pass
     pass
     pass
                 return await self._get_model_based_tactician_decision(
@@ -1130,6 +1191,8 @@ class DualModelSystem:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             )
 
             # Focus on short-term targets for timing (1m timeframe)
@@ -1140,6 +1203,7 @@ class DualModelSystem:
             }
 
             if short_term_targets:
+    pass
     pass
     pass
                 # Calculate timing confidence from short-term targets
@@ -1155,6 +1219,7 @@ class DualModelSystem:
             # Adjust based on analyst direction
             direction = analyst_decision.get("direction", "HOLD")
             if direction == "SHORT":
+    pass
     pass
     pass
                 # For short positions, invert the confidence
@@ -1187,6 +1252,9 @@ class DualModelSystem:
         """Get tactician decision using ML confidence predictor with meta-labeling."""
         try:
             if not self.ml_confidence_predictor:
+    pass
+    except Exception as e:
+        pass
     pass
     except Exception as e:
         pass
@@ -1246,7 +1314,10 @@ class DualModelSystem:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             if self.ml_confidence_predictor:
+    pass
     pass
     pass
                 confidence_predictions = (
@@ -1257,6 +1328,7 @@ class DualModelSystem:
                 )
 
                 if confidence_predictions:
+    pass
     pass
     pass
                     return self._analyze_analyst_exit_confidence(
@@ -1299,6 +1371,8 @@ class DualModelSystem:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             )
             adversarial_confidences = confidence_predictions.get(
                 "adversarial_confidences",
@@ -1311,8 +1385,10 @@ class DualModelSystem:
             if position_type == "LONG":
     pass
     pass
+    pass
                 # For long positions, check if we should take profit or stop loss
                 if price_target_confidences:
+    pass
     pass
     pass
                     # Check if we've reached profit targets
@@ -1324,8 +1400,10 @@ class DualModelSystem:
                     if profit_targets:
     pass
     pass
+    pass
                         max_profit_confidence = max(profit_targets.values())
                         if max_profit_confidence > self.analyst_confidence_threshold:
+    pass
     pass
     pass
                             return {
@@ -1338,6 +1416,7 @@ class DualModelSystem:
 
                 # Check stop loss conditions
                 if adversarial_confidences:
+    pass
     pass
     pass
                     stop_loss_confidence = max(adversarial_confidences.values())
@@ -1355,6 +1434,7 @@ class DualModelSystem:
                 if adversarial_confidences:
     pass
     pass
+    pass
                     # Check if we've reached profit targets (price went down)
                     profit_targets = {
                         k: v
@@ -1364,8 +1444,10 @@ class DualModelSystem:
                     if profit_targets:
     pass
     pass
+    pass
                         max_profit_confidence = max(profit_targets.values())
                         if max_profit_confidence > self.analyst_confidence_threshold:
+    pass
     pass
     pass
                             return {
@@ -1378,6 +1460,7 @@ class DualModelSystem:
 
                 # Check stop loss conditions (price went up)
                 if price_target_confidences:
+    pass
     pass
     pass
                     stop_loss_confidence = max(price_target_confidences.values())
@@ -1421,7 +1504,10 @@ class DualModelSystem:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             if self.ml_confidence_predictor:
+    pass
     pass
     pass
                 confidence_predictions = (
@@ -1432,6 +1518,7 @@ class DualModelSystem:
                 )
 
                 if confidence_predictions:
+    pass
     pass
     pass
                     return self._analyze_tactician_exit_confidence(
@@ -1471,7 +1558,10 @@ class DualModelSystem:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             if exit_type == "TAKE_PROFIT":
+    pass
     pass
     pass
                 # For take profit, look for high confidence in short-term targets
@@ -1486,6 +1576,7 @@ class DualModelSystem:
                 }
 
                 if short_term_targets:
+    pass
     pass
     pass
                     timing_confidence = max(short_term_targets.values())
@@ -1505,6 +1596,7 @@ class DualModelSystem:
                 }
 
                 if short_term_adversarial:
+    pass
     pass
     pass
                     timing_confidence = max(short_term_adversarial.values())
@@ -1543,6 +1635,8 @@ class DualModelSystem:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             return analyst_confidence * (tactician_confidence**2)
 
         except Exception as e:
@@ -1554,9 +1648,12 @@ class DualModelSystem:
     def _calculate_normalized_confidence(self, final_confidence: float) -> float:
     pass
     pass
+    pass
         """Calculate normalized confidence for position sizing."""
         try:
             # Normalized_Confidence = (Final_Confidence - 0.216) / 0.784
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -1573,9 +1670,13 @@ class DualModelSystem:
     def is_enter_signal_valid(self) -> bool:
     pass
     pass
+    pass
         """Check if the current ENTER signal is still valid (within 2 minutes)."""
         try:
             if self.current_enter_signal is None:
+    pass
+    except Exception as e:
+        pass
     pass
     except Exception as e:
         pass
@@ -1599,16 +1700,19 @@ class DualModelSystem:
     def get_current_signal(self) -> dict[str, Any] | None:
     pass
     pass
+    pass
         """Get the current signal information."""
         return self.current_enter_signal
 
     def clear_current_signal(self) -> None:
     pass
     pass
+    pass
         """Clear the current signal."""
         self.current_enter_signal = None
 
     def _get_fallback_decision(self) -> dict[str, Any]:
+    pass
     pass
     pass
         """Get fallback decision when models fail."""
@@ -1635,7 +1739,10 @@ class DualModelSystem:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             if normalized_confidence > 0.8:
+    pass
     pass
     pass
                 return "immediate"  # High confidence, execute immediately
@@ -1644,8 +1751,10 @@ class DualModelSystem:
             if normalized_confidence > 0.5:
     pass
     pass
+    pass
                 # Check for volatility conditions
                 if analyst_decision.get("volatility", "low") == "high":
+    pass
     pass
     pass
                     return "twap"  # High volatility, use TWAP
@@ -1653,6 +1762,7 @@ class DualModelSystem:
 
             # Low confidence scenarios
             if normalized_confidence > 0.2:
+    pass
     pass
     pass
                 return "vwap"  # Low confidence, use VWAP for better price
@@ -1669,9 +1779,12 @@ class DualModelSystem:
     def _calculate_recommended_quantity(self, normalized_confidence: float) -> float:
     pass
     pass
+    pass
         """Calculate recommended order quantity based on normalized confidence."""
         try:
             # Base quantity calculation using Kelly criterion
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -1694,9 +1807,12 @@ class DualModelSystem:
     def _calculate_recommended_leverage(self, normalized_confidence: float) -> float:
     pass
     pass
+    pass
         """Calculate recommended leverage based on normalized confidence."""
         try:
             # Leverage range: 10x to 100x
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -1716,6 +1832,7 @@ class DualModelSystem:
     def _determine_execution_priority(self, normalized_confidence: float) -> int:
     pass
     pass
+    pass
         """Determine execution priority based on normalized confidence."""
         try:
             # Priority range: 1 (lowest) to 10 (highest)
@@ -1723,19 +1840,25 @@ class DualModelSystem:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             if normalized_confidence > 0.8:
+    pass
     pass
     pass
                 return 10  # Highest priority
             if normalized_confidence > 0.6:
     pass
     pass
+    pass
                 return 8  # High priority
             if normalized_confidence > 0.4:
     pass
     pass
+    pass
                 return 6  # Medium priority
             if normalized_confidence > 0.2:
+    pass
     pass
     pass
                 return 4  # Low priority
@@ -1770,6 +1893,9 @@ class DualModelSystem:
     except Exception as e:
         pass
     pass
+    except Exception as e:
+        pass
+    pass
                 return {
                     "success": False,
                     "error": "ML confidence predictor not available",
@@ -1785,6 +1911,7 @@ class DualModelSystem:
             )
 
             if training_result.get("success", False):
+    pass
     pass
     pass
                 # Update system state after successful training
@@ -1807,7 +1934,10 @@ class DualModelSystem:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             if self.ml_confidence_predictor:
+    pass
     pass
     pass
                 await (
@@ -1830,6 +1960,7 @@ class DualModelSystem:
     def get_training_status(self) -> dict[str, Any]:
     pass
     pass
+    pass
         """Get training status for the dual model system."""
         try:
             training_status: dict[str, Any] = {}
@@ -1838,8 +1969,11 @@ class DualModelSystem:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             # Get ML confidence predictor training status
             if self.ml_confidence_predictor:
+    pass
     pass
     pass
                 training_status["ml_confidence_predictor"] = (
@@ -1875,6 +2009,9 @@ class DualModelSystem:
     except Exception as e:
         pass
     pass
+    except Exception as e:
+        pass
+    pass
                 await self.ml_confidence_predictor.update_model_performance(
                     performance_metrics,
                 )
@@ -1883,6 +2020,7 @@ class DualModelSystem:
         pass
             # Update dual model system performance tracking
             if not hasattr(self, "performance_history"):
+    pass
     pass
     pass
                 self.performance_history = []
@@ -1895,6 +2033,7 @@ class DualModelSystem:
             if len(self.performance_history) > 100:
     pass
     pass
+    pass
                 self.performance_history = self.performance_history[-100:]
 
         except Exception as e:
@@ -1905,9 +2044,13 @@ class DualModelSystem:
     def should_trigger_training(self) -> bool:
     pass
     pass
+    pass
         """Check if training should be triggered."""
         try:
             if self.ml_confidence_predictor:
+    pass
+    except Exception as e:
+        pass
     pass
     except Exception as e:
         pass
@@ -1924,6 +2067,7 @@ class DualModelSystem:
             return False
 
     def get_system_info(self) -> dict[str, Any]:
+    pass
     pass
     pass
         """Get information about the dual model system."""
@@ -1961,7 +2105,10 @@ class DualModelSystem:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             if self.ml_confidence_predictor:
+    pass
     pass
     pass
                 await self.ml_confidence_predictor.stop()
@@ -2009,7 +2156,10 @@ async def setup_dual_model_system(
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         if config is None:
+    pass
     pass
     pass
             config = {
@@ -2033,6 +2183,7 @@ async def setup_dual_model_system(
         # Initialize dual model system
         success = await dual_model_system.initialize()
         if success:
+    pass
     pass
     pass
             return dual_model_system

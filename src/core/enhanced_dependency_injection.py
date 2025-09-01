@@ -26,8 +26,12 @@ _global_container: _DependencyContainer | None = None
 def get_container() -> _DependencyContainer:
     pass
     pass
+    pass
+    pass
     global _global_container
     if _global_container is None:
+    pass
+    pass
     pass
     pass
         _global_container = _DependencyContainer()

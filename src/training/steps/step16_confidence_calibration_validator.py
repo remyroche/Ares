@@ -27,6 +27,7 @@ class Step11ConfidenceCalibrationValidator(BaseValidator):
     def __init__(self, config: dict[str, Any]) -> None:
     pass
     pass
+    pass
         super().__init__("step11_confidence_calibration", config)
 
     async def validate(
@@ -61,6 +62,7 @@ class Step11ConfidenceCalibrationValidator(BaseValidator):
         if not error_passed:
     pass
     pass
+    pass
         self.logger.error("❌ Confidence calibration step had errors")
         return False
 
@@ -73,6 +75,7 @@ class Step11ConfidenceCalibrationValidator(BaseValidator):
         if not calibration_files_passed:
     pass
     pass
+    pass
         self.logger.error("❌ Calibration files validation failed")
         return False
 
@@ -81,12 +84,14 @@ class Step11ConfidenceCalibrationValidator(BaseValidator):
         if not quality_passed:
     pass
     pass
+    pass
         self.logger.error("❌ Calibration quality validation failed")
         return False
 
         # 4. Validate calibration metrics
         metrics_passed, self._validate_calibration_metrics(symbol, exchange, data_dir)
         if not metrics_passed:
+    pass
     pass
     pass
         self.logger.error("❌ Calibration metrics validation failed")
@@ -99,6 +104,7 @@ class Step11ConfidenceCalibrationValidator(BaseValidator):
         self.validation_results["outcome_favorability"] = outcome_metrics
 
         if not outcome_passed:
+    pass
     pass
     pass
         self.logger.error("⚠️ Confidence calibration outcome is not favorable")
@@ -135,7 +141,10 @@ class Step11ConfidenceCalibrationValidator(BaseValidator):
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         if missing_files:
+    pass
     pass
     pass
         self.logger.error(missing(f"Missing calibration files: {missing_files}"))

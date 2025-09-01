@@ -45,6 +45,7 @@ class TradingDataProvider(Protocol):
     def is_connected(self) -> bool:
     pass
     pass
+    pass
         ...
 
 
@@ -68,10 +69,12 @@ class TradingMLPredictor(Protocol):
     def get_model_confidence(self) -> float:
     pass
     pass
+    pass
         ...
 
     @abstractmethod
     def is_model_ready(self) -> bool:
+    pass
     pass
     pass
         ...

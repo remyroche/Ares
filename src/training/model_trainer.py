@@ -102,6 +102,7 @@ class RayModelTrainer:
     def __init__(self, config: dict[str, Any]) -> None:
     pass
     pass
+    pass
         """Initialize Ray model trainer.
 
         Args:
@@ -160,6 +161,7 @@ class RayModelTrainer:
     def _initialize_ray(self) -> bool:
     pass
     pass
+    pass
         """Initialize Ray cluster.
 
         Returns:
@@ -168,6 +170,9 @@ class RayModelTrainer:
         """
         try:
             if not ray.is_initialized():
+    pass
+    except Exception as e:
+        pass
     pass
     except Exception as e:
         pass
@@ -200,6 +205,7 @@ class RayModelTrainer:
     def initialize(self) -> bool:
     pass
     pass
+    pass
         """Initialize model trainer.
 
         Returns:
@@ -213,8 +219,11 @@ class RayModelTrainer:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             # Validate configuration
             if not self._validate_configuration():
+    pass
     pass
     pass
                 self.logger.error("Invalid configuration for model trainer")
@@ -238,6 +247,7 @@ class RayModelTrainer:
     def _validate_configuration(self) -> bool:
     pass
     pass
+    pass
         """Validate model trainer configuration.
 
         Returns:
@@ -250,7 +260,10 @@ class RayModelTrainer:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             if not self.enable_analyst_models and not self.enable_tactician_models:
+    pass
     pass
     pass
                 self.logger.error("At least one model type must be enabled")
@@ -260,7 +273,9 @@ class RayModelTrainer:
             if self.enable_analyst_models:
     pass
     pass
+    pass
                 if not self.analyst_models_config:
+    pass
     pass
     pass
                     self.logger.error(
@@ -272,7 +287,9 @@ class RayModelTrainer:
             if self.enable_tactician_models:
     pass
     pass
+    pass
                 if not self.tactician_models_config:
+    pass
     pass
     pass
                     self.logger.error(
@@ -294,9 +311,12 @@ class RayModelTrainer:
     def _initialize_model_storage(self) -> None:
     pass
     pass
+    pass
         """Initialize model storage and metadata."""
         try:
             # Create model storage directory if it doesn't exist
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -307,6 +327,7 @@ class RayModelTrainer:
             # Load existing model metadata
             metadata_file = os.path.join(model_dir, "model_metadata.json")
             if os.path.exists(metadata_file):
+    pass
     pass
     pass
                 with open(metadata_file) as f:
@@ -344,13 +365,17 @@ class RayModelTrainer:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             self.is_training = True
             if not self._validate_training_input(training_input):
+    pass
     pass
     pass
                 return None
             training_data = self._prepare_training_data(training_input)
             if training_data is None:
+    pass
     pass
     pass
                 return None
@@ -381,8 +406,12 @@ import log_enhanced_training_metadata
                 if do_hpo:
     pass
     pass
+    pass
                     try:
                         from src.training.steps.step17_final_parameters_optimization.optimized_optuna_optimization import (
+    except Exception as e:
+        pass
+import except Exception as e:
     except Exception as e:
         pass
 import except Exception as e:
@@ -401,9 +430,11 @@ import AdvancedOptunaManager,
                 if do_hpo:
     pass
     pass
+    pass
                     self.logger.info("🔍 Running Optuna HPO before model training...")
                     tactician_data = training_data.get("tactician_1m")
                     if tactician_data is None:
+    pass
     pass
     pass
                         self.logger.error("No tactician_1m data for HPO.")
@@ -421,6 +452,7 @@ import AdvancedOptunaManager,
                     )
                     best_params = hpo_result.get("best_params")
                     if best_params:
+    pass
     pass
     pass
                         from src.utils.mlflow_utils import log_params_with_metadata
@@ -450,7 +482,9 @@ import tactician_models = training_results.get
                 for model_name, result in tactician_models.items():
     pass
     pass
+    pass
                     if result["training_status"] == "completed":
+    pass
     pass
     pass
                         # Log metrics with metadata
@@ -474,6 +508,7 @@ import tactician_models = training_results.get
                         if "model_path" in result:
     pass
     pass
+    pass
                             log_artifacts_with_metadata(
                                 local_path=result["model_path"],
                                 artifact_path=f"models/{model_name}_model.joblib",
@@ -489,6 +524,7 @@ import tactician_models = training_results.get
                             )
 
                         if "scaler_path" in result:
+    pass
     pass
     pass
                             log_artifacts_with_metadata(
@@ -507,6 +543,8 @@ import tactician_models = training_results.get
                         # SHAP explainability integration
                         try:
                             X_sample = training_data["tactician_1m"].features.iloc[:200]
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -554,6 +592,7 @@ import tactician_models = training_results.get
     def _validate_training_input(self, training_input: dict[str, Any]) -> bool:
     pass
     pass
+    pass
         """Validate training input parameters.
 
         Args:
@@ -570,10 +609,14 @@ import tactician_models = training_results.get
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             for field in required_fields:
     pass
     pass
+    pass
                 if field not in training_input:
+    pass
     pass
     pass
                     self.logger.error(f"Missing required training input field: {field}")
@@ -581,6 +624,7 @@ import tactician_models = training_results.get
 
             # Validate specific field values
             if training_input.get("lookback_days", 0) <= 0:
+    pass
     pass
     pass
                 self.logger.error("Invalid lookback_days value")
@@ -614,6 +658,8 @@ import tactician_models = training_results.get
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             )
             prepared_data: dict[str, TrainingData] = {}
             symbol = training_input.get("symbol", "ETHUSDT")
@@ -627,6 +673,7 @@ import tactician_models = training_results.get
             if os.path.exists(labeled_path):
     pass
     pass
+    pass
                 try:
                     feat_cols = training_input.get(
                         "model_feature_columns",
@@ -634,9 +681,12 @@ import tactician_models = training_results.get
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
                     ) or training_input.get("feature_columns")
                     label_col = training_input.get("label_column", "label")
                     if isinstance(feat_cols, list) and len(feat_cols) > 0:
+    pass
     pass
     pass
                         data = pd.read_parquet(
@@ -651,6 +701,7 @@ import tactician_models = training_results.get
                 # Fallback to CSV if Parquet is not available
                 labeled_csv = labeled_path.replace(".parquet", ".csv")
                 if os.path.exists(labeled_csv):
+    pass
     pass
     pass
                     data = pd.read_csv(labeled_csv, parse_dates=["timestamp"])
@@ -699,10 +750,12 @@ import tactician_models = training_results.get
         if has_direction and has_profit and self.enable_multi_output:
     pass
     pass
+    pass
             self.logger.info("🔧 Multi-output targets detected - preparing multi-output training data")
 
             # Initialize multi-output trainer if not already done
             if self.multi_output_trainer is None:
+    pass
     pass
     pass
                 multi_output_config = MultiOutputModelConfig(
@@ -754,6 +807,8 @@ import tactician_models = training_results.get
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             @ray.remote
             def train_single_model(
                 model_config: ModelConfig,
@@ -773,8 +828,10 @@ import tactician_models = training_results.get
             if self.enable_tactician_models:
     pass
     pass
+    pass
                 data_key = "tactician_1m"
                 if data_key in training_data:
+    pass
     pass
     pass
                     config = ModelConfig(
@@ -787,6 +844,7 @@ import tactician_models = training_results.get
 
             # Train multi-output models if available
             if self.enable_multi_output and "multi_output_1m" in training_data:
+    pass
     pass
     pass
                 self.logger.info("🚀 Training multi-output models for direction and profit prediction")
@@ -803,6 +861,7 @@ import tactician_models = training_results.get
                 if multi_output_result:
     pass
     pass
+    pass
                     multi_output_results["multi_output_1m"] = multi_output_result
                     self.logger.info("✅ Multi-output model training completed successfully")
                 else:
@@ -813,15 +872,18 @@ import tactician_models = training_results.get
             for config, data in model_configs:
     pass
     pass
+    pass
                 future = train_single_model.remote(config, data, best_params)
                 training_futures.append(future)
 
             if training_futures:
     pass
     pass
+    pass
                 training_results = ray.get(training_futures)
                 tactician_results: dict[str, Any] = {}
                 for result in training_results:
+    pass
     pass
     pass
                     tactician_results[result["timeframe"]] = result
@@ -852,6 +914,8 @@ import tactician_models = training_results.get
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             y = training_data.labels
             # ❌ REMOVED: Random split with shuffle (causes data leakage)
             # ✅ IMPLEMENTED: Chronological time-series split (leak-proof)
@@ -863,6 +927,7 @@ import tactician_models = training_results.get
             X_test_scaled = scaler.transform(X_test)
             # Use best_params if provided
             if best_params:
+    pass
     pass
     pass
                 model = RandomForestClassifier(**best_params)
@@ -931,6 +996,8 @@ import tactician_models = training_results.get
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             model_dir = self.model_trainer_config.get("model_directory", "models")
             os.makedirs(model_dir, exist_ok=True)
 
@@ -960,6 +1027,7 @@ import tactician_models = training_results.get
     def _store_trained_models(self, training_results: dict[str, Any]) -> None:
     pass
     pass
+    pass
         """Store all trained models metadata.
 
         Args:
@@ -973,14 +1041,19 @@ import tactician_models = training_results.get
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             # Store analyst models metadata
             if training_results.get("analyst_models"):
+    pass
     pass
     pass
                 for model_result in training_results["analyst_models"].values():
     pass
     pass
+    pass
                     if model_result["training_status"] == "completed":
+    pass
     pass
     pass
                         self._store_model_metadata(model_result)
@@ -989,10 +1062,13 @@ import tactician_models = training_results.get
             if training_results.get("tactician_models"):
     pass
     pass
+    pass
                 for model_result in training_results["tactician_models"].values():
     pass
     pass
+    pass
                     if model_result["training_status"] == "completed":
+    pass
     pass
     pass
                         self._store_model_metadata(model_result)
@@ -1001,7 +1077,9 @@ import tactician_models = training_results.get
             if training_results.get("multi_output_models"):
     pass
     pass
+    pass
                 for model_name, model_result in training_results["multi_output_models"].items():
+    pass
     pass
     pass
                     self._store_multi_output_model_metadata(model_name, model_result)
@@ -1020,6 +1098,7 @@ import tactician_models = training_results.get
     def _store_multi_output_model_metadata(self, model_name: str, model_result: dict[str, Any]) -> None:
     pass
     pass
+    pass
         """Store multi-output model metadata.
 
         Args:
@@ -1033,11 +1112,14 @@ import tactician_models = training_results.get
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             # Save multi-output model
             model_dir = self.model_trainer_config.get("model_directory", "models")
             multi_output_dir = os.path.join(model_dir, "multi_output_models", model_name)
 
             if self.multi_output_trainer:
+    pass
     pass
     pass
                 self.multi_output_trainer.save_model(model_name, multi_output_dir)
@@ -1065,6 +1147,7 @@ import tactician_models = training_results.get
     def _store_model_metadata(self, model_result: dict[str, Any]) -> None:
     pass
     pass
+    pass
         """Store model metadata.
 
         Args:
@@ -1073,6 +1156,8 @@ import tactician_models = training_results.get
         """
         try:
             model_key = f"{model_result['model_type']}_{model_result['timeframe']}"
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -1089,6 +1174,7 @@ import tactician_models = training_results.get
             self.logger.error(f"❌ Failed to store model metadata: {e}")
 
     def get_training_status(self) -> dict[str, Any]:
+    pass
     pass
     pass
         """Get current training status.
@@ -1110,6 +1196,7 @@ import tactician_models = training_results.get
         }
 
     def get_trained_models(self) -> dict[str, Any]:
+    pass
     pass
     pass
         """Get all trained models.
@@ -1141,7 +1228,10 @@ import tactician_models = training_results.get
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             if model_key in self.model_metadata:
+    pass
     pass
     pass
                 metadata = self.model_metadata[model_key]
@@ -1154,9 +1244,11 @@ import tactician_models = training_results.get
                 if "scaler_path" in metadata and metadata["scaler_path"]:
     pass
     pass
+    pass
                     scaler = joblib.load(metadata["scaler_path"])  # type: ignore[assignment]
 
                 if scaler is None:
+    pass
     pass
     pass
                     # Return a no-op scaler if missing to preserve signature
@@ -1179,9 +1271,12 @@ import tactician_models = training_results.get
     def stop(self) -> None:
     pass
     pass
+    pass
         """Stop the model trainer and cleanup resources."""
         try:
             self.logger.info("🛑 Stopping Ray Model Trainer...")
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -1190,6 +1285,7 @@ import tactician_models = training_results.get
 
             # Shutdown Ray
             if ray.is_initialized():
+    pass
     pass
     pass
                 ray.shutdown()
@@ -1226,7 +1322,10 @@ def setup_model_trainer(
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         if trainer.initialize():
+    pass
     pass
     pass
             return trainer
@@ -1238,6 +1337,7 @@ def setup_model_trainer(
 
 # Example usage and testing
 if __name__ == "__main__":
+    pass
     pass
     pass
     # Example configuration
@@ -1258,6 +1358,7 @@ if __name__ == "__main__":
     if trainer:
     pass
     pass
+    pass
         # Example training input
         training_input = {
             "symbol": "BTCUSDT",
@@ -1272,6 +1373,7 @@ if __name__ == "__main__":
         results = trainer.train_models(training_input)
 
         if results:
+    pass
     pass
     pass
             print(json.dumps({"status": "ok", "keys": list(results.keys())}, indent=2))

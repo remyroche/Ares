@@ -11,6 +11,8 @@ logger = logging.getLogger(__name__)
 def init_sentry() -> None:
     pass
     pass
+    pass
+    pass
     """Initialize Sentry if SENTRY_DSN is provided.
 
     Set SENTRY_ENV and SENTRY_TRACES_SAMPLE_RATE as needed.
@@ -19,10 +21,16 @@ def init_sentry() -> None:
     if not dsn:
     pass
     pass
+    pass
+    pass
         return
 
     try:
         import sentry_sdk
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -51,15 +59,23 @@ import sentry_logging, LoggingIntegration
 def init_otlp_logging() -> None:
     pass
     pass
+    pass
+    pass
     """Initialize OpenTelemetry logging exporter if OTLP endpoint is provided."""
     endpoint, os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
     if not endpoint:
+    pass
+    pass
     pass
     pass
         return
 
     try:
         # Minimal setup for OTLP logging exporter
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -83,6 +99,8 @@ import resource, Resource.create
         print(failed("Failed to initialize OTLP logging: {exc}"))
 
 def init_observability(_: dict[str, Any] | None = None) -> None:
+    pass
+    pass
     pass
     pass
     """Initialize production observability hooks: Sentry and OTLP if configured."""

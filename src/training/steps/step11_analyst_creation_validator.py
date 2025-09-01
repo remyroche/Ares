@@ -23,6 +23,7 @@ class Step11AnalystCreationValidator:
     def __init__(self, config: dict[str, Any]) -> None:
     pass
     pass
+    pass
         self.config, config
         self.logger, logger
 
@@ -50,7 +51,10 @@ class Step11AnalystCreationValidator:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         if not analyst_models_dir.exists():
+    pass
     pass
     pass
         self.logger.warning(
@@ -63,11 +67,13 @@ class Step11AnalystCreationValidator:
         if not regime_dirs:
     pass
     pass
+    pass
         self.logger.warning("⚠️ No regime - specific analyst model directories found")
         return False
 
         # Validate each regime's analyst models
         for regime_dir in regime_dirs:
+    pass
     pass
     pass
                 regime_name, regime_dir.name
@@ -76,6 +82,7 @@ class Step11AnalystCreationValidator:
         # Check for model files
                 model_files, list(regime_dir.glob("*.joblib"))
         if not model_files:
+    pass
     pass
     pass
         self.logger.warning(
@@ -87,7 +94,9 @@ class Step11AnalystCreationValidator:
         for model_file in model_files:
     pass
     pass
+    pass
         if not self._validate_analyst_model(model_file, regime_name):
+    pass
     pass
     pass
         return False
@@ -95,6 +104,7 @@ class Step11AnalystCreationValidator:
         # Check for metadata files
                 metadata_files, list(regime_dir.glob("*_metadata.json"))
         if not metadata_files:
+    pass
     pass
     pass
         self.logger.warning(
@@ -106,7 +116,9 @@ class Step11AnalystCreationValidator:
         for metadata_file in metadata_files:
     pass
     pass
+    pass
         if not self._validate_metadata_file(metadata_file, regime_name):
+    pass
     pass
     pass
         return False
@@ -122,10 +134,13 @@ class Step11AnalystCreationValidator:
     def _validate_analyst_model(self, model_file: Path, regime_name: str) -> bool:
     pass
     pass
+    pass
         """Validate an analyst model file."""
         try:
         self.logger.info(f"📁 Validating analyst model: {model_file.name}")
 
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -143,8 +158,11 @@ class Step11AnalystCreationValidator:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
                 model, joblib.load(model_file)
         if model is None:
+    pass
     pass
     pass
         self.logger.warning(f"⚠️ Model file is empty: {model_file.name}")
@@ -164,10 +182,13 @@ class Step11AnalystCreationValidator:
     def _validate_metadata_file(self, metadata_file: Path, regime_name: str) -> bool:
     pass
     pass
+    pass
         """Validate a metadata file."""
         try:
         self.logger.info(f"📁 Validating metadata file: {metadata_file.name}")
 
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -182,6 +203,7 @@ class Step11AnalystCreationValidator:
         if missing_fields:
     pass
     pass
+    pass
         self.logger.warning(
                     f"⚠️ Missing required fields in {metadata_file.name}: {missing_fields}"
                 )
@@ -190,6 +212,7 @@ class Step11AnalystCreationValidator:
         # Validate accuracy (should be between 0 and 1)
             accuracy, metadata.get("accuracy", 0.0)
         if not (0.0 <= accuracy <= 1.0):
+    pass
     pass
     pass
         self.logger.warning(
@@ -201,6 +224,7 @@ class Step11AnalystCreationValidator:
             model_type, metadata.get("model_type", "")
             valid_types = ["lightgbm", "xgboost", "random_forest", "neural_network"]
         if model_type not in valid_types:
+    pass
     pass
     pass
         self.logger.warning(
@@ -241,11 +265,14 @@ def step11_analyst_creation_validator(
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         result, validator.validate_step11_analyst_creation(
             symbol, exchange, data_dir, training_input
         )
 
         if result:
+    pass
     pass
     pass
             logger.info("✅ Step 11: Analyst Creation validation passed")

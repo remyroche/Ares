@@ -37,10 +37,14 @@ class ServiceRegistry:
     def __init__(self, container: DependencyContainer):
     pass
     pass
+    pass
+    pass
         self.container = container
         self.logger = system_logger.getChild("ServiceRegistry")
 
     def register_all_services(self, config: dict[str, Any]) -> None:
+    pass
+    pass
     pass
     pass
         """Register all trading system services."""
@@ -60,6 +64,8 @@ class ServiceRegistry:
     def _register_core_services(self, config: dict[str, Any]) -> None:
     pass
     pass
+    pass
+    pass
         """Register core infrastructure services."""
         # Event bus as singleton
         self.container.register(
@@ -72,11 +78,15 @@ class ServiceRegistry:
     def _register_trading_components(self, config: dict[str, Any]) -> None:
     pass
     pass
+    pass
+    pass
         """Register trading component services."""
         # Determine which implementations to use based on config
         use_modular = config.get("use_modular_components", True)
 
         if use_modular:
+    pass
+    pass
     pass
     pass
             # Register modular implementations
@@ -134,6 +144,8 @@ class ServiceRegistry:
     def _register_specialized_services(self, config: dict[str, Any]) -> None:
     pass
     pass
+    pass
+    pass
         """Register specialized services."""
         # Register training manager
         self.container.register(
@@ -154,10 +166,14 @@ class ServiceRegistry:
     def get_registered_services(self) -> dict[str, Any]:
     pass
     pass
+    pass
+    pass
         """Get all registered services."""
         return self.container.get_all_services()
 
     def validate_registrations(self) -> bool:
+    pass
+    pass
     pass
     pass
         """Validate that all required services are registered."""
@@ -173,12 +189,18 @@ class ServiceRegistry:
         for service in required_services:
     pass
     pass
+    pass
+    pass
             if service not in self.container.get_all_services():
+    pass
+    pass
     pass
     pass
                 missing_services.append(service.__name__)
 
         if missing_services:
+    pass
+    pass
     pass
     pass
             self.logger.error(f"Missing required services: {missing_services}")

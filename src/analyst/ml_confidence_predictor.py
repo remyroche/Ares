@@ -41,6 +41,7 @@ class MLConfidencePredictor:
     def __init__(self, config: dict[str, Any]) -> None:
     pass
     pass
+    pass
         """
         Initialize ML Confidence Predictor with enhanced type safety.
 
@@ -212,6 +213,7 @@ import self.analyst_confidence_threshold: float = get_parameter_value
     def is_enhanced_training_available(self) -> bool:
     pass
     pass
+    pass
         """
         Check if enhanced training manager is available and has trained models.
 
@@ -257,8 +259,11 @@ import self.analyst_confidence_threshold: float = get_parameter_value
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             # Check model availability and prepare for prediction
             if not await self._prepare_for_prediction():
+    pass
     pass
     pass
                 return self._generate_fallback_predictions(current_price)
@@ -266,6 +271,7 @@ import self.analyst_confidence_threshold: float = get_parameter_value
             # Prepare features for prediction
             features = await self._prepare_prediction_features(market_data)
             if features is None or features.empty:
+    pass
     pass
     pass
                 self.logger.warning(
@@ -325,6 +331,7 @@ import self.analyst_confidence_threshold: float = get_parameter_value
         if not self.is_enhanced_training_available():
     pass
     pass
+    pass
             self.logger.warning(
                 "Enhanced training manager not available or no models loaded - using fallback predictions",
             )
@@ -332,6 +339,7 @@ import self.analyst_confidence_threshold: float = get_parameter_value
 
         # Try to refresh models from enhanced training manager if not trained
         if not self.is_trained:
+    pass
     pass
     pass
             self.logger.info(
@@ -343,6 +351,7 @@ import self.analyst_confidence_threshold: float = get_parameter_value
         if not self._has_trained_models():
     pass
     pass
+    pass
             self.logger.warning(
                 "No trained models available, using fallback predictions",
             )
@@ -351,6 +360,7 @@ import self.analyst_confidence_threshold: float = get_parameter_value
         return True
 
     def _has_trained_models(self) -> bool:
+    pass
     pass
     pass
         """
@@ -390,6 +400,7 @@ import self.analyst_confidence_threshold: float = get_parameter_value
         for target in self.price_movement_levels:
     pass
     pass
+    pass
             model_key = f"price_target_{target:.1f}"
             confidence = self._get_prediction_for_target(
                 features,
@@ -422,6 +433,7 @@ import self.analyst_confidence_threshold: float = get_parameter_value
         adversarial_confidences = {}
 
         for level in self.adversarial_movement_levels:
+    pass
     pass
     pass
             model_key = f"adversarial_{level:.1f}"
@@ -457,6 +469,7 @@ import self.analyst_confidence_threshold: float = get_parameter_value
         if model_type == "price_target":
     pass
     pass
+    pass
             models = self.price_target_models
             fallback_func = self._get_fallback_confidence
         else:  # adversarial
@@ -464,6 +477,7 @@ import self.analyst_confidence_threshold: float = get_parameter_value
             fallback_func = self._get_fallback_decrease_probability
 
         if model_key in models and models[model_key] is not None:
+    pass
     pass
     pass
             return self._predict_single_target(features, model_key, model_type)
@@ -488,6 +502,7 @@ import self.analyst_confidence_threshold: float = get_parameter_value
             dict: Ensemble predictions
         """
         if self.ensemble_models:
+    pass
     pass
     pass
             return await self._generate_ensemble_predictions(features)
@@ -549,6 +564,9 @@ import self.analyst_confidence_threshold: float = get_parameter_value
     except Exception as e:
         pass
     pass
+    except Exception as e:
+        pass
+    pass
                 self.print(warning("Meta-labeling system not available"))
                 return None
 
@@ -562,10 +580,12 @@ import self.analyst_confidence_threshold: float = get_parameter_value
             if not base_predictions:
     pass
     pass
+    pass
                 return None
 
             # Generate meta-labels
             if model_type == "analyst":
+    pass
     pass
     pass
                 meta_labels = await self._generate_analyst_meta_labels(market_data)
@@ -584,15 +604,21 @@ import self.analyst_confidence_threshold: float = get_parameter_value
             if isinstance(meta_labels, dict):
     pass
     pass
+    pass
                 for k in label_whitelist:
+    pass
     pass
     pass
                     if k == "NO_SETUP":
     pass
     pass
+    pass
                         continue
                     try:
                         if float(meta_labels.get(k, 0) or 0) > 0:
+    pass
+    except Exception as e:
+        pass
     pass
     except Exception as e:
         pass
@@ -636,6 +662,9 @@ import self.analyst_confidence_threshold: float = get_parameter_value
     except Exception as e:
         pass
     pass
+    except Exception as e:
+        pass
+    pass
                 return {}
 
     except Exception as e:
@@ -645,13 +674,17 @@ import self.analyst_confidence_threshold: float = get_parameter_value
             for ensemble_name, ensemble_model in self.ensemble_models.items():
     pass
     pass
+    pass
                 try:
                     # Use the ensemble model to make predictions
     except Exception as e:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
                     if hasattr(ensemble_model, "predict"):
+    pass
     pass
     pass
                         prediction = ensemble_model.predict(features)
@@ -687,6 +720,9 @@ import self.analyst_confidence_threshold: float = get_parameter_value
     except Exception as e:
         pass
     pass
+    except Exception as e:
+        pass
+    pass
                 return {}
 
     except Exception as e:
@@ -717,6 +753,9 @@ import self.analyst_confidence_threshold: float = get_parameter_value
     except Exception as e:
         pass
     pass
+    except Exception as e:
+        pass
+    pass
                 self.print(warning("Enhanced training manager not available"))
                 return False
 
@@ -739,6 +778,7 @@ import self.analyst_confidence_threshold: float = get_parameter_value
             if self.is_trained:
     pass
     pass
+    pass
                 self.logger.info(
                     "✅ Models refreshed successfully from enhanced training manager",
                 )
@@ -757,9 +797,13 @@ import self.analyst_confidence_threshold: float = get_parameter_value
     def get_enhanced_training_model_info(self) -> dict[str, Any]:
     pass
     pass
+    pass
         """Get information about models from enhanced training manager."""
         try:
             if not self.enhanced_training_manager:
+    pass
+    except Exception as e:
+        pass
     pass
     except Exception as e:
         pass
@@ -776,6 +820,8 @@ import self.analyst_confidence_threshold: float = get_parameter_value
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
                 )
             except AttributeError:
                 training_results = {}
@@ -784,6 +830,8 @@ import self.analyst_confidence_threshold: float = get_parameter_value
             try:
                 training_status = (
                     self.enhanced_training_manager.get_enhanced_training_status()
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -797,6 +845,7 @@ import self.analyst_confidence_threshold: float = get_parameter_value
             if hasattr(self.enhanced_training_manager, "analyst_models"):
     pass
     pass
+    pass
                 analyst_models = self.enhanced_training_manager.analyst_models
                 analyst_models_info = {
                     "count": len(analyst_models),
@@ -806,6 +855,7 @@ import self.analyst_confidence_threshold: float = get_parameter_value
             # Get tactician models info
             tactician_models_info = {}
             if hasattr(self.enhanced_training_manager, "tactician_models"):
+    pass
     pass
     pass
                 tactician_models = self.enhanced_training_manager.tactician_models
@@ -848,6 +898,9 @@ import self.analyst_confidence_threshold: float = get_parameter_value
     except Exception as e:
         pass
     pass
+    except Exception as e:
+        pass
+    pass
                 return {}
 
     except Exception as e:
@@ -883,6 +936,8 @@ import self.analyst_confidence_threshold: float = get_parameter_value
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             from src.training.enhanced_training_manager import EnhancedTrainingManager
 
             # Initialize enhanced training manager
@@ -909,6 +964,8 @@ import self.enhanced_training_manager = EnhancedTrainingManager
         """Initialize model training capabilities."""
         try:
             # Set up training configuration
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -952,6 +1009,8 @@ import self.enhanced_training_manager = EnhancedTrainingManager
         """Initialize feature engineering integration."""
         try:
             # Import feature engineering components
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -1026,6 +1085,8 @@ import MultiTimeframeFeatureEngineering,
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             from src.analyst.meta_labeling_system import CompositeHMMRegimeSystem
 
             # Get configuration for meta-labeling
@@ -1083,11 +1144,15 @@ import meta_config = self.config.get
     except Exception as e:
         pass
     pass
+    except Exception as e:
+        pass
+    pass
                 return {}
 
     except Exception as e:
         pass
             if timeframes is None:
+    pass
     pass
     pass
                 timeframes = ["30m", "15m", "5m"]
@@ -1100,6 +1165,7 @@ import meta_config = self.config.get
             )
 
             for timeframe in timeframes:
+    pass
     pass
     pass
                 labels = await self.meta_labeling_system.generate_analyst_labels(
@@ -1132,6 +1198,9 @@ import meta_config = self.config.get
         """
         try:
             if not self.meta_labeling_system:
+    pass
+    except Exception as e:
+        pass
     pass
     except Exception as e:
         pass
@@ -1170,6 +1239,9 @@ import meta_config = self.config.get
     except Exception as e:
         pass
     pass
+    except Exception as e:
+        pass
+    pass
                 self.print(warning("Enhanced training manager not available"))
                 return
 
@@ -1198,14 +1270,17 @@ import meta_config = self.config.get
     def _load_analyst_models(self) -> None:
     pass
     pass
+    pass
         """Load analyst models (multi-timeframe models) from enhanced training manager."""
         if not hasattr(self.enhanced_training_manager, "analyst_models"):
+    pass
     pass
     pass
             return
 
         analyst_models = self.enhanced_training_manager.analyst_models
         if not analyst_models:
+    pass
     pass
     pass
             self.logger.warning(
@@ -1216,15 +1291,19 @@ import meta_config = self.config.get
         for timeframe in self.analyst_timeframes:
     pass
     pass
+    pass
             for model_name in ["tcn", "tabnet", "transformer"]:
+    pass
     pass
     pass
                 model_key = f"{timeframe}_{model_name}"
                 if model_key in analyst_models:
     pass
     pass
+    pass
                     # Create price target models for different confidence levels
                     for level in self.price_movement_levels:
+    pass
     pass
     pass
                         target_key = f"price_target_{level:.1f}"
@@ -1236,14 +1315,17 @@ import meta_config = self.config.get
     def _load_tactician_models(self) -> None:
     pass
     pass
+    pass
         """Load tactician models (1m timeframe models) from enhanced training manager."""
         if not hasattr(self.enhanced_training_manager, "tactician_models"):
+    pass
     pass
     pass
             return
 
         tactician_models = self.enhanced_training_manager.tactician_models
         if not tactician_models:
+    pass
     pass
     pass
             self.logger.warning(
@@ -1254,12 +1336,15 @@ import meta_config = self.config.get
         for model_name in ["lstm", "gru", "transformer"]:
     pass
     pass
+    pass
             model_key = f"1m_{model_name}"
             if model_key in tactician_models:
     pass
     pass
+    pass
                 # Create adversarial models for different risk levels
                 for level in self.adversarial_movement_levels:
+    pass
     pass
     pass
                     adversarial_key = f"adversarial_{level:.1f}"
@@ -1271,6 +1356,7 @@ import meta_config = self.config.get
                 self.logger.debug(f"Tactician model not found: {model_key}")
 
     def _load_ensemble_models(self) -> None:
+    pass
     pass
     pass
         """Load ensemble models from enhanced training manager."""
@@ -1287,8 +1373,11 @@ import meta_config = self.config.get
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             )
             if ensemble_models:
+    pass
     pass
     pass
                 self.ensemble_models = ensemble_models
@@ -1301,8 +1390,10 @@ import meta_config = self.config.get
     def _load_calibrated_models(self) -> None:
     pass
     pass
+    pass
         """Load calibrated models from enhanced training manager."""
         if not hasattr(self.enhanced_training_manager, "calibration_systems"):
+    pass
     pass
     pass
             return
@@ -1311,12 +1402,14 @@ import meta_config = self.config.get
         if calibration_systems:
     pass
     pass
+    pass
             self.calibrated_models = calibration_systems
             self.logger.info(f"Loaded {len(calibration_systems)} calibrated models")
         else:
             self.logger.debug("No calibrated models available")
 
     def _load_regime_models(self) -> None:
+    pass
     pass
     pass
         """Load regime-specific models from enhanced training manager."""
@@ -1332,7 +1425,10 @@ import meta_config = self.config.get
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             if regime_models:
+    pass
     pass
     pass
                 self.regime_models = regime_models
@@ -1343,6 +1439,7 @@ import meta_config = self.config.get
             self.print(warning("Could not load regime models: {e}"))
 
     def _load_multi_timeframe_models(self) -> None:
+    pass
     pass
     pass
         """Load multi-timeframe models from enhanced training manager."""
@@ -1358,7 +1455,10 @@ import meta_config = self.config.get
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             if multi_timeframe_models:
+    pass
     pass
     pass
                 self.multi_timeframe_models = multi_timeframe_models
@@ -1373,6 +1473,7 @@ import meta_config = self.config.get
     def _load_label_expert_models(self) -> None:
     pass
     pass
+    pass
         """Load label-level expert ensembles, calibrators, and reliability scores if provided by the training manager."""
         try:
             etm = self.enhanced_training_manager
@@ -1380,7 +1481,10 @@ import meta_config = self.config.get
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             if etm is None:
+    pass
     pass
     pass
                 # attempt to load from disk if ETM is not provided
@@ -1394,6 +1498,8 @@ import meta_config = self.config.get
             elif hasattr(etm, "get_label_expert_models"):
                 try:
                     self.label_expert_models = etm.get_label_expert_models() or {}
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -1413,6 +1519,8 @@ import meta_config = self.config.get
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
                     )
                 except Exception:
                     self.label_expert_calibrators = {}
@@ -1428,11 +1536,14 @@ import meta_config = self.config.get
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
                 except Exception:
                     self.label_reliability = {}
 
             # Fallback to disk if ETM had nothing
             if not self.label_expert_models:
+    pass
     pass
     pass
                 self._load_label_experts_from_disk()
@@ -1449,6 +1560,7 @@ import meta_config = self.config.get
     def _load_label_experts_from_disk(self) -> None:
     pass
     pass
+    pass
         """Load label expert models from data_dir/label_experts if present."""
         import os
         import pickle
@@ -1458,19 +1570,24 @@ import meta_config = self.config.get
         if not os.path.isdir(experts_dir):
     pass
     pass
+    pass
             return
         for tf in os.listdir(experts_dir):
+    pass
     pass
     pass
             tf_dir = os.path.join(experts_dir, tf)
             if not os.path.isdir(tf_dir):
     pass
     pass
+    pass
                 continue
             for fname in os.listdir(tf_dir):
     pass
     pass
+    pass
                 if not fname.endswith(".pkl"):
+    pass
     pass
     pass
                     continue
@@ -1478,6 +1595,8 @@ import meta_config = self.config.get
                 try:
                     with open(path, "rb") as f:
                         model = pickle.load(f)
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -1490,6 +1609,7 @@ import meta_config = self.config.get
                     continue
 
     def _log_model_loading_summary(self) -> None:
+    pass
     pass
     pass
         """Log a summary of all loaded models."""
@@ -1535,6 +1655,7 @@ import meta_config = self.config.get
         if not os.path.exists(model_dir):
     pass
     pass
+    pass
             os.makedirs(model_dir, exist_ok=True)
 
         # Initialize performance metrics
@@ -1554,8 +1675,11 @@ import meta_config = self.config.get
         if os.path.exists(self.model_path):
     pass
     pass
+    pass
             try:
                 self.model = joblib.load(self.model_path)
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -1575,6 +1699,7 @@ import meta_config = self.config.get
     def _validate_configuration(self) -> bool:
     pass
     pass
+    pass
         """
         Validate predictor configuration.
 
@@ -1587,6 +1712,8 @@ import meta_config = self.config.get
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             required_params = [
                 "model_path",
                 "min_samples_for_training",
@@ -1595,7 +1722,9 @@ import meta_config = self.config.get
             for param in required_params:
     pass
     pass
+    pass
                 if param not in self.predictor_config:
+    pass
     pass
     pass
                     self.print(missing("Missing required parameter: {param}"))
@@ -1603,6 +1732,7 @@ import meta_config = self.config.get
 
             # Validate parameter values
             if self.predictor_config["min_samples_for_training"] < 100:
+    pass
     pass
     pass
                 self.print(error("Minimum samples for training must be at least 100"))
@@ -1642,7 +1772,10 @@ import meta_config = self.config.get
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             if not ensemble_models:
+    pass
     pass
     pass
                 self.logger.warning("No ensemble models provided")
@@ -1661,13 +1794,17 @@ import meta_config = self.config.get
             for model_name, model in ensemble_models.items():
     pass
     pass
+    pass
                 try:
                     # Generate predictions for this model
     except Exception as e:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
                     if hasattr(model, "predict_proba"):
+    pass
     pass
     pass
                         # Use model's predict_proba method
@@ -1753,10 +1890,13 @@ import meta_config = self.config.get
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             features = market_data.copy()
 
             # Remove target column if present
             if "target" in features.columns:
+    pass
     pass
     pass
                 features = features.drop("target", axis=1)
@@ -1772,9 +1912,13 @@ import meta_config = self.config.get
     def _calculate_ensemble_diversity(self, predictions: dict[str, float]) -> float:
     pass
     pass
+    pass
         """Calculate ensemble diversity score."""
         try:
             if len(predictions) < 2:
+    pass
+    except Exception as e:
+        pass
     pass
     except Exception as e:
         pass
@@ -1793,9 +1937,13 @@ import meta_config = self.config.get
     def _calculate_ensemble_agreement(self, predictions: dict[str, float]) -> float:
     pass
     pass
+    pass
         """Calculate ensemble agreement score."""
         try:
             if len(predictions) < 2:
+    pass
+    except Exception as e:
+        pass
     pass
     except Exception as e:
         pass
@@ -1820,10 +1968,13 @@ import meta_config = self.config.get
     def _assess_ensemble_risk(self, predictions: dict[str, float]) -> dict[str, Any]:
     pass
     pass
+    pass
         """Assess risk based on ensemble predictions."""
         try:
             values = list(predictions.values())
 
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -1839,16 +1990,19 @@ import meta_config = self.config.get
             if np.std(values) > 0.2:
     pass
     pass
+    pass
                 risk_assessment["risk_factors"].append("HIGH_VARIANCE")
                 risk_assessment["risk_level"] = "MEDIUM"
 
             if np.min(values) < 0.3:
     pass
     pass
+    pass
                 risk_assessment["risk_factors"].append("LOW_CONFIDENCE_MODELS")
                 risk_assessment["risk_level"] = "HIGH"
 
             if np.max(values) - np.min(values) > 0.4:
+    pass
     pass
     pass
                 risk_assessment["risk_factors"].append("HIGH_DISAGREEMENT")
@@ -1886,6 +2040,8 @@ import meta_config = self.config.get
         try:
             self.logger.info(
                 "Generating directional prediction with adversarial analysis...",
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -1950,6 +2106,7 @@ import meta_config = self.config.get
         if not base_predictions:
     pass
     pass
+    pass
             msg = "Unable to generate base predictions - model may not be trained"
             raise ValueError(
                 msg,
@@ -1960,6 +2117,7 @@ import meta_config = self.config.get
         adversarial_confidences = base_predictions.get("adversarial_confidences", {})
 
         if not price_target_confidences and not adversarial_confidences:
+    pass
     pass
     pass
             msg = "No valid prediction data available"
@@ -1977,6 +2135,7 @@ import meta_config = self.config.get
 
         # Determine primary direction
         if up_confidence > down_confidence:
+    pass
     pass
     pass
             primary_direction = "up"
@@ -2024,6 +2183,8 @@ import meta_config = self.config.get
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             magnitude_levels = directional_prediction["magnitude_levels"]
 
             adversarial_analysis = {}
@@ -2032,10 +2193,12 @@ import meta_config = self.config.get
             for magnitude in magnitude_levels:
     pass
     pass
+    pass
                 # Calculate probability of adverse movement at different levels
                 adverse_probabilities = {}
 
                 for adverse_level in self.adversarial_movement_levels:
+    pass
     pass
     pass
                     probability = await self._calculate_adverse_probability(
@@ -2094,6 +2257,7 @@ import meta_config = self.config.get
         if not base_predictions:
     pass
     pass
+    pass
             msg = "Unable to generate base predictions for adverse probability calculation"
             raise ValueError(
                 msg,
@@ -2103,6 +2267,7 @@ import meta_config = self.config.get
         if primary_direction == "up":
     pass
     pass
+    pass
             # For upward primary prediction, use expected decreases for adverse
             predictions = base_predictions.get("adversarial_confidences", {})
         else:
@@ -2110,6 +2275,7 @@ import meta_config = self.config.get
             predictions = base_predictions.get("price_target_confidences", {})
 
         if not predictions:
+    pass
     pass
     pass
             msg = (
@@ -2122,6 +2288,7 @@ import meta_config = self.config.get
         # Find the closest available level
         available_levels = [float(k.replace("%", "")) for k in predictions]
         if not available_levels:
+    pass
     pass
     pass
             msg = "No prediction levels available"
@@ -2160,6 +2327,9 @@ import meta_config = self.config.get
     except Exception as e:
         pass
     pass
+    except Exception as e:
+        pass
+    pass
                 return 0.0
 
     except Exception as e:
@@ -2168,6 +2338,7 @@ import meta_config = self.config.get
             weighted_sum = 0.0
 
             for level_str, probability in predictions.items():
+    pass
     pass
     pass
                 level = float(level_str.replace("%", ""))
@@ -2200,11 +2371,13 @@ import meta_config = self.config.get
         if not predictions:
     pass
     pass
+    pass
             msg = f"No predictions available for {direction} direction"
             raise ValueError(msg)
 
         levels = []
         for level_str in predictions:
+    pass
     pass
     pass
             level = float(level_str.replace("%", ""))
@@ -2216,6 +2389,7 @@ import meta_config = self.config.get
         if not levels:
     pass
     pass
+    pass
             msg = f"No significant probability levels found for {direction} direction"
             raise ValueError(
                 msg,
@@ -2224,6 +2398,7 @@ import meta_config = self.config.get
         return sorted(levels)
 
     def _calculate_risk_score(self, adverse_probabilities: dict[str, float]) -> float:
+    pass
     pass
     pass
         """
@@ -2238,6 +2413,7 @@ import meta_config = self.config.get
         if not adverse_probabilities:
     pass
     pass
+    pass
             msg = "No adverse probabilities provided for risk calculation"
             raise ValueError(msg)
 
@@ -2248,6 +2424,7 @@ import meta_config = self.config.get
         for level_str, probability in adverse_probabilities.items():
     pass
     pass
+    pass
             level = float(level_str.replace("%", ""))
             weight = level  # Higher levels get higher weight
 
@@ -2255,6 +2432,7 @@ import meta_config = self.config.get
             total_weight += weight
 
         if total_weight <= 0:
+    pass
     pass
     pass
             msg = "Invalid adverse probability data - no valid weights"
@@ -2280,6 +2458,7 @@ import meta_config = self.config.get
         if not adverse_probabilities:
     pass
     pass
+    pass
             msg = "No adverse probabilities provided for stop loss calculation"
             raise ValueError(
                 msg,
@@ -2289,7 +2468,9 @@ import meta_config = self.config.get
         for level_str, probability in adverse_probabilities.items():
     pass
     pass
+    pass
             if probability > 0.3:
+    pass
     pass
     pass
                 return float(level_str.replace("%", ""))
@@ -2315,6 +2496,7 @@ import meta_config = self.config.get
         if not adversarial_analysis:
     pass
     pass
+    pass
             msg = "No adversarial analysis data provided for risk assessment"
             raise ValueError(
                 msg,
@@ -2325,6 +2507,7 @@ import meta_config = self.config.get
         risk_levels = []
 
         for magnitude, analysis in adversarial_analysis.items():
+    pass
     pass
     pass
             risk_score = analysis["risk_score"]
@@ -2341,6 +2524,7 @@ import meta_config = self.config.get
 
         # Determine risk category
         if avg_risk_score < 0.3:
+    pass
     pass
     pass
             risk_category = "LOW"
@@ -2380,12 +2564,15 @@ import meta_config = self.config.get
         if confidence < 0.4:
     pass
     pass
+    pass
             return "LOW_CONFIDENCE: Consider staying out of position"
         if risk_score > 0.7:
     pass
     pass
+    pass
             return f"HIGH_RISK: {direction.upper()} position with tight stop loss recommended"
         if risk_score > 0.5:
+    pass
     pass
     pass
             return (
@@ -2397,6 +2584,8 @@ import meta_config = self.config.get
         """Initialize enhanced order manager and async order executor for tactician order management."""
         try:
             # Import order management components
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -2442,6 +2631,7 @@ import setup_enhanced_order_manager,
             if self.enhanced_order_manager:
     pass
     pass
+    pass
                 self.logger.info("✅ Enhanced order manager initialized successfully")
             else:
                 self.print(failed("Failed to initialize enhanced order manager"))
@@ -2449,6 +2639,7 @@ import setup_enhanced_order_manager,
             # Initialize async order executor
             self.async_order_executor = await setup_async_order_executor(order_config)
             if self.async_order_executor:
+    pass
     pass
     pass
                 self.logger.info("✅ Async order executor initialized successfully")
@@ -2493,6 +2684,9 @@ import setup_enhanced_order_manager,
     except Exception as e:
         pass
     pass
+    except Exception as e:
+        pass
+    pass
                 return {
                     "success": False,
                     "error": "Enhanced order manager not initialized",
@@ -2518,6 +2712,7 @@ import setup_enhanced_order_manager,
             )
 
             if order_state:
+    pass
     pass
     pass
                 return {
@@ -2571,6 +2766,9 @@ import setup_enhanced_order_manager,
     except Exception as e:
         pass
     pass
+    except Exception as e:
+        pass
+    pass
                 return {
                     "success": False,
                     "error": "Enhanced order manager not initialized",
@@ -2596,6 +2794,7 @@ import setup_enhanced_order_manager,
             if order_state:
     pass
     pass
+    pass
                 return {
                     "success": True,
                     "order_id": order_state.order_id,
@@ -2619,9 +2818,13 @@ import setup_enhanced_order_manager,
     def get_order_status(self, order_id: str) -> dict[str, Any] | None:
     pass
     pass
+    pass
         """Get the status of an order."""
         try:
             if not self.enhanced_order_manager:
+    pass
+    except Exception as e:
+        pass
     pass
     except Exception as e:
         pass
@@ -2632,6 +2835,7 @@ import setup_enhanced_order_manager,
         pass
             order_state = self.enhanced_order_manager.get_order_status(order_id)
             if order_state:
+    pass
     pass
     pass
                 return {
@@ -2659,9 +2863,13 @@ import setup_enhanced_order_manager,
     def get_strategy_orders(self, strategy_id: str) -> list[dict[str, Any]]:
     pass
     pass
+    pass
         """Get all orders for a specific strategy."""
         try:
             if not self.enhanced_order_manager:
+    pass
+    except Exception as e:
+        pass
     pass
     except Exception as e:
         pass
@@ -2698,9 +2906,13 @@ import setup_enhanced_order_manager,
     def get_order_manager_performance(self) -> dict[str, Any]:
     pass
     pass
+    pass
         """Get enhanced order manager performance metrics."""
         try:
             if not self.enhanced_order_manager:
+    pass
+    except Exception as e:
+        pass
     pass
     except Exception as e:
         pass
@@ -2744,6 +2956,9 @@ import setup_enhanced_order_manager,
         """
         try:
             if not self.async_order_executor:
+    pass
+    except Exception as e:
+        pass
     pass
     except Exception as e:
         pass
@@ -2822,9 +3037,13 @@ import ExecutionRequest,
     def get_execution_status(self, execution_id: str) -> dict[str, Any] | None:
     pass
     pass
+    pass
         """Get execution status for a specific execution ID."""
         try:
             if not self.async_order_executor:
+    pass
+    except Exception as e:
+        pass
     pass
     except Exception as e:
         pass
@@ -2837,6 +3056,7 @@ import ExecutionRequest,
                 execution_id,
             )
             if execution_result:
+    pass
     pass
     pass
                 return {
@@ -2857,9 +3077,13 @@ import ExecutionRequest,
     def get_execution_performance(self) -> dict[str, Any]:
     pass
     pass
+    pass
         """Get overall execution performance metrics."""
         try:
             if not self.async_order_executor:
+    pass
+    except Exception as e:
+        pass
     pass
     except Exception as e:
         pass
@@ -2897,6 +3121,9 @@ import ExecutionRequest,
     except Exception as e:
         pass
     pass
+    except Exception as e:
+        pass
+    pass
                 return {
                     "success": False,
                     "error": "Enhanced training manager not available",
@@ -2906,6 +3133,7 @@ import ExecutionRequest,
         pass
             # Check if training is needed
             if not force_training and not self._should_trigger_training():
+    pass
     pass
     pass
                 return {
@@ -2958,6 +3186,7 @@ import ExecutionRequest,
             if training_success:
     pass
     pass
+    pass
                 # Update training state
                 self.last_training_time = datetime.now()
                 self.training_history.append(
@@ -2986,6 +3215,7 @@ import ExecutionRequest,
     def _should_trigger_training(self) -> bool:
     pass
     pass
+    pass
         """Determine if training should be triggered based on conditions."""
         try:
             # Check time-based conditions
@@ -2993,7 +3223,10 @@ import ExecutionRequest,
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             if self.last_training_time is None:
+    pass
     pass
     pass
                 return True  # First training
@@ -3028,9 +3261,13 @@ import ExecutionRequest,
     def _calculate_performance_degradation(self) -> float:
     pass
     pass
+    pass
         """Calculate model performance degradation."""
         try:
             if len(self.model_performance_history) < 2:
+    pass
+    except Exception as e:
+        pass
     pass
     except Exception as e:
         pass
@@ -3042,6 +3279,7 @@ import ExecutionRequest,
             # Calculate average performance over last 10 samples
             recent_performance = self.model_performance_history[-10:]
             if not recent_performance:
+    pass
     pass
     pass
                 return 0.0
@@ -3070,10 +3308,13 @@ import ExecutionRequest,
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             )
 
             # Keep only last 100 performance records
             if len(self.model_performance_history) > 100:
+    pass
     pass
     pass
                 self.model_performance_history = self.model_performance_history[-100:]
@@ -3082,6 +3323,7 @@ import ExecutionRequest,
             self.print(error("Error updating model performance: {e}"))
 
     def get_training_status(self) -> dict[str, Any]:
+    pass
     pass
     pass
         """Get current training status and history."""
@@ -3099,6 +3341,8 @@ import ExecutionRequest,
                 "training_config": self.training_config,
                 "should_trigger_training": self._should_trigger_training(),
                 "performance_degradation": self._calculate_performance_degradation(),
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -3122,6 +3366,8 @@ import ExecutionRequest,
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             # Cleanup code here if needed
             self.logger.info("✅ ML Confidence Predictor stopped successfully")
         except Exception:
@@ -3139,8 +3385,10 @@ import ExecutionRequest,
         if performance_history:
     pass
     pass
+    pass
             total = sum(performance_history.values())
             if total > 0:
+    pass
     pass
     pass
                 self.ensemble_weights = {
@@ -3157,6 +3405,7 @@ import ExecutionRequest,
     def ablation_study(self, features: pd.DataFrame, y_true: np.ndarray) -> dict:
     pass
     pass
+    pass
         """
         Perform ablation study: remove each ensemble member in turn and measure performance drop.
         Returns a dict of member: performance_with_removal.
@@ -3165,8 +3414,10 @@ import ExecutionRequest,
         for member in self.ensemble_models:
     pass
     pass
+    pass
             others = {k: v for k, v in self.ensemble_models.items() if k != member}
             if not others:
+    pass
     pass
     pass
                 continue
@@ -3194,10 +3445,12 @@ import ExecutionRequest,
         if not await self._prepare_for_prediction():
     pass
     pass
+    pass
             return {label: 0.5 for label in self.analyst_labels}
         # Build features according to predictor's schema
         features = await self._prepare_prediction_features(market_data)
         if features is None or features.empty:
+    pass
     pass
     pass
             return {label: 0.5 for label in self.analyst_labels}
@@ -3209,8 +3462,11 @@ import ExecutionRequest,
         for label in self.analyst_labels:
     pass
     pass
+    pass
             try:
                 # Select model for label/timeframe
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -3219,11 +3475,14 @@ import ExecutionRequest,
                 if label in self.label_expert_models:
     pass
     pass
+    pass
                     model_map = self.label_expert_models[label]
                     if isinstance(model_map, dict):
     pass
     pass
+    pass
                         if tf in model_map:
+    pass
     pass
     pass
                             model = model_map[tf]
@@ -3235,10 +3494,12 @@ import ExecutionRequest,
                 if model is None:
     pass
     pass
+    pass
                     confidences[label] = 0.5
                     continue
                 # Predict probability/confidence
                 if hasattr(model, "predict_proba"):
+    pass
     pass
     pass
                     proba = model.predict_proba(features)
@@ -3262,8 +3523,12 @@ import ExecutionRequest,
                 if calibrator is not None:
     pass
     pass
+    pass
                     try:
                         if hasattr(calibrator, "predict_proba"):
+    pass
+    except Exception as e:
+        pass
     pass
     except Exception as e:
         pass
@@ -3307,6 +3572,7 @@ import ExecutionRequest,
         for label, inten in intensities.items():
     pass
     pass
+    pass
             c = float(np.clip(confidences.get(label, 0.5), 0.0, 1.0))
             r = float(np.clip(rel_map.get(label, 1.0), 0.0, 1.0))
             s = float(
@@ -3318,6 +3584,7 @@ import ExecutionRequest,
         if top_k > 0 and len(scores) > top_k:
     pass
     pass
+    pass
             ranked = sorted(scores.items(), key=lambda t: t[1], reverse=True)
             keep = {k for k, _ in ranked[:top_k]}
         else:
@@ -3326,7 +3593,9 @@ import ExecutionRequest,
         for label, s in scores.items():
     pass
     pass
+    pass
             if label in keep:
+    pass
     pass
     pass
                 lo = w_min if w_min > 0 else 0.0
@@ -3338,8 +3607,10 @@ import ExecutionRequest,
         if normalize:
     pass
     pass
+    pass
             total = float(sum(weights.values()))
             if total > 0:
+    pass
     pass
     pass
                 weights = {k: float(v / total) for k, v in weights.items()}
@@ -3365,8 +3636,10 @@ import ExecutionRequest,
         for tf in tf_list:
     pass
     pass
+    pass
             confs = await self.predict_label_confidences(market_data, timeframe=tf)
             for label, val in confs.items():
+    pass
     pass
     pass
                 all_conf[f"{tf}_{label}"] = float(val)
@@ -3389,9 +3662,11 @@ import ExecutionRequest,
         if not await self._prepare_for_prediction():
     pass
     pass
+    pass
             return {label: 0.5 for label in self.tactician_labels}
         features = await self._prepare_prediction_features(market_data)
         if features is None or features.empty:
+    pass
     pass
     pass
             return {label: 0.5 for label in self.tactician_labels}
@@ -3402,8 +3677,11 @@ import ExecutionRequest,
         for label in self.tactician_labels:
     pass
     pass
+    pass
             try:
                 model = None
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -3411,11 +3689,14 @@ import ExecutionRequest,
                 if label in self.label_expert_models:
     pass
     pass
+    pass
                     model_map = self.label_expert_models[label]
                     if isinstance(model_map, dict):
     pass
     pass
+    pass
                         if tf in model_map:
+    pass
     pass
     pass
                             model = model_map[tf]
@@ -3426,9 +3707,11 @@ import ExecutionRequest,
                 if model is None:
     pass
     pass
+    pass
                     confidences[label] = 0.5
                     continue
                 if hasattr(model, "predict_proba"):
+    pass
     pass
     pass
                     proba = model.predict_proba(features)
@@ -3449,8 +3732,12 @@ import ExecutionRequest,
                 if calibrator is not None:
     pass
     pass
+    pass
                     try:
                         if hasattr(calibrator, "predict_proba"):
+    pass
+    except Exception as e:
+        pass
     pass
     except Exception as e:
         pass
@@ -3491,10 +3778,12 @@ import ExecutionRequest,
         for tf in tf_list:
     pass
     pass
+    pass
             confs = await self.predict_tactician_label_confidences(
                 market_data, timeframe=tf
             )
             for label, val in confs.items():
+    pass
     pass
     pass
                 all_conf[f"{tf}_{label}"] = float(val)
@@ -3524,12 +3813,16 @@ async def setup_ml_confidence_predictor(
     except Exception as e:
         pass
     pass
+    except Exception as e:
+        pass
+    pass
             config = {}
 
     except Exception as e:
         pass
         predictor = MLConfidencePredictor(config)
         if await predictor.initialize():
+    pass
     pass
     pass
             return predictor

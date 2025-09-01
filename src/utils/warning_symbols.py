@@ -11,29 +11,29 @@ class ColorCodes:
     """ANSI color codes for terminal output."""
 
     # Reset
-    RESET = "\\\033[0m"
+    RESET = "\\\\\033[0m"
 
     # Bold
-    BOLD = "\\\033[1m"
+    BOLD = "\\\\\033[1m"
 
     # Colors
-    BLACK = "\\\033[30m"
-    RED = "\\\033[31m"
-    GREEN = "\\\033[32m"
-    YELLOW = "\\\033[33m"
-    BLUE = "\\\033[34m"
-    MAGENTA = "\\\033[35m"
-    CYAN = "\\\033[36m"
-    WHITE = "\\\033[37m"
+    BLACK = "\\\\\033[30m"
+    RED = "\\\\\033[31m"
+    GREEN = "\\\\\033[32m"
+    YELLOW = "\\\\\033[33m"
+    BLUE = "\\\\\033[34m"
+    MAGENTA = "\\\\\033[35m"
+    CYAN = "\\\\\033[36m"
+    WHITE = "\\\\\033[37m"
 
     # Bright colors
-    BRIGHT_RED = "\\\033[91m"
-    BRIGHT_GREEN = "\\\033[92m"
-    BRIGHT_YELLOW = "\\\033[93m"
-    BRIGHT_BLUE = "\\\033[94m"
-    BRIGHT_MAGENTA = "\\\033[95m"
-    BRIGHT_CYAN = "\\\033[96m"
-    BRIGHT_WHITE = "\\\033[97m"
+    BRIGHT_RED = "\\\\\033[91m"
+    BRIGHT_GREEN = "\\\\\033[92m"
+    BRIGHT_YELLOW = "\\\\\033[93m"
+    BRIGHT_BLUE = "\\\\\033[94m"
+    BRIGHT_MAGENTA = "\\\\\033[95m"
+    BRIGHT_CYAN = "\\\\\033[96m"
+    BRIGHT_WHITE = "\\\\\033[97m"
 
 class WarningSymbols:
     """Unicode warning symbols for enhanced visual feedback."""
@@ -86,6 +86,8 @@ class WarningSymbols:
 def should_use_colors() -> bool:
     pass
     pass
+    pass
+    pass
     """Determine if colors should be used based on environment.
 
     Returns:
@@ -96,10 +98,14 @@ def should_use_colors() -> bool:
     if not hasattr(sys.stdout, "isatty") or not sys.stdout.isatty():
     pass
     pass
+    pass
+    pass
         return False
 
     # Check for NO_COLOR environment variable
     if os.environ.get("NO_COLOR"):
+    pass
+    pass
     pass
     pass
         return False
@@ -109,6 +115,8 @@ def should_use_colors() -> bool:
     return term not in ("dumb", "unknown")
 
 def colorize(text: str, color: str, bold: bool, False) -> str:
+    pass
+    pass
     pass
     pass
     """Add color to text if colors are enabled.
@@ -125,10 +133,14 @@ def colorize(text: str, color: str, bold: bool, False) -> str:
     if not should_use_colors():
     pass
     pass
+    pass
+    pass
         return text
 
     result, text
     if bold:
+    pass
+    pass
     pass
     pass
         result, f"{ColorCodes.BOLD}{result}"
@@ -271,10 +283,14 @@ def format_info_message(
 def warning(message: str) -> str:
     pass
     pass
+    pass
+    pass
     """Format a warning message."""
     return format_warning_message(message)
 
 def error(message: str) -> str:
+    pass
+    pass
     pass
     pass
     """Format an error message."""
@@ -283,10 +299,14 @@ def error(message: str) -> str:
 def critical(message: str) -> str:
     pass
     pass
+    pass
+    pass
     """Format a critical error message."""
     return format_critical_message(message)
 
 def failed(message: str) -> str:
+    pass
+    pass
     pass
     pass
     """Format a failure message."""
@@ -295,10 +315,14 @@ def failed(message: str) -> str:
 def success(message: str) -> str:
     pass
     pass
+    pass
+    pass
     """Format a success message."""
     return format_success_message(message)
 
 def info(message: str) -> str:
+    pass
+    pass
     pass
     pass
     """Format an info message."""
@@ -307,10 +331,14 @@ def info(message: str) -> str:
 def initialization_error(message: str) -> str:
     pass
     pass
+    pass
+    pass
     """Format an initialization error message."""
     return format_error_message(message)
 
 def invalid(message: str) -> str:
+    pass
+    pass
     pass
     pass
     """Format an invalid input message."""
@@ -319,10 +347,14 @@ def invalid(message: str) -> str:
 def missing(message: str) -> str:
     pass
     pass
+    pass
+    pass
     """Format a missing data message."""
     return format_warning_message(message)
 
 def problem(message: str) -> str:
+    pass
+    pass
     pass
     pass
     """Format a problem message."""
@@ -331,10 +363,14 @@ def problem(message: str) -> str:
 def timeout(message: str) -> str:
     pass
     pass
+    pass
+    pass
     """Format a timeout message."""
     return format_error_message(message)
 
 def connection_error(message: str) -> str:
+    pass
+    pass
     pass
     pass
     """Format a connection error message."""
@@ -343,10 +379,14 @@ def connection_error(message: str) -> str:
 def validation_error(message: str) -> str:
     pass
     pass
+    pass
+    pass
     """Format a validation error message."""
     return format_error_message(message)
 
 def execution_error(message: str) -> str:
+    pass
+    pass
     pass
     pass
     """Format an execution error message."""

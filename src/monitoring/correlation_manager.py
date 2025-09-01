@@ -48,6 +48,7 @@ class CorrelationManager:
     def __init__(self, config: Dict[str, Any]) -> None:
     pass
     pass
+    pass
         self.config = config
         self.logger = system_logger.getChild("CorrelationManager")
 
@@ -106,6 +107,7 @@ class CorrelationManager:
         if len(self.correlation_requests) > self.max_correlation_history:
     pass
     pass
+    pass
             oldest_key = next(iter(self.correlation_requests))
             self.correlation_requests.pop(oldest_key, None)
 
@@ -120,6 +122,7 @@ class CorrelationManager:
         if not req:
     pass
     pass
+    pass
             return
         req.response_timestamp = datetime.now()
         req.response_data = dict(response_data or {})
@@ -129,9 +132,11 @@ class CorrelationManager:
     def get_request(self, correlation_id: str) -> Optional[CorrelationRequest]:
     pass
     pass
+    pass
         return self.correlation_requests.get(correlation_id)
 
     def list_requests(self) -> List[CorrelationRequest]:
+    pass
     pass
     pass
         return list(self.correlation_requests.values())

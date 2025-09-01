@@ -55,11 +55,13 @@ class AggtradesValidator:
     def __init__(self, data_cache_path: str = "data_cache") -> None:
     pass
     pass
+    pass
         self.data_cache_path, Path(data_cache_path)
         self.data_cache_path.mkdir(exist_ok = True)
 
     @with_tracing_span("get_aggtrades_files")
     def get_aggtrades_files(self, symbol: str, exchange: str) -> list[Path]:
+    pass
     pass
     pass
         """Get all aggtrades files for a symbol and exchange."""
@@ -96,6 +98,7 @@ class AggtradesValidator:
     def validate_file_format(self, file_path: Path) -> dict:
     pass
     pass
+    pass
         """Validate a single aggtrades file format.
 
         Args:
@@ -126,7 +129,10 @@ class AggtradesValidator:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         if result["file_size"] == 0:
+    pass
     pass
     pass
                 result["issues"].append("Empty file")
@@ -134,6 +140,7 @@ class AggtradesValidator:
 
         # Read the file
         if file_path.suffix.lower() == ".csv":
+    pass
     pass
     pass
                 df, pd.read_csv(file_path, parse_dates=["timestamp"])
@@ -148,11 +155,13 @@ class AggtradesValidator:
         if len(df) == 0:
     pass
     pass
+    pass
                 result["issues"].append("No data rows")
         return result
 
         # Check columns
         if list(df.columns) != self.EXPECTED_COLUMNS:
+    pass
     pass
     pass
                 result["issues"].append(
@@ -163,10 +172,13 @@ class AggtradesValidator:
         for col, expected_dtype in self.EXPECTED_DTYPES.items():
     pass
     pass
+    pass
         if col in df.columns:
     pass
     pass
+    pass
         if str(df[col].dtype) != expected_dtype:
+    pass
     pass
     pass
                         result["issues"].append(
@@ -180,7 +192,9 @@ class AggtradesValidator:
         for col in critical_columns:
     pass
     pass
+    pass
         if col in df.columns and df[col].isnull().any():
+    pass
     pass
     pass
                     null_count, df[col].isnull().sum()
@@ -190,13 +204,16 @@ class AggtradesValidator:
         if "timestamp" in df.columns:
     pass
     pass
+    pass
         if not df["timestamp"].is_monotonic_increasing:
+    pass
     pass
     pass
                     result["issues"].append("Timestamps not in ascending order")
 
         # If no issues, mark as valid
         if not result["issues"]:
+    pass
     pass
     pass
                 result["valid"] = True
@@ -226,6 +243,7 @@ class AggtradesValidator:
     def fix_file_format(self, file_path: Path) -> bool:
     pass
     pass
+    pass
         """Fix file format if needed.
 
         Args:
@@ -242,8 +260,11 @@ class AggtradesValidator:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         # Read the file
         if file_path.suffix.lower() == ".csv":
+    pass
     pass
     pass
                 df, pd.read_csv(file_path, parse_dates=["timestamp"])
@@ -267,8 +288,10 @@ class AggtradesValidator:
         if list(df.columns) != self.EXPECTED_COLUMNS:
     pass
     pass
+    pass
         # Check if we have the old column names
         if all(col in df.columns for col in column_mapping.keys()):
+    pass
     pass
     pass
                     df, df.rename(columns = column_mapping)
@@ -280,10 +303,13 @@ class AggtradesValidator:
         for col, expected_dtype in self.EXPECTED_DTYPES.items():
     pass
     pass
+    pass
         if col in df.columns:
     pass
     pass
+    pass
         if expected_dtype == "int64":
+    pass
     pass
     pass
                         df[col] = pd.to_numeric(df[col], errors="coerce").astype("Int64")
@@ -306,6 +332,7 @@ class AggtradesValidator:
 
         # Save the fixed file
         if file_path.suffix.lower() == ".csv":
+    pass
     pass
     pass
                 df.to_csv(file_path, index = False)
@@ -377,6 +404,7 @@ class AggtradesValidator:
         for file_path in aggtrades_files:
     pass
     pass
+    pass
         try:
         # Validate file format
                 validation, self.validate_file_format(file_path)
@@ -385,7 +413,10 @@ class AggtradesValidator:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         if validation["valid"]:
+    pass
     pass
     pass
                     validation_result["valid_files"] += 1
@@ -398,7 +429,9 @@ class AggtradesValidator:
         if auto_fix:
     pass
     pass
+    pass
         if self.fix_file_format(file_path):
+    pass
     pass
     pass
                             validation_result["fixed_files"] += 1
@@ -423,13 +456,16 @@ class AggtradesValidator:
         if validation_result['errors']:
     pass
     pass
+    pass
             logger.error("❌ VALIDATION ERRORS:")
         for i, error in enumerate(validation_result['errors'], 1):
+    pass
     pass
     pass
                 logger.error(f"  {i}. {error}")
 
         if validation_result['invalid_files'] > 0 and not auto_fix:
+    pass
     pass
     pass
             logger.warning("⚠️  Some files are invalid and auto - fix is disabled!")
@@ -458,6 +494,7 @@ class AggtradesValidator:
     def convert_to_parquet(self, symbol: str, exchange: str) -> dict:
     pass
     pass
+    pass
         """Convert CSV aggtrades files to parquet format.
 
         Args:
@@ -482,10 +519,13 @@ class AggtradesValidator:
         for csv_file in csv_files:
     pass
     pass
+    pass
         try:
         # Read CSV file
                 df, pd.read_csv(csv_file, parse_dates=["timestamp"])
 
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -518,6 +558,7 @@ class AggtradesValidator:
     def generate_validation_report(self, symbol: str, exchange: str) -> str:
     pass
     pass
+    pass
         """Generate a validation report for aggtrades files.
 
         Args:
@@ -546,8 +587,11 @@ class AggtradesValidator:
         for file_path in aggtrades_files:
     pass
     pass
+    pass
         try:
                 validation, self.validate_file_format(file_path)
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -556,20 +600,22 @@ class AggtradesValidator:
                 total_size += file_size
 
                 status = "✅ VALID" if validation["valid"] else "❌ INVALID"
-                report += f"• {file_path.name}: {status} ({validation['row_count']} rows, {file_size / 1024 / 1024:.2f} MB)\\\n"
+                report += f"• {file_path.name}: {status} ({validation['row_count']} rows, {file_size / 1024 / 1024:.2f} MB)\\\\n"
 
         if not validation["valid"]:
+    pass
     pass
     pass
         for issue in validation["issues"]:
     pass
     pass
-                        report += f"  - Issue: {issue}\\\n"
+    pass
+                        report += f"  - Issue: {issue}\\\\n"
 
                 total_rows += validation["row_count"]
 
         except Exception as e:
-                report += f"• {file_path.name}: ❌ ERROR ({e})\\\n"
+                report += f"• {file_path.name}: ❌ ERROR ({e})\\\\n"
 
         report += f"""
 📈 SUMMARY:

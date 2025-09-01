@@ -46,10 +46,14 @@ class DecoratorConfig:
     def from_dict(cls, config_dict: Dict[str, Any]) -> 'DecoratorConfig':
     pass
     pass
+    pass
+    pass
         """Create config from dictionary."""
         return cls(**config_dict)
 
     def to_dict(self) -> Dict[str, Any]:
+    pass
+    pass
     pass
     pass
         """Convert config to dictionary."""

@@ -22,6 +22,7 @@ sys.path.insert(0, str(src_dir))
 def create_realistic_trading_data():
     pass
     pass
+    pass
     """Create realistic trading data with various NaN patterns."""
     print("📊 Creating realistic trading data with NaN patterns...")
 
@@ -82,8 +83,9 @@ def create_realistic_trading_data():
 def analyze_nan_patterns(data):
     pass
     pass
+    pass
     """Analyze NaN patterns in the data."""
-    print("\\\n🔍 Analyzing NaN patterns in trading data...")
+    print("\\\\n🔍 Analyzing NaN patterns in trading data...")
 
     total_rows = len(data)
     total_cells = data.size
@@ -97,6 +99,7 @@ def analyze_nan_patterns(data):
     for col in data.columns:
     pass
     pass
+    pass
         nan_mask = data[col].isnull()
         nan_count = nan_mask.sum()
         nan_percentage = (nan_count / total_rows) * 100
@@ -104,7 +107,8 @@ def analyze_nan_patterns(data):
         if nan_count > 0:
     pass
     pass
-            print(f"\\\n📋 Column: {col}")
+    pass
+            print(f"\\\\n📋 Column: {col}")
             print(f"   NaN count: {nan_count:,} ({nan_percentage:.2f}%)")
 
             # Get timestamp ranges for NaN values
@@ -113,6 +117,7 @@ def analyze_nan_patterns(data):
 
             print(f"   📅 Found {len(ranges)} NaN timestamp range(s):")
             for i , range_info in enumerate(ranges, 1):
+    pass
     pass
     pass
                 start_time = range_info["start"].strftime("%Y-%m-%d %H:%M:%S")
@@ -130,13 +135,13 @@ def analyze_nan_patterns(data):
                 pattern_type = identify_pattern_type(range_info)
                 print(f"         Pattern: {pattern_type}")
         else:
-            print(f"\\\n✅ Column: {col} - No NaN values")
+            print(f"\\\\n✅ Column: {col} - No NaN values")
 
     # Overall statistics
     total_nans = data.isnull().sum().sum()
     total_nan_percentage = (total_nans / total_cells) * 100
 
-    print("\\\n📈 Overall Statistics:")
+    print("\\\\n📈 Overall Statistics:")
     print(f"   Total NaN values: {total_nans:,}")
     print(f"   Total NaN percentage: {total_nan_percentage:.2f}%")
     print(f"   Data quality score: {max(0, 100 - total_nan_percentage):.1f}/100")
@@ -145,8 +150,10 @@ def analyze_nan_patterns(data):
 def group_consecutive_timestamps(timestamps):
     pass
     pass
+    pass
     """Group consecutive timestamps into ranges."""
     if len(timestamps) == 0:
+    pass
     pass
     pass
         return []
@@ -157,12 +164,14 @@ def group_consecutive_timestamps(timestamps):
     for i in range(1, len(timestamps)):
     pass
     pass
+    pass
         current_time = timestamps[i]
         prev_time = timestamps[i - 1]
         time_diff = current_time - prev_time
 
         # If gap is more than 2 minutes = start a new range
         if time_diff > pd.Timedelta(minutes=2):
+    pass
     pass
     pass
             range_info = {
@@ -180,6 +189,7 @@ def group_consecutive_timestamps(timestamps):
     if start_idx < len(timestamps):
     pass
     pass
+    pass
         range_info = {
             "start": timestamps[start_idx],
             "end": timestamps[-1],
@@ -194,6 +204,7 @@ def group_consecutive_timestamps(timestamps):
 def identify_pattern_type(range_info):
     pass
     pass
+    pass
     """Identify the type of NaN pattern."""
     start_time = range_info["start"]
     end_time = range_info["end"]
@@ -201,6 +212,7 @@ def identify_pattern_type(range_info):
 
     # Weekend pattern
     if start_time.weekday() >= 5 or end_time.weekday() >= 5:
+    pass
     pass
     pass
         return "Weekend (No Trading)"
@@ -215,10 +227,12 @@ def identify_pattern_type(range_info):
     if duration_hours >= 2:
     pass
     pass
+    pass
         return "Maintenance Period"
 
     # Short gaps
     if duration_hours < 0.5:
+    pass
     pass
     pass
         return "Brief Data Gap"
@@ -227,6 +241,7 @@ def identify_pattern_type(range_info):
 
 
 def main():
+    pass
     pass
     pass
     """Main function to demonstrate enhanced NaN analysis."""
@@ -239,7 +254,7 @@ def main():
     # Analyze NaN patterns
     analyze_nan_patterns(trading_data)
 
-    print("\\\n" + "=" * 60)
+    print("\\\\n" + "=" * 60)
     print("💡 Key Benefits of Enhanced NaN Analysis:")
     print("   ✅ Identifies specific time periods with missing data")
     print("   ✅ Groups consecutive NaN values into meaningful ranges")
@@ -250,6 +265,7 @@ def main():
 
 
 if __name__ == "__main__":
+    pass
     pass
     pass
     main()

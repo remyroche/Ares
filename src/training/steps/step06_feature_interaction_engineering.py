@@ -38,6 +38,7 @@ class FeatureInteractionEngine:
     def __init__(self, config: Dict[str, Any]):
     pass
     pass
+    pass
         """
         Initialize feature interaction engine.
 
@@ -53,6 +54,9 @@ class FeatureInteractionEngine:
         # Initialize DiverseLookbackOptimizer for dynamic period selection
         try:
             from src.training.diverse_lookback_optimizer import DiverseLookbackOptimizer
+    except Exception as e:
+        pass
+import except Exception as e:
     except Exception as e:
         pass
 import except Exception as e:
@@ -222,12 +226,15 @@ import self.diverse_optimizer, DiverseLookbackOptimizer
         if not self.use_dynamic_periods:
     pass
     pass
+    pass
         self.logger.warning("⚠️ Dynamic period optimization not available, using fallback periods")
         return {"status": "fallback", "periods": self.fallback_lookback_periods}
 
         try:
         self.logger.info("🎯 Starting dynamic lookback period optimization...")
 
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -260,6 +267,7 @@ import self.diverse_optimizer, DiverseLookbackOptimizer
     def _extract_optimized_periods(self, optimization_results: Dict[str, Any]) -> Dict[str, List[int]]:
     pass
     pass
+    pass
         """
         Extract optimized periods from DiverseLookbackOptimizer results.
         """
@@ -270,7 +278,9 @@ import self.diverse_optimizer, DiverseLookbackOptimizer
         for indicator, results in diverse_periods.items():
     pass
     pass
+    pass
         if "selected_periods" in results:
+    pass
     pass
     pass
                 optimized_periods[indicator] = results["selected_periods"]
@@ -280,10 +290,12 @@ import self.diverse_optimizer, DiverseLookbackOptimizer
     def _update_interaction_patterns_with_optimized_periods(self):
     pass
     pass
+    pass
         """
         Update interaction patterns to use optimized periods.
         """
         if not self.dynamic_lookback_periods:
+    pass
     pass
     pass
             return
@@ -292,15 +304,18 @@ import self.diverse_optimizer, DiverseLookbackOptimizer
         for pattern_name, pattern_config in self.interaction_patterns.items():
     pass
     pass
+    pass
             updated_features = []
 
         for feature in pattern_config["features"]:
+    pass
     pass
     pass
         # Check if this feature has an optimized period
                 base_indicator, feature.split("_")[0]
 
         if base_indicator in self.dynamic_lookback_periods:
+    pass
     pass
     pass
         # Use the first optimized period for this pattern
@@ -318,6 +333,7 @@ import self.diverse_optimizer, DiverseLookbackOptimizer
     def _validate_lookback_periods(self):
     pass
     pass
+    pass
         """
         Validate that the selected lookback periods are not too correlated.
         """
@@ -329,7 +345,9 @@ import self.diverse_optimizer, DiverseLookbackOptimizer
         for indicator, config in periods_to_validate.items():
     pass
     pass
+    pass
         if isinstance(config, dict) and "periods" in config:
+    pass
     pass
     pass
                 periods, config["periods"]
@@ -344,7 +362,9 @@ import self.diverse_optimizer, DiverseLookbackOptimizer
         for i in range(len(periods)):
     pass
     pass
+    pass
         for j in range(i + 1, len(periods)):
+    pass
     pass
     pass
                     period1, period2, periods[i], periods[j]
@@ -359,11 +379,13 @@ import self.diverse_optimizer, DiverseLookbackOptimizer
         if isinstance(config, dict) and "description" in config:
     pass
     pass
+    pass
         self.logger.info(f"✅ {indicator}: Selected periods {periods} - {config['description']}")
                     else:
         self.logger.info(f"✅ {indicator}: Selected periods {periods}")
 
     def extract_optimal_technical_indicators(self, market_data: pd.DataFrame) -> pd.DataFrame:
+    pass
     pass
     pass
         """
@@ -386,13 +408,16 @@ import self.diverse_optimizer, DiverseLookbackOptimizer
         if "RSI" in periods_to_use:
     pass
     pass
+    pass
             rsi_periods, periods_to_use["RSI"]
         if isinstance(rsi_periods, dict):
+    pass
     pass
     pass
                 rsi_periods, rsi_periods["periods"]
 
         for period in rsi_periods:
+    pass
     pass
     pass
                 rsi, talib.RSI(market_data['close'].values, timeperiod = period)
@@ -402,14 +427,17 @@ import self.diverse_optimizer, DiverseLookbackOptimizer
         if "MACD" in periods_to_use:
     pass
     pass
+    pass
             macd_periods, periods_to_use["MACD"]
         if isinstance(macd_periods, dict):
+    pass
     pass
     pass
                 macd_periods, macd_periods["periods"]
 
         # Use first two periods for fast / slow
         if len(macd_periods) >= 2:
+    pass
     pass
     pass
                 macd, macd_signal, macd_hist, talib.MACD(
@@ -426,6 +454,7 @@ import self.diverse_optimizer, DiverseLookbackOptimizer
         if len(macd_periods) >= 3:
     pass
     pass
+    pass
                     macd_ext, macd_signal_ext, macd_hist_ext, talib.MACD(
                         market_data['close'].values,
                         fastperiod = macd_periods[1],
@@ -440,13 +469,16 @@ import self.diverse_optimizer, DiverseLookbackOptimizer
         if "Bollinger_Bands" in periods_to_use:
     pass
     pass
+    pass
             bb_periods, periods_to_use["Bollinger_Bands"]
         if isinstance(bb_periods, dict):
+    pass
     pass
     pass
                 bb_periods, bb_periods["periods"]
 
         for period in bb_periods:
+    pass
     pass
     pass
                 bb_upper, bb_middle, bb_lower, talib.BBANDS(
@@ -468,13 +500,16 @@ import self.diverse_optimizer, DiverseLookbackOptimizer
         if "SMA" in periods_to_use:
     pass
     pass
+    pass
             sma_periods, periods_to_use["SMA"]
         if isinstance(sma_periods, dict):
+    pass
     pass
     pass
                 sma_periods, sma_periods["periods"]
 
         for period in sma_periods:
+    pass
     pass
     pass
                 sma, talib.SMA(market_data['close'].values, timeperiod = period)
@@ -484,13 +519,16 @@ import self.diverse_optimizer, DiverseLookbackOptimizer
         if "EMA" in periods_to_use:
     pass
     pass
+    pass
             ema_periods, periods_to_use["EMA"]
         if isinstance(ema_periods, dict):
+    pass
     pass
     pass
                 ema_periods, ema_periods["periods"]
 
         for period in ema_periods:
+    pass
     pass
     pass
                 ema, talib.EMA(market_data['close'].values, timeperiod = period)
@@ -500,13 +538,16 @@ import self.diverse_optimizer, DiverseLookbackOptimizer
         if "ATR" in periods_to_use:
     pass
     pass
+    pass
             atr_periods, periods_to_use["ATR"]
         if isinstance(atr_periods, dict):
+    pass
     pass
     pass
                 atr_periods, atr_periods["periods"]
 
         for period in atr_periods:
+    pass
     pass
     pass
                 atr, talib.ATR(
@@ -524,13 +565,16 @@ import self.diverse_optimizer, DiverseLookbackOptimizer
         if "Stochastic" in periods_to_use:
     pass
     pass
+    pass
             stoch_periods, periods_to_use["Stochastic"]
         if isinstance(stoch_periods, dict):
+    pass
     pass
     pass
                 stoch_periods, stoch_periods["periods"]
 
         for period in stoch_periods:
+    pass
     pass
     pass
                 stoch_k, stoch_d, talib.STOCH(
@@ -548,13 +592,16 @@ import self.diverse_optimizer, DiverseLookbackOptimizer
         if "ADX" in periods_to_use:
     pass
     pass
+    pass
             adx_periods, periods_to_use["ADX"]
         if isinstance(adx_periods, dict):
+    pass
     pass
     pass
                 adx_periods, adx_periods["periods"]
 
         for period in adx_periods:
+    pass
     pass
     pass
                 adx, talib.ADX(
@@ -569,13 +616,16 @@ import self.diverse_optimizer, DiverseLookbackOptimizer
         if "CCI" in periods_to_use:
     pass
     pass
+    pass
             cci_periods, periods_to_use["CCI"]
         if isinstance(cci_periods, dict):
+    pass
     pass
     pass
                 cci_periods, cci_periods["periods"]
 
         for period in cci_periods:
+    pass
     pass
     pass
                 cci, talib.CCI(
@@ -590,13 +640,16 @@ import self.diverse_optimizer, DiverseLookbackOptimizer
         if "Williams_R" in periods_to_use:
     pass
     pass
+    pass
             williams_periods, periods_to_use["Williams_R"]
         if isinstance(williams_periods, dict):
+    pass
     pass
     pass
                 williams_periods, williams_periods["periods"]
 
         for period in williams_periods:
+    pass
     pass
     pass
                 williams_r, talib.WILLR(
@@ -611,8 +664,10 @@ import self.diverse_optimizer, DiverseLookbackOptimizer
         if "ROC" in periods_to_use:
     pass
     pass
+    pass
             roc_periods, periods_to_use["ROC"]
         if isinstance(roc_periods, dict):
+    pass
     pass
     pass
                 roc_periods, roc_periods["periods"]
@@ -620,11 +675,13 @@ import self.diverse_optimizer, DiverseLookbackOptimizer
         for period in roc_periods:
     pass
     pass
+    pass
                 roc, talib.ROC(market_data['close'].values, timeperiod = period)
                 indicators[f"ROC_{period}"] = roc
 
         # Extract OBV with optimal periods
         if "OBV" in periods_to_use:
+    pass
     pass
     pass
             obv, talib.OBV(market_data['close'].values, market_data['volume'].values)
@@ -637,13 +694,16 @@ import self.diverse_optimizer, DiverseLookbackOptimizer
         if "MFI" in periods_to_use:
     pass
     pass
+    pass
             mfi_periods, periods_to_use["MFI"]
         if isinstance(mfi_periods, dict):
+    pass
     pass
     pass
                 mfi_periods, mfi_periods["periods"]
 
         for period in mfi_periods:
+    pass
     pass
     pass
                 mfi, talib.MFI(
@@ -668,6 +728,7 @@ import self.diverse_optimizer, DiverseLookbackOptimizer
     def analyze_feature_correlations(self, features: pd.DataFrame) -> Dict[str, Any]:
     pass
     pass
+    pass
         """
         Analyze correlations between features to ensure non - correlation.
 
@@ -686,7 +747,9 @@ import self.diverse_optimizer, DiverseLookbackOptimizer
         for i in range(len(correlation_matrix.columns)):
     pass
     pass
+    pass
         for j in range(i + 1, len(correlation_matrix.columns)):
+    pass
     pass
     pass
                 corr_value, correlation_matrix.iloc[i, j]
@@ -702,8 +765,10 @@ import self.diverse_optimizer, DiverseLookbackOptimizer
         for corr in high_correlations:
     pass
     pass
+    pass
             indicator_type, corr["feature1"].split("_")[0]
         if indicator_type not in correlation_groups:
+    pass
     pass
     pass
                 correlation_groups[indicator_type] = []
@@ -721,6 +786,7 @@ import self.diverse_optimizer, DiverseLookbackOptimizer
 
         # Log findings
         if high_correlations:
+    pass
     pass
     pass
         self.logger.warning(f"⚠️ Found {len(high_correlations)} highly correlated feature pairs")
@@ -758,6 +824,8 @@ import self.diverse_optimizer, DiverseLookbackOptimizer
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         # 1. Create basic interaction features
             basic_interactions, self._create_basic_interactions(features, feature_names)
 
@@ -783,6 +851,7 @@ import self.diverse_optimizer, DiverseLookbackOptimizer
 
         # 7. Scale interaction features
         if not self.is_fitted:
+    pass
     pass
     pass
                 selected_interactions, self.scaler.fit_transform(selected_interactions)
@@ -825,7 +894,9 @@ import self.diverse_optimizer, DiverseLookbackOptimizer
         for feature1, feature2 in important_pairs:
     pass
     pass
+    pass
         if feature1 in feature_map and feature2 in feature_map:
+    pass
     pass
     pass
                 idx1, idx2, feature_map[feature1], feature_map[feature2]
@@ -855,7 +926,9 @@ import self.diverse_optimizer, DiverseLookbackOptimizer
         for pattern_name, pattern_config in self.interaction_patterns.items():
     pass
     pass
+    pass
         if not pattern_config["enabled"]:
+    pass
     pass
     pass
                 continue
@@ -868,12 +941,15 @@ import self.diverse_optimizer, DiverseLookbackOptimizer
         for feature_name in pattern_features:
     pass
     pass
+    pass
         if feature_name in feature_map:
+    pass
     pass
     pass
                     pattern_indices.append(feature_map[feature_name])
 
         if len(pattern_indices) >= 2:
+    pass
     pass
     pass
         # Create pattern - specific interactions
@@ -895,6 +971,7 @@ import self.diverse_optimizer, DiverseLookbackOptimizer
         pattern_features, features[:, pattern_indices]
 
         if pattern_name == "momentum_volume":
+    pass
     pass
     pass
         # Momentum × Volume interactions
@@ -968,6 +1045,7 @@ import self.diverse_optimizer, DiverseLookbackOptimizer
         if market_regime == "trending":
     pass
     pass
+    pass
         # Trending market interactions
             trend_interactions, self._create_trending_interactions(features, feature_names)
             interactions.extend(trend_interactions)
@@ -1002,6 +1080,7 @@ import self.diverse_optimizer, DiverseLookbackOptimizer
         if trend_indices and momentum_indices:
     pass
     pass
+    pass
             trend_avg, np.mean(features[:, trend_indices], axis = 1)
             momentum_avg, np.mean(features[:, momentum_indices], axis = 1)
 
@@ -1031,6 +1110,7 @@ import self.diverse_optimizer, DiverseLookbackOptimizer
         if oscillator_indices and volume_indices:
     pass
     pass
+    pass
             oscillator_avg, np.mean(features[:, oscillator_indices], axis = 1)
             volume_avg, np.mean(features[:, volume_indices], axis = 1)
 
@@ -1058,6 +1138,7 @@ import self.diverse_optimizer, DiverseLookbackOptimizer
         risk_indices = [feature_map.get(f) for f in risk_features if f in feature_map]
 
         if volatility_indices and risk_indices:
+    pass
     pass
     pass
             volatility_avg, np.mean(features[:, volatility_indices], axis = 1)
@@ -1090,7 +1171,9 @@ import self.diverse_optimizer, DiverseLookbackOptimizer
         for short_feature, long_feature in timeframe_pairs:
     pass
     pass
+    pass
         if short_feature in feature_map and long_feature in feature_map:
+    pass
     pass
     pass
                 short_idx, long_idx, feature_map[short_feature], feature_map[long_feature]
@@ -1108,6 +1191,7 @@ import self.diverse_optimizer, DiverseLookbackOptimizer
     def _identify_market_regime(self, market_data: pd.DataFrame) -> str:
     pass
     pass
+    pass
         """
         Identify current market regime.
         """
@@ -1121,7 +1205,10 @@ import self.diverse_optimizer, DiverseLookbackOptimizer
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         if volatility > 0.03:
+    pass
     pass
     pass
         return "volatile"
@@ -1147,6 +1234,8 @@ import self.diverse_optimizer, DiverseLookbackOptimizer
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         # Calculate mutual information
             mi_scores, mutual_info_classif(interactions, dummy_target, random_state = 42)
 
@@ -1157,6 +1246,7 @@ import self.diverse_optimizer, DiverseLookbackOptimizer
         # Limit number of interactions
             max_interactions, self.selection_params["max_interactions"]
         if len(important_indices) > max_interactions:
+    pass
     pass
     pass
         # Select top interactions by mutual information
@@ -1181,6 +1271,7 @@ import self.diverse_optimizer, DiverseLookbackOptimizer
     def get_interaction_summary(self) -> Dict[str, Any]:
     pass
     pass
+    pass
         """
         Get summary of interaction engineering results.
         """
@@ -1199,6 +1290,7 @@ import self.diverse_optimizer, DiverseLookbackOptimizer
     def update_performance(self, performance_metrics: Dict[str, float]) -> None:
     pass
     pass
+    pass
         """
         Update interaction performance tracking.
         """
@@ -1213,6 +1305,8 @@ import self.diverse_optimizer, DiverseLookbackOptimizer
         # Calculate mutual information for interaction importance
             mi_scores, mutual_info_classif(interactions, target, random_state = 42)
 
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:

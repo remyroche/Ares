@@ -28,11 +28,13 @@ class RawDataQualityChecker:
     def __init__(self, config: dict[str, Any] | None, None) -> None:
     pass
     pass
+    pass
         self.logger, system_logger.getChild("RawDataQualityChecker")
         self.config, config or self._get_default_config()
 
     @staticmethod
     def ensure_datetime_index(func):
+    pass
     pass
     pass
         """Decorator to ensure DataFrame has datetime index before processing.
@@ -42,7 +44,9 @@ class RawDataQualityChecker:
         def wrapper(self, data: pd.DataFrame, *args, **kwargs):
     pass
     pass
+    pass
         if not isinstance(data.index, pd.DatetimeIndex):
+    pass
     pass
     pass
         self.logger.warning(f"⚠️ {func.__name__}: Data does not have datetime index, attempting to fix...")
@@ -54,12 +58,14 @@ class RawDataQualityChecker:
         if fixed_data is not None:
     pass
     pass
+    pass
         self.logger.info(f"✅ {func.__name__}: Successfully created datetime index")
                     data, fixed_data
                 else:
         self.logger.error(f"❌ {func.__name__}: Failed to create datetime index")
         # Return a safe fallback result
         if func.__name__ == "validate_raw_data":
+    pass
     pass
     pass
         return {
@@ -81,17 +87,21 @@ class RawDataQualityChecker:
     def validate_data_structure(func):
     pass
     pass
+    pass
         """Decorator to validate basic data structure before processing."""
         @functools.wraps(func)
         def wrapper(self, data: pd.DataFrame, *args, **kwargs):
+    pass
     pass
     pass
         # Check if data is empty
         if data is None or data.empty:
     pass
     pass
+    pass
         self.logger.error(f"❌ {func.__name__}: Empty or None data provided")
         if func.__name__ == "validate_raw_data":
+    pass
     pass
     pass
         return {
@@ -113,8 +123,10 @@ class RawDataQualityChecker:
         if missing_columns:
     pass
     pass
+    pass
         self.logger.error(f"❌ {func.__name__}: Missing required columns: {missing_columns}")
         if func.__name__ == "validate_raw_data":
+    pass
     pass
     pass
         return {
@@ -136,9 +148,11 @@ class RawDataQualityChecker:
     def handle_validation_errors(func):
     pass
     pass
+    pass
         """Decorator to handle validation errors gracefully."""
         @functools.wraps(func)
         def wrapper(self, data: pd.DataFrame, *args, **kwargs):
+    pass
     pass
     pass
         try:
@@ -147,10 +161,13 @@ class RawDataQualityChecker:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         except Exception as e:
         self.logger.exception(f"❌ {func.__name__}: Validation error: {e}")
 
         if func.__name__ == "validate_raw_data":
+    pass
     pass
     pass
         return {
@@ -170,9 +187,11 @@ class RawDataQualityChecker:
     def log_validation_progress(func):
     pass
     pass
+    pass
         """Decorator to log validation progress and timing."""
         @functools.wraps(func)
         def wrapper(self, data: pd.DataFrame, *args, **kwargs):
+    pass
     pass
     pass
             start_time, datetime.now()
@@ -185,10 +204,13 @@ class RawDataQualityChecker:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
                 end_time, datetime.now()
                 duration = (end_time - start_time).total_seconds()
 
         if func.__name__ == "validate_raw_data" and isinstance(result, tuple):
+    pass
     pass
     pass
                     validation_results, _, result
@@ -211,9 +233,11 @@ class RawDataQualityChecker:
     def handle_async_context(func):
     pass
     pass
+    pass
         """Decorator to handle async context issues in data download methods."""
         @functools.wraps(func)
         def wrapper(self, *args, **kwargs):
+    pass
     pass
     pass
         try:
@@ -222,8 +246,11 @@ class RawDataQualityChecker:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         except RuntimeError as e:
         if "asyncio.run() cannot be called from a running event loop" in str(e):
+    pass
     pass
     pass
         self.logger.warning(f"⚠️ {func.__name__}: Async context issue detected, skipping async operations")
@@ -239,12 +266,15 @@ class RawDataQualityChecker:
     def ensure_data_types(func):
     pass
     pass
+    pass
         """Decorator to ensure proper data types for OHLCV columns."""
         @functools.wraps(func)
         def wrapper(self, data: pd.DataFrame, *args, **kwargs):
     pass
     pass
+    pass
         if data is not None and not data.empty:
+    pass
     pass
     pass
         # Ensure OHLCV columns are numeric
@@ -252,11 +282,15 @@ class RawDataQualityChecker:
         for col in ohlcv_columns:
     pass
     pass
+    pass
         if col in data.columns:
+    pass
     pass
     pass
         try:
                             data[col] = pd.to_numeric(data[col], errors="coerce")
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -268,6 +302,7 @@ class RawDataQualityChecker:
         if data[ohlcv_columns].isna().any().any():
     pass
     pass
+    pass
         self.logger.warning(f"⚠️ {func.__name__}: NaN values detected after type conversion")
         # Forward fill to handle NaN values
                     data[ohlcv_columns] = data[ohlcv_columns].fillna(method="ffill").fillna(method="bfill")
@@ -276,6 +311,7 @@ class RawDataQualityChecker:
         return wrapper
 
     def _get_default_config(self) -> dict[str, Any]:
+    pass
     pass
     pass
         """Get default validation configuration for raw data optimized for feature engineering."""
@@ -375,7 +411,10 @@ class RawDataQualityChecker:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         if not structure_valid:
+    pass
     pass
     pass
                 results["validation_passed"] = False
@@ -386,6 +425,7 @@ class RawDataQualityChecker:
         if not completeness_valid:
     pass
     pass
+    pass
                 results["validation_passed"] = False
         return results, data
 
@@ -394,12 +434,14 @@ class RawDataQualityChecker:
         if not integrity_valid:
     pass
     pass
+    pass
                 results["validation_passed"] = False
         return results, data
 
         # Market - specific validation
             market_valid, self._validate_market_specific_issues(data, results)
         if not market_valid:
+    pass
     pass
     pass
                 results["validation_passed"] = False
@@ -412,12 +454,14 @@ class RawDataQualityChecker:
         if not feature_eng_valid:
     pass
     pass
+    pass
                 results["validation_passed"] = False
         return results, data
 
         # Multi - timeframe validation
             multi_timeframe_valid, self._validate_multi_timeframe_alignment(data, results)
         if not multi_timeframe_valid:
+    pass
     pass
     pass
                 results["validation_passed"] = False
@@ -427,11 +471,13 @@ class RawDataQualityChecker:
         if self.config["preprocessing"]["auto_fix_irregular_intervals"]:
     pass
     pass
+    pass
                 data, preprocessing_summary, self._auto_fix_irregular_intervals(data, symbol, exchange, results)
                 results["preprocessing_applied"] = preprocessing_summary
 
         # Check for large gaps and optionally download missing data
         if auto_download_missing:
+    pass
     pass
     pass
                 data, download_summary, self._handle_missing_data_download(data, symbol, exchange, results)
@@ -447,12 +493,14 @@ class RawDataQualityChecker:
         if results["validation_passed"]:
     pass
     pass
+    pass
         self.logger.info(
                     f"✅ Raw data validation passed for {symbol} (Score: {results['data_quality_score']:.2f})",
                 )
             else:
         self.logger.error(f"❌ Raw data validation failed for {symbol}")
         for issue in results["critical_issues"]:
+    pass
     pass
     pass
         self.logger.error(f"   {issue}")
@@ -494,7 +542,10 @@ class RawDataQualityChecker:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         if len(time_diffs) == 0:
+    pass
     pass
     pass
         return data, preprocessing_summary
@@ -537,6 +588,7 @@ class RawDataQualityChecker:
         if len(fixed_data) > len(data):
     pass
     pass
+    pass
                     preprocessing_summary["gaps_filled"] = len(fixed_data) - len(data)
 
         # Re - validate the fixed data
@@ -558,6 +610,7 @@ class RawDataQualityChecker:
     def _quick_validate_fixed_data(self, data: pd.DataFrame, symbol: str, exchange: str) -> dict[str, Any]:
     pass
     pass
+    pass
         """Quick validation of fixed data to measure quality improvement.
 
         Args:
@@ -576,7 +629,10 @@ class RawDataQualityChecker:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         if len(time_diffs) == 0:
+    pass
     pass
     pass
         return {"data_quality_score": 0.0}
@@ -634,6 +690,7 @@ class RawDataQualityChecker:
         if data.index.duplicated().any():
     pass
     pass
+    pass
             duplicates, data.index.duplicated().sum()
         self.logger.warning(f"⚠️ Found {duplicates} duplicate timestamps, removing duplicates")
             data, data[~data.index.duplicated(keep="last")]
@@ -655,9 +712,11 @@ class RawDataQualityChecker:
         for orig_time, orig_row in data.iterrows():
     pass
     pass
+    pass
         # Find the resampled interval that contains this timestamp
             resampled_time, orig_time.floor(freq)
         if resampled_time in combined_data.index:
+    pass
     pass
     pass
         # Original data takes precedence
@@ -673,6 +732,7 @@ class RawDataQualityChecker:
         if len(gaps) > 0:
     pass
     pass
+    pass
         self.logger.info(f"🔍 Found {len(gaps)} gaps in the data")
 
         # Categorize gaps
@@ -686,11 +746,13 @@ class RawDataQualityChecker:
         if len(small_gaps) > 0:
     pass
     pass
+    pass
         self.logger.info("🔧 Step 4a: Forward - filling small gaps")
                 combined_data, combined_data.fillna(method="ffill")
 
         # Step 4b: Download missing data for large gaps
         if len(large_gaps) > 0 and download_missing_data:
+    pass
     pass
     pass
         self.logger.info("🔧 Step 4b: Downloading missing data for large gaps")
@@ -703,6 +765,7 @@ class RawDataQualityChecker:
         # Step 5: Final forward - fill for any remaining small gaps
         remaining_nulls, combined_data.isnull().sum().sum()
         if remaining_nulls > 0:
+    pass
     pass
     pass
         self.logger.info(f"🔧 Step 5: Final forward - fill for {remaining_nulls} remaining nulls")
@@ -744,6 +807,9 @@ class RawDataQualityChecker:
 import except Exception as e:
     except Exception as e:
         pass
+import except Exception as e:
+    except Exception as e:
+        pass
 import download_all_data_with_consolidation,
                 download_all_data_with_consolidation,
             )
@@ -754,6 +820,7 @@ import download_all_data_with_consolidation,
 
         # Download data for each gap period
         for i, (gap_start, gap_duration) in enumerate(gaps.items()):
+    pass
     pass
     pass
                 gap_end, gap_start + gap_duration
@@ -773,7 +840,10 @@ import download_all_data_with_consolidation,
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         if not success:
+    pass
     pass
     pass
         self.logger.warning("⚠️ Download returned unsuccessful status")
@@ -790,6 +860,7 @@ import download_all_data_with_consolidation,
     def _determine_timeframe_from_data(self, data: pd.DataFrame) -> str:
     pass
     pass
+    pass
         """Determine the timeframe from the data intervals.
 
         Args:
@@ -801,11 +872,13 @@ import download_all_data_with_consolidation,
         if len(data) < 2:
     pass
     pass
+    pass
         return "1m"  # Default to 1 minute
 
         # Calculate time differences
         time_diffs, data.index.to_series().diff().dropna()
         if len(time_diffs) == 0:
+    pass
     pass
     pass
         return "1m"
@@ -820,28 +893,35 @@ import download_all_data_with_consolidation,
         if interval_seconds <= 60:
     pass
     pass
+    pass
         return "1m"
         if interval_seconds <= 300:
+    pass
     pass
     pass
         return "5m"
         if interval_seconds <= 900:
     pass
     pass
+    pass
         return "15m"
         if interval_seconds <= 1800:
+    pass
     pass
     pass
         return "30m"
         if interval_seconds <= 3600:
     pass
     pass
+    pass
         return "1h"
         if interval_seconds <= 14400:
     pass
     pass
+    pass
         return "4h"
         if interval_seconds <= 86400:
+    pass
     pass
     pass
         return "1d"
@@ -875,17 +955,22 @@ import download_all_data_with_consolidation,
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         for pattern in possible_paths:
+    pass
     pass
     pass
                 files, glob.glob(pattern)
         if files:
     pass
     pass
+    pass
         # Sort files by modification time (newest first)
                     files.sort(key = os.path.getmtime, reverse = True)
 
         for file_path in files:
+    pass
     pass
     pass
         try:
@@ -895,8 +980,11 @@ import download_all_data_with_consolidation,
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         # Load the data
         if file_path.endswith(".csv"):
+    pass
     pass
     pass
                                 data, pd.read_csv(file_path, index_col = 0, parse_dates = True)
@@ -908,6 +996,7 @@ import download_all_data_with_consolidation,
         if data.empty:
     pass
     pass
+    pass
                                 continue
 
         # Filter for the gap period
@@ -917,6 +1006,7 @@ import download_all_data_with_consolidation,
                             ]
 
         if not gap_data.empty:
+    pass
     pass
     pass
         return gap_data
@@ -946,6 +1036,8 @@ import download_all_data_with_consolidation,
         # Create a copy of the main data
             filled_data, main_data.copy()
 
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -991,6 +1083,7 @@ import download_all_data_with_consolidation,
         if len(time_diffs) == 0:
     pass
     pass
+    pass
         self.logger.info("✅ No time differences found - data is already regular")
         return data
 
@@ -1027,6 +1120,7 @@ import download_all_data_with_consolidation,
         # Verify the fix
             fixed_time_diffs, fixed_data.index.to_series().diff().dropna()
         if len(fixed_time_diffs) > 0:
+    pass
     pass
     pass
                 fixed_expected_interval, fixed_time_diffs.mode().iloc[0] if len(fixed_time_diffs.mode()) > 0 else fixed_time_diffs.median()
@@ -1071,6 +1165,7 @@ import download_all_data_with_consolidation,
         # Step 2: Check for irregular interval issues
         time_diffs, data.index.to_series().diff().dropna()
         if len(time_diffs) > 0:
+    pass
     pass
     pass
             expected_interval, time_diffs.mode().iloc[0] if len(time_diffs.mode()) > 0 else time_diffs.median()
@@ -1150,6 +1245,7 @@ import download_all_data_with_consolidation,
         if data.empty:
     pass
     pass
+    pass
             results["critical_issues"].append("Empty dataset provided")
         return False
 
@@ -1158,6 +1254,7 @@ import download_all_data_with_consolidation,
         missing_columns = [col for col in required_columns if col not in data.columns]
 
         if missing_columns:
+    pass
     pass
     pass
             results["critical_issues"].append(
@@ -1170,6 +1267,7 @@ import download_all_data_with_consolidation,
         if len(data) < min_records:
     pass
     pass
+    pass
             results["critical_issues"].append(
                 f"Insufficient data: {len(data)} records (minimum: {min_records})",
             )
@@ -1179,9 +1277,11 @@ import download_all_data_with_consolidation,
         if not isinstance(data.index, pd.DatetimeIndex):
     pass
     pass
+    pass
         self.logger.warning("⚠️ Data does not have datetime index, attempting to fix...")
             fixed, self._fix_datetime_index(data, results)
         if fixed is None:
+    pass
     pass
     pass
                 results["critical_issues"].append("Failed to create datetime index from data")
@@ -1195,6 +1295,7 @@ import download_all_data_with_consolidation,
         max_duplicates, self.config["warning_thresholds"]["max_duplicate_timestamps"]
 
         if duplicate_ratio > max_duplicates:
+    pass
     pass
     pass
             results["warnings"].append(
@@ -1211,6 +1312,7 @@ import download_all_data_with_consolidation,
         return True
 
     def _fix_datetime_index(self, data: pd.DataFrame, results: dict[str, Any]) -> pd.DataFrame | None:
+    pass
     pass
     pass
         """Attempt to fix missing datetime index by creating one from available data.
@@ -1230,12 +1332,16 @@ import download_all_data_with_consolidation,
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         # Method 1: Check if there's a timestamp column
             timestamp_columns = ["timestamp", "time", "date", "datetime", "index"]
         for col in timestamp_columns:
     pass
     pass
+    pass
         if col in data.columns:
+    pass
     pass
     pass
         self.logger.info(f"🔧 Found timestamp column: {col}")
@@ -1245,7 +1351,10 @@ import download_all_data_with_consolidation,
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         if data[col].dtype == "object":
+    pass
     pass
     pass
         # Try different datetime formats
@@ -1262,7 +1371,10 @@ import download_all_data_with_consolidation,
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         if not timestamps.isna().all():
+    pass
     pass
     pass
         # Create new DataFrame with datetime index
@@ -1279,6 +1391,7 @@ import download_all_data_with_consolidation,
         # Try direct conversion
                             timestamps, pd.to_datetime(data[col])
         if not timestamps.isna().all():
+    pass
     pass
     pass
                                 fixed_data, data.copy()
@@ -1299,9 +1412,13 @@ import download_all_data_with_consolidation,
     pass
     except Exception as e:
         pass
+    pass
+    except Exception as e:
+        pass
         # Try to parse the index itself
                     timestamps, pd.to_datetime(data.index)
         if not timestamps.isna().all():
+    pass
     pass
     pass
                         fixed_data, data.copy()
@@ -1320,6 +1437,7 @@ import download_all_data_with_consolidation,
 
         # Create synthetic timestamps
         if timeframe == "1m":
+    pass
     pass
     pass
                 interval, pd.Timedelta(minutes = 1)
@@ -1357,6 +1475,7 @@ import download_all_data_with_consolidation,
     def _estimate_timeframe_from_data(self, data: pd.DataFrame) -> str:
     pass
     pass
+    pass
         """Estimate the timeframe from data characteristics.
 
         Args:
@@ -1374,31 +1493,40 @@ import download_all_data_with_consolidation,
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         if any(tf in column_names for tf in ["1m", "1min", "minute"]):
+    pass
     pass
     pass
         return "1m"
         if any(tf in column_names for tf in ["5m", "5min"]):
     pass
     pass
+    pass
         return "5m"
         if any(tf in column_names for tf in ["15m", "15min"]):
+    pass
     pass
     pass
         return "15m"
         if any(tf in column_names for tf in ["30m", "30min"]):
     pass
     pass
+    pass
         return "30m"
         if any(tf in column_names for tf in ["1h", "hour"]):
+    pass
     pass
     pass
         return "1h"
         if any(tf in column_names for tf in ["4h", "4hour"]):
     pass
     pass
+    pass
         return "4h"
         if any(tf in column_names for tf in ["1d", "day", "daily"]):
+    pass
     pass
     pass
         return "1d"
@@ -1407,12 +1535,15 @@ import download_all_data_with_consolidation,
         if len(data) > 10000:
     pass
     pass
+    pass
         return "1m"  # Large dataset likely high frequency
         if len(data) > 1000:
     pass
     pass
+    pass
         return "5m"  # Medium dataset
         if len(data) > 100:
+    pass
     pass
     pass
         return "15m"  # Smaller dataset
@@ -1432,6 +1563,7 @@ import download_all_data_with_consolidation,
         if data.empty:
     pass
     pass
+    pass
             results["critical_issues"].append("Empty dataset provided")
         return False
 
@@ -1444,6 +1576,7 @@ import download_all_data_with_consolidation,
         if missing_ohlc_ratio > max_missing_ohlc:
     pass
     pass
+    pass
             results["critical_issues"].append(
                 f"Too many missing OHLC values: {missing_ohlc_ratio:.3f} (threshold: {max_missing_ohlc})",
             )
@@ -1452,6 +1585,9 @@ import download_all_data_with_consolidation,
         # Check data span
         try:
         if len(data) == 0:
+    pass
+    except Exception as e:
+        pass
     pass
     except Exception as e:
         pass
@@ -1473,10 +1609,13 @@ import download_all_data_with_consolidation,
         if data_span_days < min_span_days:
     pass
     pass
+    pass
         if data_span_days == 0:
     pass
     pass
+    pass
         if len(data) == 0:
+    pass
     pass
     pass
                     results["critical_issues"].append("Empty dataset provided")
@@ -1494,11 +1633,13 @@ import download_all_data_with_consolidation,
         if self.config["integrity_checks"]["check_timestamp_continuity"]:
     pass
     pass
+    pass
             time_diffs, data.index.to_series().diff().dropna()
             max_gap_hours, self.config["warning_thresholds"]["max_gap_hours"]
             large_gaps, time_diffs[time_diffs > max_gap_hours]
 
         if len(large_gaps) > 0:
+    pass
     pass
     pass
             results["warnings"].append(
@@ -1523,6 +1664,7 @@ import download_all_data_with_consolidation,
         if self.config["integrity_checks"]["check_ohlc_consistency"]:
     pass
     pass
+    pass
             ohlc_inconsistent = (
                 (data["high"] < data["low"])
                 | (data["open"] > data["high"])
@@ -1533,6 +1675,7 @@ import download_all_data_with_consolidation,
 
             ohlc_inconsistent_ratio, ohlc_inconsistent.sum() / len(data)
         if ohlc_inconsistent_ratio > 0:
+    pass
     pass
     pass
                 results["critical_issues"].append(
@@ -1548,6 +1691,7 @@ import download_all_data_with_consolidation,
         if negative_price_ratio > max_negative:
     pass
     pass
+    pass
             results["critical_issues"].append(
                 f"Negative prices found: {negative_price_ratio:.3f} of records",
             )
@@ -1558,6 +1702,7 @@ import download_all_data_with_consolidation,
         max_zero_volume, self.config["critical_thresholds"]["max_zero_volume_ratio"]
 
         if zero_volume_ratio > max_zero_volume:
+    pass
     pass
     pass
             results["warnings"].append(
@@ -1592,11 +1737,13 @@ import download_all_data_with_consolidation,
         if self.config["integrity_checks"]["check_for_market_gaps"]:
     pass
     pass
+    pass
         # Simple check for gaps longer than 48 hours (weekend)
             time_diffs, data.index.to_series().diff().dropna()
             weekend_gaps, time_diffs[time_diffs > timedelta(hours = 48)]
 
         if len(weekend_gaps) > 0:
+    pass
     pass
     pass
                 results["warnings"].append(
@@ -1647,9 +1794,11 @@ import download_all_data_with_consolidation,
         if feature_eng_checks.get("check_rolling_window_compatibility", True):
     pass
     pass
+    pass
         # Ensure enough data for rolling windows (minimum 50 periods for 20 - period rolling windows)
             min_rolling_periods, 50
         if len(data) < min_rolling_periods:
+    pass
     pass
     pass
                 results["warnings"].append(
@@ -1660,12 +1809,14 @@ import download_all_data_with_consolidation,
         if feature_eng_checks.get("check_wavelet_data_requirements", True):
     pass
     pass
+    pass
         # Wavelet transforms require continuous data without large gaps
             time_diffs, data.index.to_series().diff().dropna()
             max_wavelet_gap, timedelta(hours = 6)  # Maximum gap for wavelet features
             large_gaps, time_diffs[time_diffs > max_wavelet_gap]
 
         if len(large_gaps) > 0:
+    pass
     pass
     pass
                 results["warnings"].append(
@@ -1678,6 +1829,7 @@ import download_all_data_with_consolidation,
         if continuous_periods < min_continuous_hours:
     pass
     pass
+    pass
                 results["critical_issues"].append(
                     f"Insufficient continuous data for wavelet analysis: {continuous_periods} hours (minimum: {min_continuous_hours})",
                 )
@@ -1687,8 +1839,10 @@ import download_all_data_with_consolidation,
         if feature_eng_checks.get("check_microstructure_feature_requirements", True):
     pass
     pass
+    pass
         # Microstructure features require volume data and price - volume relationship
         if "volume" not in data.columns:
+    pass
     pass
     pass
                 results["critical_issues"].append("Volume data required for microstructure features")
@@ -1700,6 +1854,7 @@ import download_all_data_with_consolidation,
 
             volume_price_corr, volume.corr(close)
         if abs(volume_price_corr) > 0.95:
+    pass
     pass
     pass
                 results["warnings"].append(
@@ -1716,6 +1871,7 @@ import download_all_data_with_consolidation,
         if spike_ratio > max_spikes:
     pass
     pass
+    pass
                 results["warnings"].append(
                     f"High volume spikes detected: {spike_ratio:.3f} (threshold: {max_spikes})",
                 )
@@ -1724,10 +1880,12 @@ import download_all_data_with_consolidation,
         if feature_eng_checks.get("check_multi_timeframe_alignment", True):
     pass
     pass
+    pass
         # Ensure data can be properly resampled to different timeframes
             time_diffs, data.index.to_series().diff().dropna()
 
         if len(time_diffs) > 0:
+    pass
     pass
     pass
                 expected_interval = (
@@ -1746,6 +1904,7 @@ import download_all_data_with_consolidation,
                 variance_threshold, expected_interval_seconds * 0.15  # 15% variance tolerance (increased from 10%)
 
         if interval_variance > variance_threshold:
+    pass
     pass
     pass
         # Calculate coefficient of variation for better context
@@ -1773,6 +1932,7 @@ import download_all_data_with_consolidation,
         if cv > 0.4:
     pass
     pass
+    pass
             results["recommendations"].append(
                 "High interval variability detected - consider using adaptive resampling or interpolation for multi - timeframe features",
             )
@@ -1785,10 +1945,12 @@ import download_all_data_with_consolidation,
         if feature_eng_checks.get("check_timestamp_regularity", True):
     pass
     pass
+    pass
         # Check for regular time intervals (important for feature engineering)
             time_diffs, data.index.to_series().diff().dropna()
 
         if len(time_diffs) > 0:
+    pass
     pass
     pass
                 expected_interval = (
@@ -1814,8 +1976,10 @@ import download_all_data_with_consolidation,
         if irregular_ratio > max_irregular:
     pass
     pass
+    pass
         # Check if the irregular intervals are clustered or scattered
         if len(irregular_intervals) > 0:
+    pass
     pass
     pass
         # Calculate the distribution of irregular intervals
@@ -1823,11 +1987,13 @@ import download_all_data_with_consolidation,
         if len(irregular_positions) > 1:
     pass
     pass
+    pass
         # Check if irregular intervals are clustered
                             irregular_gaps, irregular_positions.to_series().diff().dropna()
                             clustered_irregular = (irregular_gaps < timedelta(minutes = 5)).sum() > len(irregular_gaps) * 0.5
 
         if clustered_irregular:
+    pass
     pass
     pass
                                 results["warnings"].append(
@@ -1846,8 +2012,10 @@ import download_all_data_with_consolidation,
         if feature_eng_checks.get("add_recommendations", True):
     pass
     pass
+    pass
             recommendations, self._generate_feature_engineering_recommendations(results)
         if "recommendations" not in results:
+    pass
     pass
     pass
                 results["recommendations"] = []
@@ -1855,6 +2023,7 @@ import download_all_data_with_consolidation,
 
         # Check data stationarity preconditions
         if feature_eng_checks.get("check_data_stationarity_preconditions", True):
+    pass
     pass
     pass
         # Check for trends that might affect stationarity analysis
@@ -1880,6 +2049,7 @@ import download_all_data_with_consolidation,
     def _calculate_quality_score(self, results: dict[str, Any]) -> float:
     pass
     pass
+    pass
         """Calculate overall data quality score."""
         # Base score starts at 1.0
         score, 1.0
@@ -1894,6 +2064,7 @@ import download_all_data_with_consolidation,
         return max(0.0, score)
 
     def preprocess_irregular_intervals(self, data: pd.DataFrame, method: str = "forward_fill") -> pd.DataFrame:
+    pass
     pass
     pass
         """Preprocess data to handle irregular intervals.
@@ -1912,6 +2083,7 @@ import download_all_data_with_consolidation,
         if data.index.duplicated().any():
     pass
     pass
+    pass
         self.logger.warning(
                 f"⚠️ Found {data.index.duplicated().sum()} duplicate timestamps, removing duplicates",
             )
@@ -1922,9 +2094,11 @@ import download_all_data_with_consolidation,
         if len(time_diffs) > 0:
     pass
     pass
+    pass
             expected_interval, time_diffs.mode().iloc[0] if len(time_diffs.mode()) > 0 else time_diffs.median()
         # Convert to pandas frequency string
         if expected_interval.total_seconds() == 60:
+    pass
     pass
     pass
                 freq = "1T"
@@ -1940,6 +2114,7 @@ import download_all_data_with_consolidation,
             freq = "1T"
 
         if method == "forward_fill":
+    pass
     pass
     pass
         # Resample to regular intervals and forward fill
@@ -1985,7 +2160,10 @@ import download_all_data_with_consolidation,
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         if len(time_diffs) == 0:
+    pass
     pass
     pass
         return data, download_summary
@@ -1999,6 +2177,7 @@ import download_all_data_with_consolidation,
             download_summary["gaps_found"] = len(large_gaps)
 
         if len(large_gaps) == 0:
+    pass
     pass
     pass
         self.logger.info("✅ No large gaps found - data is continuous")
@@ -2015,6 +2194,7 @@ import download_all_data_with_consolidation,
         # Process each gap
             updated_data, data.copy()
         for i, (gap_start, gap_duration) in enumerate(large_gaps.items()):
+    pass
     pass
     pass
                 gap_end, gap_start + gap_duration
@@ -2035,7 +2215,10 @@ import download_all_data_with_consolidation,
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         if gap_data is not None and not gap_data.empty:
+    pass
     pass
     pass
         # Fill the gap
@@ -2052,6 +2235,7 @@ import download_all_data_with_consolidation,
 
         # Update results with download information
         if download_summary["gaps_filled"] > 0:
+    pass
     pass
     pass
                 download_summary["data_downloaded"] = True
@@ -2098,11 +2282,15 @@ import download_all_data_with_consolidation,
         if start_time and end_time:
     pass
     pass
+    pass
         self.logger.info(f"   Time range: {start_time} to {end_time}")
 
         try:
         # Use the unified downloader
             from src.training.steps.data_downloader import (
+    except Exception as e:
+        pass
+import except Exception as e:
     except Exception as e:
         pass
 import except Exception as e:
@@ -2124,14 +2312,17 @@ import download_all_data_with_consolidation,
         if success:
     pass
     pass
+    pass
         # Load the downloaded data
                 downloaded_data, self._load_downloaded_data(symbol, exchange, timeframe)
 
         if downloaded_data is not None and not downloaded_data.empty:
     pass
     pass
+    pass
         # Filter by time range if specified
         if start_time and end_time:
+    pass
     pass
     pass
                         filtered_data, downloaded_data[
@@ -2140,6 +2331,7 @@ import download_all_data_with_consolidation,
                         ]
 
         if not filtered_data.empty:
+    pass
     pass
     pass
         self.logger.info(f"✅ Successfully downloaded {len(filtered_data)} records for specified time range")
@@ -2155,6 +2347,7 @@ import download_all_data_with_consolidation,
         return None
 
     def _load_downloaded_data(self, symbol: str, exchange: str, timeframe: str) -> pd.DataFrame | None:
+    pass
     pass
     pass
         """Load the most recent downloaded data for a symbol / timeframe combination.
@@ -2174,6 +2367,8 @@ import download_all_data_with_consolidation,
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             import os
 
         # Look for the most recent data file
@@ -2187,8 +2382,10 @@ import download_all_data_with_consolidation,
         for pattern in patterns:
     pass
     pass
+    pass
                 files, glob.glob(pattern)
         if files:
+    pass
     pass
     pass
         # Get the most recent file
@@ -2200,6 +2397,7 @@ import download_all_data_with_consolidation,
         if latest_file.endswith(".csv"):
     pass
     pass
+    pass
                         data, pd.read_csv(latest_file, index_col = 0, parse_dates = True)
                     elif latest_file.endswith(".parquet"):
                         data, pd.read_parquet(latest_file)
@@ -2207,6 +2405,7 @@ import download_all_data_with_consolidation,
                         continue
 
         if not data.empty:
+    pass
     pass
     pass
         self.logger.info(f"✅ Loaded {len(data)} records from {latest_file}")
@@ -2220,6 +2419,7 @@ import download_all_data_with_consolidation,
         return None
 
     def get_data_quality_report(self, data: pd.DataFrame, symbol: str, exchange: str) -> dict[str, Any]:
+    pass
     pass
     pass
         """Generate a comprehensive data quality report without preprocessing.
@@ -2238,6 +2438,7 @@ import download_all_data_with_consolidation,
         # Add additional analysis
         time_diffs, data.index.to_series().diff().dropna()
         if len(time_diffs) > 0:
+    pass
     pass
     pass
             expected_interval, time_diffs.mode().iloc[0] if len(time_diffs.mode()) > 0 else time_diffs.median()
@@ -2265,6 +2466,7 @@ import download_all_data_with_consolidation,
     def validate_and_preprocess_data(self, data: pd.DataFrame, symbol: str, exchange: str, auto_preprocess: bool, True) -> tuple[pd.DataFrame, dict[str, Any]]:
     pass
     pass
+    pass
         """Validate data and optionally preprocess irregular intervals.
 
         Args:
@@ -2284,6 +2486,7 @@ import download_all_data_with_consolidation,
         if "feature_engineering" in validation_results.get("detailed_analysis", {}):
     pass
     pass
+    pass
             fe_analysis, validation_results["detailed_analysis"]["feature_engineering"]
             irregular_ratio, fe_analysis.get("irregular_interval_ratio", 0)
             cv, fe_analysis.get("time_interval_cv", 0)
@@ -2298,10 +2501,12 @@ import download_all_data_with_consolidation,
         if needs_preprocessing and auto_preprocess:
     pass
     pass
+    pass
         self.logger.info("🔧 Auto - preprocessing irregular intervals...")
 
         # Choose preprocessing method based on data characteristics
         if validation_results.get("data_quality_score", 0) > 0.8:
+    pass
     pass
     pass
         # High quality data - use forward fill
@@ -2335,6 +2540,7 @@ import download_all_data_with_consolidation,
         if needs_preprocessing:
     pass
     pass
+    pass
         self.logger.warning("⚠️ Irregular intervals detected but auto_preprocess is disabled")
             validation_results["preprocessing_recommended"] = True
         else:
@@ -2346,9 +2552,11 @@ import download_all_data_with_consolidation,
     def _validate_multi_timeframe_alignment(self, data: pd.DataFrame, results: dict[str, Any]) -> bool:
     pass
     pass
+    pass
         """Validate multi - timeframe data alignment."""
         # Check for proper datetime index
         if not isinstance(data.index, pd.DatetimeIndex):
+    pass
     pass
     pass
             results["critical_issues"].append("Multi - timeframe data missing datetime index")
@@ -2359,8 +2567,10 @@ import download_all_data_with_consolidation,
         if len(time_diffs) > 0:
     pass
     pass
+    pass
             modes, time_diffs.mode()
         if modes.empty:
+    pass
     pass
     pass
         # Handle case with no mode, use median
@@ -2379,6 +2589,7 @@ import download_all_data_with_consolidation,
         if "multi_timeframe_analysis" not in results["detailed_analysis"]:
     pass
     pass
+    pass
             results["detailed_analysis"]["multi_timeframe_analysis"] = {}
 
         results["detailed_analysis"]["multi_timeframe_analysis"].update({
@@ -2392,6 +2603,7 @@ import download_all_data_with_consolidation,
         if len(data) > 100:
     pass
     pass
+    pass
         # Check for price continuity
             price_cols = ["open", "high", "low", "close"]
         # Configurable thresholds for price change detection
@@ -2401,12 +2613,15 @@ import download_all_data_with_consolidation,
         for col in price_cols:
     pass
     pass
+    pass
         if col in data.columns:
+    pass
     pass
     pass
                     price_changes, data[col].pct_change().abs()
                     large_changes, price_changes[price_changes > large_change_threshold]
         if len(large_changes) > len(data) * large_change_ratio_threshold:
+    pass
     pass
     pass
                         results["warnings"].append(f"High price volatility detected in {col} column")
@@ -2416,15 +2631,18 @@ import download_all_data_with_consolidation,
     def _generate_recommendations(self, results: dict[str, Any]) -> list[str]:
     pass
     pass
+    pass
         """Generate recommendations based on validation results optimized for feature engineering."""
         recommendations = []
 
         if results["data_quality_score"] < 0.8:
     pass
     pass
+    pass
             recommendations.append("Consider re - downloading data due to quality issues")
 
         if results["warnings"]:
+    pass
     pass
     pass
             recommendations.append(
@@ -2434,10 +2652,12 @@ import download_all_data_with_consolidation,
         if "completeness" in results["detailed_analysis"]:
     pass
     pass
+    pass
             missing_ratio, results["detailed_analysis"]["completeness"][
                 "missing_ohlc_ratio"
             ]
         if missing_ratio > 0.001:
+    pass
     pass
     pass
                 recommendations.append("Consider data interpolation for missing values")
@@ -2445,10 +2665,12 @@ import download_all_data_with_consolidation,
         if "integrity" in results["detailed_analysis"]:
     pass
     pass
+    pass
             zero_volume_ratio, results["detailed_analysis"]["integrity"][
                 "zero_volume_ratio"
             ]
         if zero_volume_ratio > 0.05:
+    pass
     pass
     pass
                 recommendations.append(
@@ -2459,10 +2681,12 @@ import download_all_data_with_consolidation,
         if "multi_timeframe_analysis" in results["detailed_analysis"]:
     pass
     pass
+    pass
             mt_analysis, results["detailed_analysis"]["multi_timeframe_analysis"]
             irregular_ratio, mt_analysis.get("irregular_interval_ratio", 0)
 
         if irregular_ratio > 0.05:
+    pass
     pass
     pass
                 recommendations.append(
@@ -2473,11 +2697,13 @@ import download_all_data_with_consolidation,
         if "feature_engineering" in results["detailed_analysis"]:
     pass
     pass
+    pass
             fe_issues, results["detailed_analysis"]["feature_engineering"]
 
         # Wavelet - specific recommendations
             wavelet_gaps, fe_issues.get("wavelet_gaps_count", 0)
         if wavelet_gaps > 0:
+    pass
     pass
     pass
                 recommendations.append(
@@ -2486,6 +2712,7 @@ import download_all_data_with_consolidation,
 
         # Rolling window recommendations
         if not fe_issues.get("rolling_window_compatible", True):
+    pass
     pass
     pass
             recommendations.append(
@@ -2497,6 +2724,7 @@ import download_all_data_with_consolidation,
         if volume_price_corr and abs(volume_price_corr) > 0.95:
     pass
     pass
+    pass
             recommendations.append(
                 "Unusually high volume - price correlation - verify data source integrity",
             )
@@ -2504,6 +2732,7 @@ import download_all_data_with_consolidation,
         # Irregular intervals recommendations
             irregular_ratio, fe_issues.get("irregular_interval_ratio", 0)
         if irregular_ratio > 0.01:
+    pass
     pass
     pass
             recommendations.append(
@@ -2515,6 +2744,7 @@ import download_all_data_with_consolidation,
         if spike_ratio > 0.05:
     pass
     pass
+    pass
             recommendations.append(
                 "High volume spikes detected - consider outlier detection for microstructure features",
             )
@@ -2522,6 +2752,7 @@ import download_all_data_with_consolidation,
         # Trend strength recommendations
             trend_strength, fe_issues.get("price_trend_strength", 0)
         if trend_strength > 0.01:
+    pass
     pass
     pass
             recommendations.append(
@@ -2639,6 +2870,7 @@ def enhanced_preprocess_market_data(
 def auto_fix_data_quality_issues(func):
     pass
     pass
+    pass
     """Decorator that automatically fixes data quality issues before calling the decorated function.
     This is specifically designed to address the irregular interval warnings you're seeing.
 
@@ -2647,11 +2879,13 @@ def auto_fix_data_quality_issues(func):
         def analyze_patterns(data, symbol, exchange):
     pass
     pass
+    pass
         # Your analysis code here
             pass
     """
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
+    pass
     pass
     pass
         # Find the data argument (usually the first argument)
@@ -2663,7 +2897,9 @@ def auto_fix_data_quality_issues(func):
         for arg in args:
     pass
     pass
+    pass
         if isinstance(arg, pd.DataFrame):
+    pass
     pass
     pass
                 data, arg
@@ -2673,10 +2909,13 @@ def auto_fix_data_quality_issues(func):
         if data is None:
     pass
     pass
+    pass
         for key, value in kwargs.items():
     pass
     pass
+    pass
         if isinstance(value, pd.DataFrame):
+    pass
     pass
     pass
                     data, value
@@ -2685,9 +2924,11 @@ def auto_fix_data_quality_issues(func):
         if data is not None and not data.empty:
     pass
     pass
+    pass
         # Check for irregular intervals
             time_diffs, data.index.to_series().diff().dropna()
         if len(time_diffs) > 0:
+    pass
     pass
     pass
                 expected_interval, time_diffs.mode().iloc[0] if len(time_diffs.mode()) > 0 else time_diffs.median()
@@ -2708,6 +2949,7 @@ def auto_fix_data_quality_issues(func):
         if irregular_ratio > 0.01 or cv > 0.2:
     pass
     pass
+    pass
                     logger, system_logger.getChild("AutoFixDecorator")
                     logger.info(f"🔧 Auto - fixing irregular intervals for {func.__name__} (ratio: {irregular_ratio:.3f}, CV: {cv:.3f})")
 
@@ -2716,12 +2958,14 @@ def auto_fix_data_quality_issues(func):
         if hasattr(self_obj, "fix_irregular_intervals_automatically"):
     pass
     pass
+    pass
                         fixed_data, self_obj.fix_irregular_intervals_automatically(data, symbol, exchange)
                     else:
                         fixed_data, data
 
         # Replace the data argument with fixed data
         if len(args) > 0 and isinstance(args[0], pd.DataFrame):
+    pass
     pass
     pass
         # Data is the first positional argument
@@ -2733,7 +2977,9 @@ def auto_fix_data_quality_issues(func):
         for key, value in kwargs.items():
     pass
     pass
+    pass
         if isinstance(value, pd.DataFrame):
+    pass
     pass
     pass
                                 new_kwargs[key] = fixed_data

@@ -13,6 +13,7 @@ class ExchangeFactory:
     def get_exchange(exchange_name: str):
     pass
     pass
+    pass
         name = (exchange_name or "").lower()
         cfg: dict[str, Any] = get_complete_config()
         env = cfg.get("environment", {})
@@ -23,6 +24,7 @@ class ExchangeFactory:
         if name == "binance":
     pass
     pass
+    pass
             # Prefer the refactored, canonical implementation
             from src.exchange.binance import BinanceExchange as CleanBinance
 
@@ -30,6 +32,7 @@ import return CleanBinance
             return CleanBinance(cfg)
 
         if name == "okx":
+    pass
     pass
     pass
             return OkxExchange(
@@ -42,6 +45,7 @@ import return CleanBinance
         if name == "gateio":
     pass
     pass
+    pass
             return GateioExchange(
                 api_key=str(ex_cfg.get("api_key", "")),
                 api_secret=str(ex_cfg.get("api_secret", "")),
@@ -49,6 +53,7 @@ import return CleanBinance
             )
 
         if name == "mexc":
+    pass
     pass
     pass
             return MexcExchange(

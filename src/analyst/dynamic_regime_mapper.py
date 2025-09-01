@@ -18,6 +18,7 @@ class DynamicRegimeMapper:
     def __init__(self, config: dict[str, Any]):
     pass
     pass
+    pass
         self.config = config
         self.logger = system_logger.getChild("DynamicRegimeMapper")
 
@@ -54,7 +55,10 @@ class DynamicRegimeMapper:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             if self.auto_discover_regimes:
+    pass
     pass
     pass
                 await self._discover_regimes_from_step1_7()
@@ -80,12 +84,16 @@ class DynamicRegimeMapper:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             # Look for meta files that contain archetype descriptions
             meta_files = []
             for filename in os.listdir(self.data_dir):
     pass
     pass
+    pass
                 if filename.endswith("_hmm_composite_meta_1m.json"):
+    pass
     pass
     pass
                     meta_files.append(filename)
@@ -93,11 +101,13 @@ class DynamicRegimeMapper:
             if not meta_files:
     pass
     pass
+    pass
                 self.logger.warning("No Step 1.7 meta files found for regime discovery")
                 return False
 
             # Process each meta file to extract regime information
             for meta_file in meta_files:
+    pass
     pass
     pass
                 await self._process_meta_file(meta_file)
@@ -125,6 +135,8 @@ class DynamicRegimeMapper:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             with open(meta_path) as f:
                 meta_data = json.load(f)
 
@@ -132,6 +144,7 @@ class DynamicRegimeMapper:
             # Format: {exchange}_{symbol}_hmm_composite_meta_{timeframe}.json
             parts = meta_file.split("_")
             if len(parts) >= 4:
+    pass
     pass
     pass
                 timeframe = parts[-1].replace(".json", "")
@@ -149,8 +162,11 @@ class DynamicRegimeMapper:
             for cluster_id_str, description in archetype_descriptions.items():
     pass
     pass
+    pass
                 try:
                     cluster_id = int(cluster_id_str)
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -162,8 +178,11 @@ class DynamicRegimeMapper:
             for cluster_id_str, centroid in cluster_centroids.items():
     pass
     pass
+    pass
                 try:
                     cluster_id = int(cluster_id_str)
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -190,6 +209,7 @@ class DynamicRegimeMapper:
             for cluster_id, regime_name in regime_mapping.items():
     pass
     pass
+    pass
                 description = archetype_descriptions_int.get(
                     cluster_id, "No description",
                 )
@@ -213,6 +233,7 @@ class DynamicRegimeMapper:
         for cluster_id, description in archetype_descriptions.items():
     pass
     pass
+    pass
             regime_name = self._classify_archetype_to_regime(
                 cluster_id, description,
                 cluster_centroids.get(cluster_id, []),
@@ -231,6 +252,7 @@ class DynamicRegimeMapper:
         if cluster_id == -1:
     pass
     pass
+    pass
             return "RARE_MARKET_CONDITIONS"
 
         description_lower = description.lower()
@@ -239,11 +261,14 @@ class DynamicRegimeMapper:
         if "strong upward" in description_lower or "bullish" in description_lower:
     pass
     pass
+    pass
             if "high volatility" in description_lower:
+    pass
     pass
     pass
                 return "HIGH_VOLATILITY_BULL"
             if "low volatility" in description_lower:
+    pass
     pass
     pass
                 return "STRONG_BULL_TREND"
@@ -252,11 +277,14 @@ class DynamicRegimeMapper:
         if "strong downward" in description_lower or "bearish" in description_lower:
     pass
     pass
+    pass
             if "high volatility" in description_lower:
+    pass
     pass
     pass
                 return "HIGH_VOLATILITY_BEAR"
             if "low volatility" in description_lower:
+    pass
     pass
     pass
                 return "STRONG_BEAR_TREND"
@@ -265,11 +293,14 @@ class DynamicRegimeMapper:
         if "sideways" in description_lower:
     pass
     pass
+    pass
             if "high volatility" in description_lower:
+    pass
     pass
     pass
                 return "VOLATILE_SIDEWAYS"
             if "low volatility" in description_lower:
+    pass
     pass
     pass
                 return "TIGHT_SIDEWAYS_RANGE"
@@ -279,11 +310,14 @@ class DynamicRegimeMapper:
         if "transition" in description_lower:
     pass
     pass
+    pass
             if "bull to bear" in description_lower:
+    pass
     pass
     pass
                 return "BULL_TO_BEAR_TRANSITION"
             if "bear to bull" in description_lower:
+    pass
     pass
     pass
                 return "BEAR_TO_BULL_TRANSITION"
@@ -293,12 +327,15 @@ class DynamicRegimeMapper:
         if "accumulation" in description_lower:
     pass
     pass
+    pass
             return "ACCUMULATION_PHASE"
         if "distribution" in description_lower:
     pass
     pass
+    pass
             return "DISTRIBUTION_PHASE"
         if "breakout" in description_lower:
+    pass
     pass
     pass
             return "BREAKOUT_PREPARATION"
@@ -307,13 +344,16 @@ class DynamicRegimeMapper:
         if "high volatility" in description_lower:
     pass
     pass
+    pass
             if "stressed" in description_lower:
+    pass
     pass
     pass
                 return "EXTREME_VOLATILITY"
             return "HIGH_VOLATILITY_REGIME"
 
         if "low volatility" in description_lower:
+    pass
     pass
     pass
             return "LOW_VOLATILITY_RANGE"
@@ -336,10 +376,12 @@ class DynamicRegimeMapper:
     def get_regime_mapping(self, timeframe: str = "1m") -> dict[int, str]:
     pass
     pass
+    pass
         """Get the regime mapping for a specific timeframe."""
         return self.regime_mappings.get(timeframe = {})
 
     def get_archetype_description(self, cluster_id: int, timeframe: str = "1m") -> str:
+    pass
     pass
     pass
         """Get the archetype description for a specific cluster."""
@@ -357,6 +399,7 @@ class DynamicRegimeMapper:
     def map_cluster_to_regime(self, cluster_id: int, timeframe: str = "1m") -> str:
     pass
     pass
+    pass
         """Map a cluster ID to a regime name."""
         mapping = self.get_regime_mapping(timeframe)
         return mapping.get(cluster_id, f"UNKNOWN_REGIME_{cluster_id}")
@@ -364,11 +407,13 @@ class DynamicRegimeMapper:
     def get_all_regimes(self, timeframe: str = "1m") -> list[str]:
     pass
     pass
+    pass
         """Get all regime names for a timeframe."""
         mapping = self.get_regime_mapping(timeframe)
         return list(set(mapping.values()))
 
     def get_regime_clusters(self, regime_name: str, timeframe: str = "1m") -> list[int]:
+    pass
     pass
     pass
         """Get all cluster IDs that map to a specific regime."""
@@ -380,6 +425,7 @@ class DynamicRegimeMapper:
     def get_regime_summary(self, timeframe: str = "1m") -> dict[str, Any]:
     pass
     pass
+    pass
         """Get a summary of all regimes for a timeframe."""
         mapping = self.get_regime_mapping(timeframe)
         descriptions = self.archetype_descriptions.get(timeframe, {})
@@ -388,7 +434,9 @@ class DynamicRegimeMapper:
         for cluster_id, regime_name in mapping.items():
     pass
     pass
+    pass
             if regime_name not in regime_summary:
+    pass
     pass
     pass
                 regime_summary[regime_name] = {
@@ -408,6 +456,7 @@ class DynamicRegimeMapper:
     def save_regime_mapping(self, output_path: str, timeframe: str = "1m") -> bool:
     pass
     pass
+    pass
         """Save the regime mapping to a file."""
         try:
             mapping_data = {
@@ -417,6 +466,8 @@ class DynamicRegimeMapper:
                 ),
                 "regime_summary": self.get_regime_summary(timeframe),
                 "discovery_timestamp": pd.Timestamp.now().isoformat(),
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -436,11 +487,14 @@ class DynamicRegimeMapper:
     def load_regime_mapping(self, input_path: str) -> bool:
     pass
     pass
+    pass
         """Load a regime mapping from a file."""
         try:
             with open(input_path) as f:
                 mapping_data = json.load(f)
 
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:

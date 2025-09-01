@@ -24,6 +24,7 @@ class Step9_5MultiTimeframeHMMEnsembleValidator(BaseValidator):
     def __init__(self, config: Dict[str, Any] | None, None) -> None:
     pass
     pass
+    pass
         """Initialize the validator.
 
         Args:
@@ -72,6 +73,8 @@ class Step9_5MultiTimeframeHMMEnsembleValidator(BaseValidator):
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         # Check 1: Validate ensemble model files exist
             models_dir, Path("models") / "multi_timeframe_hmm_ensemble" / f"{exchange}_{symbol}"
 
@@ -83,8 +86,10 @@ class Step9_5MultiTimeframeHMMEnsembleValidator(BaseValidator):
         for file in required_files:
     pass
     pass
+    pass
                 file_path, models_dir / file
         if file_path.exists():
+    pass
     pass
     pass
                     validation_results["checks_passed"] += 1
@@ -99,10 +104,13 @@ class Step9_5MultiTimeframeHMMEnsembleValidator(BaseValidator):
         if metadata_path.exists():
     pass
     pass
+    pass
         try:
         with open(metadata_path, 'r') as f:
                         metadata, json.load(f)
 
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -114,6 +122,7 @@ class Step9_5MultiTimeframeHMMEnsembleValidator(BaseValidator):
         if not missing_keys:
     pass
     pass
+    pass
                         validation_results["checks_passed"] += 1
         self.logger.info("✅ Ensemble metadata structure is valid")
                     else:
@@ -123,6 +132,7 @@ class Step9_5MultiTimeframeHMMEnsembleValidator(BaseValidator):
 
         # Validate training status
         if metadata.get("trained", False):
+    pass
     pass
     pass
                         validation_results["checks_passed"] += 1
@@ -137,8 +147,10 @@ class Step9_5MultiTimeframeHMMEnsembleValidator(BaseValidator):
         if ensemble_weights:
     pass
     pass
+    pass
                         total_weight, sum(ensemble_weights.values())
         if abs(total_weight - 1.0) < 0.01:
+    pass
     pass
     pass
                             validation_results["checks_passed"] += 1
@@ -162,8 +174,11 @@ class Step9_5MultiTimeframeHMMEnsembleValidator(BaseValidator):
         if meta_learner_path.exists():
     pass
     pass
+    pass
         try:
                     import joblib
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -172,6 +187,7 @@ class Step9_5MultiTimeframeHMMEnsembleValidator(BaseValidator):
 
         # Check if it has required methods
         if hasattr(meta_learner, 'predict') and hasattr(meta_learner, 'predict_proba'):
+    pass
     pass
     pass
                         validation_results["checks_passed"] += 1
@@ -194,6 +210,9 @@ class Step9_5MultiTimeframeHMMEnsembleValidator(BaseValidator):
 import except Exception as e:
     except Exception as e:
         pass
+import except Exception as e:
+    except Exception as e:
+        pass
 import get_multi_timeframe_hmm_ensemble_config,
                     get_multi_timeframe_hmm_ensemble_config,
                 )
@@ -202,6 +221,7 @@ import get_multi_timeframe_hmm_ensemble_config,
                 ensemble_config, config.get("MULTI_TIMEFRAME_HMM_ENSEMBLE", {})
 
         if ensemble_config.get("enabled", False):
+    pass
     pass
     pass
                     validation_results["checks_passed"] += 1
@@ -218,6 +238,7 @@ import get_multi_timeframe_hmm_ensemble_config,
 
         # Determine overall validation result
         if validation_results["checks_failed"] == 0:
+    pass
     pass
     pass
                 validation_results["validation_passed"] = True
@@ -276,9 +297,12 @@ import get_multi_timeframe_hmm_ensemble_config,
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         # Check 1: Validate regime forecasting directory exists
             rf_dir, Path(data_dir) / "regime_forecasting"
         if rf_dir.exists():
+    pass
     pass
     pass
                 validation_results["checks_passed"] += 1
@@ -295,8 +319,10 @@ import get_multi_timeframe_hmm_ensemble_config,
         for tf in expected_timeframes:
     pass
     pass
+    pass
                 rf_file, rf_dir / f"{exchange}_{symbol}_{tf}_regime_forecasting.json"
         if rf_file.exists():
+    pass
     pass
     pass
                     found_timeframes.append(tf)
@@ -311,6 +337,7 @@ import get_multi_timeframe_hmm_ensemble_config,
         for tf in found_timeframes:
     pass
     pass
+    pass
                 rf_file, rf_dir / f"{exchange}_{symbol}_{tf}_regime_forecasting.json"
         try:
         with open(rf_file, 'r') as f:
@@ -320,11 +347,14 @@ import get_multi_timeframe_hmm_ensemble_config,
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         # Check required keys
                     required_keys = ["timeframe", "current_regime", "next_regime_probabilities"]
                     missing_keys = [key for key in required_keys if key not in rf_data]
 
         if not missing_keys:
+    pass
     pass
     pass
                         validation_results["checks_passed"] += 1
@@ -343,6 +373,7 @@ import get_multi_timeframe_hmm_ensemble_config,
         if len(found_timeframes) >= 2:
     pass
     pass
+    pass
                 validation_results["checks_passed"] += 1
         self.logger.info(f"✅ Sufficient timeframes found: {found_timeframes}")
             else:
@@ -352,6 +383,7 @@ import get_multi_timeframe_hmm_ensemble_config,
 
         # Determine overall validation result
         if validation_results["checks_failed"] == 0:
+    pass
     pass
     pass
                 validation_results["validation_passed"] = True
@@ -411,6 +443,8 @@ import get_multi_timeframe_hmm_ensemble_config,
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         # Check 1: Validate ensemble model performance
             models_dir, Path("models") / "multi_timeframe_hmm_ensemble" / f"{exchange}_{symbol}"
             metadata_path, models_dir / "ensemble_metadata.json"
@@ -418,10 +452,13 @@ import get_multi_timeframe_hmm_ensemble_config,
         if metadata_path.exists():
     pass
     pass
+    pass
         try:
         with open(metadata_path, 'r') as f:
                         metadata, json.load(f)
 
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -440,6 +477,7 @@ import get_multi_timeframe_hmm_ensemble_config,
         # Check ensemble weights distribution
                     ensemble_weights, metadata.get("ensemble_weights", {})
         if ensemble_weights:
+    pass
     pass
     pass
                         weight_values, list(ensemble_weights.values())
@@ -466,6 +504,7 @@ import get_multi_timeframe_hmm_ensemble_config,
 
         # Determine overall validation result
         if validation_results["checks_failed"] == 0:
+    pass
     pass
     pass
                 validation_results["validation_passed"] = True

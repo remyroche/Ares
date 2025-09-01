@@ -45,6 +45,7 @@ numpy, PipelineStandards.safe_import("numpy", None)
 def create_fallback_logger():
     pass
     pass
+    pass
     import logging
     logging.basicConfig(level = logging.INFO)
     return logging.getLogger(__name__)
@@ -52,7 +53,9 @@ def create_fallback_logger():
 def create_fallback_decorator():
     pass
     pass
+    pass
     def decorator(func):
+    pass
     pass
     pass
         return func
@@ -62,9 +65,11 @@ def create_fallback_decorator():
 if system_logger is None:
     pass
     pass
+    pass
     system_logger, create_fallback_logger()
 
 if centralized_decorators is None:
+    pass
     pass
     pass
     comprehensive_data_validation, create_fallback_decorator()
@@ -90,6 +95,7 @@ else:
 if enhanced_mlflow is None:
     pass
     pass
+    pass
     with_enhanced_mlflow_logging, create_fallback_decorator()
     log_step_report, lambda * args, **kwargs: "fallback_report"
     create_detailed_step_report, lambda * args, **kwargs: {}
@@ -112,6 +118,7 @@ class RegimeDataSplittingStep:
     def __init__(self, config: dict[str, Any]) -> None:
     pass
     pass
+    pass
         self.config, config
         self.logger, system_logger.getChild("RegimeDataSplittingStep")
         self.standards, pipeline_standards
@@ -124,11 +131,13 @@ class RegimeDataSplittingStep:
     def _validate_environment(self) -> None:
     pass
     pass
+    pass
         """Validate environment dependencies."""
         self.logger.info("🔍 Validating environment dependencies...")
 
         missing_modules = [module for module, available in dependency_status.items() if not available]
         if missing_modules:
+    pass
     pass
     pass
         self.logger.warning(f"⚠️ Missing optional modules: {missing_modules}")
@@ -147,6 +156,7 @@ class RegimeDataSplittingStep:
         self.logger.info("✅ Regime Data Splitting Step initialized successfully")
 
     def _log_step_timing(self, step_name: str, start_time: float) -> None:
+    pass
     pass
     pass
         """Log timing information for a step."""
@@ -180,7 +190,10 @@ class RegimeDataSplittingStep:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         if regime_data is None:
+    pass
     pass
     pass
         return False
@@ -195,10 +208,12 @@ class RegimeDataSplittingStep:
         if num_regimes < 3:
     pass
     pass
+    pass
         self.logger.error(f"❌ Too few regimes: {num_regimes} (minimum 3 required)")
         return False
 
         if num_regimes > 20:
+    pass
     pass
     pass
         self.logger.warning(f"⚠️ Many regimes detected: {num_regimes} (maximum 20 supported)")
@@ -210,6 +225,7 @@ class RegimeDataSplittingStep:
             )
 
         if success:
+    pass
     pass
     pass
         self._log_step_timing("Regime Data Splitting", step_start)
@@ -242,7 +258,10 @@ class RegimeDataSplittingStep:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         if not unified_data_path.exists():
+    pass
     pass
     pass
         self.logger.error(f"❌ Unified data path not found: {unified_data_path}")
@@ -253,6 +272,7 @@ class RegimeDataSplittingStep:
         if not regime_file.exists():
     pass
     pass
+    pass
         self.logger.error(f"❌ Regime file not found: {regime_file}")
         return None
 
@@ -261,12 +281,14 @@ class RegimeDataSplittingStep:
         if not unified_files:
     pass
     pass
+    pass
         self.logger.error(f"❌ No unified data files found in {unified_data_path}")
         return None
 
         # Load and concatenate unified data
             unified_data = []
         for file_path in sorted(unified_files):
+    pass
     pass
     pass
                 df, pd.read_parquet(file_path)
@@ -312,6 +334,8 @@ class RegimeDataSplittingStep:
         # Ensure data is sorted by timestamp for proper lookback
             data, data.sort_values('timestamp').reset_index(drop = True)
 
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -388,15 +412,19 @@ class RegimeDataSplittingStep:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             }
 
         # Calculate statistics for each regime
         for regime_id in regime_ids:
     pass
     pass
+    pass
                 regime_data, data[data['composite_cluster_id'] == regime_id]
 
         if len(regime_data) > 0:
+    pass
     pass
     pass
                     regime_stats = {
@@ -410,6 +438,7 @@ class RegimeDataSplittingStep:
 
         # Add price statistics if available
         if 'close' in regime_data.columns:
+    pass
     pass
     pass
                         regime_stats["price_stats"] = {
@@ -451,6 +480,8 @@ class RegimeDataSplittingStep:
                         "Enables regime - aware processing with single dataset"
                     ]
                 }
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -507,10 +538,13 @@ async def run_step(
     if data_dir is None:
     pass
     pass
+    pass
         data_dir, pipeline_standards.build_path("processed_data", exchange, symbol)
 
     try:
         # Initialize step
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -524,6 +558,7 @@ async def run_step(
         if success:
     pass
     pass
+    pass
             logger.info("✅ Step 4: Regime Data Splitting completed successfully")
         else:
             logger.error("❌ Step 4: Regime Data Splitting failed")
@@ -535,6 +570,7 @@ async def run_step(
         return False
 
 if __name__ == "__main__":
+    pass
     pass
     pass
     # Test the step

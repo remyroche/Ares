@@ -31,6 +31,7 @@ class UnifiedRegimeIntelligenceRuntime:
     def __init__(self, config: dict[str, Any]):
     pass
     pass
+    pass
         self.config = config
         self.logger = logger
 
@@ -94,9 +95,12 @@ class UnifiedRegimeIntelligenceRuntime:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             # Initialize SR predictor
             sr_init_success = await self.sr_predictor.initialize()
             if not sr_init_success:
+    pass
     pass
     pass
                 self.logger.warning("Failed to initialize SRBreakoutPredictor")
@@ -108,11 +112,13 @@ class UnifiedRegimeIntelligenceRuntime:
             if not await self.unified_step.initialize():
     pass
     pass
+    pass
                 self.logger.error("Failed to initialize unified step")
                 return False
 
             # Load model
             if not await self._load_model():
+    pass
     pass
     pass
                 self.logger.error("Failed to load unified regime intelligence model")
@@ -122,11 +128,13 @@ class UnifiedRegimeIntelligenceRuntime:
             if not await self._load_label_encoders():
     pass
     pass
+    pass
                 self.logger.error("Failed to load label encoders")
                 return False
 
             # Load configuration
             if not await self._load_configuration():
+    pass
     pass
     pass
                 self.logger.error("Failed to load configuration")
@@ -152,7 +160,10 @@ class UnifiedRegimeIntelligenceRuntime:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             if not os.path.exists(model_path):
+    pass
     pass
     pass
                 self.logger.error(f"Model file not found: {model_path}")
@@ -161,6 +172,7 @@ class UnifiedRegimeIntelligenceRuntime:
             # Load model configuration
             config_path = os.path.join(self.artifacts_dir, "config.json")
             if os.path.exists(config_path):
+    pass
     pass
     pass
                 with open(config_path, "r") as f:
@@ -193,11 +205,15 @@ class UnifiedRegimeIntelligenceRuntime:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             for name in encoder_names:
+    pass
     pass
     pass
                 encoder_path = os.path.join(self.artifacts_dir, f"{name}_encoder.pkl")
                 if os.path.exists(encoder_path):
+    pass
     pass
     pass
                     with open(encoder_path, "rb") as f:
@@ -220,7 +236,10 @@ class UnifiedRegimeIntelligenceRuntime:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             if os.path.exists(config_path):
+    pass
     pass
     pass
                 with open(config_path, "r") as f:
@@ -249,12 +268,15 @@ class UnifiedRegimeIntelligenceRuntime:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             )
 
             import os
             import pickle
 
             if os.path.exists(model_path):
+    pass
     pass
     pass
                 with open(model_path, "rb") as f:
@@ -271,10 +293,12 @@ class UnifiedRegimeIntelligenceRuntime:
                 if os.path.exists(scaler_path):
     pass
     pass
+    pass
                     with open(scaler_path, "rb") as f:
                         self.sr_scaler = pickle.load(f)
 
                 if os.path.exists(encoder_path):
+    pass
     pass
     pass
                     with open(encoder_path, "rb") as f:
@@ -315,6 +339,8 @@ class UnifiedRegimeIntelligenceRuntime:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             analysis_result = {
                 **regime_analysis,
                 "sr_monitoring": {},
@@ -322,6 +348,7 @@ class UnifiedRegimeIntelligenceRuntime:
             }
 
             if not self.enable_sr_monitoring:
+    pass
     pass
     pass
                 return analysis_result
@@ -335,6 +362,7 @@ class UnifiedRegimeIntelligenceRuntime:
             )
 
             if is_near_sr:
+    pass
     pass
     pass
                 # Get detailed S/R proximity information
@@ -365,6 +393,7 @@ class UnifiedRegimeIntelligenceRuntime:
                 analysis_result["sr_opportunity_detected"] = opportunity_detected
 
                 if opportunity_detected:
+    pass
     pass
     pass
                     self.logger.info(
@@ -404,6 +433,8 @@ class UnifiedRegimeIntelligenceRuntime:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             confidence = sr_outcome.get("confidence", 0)
 
             # Get S/R context to determine position direction
@@ -420,7 +451,9 @@ class UnifiedRegimeIntelligenceRuntime:
             if outcome == "breakout" and confidence >= 0.8:
     pass
     pass
+    pass
                 if distance_to_resistance < distance_to_support:
+    pass
     pass
     pass
                     return "STRONG_BREAKOUT_SIGNAL - Breaking out from RESISTANCE -> SHORT position with tight stops"
@@ -430,6 +463,7 @@ class UnifiedRegimeIntelligenceRuntime:
                 if distance_to_resistance < distance_to_support:
     pass
     pass
+    pass
                     return "BREAKOUT_LIKELY - Breaking out from RESISTANCE -> Monitor for SHORT entry confirmation"
                 else:
                     return "BREAKOUT_LIKELY - Breaking out from SUPPORT -> Monitor for LONG entry confirmation"
@@ -437,11 +471,13 @@ class UnifiedRegimeIntelligenceRuntime:
                 if distance_to_resistance < distance_to_support:
     pass
     pass
+    pass
                     return "STRONG_REBOUNCE_SIGNAL - Rebouncing from RESISTANCE -> LONG position with tight stops"
                 else:
                     return "STRONG_REBOUNCE_SIGNAL - Rebouncing from SUPPORT -> SHORT position with tight stops"
             elif outcome == "rebounce" and confidence >= 0.6:
                 if distance_to_resistance < distance_to_support:
+    pass
     pass
     pass
                     return "REBOUNCE_LIKELY - Rebouncing from RESISTANCE -> Monitor for LONG entry confirmation"
@@ -478,6 +514,9 @@ class UnifiedRegimeIntelligenceRuntime:
     except Exception as e:
         pass
     pass
+    except Exception as e:
+        pass
+    pass
                 return {"opportunity_detected": False}
 
     except Exception as e:
@@ -493,6 +532,7 @@ class UnifiedRegimeIntelligenceRuntime:
             if not is_near_sr:
     pass
     pass
+    pass
                 return {"opportunity_detected": False}
 
             # Predict S/R outcome using centralized logic
@@ -506,6 +546,7 @@ class UnifiedRegimeIntelligenceRuntime:
             )
 
             if not opportunity_detected:
+    pass
     pass
     pass
                 return {"opportunity_detected": False}
@@ -540,6 +581,8 @@ class UnifiedRegimeIntelligenceRuntime:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             confidence = sr_outcome.get("confidence", 0)
             current_price = sr_context.get("current_price", 0)
 
@@ -565,8 +608,10 @@ class UnifiedRegimeIntelligenceRuntime:
             if outcome == "breakout" and confidence >= 0.8:
     pass
     pass
+    pass
                 # Determine position direction based on which level we're breaking out from
                 if distance_to_resistance < distance_to_support:
+    pass
     pass
     pass
                     # Breaking out from resistance = SHORT position
@@ -593,6 +638,7 @@ class UnifiedRegimeIntelligenceRuntime:
                 if distance_to_resistance < distance_to_support:
     pass
     pass
+    pass
                     position_direction = "SHORT"
                 else:
                     position_direction = "LONG"
@@ -609,6 +655,7 @@ class UnifiedRegimeIntelligenceRuntime:
             elif outcome == "rebounce" and confidence >= 0.8:
                 # Determine position direction based on which level we're rebouncing from
                 if distance_to_resistance < distance_to_support:
+    pass
     pass
     pass
                     # Rebouncing from resistance = LONG position (price bounces down from resistance)
@@ -631,6 +678,7 @@ class UnifiedRegimeIntelligenceRuntime:
             elif outcome == "rebounce" and confidence >= 0.6:
                 # Determine position direction based on which level we're rebouncing from
                 if distance_to_resistance < distance_to_support:
+    pass
     pass
     pass
                     position_direction = "LONG"
@@ -694,6 +742,9 @@ class UnifiedRegimeIntelligenceRuntime:
     except Exception as e:
         pass
     pass
+    except Exception as e:
+        pass
+    pass
                 self.logger.error("Runtime not initialized")
                 return None
 
@@ -705,6 +756,7 @@ class UnifiedRegimeIntelligenceRuntime:
             )
 
             if not integrated_prediction:
+    pass
     pass
     pass
                 self.logger.error("Failed to get integrated prediction")
@@ -734,7 +786,10 @@ class UnifiedRegimeIntelligenceRuntime:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             if market_features.shape[0] < self.sequence_length:
+    pass
     pass
     pass
                 self.logger.warning(
@@ -750,11 +805,14 @@ class UnifiedRegimeIntelligenceRuntime:
             for tf in self.timeframes:
     pass
     pass
+    pass
                 if tf in hmm_states:
+    pass
     pass
     pass
                     tf_states = hmm_states[tf]
                     if len(tf_states) >= self.sequence_length:
+    pass
     pass
     pass
                         prepared_hmm_states[tf] = tf_states[-self.sequence_length :]
@@ -779,14 +837,19 @@ class UnifiedRegimeIntelligenceRuntime:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             # Decode regime prediction
             if "regime" in prediction and "regime" in self.label_encoders:
+    pass
     pass
     pass
                 regime_pred = prediction["regime"]["prediction"]
                 try:
                     regime_name = self.label_encoders["regime"].inverse_transform(
                         [regime_pred]
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -798,6 +861,7 @@ class UnifiedRegimeIntelligenceRuntime:
 
             # Decode intensity scores
             if "intensity" in prediction:
+    pass
     pass
     pass
                 enhanced["intensity"] = {
@@ -812,10 +876,13 @@ class UnifiedRegimeIntelligenceRuntime:
             if "tpsl" in prediction and "tpsl" in self.label_encoders:
     pass
     pass
+    pass
                 tpsl_pred = prediction["tpsl"]["prediction"]
                 try:
                     tpsl_name = self.label_encoders["tpsl"].inverse_transform(
                         [tpsl_pred]
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -856,6 +923,8 @@ class UnifiedRegimeIntelligenceRuntime:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             }
 
             regime_name = prediction.get("regime", {}).get("name", "")
@@ -868,6 +937,7 @@ class UnifiedRegimeIntelligenceRuntime:
             top_regimes = intensity_data.get("top_regimes", [])
 
             if len(top_regimes) >= 2:
+    pass
     pass
     pass
                 # We're "in the middle" of several regimes
@@ -893,6 +963,7 @@ class UnifiedRegimeIntelligenceRuntime:
                 if top_regimes:
     pass
     pass
+    pass
                     primary_regime = top_regimes[0]
                     activation["primary_expert"] = (
                         f"REGIME_{primary_regime['regime_id']}_EXPERT"
@@ -907,8 +978,10 @@ class UnifiedRegimeIntelligenceRuntime:
                 if regime_conf >= self.regime_confidence_threshold:
     pass
     pass
+    pass
                     # Map regime to expert based on step01_7 archetype descriptions
                     if "BULL" in regime_name or "TREND" in regime_name:
+    pass
     pass
     pass
                         activation["primary_expert"] = "BULL_TREND_EXPERT"
@@ -943,6 +1016,7 @@ class UnifiedRegimeIntelligenceRuntime:
             if transition_prob >= self.transition_threshold:
     pass
     pass
+    pass
                 activation["secondary_experts"].append("TRANSITION_EXPERT")
                 activation["activation_reason"] += (
                     f" + Transition expert (P={transition_prob:.2f})"
@@ -956,6 +1030,7 @@ class UnifiedRegimeIntelligenceRuntime:
 
             # Add TPSL-based direction information
             if tpsl_direction != "hold":
+    pass
     pass
     pass
                 activation["activation_reason"] += (
@@ -981,8 +1056,11 @@ class UnifiedRegimeIntelligenceRuntime:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             regime_name = prediction.get("regime", {}).get("name", "UNKNOWN")
             if regime_name != self.current_regime:
+    pass
     pass
     pass
                 self.logger.info(
@@ -1005,6 +1083,7 @@ class UnifiedRegimeIntelligenceRuntime:
             if len(self.regime_history) > 100:
     pass
     pass
+    pass
                 self.regime_history = self.regime_history[-100:]
 
             # Update transition probability
@@ -1021,6 +1100,7 @@ class UnifiedRegimeIntelligenceRuntime:
     def get_current_state(self) -> Dict[str, Any]:
     pass
     pass
+    pass
         """Get current runtime state."""
         return {
             "current_regime": self.current_regime,
@@ -1033,9 +1113,13 @@ class UnifiedRegimeIntelligenceRuntime:
     def get_performance_metrics(self) -> Dict[str, Any]:
     pass
     pass
+    pass
         """Get performance metrics for the unified model."""
         try:
             if not self.regime_history:
+    pass
+    except Exception as e:
+        pass
     pass
     except Exception as e:
         pass
@@ -1072,8 +1156,10 @@ class UnifiedRegimeIntelligenceRuntime:
     def _calculate_regime_duration(self) -> int:
     pass
     pass
+    pass
         """Calculate how long the current regime has been active."""
         if not self.regime_history or not self.current_regime:
+    pass
     pass
     pass
             return 0
@@ -1082,7 +1168,9 @@ class UnifiedRegimeIntelligenceRuntime:
         for entry in reversed(self.regime_history):
     pass
     pass
+    pass
             if entry["regime"] == self.current_regime:
+    pass
     pass
     pass
                 duration += 1

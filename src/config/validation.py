@@ -14,7 +14,11 @@ def _require_keys(
     for k in keys:
     pass
     pass
+    pass
+    pass
         if k not in d:
+    pass
+    pass
     pass
     pass
             errors.append(f"Missing key '{k}' in {ctx}")
@@ -23,8 +27,12 @@ def _require_keys(
 def validate_system_config(config: dict[str, Any]) -> tuple[bool, list[str]]:
     pass
     pass
+    pass
+    pass
     errors: list[str] = []
     if not isinstance(config, dict):
+    pass
+    pass
     pass
     pass
         return False, ["System config must be a dict"]
@@ -50,16 +58,22 @@ def validate_system_config(config: dict[str, Any]) -> tuple[bool, list[str]]:
     if not isinstance(logging_cfg.get("level", "INFO"), str):
     pass
     pass
+    pass
+    pass
         errors.append("logging.level must be a string")
 
     db_cfg = config.get("database", {})
     if not isinstance(db_cfg, dict):
     pass
     pass
+    pass
+    pass
         errors.append("database must be a dict")
     else:
         influx_cfg = db_cfg.get("influxdb", {})
         if influx_cfg and not isinstance(influx_cfg.get("url", ""), str):
+    pass
+    pass
     pass
     pass
             errors.append("database.influxdb.url must be a string when provided")
@@ -70,8 +84,12 @@ def validate_system_config(config: dict[str, Any]) -> tuple[bool, list[str]]:
 def validate_trading_config(config: dict[str, Any]) -> tuple[bool, list[str]]:
     pass
     pass
+    pass
+    pass
     errors: list[str] = []
     if not isinstance(config, dict):
+    pass
+    pass
     pass
     pass
         return False, ["Trading config must be a dict"]
@@ -87,6 +105,8 @@ def validate_trading_config(config: dict[str, Any]) -> tuple[bool, list[str]]:
     if not isinstance(rm, dict):
     pass
     pass
+    pass
+    pass
         errors.append("risk_management must be a dict")
     elif "position_sizing" not in rm:
         errors.append("risk_management.position_sizing is required")
@@ -97,8 +117,12 @@ def validate_trading_config(config: dict[str, Any]) -> tuple[bool, list[str]]:
 def validate_training_config(config: dict[str, Any]) -> tuple[bool, list[str]]:
     pass
     pass
+    pass
+    pass
     errors: list[str] = []
     if not isinstance(config, dict):
+    pass
+    pass
     pass
     pass
         return False, ["Training config must be a dict"]
@@ -108,6 +132,8 @@ def validate_training_config(config: dict[str, Any]) -> tuple[bool, list[str]]:
 
     data_cfg = config.get("DATA_CONFIG", {})
     if not isinstance(data_cfg, dict):
+    pass
+    pass
     pass
     pass
         errors.append("DATA_CONFIG must be a dict")
@@ -120,10 +146,14 @@ def validate_training_config(config: dict[str, Any]) -> tuple[bool, list[str]]:
 def validate_complete_config(config: dict[str, Any]) -> tuple[bool, list[str]]:
     pass
     pass
+    pass
+    pass
     """Validate the combined top-level config structure and sections."""
     errors: list[str] = []
 
     if not isinstance(config, dict):
+    pass
+    pass
     pass
     pass
         return False, ["Top-level config must be a dict"]
@@ -132,7 +162,11 @@ def validate_complete_config(config: dict[str, Any]) -> tuple[bool, list[str]]:
     for section in ("system", "trading", "training"):
     pass
     pass
+    pass
+    pass
         if section not in config:
+    pass
+    pass
     pass
     pass
             errors.append(f"Missing '{section}' section in complete config")

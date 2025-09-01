@@ -62,6 +62,8 @@ async def run_validator(
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         symbol, training_input.get("symbol", "ETHUSDT")
         exchange, training_input.get("exchange", "BINANCE")
         timeframe, training_input.get("timeframe", "1m")
@@ -71,6 +73,7 @@ async def run_validator(
         hmm_models_path, Path(data_dir) / "training" / f"{exchange}_{symbol}_{timeframe}_hmm_models.pkl"
 
         if not hmm_models_path.exists():
+    pass
     pass
     pass
             logger.error(f"❌ HMM models file not found: {hmm_models_path}")
@@ -83,6 +86,7 @@ async def run_validator(
         # Check file size
         file_size, hmm_models_path.stat().st_size
         if file_size == 0:
+    pass
     pass
     pass
             logger.error(f"❌ HMM models file is empty: {hmm_models_path}")
@@ -99,6 +103,8 @@ async def run_validator(
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             import numpy as np
 
         # Load the models
@@ -107,6 +113,7 @@ async def run_validator(
 
         # Check if models_data is a dictionary
         if not isinstance(models_data, dict):
+    pass
     pass
     pass
                 logger.error("❌ HMM models data is not a dictionary")
@@ -123,6 +130,7 @@ async def run_validator(
         if missing_keys:
     pass
     pass
+    pass
                 logger.error(f"❌ Missing required keys in models data: {missing_keys}")
         return {
                     "step_name": "step08_hmm_based_training",
@@ -133,6 +141,7 @@ async def run_validator(
         # Validate models
             models, models_data.get("models", {})
         if not models:
+    pass
     pass
     pass
                 logger.error("❌ No models found in models data")
@@ -147,13 +156,17 @@ async def run_validator(
         for regime_id, model in models.items():
     pass
     pass
+    pass
         try:
         # Basic model validation
     except Exception as e:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         if hasattr(model, 'predict'):
+    pass
     pass
     pass
                         model_validation_results[regime_id] = "VALID"
@@ -164,10 +177,12 @@ async def run_validator(
         if hasattr(model, 'score'):
     pass
     pass
+    pass
                         model_validation_results[regime_id] += " - Has score method"
 
         # Check for training parameters
         if hasattr(model, 'n_components'):
+    pass
     pass
     pass
                         model_validation_results[regime_id] += f" - {model.n_components} components"
@@ -180,11 +195,13 @@ async def run_validator(
         if not regime_mapping:
     pass
     pass
+    pass
                 logger.warning("⚠️ No regime mapping found")
 
         # Validate training metadata
             training_metadata, models_data.get("training_metadata", {})
         if not training_metadata:
+    pass
     pass
     pass
                 logger.warning("⚠️ No training metadata found")
@@ -194,14 +211,17 @@ async def run_validator(
         if training_metrics:
     pass
     pass
+    pass
                 logger.info(f"✅ Training metrics: {training_metrics}")
 
         # Check for reasonable accuracy scores
         if "accuracy" in training_metrics:
     pass
     pass
+    pass
                     accuracy, training_metrics["accuracy"]
         if accuracy < 0.5:
+    pass
     pass
     pass
                         logger.warning(f"⚠️ Low accuracy score: {accuracy}")
@@ -213,11 +233,13 @@ async def run_validator(
         if performance_data:
     pass
     pass
+    pass
                 logger.info(f"✅ Performance data: {performance_data}")
 
         # Check for feature importance if available
             feature_importance, training_metadata.get("feature_importance", {})
         if feature_importance:
+    pass
     pass
     pass
                 logger.info(f"✅ Feature importance data available for {len(feature_importance)} regimes")
@@ -232,6 +254,7 @@ async def run_validator(
         if "INVALID" in status or "ERROR" in status]
 
         if invalid_models:
+    pass
     pass
     pass
                 logger.warning(f"⚠️ Found {len(invalid_models)} invalid models: {invalid_models}")
@@ -276,6 +299,7 @@ async def run_validator(
         }
 
 if __name__ == "__main__":
+    pass
     pass
     pass
     # Test the validator

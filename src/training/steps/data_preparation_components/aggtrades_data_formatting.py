@@ -8,11 +8,14 @@ import shutil
 def check_file_format(file_path) -> bool | None:
     pass
     pass
+    pass
     """Check if a CSV file follows the correct format.
     Returns True if the file is correctly formatted, False otherwise.
     """
     try:
         with open(file_path, encoding="utf - 8") as f:
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -25,16 +28,19 @@ def check_file_format(file_path) -> bool | None:
         if first_line != expected_header:
     pass
     pass
+    pass
         return False
 
         # Check a few data lines to ensure they're properly formatted
         for i, line in enumerate(f):
     pass
     pass
+    pass
         if i >= 5:  # Check first 5 data lines
                     break
                 line, line.strip()
         if not line:
+    pass
     pass
     pass
                     continue
@@ -44,6 +50,7 @@ def check_file_format(file_path) -> bool | None:
         if len(fields) != 5:
     pass
     pass
+    pass
         return False
 
         # Check if timestamp field is properly formatted
@@ -51,11 +58,14 @@ def check_file_format(file_path) -> bool | None:
         if not timestamp:
     pass
     pass
+    pass
         return False
 
         # Check if price and quantity are numeric
         try:
                     float(fields[1])  # price
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -71,6 +81,7 @@ def check_file_format(file_path) -> bool | None:
 def detect_file_format(file_path) -> str | None:
     pass
     pass
+    pass
     """Detect the format of a CSV file and return the format type.
     Returns: 'correct', 'format1', 'format2', 'format3', or 'unknown'.
     """
@@ -82,8 +93,11 @@ def detect_file_format(file_path) -> str | None:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         # Check for correct format
         if first_line == "timestamp, price, quantity, is_buyer_maker, agg_trade_id":
+    pass
     pass
     pass
         return "correct"
@@ -93,6 +107,7 @@ def detect_file_format(file_path) -> str | None:
         if ";" in first_line and "agg_trade_id" not in first_line:
     pass
     pass
+    pass
         return "format1"
         return "format1"
 
@@ -100,10 +115,12 @@ def detect_file_format(file_path) -> str | None:
         if "agg_trade_id" in first_line and ";" in first_line:
     pass
     pass
+    pass
         return "format2"
 
         # Check for format3 (missing agg_trade_id column)
         if first_line == "timestamp, price, quantity, is_buyer_maker":
+    pass
     pass
     pass
         return "format3"
@@ -118,6 +135,7 @@ class DataFileReformatter:
     def __init__(self, input_path: str, output_path: str) -> None:
     pass
     pass
+    pass
         self.input_path, input_path
         self.output_path, output_path
         self.processors = {
@@ -129,9 +147,11 @@ class DataFileReformatter:
     def reformat_file(self, format_type: str) -> bool:
     pass
     pass
+    pass
         """Main entry point - delegates to specific processor."""
         processor, self.processors.get(format_type)
         if not processor:
+    pass
     pass
     pass
         return False
@@ -140,6 +160,8 @@ class DataFileReformatter:
         with (
                 open(self.input_path, encoding="utf - 8") as infile,
                 open(
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -158,6 +180,7 @@ class DataFileReformatter:
     def _process_format1(self, infile, writer) -> bool:
     pass
     pass
+    pass
         """Process semicolon - delimited format."""
         try:
         # Write header
@@ -169,12 +192,16 @@ class DataFileReformatter:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         # Process data lines
         for line in infile:
     pass
     pass
+    pass
                 line, line.strip()
         if not line or line.startswith("timestamp"):
+    pass
     pass
     pass
                     continue
@@ -182,6 +209,7 @@ class DataFileReformatter:
         # Split by semicolon
                 fields, line.split(";")
         if len(fields) >= 4:
+    pass
     pass
     pass
                     timestamp, fields[0]
@@ -201,6 +229,7 @@ class DataFileReformatter:
     def _process_format2(self, infile, writer) -> bool:
     pass
     pass
+    pass
         """Process mixed - delimiter format with agg_trade_id."""
         try:
         # Write header
@@ -212,12 +241,16 @@ class DataFileReformatter:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         # Process data lines
         for line in infile:
     pass
     pass
+    pass
                 line, line.strip()
         if not line or line.startswith("timestamp"):
+    pass
     pass
     pass
                     continue
@@ -225,6 +258,7 @@ class DataFileReformatter:
         # Handle mixed delimiter format: timestamp contains a semicolon
         # Replace semicolon in the timestamp with a space, parse the rest as CSV
         if "," in line:
+    pass
     pass
     pass
                     ts_part, rest, line.split(",", 1)
@@ -249,6 +283,7 @@ class DataFileReformatter:
     def _process_format3(self, infile, writer) -> bool:
     pass
     pass
+    pass
         """Process format missing agg_trade_id column."""
         try:
         # Write header
@@ -260,12 +295,16 @@ class DataFileReformatter:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         # Process data lines
         for line in infile:
     pass
     pass
+    pass
                 line, line.strip()
         if not line or line.startswith("timestamp"):
+    pass
     pass
     pass
                     continue
@@ -273,6 +312,7 @@ class DataFileReformatter:
         # Split by comma
                 fields, line.split(",")
         if len(fields) >= 4:
+    pass
     pass
     pass
                     timestamp, fields[0]
@@ -290,6 +330,7 @@ class DataFileReformatter:
         return False
 
 def auto_reformat_aggtrades_files() -> None:
+    pass
     pass
     pass
     """Automatically detect and reformat all aggtrades CSV files that don't follow the correct format."""
@@ -310,14 +351,17 @@ def auto_reformat_aggtrades_files() -> None:
     for file_path in files:
     pass
     pass
+    pass
         files_checked += 1
 
         # Check if file is correctly formatted
         if not check_file_format(file_path):
     pass
     pass
+    pass
             format_type, detect_file_format(file_path)
         if format_type != "correct":
+    pass
     pass
     pass
                 files_to_reformat.append((file_path, format_type))
@@ -325,17 +369,20 @@ def auto_reformat_aggtrades_files() -> None:
     if not files_to_reformat:
     pass
     pass
+    pass
         return
 
     # Ask for confirmation
-    response, input("\\\nDo you want to proceed with reformatting? (y / N): ")
+    response, input("\\\\nDo you want to proceed with reformatting? (y / N): ")
     if response.lower() != "y":
+    pass
     pass
     pass
         return
 
     # Reformat files
     for file_path, format_type in files_to_reformat:
+    pass
     pass
     pass
         # Create backup
@@ -350,6 +397,7 @@ def auto_reformat_aggtrades_files() -> None:
         if reformatter.reformat_file(format_type):
     pass
     pass
+    pass
         # Replace original with reformatted version
             shutil.move(temp_output, file_path)
         else:
@@ -357,6 +405,7 @@ def auto_reformat_aggtrades_files() -> None:
             shutil.copy2(backup_path, file_path)
 
 def auto_reformat_aggtrades_files_for_exchange(exchange: str, symbol: str) -> None:
+    pass
     pass
     pass
     """Automatically detect and reformat aggtrades CSV files for a specific exchange and symbol.
@@ -379,14 +428,17 @@ def auto_reformat_aggtrades_files_for_exchange(exchange: str, symbol: str) -> No
     for file_path in files:
     pass
     pass
+    pass
         files_checked += 1
 
         # Check if file is correctly formatted
         if not check_file_format(file_path):
     pass
     pass
+    pass
             format_type, detect_file_format(file_path)
         if format_type != "correct":
+    pass
     pass
     pass
                 files_to_reformat.append((file_path, format_type))
@@ -394,10 +446,12 @@ def auto_reformat_aggtrades_files_for_exchange(exchange: str, symbol: str) -> No
     if not files_to_reformat:
     pass
     pass
+    pass
         return
 
     # Reformat files without asking for confirmation (for automated use)
     for file_path, format_type in files_to_reformat:
+    pass
     pass
     pass
         # Create backup
@@ -412,6 +466,7 @@ def auto_reformat_aggtrades_files_for_exchange(exchange: str, symbol: str) -> No
         if reformatter.reformat_file(format_type):
     pass
     pass
+    pass
         # Replace original with reformatted version
             shutil.move(temp_output, file_path)
         else:
@@ -421,10 +476,12 @@ def auto_reformat_aggtrades_files_for_exchange(exchange: str, symbol: str) -> No
 def create_dummy_files(input_dir) -> None:
     pass
     pass
+    pass
     """Creates a set of dummy CSV files for demonstration purposes.
     This function simulates the two different formats you provided.
     """
     if os.path.exists(input_dir):
+    pass
     pass
     pass
         shutil.rmtree(input_dir)
@@ -433,19 +490,19 @@ def create_dummy_files(input_dir) -> None:
     # --- Create File 1: Semicolon - delimited format ---
     file1_path, os.path.join(input_dir, "aggtrades_format1_2025 - 07 - 13.csv")
     with open(file1_path, "w", newline="", encoding="utf - 8") as f:
-        f.write("timestamp;price;quantity;is_buyer_maker\\\n")
-        f.write("2025 - 07 - 12 22:00:00.604;2939.2;0.3152;False\\\n")
-        f.write("2025 - 07 - 12 22:00:00.614;2939.21;0.1917;False\\\n")
-        f.write("2025 - 07 - 12 22:00:00.614;2939.22;0.1702;False\\\n")
+        f.write("timestamp;price;quantity;is_buyer_maker\\\\n")
+        f.write("2025 - 07 - 12 22:00:00.604;2939.2;0.3152;False\\\\n")
+        f.write("2025 - 07 - 12 22:00:00.614;2939.21;0.1917;False\\\\n")
+        f.write("2025 - 07 - 12 22:00:00.614;2939.22;0.1702;False\\\\n")
 
     # --- Create File 2: Mixed - delimiter format ---
     file2_path, os.path.join(input_dir, "aggtrades_format2_2025 - 07 - 30.csv")
     with open(file2_path, "w", newline="", encoding="utf - 8") as f:
         # Note the malformed "p;rice" in the header, as in your example
-        f.write("timestamp, p;rice, quantity, is_buyer_maker, agg_trade_id\\\n")
-        f.write("2025 - 07 - 30;00:00:02.623, 3791.56, 0.065, False, 2338842426\\\n")
-        f.write("2025 - 07 - 30;00:00:04.240, 3791.55, 0.022, True, 2338842427\\\n")
-        f.write("2025 - 07 - 30;00:00:04.865, 3791.55, 0.018, True, 2338842428\\\n")
+        f.write("timestamp, p;rice, quantity, is_buyer_maker, agg_trade_id\\\\n")
+        f.write("2025 - 07 - 30;00:00:02.623, 3791.56, 0.065, False, 2338842426\\\\n")
+        f.write("2025 - 07 - 30;00:00:04.240, 3791.55, 0.022, True, 2338842427\\\\n")
+        f.write("2025 - 07 - 30;00:00:04.865, 3791.55, 0.018, True, 2338842428\\\\n")
 
     # --- Create an empty file to test edge cases ---
     file3_path, os.path.join(input_dir, "empty_file.csv")
@@ -475,6 +532,7 @@ class CSVNormalizer:
     def normalize_trade_csvs(self) -> None:
     pass
     pass
+    pass
         """Main entry point - processes all CSV files in the input directory."""
         self._setup_output_directory()
         files_to_process, self._get_csv_files()
@@ -482,9 +540,11 @@ class CSVNormalizer:
         if not files_to_process:
     pass
     pass
+    pass
             return
 
         for filename in files_to_process:
+    pass
     pass
     pass
         self._process_single_file(filename)
@@ -492,13 +552,16 @@ class CSVNormalizer:
     def _setup_output_directory(self) -> None:
     pass
     pass
+    pass
         """Create output directory if it doesn't exist."""
         if not os.path.exists(self.output_directory):
+    pass
     pass
     pass
             os.makedirs(self.output_directory)
 
     def _get_csv_files(self) -> list[str]:
+    pass
     pass
     pass
         """Get list of CSV files to process."""
@@ -508,10 +571,13 @@ class CSVNormalizer:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         except FileNotFoundError:
         return []
 
     def _process_single_file(self, filename: str) -> None:
+    pass
     pass
     pass
         """Process a single CSV file."""
@@ -529,8 +595,11 @@ class CSVNormalizer:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         # Write header if requested
         if self.write_header:
+    pass
     pass
     pass
                     writer.writerow(self.target_header)
@@ -538,6 +607,7 @@ class CSVNormalizer:
         # Detect and process format
                 format_type, self._detect_file_format(infile)
         if format_type in self.processors:
+    pass
     pass
     pass
         self.processors[format_type](infile, writer)
@@ -549,6 +619,7 @@ class CSVNormalizer:
     def _detect_file_format(self, infile) -> str:
     pass
     pass
+    pass
         """Detect the format of the CSV file."""
         try:
             header_line, next(infile).strip()
@@ -557,14 +628,18 @@ class CSVNormalizer:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         # Format 1: semicolon - delimited without trade_id
         if ";" in header_line and "agg_trade_id" not in header_line:
+    pass
     pass
     pass
         return "format1"
 
         # Format 2: mixed delimiters with agg_trade_id
         if "agg_trade_id" in header_line:
+    pass
     pass
     pass
         return "format2"
@@ -578,12 +653,15 @@ class CSVNormalizer:
     def _process_format1_file(self, infile, writer) -> None:
     pass
     pass
+    pass
         """Process format 1 (semicolon - delimited without trade_id)."""
         for line in infile:
     pass
     pass
+    pass
             line, line.strip()
         if not line or line.startswith("timestamp"):
+    pass
     pass
     pass
                 continue
@@ -600,12 +678,15 @@ class CSVNormalizer:
     def _process_format2_file(self, infile, writer) -> None:
     pass
     pass
+    pass
         """Process format 2 (mixed delimiters with agg_trade_id)."""
         for line in infile:
     pass
     pass
+    pass
             line, line.strip()
         if not line or line.startswith("timestamp"):
+    pass
     pass
     pass
                 continue
@@ -614,6 +695,8 @@ class CSVNormalizer:
         # The timestamp part is everything before the first comma
                 ts_part, rest_of_line, line.split(",", 1)
 
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -633,6 +716,7 @@ class CSVNormalizer:
                 continue
 
 if __name__ == "__main__":
+    pass
     pass
     pass
     # Run the automatic reformatting

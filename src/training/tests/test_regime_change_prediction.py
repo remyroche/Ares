@@ -21,6 +21,7 @@ class TestRegimeChangePrediction:
     def sample_hmm_data(self):
     pass
     pass
+    pass
         """Create sample HMM data for testing."""
         # Create sample data with regime changes
         dates = pd.date_range(start="2024-01-01", end="2024-01-31", freq="1H")
@@ -28,6 +29,7 @@ class TestRegimeChangePrediction:
         # Create regime changes every few hours
         regimes = []
         for i in range(len(dates)):
+    pass
     pass
     pass
             regime = (i // 6) % 5  # Change regime every 6 hours, 5 different regimes
@@ -58,6 +60,7 @@ class TestRegimeChangePrediction:
     def sample_feature_data(self):
     pass
     pass
+    pass
         """Create sample feature data for testing."""
         dates = pd.date_range(start="2024-01-01", end="2024-01-31", freq="1H")
 
@@ -73,11 +76,13 @@ class TestRegimeChangePrediction:
     def temp_data_dir(self):
     pass
     pass
+    pass
         """Create temporary data directory for testing."""
         with tempfile.TemporaryDirectory() as temp_dir:
             yield temp_dir
 
     def test_regime_change_detection(self, sample_hmm_data) -> None:
+    pass
     pass
     pass
         """Test regime change detection functionality."""
@@ -113,6 +118,7 @@ class TestRegimeChangePrediction:
     def test_vocabulary_creation(self) -> None:
     pass
     pass
+    pass
         """Test regime change vocabulary creation."""
         config = {
             "HMM_LM": {
@@ -145,6 +151,7 @@ class TestRegimeChangePrediction:
     def test_sequence_creation(self, sample_hmm_data) -> None:
     pass
     pass
+    pass
         """Test sequence creation for training."""
         config = {
             "HMM_LM": {
@@ -168,6 +175,7 @@ class TestRegimeChangePrediction:
         for seq in sequences:
     pass
     pass
+    pass
             assert "sequence" in seq
             assert "target" in seq
             assert "timestamp" in seq
@@ -178,6 +186,7 @@ class TestRegimeChangePrediction:
             assert seq["target"] in step.regime_change_vocab
 
     def test_feature_preparation(self, sample_hmm_data) -> None:
+    pass
     pass
     pass
         """Test feature preparation for language model."""
@@ -241,6 +250,7 @@ class TestRegimeChangePrediction:
     def test_config_integration(self) -> None:
     pass
     pass
+    pass
         """Test configuration integration."""
         from src.config import get_complete_config
 
@@ -277,6 +287,7 @@ import config = get_complete_config
     def test_step_order_integration(self) -> None:
     pass
     pass
+    pass
         """Test step order integration in training pipeline."""
         from src.config import get_complete_config
 
@@ -301,6 +312,7 @@ import config = get_complete_config
 
 
 if __name__ == "__main__":
+    pass
     pass
     pass
     # Run tests

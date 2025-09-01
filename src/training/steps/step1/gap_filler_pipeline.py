@@ -31,6 +31,7 @@ class GapFillerPipeline:
     def __init__(self, data_cache_path: str = "data_cache") -> None:
     pass
     pass
+    pass
         self.data_cache_path, Path(data_cache_path)
         self.session, None
         self.max_api_calls_per_gap, 50  # Maximum calls to prevent infinite loops
@@ -42,11 +43,13 @@ class GapFillerPipeline:
         if self.session is None:
     pass
     pass
+    pass
         self.session, aiohttp.ClientSession()
 
     async def close_session(self) -> None:
         """Close aiohttp session."""
         if self.session:
+    pass
     pass
     pass
         await self.session.close()
@@ -61,7 +64,10 @@ class GapFillerPipeline:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         if file_path.suffix.lower() == ".parquet":
+    pass
     pass
     pass
                 df, pd.read_parquet(file_path)
@@ -73,10 +79,12 @@ class GapFillerPipeline:
         if df.empty:
     pass
     pass
+    pass
         return []
 
         # Ensure timestamp column exists
         if "timestamp" not in df.columns:
+    pass
     pass
     pass
         return []
@@ -94,7 +102,9 @@ class GapFillerPipeline:
         for idx, row in gap_rows.iterrows():
     pass
     pass
+    pass
         if idx > 0:
+    pass
     pass
     pass
                     gap_start, df.loc[idx - 1, "timestamp"]
@@ -133,8 +143,11 @@ class GapFillerPipeline:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         async with self.session.get(url, ssl = ssl_context) as resp:
         if resp.status != 200:
+    pass
     pass
     pass
         return []
@@ -143,6 +156,7 @@ class GapFillerPipeline:
         with zipfile.ZipFile(io.BytesIO(content)) as zf:
                 csv_names = [n for n in zf.namelist() if n.endswith(".csv")]
         if not csv_names:
+    pass
     pass
     pass
         return []
@@ -158,14 +172,17 @@ class GapFillerPipeline:
         if df.empty:
     pass
     pass
+    pass
         return []
 
         # Process data types
         for col in ["a", "f", "l", "T"]:
     pass
     pass
+    pass
                 df[col] = pd.to_numeric(df[col], errors="coerce")
         for col in ["p", "q"]:
+    pass
     pass
     pass
                 df[col] = pd.to_numeric(df[col], errors="coerce")
@@ -183,6 +200,7 @@ class GapFillerPipeline:
         if df.empty:
     pass
     pass
+    pass
         return []
 
         # Convert to list of dicts
@@ -192,6 +210,7 @@ class GapFillerPipeline:
         return []
 
     def _standardize_aggtrades_format(self, df: pd.DataFrame) -> pd.DataFrame:
+    pass
     pass
     pass
         """Standardize aggtrades data format."""
@@ -209,6 +228,7 @@ class GapFillerPipeline:
 
         # Convert timestamp from milliseconds to datetime
         if "timestamp" in df.columns and df["timestamp"].dtype in ["int64", "float64"]:
+    pass
     pass
     pass
             df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
@@ -243,6 +263,7 @@ class GapFillerPipeline:
         if missing_data and len(missing_data) > 0:
     pass
     pass
+    pass
                 all_missing_data.extend(missing_data)
                 successful_calls += 1
                 consecutive_empty_calls, 0
@@ -250,6 +271,7 @@ class GapFillerPipeline:
         # Check if we have enough data to fill the gap
                 expected_min_trades, max(1, int(gap_info["gap_duration_seconds"] / 2))
         if len(all_missing_data) >= expected_min_trades:
+    pass
     pass
     pass
                     break
@@ -260,12 +282,14 @@ class GapFillerPipeline:
         if consecutive_empty_calls >= self.max_consecutive_empty:
     pass
     pass
+    pass
                 break
 
         # Delay between calls
         await asyncio.sleep(self.call_delay)
 
         if all_missing_data:
+    pass
     pass
     pass
         # Remove duplicates based on timestamp
@@ -275,9 +299,11 @@ class GapFillerPipeline:
         for record in all_missing_data:
     pass
     pass
+    pass
                 timestamp, record.get("T", 0)
 
         if timestamp not in seen_timestamps:
+    pass
     pass
     pass
                     seen_timestamps.add(timestamp)
@@ -292,8 +318,10 @@ class GapFillerPipeline:
         if file_path.exists():
     pass
     pass
+    pass
         # Read existing file (Parquet or CSV)
         if file_path.suffix.lower() == ".parquet":
+    pass
     pass
     pass
                     df_existing, pd.read_parquet(file_path)
@@ -318,6 +346,7 @@ class GapFillerPipeline:
 
         # Save back in the same format
         if file_path.suffix.lower() == ".parquet":
+    pass
     pass
     pass
                     df_combined.to_parquet(
@@ -367,6 +396,7 @@ class GapFillerPipeline:
         for file_path in all_files:
     pass
     pass
+    pass
         try:
         # Detect gaps in this file
                 gaps, self.detect_gaps_in_file(file_path)
@@ -377,7 +407,10 @@ class GapFillerPipeline:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         if gaps:
+    pass
     pass
     pass
                     results["files_with_gaps"] += 1
@@ -387,12 +420,14 @@ class GapFillerPipeline:
         for gap in gaps:
     pass
     pass
+    pass
                         result, await self.fill_gap_until_complete(gap, symbol)
 
                         results["total_api_calls"] += result.get("api_calls_made", 0)
                         results["total_successful_calls"] += result.get("successful_calls", 0)
 
         if result["success"]:
+    pass
     pass
     pass
                             results["total_gaps_filled"] += 1
@@ -409,10 +444,12 @@ class GapFillerPipeline:
         if results["total_gaps_found"] > 0:
     pass
     pass
+    pass
             success_rate = (results["total_gaps_filled"] / results["total_gaps_found"]) * 100
             logger.info(f"📊 Gap filling success rate: {success_rate:.1f}%")
 
         if results["total_api_calls"] > 0:
+    pass
     pass
     pass
             api_success_rate = (results["total_successful_calls"] / results["total_api_calls"]) * 100
@@ -430,6 +467,8 @@ class GapFillerPipeline:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             logger.info(f"🎉 Gap filling pipeline completed for {exchange}_{symbol}")
         return results
         finally:
@@ -442,6 +481,7 @@ async def run_gap_filling_pipeline(symbol: str = "ETHUSDT", exchange: str = "BIN
     return await gap_filler.run_pipeline(symbol, exchange)
 
 if __name__ == "__main__":
+    pass
     pass
     pass
     asyncio.run(run_gap_filling_pipeline())

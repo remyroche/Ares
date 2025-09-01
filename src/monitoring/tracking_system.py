@@ -26,6 +26,7 @@ class TrackingSystem:
     def __init__(self, config: Dict[str, Any]) -> None:
     pass
     pass
+    pass
         self.config , config
         self.logger = system_logger.getChild("TrackingSystem")
 

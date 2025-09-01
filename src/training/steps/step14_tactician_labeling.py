@@ -37,6 +37,7 @@ class TacticianTripleBarrierLabeler:
     def __init__(self, config: dict[str, Any]) -> None:
     pass
     pass
+    pass
         self.config, config.get("tactician_triple_barrier", {})
         self.logger, system_logger.getChild("TacticianTripleBarrierLabeler")
 
@@ -44,6 +45,7 @@ class TacticianTripleBarrierLabeler:
         self._load_enhanced_config()
 
     def _load_enhanced_config(self) -> None:
+    pass
     pass
     pass
         """Load enhanced configuration for high precision execution."""
@@ -91,6 +93,7 @@ import self.barrier_calculator, DynamicBarrierCalculator
         for name, (upper, lower) in self.barrier_combinations.items():
     pass
     pass
+    pass
         self.logger.info(f"     {name}: Upper={upper:.4f} ({upper * 100:.3f}%), Lower={lower:.4f} ({lower * 100:.3f}%)")
         self.logger.info(f"   High Precision Mode: {self.enable_high_precision_mode}")
         self.logger.info(f"   Precision Threshold: {self.precision_threshold}")
@@ -98,8 +101,10 @@ import self.barrier_calculator, DynamicBarrierCalculator
     def _apply_quality_filters(self, data: pd.DataFrame, entry_idx: int) -> bool:
     pass
     pass
+    pass
         """Apply quality filters for high precision execution."""
         if not self.enable_quality_filters:
+    pass
     pass
     pass
         return True
@@ -110,11 +115,15 @@ import self.barrier_calculator, DynamicBarrierCalculator
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         if "volume" in data.columns:
+    pass
     pass
     pass
                 volume, data.iloc[entry_idx]["volume"]
         if volume < self.min_volume_threshold:
+    pass
     pass
     pass
         return False
@@ -123,10 +132,12 @@ import self.barrier_calculator, DynamicBarrierCalculator
         if "bid" in data.columns and "ask" in data.columns:
     pass
     pass
+    pass
                 bid, data.iloc[entry_idx]["bid"]
                 ask, data.iloc[entry_idx]["ask"]
                 spread = (ask - bid) / bid
         if spread > self.min_spread_threshold:
+    pass
     pass
     pass
         return False
@@ -135,8 +146,10 @@ import self.barrier_calculator, DynamicBarrierCalculator
         if self.volatility_filter and len(data) >= 20:
     pass
     pass
+    pass
                 recent_data, data.iloc[max(0, entry_idx - 20):entry_idx + 1]
         if len(recent_data) >= 10:
+    pass
     pass
     pass
                     returns, recent_data["close"].pct_change().dropna()
@@ -152,6 +165,7 @@ import self.barrier_calculator, DynamicBarrierCalculator
         return True  # Default to allow if filter fails
 
     def _calculate_adaptive_barriers(self, data: pd.DataFrame, entry_idx: int, base_pt: float, base_sl: float) -> tuple[float, float]:
+    pass
     pass
     pass
         """Calculate barriers - no dynamic adaptation, ML model handles market conditions."""
@@ -179,7 +193,10 @@ import self.barrier_calculator, DynamicBarrierCalculator
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         for barrier_name, (upper_barrier, lower_barrier) in barrier_combinations.items():
+    pass
     pass
     pass
         if signal == 1:  # Long position
@@ -254,6 +271,7 @@ import self.barrier_calculator, DynamicBarrierCalculator
         if entry_points.empty:
     pass
     pass
+    pass
         self.logger.warning(
                 "⚠️ No strategic signals found to label. Returning data without labels.",
             )
@@ -287,7 +305,9 @@ import self.barrier_calculator, DynamicBarrierCalculator
         for i, entry_idx in enumerate(entry_indices):
     pass
     pass
+    pass
         if entry_idx >= len(data) - 1:
+    pass
     pass
     pass
                 continue
@@ -298,11 +318,13 @@ import self.barrier_calculator, DynamicBarrierCalculator
         if not self._apply_quality_filters(data, entry_idx):
     pass
     pass
+    pass
                 continue
 
         # Calculate barriers for 2 combinations
             barrier_prices = {}
         for barrier_name, (upper_pct, lower_pct) in self.barrier_combinations.items():
+    pass
     pass
     pass
                 base_upper, entry_prices.iloc[i] * (1 + upper_pct * signal)
@@ -323,6 +345,7 @@ import self.barrier_calculator, DynamicBarrierCalculator
             best_barrier_name, None
 
         for barrier_name, (upper, lower) in barrier_prices.items():
+    pass
     pass
     pass
         # Check for hits with enhanced precision (no time barrier)
@@ -369,12 +392,14 @@ import self.barrier_calculator, DynamicBarrierCalculator
         if precision_score > best_precision_score:
     pass
     pass
+    pass
                     best_precision_score, precision_score
                     best_quality_score, quality_score
                     best_barrier_name, barrier_name
 
         # Use the best performing barrier combination for traditional labeling
         if best_barrier_name:
+    pass
     pass
     pass
                 best_result, barrier_results[best_barrier_name]
@@ -396,6 +421,7 @@ import self.barrier_calculator, DynamicBarrierCalculator
         if best_barrier_name:
     pass
     pass
+    pass
                 price_deviation_predictions.iloc[entry_idx] = predictions["price_deviations"][best_barrier_name]
                 price_direction_predictions.iloc[entry_idx] = predictions["price_directions"][best_barrier_name]
                 price_target_confidence.iloc[entry_idx] = predictions["price_target_confidences"][best_barrier_name]
@@ -408,7 +434,9 @@ import self.barrier_calculator, DynamicBarrierCalculator
         if self.enable_high_precision_mode:
     pass
     pass
+    pass
         if precision_score < self.precision_threshold:
+    pass
     pass
     pass
                     labels.iloc[entry_idx] = 0  # Filter out low precision signals
@@ -452,8 +480,10 @@ class TacticianLabelingStep:
     def _validate_environment(self) -> None:
     pass
     pass
+    pass
         """Validate environment dependencies and configuration."""
         if not dependency_status["all_available"]:
+    pass
     pass
     pass
             missing_modules, dependency_status["missing_modules"]
@@ -461,6 +491,7 @@ class TacticianLabelingStep:
         # Continue with available modules, using fallbacks where needed
 
 def __init__(self, config: dict[str, Any]) -> None:
+    pass
     pass
     pass
         self.config, config
@@ -495,6 +526,8 @@ def __init__(self, config: dict[str, Any]) -> None:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         # Use data sharing manager to get comprehensive data for tactician labeling
         self.logger.info(
                 "🔄 Loading unified data for tactician labeling via data sharing manager...",
@@ -524,6 +557,7 @@ import BLANK_TRAINING_LOOKBACK_DAYS,
         if data_1m is None or data_1m.empty:
     pass
     pass
+    pass
         self.logger.error(
                     f"🚨 No unified data found for {symbol} on {exchange}",
                 )
@@ -535,6 +569,8 @@ import BLANK_TRAINING_LOOKBACK_DAYS,
         # Log data information
         try:
                 _loader, get_unified_data_loader(self.config)
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -565,6 +601,7 @@ import BLANK_TRAINING_LOOKBACK_DAYS,
                 col for col in required_columns if col not in data_1m.columns
             ]
         if missing_columns:
+    pass
     pass
     pass
         self.logger.error(f"🚨 Missing required columns: {missing_columns}")
@@ -620,10 +657,12 @@ import BLANK_TRAINING_LOOKBACK_DAYS,
     def _load_analyst_ensembles(self, data_dir: str) -> dict[str, Any]:
     pass
     pass
+    pass
         """Loads all trained analyst ensemble models."""
         analyst_ensembles_dir, f"{data_dir}/analyst_ensembles"
         analyst_ensembles: dict[str, Any] = {}
         if not Path(analyst_ensembles_dir).exists():
+    pass
     pass
     pass
             msg, f"Analyst ensembles directory not found: {analyst_ensembles_dir}"
@@ -634,7 +673,9 @@ import BLANK_TRAINING_LOOKBACK_DAYS,
         for ensemble_file in os.listdir(analyst_ensembles_dir):
     pass
     pass
+    pass
         if ensemble_file.endswith("_ensemble.pkl"):
+    pass
     pass
     pass
                 regime_name, ensemble_file.replace("_ensemble.pkl", "")
@@ -645,20 +686,25 @@ import BLANK_TRAINING_LOOKBACK_DAYS,
         if isinstance(loaded, dict):
     pass
     pass
+    pass
         # Prefer stacking_cv, then dynamic_weighting, then voting
         for key in ENSEMBLE_PREFERENCE_ORDER:
     pass
     pass
+    pass
         if key in loaded and isinstance(loaded[key], dict):
+    pass
     pass
     pass
                             obj, loaded[key].get("ensemble")
         if obj is not None:
     pass
     pass
+    pass
                                 chosen_ensemble, obj
                                 break
         if chosen_ensemble is None:
+    pass
     pass
     pass
         # Fallback if saved dict is a single - ensemble payload
@@ -689,7 +735,9 @@ import BLANK_TRAINING_LOOKBACK_DAYS,
         for regime_name, ensemble in analyst_ensembles.items():
     pass
     pass
+    pass
         if ensemble is None:
+    pass
     pass
     pass
                 continue
@@ -698,10 +746,12 @@ import BLANK_TRAINING_LOOKBACK_DAYS,
         if not regime_mask.any():
     pass
     pass
+    pass
                 continue
 
         # Ensure the model's expected features are present
         if hasattr(ensemble, "feature_names_in_"):
+    pass
     pass
     pass
                 features_for_model = [
@@ -719,15 +769,17 @@ import BLANK_TRAINING_LOOKBACK_DAYS,
         if not x_regime.empty:
     pass
     pass
+    pass
                 predictions, ensemble.predict(x_regime)
                 all_signals[regime_mask] = predictions
 
         self.logger.info(
-            f"Generated strategic signals. Signal distribution:\\\n{all_signals.value_counts()}",
+            f"Generated strategic signals. Signal distribution:\\\\n{all_signals.value_counts()}",
         )
         return data_with_features, all_signals
 
     def _get_market_regime(self, data: pd.DataFrame) -> pd.Series:
+    pass
     pass
     pass
         """Placeholder for your market regime detection logic.
@@ -745,6 +797,7 @@ import BLANK_TRAINING_LOOKBACK_DAYS,
     def _calculate_features(self, data: pd.DataFrame) -> pd.DataFrame:
     pass
     pass
+    pass
         """Calculate all necessary features for both Analyst and Tactician."""
         data, data.copy()
         data["returns"] = data["close"].pct_change()
@@ -759,6 +812,7 @@ import BLANK_TRAINING_LOOKBACK_DAYS,
     def _save_results(self, labeled_data: pd.DataFrame, signals: pd.Series, data_dir: str, exchange: str, symbol: str) -> Tuple[str, str]:
     pass
     pass
+    pass
         """Saves the labeled data and signals to disk."""
         labeled_data_dir, f"{data_dir}/tactician_labeled_data"
         Path(labeled_data_dir).mkdir(parents = True, exist_ok = True)
@@ -770,6 +824,11 @@ import BLANK_TRAINING_LOOKBACK_DAYS,
         try:
         try:
                 from src.training.enhanced_training_manager_optimized import (
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
+import except Exception as e:
     except Exception as e:
         pass
     except Exception as e:
@@ -826,8 +885,13 @@ import with log_io_operation
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         try:
                 from src.training.enhanced_training_manager_optimized import (
+    except Exception as e:
+        pass
+import except Exception as e:
     except Exception as e:
         pass
 import except Exception as e:
@@ -983,6 +1047,8 @@ async def run_step(
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         config: dict[str, Any] = {"symbol": symbol, "exchange": exchange, "data_dir": data_dir}
         step, TacticianLabelingStep(config)
         await step.initialize()
@@ -1005,6 +1071,7 @@ async def run_step(
         return False
 
 if __name__ == "__main__":
+    pass
     pass
     pass
     # Test the step

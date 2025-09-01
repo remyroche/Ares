@@ -19,6 +19,7 @@ class OrderBookAnalyzer:
     def __init__(self, config: dict[str, Any] | None = None) -> None:
     pass
     pass
+    pass
         self.config = config or {}
         self.logger = system_logger.getChild("OrderBookAnalyzer")
 
@@ -38,7 +39,10 @@ class OrderBookAnalyzer:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             if df.empty:
+    pass
     pass
     pass
                 return pd.DataFrame(columns=["price", "size"])  # empty
@@ -74,8 +78,11 @@ class OrderBookAnalyzer:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             }
             if mid_price <= 0:
+    pass
     pass
     pass
                 return features
@@ -83,8 +90,10 @@ class OrderBookAnalyzer:
             if bid_walls is not None and not bid_walls.empty:
     pass
     pass
+    pass
                 below = bid_walls[bid_walls["price"] <= mid_price]
                 if not below.empty:
+    pass
     pass
     pass
                     nearest_bid = below.iloc[
@@ -96,8 +105,10 @@ class OrderBookAnalyzer:
             if ask_walls is not None and not ask_walls.empty:
     pass
     pass
+    pass
                 above = ask_walls[ask_walls["price"] >= mid_price]
                 if not above.empty:
+    pass
     pass
     pass
                     nearest_ask = above.iloc[
@@ -143,6 +154,9 @@ class OrderBookAnalyzer:
     except Exception as e:
         pass
     pass
+    except Exception as e:
+        pass
+    pass
                 return {"overlap_ratio": 0.0, "avg_min_dist_to_sr": 1.0}
     except Exception as e:
         pass
@@ -152,6 +166,7 @@ class OrderBookAnalyzer:
             overlaps = []
             min_dists = []
             for p in wp:
+    pass
     pass
     pass
                 dists = np.abs(sc - p) / np.maximum(1e-8, p)
@@ -176,6 +191,8 @@ class OrderBookAnalyzer:
                 pd.read_parquet(sr_zones_file)
                 if sr_zones_file.endswith(".parquet")
                 else pd.read_csv(sr_zones_file)
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:

@@ -36,6 +36,7 @@ class ModelProbabilityGenerator:
     def __init__(self):
     pass
     pass
+    pass
         self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
         self.classification_calculator = ClassificationProbabilityCalculator()
         self.regression_calculator = RegressionProbabilityCalculator()
@@ -66,6 +67,8 @@ class ModelProbabilityGenerator:
         try:
             self.logger.info(f"Generating probability outputs for {model_type} model")
 
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -116,10 +119,13 @@ class ModelProbabilityGenerator:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             stop_loss = kwargs.get('stop_loss', 0.01)
             volatility_window = kwargs.get('volatility_window', 20)
 
             if isinstance(calculator, ClassificationProbabilityCalculator):
+    pass
     pass
     pass
                 return calculator.calculate_triple_barrier_probability(
@@ -148,6 +154,8 @@ class ModelProbabilityGenerator:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         except Exception as e:
             self.logger.error(f"Error calculating direction probability: {e}")
             return 0.5
@@ -163,6 +171,8 @@ class ModelProbabilityGenerator:
         """Calculate magnitude probability."""
         try:
             threshold_factor = kwargs.get('threshold_factor', 0.8)
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -189,6 +199,8 @@ class ModelProbabilityGenerator:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             return calculator.calculate_barrier_avoidance_probability(
                 model, X_test, market_data, adverse_threshold
             )
@@ -197,6 +209,7 @@ class ModelProbabilityGenerator:
             return 0.5
 
     def _get_default_probabilities(self, model_type: str) -> Dict[str, float]:
+    pass
     pass
     pass
         """Get default probability values when calculation fails."""
@@ -211,6 +224,7 @@ class ModelProbabilityGenerator:
         }
 
     def validate_probabilities(self, probabilities: Dict[str, float]) -> bool:
+    pass
     pass
     pass
         """
@@ -233,7 +247,9 @@ class ModelProbabilityGenerator:
         for key in required_keys:
     pass
     pass
+    pass
             if key not in probabilities:
+    pass
     pass
     pass
                 self.logger.error(f"Missing required probability key: {key}")
@@ -243,8 +259,10 @@ class ModelProbabilityGenerator:
         for key in required_keys:
     pass
     pass
+    pass
             prob = probabilities[key]
             if not isinstance(prob, (int, float)) or not 0.0 <= prob <= 1.0:
+    pass
     pass
     pass
                 self.logger.error(f"Invalid probability value for {key}: {prob}")
@@ -283,6 +301,9 @@ class ModelProbabilityGenerator:
     except Exception as e:
         pass
     pass
+    except Exception as e:
+        pass
+    pass
                 raise ValueError("Number of models must match number of model types")
 
     except Exception as e:
@@ -290,9 +311,11 @@ class ModelProbabilityGenerator:
             if weights is None:
     pass
     pass
+    pass
                 weights = [1.0 / len(models)] * len(models)
 
             if len(weights) != len(models):
+    pass
     pass
     pass
                 raise ValueError("Number of weights must match number of models")
@@ -300,6 +323,7 @@ class ModelProbabilityGenerator:
             # Generate probabilities for each model
             all_probabilities = []
             for model, model_type in zip(models, model_types):
+    pass
     pass
     pass
                 model_probs = self.generate_price_action_probabilities(
@@ -356,6 +380,8 @@ class ModelProbabilityGenerator:
         """
         try:
             # For now, use standard probability generation
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:

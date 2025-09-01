@@ -23,6 +23,7 @@ class DataManager:
     def __init__(self, config: Dict[str, Any]) -> None:
     pass
     pass
+    pass
         self.config = config
         self.logger = system_logger.getChild("DataManager")
         self.data_config = config.get("data_manager", {})

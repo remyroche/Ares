@@ -19,6 +19,9 @@ try:
 import except Exception as e:
     except Exception as e:
         pass
+import except Exception as e:
+    except Exception as e:
+        pass
 import SMOTE_AVAILABLE = True
     SMOTE_AVAILABLE = True
 except ImportError:
@@ -28,9 +31,11 @@ except ImportError:
         def __init__(self, *args: Any, **kwargs: Any) -> None:
     pass
     pass
+    pass
             self.params = {"args": args, "kwargs": kwargs}
 
         def fit_resample(self, X: Any, y: Any) -> tuple[Any, Any]:
+    pass
     pass
     pass
             return X, y
@@ -55,6 +60,7 @@ class BaseEnsemble:
         default_return=None, context="ensemble initialization",
     )
     def __init__(self, config: dict, ensemble_name: str):
+    pass
     pass
     pass
         self.config = config.get("analyst", {}).get(ensemble_name, {})
@@ -380,6 +386,7 @@ class BaseEnsemble:
         if historical_features.empty:
     pass
     pass
+    pass
             self.logger.warning(
                 f"No historical features for {self.ensemble_name}. Skipping training.",
             )
@@ -399,12 +406,15 @@ class BaseEnsemble:
         for col in all_expected_features:
     pass
     pass
+    pass
             if col not in historical_features.columns:
+    pass
     pass
     pass
                 historical_features[col] = 0.0
 
         if historical_targets is None:
+    pass
     pass
     pass
             self.logger.warning(
@@ -418,6 +428,7 @@ class BaseEnsemble:
         if aligned_data.empty:
     pass
     pass
+    pass
             self.logger.warning(
                 f"Aligned data is empty for {self.ensemble_name} after dropping NaNs. Skipping training.",
             )
@@ -426,6 +437,8 @@ class BaseEnsemble:
         # Encode targets
         try:
             y_encoded = self.label_encoder.fit_transform(aligned_data["target"])
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -464,6 +477,7 @@ class BaseEnsemble:
         if X_meta_train.empty or len(np.unique(y_meta_train)) < 2:
     pass
     pass
+    pass
             self.logger.warning(
                 f"Insufficient or single-class data for meta-learner in {self.ensemble_name}. Skipping meta-learner training.",
             )
@@ -500,9 +514,13 @@ class BaseEnsemble:
     def _validate_ensemble_state(self) -> bool:
     pass
     pass
+    pass
         """Validate that the ensemble is properly trained and ready for prediction."""
         try:
             if not self.trained:
+    pass
+    except Exception as e:
+        pass
     pass
     except Exception as e:
         pass
@@ -517,10 +535,12 @@ class BaseEnsemble:
             if not self.models:
     pass
     pass
+    pass
                 self.logger.warning(f"{self.ensemble_name}: No base models found")
                 return False
 
             if not self.meta_learner:
+    pass
     pass
     pass
                 self.logger.warning(f"{self.ensemble_name}: No meta-learner found")
@@ -529,12 +549,14 @@ class BaseEnsemble:
             if not self.meta_feature_scaler:
     pass
     pass
+    pass
                 self.logger.warning(
                     f"{self.ensemble_name}: No meta-feature scaler found",
                 )
                 return False
 
             if not self.label_encoder:
+    pass
     pass
     pass
                 self.logger.warning(f"{self.ensemble_name}: No label encoder found")
@@ -557,7 +579,9 @@ class BaseEnsemble:
     def get_prediction(self, current_features: pd.DataFrame, **kwargs: Any) -> dict:
     pass
     pass
+    pass
         if not self.trained:
+    pass
     pass
     pass
             self.logger.warning(
@@ -580,7 +604,9 @@ class BaseEnsemble:
         for col in all_expected_features:
     pass
     pass
+    pass
             if col not in current_features.columns:
+    pass
     pass
     pass
                 current_features[col] = 0.0
@@ -596,11 +622,13 @@ class BaseEnsemble:
         if hasattr(self.meta_feature_scaler, "feature_names_in_"):
     pass
     pass
+    pass
             missing_cols = list(
                 set(self.meta_feature_scaler.feature_names_in_)
                 - set(meta_input_df.columns),
             )
             if missing_cols:
+    pass
     pass
     pass
                 self.logger.warning(
@@ -626,12 +654,16 @@ class BaseEnsemble:
     def _train_with_smote(self, model: Any, X: pd.DataFrame | np.ndarray, y: pd.Series | np.ndarray) -> Any:
     pass
     pass
+    pass
         """Applies SMOTE to balance the dataset before training."""
         if self.use_smote and len(np.unique(y)) > 1:
     pass
     pass
+    pass
             try:
                 smote = SMOTE(random_state=42)
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -655,8 +687,10 @@ class BaseEnsemble:
     def _tune_hyperparameters(self, model_class: Callable[..., Any], search_space_func: Callable[[Any], dict[str, Any]], X: pd.DataFrame, y: np.ndarray, n_trials: int = 25) -> dict[str, Any]:
     pass
     pass
+    pass
         """Reusable Optuna hyperparameter tuning function."""
         if not self.tune_base_models:
+    pass
     pass
     pass
             self.logger.info("Base model tuning is disabled. Using default parameters.")
@@ -665,10 +699,12 @@ class BaseEnsemble:
         def objective(trial: optuna.trial.Trial) -> float:
     pass
     pass
+    pass
             params = search_space_func(trial)
             model = model_class(**params, random_state=42, verbose=-1)
             # Prefer purged CV for time series with DatetimeIndex
             if isinstance(X, pd.DataFrame) and isinstance(X.index, pd.DatetimeIndex):
+    pass
     pass
     pass
                 cv = PurgedKFoldTime(n_splits=3)
@@ -678,6 +714,7 @@ class BaseEnsemble:
                 splits = cv.split(X, y)
             scores: list[float] = []
             for train_idx, val_idx in splits:
+    pass
     pass
     pass
                 X_train, X_val = X.iloc[train_idx], X.iloc[val_idx]
@@ -701,6 +738,7 @@ class BaseEnsemble:
     def _get_lgbm_search_space(self, trial: optuna.trial.Trial) -> dict[str, Any]:
     pass
     pass
+    pass
         """Enhanced LightGBM search space with regularization from config."""
         base_space: dict[str, Any] = {
             "n_estimators": trial.suggest_int("n_estimators", 50, 500),
@@ -713,6 +751,7 @@ class BaseEnsemble:
 
         # Use regularization config if available, otherwise use default optuna suggestions
         if self.regularization_config and "lightgbm" in self.regularization_config:
+    pass
     pass
     pass
             reg_config = self.regularization_config["lightgbm"]
@@ -756,8 +795,10 @@ class BaseEnsemble:
     def _get_regularized_logistic_regression(self) -> LogisticRegression:
     pass
     pass
+    pass
         """Create a LogisticRegression model with L1-L2 regularization."""
         if self.regularization_config and "sklearn" in self.regularization_config:
+    pass
     pass
     pass
             sklearn_config = self.regularization_config["sklearn"]
@@ -795,6 +836,7 @@ class BaseEnsemble:
     def _get_svm_search_space(self, trial: optuna.trial.Trial) -> dict[str, Any]:
     pass
     pass
+    pass
         return {
             "C": trial.suggest_float("C", 1e-3, 1e2, log=True),
             "gamma": trial.suggest_float("gamma", 1e-4, 1e-1, log=True),
@@ -809,6 +851,7 @@ class BaseEnsemble:
     def _train_meta_learner(self, X: pd.DataFrame, y: np.ndarray, params: dict[str, Any]) -> None:
     pass
     pass
+    pass
         self.meta_learner = LGBMClassifier(**params, random_state=42, verbose=-1)
         self.meta_learner.fit(X, y)
 
@@ -820,7 +863,9 @@ class BaseEnsemble:
     def _get_meta_prediction(self, meta_input_pca: np.ndarray) -> dict[str, Any]:
     pass
     pass
+    pass
         if not self.meta_learner:
+    pass
     pass
     pass
             return {"prediction": "HOLD", "confidence": 0.0}
@@ -846,6 +891,9 @@ class BaseEnsemble:
     except Exception as e:
         pass
     pass
+    except Exception as e:
+        pass
+    pass
                 self.logger.warning(
                     f"{self.ensemble_name}: Ensemble not trained, returning empty DataFrame",
                 )
@@ -854,6 +902,7 @@ class BaseEnsemble:
     except Exception as e:
         pass
             if historical_features.empty:
+    pass
     pass
     pass
                 self.logger.warning(
@@ -877,7 +926,9 @@ class BaseEnsemble:
             for col in all_expected_features:
     pass
     pass
+    pass
                 if col not in historical_features.columns:
+    pass
     pass
     pass
                     historical_features[col] = 0.0
@@ -886,6 +937,7 @@ class BaseEnsemble:
             meta_features = self._get_meta_features(historical_features, is_live=False)
 
             if not isinstance(meta_features, pd.DataFrame) or meta_features.empty:
+    pass
     pass
     pass
                 self.logger.warning(
@@ -898,11 +950,13 @@ class BaseEnsemble:
             if hasattr(self.meta_feature_scaler, "feature_names_in_"):
     pass
     pass
+    pass
                 missing_cols = list(
                     set(self.meta_feature_scaler.feature_names_in_)
                     - set(meta_features.columns),
                 )
                 if missing_cols:
+    pass
     pass
     pass
                     self.logger.warning(
@@ -921,8 +975,11 @@ class BaseEnsemble:
             for i in range(len(meta_input_pca)):
     pass
     pass
+    pass
                 try:
                     pred_result = self._get_meta_prediction(meta_input_pca[i : i + 1])
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -959,9 +1016,12 @@ class BaseEnsemble:
     def check_ensemble_health(self) -> dict[str, Any]:
     pass
     pass
+    pass
         """Check the health status of the ensemble and return detailed diagnostics."""
         try:
             issues: list[str] = []
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -972,11 +1032,13 @@ class BaseEnsemble:
             if not self.trained:
     pass
     pass
+    pass
                 issues.append("Ensemble not trained")
                 status = "unhealthy"
 
             # Check base models
             if not self.models:
+    pass
     pass
     pass
                 issues.append("No base models available")
@@ -985,7 +1047,9 @@ class BaseEnsemble:
                 for model_name, model in self.models.items():
     pass
     pass
+    pass
                     if model is None:
+    pass
     pass
     pass
                         issues.append(f"Base model '{model_name}' is None")
@@ -995,6 +1059,7 @@ class BaseEnsemble:
             if not self.meta_learner:
     pass
     pass
+    pass
                 issues.append("No meta-learner available")
                 status = "unhealthy"
 
@@ -1002,10 +1067,12 @@ class BaseEnsemble:
             if not self.meta_feature_scaler:
     pass
     pass
+    pass
                 issues.append("No meta-feature scaler available")
                 status = "unhealthy"
 
             if not self.label_encoder:
+    pass
     pass
     pass
                 issues.append("No label encoder available")
@@ -1015,11 +1082,13 @@ class BaseEnsemble:
             if not self.pca:
     pass
     pass
+    pass
                 issues.append("No PCA transformer available")
                 status = "degraded"
 
             # Check configuration
             if not self.config:
+    pass
     pass
     pass
                 issues.append("No configuration available")
@@ -1036,6 +1105,7 @@ class BaseEnsemble:
             }
 
             if status == "healthy":
+    pass
     pass
     pass
                 self.logger.info(f"{self.ensemble_name}: Ensemble health check passed")
@@ -1067,9 +1137,12 @@ class BaseEnsemble:
     def save_model(self, path: str) -> None:
     pass
     pass
+    pass
         """Saves the entire ensemble instance to a file."""
         try:
             # Save relevant components
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -1095,8 +1168,10 @@ class BaseEnsemble:
     def load_model(self, path: str) -> bool:
     pass
     pass
+    pass
         """Loads the entire ensemble instance from a file."""
         if not os.path.exists(path):
+    pass
     pass
     pass
             self.logger.warning(
@@ -1106,6 +1181,8 @@ class BaseEnsemble:
             return False
         try:
             model_data = joblib.load(path)
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -1132,6 +1209,7 @@ class BaseEnsemble:
             return False
 
     def _train_base_models(self, aligned_data: pd.DataFrame, y_encoded: np.ndarray):
+    pass
     pass
     pass
         raise NotImplementedError
@@ -1162,15 +1240,19 @@ class BaseEnsemble:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             resistances: list[float] = []
 
             # Calculate rolling pivots for the last few periods
             if features_df is None or features_df.empty:
     pass
     pass
+    pass
                 return {"supports": [], "resistances": []}
 
             for i in range(max(0, len(features_df) - 24), len(features_df)):
+    pass
     pass
     pass
                 if i < 5:  # Need at least 5 data points
@@ -1180,6 +1262,7 @@ class BaseEnsemble:
                 if len(window) < 5:
     pass
     pass
+    pass
                     continue
 
                 pivots = sr_analyzer._calculate_rolling_pivots(window)
@@ -1187,16 +1270,20 @@ class BaseEnsemble:
                 if pivots.get("s1", 0) > 0:
     pass
     pass
+    pass
                     supports.append(pivots["s1"])
                 if pivots.get("s2", 0) > 0:
+    pass
     pass
     pass
                     supports.append(pivots["s2"])
                 if pivots.get("r1", 0) > 0:
     pass
     pass
+    pass
                     resistances.append(pivots["r1"])
                 if pivots.get("r2", 0) > 0:
+    pass
     pass
     pass
                     resistances.append(pivots["r2"])
@@ -1234,6 +1321,8 @@ class BaseEnsemble:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             resistances: list[float] = []
 
             # Analyze volume levels for the last period
@@ -1245,15 +1334,19 @@ class BaseEnsemble:
                 if current_price is not None:
     pass
     pass
+    pass
                     for level_data in volume_levels.values():
+    pass
     pass
     pass
                         level_price = level_data.get("price")
                         if level_price is not None:
     pass
     pass
+    pass
                             # Classify as support or resistance based on current price
                             if current_price > level_price:
+    pass
     pass
     pass
                                 supports.append(level_price)
@@ -1291,11 +1384,14 @@ class BaseEnsemble:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             pivot_supports = pivot_levels.get("supports", [])
             pivot_resistances = pivot_levels.get("resistances", [])
             pivot_strengths = pivot_levels.get("strengths", {})
 
             if pivot_supports:
+    pass
     pass
     pass
                 nearest_pivot_support = min(
@@ -1310,11 +1406,13 @@ class BaseEnsemble:
             if pivot_strengths and pivot_supports:
     pass
     pass
+    pass
                 strength_data = self._get_nearest_level_strength_data(
                     nearest_pivot_support, pivot_supports,
                     pivot_strengths
                 )
             if strength_data:
+    pass
     pass
     pass
                 sr_features.iloc[
@@ -1333,6 +1431,7 @@ class BaseEnsemble:
             if pivot_resistances:
     pass
     pass
+    pass
                 nearest_pivot_resistance = min(
                     pivot_resistances, key=lambda x: abs(x - current_price),
                 )
@@ -1345,11 +1444,13 @@ class BaseEnsemble:
             if pivot_strengths and pivot_resistances:
     pass
     pass
+    pass
                 strength_data = self._get_nearest_level_strength_data(
                     nearest_pivot_resistance, pivot_resistances,
                     pivot_strengths
                 )
             if strength_data:
+    pass
     pass
     pass
                 sr_features.iloc[
@@ -1379,6 +1480,7 @@ class BaseEnsemble:
             if hvn_supports:
     pass
     pass
+    pass
                 nearest_hvn_support = min(
                     hvn_supports, key=lambda x: abs(x - current_price),
                 )
@@ -1391,11 +1493,13 @@ class BaseEnsemble:
             if hvn_strengths and hvn_supports:
     pass
     pass
+    pass
                 strength_data = self._get_nearest_level_strength_data(
                     nearest_hvn_support, hvn_supports,
                     hvn_strengths
                 )
             if strength_data:
+    pass
     pass
     pass
                 sr_features.iloc[
@@ -1414,6 +1518,7 @@ class BaseEnsemble:
             if hvn_resistances:
     pass
     pass
+    pass
                 nearest_hvn_resistance = min(
                     hvn_resistances, key=lambda x: abs(x - current_price),
                 )
@@ -1426,11 +1531,13 @@ class BaseEnsemble:
             if hvn_strengths and hvn_resistances:
     pass
     pass
+    pass
                 strength_data = self._get_nearest_level_strength_data(
                     nearest_hvn_resistance, hvn_resistances,
                     hvn_strengths
                 )
             if strength_data:
+    pass
     pass
     pass
                 sr_features.iloc[
@@ -1493,6 +1600,9 @@ class BaseEnsemble:
     except Exception as e:
         pass
     pass
+    except Exception as e:
+        pass
+    pass
                 return {}
 
     except Exception as e:
@@ -1502,12 +1612,17 @@ class BaseEnsemble:
             for level_key, strength_data in strengths.items():
     pass
     pass
+    pass
                 if isinstance(strength_data, dict):
+    pass
     pass
     pass
                     # If mapping has exact key, prefer it
                     try:
                         if float(level_key) == float(closest_value):
+    pass
+    except Exception as e:
+        pass
     pass
     except Exception as e:
         pass
@@ -1538,15 +1653,21 @@ class BaseEnsemble:
     except Exception as e:
         pass
     pass
+    except Exception as e:
+        pass
+    pass
                 return
     except Exception as e:
         pass
             for i in range(len(df)):
     pass
     pass
+    pass
                 try:
                     _ = float(df.iloc[i]["close"]) if "close" in df.columns else None
 
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -1589,6 +1710,7 @@ class BaseEnsemble:
     def normalize_non_price_features(self, df: pd.DataFrame) -> pd.DataFrame:
     pass
     pass
+    pass
         """
         Normalize non-price series using relative/normalized changes and rolling z-scores.
 
@@ -1612,8 +1734,11 @@ class BaseEnsemble:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             # 1. Volume normalization
             if "volume" in df.columns:
+    pass
     pass
     pass
                 # Log1p + first-difference for stationarity
@@ -1632,6 +1757,7 @@ class BaseEnsemble:
             if "volume_ma_ratio" not in df.columns and "volume" in df.columns:
     pass
     pass
+    pass
                 volume_ma_20 = df["volume"].rolling(window=20, min_periods=1).mean()
                 normalized_df["volume_ma_ratio"] = df["volume"] / (
                     volume_ma_20 + 1e-8
@@ -1647,11 +1773,14 @@ class BaseEnsemble:
             for feature in spread_features:
     pass
     pass
+    pass
                 if feature in df.columns:
+    pass
     pass
     pass
                     # Convert to bps if not already (assuming raw values)
                     if feature in ["spread_liquidity", "price_impact"]:
+    pass
     pass
     pass
                         # These might already be in bps, but ensure they're properly scaled
@@ -1679,11 +1808,14 @@ class BaseEnsemble:
             for feature in liquidity_features:
     pass
     pass
+    pass
                 if feature in df.columns:
+    pass
     pass
     pass
                     # Log-transform heavy-tailed metrics
                     if feature in ["volume_liquidity"]:
+    pass
     pass
     pass
                         normalized_df[f"{feature}_log"] = np.log1p(np.abs(df[feature]))
@@ -1713,7 +1845,9 @@ class BaseEnsemble:
             for feature in ofi_features:
     pass
     pass
+    pass
                 if feature in df.columns:
+    pass
     pass
     pass
                     # Ensure bounded to [-1, 1]
@@ -1739,6 +1873,7 @@ class BaseEnsemble:
             if "vwap" in df.columns and "close" in df.columns:
     pass
     pass
+    pass
                 # VWAP deviation from mid price
                 mid_price = df["close"]
                 normalized_df["vwap_deviation"] = (df["vwap"] - mid_price) / (
@@ -1757,6 +1892,7 @@ class BaseEnsemble:
             if "large_order_ratio" in df.columns:
     pass
     pass
+    pass
                 # Clip to [0, 1] and rolling z-score
                 normalized_df["large_order_ratio_bounded"] = np.clip(
                     df["large_order_ratio"],
@@ -1773,6 +1909,7 @@ class BaseEnsemble:
 
             # 7. Funding rate normalization
             if "funding_rate" in df.columns:
+    pass
     pass
     pass
                 # Funding rates are already in percentage form, normalize with rolling z-score
@@ -1798,11 +1935,14 @@ class BaseEnsemble:
             for feature in volatility_features:
     pass
     pass
+    pass
                 if feature in df.columns:
+    pass
     pass
     pass
                     # Log-transform for heavy-tailed volatility
                     if feature in ["realized_volatility", "parkinson_volatility", "garman_klass_volatility"]:
+    pass
     pass
     pass
                         normalized_df[f"{feature}_log"] = np.log1p(df[feature])
@@ -1830,7 +1970,9 @@ class BaseEnsemble:
             for feature in momentum_features:
     pass
     pass
+    pass
                 if feature in df.columns:
+    pass
     pass
     pass
                     # Rolling z-score of momentum
@@ -1886,6 +2028,8 @@ class BaseEnsemble:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             rolling_std = series.rolling(window, min_periods=1).std()
             z_score = (series - rolling_mean) / (rolling_std + 1e-8)
             # Handle infinite values
@@ -1901,6 +2045,7 @@ class BaseEnsemble:
     def _winsorize_features(self, df: pd.DataFrame, percentile: float = 0.01) -> None:
     pass
     pass
+    pass
         """
         Winsorize outliers in the DataFrame to improve numerical stability.
 
@@ -1914,17 +2059,23 @@ class BaseEnsemble:
     except Exception as e:
         pass
     pass
+    except Exception as e:
+        pass
+    pass
                 if df[col].dtype in ["float64", "float32", "int64", "int32"]:
+    pass
     pass
     pass
                     # Skip binary/categorical features
                     if df[col].nunique() <= 2:
     pass
     pass
+    pass
                         continue
 
                     # Handle NaN values first
                     if df[col].isna().any():
+    pass
     pass
     pass
                         df[col] = df[col].fillna(df[col].median())

@@ -27,6 +27,7 @@ class TransitionInferenceCombiner:
     def __init__(self, config: dict[str, Any]) -> None:
     pass
     pass
+    pass
         self.logger = system_logger.getChild("TransitionInferenceCombiner")
         tm = (config or {}).get("TRANSITION_MODELING", {})
         ens = tm.get("timeframe_ensemble", {}) or {}
@@ -51,8 +52,12 @@ class TransitionInferenceCombiner:
     def _load_reliability(self, path: str | None) -> dict[str, dict[str, float]]:
     pass
     pass
+    pass
         try:
             if path and os.path.exists(path):
+    pass
+    except Exception as e:
+        pass
     pass
     except Exception as e:
         pass
@@ -61,6 +66,7 @@ class TransitionInferenceCombiner:
                     data = json.load(f)
                 # Expecting {timeframe: {path_class: scale}}
                 if isinstance(data, dict):
+    pass
     pass
     pass
                     return {
@@ -75,6 +81,7 @@ class TransitionInferenceCombiner:
         return {}
 
     def _apply_reliability(self, timeframe: str, cls: str, p: float) -> float:
+    pass
     pass
     pass
         # Simple multiplicative scaling; can be replaced by calibrated curves later
@@ -95,13 +102,16 @@ class TransitionInferenceCombiner:
         for tf, probs in path_probs_by_timeframe.items():
     pass
     pass
+    pass
             w = float(self.cfg.weights.get(tf, 0.0))
             if w <= 0.0:
+    pass
     pass
     pass
                 continue
             weight_sum += w
             for c in classes:
+    pass
     pass
     pass
                 p = float(probs.get(c, 0.0))
@@ -110,7 +120,9 @@ class TransitionInferenceCombiner:
         if weight_sum > 0:
     pass
     pass
+    pass
             for c in combined:
+    pass
     pass
     pass
                 combined[c] /= weight_sum
@@ -132,6 +144,7 @@ class TransitionInferenceCombiner:
         if macro_regime and macro_regime in self.cfg.macro_thresholds:
     pass
     pass
+    pass
             thr_map = self.cfg.macro_thresholds[macro_regime].get(timeframe, thr_map)
         thr_cont = float(thr_map.get("continuation", 0.75))
         thr_bot = float(thr_map.get("beginning_of_trend", 0.75))
@@ -140,8 +153,10 @@ class TransitionInferenceCombiner:
         if cont >= thr_cont:
     pass
     pass
+    pass
             allow, trigger = True, "continuation"
         if bot >= thr_bot and bot >= cont:
+    pass
     pass
     pass
             allow, trigger = True, "beginning_of_trend"

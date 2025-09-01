@@ -28,6 +28,8 @@ try:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
     MLFLOW_AVAILABLE = True
 except ImportError:
     MLFLOW_AVAILABLE = False
@@ -39,6 +41,8 @@ try:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
     OPTUNA_AVAILABLE = True
 except ImportError:
     OPTUNA_AVAILABLE = False
@@ -46,6 +50,9 @@ except ImportError:
 # Import regime-specific triple barrier optimizer from step4 components
 try:
     from .steps.step04_analyst_labeling_feature_engineering_components.regime_specific_triple_barrier_optimizer import (
+    except Exception as e:
+        pass
+import except Exception as e:
     except Exception as e:
         pass
 import except Exception as e:
@@ -64,6 +71,8 @@ except ImportError:
 # Import HMM regime barrier optimizer (focused upper/lower barriers)
 try:
         HMMRegimeBarrierOptimizer,
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -88,6 +97,7 @@ class EarlyStageOptimizer:
     def __init__(self, config: Dict[str, Any], training_manager=None):
     pass
     pass
+    pass
         self.config = config
         self.training_manager = training_manager
         self.logger = logging.getLogger(__name__)
@@ -105,6 +115,7 @@ class EarlyStageOptimizer:
         if REGIME_OPTIMIZER_AVAILABLE:
     pass
     pass
+    pass
             self.regime_optimizer = create_regime_specific_triple_barrier_optimizer(config, training_manager)
             self.logger.info("✅ Regime-specific triple barrier optimizer initialized")
         else:
@@ -117,9 +128,12 @@ class EarlyStageOptimizer:
         if HMM_BARRIER_OPTIMIZER_AVAILABLE:
     pass
     pass
+    pass
             try:
                 self.hmm_barrier_optimizer = HMMRegimeBarrierOptimizer(
                     config.get("hmm_regime_barrier_optimizer", {})
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -141,10 +155,13 @@ class EarlyStageOptimizer:
         if not OPTUNA_AVAILABLE:
     pass
     pass
+    pass
             return {"error": "Optuna is required for SR optimization"}
 
         try:
             # Create study for SR optimization
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -201,6 +218,7 @@ class EarlyStageOptimizer:
             if MLFLOW_AVAILABLE:
     pass
     pass
+    pass
                 await self._log_sr_optimization_to_mlflow(self.sr_optimization_results)
 
             self.logger.info("✅ SR parameter optimization completed successfully!")
@@ -222,11 +240,14 @@ class EarlyStageOptimizer:
         if not self.regime_optimizer:
     pass
     pass
+    pass
             return {"error": "Regime-specific triple barrier optimizer not available"}
 
         try:
             self.logger.info("🚀 Starting regime-specific triple barrier optimization...")
 
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -255,10 +276,13 @@ class EarlyStageOptimizer:
         if not self.regime_optimizer:
     pass
     pass
+    pass
             return {"error": "Regime-specific triple barrier optimizer not available"}
 
         try:
             return await self.regime_optimizer.get_regime_optimization_status()
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -272,10 +296,13 @@ class EarlyStageOptimizer:
         if not self.regime_optimizer:
     pass
     pass
+    pass
             return {"error": "Regime-specific triple barrier optimizer not available"}
 
         try:
             return await self.regime_optimizer.apply_regime_parameters(regime_name)
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -289,10 +316,13 @@ class EarlyStageOptimizer:
         if not self.regime_optimizer:
     pass
     pass
+    pass
             return ["Regime-specific triple barrier optimizer not available"]
 
         try:
             return await self.regime_optimizer.get_optimization_recommendations()
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -306,10 +336,13 @@ class EarlyStageOptimizer:
         if not self.regime_optimizer:
     pass
     pass
+    pass
             return None
 
         try:
             return await self.regime_optimizer.get_triple_barrier_labeler()
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -321,9 +354,11 @@ class EarlyStageOptimizer:
     def _create_sr_objective(self, data: pd.DataFrame):
     pass
     pass
+    pass
         """Create objective function for SR optimization."""
 
         def objective(trial):
+    pass
     pass
     pass
             # Sample SR parameters
@@ -343,6 +378,8 @@ class EarlyStageOptimizer:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
                 return quality_score
             except Exception as e:
                 self.logger.warning(f"SR trial failed: {e}")
@@ -353,10 +390,13 @@ class EarlyStageOptimizer:
     def _evaluate_sr_parameters(self, data: pd.DataFrame, params: Dict[str, Any]) -> float:
     pass
     pass
+    pass
         """Evaluate SR parameters on data."""
 
         try:
             # This would integrate with your actual SR implementation
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -415,11 +455,14 @@ class EarlyStageOptimizer:
         if not OPTUNA_AVAILABLE:
     pass
     pass
+    pass
             return {"error": "Optuna is required for regime-specific optimization"}
 
         try:
             optimization_results = {}
 
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -430,6 +473,7 @@ class EarlyStageOptimizer:
 
             # Optimize each regime with regime-aware parameter ranges
             for regime_name, regime_df in regime_data.items():
+    pass
     pass
     pass
                 self.logger.info(f"🔧 Optimizing triple barrier parameters for {regime_name} regime...")
@@ -465,6 +509,7 @@ class EarlyStageOptimizer:
 
             # Log to MLflow
             if MLFLOW_AVAILABLE:
+    pass
     pass
     pass
                 await self._log_regime_optimization_to_mlflow(optimization_results)
@@ -565,6 +610,7 @@ class EarlyStageOptimizer:
     def _get_regime_barrier_parameters(self, regime_name: str) -> Dict[str, Any]:
     pass
     pass
+    pass
         """Get regime-specific barrier parameter ranges based on regime characteristics."""
 
         # Base parameter ranges - now regime-agnostic
@@ -583,6 +629,7 @@ class EarlyStageOptimizer:
         regime_characteristics = self._analyze_regime_characteristics(regime_name)
 
         if regime_characteristics:
+    pass
     pass
     pass
             # Adjust parameter ranges based on regime volatility
@@ -624,10 +671,13 @@ class EarlyStageOptimizer:
     def _analyze_regime_characteristics(self, regime_name: str) -> Dict[str, float]:
     pass
     pass
+    pass
         """Analyze regime characteristics to inform parameter ranges."""
 
         try:
             # This would integrate with your actual regime data analysis
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -638,6 +688,7 @@ class EarlyStageOptimizer:
             regime_data = self._get_regime_data(regime_name)
 
             if regime_data is None or regime_data.empty:
+    pass
     pass
     pass
                 # Return default characteristics if no data available
@@ -660,6 +711,7 @@ class EarlyStageOptimizer:
             if len(regime_data) > 10:
     pass
     pass
+    pass
                 x = np.arange(len(regime_data))
                 y = regime_data['close'].values
                 slope = np.polyfit(x, y, 1)[0]
@@ -669,6 +721,7 @@ class EarlyStageOptimizer:
 
             # Mean reversion strength (using autocorrelation)
             if len(returns) > 20:
+    pass
     pass
     pass
                 autocorr = returns.autocorr(lag=1)
@@ -681,6 +734,7 @@ class EarlyStageOptimizer:
 
             # Price momentum
             if len(regime_data) > 20:
+    pass
     pass
     pass
                 momentum = (regime_data['close'].iloc[-1] / regime_data['close'].iloc[-20] - 1)
@@ -703,6 +757,7 @@ class EarlyStageOptimizer:
     def _get_regime_data(self, regime_name: str) -> Optional[pd.DataFrame]:
     pass
     pass
+    pass
         """Get regime data for analysis."""
 
         # This would integrate with your actual regime data storage
@@ -713,7 +768,10 @@ class EarlyStageOptimizer:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             if hasattr(self, 'training_manager') and self.training_manager:
+    pass
     pass
     pass
                 # Try to get regime data from training manager
@@ -735,20 +793,25 @@ class EarlyStageOptimizer:
         def objective(trial):
     pass
     pass
+    pass
             # Sample parameters from regime-specific configuration
             params = {}
 
             for param_name, param_config in regime_params.items():
     pass
     pass
+    pass
                 if isinstance(param_config, tuple):
+    pass
     pass
     pass
                     # Numeric range parameter
                     if len(param_config) == 2:
     pass
     pass
+    pass
                         if param_name in ["barrier_timeout"]:
+    pass
     pass
     pass
                             # Integer parameters
@@ -782,6 +845,8 @@ class EarlyStageOptimizer:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
                 )
                 return performance_score
             except Exception as e:
@@ -800,6 +865,8 @@ class EarlyStageOptimizer:
 
         try:
             # This would integrate with your actual triple barrier implementation
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -861,8 +928,10 @@ class EarlyStageOptimizer:
             if upper_barrier > 0.008 and lower_barrier > 0.008:
     pass
     pass
+    pass
                 base_score += 0.3
             if timeout < 60:
+    pass
     pass
     pass
                 base_score += 0.2
@@ -873,8 +942,10 @@ class EarlyStageOptimizer:
             if upper_barrier < 0.008 and lower_barrier < 0.008:
     pass
     pass
+    pass
                 base_score += 0.3
             if timeout > 120:
+    pass
     pass
     pass
                 base_score += 0.2
@@ -888,8 +959,10 @@ class EarlyStageOptimizer:
                 if upper_barrier > lower_barrier:
     pass
     pass
+    pass
                     base_score += 0.25
                 if upper_barrier > 0.006:
+    pass
     pass
     pass
                     base_score += 0.15
@@ -898,8 +971,10 @@ class EarlyStageOptimizer:
                 if lower_barrier > upper_barrier:
     pass
     pass
+    pass
                     base_score += 0.25
                 if lower_barrier > 0.006:
+    pass
     pass
     pass
                     base_score += 0.15
@@ -908,6 +983,7 @@ class EarlyStageOptimizer:
         if mean_reversion_strength > 0.7:  # Strong mean reversion
             # Prefer balanced barriers
             if abs(upper_barrier - lower_barrier) < 0.002:
+    pass
     pass
     pass
                 base_score += 0.2
@@ -929,6 +1005,7 @@ class EarlyStageOptimizer:
 
         # 6. Barrier range validation (ensure within 0.2-1.5% range)
         if 0.002 <= upper_barrier <= 0.015 and 0.002 <= lower_barrier <= 0.015:
+    pass
     pass
     pass
             base_score += 0.1  # Bonus for staying within specified range
@@ -955,6 +1032,8 @@ class EarlyStageOptimizer:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             mlflow.set_experiment(self.sr_experiment_name)
 
             # Start a run for SR optimization
@@ -967,6 +1046,7 @@ class EarlyStageOptimizer:
                 # Log best parameters
                 best_params = optimization_results.get("best_params", {})
                 for param_name, param_value in best_params.items():
+    pass
     pass
     pass
                     mlflow.log_param(param_name, param_value)
@@ -990,6 +1070,8 @@ class EarlyStageOptimizer:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             mlflow.set_experiment(self.regime_experiment_name)
 
             # Start a run for regime-specific optimization
@@ -1002,7 +1084,9 @@ class EarlyStageOptimizer:
                 for regime_name, regime_result in optimization_results.items():
     pass
     pass
+    pass
                     if "error" not in regime_result:
+    pass
     pass
     pass
                         # Log regime parameters
@@ -1012,6 +1096,7 @@ class EarlyStageOptimizer:
                         # Log best parameters for this regime
                         best_params = regime_result.get("best_params", {})
                         for param_name, param_value in best_params.items():
+    pass
     pass
     pass
                             mlflow.log_param(f"{regime_name}_{param_name}", param_value)
@@ -1036,10 +1121,13 @@ class EarlyStageOptimizer:
         if not self.hmm_barrier_optimizer:
     pass
     pass
+    pass
             return {"error": "HMM Regime Barrier Optimizer not available"}
 
         try:
             self.logger.info("🚀 Starting HMM regime barrier optimization (upper/lower only)...")
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -1067,6 +1155,7 @@ class EarlyStageOptimizer:
     def get_hmm_barrier_map(self) -> Dict[str, Dict[str, float]]:
     pass
     pass
+    pass
         """Return the latest HMM barrier map (regime -> upper/lower in decimals and %)."""
         return self.hmm_barrier_map or {}
 
@@ -1084,12 +1173,14 @@ class EarlyStageOptimizer:
     def _create_optimization_summary(self) -> Dict[str, Any]:
     pass
     pass
+    pass
         """Create a summary of all optimizations."""
 
         summary = {}
 
         # SR optimization summary
         if self.sr_optimization_results:
+    pass
     pass
     pass
             summary["sr_optimization"] = {
@@ -1105,11 +1196,14 @@ class EarlyStageOptimizer:
         if self.regime_barrier_optimization_results:
     pass
     pass
+    pass
             regime_summary = {}
             for regime_name, result in self.regime_barrier_optimization_results.items():
     pass
     pass
+    pass
                 if "error" not in result:
+    pass
     pass
     pass
                     regime_summary[regime_name] = {
@@ -1134,6 +1228,7 @@ class EarlyStageOptimizer:
         if not self.regime_barrier_optimization_results:
     pass
     pass
+    pass
             return {"status": "no_optimization_results"}
 
         summary = {
@@ -1148,7 +1243,9 @@ class EarlyStageOptimizer:
         for regime_name, result in self.regime_barrier_optimization_results.items():
     pass
     pass
+    pass
             if "error" not in result:
+    pass
     pass
     pass
                 summary["successful_optimizations"] += 1
@@ -1171,7 +1268,9 @@ class EarlyStageOptimizer:
                 for param_name, param_value in best_params.items():
     pass
     pass
+    pass
                     if param_name not in summary["parameter_ranges"]:
+    pass
     pass
     pass
                         summary["parameter_ranges"][param_name] = []
@@ -1186,7 +1285,9 @@ class EarlyStageOptimizer:
         for param_name, values in summary["parameter_ranges"].items():
     pass
     pass
+    pass
             if values:
+    pass
     pass
     pass
                 summary["parameter_ranges"][param_name] = {
@@ -1207,6 +1308,7 @@ class EarlyStageOptimizer:
         if not self.regime_barrier_optimization_results:
     pass
     pass
+    pass
             recommendations.append("No optimization results available. Run optimization first.")
             return recommendations
 
@@ -1214,6 +1316,7 @@ class EarlyStageOptimizer:
 
         # Performance-based recommendations
         if summary["performance_ranking"]:
+    pass
     pass
     pass
             best_regime = summary["performance_ranking"][0]
@@ -1228,10 +1331,12 @@ class EarlyStageOptimizer:
         if "upper_barrier_multiplier" in param_ranges:
     pass
     pass
+    pass
             upper_stats = param_ranges["upper_barrier_multiplier"]
             recommendations.append(f"Upper barrier range: {upper_stats['min']:.4f} - {upper_stats['max']:.4f} (mean: {upper_stats['mean']:.4f})")
 
         if "lower_barrier_multiplier" in param_ranges:
+    pass
     pass
     pass
             lower_stats = param_ranges["lower_barrier_multiplier"]
@@ -1240,12 +1345,14 @@ class EarlyStageOptimizer:
         if "barrier_timeout" in param_ranges:
     pass
     pass
+    pass
             timeout_stats = param_ranges["barrier_timeout"]
             recommendations.append(f"Timeout range: {timeout_stats['min']:.0f} - {timeout_stats['max']:.0f} minutes (mean: {timeout_stats['mean']:.0f})")
 
         # Regime type recommendations
         regime_types = summary.get("regime_types", {})
         if regime_types:
+    pass
     pass
     pass
             most_common_type = max(regime_types, key=regime_types.get)
@@ -1259,6 +1366,7 @@ class EarlyStageOptimizer:
         if not filepath:
     pass
     pass
+    pass
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             filepath = f"regime_optimization_results_{timestamp}.json"
 
@@ -1269,6 +1377,8 @@ class EarlyStageOptimizer:
                 "summary": await self.get_regime_optimization_summary(),
                 "recommendations": await self.get_regime_parameter_recommendations(),
                 "export_timestamp": datetime.now().isoformat()
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -1291,12 +1401,14 @@ class EarlyStageOptimizer:
 def create_early_stage_optimizer(config: Dict[str, Any], training_manager=None):
     pass
     pass
+    pass
     """Create early stage optimizer instance."""
 
     return EarlyStageOptimizer(config, training_manager)
 
 
 if __name__ == "__main__":
+    pass
     pass
     pass
     # Example usage for dynamic regime optimization
@@ -1333,7 +1445,7 @@ if __name__ == "__main__":
     print("  - Comprehensive optimization insights and recommendations")
 
     # Example of how to use with multiple regimes
-    print("\\\n📊 Example usage with multiple regimes:")
+    print("\\\\n📊 Example usage with multiple regimes:")
     print("""
     # Create sample regime data (replace with your actual data)
     regime_data = {

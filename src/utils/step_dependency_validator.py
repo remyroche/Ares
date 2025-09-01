@@ -22,6 +22,8 @@ class StepDependencyValidator:
     def __init__(self):
     pass
     pass
+    pass
+    pass
         self.logger, system_logger.getChild("StepDependencyValidator")
 
         # Define step dependencies (step -> list of required steps)
@@ -184,8 +186,14 @@ class StepDependencyValidator:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Check if step has dependencies
             if step_name not in self.step_dependencies:
+    pass
+    pass
     pass
     pass
                 self.logger.info(f"✅ {step_name} has no dependencies")
@@ -198,11 +206,15 @@ class StepDependencyValidator:
             if force_rerun:
     pass
     pass
+    pass
+    pass
                 self.logger.info(f"✅ Force rerun enabled for {step_name}, skipping dependency validation")
                 return {"valid": True, "reason": "Force rerun enabled"}
 
             # If no dependencies, validation passes
             if not required_steps:
+    pass
+    pass
     pass
     pass
                 self.logger.info(f"✅ {step_name} has no dependencies")
@@ -213,12 +225,18 @@ class StepDependencyValidator:
             for required_step in required_steps:
     pass
     pass
+    pass
+    pass
                 if not await self._check_step_completion(required_step, checkpoint_dir):
+    pass
+    pass
     pass
     pass
                     failed_prerequisites.append(required_step)
 
             if failed_prerequisites:
+    pass
+    pass
     pass
     pass
                 error_msg = f"❌ Prerequisites failed for {step_name}: {failed_prerequisites}"
@@ -233,11 +251,15 @@ class StepDependencyValidator:
             if step_name in self.critical_data_requirements:
     pass
     pass
+    pass
+    pass
                 data_validation = await self._validate_critical_data(
                     step_name,
                     self.critical_data_requirements[step_name]
                 )
                 if not data_validation["valid"]:
+    pass
+    pass
     pass
     pass
                     return data_validation
@@ -269,9 +291,15 @@ class StepDependencyValidator:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             checkpoint_file = Path(checkpoint_dir) / f"{step_name}.json"
 
             if checkpoint_file.exists():
+    pass
+    pass
     pass
     pass
                 # Read checkpoint
@@ -283,12 +311,16 @@ class StepDependencyValidator:
                 if status != "completed":
     pass
     pass
+    pass
+    pass
                     self.logger.warning(f"⚠️ {step_name} status: {status} (not completed)")
                     return False
 
                 # Check for any errors in the checkpoint
                 errors = checkpoint_data.get("errors", [])
                 if errors:
+    pass
+    pass
     pass
     pass
                     self.logger.warning(f"⚠️ {step_name} has errors: {errors}")
@@ -303,6 +335,8 @@ class StepDependencyValidator:
         if len(path_parts) >= 4 and path_parts[0] == "checkpoints":
     pass
     pass
+    pass
+    pass
             # Path structure: checkpoints / exchange / symbol / timeframe
             exchange = path_parts[1]  # e.g., "BINANCE"
             symbol = path_parts[2]    # e.g., "ETHUSDT"
@@ -314,10 +348,16 @@ class StepDependencyValidator:
             if centralized_checkpoint.exists():
     pass
     pass
+    pass
+    pass
                 try:
                     with open(centralized_checkpoint, 'r') as f:
                         progress_data = json.load(f)
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -349,10 +389,14 @@ class StepDependencyValidator:
         if step_name in step_status_mapping:
     pass
     pass
+    pass
+    pass
                             status_key, step_status_mapping[step_name]
                             step_status, pipeline_state.get(status_key, {})
 
         if step_status.get("status") == "SUCCESS" or step_status.get("completed", False):
+    pass
+    pass
     pass
     pass
         self.logger.debug(f"✅ {step_name} completed successfully (from centralized progress)")
@@ -380,13 +424,21 @@ class StepDependencyValidator:
         for alt_checkpoint in alternative_paths:
     pass
     pass
+    pass
+    pass
         if alt_checkpoint.exists():
+    pass
+    pass
     pass
     pass
         try:
         with open(alt_checkpoint, 'r') as f:
                                 progress_data, json.load(f)
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -418,10 +470,14 @@ class StepDependencyValidator:
         if step_name in step_status_mapping:
     pass
     pass
+    pass
+    pass
                                 status_key, step_status_mapping[step_name]
                                 step_status, pipeline_state.get(status_key, {})
 
         if step_status.get("status") == "SUCCESS" or step_status.get("completed", False):
+    pass
+    pass
     pass
     pass
         self.logger.debug(f"✅ {step_name} completed successfully (from centralized progress)")
@@ -467,14 +523,24 @@ class StepDependencyValidator:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Check required files
         if "required_files" in requirements:
+    pass
+    pass
     pass
     pass
         for file_pattern in requirements["required_files"]:
     pass
     pass
+    pass
+    pass
         if not await self._check_file_pattern(file_pattern):
+    pass
+    pass
     pass
     pass
         return {
@@ -486,12 +552,16 @@ class StepDependencyValidator:
         if "required_columns" in requirements:
     pass
     pass
+    pass
+    pass
         # This would need to be implemented based on actual data loading
         # For now, we'll assume it's valid if files exist
                 pass
 
         # Check minimum rows (if we have data to check)
         if "min_rows" in requirements:
+    pass
+    pass
     pass
     pass
         # This would need to be implemented based on actual data loading
@@ -524,10 +594,18 @@ class StepDependencyValidator:
 import except Exception as e:
     except Exception as e:
         pass
+import except Exception as e:
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
             import glob
 
         # Convert pattern to glob pattern
         if "*" not in file_pattern:
+    pass
+    pass
     pass
     pass
         # Single file
@@ -542,6 +620,8 @@ import except Exception as e:
         return False
 
     def get_step_dependencies(self, step_name: str) -> List[str]:
+    pass
+    pass
     pass
     pass
         """
@@ -583,7 +663,13 @@ import except Exception as e:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if step_name not in self.critical_data_requirements:
+    pass
+    pass
     pass
     pass
         self.logger.info(f"✅ {step_name} has no specific data requirements")
@@ -601,6 +687,8 @@ import except Exception as e:
         for file_pattern in requirements.get("required_files", []):
     pass
     pass
+    pass
+    pass
         # Replace placeholders in file pattern
                 pattern, file_pattern.replace("{symbol}", symbol).replace("{exchange}", exchange).replace("{timeframe}", timeframe)
 
@@ -611,11 +699,15 @@ import except Exception as e:
         if not matching_files:
     pass
     pass
+    pass
+    pass
                     validation_results["missing_files"].append(pattern)
                     validation_results["valid"] = False
                 else:
         # Validate each matching file
         for file_path in matching_files:
+    pass
+    pass
     pass
     pass
                         file_validation, await self._validate_data_file(
@@ -626,10 +718,14 @@ import except Exception as e:
         if not file_validation["valid"]:
     pass
     pass
+    pass
+    pass
                             validation_results["data_quality_issues"].append(f"Data quality issues in {file_path}")
                             validation_results["valid"] = False
 
         if validation_results["valid"]:
+    pass
+    pass
     pass
     pass
         self.logger.info(f"✅ Data requirements met for {step_name}")
@@ -666,6 +762,10 @@ import except Exception as e:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             validation_result = {
                 "valid": True,
                 "file_path": file_path,
@@ -680,6 +780,8 @@ import except Exception as e:
         if not validation_result["exists"]:
     pass
     pass
+    pass
+    pass
                 validation_result["valid"] = False
                 validation_result["data_quality_issues"].append("File does not exist")
         return validation_result
@@ -687,6 +789,12 @@ import except Exception as e:
         # Try to read the file
         try:
         if file_path.endswith('.parquet'):
+    pass
+    except Exception as e:
+        pass
+    pass
+    except Exception as e:
+        pass
     pass
     except Exception as e:
         pass
@@ -707,6 +815,8 @@ import except Exception as e:
         if not validation_result["has_minimum_rows"]:
     pass
     pass
+    pass
+    pass
                     validation_result["valid"] = False
                     validation_result["data_quality_issues"].append(f"Insufficient rows: {len(df)} < {min_rows}")
 
@@ -714,10 +824,14 @@ import except Exception as e:
         if required_columns:
     pass
     pass
+    pass
+    pass
                     missing_cols = [col for col in required_columns if col not in df.columns]
                     validation_result["missing_columns"] = missing_cols
 
         if missing_cols:
+    pass
+    pass
     pass
     pass
                         validation_result["valid"] = False
@@ -727,11 +841,17 @@ import except Exception as e:
         for col in ['open', 'high', 'low', 'close', 'volume']:
     pass
     pass
+    pass
+    pass
         if col in df.columns:
+    pass
+    pass
     pass
     pass
                         null_count, df[col].isnull().sum()
         if null_count > 0:
+    pass
+    pass
     pass
     pass
                             validation_result["data_quality_issues"].append(f"Null values in {col}: {null_count}")
@@ -773,6 +893,10 @@ import except Exception as e:
         try:
         self.logger.info(f"🔍 Validating artifacts for {step_name}")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -841,6 +965,8 @@ import except Exception as e:
         if step_name not in expected_artifacts:
     pass
     pass
+    pass
+    pass
         self.logger.info(f"✅ {step_name} has no specific artifacts")
         return {"valid": True, "reason": "No artifacts defined"}
 
@@ -854,10 +980,14 @@ import except Exception as e:
         for artifact_pattern in expected_artifacts[step_name]:
     pass
     pass
+    pass
+    pass
                 import glob
                 matching_artifacts, glob.glob(artifact_pattern)
 
         if not matching_artifacts:
+    pass
+    pass
     pass
     pass
                     validation_results["missing_artifacts"].append(artifact_pattern)
@@ -867,15 +997,21 @@ import except Exception as e:
         for artifact_path in matching_artifacts:
     pass
     pass
+    pass
+    pass
                         artifact_validation, await self._validate_artifact_file(artifact_path)
                         validation_results["artifact_validation_results"][artifact_path] =artifact_validation
 
         if not artifact_validation["valid"]:
     pass
     pass
+    pass
+    pass
                             validation_results["valid"] = False
 
         if validation_results["valid"]:
+    pass
+    pass
     pass
     pass
         self.logger.info(f"✅ Artifacts validated for {step_name}")
@@ -909,9 +1045,15 @@ import except Exception as e:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             }
 
         if not validation_result["exists"]:
+    pass
+    pass
     pass
     pass
                 validation_result["valid"] = False
@@ -922,6 +1064,8 @@ import except Exception as e:
         if validation_result["file_size"] == 0:
     pass
     pass
+    pass
+    pass
                 validation_result["valid"] = False
                 validation_result["validation_issues"].append("Artifact file is empty")
 
@@ -929,8 +1073,14 @@ import except Exception as e:
         if artifact_path.endswith('.pkl'):
     pass
     pass
+    pass
+    pass
         try:
                     import pickle
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -949,6 +1099,10 @@ import except Exception as e:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         with open(artifact_path, 'r') as f:
                         obj, json.load(f)
                     validation_result["object_type"] = type(obj).__name__
@@ -959,6 +1113,10 @@ import except Exception as e:
             elif artifact_path.endswith('.parquet'):
         try:
                     import pandas as pd
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -983,6 +1141,8 @@ import except Exception as e:
     def get_dependent_steps(self, step_name: str) -> List[str]:
     pass
     pass
+    pass
+    pass
         """
         Get the list of steps that depend on the given step.
 
@@ -996,7 +1156,11 @@ import except Exception as e:
         for step, dependencies in self.step_dependencies.items():
     pass
     pass
+    pass
+    pass
         if step_name in dependencies:
+    pass
+    pass
     pass
     pass
                 dependent_steps.append(step)

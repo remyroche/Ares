@@ -27,6 +27,7 @@ class EnhancedRegimePredictor:
     def __init__(self, config: Optional[Dict[str, Any]] = None) -> None:
     pass
     pass
+    pass
         self.config = config or {}
         self.logger = system_logger.getChild("EnhancedRegimePredictor")
 
@@ -71,6 +72,8 @@ class EnhancedRegimePredictor:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             # Calculate regime stability and entropy
             regime_stability = self._calculate_regime_stability(hmm_probs)
             regime_entropy = self._calculate_regime_entropy(hmm_probs)
@@ -92,6 +95,7 @@ class EnhancedRegimePredictor:
 
             # Apply persistence model if available
             if self.persistence_model:
+    pass
     pass
     pass
                 persistence_adjustments = self._apply_persistence_model(
@@ -134,9 +138,12 @@ class EnhancedRegimePredictor:
     def _calculate_regime_stability(self, hmm_probs: np.ndarray) -> np.ndarray:
     pass
     pass
+    pass
         """Calculate regime stability (max probability for each timepoint)."""
         try:
             return np.max(hmm_probs, axis=1)
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -153,9 +160,12 @@ class EnhancedRegimePredictor:
     def _calculate_regime_entropy(self, hmm_probs: np.ndarray) -> np.ndarray:
     pass
     pass
+    pass
         """Calculate regime entropy (uncertainty measure)."""
         try:
             eps = 1e-10
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -185,6 +195,8 @@ class EnhancedRegimePredictor:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             # Signal 1: State transitions
             state_changes = np.diff(hmm_states, prepend=hmm_states[0]) != 0
 
@@ -205,27 +217,33 @@ class EnhancedRegimePredictor:
             for i in range(1, len(hmm_states)):
     pass
     pass
+    pass
                 signal_score = 0
 
                 if state_changes[i]:
+    pass
     pass
     pass
                     signal_score += 0.4  # State change is most important
                 if stability_changes[i]:
     pass
     pass
+    pass
                     signal_score += 0.3  # Stability drop
                 if entropy_changes[i]:
+    pass
     pass
     pass
                     signal_score += 0.2  # High entropy
                 if acceleration_changes[i]:
     pass
     pass
+    pass
                     signal_score += 0.1  # Stability acceleration
 
                 # Require minimum signal score and persistence
                 if signal_score >= 0.5 and i >= self.min_persistence:
+    pass
     pass
     pass
                     changes[i] = True
@@ -254,10 +272,14 @@ class EnhancedRegimePredictor:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             for i in range(len(regime_changes)):
     pass
     pass
+    pass
                 if regime_changes[i] and i < len(hmm_probs) - 1:
+    pass
     pass
     pass
                     # Calculate probability change magnitude
@@ -292,7 +314,10 @@ class EnhancedRegimePredictor:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             for i in range(len(stability)):
+    pass
     pass
     pass
                 # Base confidence from stability
@@ -336,6 +361,9 @@ class EnhancedRegimePredictor:
     except Exception as e:
         pass
     pass
+    except Exception as e:
+        pass
+    pass
                 return np.ones(len(regime_changes), dtype=float)
 
     except Exception as e:
@@ -350,10 +378,13 @@ class EnhancedRegimePredictor:
             if survival_func:
     pass
     pass
+    pass
                 for i in range(len(regime_changes)):
     pass
     pass
+    pass
                     if regime_changes[i] and i < len(durations):
+    pass
     pass
     pass
                         current_duration = durations[i]
@@ -392,10 +423,14 @@ class EnhancedRegimePredictor:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             for i in range(len(regime_changes)):
     pass
     pass
+    pass
                 if regime_changes[i] and i < len(hmm_states) - 1:
+    pass
     pass
     pass
                     event = {
@@ -427,9 +462,12 @@ class EnhancedRegimePredictor:
     def _calculate_regime_durations(self, states: np.ndarray) -> np.ndarray:
     pass
     pass
+    pass
         """Calculate how long each regime persists."""
         try:
             durations = np.zeros(len(states), dtype=int)
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -440,7 +478,9 @@ class EnhancedRegimePredictor:
             for i in range(1, len(states)):
     pass
     pass
+    pass
                 if states[i] == current_state:
+    pass
     pass
     pass
                     current_duration += 1
@@ -449,12 +489,14 @@ class EnhancedRegimePredictor:
                     for j in range(i - current_duration, i):
     pass
     pass
+    pass
                         durations[j] = current_duration
                     current_state = states[i]
                     current_duration = 1
 
             # Handle the last regime
             for j in range(len(states) - current_duration, len(states)):
+    pass
     pass
     pass
                 durations[j] = current_duration
@@ -474,10 +516,13 @@ class EnhancedRegimePredictor:
     def fit_persistence_model(self, regime_sequence: np.ndarray) -> bool:
     pass
     pass
+    pass
         """Fit regime persistence model using statistical distributions."""
         try:
             self.logger.info("📊 Fitting regime persistence model...")
 
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -489,6 +534,7 @@ class EnhancedRegimePredictor:
             if len(unique_durations) < 3:
     pass
     pass
+    pass
                 self.logger.warning("⚠️ Insufficient regime duration data for modeling")
                 return False
 
@@ -498,6 +544,8 @@ class EnhancedRegimePredictor:
             # Weibull distribution
             try:
                 shape, loc, scale = weibull_min.fit(durations)
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -519,6 +567,8 @@ class EnhancedRegimePredictor:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
                 distribution_fits["exponential"] = {
                     "scale": float(scale),
                     "mean_duration": float(scale),
@@ -531,6 +581,8 @@ class EnhancedRegimePredictor:
             # Gamma distribution
             try:
                 shape, loc, scale = gamma.fit(durations)
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -552,13 +604,16 @@ class EnhancedRegimePredictor:
             for dist_name, dist_params in distribution_fits.items():
     pass
     pass
+    pass
                 if dist_params["aic"] < best_aic:
+    pass
     pass
     pass
                     best_aic = dist_params["aic"]
                     best_distribution = dist_name
 
             if best_distribution:
+    pass
     pass
     pass
                 self.persistence_model = distribution_fits[best_distribution]
@@ -591,9 +646,12 @@ class EnhancedRegimePredictor:
     def _calculate_aic(self, data: np.ndarray, pdf_func, *params) -> float:
     pass
     pass
+    pass
         """Calculate Akaike Information Criterion for distribution fitting."""
         try:
             log_likelihood = np.sum(np.log(pdf_func(data, *params) + 1e-10))
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -614,6 +672,7 @@ class EnhancedRegimePredictor:
     def fit_adaptive_boundaries(self, features: pd.DataFrame) -> bool:
     pass
     pass
+    pass
         """Fit adaptive regime boundaries using clustering."""
         try:
             self.logger.info("🔧 Fitting adaptive regime boundaries...")
@@ -622,10 +681,13 @@ class EnhancedRegimePredictor:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             # Extract regime characteristics
             regime_features = self._extract_regime_characteristics(features)
 
             if regime_features.empty:
+    pass
     pass
     pass
                 self.logger.warning("⚠️ No regime characteristics available")
@@ -644,6 +706,7 @@ class EnhancedRegimePredictor:
             boundary_stats = {}
 
             for boundary_id in unique_boundaries:
+    pass
     pass
     pass
                 boundary_mask = boundary_labels == boundary_id
@@ -670,10 +733,13 @@ class EnhancedRegimePredictor:
     def _extract_regime_characteristics(self, features: pd.DataFrame) -> pd.DataFrame:
     pass
     pass
+    pass
         """Extract regime characteristics for boundary calculation."""
         try:
             characteristics = pd.DataFrame()
 
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -687,7 +753,9 @@ class EnhancedRegimePredictor:
             for feature in key_features:
     pass
     pass
+    pass
                 if feature in features.columns:
+    pass
     pass
     pass
                     # Calculate rolling statistics
@@ -697,6 +765,7 @@ class EnhancedRegimePredictor:
 
             # Add regime interaction features
             if "price_momentum_10" in features.columns and "volatility_20" in features.columns:
+    pass
     pass
     pass
                 characteristics["momentum_volatility_ratio"] = (
@@ -715,6 +784,7 @@ class EnhancedRegimePredictor:
     def get_model_summary(self) -> Dict[str, Any]:
     pass
     pass
+    pass
         """Get summary of the fitted models."""
         summary = {
             "persistence_model": None,
@@ -730,6 +800,7 @@ class EnhancedRegimePredictor:
         if self.persistence_model:
     pass
     pass
+    pass
             summary["persistence_model"] = {
                 "distribution_type": self.persistence_model.get("distribution_type"),
                 "mean_duration": self.persistence_model.get("mean_duration"),
@@ -737,6 +808,7 @@ class EnhancedRegimePredictor:
             }
 
         if self.regime_boundaries:
+    pass
     pass
     pass
             summary["adaptive_boundaries"] = {

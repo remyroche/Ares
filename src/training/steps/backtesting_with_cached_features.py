@@ -30,6 +30,7 @@ class BacktestingWithCachedFeatures:
     def __init__(self, config: dict[str, Any]) -> None:
     pass
     pass
+    pass
         self.config, config
         self.logger, system_logger.getChild("BacktestingWithCachedFeatures")
 
@@ -63,6 +64,8 @@ class BacktestingWithCachedFeatures:
         try:
         self.logger.info("🚀 Initializing backtesting with cached features...")
 
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -122,6 +125,7 @@ class BacktestingWithCachedFeatures:
         if not wavelet_features:
     pass
     pass
+    pass
         self.logger.error("No wavelet features available for backtesting")
         return {"error": "No wavelet features available"}
 
@@ -158,10 +162,12 @@ class BacktestingWithCachedFeatures:
         if not self.feature_engineer:
     pass
     pass
+    pass
         self.logger.error("Feature engineer not initialized")
         return {}
 
         if not self.wavelet_cache:
+    pass
     pass
     pass
         self.logger.warning(
@@ -185,6 +191,7 @@ class BacktestingWithCachedFeatures:
         # Check cache with timing
         cache_start_time, time.time()
         if self.wavelet_cache.cache_exists(cache_key):
+    pass
     pass
     pass
         self.logger.info(f"📦 Loading wavelet features from cache: {cache_key}")
@@ -222,6 +229,7 @@ class BacktestingWithCachedFeatures:
             metadata,
         )
         if cache_success:
+    pass
     pass
     pass
         self.logger.info(
@@ -308,11 +316,13 @@ class BacktestingWithCachedFeatures:
         for i in range(len(price_data)):
     pass
     pass
+    pass
         # Calculate signal based on wavelet features
             signal, 0
 
         # Use energy features for trend following
         if energy_features:
+    pass
     pass
     pass
         # Average last value across energy arrays if consistent
@@ -322,10 +332,14 @@ class BacktestingWithCachedFeatures:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         if last_vals:
     pass
     pass
+    pass
         if float(np.mean(last_vals)) > float(np.median(last_vals)):
+    pass
     pass
     pass
                             signal, 1  # Buy signal
@@ -336,8 +350,11 @@ class BacktestingWithCachedFeatures:
         if entropy_features:
     pass
     pass
+    pass
         try:
                     last_vals_e = [float(v[min(i, len(v) - 1)]) for v in entropy_features.values() if len(v) > 0]
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -345,7 +362,9 @@ class BacktestingWithCachedFeatures:
         if last_vals_e:
     pass
     pass
+    pass
         if float(np.mean(last_vals_e)) < float(np.median(last_vals_e)):
+    pass
     pass
     pass
                             signal = -1  # Sell signal
@@ -356,6 +375,7 @@ class BacktestingWithCachedFeatures:
 
         # Calculate position and returns
         if i > 0:
+    pass
     pass
     pass
                 price_return = (
@@ -407,7 +427,10 @@ class BacktestingWithCachedFeatures:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         for i, config in enumerate(backtest_configs):
+    pass
     pass
     pass
         self.logger.info(f"📊 Running backtest {i + 1}/{len(backtest_configs)}")
@@ -417,6 +440,7 @@ class BacktestingWithCachedFeatures:
                 volume_data, await self._load_volume_data(config.get("volume_path"))
 
         if price_data is None:
+    pass
     pass
     pass
         self.logger.error(f"Failed to load data for backtest {i + 1}")
@@ -451,15 +475,22 @@ class BacktestingWithCachedFeatures:
     pass
     except Exception as e:
         pass
+    pass
+    except Exception as e:
+        pass
         return None
 
             file_path, Path(data_path)
         if file_path.suffix.lower() == ".parquet":
     pass
     pass
+    pass
         # Prefer dataset scan if a partitioned base is provided in path
         try:
                     from src.training.enhanced_training_manager_optimized import (
+    except Exception as e:
+        pass
+import except Exception as e:
     except Exception as e:
         pass
 import except Exception as e:
@@ -475,6 +506,7 @@ import ParquetDatasetManager,
         if Path(data_path).is_dir():
     pass
     pass
+    pass
         return pdm.scan_dataset(
                             base_dir = data_path, columns = columns, to_pandas = True
                         )
@@ -483,6 +515,9 @@ import ParquetDatasetManager,
         try:
                     from src.utils.logger import log_io_operation
 
+    except Exception as e:
+        pass
+import except Exception as e:
     except Exception as e:
         pass
 import except Exception as e:
@@ -500,6 +535,7 @@ import with log_io_operation
         with log_io_operation(self.logger, "read_parquet", data_path):
         return pd.read_parquet(data_path)
         if file_path.suffix.lower() == ".csv":
+    pass
     pass
     pass
                 from src.utils.logger import log_io_operation
@@ -525,6 +561,9 @@ import with log_io_operation
     pass
     except Exception as e:
         pass
+    pass
+    except Exception as e:
+        pass
         return None
 
         return await self._load_backtest_data(volume_path)
@@ -536,6 +575,7 @@ import with log_io_operation
     def get_performance_stats(self) -> dict[str, Any]:
     pass
     pass
+    pass
         """Get performance statistics."""
         try:
             stats, self.performance_stats.copy()
@@ -544,7 +584,10 @@ import with log_io_operation
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         if stats.get("iterations_completed", 0) > 0:
+    pass
     pass
     pass
                 stats["avg_backtest_time"] = (
@@ -571,9 +614,13 @@ import with log_io_operation
     def clear_cache(self) -> bool:
     pass
     pass
+    pass
         """Clear wavelet cache."""
         try:
         if self.wavelet_cache:
+    pass
+    except Exception as e:
+        pass
     pass
     except Exception as e:
         pass
@@ -591,6 +638,8 @@ async def main() -> None:
     """Main function for backtesting with cached features."""
     try:
         # Configuration
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -653,6 +702,7 @@ async def main() -> None:
         for i, result in enumerate(results, start = 1):
     pass
     pass
+    pass
             backtester.logger.info(f"Backtest {i} results summary: keys={list(result.keys())}")
         # Print performance stats
         backtester.logger.info(f"Performance stats: {backtester.get_performance_stats()}")
@@ -661,6 +711,7 @@ async def main() -> None:
         system_logger.exception(f"Backtesting main failed: {e}")
 
 if __name__ == "__main__":
+    pass
     pass
     pass
     asyncio.run(main())

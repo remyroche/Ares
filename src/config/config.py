@@ -141,6 +141,8 @@ class TrainingConfig:
 def get_static_config() -> dict[str, Any]:
     pass
     pass
+    pass
+    pass
     """Get the complete non-optimizable configuration."""
     return {
         "database": DatabaseConfig(),
@@ -155,15 +157,21 @@ def get_static_config() -> dict[str, Any]:
 def get_config_section(section_name: str) -> dict[str, Any]:
     pass
     pass
+    pass
+    pass
     """Get a specific configuration section."""
     config = get_static_config()
     section = config.get(section_name)
     if section is None:
     pass
     pass
+    pass
+    pass
         return {}
 
     if hasattr(section, '__dict__'):
+    pass
+    pass
     pass
     pass
         return section.__dict__

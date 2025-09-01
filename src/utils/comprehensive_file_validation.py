@@ -25,6 +25,8 @@ project_root = Path(__file__).parent.parent.parent
 if str(project_root) not in sys.path:
     pass
     pass
+    pass
+    pass
     sys.path.append(str(project_root))
 
 from src.utils.logger import system_logger
@@ -70,11 +72,15 @@ class ComprehensiveFileValidator:
     def __init__(self, config: Optional[Dict[str, Any]] = None):
     pass
     pass
+    pass
+    pass
         """Initialize the validator with configuration."""
         self.logger = system_logger.getChild("ComprehensiveFileValidator")
         self.config = config or self._get_default_config()
 
     def _get_default_config(self) -> Dict[str, Any]:
+    pass
+    pass
     pass
     pass
         """Get default validation configuration."""
@@ -111,18 +117,18 @@ class ComprehensiveFileValidator:
             },
             "expected_filename_patterns": {
                 "step1": {
-                    "klines": r"klines_{exchange}_{symbol}_{timeframe}_consolidated\\\.parquet",
-                    "aggtrades": r"aggtrades_{exchange}_{symbol}_consolidated\\\.parquet"
+                    "klines": r"klines_{exchange}_{symbol}_{timeframe}_consolidated\\\\\.parquet",
+                    "aggtrades": r"aggtrades_{exchange}_{symbol}_consolidated\\\\\.parquet"
                 },
                 "step01_5": {
-                    "unified_data": r"unified_{exchange}_{symbol}_{timeframe}\\\.parquet",
-                    "config": r"unified_{exchange}_{symbol}_{timeframe}_config\\\.json"
+                    "unified_data": r"unified_{exchange}_{symbol}_{timeframe}\\\\\.parquet",
+                    "config": r"unified_{exchange}_{symbol}_{timeframe}_config\\\\\.json"
                 },
                 "step2": {
-                    "features": r"features_{exchange}_{symbol}_{split}\\\.parquet"
+                    "features": r"features_{exchange}_{symbol}_{split}\\\\\.parquet"
                 },
                 "step4": {
-                    "labeled": r"{exchange}_{symbol}_labeled_{split}\\\.parquet"
+                    "labeled": r"{exchange}_{symbol}_labeled_{split}\\\\\.parquet"
                 }
             },
             "expected_schemas": {
@@ -200,6 +206,8 @@ class ComprehensiveFileValidator:
         if not file_type_result["is_valid"]:
     pass
     pass
+    pass
+    pass
             return FileValidationResult(
                 is_valid=False,
                 file_path=file_path,
@@ -212,6 +220,10 @@ class ComprehensiveFileValidator:
         # 2. Load and validate data
         try:
             df = self._load_file(file_path, file_type_result["file_type"])
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -280,10 +292,14 @@ class ComprehensiveFileValidator:
         if is_valid:
     pass
     pass
+    pass
+    pass
             self.logger.info(f"✅ File validation passed for {step_name}: {file_path}")
         else:
             self.logger.warning(f"⚠️ File validation issues found for {step_name}: {file_path}")
             for issue in issues:
+    pass
+    pass
     pass
     pass
                 self.logger.warning(f"   - {issue.severity.value.upper()}: {issue.description}")
@@ -300,11 +316,15 @@ class ComprehensiveFileValidator:
     def _validate_file_path_and_name(self, file_path: str) -> Dict[str, Any]:
     pass
     pass
+    pass
+    pass
         """Validate file path and name structure."""
         issues = []
 
         # Check if file exists
         if not os.path.exists(file_path):
+    pass
+    pass
     pass
     pass
             issues.append(ValidationIssue(
@@ -327,6 +347,8 @@ class ComprehensiveFileValidator:
         if found_invalid_chars:
     pass
     pass
+    pass
+    pass
             issues.append(ValidationIssue(
                 issue_type="invalid_path_characters",
                 severity=ValidationSeverity.ERROR,
@@ -338,7 +360,11 @@ class ComprehensiveFileValidator:
         if self.config.get("data_quality", {}).get("prefer_relative_paths", False):
     pass
     pass
+    pass
+    pass
             if path_obj.is_absolute():
+    pass
+    pass
     pass
     pass
                 issues.append(ValidationIssue(
@@ -356,6 +382,8 @@ class ComprehensiveFileValidator:
         if len(filename) > max_filename_length:
     pass
     pass
+    pass
+    pass
             issues.append(ValidationIssue(
                 issue_type="filename_too_long",
                 severity=ValidationSeverity.WARNING,
@@ -368,6 +396,8 @@ class ComprehensiveFileValidator:
         if expected_patterns and self.config.get("data_quality", {}).get("validate_filename_patterns", True):
     pass
     pass
+    pass
+    pass
             # Validate filename against expected patterns
             import re
             pattern_matched = False
@@ -375,11 +405,21 @@ class ComprehensiveFileValidator:
             for step_patterns in expected_patterns.values():
     pass
     pass
+    pass
+    pass
                 for pattern_name, pattern in step_patterns.items():
+    pass
+    pass
     pass
     pass
                     try:
                         if re.match(pattern, filename):
+    pass
+    except Exception as e:
+        pass
+    pass
+    except Exception as e:
+        pass
     pass
     except Exception as e:
         pass
@@ -394,9 +434,13 @@ class ComprehensiveFileValidator:
                 if pattern_matched:
     pass
     pass
+    pass
+    pass
                     break
 
             if not pattern_matched:
+    pass
+    pass
     pass
     pass
                 issues.append(ValidationIssue(
@@ -420,6 +464,8 @@ class ComprehensiveFileValidator:
     def _validate_file_type(self, file_path: str) -> Dict[str, Any]:
     pass
     pass
+    pass
+    pass
         """Validate file type and existence."""
         issues = []
 
@@ -428,6 +474,8 @@ class ComprehensiveFileValidator:
         issues.extend(path_validation["issues"])
 
         if not path_validation["is_valid"]:
+    pass
+    pass
     pass
     pass
             return {
@@ -439,6 +487,8 @@ class ComprehensiveFileValidator:
         # Check file size
         file_size = os.path.getsize(file_path)
         if file_size == 0:
+    pass
+    pass
     pass
     pass
             issues.append(ValidationIssue(
@@ -458,9 +508,13 @@ class ComprehensiveFileValidator:
         for file_type, config in self.config["file_types"].items():
     pass
     pass
+    pass
+    pass
             supported_extensions.extend(config["extensions"])
 
         if file_extension not in supported_extensions:
+    pass
+    pass
     pass
     pass
             issues.append(ValidationIssue(
@@ -475,7 +529,11 @@ class ComprehensiveFileValidator:
         for file_type_name, config in self.config["file_types"].items():
     pass
     pass
+    pass
+    pass
             if file_extension in config["extensions"]:
+    pass
+    pass
     pass
     pass
                 file_type = file_type_name
@@ -492,8 +550,12 @@ class ComprehensiveFileValidator:
     def _load_file(self, file_path: str, file_type: str) -> pd.DataFrame:
     pass
     pass
+    pass
+    pass
         """Load file based on its type."""
         if file_type == "parquet":
+    pass
+    pass
     pass
     pass
             return pd.read_parquet(file_path)
@@ -507,10 +569,14 @@ class ComprehensiveFileValidator:
     def _validate_column_count(self, df: pd.DataFrame, expected_schema: Optional[str]) -> Dict[str, Any]:
     pass
     pass
+    pass
+    pass
         """Validate number of columns."""
         issues = []
 
         if expected_schema and expected_schema in self.config["expected_schemas"]:
+    pass
+    pass
     pass
     pass
             schema = self.config["expected_schemas"][expected_schema]
@@ -518,6 +584,8 @@ class ComprehensiveFileValidator:
             actual_count = len(df.columns)
 
             if actual_count < expected_count:
+    pass
+    pass
     pass
     pass
                 issues.append(ValidationIssue(
@@ -534,10 +602,14 @@ class ComprehensiveFileValidator:
     def _validate_column_names(self, df: pd.DataFrame, expected_schema: Optional[str]) -> Dict[str, Any]:
     pass
     pass
+    pass
+    pass
         """Validate column names."""
         issues = []
 
         if expected_schema and expected_schema in self.config["expected_schemas"]:
+    pass
+    pass
     pass
     pass
             schema = self.config["expected_schemas"][expected_schema]
@@ -546,6 +618,8 @@ class ComprehensiveFileValidator:
 
             missing_columns = required_columns - actual_columns
             if missing_columns:
+    pass
+    pass
     pass
     pass
                 issues.append(ValidationIssue(
@@ -558,6 +632,8 @@ class ComprehensiveFileValidator:
         # Check for duplicate column names
         duplicate_columns, df.columns[df.columns.duplicated()].tolist()
         if duplicate_columns:
+    pass
+    pass
     pass
     pass
             issues.append(ValidationIssue(
@@ -574,10 +650,14 @@ class ComprehensiveFileValidator:
     def _validate_data_types(self, df: pd.DataFrame, expected_schema: Optional[str]) -> Dict[str, Any]:
     pass
     pass
+    pass
+    pass
         """Validate data types of columns."""
         issues = []
 
         if expected_schema and expected_schema in self.config["expected_schemas"]:
+    pass
+    pass
     pass
     pass
             schema = self.config["expected_schemas"][expected_schema]
@@ -586,11 +666,17 @@ class ComprehensiveFileValidator:
             for column, expected_type_list in expected_types.items():
     pass
     pass
+    pass
+    pass
                 if column in df.columns:
+    pass
+    pass
     pass
     pass
                     actual_type = str(df[column].dtype)
                     if actual_type not in expected_type_list:
+    pass
+    pass
     pass
     pass
                         issues.append(ValidationIssue(
@@ -605,12 +691,18 @@ class ComprehensiveFileValidator:
         for column in df.columns:
     pass
     pass
+    pass
+    pass
             if df[column].dtype == 'object':
+    pass
+    pass
     pass
     pass
                 # Check if object column contains mixed types
                 unique_types = set(type(x) for x in df[column].dropna())
                 if len(unique_types) > 1:
+    pass
+    pass
     pass
     pass
                     issues.append(ValidationIssue(
@@ -628,6 +720,8 @@ class ComprehensiveFileValidator:
     def _validate_column_completeness(self, df: pd.DataFrame) -> Dict[str, Any]:
     pass
     pass
+    pass
+    pass
         """Validate column completeness (no empty values)."""
         issues = []
         max_null_ratio = self.config["data_quality"]["max_null_ratio"]
@@ -635,10 +729,14 @@ class ComprehensiveFileValidator:
         for column in df.columns:
     pass
     pass
+    pass
+    pass
             null_count = df[column].isnull().sum()
             null_ratio = null_count / len(df)
 
             if null_ratio > max_null_ratio:
+    pass
+    pass
     pass
     pass
                 issues.append(ValidationIssue(
@@ -652,6 +750,8 @@ class ComprehensiveFileValidator:
         # Check for completely empty columns
         empty_columns = df.columns[df.isnull().all()].tolist()
         if empty_columns:
+    pass
+    pass
     pass
     pass
             issues.append(ValidationIssue(
@@ -668,11 +768,15 @@ class ComprehensiveFileValidator:
     def _validate_index(self, df: pd.DataFrame) -> Dict[str, Any]:
     pass
     pass
+    pass
+    pass
         """Validate DataFrame index."""
         issues = []
 
         # Check if index is unique
         if not df.index.is_unique:
+    pass
+    pass
     pass
     pass
             duplicate_indices = df.index[df.index.duplicated()].tolist()
@@ -687,7 +791,11 @@ class ComprehensiveFileValidator:
         if hasattr(df.index, 'is_monotonic_increasing'):
     pass
     pass
+    pass
+    pass
             if not df.index.is_monotonic_increasing:
+    pass
+    pass
     pass
     pass
                 issues.append(ValidationIssue(
@@ -698,6 +806,8 @@ class ComprehensiveFileValidator:
 
         # Check for null values in index
         if df.index.isnull().any():
+    pass
+    pass
     pass
     pass
             null_index_count = df.index.isnull().sum()
@@ -715,6 +825,8 @@ class ComprehensiveFileValidator:
     def _validate_data_quality(self, df: pd.DataFrame) -> Dict[str, Any]:
     pass
     pass
+    pass
+    pass
         """Additional data quality checks."""
         issues = []
         metrics = {}
@@ -724,8 +836,12 @@ class ComprehensiveFileValidator:
         for column in df.select_dtypes(include=[np.number]).columns:
     pass
     pass
+    pass
+    pass
             infinite_count = np.isinf(df[column]).sum()
             if infinite_count > 0:
+    pass
+    pass
     pass
     pass
                 infinite_counts[column] = infinite_count
@@ -744,8 +860,12 @@ class ComprehensiveFileValidator:
         if duplicate_rows > 0:
     pass
     pass
+    pass
+    pass
             duplicate_ratio = duplicate_rows / len(df)
             if duplicate_ratio > self.config["data_quality"]["max_duplicate_ratio"]:
+    pass
+    pass
     pass
     pass
                 issues.append(ValidationIssue(
@@ -762,12 +882,18 @@ class ComprehensiveFileValidator:
         for column in df.select_dtypes(include=[np.number]).columns:
     pass
     pass
+    pass
+    pass
             if df[column].nunique() <= 1:
+    pass
+    pass
     pass
     pass
                 constant_columns.append(column)
 
         if constant_columns:
+    pass
+    pass
     pass
     pass
             issues.append(ValidationIssue(
@@ -788,11 +914,15 @@ class ComprehensiveFileValidator:
 def validate_step1_file(file_path: str) -> FileValidationResult:
     pass
     pass
+    pass
+    pass
     """Validate file for step 1 (data collection)."""
     validator = ComprehensiveFileValidator()
     return validator.validate_file_format(file_path, expected_schema="klines", step_name="step1")
 
 def validate_step1_5_file(file_path: str) -> FileValidationResult:
+    pass
+    pass
     pass
     pass
     """Validate file for step 1.5 (data conversion)."""
@@ -802,11 +932,15 @@ def validate_step1_5_file(file_path: str) -> FileValidationResult:
 def validate_step2_file(file_path: str) -> FileValidationResult:
     pass
     pass
+    pass
+    pass
     """Validate file for step 2 (feature engineering)."""
     validator = ComprehensiveFileValidator()
     return validator.validate_file_format(file_path, expected_schema="features", step_name="step2")
 
 def validate_step4_file(file_path: str) -> FileValidationResult:
+    pass
+    pass
     pass
     pass
     """Validate file for step 4 (processing and labeling)."""
@@ -817,11 +951,17 @@ def validate_step4_file(file_path: str) -> FileValidationResult:
 def validate_file_format(step_name: str, expected_schema: Optional[str] = None):
     pass
     pass
+    pass
+    pass
     """Decorator to automatically validate file format in pipeline steps."""
     def decorator(func):
     pass
     pass
+    pass
+    pass
         def wrapper(*args, **kwargs):
+    pass
+    pass
     pass
     pass
             # Execute the function
@@ -829,6 +969,8 @@ def validate_file_format(step_name: str, expected_schema: Optional[str] = None):
 
             # If result is a file path, validate it
             if isinstance(result, str) and os.path.exists(result):
+    pass
+    pass
     pass
     pass
                 validator = ComprehensiveFileValidator()
@@ -839,9 +981,13 @@ def validate_file_format(step_name: str, expected_schema: Optional[str] = None):
                 if not validation_result.is_valid:
     pass
     pass
+    pass
+    pass
                     # Log validation issues but don't fail the step
                     logging.warning(f"File validation issues in {step_name}: {result}")
                     for issue in validation_result.issues:
+    pass
+    pass
     pass
     pass
                         logging.warning(f"  - {issue.severity.value}: {issue.description}")

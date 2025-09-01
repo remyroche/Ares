@@ -58,6 +58,7 @@ pandas, PipelineStandards.safe_import("pandas", None)
 def create_fallback_logger():
     pass
     pass
+    pass
     import logging
     logging.basicConfig(level = logging.INFO)
     return logging.getLogger(__name__)
@@ -65,7 +66,9 @@ def create_fallback_logger():
 def create_fallback_decorator():
     pass
     pass
+    pass
     def decorator(func):
+    pass
     pass
     pass
         return func
@@ -75,9 +78,11 @@ def create_fallback_decorator():
 if system_logger is None:
     pass
     pass
+    pass
     system_logger, create_fallback_logger()
 
 if training_pipeline_decorators is None:
+    pass
     pass
     pass
     circuit_breaker_protection, create_fallback_decorator()
@@ -105,11 +110,13 @@ else:
 if error_handler is None:
     pass
     pass
+    pass
     handle_errors, create_fallback_decorator()
 else:
     handle_errors, error_handler.handle_errors
 
 if decorators is None:
+    pass
     pass
     pass
     guard_dataframe_nulls, create_fallback_decorator()
@@ -119,6 +126,7 @@ else:
     with_tracing_span, decorators.with_tracing_span
 
 if enhanced_mlflow is None:
+    pass
     pass
     pass
     with_enhanced_mlflow_logging, create_fallback_decorator()
@@ -241,6 +249,7 @@ async def run_step(
     if data_dir is None:
     pass
     pass
+    pass
         data_dir, pipeline_standards.build_path("processed_data", exchange, symbol)
 
     logger.info("=" * 80)
@@ -259,16 +268,20 @@ async def run_step(
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         logger.info("🔍 Checking for existing feature artifacts...")
         artifacts_exist, _check_feature_artifacts_exist(symbol, exchange, data_dir)
 
         if artifacts_exist and not force_rerun:
     pass
     pass
+    pass
             logger.info("📦 Loading existing feature artifacts (use --force - rerun to regenerate)")
         return True
 
         if artifacts_exist and force_rerun:
+    pass
     pass
     pass
             logger.info("🔄 Force rerun enabled - regenerating features")
@@ -283,6 +296,7 @@ async def run_step(
         if unified_data is None or unified_data.empty:
     pass
     pass
+    pass
             logger.error("❌ Failed to load unified data")
         return False
 
@@ -295,6 +309,7 @@ async def run_step(
         if regime_data is not None:
     pass
     pass
+    pass
             logger.info(f"✅ Loaded regime data with {len(regime_data)} regimes")
         else:
             logger.warning("⚠️ No regime data found - proceeding without regime - aware features")
@@ -303,6 +318,7 @@ async def run_step(
         logger.info("📊 Loading labeled data from step5...")
         labeled_data, await _load_labeled_data(symbol, exchange, timeframe)
         if labeled_data is None or labeled_data.empty:
+    pass
     pass
     pass
             logger.error("❌ Failed to load labeled data")
@@ -330,6 +346,7 @@ async def run_step(
         if not features_result:
     pass
     pass
+    pass
             logger.error("❌ Failed to create comprehensive features")
         return False
 
@@ -343,6 +360,7 @@ async def run_step(
         save_success, await _save_feature_artifacts(features_result, symbol, exchange, timeframe, data_dir)
 
         if not save_success:
+    pass
     pass
     pass
             logger.error("❌ Failed to save feature artifacts")
@@ -360,6 +378,7 @@ async def run_step(
 def _monitor_feature_generation(features: pd.DataFrame) -> dict:
     pass
     pass
+    pass
     """Monitor feature generation process."""
     stats = {
         "total_features": len(features.columns),
@@ -374,6 +393,7 @@ def _monitor_feature_generation(features: pd.DataFrame) -> dict:
     return stats
 
 def _categorize_features(feature_columns: List[str]) -> dict:
+    pass
     pass
     pass
     """Categorize features by type."""
@@ -393,7 +413,9 @@ def _categorize_features(feature_columns: List[str]) -> dict:
     for col in feature_columns:
     pass
     pass
+    pass
         if any(keyword in col.lower() for keyword in ["return", "price", "close", "open", "high", "low"]):
+    pass
     pass
     pass
             categories["price_features"].append(col)
@@ -428,6 +450,9 @@ async def _load_unified_data(symbol: str, exchange: str, timeframe: str, data_di
 import except Exception as e:
     except Exception as e:
         pass
+import except Exception as e:
+    except Exception as e:
+        pass
 import unified_data, await load_unified_data
         unified_data, await load_unified_data(
             symbol = symbol,
@@ -438,6 +463,7 @@ import unified_data, await load_unified_data
         )
 
         if unified_data is None or unified_data.empty:
+    pass
     pass
     pass
         return None
@@ -456,9 +482,12 @@ async def _load_regime_data(symbol: str, exchange: str, timeframe: str) -> pd.Da
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         unified_regime_file, Path(f"data / training/{exchange}_{symbol}_{timeframe}_unified_regime_data.parquet")
 
         if unified_regime_file.exists():
+    pass
     pass
     pass
             regime_data, pd.read_parquet(unified_regime_file)
@@ -471,6 +500,7 @@ async def _load_regime_data(symbol: str, exchange: str, timeframe: str) -> pd.Da
         regime_file, Path(f"data / hmm_regimes/{exchange}_{symbol}_{timeframe}_composite_clusters.parquet")
 
         if regime_file.exists():
+    pass
     pass
     pass
             regime_data, pd.read_parquet(regime_file)
@@ -497,7 +527,10 @@ async def _load_labeled_data(symbol: str, exchange: str, timeframe: str) -> pd.D
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         if labeled_file.exists():
+    pass
     pass
     pass
             labeled_data, pd.read_parquet(labeled_file)
@@ -528,6 +561,8 @@ async def _create_comprehensive_features(
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         config = {
             "symbol": symbol,
             "exchange": exchange,
@@ -552,17 +587,21 @@ async def _create_comprehensive_features(
         if regime_data is not None:
     pass
     pass
+    pass
         # Check if this is unified regime data or legacy regime data
         if "composite_cluster_id" in regime_data.columns:
+    pass
     pass
     pass
         # Unified regime dataset - regime info is already included
         if "composite_cluster_id" not in merged_data.columns:
     pass
     pass
+    pass
         # Merge regime information from unified dataset
                     regime_columns = ["composite_cluster_id"]
         if "timestamp" in regime_data.columns:
+    pass
     pass
     pass
                         regime_columns.insert(0, "timestamp")
@@ -581,9 +620,11 @@ async def _create_comprehensive_features(
         if "timestamp" in regime_data.columns:
     pass
     pass
+    pass
                     regime_columns.insert(0, "timestamp")
 
         if regime_columns:
+    pass
     pass
     pass
                     merged_data, merged_data.merge(
@@ -598,9 +639,11 @@ async def _create_comprehensive_features(
         if labeled_data is not None:
     pass
     pass
+    pass
         # Merge labeled data
             label_columns = [col for col in labeled_data.columns if col.startswith("label_")]
         if label_columns:
+    pass
     pass
     pass
                 merged_data, merged_data.merge(
@@ -632,16 +675,19 @@ async def _create_comprehensive_features(
         if regime_data is not None:
     pass
     pass
+    pass
             features_df, _add_regime_aware_features(features_df, merged_data)
 
         # Add HMM feature enhancement if regime data is available
         if regime_data is not None:
     pass
     pass
+    pass
             features_df, _enhance_hmm_features(features_df, regime_data)
 
         # Add comprehensive S / R features using centralized logic
         if config.get("sr_breakout_predictor", {}).get("enable_sr_features", True):
+    pass
     pass
     pass
             features_df, await _add_sr_features(features_df, merged_data, config)
@@ -685,6 +731,7 @@ async def _create_comprehensive_features(
         return None
 
 def _create_basic_features(data: pd.DataFrame) -> pd.DataFrame:
+    pass
     pass
     pass
     """Create basic features."""
@@ -739,6 +786,7 @@ def _create_basic_features(data: pd.DataFrame) -> pd.DataFrame:
 def _create_lagged_features(features: pd.DataFrame, lags: list = [1, 2, 3, 5, 10]) -> pd.DataFrame:
     pass
     pass
+    pass
     """Create lagged versions of important features."""
     important_features = ["returns", "volume_ratio", "volatility", "rsi"]
 
@@ -746,8 +794,10 @@ def _create_lagged_features(features: pd.DataFrame, lags: list = [1, 2, 3, 5, 10
     if "vwap_returns" in features.columns:
     pass
     pass
+    pass
         important_features.extend(["vwap_returns", "vwap_momentum_20", "vwap_volatility_20"])
     if "price_vwap_ratio" in features.columns:
+    pass
     pass
     pass
         important_features.extend(["price_vwap_ratio", "price_vwap_deviation"])
@@ -755,10 +805,13 @@ def _create_lagged_features(features: pd.DataFrame, lags: list = [1, 2, 3, 5, 10
     for feature in important_features:
     pass
     pass
+    pass
         if feature in features.columns:
     pass
     pass
+    pass
         for lag in lags:
+    pass
     pass
     pass
                 features[f"{feature}_lag_{lag}"] = features[feature].shift(lag)
@@ -769,10 +822,12 @@ def _create_lagged_features(features: pd.DataFrame, lags: list = [1, 2, 3, 5, 10
 def _create_rolling_window_features(features: pd.DataFrame) -> pd.DataFrame:
     pass
     pass
+    pass
     """Create advanced rolling window features."""
     windows = [5, 10, 20, 50]
 
     for window in windows:
+    pass
     pass
     pass
         # Rolling statistics
@@ -791,6 +846,7 @@ def _create_rolling_window_features(features: pd.DataFrame) -> pd.DataFrame:
         if "volume_ratio" in features.columns:
     pass
     pass
+    pass
             features[f"volume_skew_{window}"] = features["volume_ratio"].rolling(window).skew()
             features[f"volume_kurt_{window}"] = features["volume_ratio"].rolling(window).kurt()
 
@@ -798,7 +854,9 @@ def _create_rolling_window_features(features: pd.DataFrame) -> pd.DataFrame:
     if "vwap_returns" in features.columns:
     pass
     pass
+    pass
         for window in windows:
+    pass
     pass
     pass
         # VWAP returns rolling statistics
@@ -813,7 +871,9 @@ def _create_rolling_window_features(features: pd.DataFrame) -> pd.DataFrame:
     if "vwap_momentum_20" in features.columns:
     pass
     pass
+    pass
         for window in [5, 10, 20]:
+    pass
     pass
     pass
             features[f"vwap_momentum_skew_{window}"] = features["vwap_momentum_20"].rolling(window).skew()
@@ -827,8 +887,10 @@ def _create_rolling_window_features(features: pd.DataFrame) -> pd.DataFrame:
 def _add_regime_aware_features(features: pd.DataFrame, data: pd.DataFrame) -> pd.DataFrame:
     pass
     pass
+    pass
     """Add regime - aware features."""
     if "regime" not in data.columns:
+    pass
     pass
     pass
         return features
@@ -842,7 +904,9 @@ def _add_regime_aware_features(features: pd.DataFrame, data: pd.DataFrame) -> pd
     for regime in data["regime"].unique():
     pass
     pass
+    pass
         if pd.notna(regime):
+    pass
     pass
     pass
             regime_mask, data["regime"] == regime
@@ -851,6 +915,7 @@ def _add_regime_aware_features(features: pd.DataFrame, data: pd.DataFrame) -> pd
 
         # VWAP - based regime features
         if "vwap_returns" in features.columns:
+    pass
     pass
     pass
                 features[f"regime_{regime}_vwap_returns_mean"] = features["vwap_returns"].where(regime_mask).rolling(20).mean()
@@ -862,10 +927,14 @@ def _add_regime_aware_features(features: pd.DataFrame, data: pd.DataFrame) -> pd
 def _enhance_hmm_features(features: pd.DataFrame, regime_data: pd.DataFrame) -> pd.DataFrame:
     pass
     pass
+    pass
     """Enhance features with HMM feature enhancer."""
     try:
         from src.training.steps.hmm_feature_enhancer import HMMFeatureEnhancer
 
+    except Exception as e:
+        pass
+import except Exception as e:
     except Exception as e:
         pass
 import except Exception as e:
@@ -880,6 +949,7 @@ import enhancer, HMMFeatureEnhancer
 
         # Add regime information if not already present
         if "composite_cluster_id" not in enhanced_features.columns and "regime" in regime_data.columns:
+    pass
     pass
     pass
             enhanced_features, enhanced_features.merge(
@@ -901,6 +971,7 @@ import enhancer, HMMFeatureEnhancer
 def _add_technical_indicators(features: pd.DataFrame) -> pd.DataFrame:
     pass
     pass
+    pass
     """Add technical indicators."""
     # Moving averages
     features["sma_20"] = features["close"].rolling(window = 20).mean()
@@ -910,6 +981,7 @@ def _add_technical_indicators(features: pd.DataFrame) -> pd.DataFrame:
 
     # VWAP - based moving averages
     if "vwap" in features.columns:
+    pass
     pass
     pass
         features["vwap_sma_20"] = features["vwap"].rolling(window = 20).mean()
@@ -962,9 +1034,11 @@ def _add_technical_indicators(features: pd.DataFrame) -> pd.DataFrame:
 def _add_statistical_features(features: pd.DataFrame) -> pd.DataFrame:
     pass
     pass
+    pass
     """Add statistical features."""
     # Rolling statistics
     for window in [5, 10, 20, 50]:
+    pass
     pass
     pass
         features[f"returns_mean_{window}"] = features["returns"].rolling(window = window).mean()
@@ -976,7 +1050,9 @@ def _add_statistical_features(features: pd.DataFrame) -> pd.DataFrame:
     if "vwap_returns" in features.columns:
     pass
     pass
+    pass
         for window in [5, 10, 20, 50]:
+    pass
     pass
     pass
             features[f"vwap_returns_mean_{window}"] = features["vwap_returns"].rolling(window = window).mean()
@@ -988,7 +1064,9 @@ def _add_statistical_features(features: pd.DataFrame) -> pd.DataFrame:
     if "vwap_momentum_20" in features.columns:
     pass
     pass
+    pass
         for window in [5, 10, 20]:
+    pass
     pass
     pass
             features[f"vwap_momentum_mean_{window}"] = features["vwap_momentum_20"].rolling(window = window).mean()
@@ -1002,6 +1080,7 @@ def _add_statistical_features(features: pd.DataFrame) -> pd.DataFrame:
 
     # VWAP Z - score features
     if "vwap_returns" in features.columns:
+    pass
     pass
     pass
         features["vwap_returns_zscore"] = (features["vwap_returns"] - features["vwap_returns"].rolling(20).mean()) / features["vwap_returns"].rolling(20).std()
@@ -1021,11 +1100,14 @@ async def _add_sr_features(
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         existing_sr_features = [col for col in features.columns if any(keyword in col.lower() for keyword in [
             "sr_", "support", "resistance", "pivot", "breakout", "proximity"
         ])]
 
         if existing_sr_features:
+    pass
     pass
     pass
             system_logger.info(f"⚠️ Found {len(existing_sr_features)} existing SR features, will enhance rather than replace")
@@ -1083,6 +1165,7 @@ import sr_config, config.copy
         if pivot_levels and current_price > 0:
     pass
     pass
+    pass
             context_features.update({
                 "sr_pivot_level_pct": (pivot_levels.get("pivot", current_price) - current_price) / current_price,
                 "sr_support_1_pct": (pivot_levels.get("s1", current_price) - current_price) / current_price,
@@ -1098,13 +1181,16 @@ import sr_config, config.copy
         for feature_name, feature_value in all_sr_features.items():
     pass
     pass
+    pass
             new_feature_name, f"sr_{feature_name}"
 
         # Check if feature already exists
         if new_feature_name in features.columns:
     pass
     pass
+    pass
         if config.get("sr_breakout_predictor", {}).get("replace_existing_sr", False):
+    pass
     pass
     pass
                     system_logger.info(f"🔄 Replacing existing feature: {new_feature_name}")
@@ -1113,6 +1199,7 @@ import sr_config, config.copy
                     continue
 
         if isinstance(feature_value, pd.Series) and len(feature_value) == len(features):
+    pass
     pass
     pass
                 features[new_feature_name] = feature_value
@@ -1126,6 +1213,7 @@ import sr_config, config.copy
 
         # Generate detailed report if enabled
         if sr_predictor.reporting_enabled:
+    pass
     pass
     pass
         await sr_predictor.generate_manual_report(market_data, sr_context)
@@ -1148,6 +1236,9 @@ async def _add_sr_aware_feature_selection(
     try:
         from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
 
+    except Exception as e:
+        pass
+import except Exception as e:
     except Exception as e:
         pass
 import except Exception as e:
@@ -1181,6 +1272,7 @@ import sr_config, config.copy
         # Add SR zone features (using percentages)
         sr_zone_width, sr_context.get("sr_zone_width", 0.0)
         if sr_zone_width > 0 and current_price > 0:
+    pass
     pass
     pass
             zone_position_pct = (current_price - sr_context.get("nearest_support", current_price)) / current_price / sr_zone_width
@@ -1222,10 +1314,14 @@ async def _add_sr_optimization_features(
 import except Exception as e:
     except Exception as e:
         pass
+import except Exception as e:
+    except Exception as e:
+        pass
         # Initialize SR detection optimizer
 import optimizer, await setup_sr_detection_optimizer
         optimizer, await setup_sr_detection_optimizer(config)
         if not optimizer:
+    pass
     pass
     pass
             system_logger.warning("⚠️ SR detection optimizer not available, skipping optimization features")
@@ -1234,6 +1330,7 @@ import optimizer, await setup_sr_detection_optimizer
         # Get optimized parameters if available
         optimized_params, optimizer.get_optimized_parameters()
         if optimized_params:
+    pass
     pass
     pass
             system_logger.info("✅ Using optimized SR parameters")
@@ -1252,6 +1349,7 @@ import optimizer, await setup_sr_detection_optimizer
         for tf, weight in timeframe_weights.items():
     pass
     pass
+    pass
                 features[f"sr_optimized_tf_{tf}_weight"] = weight
         else:
             system_logger.info("ℹ️ No optimized parameters available, using default values")
@@ -1266,6 +1364,7 @@ import optimizer, await setup_sr_detection_optimizer
 
         # Add optimization score if available (keeping only the main optimization score)
         if hasattr(optimizer, 'best_result') and optimizer.best_result:
+    pass
     pass
     pass
             features["sr_optimization_score"] = optimizer.best_result.optimization_score
@@ -1290,6 +1389,8 @@ async def _enhanced_integration_with_vectorized_features(
     """Better integration with vectorized advanced feature engineering."""
     try:
         # Initialize vectorized feature engineering with more configuration
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -1321,7 +1422,9 @@ async def _enhanced_integration_with_vectorized_features(
         for key, value in additional_features.items():
     pass
     pass
+    pass
         if isinstance(value, pd.Series):
+    pass
     pass
     pass
                 features[f"vectorized_{key}"] = value
@@ -1336,10 +1439,12 @@ async def _enhanced_integration_with_vectorized_features(
 def _validate_and_clean_features(features: pd.DataFrame) -> pd.DataFrame:
     pass
     pass
+    pass
     """Validate and clean features."""
     # Remove constant features
     constant_features, features.columns[features.nunique() <= 1]
     if len(constant_features) > 0:
+    pass
     pass
     pass
         features, features.drop(columns = constant_features)
@@ -1353,6 +1458,7 @@ def _validate_and_clean_features(features: pd.DataFrame) -> pd.DataFrame:
     high_corr_features = [column for column in upper_tri.columns
         if any(upper_tri[column] > 0.95)]
     if len(high_corr_features) > 0:
+    pass
     pass
     pass
         features, features.drop(columns = high_corr_features)
@@ -1381,6 +1487,8 @@ async def _save_feature_artifacts(
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         output_dir.mkdir(parents = True, exist_ok = True)
 
         # Save feature files
@@ -1404,6 +1512,8 @@ async def _save_feature_artifacts(
                 "lookback_years": 2,  # Default value
             }
 
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -1487,17 +1597,21 @@ async def _save_feature_artifacts(
         if "metadata" in features_result and "metrics" in features_result["metadata"]:
     pass
     pass
+    pass
                 metrics, features_result["metadata"]["metrics"]
                 numeric_metrics = {}
         for key, value in metrics.items():
     pass
     pass
+    pass
         if isinstance(value, (int, float)):
+    pass
     pass
     pass
                         numeric_metrics[f"step06_{key}"] = float(value)
 
         if numeric_metrics:
+    pass
     pass
     pass
                     log_step_metrics(
@@ -1527,10 +1641,13 @@ async def _save_feature_artifacts(
 def _check_feature_artifacts_exist(symbol: str, exchange: str, data_dir: str) -> bool:
     pass
     pass
+    pass
     """Check if feature artifacts already exist."""
     try:
         output_dir, Path("data / training")
 
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:

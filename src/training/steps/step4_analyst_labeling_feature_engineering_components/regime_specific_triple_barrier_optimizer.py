@@ -35,6 +35,8 @@ try:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
     MLFLOW_AVAILABLE, True
 except ImportError:
     MLFLOW_AVAILABLE, False
@@ -46,6 +48,8 @@ try:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
     OPTUNA_AVAILABLE, True
 except ImportError:
     OPTUNA_AVAILABLE, False
@@ -53,6 +57,9 @@ except ImportError:
 # Import triple barrier components for integration
 try:
     from .regime_aware_triple_barrier_labeling import RegimeAwareTripleBarrierLabeling
+    except Exception as e:
+        pass
+import except Exception as e:
     except Exception as e:
         pass
 import except Exception as e:
@@ -80,6 +87,7 @@ class RegimeSpecificTripleBarrierOptimizer:
     def __init__(self, config: Dict[str, Any], training_manager = None):
     pass
     pass
+    pass
         self.config, config
         self.training_manager, training_manager
         self.logger, logging.getLogger(__name__)
@@ -99,12 +107,14 @@ class RegimeSpecificTripleBarrierOptimizer:
         if TRIPLE_BARRIER_AVAILABLE:
     pass
     pass
+    pass
         self.triple_barrier_labeler, self._create_triple_barrier_labeler()
         self.logger.info("✅ Triple barrier labeler integration initialized")
         else:
         self.logger.warning("⚠️ Triple barrier labeler not available for integration")
 
     def _create_triple_barrier_labeler(self):
+    pass
     pass
     pass
         """Create triple barrier labeler for integration."""
@@ -121,7 +131,10 @@ class RegimeSpecificTripleBarrierOptimizer:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         if RegimeAwareTripleBarrierLabeling:
+    pass
     pass
     pass
         return RegimeAwareTripleBarrierLabeling(labeler_config)
@@ -135,6 +148,7 @@ class RegimeSpecificTripleBarrierOptimizer:
         return None
 
     def _get_default_barrier_settings(self) -> Dict[str, Any]:
+    pass
     pass
     pass
         """Get default barrier settings for initialization."""
@@ -151,6 +165,7 @@ class RegimeSpecificTripleBarrierOptimizer:
         }
 
     def _create_regime_specific_configs(self) -> Dict[str, Dict[str, Any]]:
+    pass
     pass
     pass
         """Create regime - specific parameter configurations for triple barrier method."""
@@ -328,7 +343,9 @@ class RegimeSpecificTripleBarrierOptimizer:
         for regime_name, regime_df in regime_data.items():
     pass
     pass
+    pass
         if regime_name not in self.regime_configs:
+    pass
     pass
     pass
         self.logger.warning(f"⚠️ No configuration found for regime: {regime_name}")
@@ -337,6 +354,8 @@ class RegimeSpecificTripleBarrierOptimizer:
         try:
         self.logger.info(f"🔧 Optimizing parameters for {regime_name} regime...")
 
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -361,6 +380,7 @@ class RegimeSpecificTripleBarrierOptimizer:
         if self.triple_barrier_labeler:
     pass
     pass
+    pass
         await self._update_triple_barrier_labeler(regime_name, regime_result)
 
         self.logger.info(f"✅ {regime_name} regime optimization completed")
@@ -376,6 +396,7 @@ class RegimeSpecificTripleBarrierOptimizer:
         if MLFLOW_AVAILABLE:
     pass
     pass
+    pass
         await self._log_regime_optimization_to_mlflow(optimization_results)
 
         return optimization_results
@@ -386,11 +407,14 @@ class RegimeSpecificTripleBarrierOptimizer:
         if not self.triple_barrier_labeler or "error" in regime_result:
     pass
     pass
+    pass
             return
 
         try:
             best_params, regime_result.get("best_params", {})
 
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -403,6 +427,7 @@ class RegimeSpecificTripleBarrierOptimizer:
 
         # Update labeler with regime - specific parameters
         if hasattr(self.triple_barrier_labeler, 'set_regime_parameters'):
+    pass
     pass
     pass
         await self.triple_barrier_labeler.set_regime_parameters(
@@ -425,6 +450,7 @@ class RegimeSpecificTripleBarrierOptimizer:
         """Create an Optuna study for a specific regime."""
 
         if not OPTUNA_AVAILABLE:
+    pass
     pass
     pass
             raise ImportError("Optuna is required for regime - specific optimization")
@@ -515,6 +541,7 @@ class RegimeSpecificTripleBarrierOptimizer:
         def objective(trial):
     pass
     pass
+    pass
         # Sample parameters from regime - specific configuration
             params, self._sample_regime_parameters(trial, regime_config)
 
@@ -524,6 +551,8 @@ class RegimeSpecificTripleBarrierOptimizer:
                     regime_name,
                     regime_data,
                     params
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -548,19 +577,24 @@ class RegimeSpecificTripleBarrierOptimizer:
         for category, category_params in regime_config.items():
     pass
     pass
+    pass
             params[category] = {}
 
         for param_name, param_config in category_params.items():
     pass
     pass
+    pass
         if isinstance(param_config, tuple):
+    pass
     pass
     pass
         # Numeric range parameter
         if len(param_config) == 2:
     pass
     pass
+    pass
         if param_name in ["barrier_timeout", "n_estimators", "max_depth"]:
+    pass
     pass
     pass
         # Integer parameters
@@ -599,6 +633,8 @@ class RegimeSpecificTripleBarrierOptimizer:
 
         try:
         # This would integrate with your actual triple barrier implementation
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -643,12 +679,14 @@ class RegimeSpecificTripleBarrierOptimizer:
         if barrier_params:
     pass
     pass
+    pass
             upper_barrier, barrier_params.get("upper_barrier_multiplier", 1.0)
             lower_barrier, barrier_params.get("lower_barrier_multiplier", 1.0)
             timeout, barrier_params.get("barrier_timeout", 30)
 
         # Score based on regime - appropriate barriers
         if regime_name == "bull_regime":
+    pass
     pass
     pass
         if upper_barrier > lower_barrier:  # Wider upper barrier
@@ -670,11 +708,13 @@ class RegimeSpecificTripleBarrierOptimizer:
         if labeling_params:
     pass
     pass
+    pass
             confidence, labeling_params.get("min_label_confidence", 0.7)
             smoothing, labeling_params.get("label_smoothing", 0.3)
 
         # Score based on regime - appropriate labeling
         if regime_name == "volatile_regime":
+    pass
     pass
     pass
         if confidence < 0.7:  # Lower confidence for volatile markets
@@ -691,11 +731,13 @@ class RegimeSpecificTripleBarrierOptimizer:
         if position_params:
     pass
     pass
+    pass
             position_size, position_params.get("position_size_multiplier", 1.0)
             max_position, position_params.get("max_position_size", 1.0)
 
         # Score based on regime - appropriate position sizing
         if regime_name == "bull_regime":
+    pass
     pass
     pass
         if position_size > 1.2:  # Larger positions in bull markets
@@ -711,11 +753,13 @@ class RegimeSpecificTripleBarrierOptimizer:
         if risk_params:
     pass
     pass
+    pass
             drawdown, risk_params.get("max_drawdown_threshold", 0.2)
             volatility, risk_params.get("volatility_target", 0.3)
 
         # Score based on regime - appropriate risk management
         if regime_name == "bull_regime":
+    pass
     pass
     pass
         if drawdown > 0.25:  # Higher drawdown tolerance in bull markets
@@ -757,11 +801,13 @@ class RegimeSpecificTripleBarrierOptimizer:
     def _create_parameter_summary(self, params: Dict[str, Any]) -> Dict[str, Any]:
     pass
     pass
+    pass
         """Create a summary of optimized parameters."""
 
         summary = {}
 
         for category, category_params in params.items():
+    pass
     pass
     pass
             summary[category] = {
@@ -786,6 +832,8 @@ class RegimeSpecificTripleBarrierOptimizer:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         # Start a run for regime - specific optimization
         with mlflow.start_run(run_name="regime_specific_triple_barrier_optimization"):
         # Log overall results
@@ -796,7 +844,9 @@ class RegimeSpecificTripleBarrierOptimizer:
         for regime_name, regime_result in optimization_results.items():
     pass
     pass
+    pass
         if "error" not in regime_result:
+    pass
     pass
     pass
         # Log regime parameters
@@ -808,7 +858,9 @@ class RegimeSpecificTripleBarrierOptimizer:
         for category, category_params in best_params.items():
     pass
     pass
+    pass
         for param_name, param_value in category_params.items():
+    pass
     pass
     pass
                                 mlflow.log_param(f"{regime_name}_{category}_{param_name}", param_value)
@@ -838,6 +890,7 @@ class RegimeSpecificTripleBarrierOptimizer:
     def _create_regime_summary(self) -> Dict[str, Any]:
     pass
     pass
+    pass
         """Create a summary of all regime optimizations."""
 
         summary = {}
@@ -845,7 +898,9 @@ class RegimeSpecificTripleBarrierOptimizer:
         for regime_name, result in self.optimization_results.items():
     pass
     pass
+    pass
         if "error" not in result:
+    pass
     pass
     pass
                 summary[regime_name] = {
@@ -868,10 +923,13 @@ class RegimeSpecificTripleBarrierOptimizer:
         if regime_name not in self.regime_models:
     pass
     pass
+    pass
         return {"error": f"No optimized model found for regime: {regime_name}"}
 
         try:
             regime_model, self.regime_models[regime_name]
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -905,6 +963,7 @@ class RegimeSpecificTripleBarrierOptimizer:
         if not self.optimization_results:
     pass
     pass
+    pass
             recommendations.append("Run regime - specific optimization first")
         return recommendations
 
@@ -912,12 +971,15 @@ class RegimeSpecificTripleBarrierOptimizer:
         for regime_name, result in self.optimization_results.items():
     pass
     pass
+    pass
         if "error" not in result:
+    pass
     pass
     pass
                 best_value, result.get("best_value", 0)
 
         if best_value < 0.5:
+    pass
     pass
     pass
                     recommendations.append(f"Consider adjusting parameters for {regime_name} regime (low performance)")
@@ -926,6 +988,7 @@ class RegimeSpecificTripleBarrierOptimizer:
 
         # Regime - specific recommendations
         if regime_name == "volatile_regime":
+    pass
     pass
     pass
                     recommendations.append("Volatile regime: Consider wider barriers and shorter timeouts")
@@ -946,11 +1009,13 @@ class RegimeSpecificTripleBarrierOptimizer:
 def create_regime_specific_triple_barrier_optimizer(config: Dict[str, Any], training_manager = None):
     pass
     pass
+    pass
     """Create regime - specific triple barrier optimizer instance."""
 
     return RegimeSpecificTripleBarrierOptimizer(config, training_manager)
 
 if __name__ == "__main__":
+    pass
     pass
     pass
     # Example usage
@@ -974,7 +1039,8 @@ if __name__ == "__main__":
     for regime_name, regime_config in optimizer.regime_configs.items():
     pass
     pass
-        print(f"\\\n{regime_name}:")
+    pass
+        print(f"\\\\n{regime_name}:")
         print(f"  Description: {regime_config['description']}")
         total_params, sum(len(category) for category in regime_config.values() if isinstance(category, dict))
         print(f"  Total parameters: {total_params}")

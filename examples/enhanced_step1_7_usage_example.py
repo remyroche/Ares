@@ -35,6 +35,8 @@ async def main():
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         success = await run_step_enhanced(
             symbol, symbol = exchange=exchange,
             data_dir, data_dir = timeframe=timeframe,
@@ -48,6 +50,7 @@ async def main():
         if success:
     pass
     pass
+    pass
             logger.info("✅ Enhanced Step 1_7 completed successfully!")
 
             # Show what files were generated
@@ -59,11 +62,13 @@ async def main():
             for tf in timeframes_to_check:
     pass
     pass
+    pass
                 # Metrics report
                 report_path = os.path.join(
                     data_dir = f"{exchange}_{symbol}_composite_metrics_report_{tf}.txt",
                 )
                 if os.path.exists(report_path):
+    pass
     pass
     pass
                     logger.info(f"   📊 Metrics Report: {report_path}")
@@ -78,8 +83,12 @@ async def main():
     except Exception as e:
         pass
     pass
+    except Exception as e:
+        pass
+    pass
                                 logger.info(f"      {i+1:2d}: {line.rstrip()}")
                             if len(lines) > 10:
+    pass
     pass
     pass
                                 logger.info(
@@ -97,6 +106,7 @@ async def main():
                 if os.path.exists(metrics_path):
     pass
     pass
+    pass
                     logger.info(f"   📈 Metrics JSON: {metrics_path}")
 
                 # Original HMM files
@@ -110,13 +120,15 @@ async def main():
                 for hmm_file in hmm_files:
     pass
     pass
+    pass
                     hmm_path = os.path.join(data_dir = hmm_file)
                     if os.path.exists(hmm_path):
     pass
     pass
+    pass
                         logger.info(f"   🧩 HMM Data: {hmm_path}")
 
-            logger.info("\\\n📋 Key Benefits of Enhanced Step 1_7:")
+            logger.info("\\\\n📋 Key Benefits of Enhanced Step 1_7:")
             logger.info(
                 "   • Comprehensive cluster quality metrics (Silhouette = Calinski-Harabasz, Davies-Bouldin)",
             )
@@ -140,6 +152,7 @@ async def main():
         logger.exception(traceback.format_exc())
 
 if __name__ == "__main__":
+    pass
     pass
     pass
     asyncio.run(main())

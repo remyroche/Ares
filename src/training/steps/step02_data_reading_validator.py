@@ -62,6 +62,8 @@ async def run_validator(
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         symbol, training_input.get("symbol", "ETHUSDT")
         exchange, training_input.get("exchange", "BINANCE")
         timeframe, training_input.get("timeframe", "1m")
@@ -71,6 +73,7 @@ async def run_validator(
         unified_data_path, Path(data_dir) / "unified" / exchange / symbol / timeframe
 
         if not unified_data_path.exists():
+    pass
     pass
     pass
             logger.error(f"❌ Unified data directory not found: {unified_data_path}")
@@ -83,6 +86,7 @@ async def run_validator(
         # Check for parquet files
         data_files, list(unified_data_path.glob("*.parquet"))
         if not data_files:
+    pass
     pass
     pass
             logger.error(f"❌ No parquet files found in {unified_data_path}")
@@ -102,6 +106,8 @@ async def run_validator(
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             import json
 
         # Read the most recent data file
@@ -110,6 +116,7 @@ async def run_validator(
 
         # Check data quality
         if len(data) == 0:
+    pass
     pass
     pass
                 logger.error("❌ No data rows found")
@@ -126,6 +133,7 @@ async def run_validator(
         if missing_columns:
     pass
     pass
+    pass
                 logger.error(f"❌ Missing required columns: {missing_columns}")
         return {
                     "step_name": "step02_data_reading",
@@ -137,11 +145,13 @@ async def run_validator(
         if "timestamp" not in data.columns:
     pass
     pass
+    pass
                 logger.warning("⚠️ Timestamp column not found")
 
         # Check for NaN values
             nan_count, data[required_columns].isna().sum().sum()
         if nan_count > 0:
+    pass
     pass
     pass
                 logger.warning(f"⚠️ Found {nan_count} NaN values in required columns")
@@ -151,11 +161,13 @@ async def run_validator(
         if inf_count > 0:
     pass
     pass
+    pass
                 logger.warning(f"⚠️ Found {inf_count} infinite values in required columns")
 
         # Check for negative prices
             negative_prices = ((data[['open', 'high', 'low', 'close']] < 0).sum().sum())
         if negative_prices > 0:
+    pass
     pass
     pass
                 logger.error(f"❌ Found {negative_prices} negative price values")
@@ -168,6 +180,7 @@ async def run_validator(
         # Check for zero prices
             zero_prices = ((data[['open', 'high', 'low', 'close']] == 0).sum().sum())
         if zero_prices > 0:
+    pass
     pass
     pass
                 logger.warning(f"⚠️ Found {zero_prices} zero price values")
@@ -185,11 +198,13 @@ async def run_validator(
         for idx, row in data.iterrows():
     pass
     pass
+    pass
         if not (row['low'] <= row['open'] <= row['high'] and
                        row['low'] <= row['close'] <= row['high']):
                     ohlc_errors += 1
 
         if ohlc_errors > 0:
+    pass
     pass
     pass
                 logger.warning(f"⚠️ Found {ohlc_errors} OHLC consistency errors")
@@ -198,8 +213,10 @@ async def run_validator(
         if "timestamp" in data.columns:
     pass
     pass
+    pass
                 duplicate_timestamps, data['timestamp'].duplicated().sum()
         if duplicate_timestamps > 0:
+    pass
     pass
     pass
                     logger.warning(f"⚠️ Found {duplicate_timestamps} duplicate timestamps")
@@ -208,9 +225,11 @@ async def run_validator(
         if "timestamp" in data.columns:
     pass
     pass
+    pass
                 data_sorted, data.sort_values('timestamp')
                 time_diffs, data_sorted['timestamp'].diff().dropna()
         if len(time_diffs) > 0:
+    pass
     pass
     pass
                     avg_time_diff, time_diffs.mean()
@@ -221,10 +240,13 @@ async def run_validator(
         if validation_report_path.exists():
     pass
     pass
+    pass
         try:
         with open(validation_report_path, 'r') as f:
                         validation_metadata, json.load(f)
                     logger.info("✅ Validation report found and loaded")
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -268,6 +290,7 @@ async def run_validator(
         }
 
 if __name__ == "__main__":
+    pass
     pass
     pass
     # Test the validator

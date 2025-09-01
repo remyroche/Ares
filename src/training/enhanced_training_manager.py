@@ -23,6 +23,8 @@ try:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
 except ImportError:
     pq = None  # type: ignore
 
@@ -94,9 +96,12 @@ import def _is_relative_to
 def _is_relative_to(path: Path, base: Path) -> bool:
     pass
     pass
+    pass
     """Return True if path is within base when resolved; False otherwise."""
     try:
         path.resolve().relative_to(base.resolve())
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -109,6 +114,7 @@ def _is_relative_to(path: Path, base: Path) -> bool:
 def _safe_json_write(target: Path, obj: Any) -> None:
     pass
     pass
+    pass
     """Atomically and deterministically write JSON to target.
 
     - Ensures parent directory exists
@@ -118,10 +124,12 @@ def _safe_json_write(target: Path, obj: Any) -> None:
     """
     target.parent.mkdir(parents=True, exist_ok=True)
     tmp = target.with_suffix(target.suffix + ".tmp")
-    with tmp.open("w", encoding="utf-8", newline="\\\n") as f:
+    with tmp.open("w", encoding="utf-8", newline="\\\\n") as f:
         json.dump(obj, f, indent=2, sort_keys=True, ensure_ascii=False)
         try:
             f.flush()
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -139,13 +147,16 @@ _ID_RE = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
 def _sanitize_identifier(value: str) -> str:
     pass
     pass
+    pass
     """Validate identifier for use in file/dir names. Raises ValueError on invalid."""
     if not isinstance(value, str) or not value:
+    pass
     pass
     pass
         msg = "Identifier must be a non-empty string"
         raise ValueError(msg)
     if not _ID_RE.match(value):
+    pass
     pass
     pass
         msg = f"Invalid identifier: {value}"
@@ -182,6 +193,7 @@ class EnhancedTrainingManager:
     """
 
     def __init__(self, config: dict[str, Any]) -> None:
+    pass
     pass
     pass
         """Initialize enhanced training manager.
@@ -516,6 +528,7 @@ class EnhancedTrainingManager:
     def _load_optimization_config(self) -> None:
     pass
     pass
+    pass
         """Load optimization configuration from enhanced_training_manager_optimized."""
         # Caching configuration
         caching_config = self.optimization_config.get("caching", {})
@@ -547,9 +560,12 @@ class EnhancedTrainingManager:
     def _timed_step(self, name: str, step_times: dict):
     pass
     pass
+    pass
         start = time.time()
         try:
             yield
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -562,6 +578,7 @@ class EnhancedTrainingManager:
     def _save_checkpoint(self, step_name: str, pipeline_state: dict[str, Any]) -> None:
     pass
     pass
+    pass
         """Save training progress checkpoint.
 
         Args:
@@ -570,6 +587,7 @@ class EnhancedTrainingManager:
 
         """
         if not self.enable_checkpointing:
+    pass
     pass
     pass
             return
@@ -586,6 +604,8 @@ class EnhancedTrainingManager:
                 "lookback_days": self.lookback_days,
                 "max_trials": self.max_trials,
                 "n_trials": self.n_trials,
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -609,6 +629,7 @@ class EnhancedTrainingManager:
     def _load_checkpoint(self) -> dict[str, Any] | None:
     pass
     pass
+    pass
         """Load training progress checkpoint.
 
         Returns:
@@ -620,9 +641,11 @@ class EnhancedTrainingManager:
         if not hasattr(self, "enable_checkpointing"):
     pass
     pass
+    pass
             self.enable_checkpointing = getattr(self, "enhanced_training_config", {}).get("enable_checkpointing", True)
 
         if not self.enable_checkpointing:
+    pass
     pass
     pass
             return None
@@ -631,11 +654,14 @@ class EnhancedTrainingManager:
         if not hasattr(self, "checkpoint_dir"):
     pass
     pass
+    pass
             self.checkpoint_dir = Path("checkpoints")
             self.checkpoint_dir.mkdir(exist_ok=True)
 
         try:
             symbol = getattr(self, "current_symbol", "unknown")
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -650,6 +676,7 @@ class EnhancedTrainingManager:
                 / "training_progress.json"
             )
             if not ns_file.exists():
+    pass
     pass
     pass
                 return None
@@ -667,9 +694,12 @@ class EnhancedTrainingManager:
     def _clear_checkpoint(self) -> None:
     pass
     pass
+    pass
         """Clear the checkpoint file."""
         try:
             symbol = getattr(self, "current_symbol", "unknown")
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -686,8 +716,10 @@ class EnhancedTrainingManager:
             if ns_file.exists():
     pass
     pass
+    pass
                 # Guard against clearing outside configured checkpoint dir
                 if _is_relative_to(ns_file, self.checkpoint_dir) and not ns_file.is_symlink():
+    pass
     pass
     pass
                     ns_file.unlink()
@@ -698,6 +730,7 @@ class EnhancedTrainingManager:
             self.logger.warning(f"Failed to clear checkpoint: {e}")
 
     def _heartbeat(self, message: str) -> None:
+    pass
     pass
     pass
         """Log a heartbeat message for monitoring training progress.
@@ -711,6 +744,7 @@ class EnhancedTrainingManager:
     def _get_system_resources(self) -> dict[str, float]:
     pass
     pass
+    pass
         """Get current system resource usage.
 
         Returns:
@@ -719,6 +753,8 @@ class EnhancedTrainingManager:
         """
         try:
             process = psutil.Process(os.getpid())
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -769,8 +805,11 @@ class EnhancedTrainingManager:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             # If force_rerun is True, we're starting from this step, so skip dependency validation
             if force_rerun:
+    pass
     pass
     pass
                 self.logger.info(f"✅ Force rerun enabled for {step_name}, skipping dependency validation")
@@ -794,12 +833,14 @@ class EnhancedTrainingManager:
             if validation_result["valid"]:
     pass
     pass
+    pass
                 self.logger.info(f"✅ Dependencies validated for {step_name}: {validation_result['reason']}")
                 return True
             self.logger.error(f"❌ Dependencies failed for {step_name}: {validation_result['reason']}")
 
             # Log failed prerequisites for debugging
             if "failed_steps" in validation_result:
+    pass
     pass
     pass
                 self.logger.error(f"   Failed prerequisites: {validation_result['failed_steps']}")
@@ -811,6 +852,7 @@ class EnhancedTrainingManager:
             return False
 
     def _analyze_resource_requirements(self) -> dict[str, Any]:
+    pass
     pass
     pass
         """Analyze resource requirements for the training process.
@@ -825,11 +867,14 @@ class EnhancedTrainingManager:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             cpu_count = int(psutil.cpu_count() or 0)
             memory_gb = float(psutil.virtual_memory().total / 1024 / 1024 / 1024)
 
             # Realistic estimates based on actual training complexity
             if self.blank_training_mode:
+    pass
     pass
     pass
                 estimated_memory_gb = 4.0  # Blank training uses less memory
@@ -887,6 +932,7 @@ class EnhancedTrainingManager:
         if memory_gb < 8:
     pass
     pass
+    pass
             recommendations.append(
                 "⚠️ Consider upgrading to 16GB RAM for optimal performance",
             )
@@ -896,6 +942,7 @@ class EnhancedTrainingManager:
         if cpu_count < 4:
     pass
     pass
+    pass
             recommendations.append(
                 "⚠️ Consider using a system with at least 4 CPU cores",
             )
@@ -903,6 +950,7 @@ class EnhancedTrainingManager:
             recommendations.append("💡 8+ CPU cores recommended for faster training")
 
         if self.blank_training_mode:
+    pass
     pass
     pass
             recommendations.append("✅ Blank training mode is suitable for your system")
@@ -920,6 +968,7 @@ class EnhancedTrainingManager:
     def _get_step_time_breakdown(self, is_blank_mode: bool) -> dict[str, int]:
     pass
     pass
+    pass
         """Get realistic time breakdown for each step.
 
         Args:
@@ -930,6 +979,7 @@ class EnhancedTrainingManager:
 
         """
         if is_blank_mode:
+    pass
     pass
     pass
             return {
@@ -974,9 +1024,12 @@ class EnhancedTrainingManager:
     def _optimize_memory_usage(self) -> None:
     pass
     pass
+    pass
         """Perform memory optimization to reduce memory footprint."""
         try:
             # Force garbage collection
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -1037,12 +1090,14 @@ class EnhancedTrainingManager:
         if elapsed_time > 0:
     pass
     pass
+    pass
             avg_time = elapsed_time / max(current_step, 1)
             remaining_steps = total_steps - current_step
             eta_minutes = (avg_time * remaining_steps) / 60
         else:
             eta_minutes = 0
         if self.verbosity == "debug":
+    pass
     pass
     pass
             self.logger.debug(
@@ -1091,10 +1146,12 @@ class EnhancedTrainingManager:
         if resources["system_memory_percent"] > 85:
     pass
     pass
+    pass
             warning_msg = f"⚠️ HIGH MEMORY USAGE: {resources['system_memory_percent']:.1f}% - Consider closing other applications"
             self.logger.warning(warning_msg)
 
         if resources["available_memory_gb"] < 2.0:
+    pass
     pass
     pass
             warning_msg = f"⚠️ LOW AVAILABLE MEMORY: {resources['available_memory_gb']:.1f} GB remaining"
@@ -1127,8 +1184,11 @@ class EnhancedTrainingManager:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             # Ensure blank_training_mode is defined
             if not hasattr(self, "blank_training_mode"):
+    pass
     pass
     pass
                 blank_env = os.getenv("BLANK_TRAINING_MODE", "0") == "1"
@@ -1139,12 +1199,15 @@ class EnhancedTrainingManager:
             if not hasattr(self, "max_trials"):
     pass
     pass
+    pass
                 self.max_trials = self.enhanced_training_config.get("max_trials", 200)
             if not hasattr(self, "n_trials"):
     pass
     pass
+    pass
                 self.n_trials = self.enhanced_training_config.get("n_trials", 100)
             if not hasattr(self, "lookback_days"):
+    pass
     pass
     pass
                 default_lookback = 180 if self.blank_training_mode else 30
@@ -1156,6 +1219,7 @@ class EnhancedTrainingManager:
             if not hasattr(self, "enable_computational_optimization"):
     pass
     pass
+    pass
                 self.enable_computational_optimization = self.enhanced_training_config.get("enable_computational_optimization", True)
             self.logger.info(
                 f"🚀 Computational optimization: {self.enable_computational_optimization}",
@@ -1164,6 +1228,7 @@ class EnhancedTrainingManager:
             # Analyze resource requirements
             resource_analysis = self._analyze_resource_requirements()
             if resource_analysis:
+    pass
     pass
     pass
                 self.logger.info("📊 Resource Analysis:")
@@ -1188,6 +1253,7 @@ class EnhancedTrainingManager:
             if "step_breakdown" in resource_analysis:
     pass
     pass
+    pass
                 total_estimated = sum(resource_analysis["step_breakdown"].values())
                 self.logger.info("📋 Step-by-Step Time Estimates:")
                 for step_name, minutes in resource_analysis[
@@ -1202,14 +1268,17 @@ class EnhancedTrainingManager:
             if resource_analysis["recommendations"]:
     pass
     pass
+    pass
                 self.logger.info("💡 Recommendations:")
                 for rec in resource_analysis["recommendations"]:
+    pass
     pass
     pass
                     self.logger.info(f"   {rec}")
 
             # Validate configuration
             if not self._validate_configuration():
+    pass
     pass
     pass
                 self.logger.error(
@@ -1219,6 +1288,7 @@ class EnhancedTrainingManager:
 
             # Initialize computational optimization if enabled
             if self.enable_computational_optimization:
+    pass
     pass
     pass
                 await self._initialize_computational_optimization()
@@ -1242,6 +1312,7 @@ class EnhancedTrainingManager:
     def _validate_configuration(self) -> bool:
     pass
     pass
+    pass
         """Validate enhanced training manager configuration.
 
         Returns:
@@ -1254,13 +1325,17 @@ class EnhancedTrainingManager:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             # Ensure max_enhanced_training_history is defined
             if not hasattr(self, "max_enhanced_training_history"):
+    pass
     pass
     pass
                 self.max_enhanced_training_history = self.enhanced_training_config.get("max_enhanced_training_history", 100)
 
             if self.max_enhanced_training_history <= 0:
+    pass
     pass
     pass
                 self.logger.error(
@@ -1271,16 +1346,19 @@ class EnhancedTrainingManager:
             if self.max_trials <= 0:
     pass
     pass
+    pass
                 self.logger.error("❌ Invalid max_trials configuration")
                 return False
 
             if self.n_trials <= 0:
     pass
     pass
+    pass
                 self.logger.error("❌ Invalid n_trials configuration")
                 return False
 
             if self.lookback_days <= 0:
+    pass
     pass
     pass
                 self.logger.error("❌ Invalid lookback_days configuration")
@@ -1320,6 +1398,8 @@ class EnhancedTrainingManager:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             self.logger.info(
                 "🚀 COMPREHENSIVE 15-STEP ENHANCED TRAINING PIPELINE START",
             )
@@ -1351,6 +1431,7 @@ class EnhancedTrainingManager:
             if not self._validate_enhanced_training_inputs(enhanced_training_input):
     pass
     pass
+    pass
                 return False
 
             # Execute the comprehensive 16-step pipeline
@@ -1359,6 +1440,7 @@ class EnhancedTrainingManager:
             )
 
             if success:
+    pass
     pass
     pass
                 # Store training history
@@ -1432,10 +1514,14 @@ class EnhancedTrainingManager:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             for field in required_fields:
     pass
     pass
+    pass
                 if field not in enhanced_training_input:
+    pass
     pass
     pass
                     self.logger.error(
@@ -1445,6 +1531,7 @@ class EnhancedTrainingManager:
 
             # Validate specific field values
             if enhanced_training_input.get("lookback_days", 0) <= 0:
+    pass
     pass
     pass
                 self.logger.error("❌ Invalid lookback_days value")
@@ -1470,6 +1557,8 @@ class EnhancedTrainingManager:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             # Get computational optimization configuration
             optimization_config = get_computational_optimization_config()
 
@@ -1483,6 +1572,7 @@ class EnhancedTrainingManager:
             )
 
             if self.computational_optimization_manager:
+    pass
     pass
     pass
                 self.logger.info(
@@ -1546,6 +1636,8 @@ class EnhancedTrainingManager:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             exchange = training_input.get("exchange", "")
             timeframe = training_input.get("timeframe", "1m")
 
@@ -1576,6 +1668,7 @@ class EnhancedTrainingManager:
             if checkpoint:
     pass
     pass
+    pass
                 self.logger.info("🔄 Resuming from checkpoint...")
                 pipeline_state = checkpoint.get("pipeline_state", {})
                 last_completed_step = checkpoint.get("current_step", "")
@@ -1588,9 +1681,11 @@ class EnhancedTrainingManager:
             if not hasattr(self, "force_rerun"):
     pass
     pass
+    pass
                 self.force_rerun = self.enhanced_training_config.get("force_rerun", False)
 
             if self.force_rerun:
+    pass
     pass
     pass
                 self.logger.info(f"🧹 Force rerun enabled - clearing artifacts from {start_step} and subsequent steps")
@@ -1627,6 +1722,7 @@ class EnhancedTrainingManager:
             if start_step == "step01_data_collection":
     pass
     pass
+    pass
                 self.logger.info("📊 STEP 1: Data Collection...")
                 self.logger.info("   🔍 Downloading and preparing market data...")
 
@@ -1638,6 +1734,7 @@ class EnhancedTrainingManager:
                 if market_data is not None and not market_data.empty:
     pass
     pass
+    pass
                     pipeline_state["market_data"] = market_data
                 self.logger.info(f"   ✅ Data loaded: {len(market_data)} rows")
 
@@ -1645,11 +1742,13 @@ class EnhancedTrainingManager:
                 if self.enable_caching:
     pass
     pass
+    pass
                     self.cached_backtester = CachedBacktester(market_data)
                     self.logger.info("   ✅ Cached backtester initialized")
 
                 # Initialize progressive evaluator for early stopping
                 if self.enable_early_stopping:
+    pass
     pass
     pass
                     self.progressive_evaluator = ProgressiveEvaluator(market_data)
@@ -1669,11 +1768,14 @@ class EnhancedTrainingManager:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
                 "step01_data_collection",
                         training_input,
                         pipeline_state,
                     )
                     if step01_validation and step01_validation.get("validation_passed", False):
+    pass
     pass
     pass
                         self.logger.info(
@@ -1701,6 +1803,7 @@ class EnhancedTrainingManager:
                     if self.force_rerun:
     pass
     pass
+    pass
                         self.logger.warning(
                             f"⚠️ Step 1 validation failed but is non-fatal: {e}",
                         )
@@ -1721,8 +1824,11 @@ class EnhancedTrainingManager:
                 def _should_run(step_name: str) -> bool:
     pass
     pass
+    pass
                     try:
                         return self.STEP_ORDER.index(step_name) >= self.STEP_ORDER.index(start_step_key)
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -1740,6 +1846,7 @@ class EnhancedTrainingManager:
                 if not should_run_step1_5:
     pass
     pass
+    pass
                     self.logger.info(
                         f"⏭️ Skipping Step 1.5: Data Converter (starting from '{start_step_key}')",
                     )
@@ -1755,11 +1862,13 @@ class EnhancedTrainingManager:
                     if not await self.verify_previous_step_artifacts("step01_5_data_converter", symbol, exchange, timeframe):
     pass
     pass
+    pass
                         self.logger.error("❌ Previous step artifacts not found for step01_5, stopping pipeline")
                         return False
 
                     # Validate step dependencies BEFORE execution
                     if not await self.validate_step_dependencies("step01_5_data_converter", pipeline_state, self.force_rerun):
+    pass
     pass
     pass
                         self.logger.error("❌ Step 1.5 dependencies not met, stopping pipeline")
@@ -1769,6 +1878,9 @@ class EnhancedTrainingManager:
                     try:
                         from src.training.steps.step01_5_data_converter import run_step as step01_5_run_step
 
+    except Exception as e:
+        pass
+import except Exception as e:
     except Exception as e:
         pass
 import except Exception as e:
@@ -1789,6 +1901,7 @@ import step01_5_success = await self._execute_step1_5_with_qa
                         step01_5_success = False
 
                     if not step01_5_success:
+    pass
     pass
     pass
                         self._log_step_completion(
@@ -1821,8 +1934,11 @@ import step01_5_success = await self._execute_step1_5_with_qa
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
                         )
                         if step01_5_validation and step01_5_validation.get("validation_passed", False):
+    pass
     pass
     pass
                             self.logger.info(
@@ -1843,8 +1959,11 @@ import step01_5_success = await self._execute_step1_5_with_qa
                 def _should_run(step_name: str) -> bool:
     pass
     pass
+    pass
                     try:
                         return self.STEP_ORDER.index(step_name) >= self.STEP_ORDER.index(start_step_key)
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -1854,6 +1973,7 @@ import step01_5_success = await self._execute_step1_5_with_qa
                         return True
 
                 if not _should_run("step02_feature_engineering"):
+    pass
     pass
     pass
                     self.logger.info(
@@ -1871,11 +1991,13 @@ import step01_5_success = await self._execute_step1_5_with_qa
                     if not await self.verify_previous_step_artifacts("step02_feature_engineering", symbol, exchange, timeframe):
     pass
     pass
+    pass
                         self.logger.error("❌ Previous step artifacts not found for step2, stopping pipeline")
                         return False
 
                     # Validate step dependencies BEFORE execution (step01_5 should have completed)
                     if not await self.validate_step_dependencies("step02_feature_engineering", pipeline_state, self.force_rerun):
+    pass
     pass
     pass
                         self.logger.error("❌ Step 2 dependencies not met (step01_5 should have completed), stopping pipeline")
@@ -1888,8 +2010,11 @@ import step01_5_success = await self._execute_step1_5_with_qa
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
                         feature_config = self.config.get("vectorized_advanced_features", {})
                         if not feature_config:
+    pass
     pass
     pass
                             # Default configuration with difference and acceleration features enabled
@@ -1923,6 +2048,7 @@ import step01_5_success = await self._execute_step1_5_with_qa
                     if not step02_success:
     pass
     pass
+    pass
                         self._log_step_completion(
                             "Step 2: Feature Engineering",
                             step_start_2,
@@ -1950,6 +2076,7 @@ import step01_5_success = await self._execute_step1_5_with_qa
                     if _should_run("step02_feature_engineering"):
     pass
     pass
+    pass
                         try:
                             step02_validation = await self._run_step_validator(
                                 "step02_feature_engineering", training_input, pipeline_state,
@@ -1957,8 +2084,11 @@ import step01_5_success = await self._execute_step1_5_with_qa
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
                             )
                             if step02_validation and step02_validation.get("validation_passed", False):
+    pass
     pass
     pass
                                 # Explicit success notice when validation passes
@@ -1981,6 +2111,7 @@ import step01_5_success = await self._execute_step1_5_with_qa
                 if not should_run_step2_5:
     pass
     pass
+    pass
                     self.logger.info(
                         f"⏭️ Skipping Step 2.5: S/R Detection Optimization (starting from '{start_step_key}')",
                     )
@@ -1995,11 +2126,13 @@ import step01_5_success = await self._execute_step1_5_with_qa
                     if not await self.verify_previous_step_artifacts("step02_5_sr_optimization", symbol, exchange, timeframe):
     pass
     pass
+    pass
                         self.logger.error("❌ Previous step artifacts not found for step2.5, stopping pipeline")
                         return False
 
                     # Validate step dependencies BEFORE execution
                     if not await self.validate_step_dependencies("step02_5_sr_optimization", pipeline_state, self.force_rerun):
+    pass
     pass
     pass
                         self.logger.error("❌ Step 2.5 dependencies not met, stopping pipeline")
@@ -2014,6 +2147,9 @@ import step01_5_success = await self._execute_step1_5_with_qa
 import except Exception as e:
     except Exception as e:
         pass
+import except Exception as e:
+    except Exception as e:
+        pass
 import step02_5_success = await step02_5_sr_optimization.run_step
                         step02_5_success = await step02_5_sr_optimization.run_step(
                             config=self.config,
@@ -2023,6 +2159,7 @@ import step02_5_success = await step02_5_sr_optimization.run_step
                         step02_5_success = False
 
                     if not step02_5_success:
+    pass
     pass
     pass
                         self._log_step_completion(
@@ -2047,6 +2184,7 @@ import step02_5_success = await step02_5_sr_optimization.run_step
                     self._save_checkpoint("step02_5_sr_optimization", pipeline_state)
 
                 if not step02_5_success:
+    pass
     pass
     pass
                     return False
@@ -2079,6 +2217,7 @@ import step03_args = {
                 if not step03_success:
     pass
     pass
+    pass
                     return False
                 self.logger.info("➡️ Proceeding to Step 4: Processing & Labeling")
 
@@ -2089,6 +2228,7 @@ import step03_args = {
                 step_start_4 = time.time()
 
                 if not should_run_step4:
+    pass
     pass
     pass
                     self.logger.info(
@@ -2105,11 +2245,13 @@ import step03_args = {
                     if not await self.verify_previous_step_artifacts("step04_regime_data_splitting", symbol, exchange, timeframe):
     pass
     pass
+    pass
                         self.logger.error("❌ Previous step artifacts not found for step4, stopping pipeline")
                         return False
 
                     # Validate step dependencies BEFORE execution
                     if not await self.validate_step_dependencies("step04_regime_data_splitting", pipeline_state, self.force_rerun):
+    pass
     pass
     pass
                         self.logger.error("❌ Step 4 dependencies not met, stopping pipeline")
@@ -2119,6 +2261,9 @@ import step03_args = {
                     try:
                         from src.training.steps import step04_regime_data_splitting
 
+    except Exception as e:
+        pass
+import except Exception as e:
     except Exception as e:
         pass
 import except Exception as e:
@@ -2138,6 +2283,7 @@ import step04_success = await step04_regime_data_splitting.run_step
                         step04_success = False
 
                     if not step04_success:
+    pass
     pass
     pass
                         self._log_step_completion(
@@ -2170,8 +2316,11 @@ import step04_success = await step04_regime_data_splitting.run_step
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
                         )
                         if step04_validation and step04_validation.get("validation_passed", False):
+    pass
     pass
     pass
                             self.logger.info(
@@ -2193,6 +2342,7 @@ import step04_success = await step04_regime_data_splitting.run_step
                 if not should_run_step5:
     pass
     pass
+    pass
                     self.logger.info(
                         f"⏭️ Skipping Step 5: Triple Barrier Method (starting from '{start_step_key}')",
                     )
@@ -2207,11 +2357,13 @@ import step04_success = await step04_regime_data_splitting.run_step
                     if not await self.verify_previous_step_artifacts("step05_triple_barrier_method", symbol, exchange, timeframe):
     pass
     pass
+    pass
                         self.logger.error("❌ Previous step artifacts not found for step5, stopping pipeline")
                         return False
 
                     # Validate step dependencies BEFORE execution
                     if not await self.validate_step_dependencies("step05_triple_barrier_method", pipeline_state, self.force_rerun):
+    pass
     pass
     pass
                         self.logger.error("❌ Step 5 dependencies not met, stopping pipeline")
@@ -2221,6 +2373,9 @@ import step04_success = await step04_regime_data_splitting.run_step
                     try:
                         from src.training.steps import step05_triple_barrier_method
 
+    except Exception as e:
+        pass
+import except Exception as e:
     except Exception as e:
         pass
 import except Exception as e:
@@ -2240,6 +2395,7 @@ import step05_success = await step05_triple_barrier_method.run_step
                         step05_success = False
 
                     if not step05_success:
+    pass
     pass
     pass
                         self._log_step_completion(
@@ -2272,8 +2428,11 @@ import step05_success = await step05_triple_barrier_method.run_step
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
                         )
                         if step05_validation and step05_validation.get("validation_passed", False):
+    pass
     pass
     pass
                             self.logger.info(
@@ -2293,6 +2452,7 @@ import step05_success = await step05_triple_barrier_method.run_step
                 if not should_run_step6:
     pass
     pass
+    pass
                     self.logger.info(
                         f"⏭️ Skipping Step 6: Labeling (starting from '{start_step_key}')",
                     )
@@ -2307,11 +2467,13 @@ import step05_success = await step05_triple_barrier_method.run_step
                     if not await self.verify_previous_step_artifacts("step06_labeling", symbol, exchange, timeframe):
     pass
     pass
+    pass
                         self.logger.error("❌ Previous step artifacts not found for step6, stopping pipeline")
                         return False
 
                     # Validate step dependencies BEFORE execution
                     if not await self.validate_step_dependencies("step06_labeling", pipeline_state, self.force_rerun):
+    pass
     pass
     pass
                         self.logger.error("❌ Step 6 dependencies not met, stopping pipeline")
@@ -2321,6 +2483,9 @@ import step05_success = await step05_triple_barrier_method.run_step
                     try:
                         from src.training.steps import step06_labeling
 
+    except Exception as e:
+        pass
+import except Exception as e:
     except Exception as e:
         pass
 import except Exception as e:
@@ -2340,6 +2505,7 @@ import step06_success = await step06_labeling.run_step
                         step06_success = False
 
                     if not step06_success:
+    pass
     pass
     pass
                         self._log_step_completion(
@@ -2372,8 +2538,11 @@ import step06_success = await step06_labeling.run_step
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
                         )
                         if step06_validation and step06_validation.get("validation_passed", False):
+    pass
     pass
     pass
                             self.logger.info(
@@ -2393,6 +2562,7 @@ import step06_success = await step06_labeling.run_step
                 if not should_run_step7:
     pass
     pass
+    pass
                     self.logger.info(
                         f"⏭️ Skipping Step 7: Feature Engineering (starting from '{start_step_key}')",
                     )
@@ -2407,11 +2577,13 @@ import step06_success = await step06_labeling.run_step
                     if not await self.verify_previous_step_artifacts("step07_feature_engineering", symbol, exchange, timeframe):
     pass
     pass
+    pass
                         self.logger.error("❌ Previous step artifacts not found for step7, stopping pipeline")
                         return False
 
                     # Validate step dependencies BEFORE execution
                     if not await self.validate_step_dependencies("step07_feature_engineering", pipeline_state, self.force_rerun):
+    pass
     pass
     pass
                         self.logger.error("❌ Step 7 dependencies not met, stopping pipeline")
@@ -2421,6 +2593,9 @@ import step06_success = await step06_labeling.run_step
                     try:
                         from src.training.steps import step07_feature_engineering
 
+    except Exception as e:
+        pass
+import except Exception as e:
     except Exception as e:
         pass
 import except Exception as e:
@@ -2440,6 +2615,7 @@ import step07_success = await step07_feature_engineering.run_step
                         step07_success = False
 
                     if not step07_success:
+    pass
     pass
     pass
                         self._log_step_completion(
@@ -2472,8 +2648,11 @@ import step07_success = await step07_feature_engineering.run_step
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
                         )
                         if step07_validation and step07_validation.get("validation_passed", False):
+    pass
     pass
     pass
                             self.logger.info(
@@ -2493,6 +2672,7 @@ import step07_success = await step07_feature_engineering.run_step
                 if not should_run_step7:
     pass
     pass
+    pass
                     self.logger.info(
                         f"⏭️ Skipping Step 7: Regime Data Splitting (starting from '{start_step_key}')",
                     )
@@ -2507,11 +2687,13 @@ import step07_success = await step07_feature_engineering.run_step
                     if not await self.verify_previous_step_artifacts("step07_regime_data_splitting", symbol, exchange, timeframe):
     pass
     pass
+    pass
                         self.logger.error("❌ Previous step artifacts not found for step7, stopping pipeline")
                         return False
 
                     # Validate step dependencies BEFORE execution
                     if not await self.validate_step_dependencies("step07_regime_data_splitting", pipeline_state, self.force_rerun):
+    pass
     pass
     pass
                         self.logger.error("❌ Step 7 dependencies not met, stopping pipeline")
@@ -2521,6 +2703,9 @@ import step07_success = await step07_feature_engineering.run_step
                     try:
                         from src.training.steps import step07_regime_data_splitting
 
+    except Exception as e:
+        pass
+import except Exception as e:
     except Exception as e:
         pass
 import except Exception as e:
@@ -2540,6 +2725,7 @@ import step07_success = await step07_regime_data_splitting.run_step
                         step07_success = False
 
                     if not step07_success:
+    pass
     pass
     pass
                         self._log_step_completion(
@@ -2572,8 +2758,11 @@ import step07_success = await step07_regime_data_splitting.run_step
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
                         )
                         if step07_validation and step07_validation.get("validation_passed", False):
+    pass
     pass
     pass
                             self.logger.info(
@@ -2593,6 +2782,7 @@ import step07_success = await step07_regime_data_splitting.run_step
                 if not should_run_step8:
     pass
     pass
+    pass
                     self.logger.info(
                         f"⏭️ Skipping Step 8: Enhanced HMM-Based Training (starting from '{start_step_key}')",
                     )
@@ -2607,11 +2797,13 @@ import step07_success = await step07_regime_data_splitting.run_step
                     if not await self.verify_previous_step_artifacts("step08_enhanced_hmm_based_training", symbol, exchange, timeframe):
     pass
     pass
+    pass
                         self.logger.error("❌ Previous step artifacts not found for step8, stopping pipeline")
                         return False
 
                     # Validate step dependencies BEFORE execution
                     if not await self.validate_step_dependencies("step08_enhanced_hmm_based_training", pipeline_state, self.force_rerun):
+    pass
     pass
     pass
                         self.logger.error("❌ Step 8 dependencies not met, stopping pipeline")
@@ -2621,6 +2813,9 @@ import step07_success = await step07_regime_data_splitting.run_step
                     try:
                         from src.training.steps import step09_hmm_based_training_enhanced
 
+    except Exception as e:
+        pass
+import except Exception as e:
     except Exception as e:
         pass
 import except Exception as e:
@@ -2641,6 +2836,7 @@ import method_a_cfg = self.config.get
                         step08_success = False
 
                     if not step08_success:
+    pass
     pass
     pass
                         self._log_step_completion(
@@ -2673,8 +2869,11 @@ import method_a_cfg = self.config.get
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
                         )
                         if step08_validation and step08_validation.get("validation_passed", False):
+    pass
     pass
     pass
                             self.logger.info(
@@ -2692,6 +2891,7 @@ import method_a_cfg = self.config.get
                 if not should_run_step9_5:
     pass
     pass
+    pass
                     self.logger.info(
                         f"⏭️ Skipping Step 9.5: Multi-Timeframe HMM Ensemble Training (starting from '{start_step_key}')",
                     )
@@ -2707,6 +2907,9 @@ import method_a_cfg = self.config.get
                     try:
                         from src.training.steps import step09_5_multi_timeframe_hmm_ensemble
 
+    except Exception as e:
+        pass
+import except Exception as e:
     except Exception as e:
         pass
 import except Exception as e:
@@ -2745,8 +2948,11 @@ import step09_5_success = await step09_5_multi_timeframe_hmm_ensemble.run_step
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
                         )
                         if step09_5_validation and step09_5_validation.get("validation_passed", False):
+    pass
     pass
     pass
                             self.logger.info(
@@ -2764,6 +2970,7 @@ import step09_5_success = await step09_5_multi_timeframe_hmm_ensemble.run_step
                 if not should_run_step6_5:
     pass
     pass
+    pass
                     self.logger.info(
                         f"⏭️ Skipping Step 6_5: Unified Regime Intelligence (starting from '{start_step_key}')",
                     )
@@ -2778,6 +2985,9 @@ import step09_5_success = await step09_5_multi_timeframe_hmm_ensemble.run_step
                     step_start_6_5 = time.time()
                     try:
                         from src.training.steps import (
+    except Exception as e:
+        pass
+import except Exception as e:
     except Exception as e:
         pass
 import except Exception as e:
@@ -2819,6 +3029,7 @@ import step05_5_unified_regime_intelligence as _step6_5,
                     if step06_5_validation and step06_5_validation.get("validation_passed", False):
     pass
     pass
+    pass
                         self.logger.info(
                             "🎉 Step 6_5: Unified Regime Intelligence completed successfully and validation passed",
                         )
@@ -2831,6 +3042,7 @@ import step05_5_unified_regime_intelligence as _step6_5,
                 # Step 7: Analyst Enhancement
                 should_run_step7 = _should_run("step07_analyst_enhancement")
                 if not should_run_step7:
+    pass
     pass
     pass
                     self.logger.info(
@@ -2850,6 +3062,7 @@ import step05_5_unified_regime_intelligence as _step6_5,
                     if not await self.validate_step_dependencies("step07_ensemble_creation", pipeline_state, self.force_rerun):
     pass
     pass
+    pass
                         self.logger.error("❌ Step 7 dependencies not met, skipping")
                         return False
 
@@ -2858,6 +3071,7 @@ import step05_5_unified_regime_intelligence as _step6_5,
 import analyst_timeframes = ["30m", "15m", "5m"]
                     analyst_timeframes = ["30m", "15m", "5m"]
                     for tf in analyst_timeframes:
+    pass
     pass
     pass
                         self.logger.info(f"🔧 STEP 7: Analyst Enhancement @ {tf}")
@@ -2870,6 +3084,7 @@ import analyst_timeframes = ["30m", "15m", "5m"]
                         if not step07_success:
     pass
     pass
+    pass
                             return False
 
                     # Run validator for Step 7 (per timeframe)
@@ -2879,6 +3094,7 @@ import analyst_timeframes = ["30m", "15m", "5m"]
                         pipeline_state,
                     )
                     if step07_validation and step07_validation.get("validation_passed", False):
+    pass
     pass
     pass
                         self.logger.info(
@@ -2895,6 +3111,7 @@ import analyst_timeframes = ["30m", "15m", "5m"]
                 # Step 8: Tactician Labeling
                 should_run_step8 = _should_run("step08_tactician_labeling")
                 if not should_run_step8:
+    pass
     pass
     pass
                     self.logger.info(
@@ -2914,6 +3131,7 @@ import analyst_timeframes = ["30m", "15m", "5m"]
                     if not await self.validate_step_dependencies("step08_model_evaluation", pipeline_state, self.force_rerun):
     pass
     pass
+    pass
                         self.logger.error("❌ Step 8 dependencies not met, skipping")
                         return False
 
@@ -2929,6 +3147,7 @@ import step08_success = await step08_tactician_labeling.run_step
                     if not step08_success:
     pass
     pass
+    pass
                         return False
 
                     # Run validator for Step 8
@@ -2938,6 +3157,7 @@ import step08_success = await step08_tactician_labeling.run_step
                         pipeline_state,
                     )
                     if step08_validation and step08_validation.get("validation_passed", False):
+    pass
     pass
     pass
                         self.logger.info(
@@ -2952,6 +3172,7 @@ import step08_success = await step08_tactician_labeling.run_step
                 # Step 9: Tactician Specialist Training
                 should_run_step9 = _should_run("step09_tactician_specialist_training")
                 if not should_run_step9:
+    pass
     pass
     pass
                     self.logger.info(
@@ -2971,6 +3192,7 @@ import step08_success = await step08_tactician_labeling.run_step
                     if not await self.validate_step_dependencies("step09_hyperparameter_optimization", pipeline_state, self.force_rerun):
     pass
     pass
+    pass
                         self.logger.error("❌ Step 9 dependencies not met, skipping")
                         return False
 
@@ -2986,6 +3208,7 @@ import step09_success = await step09_tactician_specialist_training.run_step
                     if not step09_success:
     pass
     pass
+    pass
                         return False
 
                     # Run validator for Step 9
@@ -2995,6 +3218,7 @@ import step09_success = await step09_tactician_specialist_training.run_step
                         pipeline_state,
                     )
                     if step09_validation and step09_validation.get("validation_passed", False):
+    pass
     pass
     pass
                         self.logger.info(
@@ -3011,6 +3235,7 @@ import step09_success = await step09_tactician_specialist_training.run_step
                 # Step 10: Confidence Calibration
                 should_run_step10 = _should_run("step10_confidence_calibration")
                 if not should_run_step10:
+    pass
     pass
     pass
                     self.logger.info(
@@ -3030,6 +3255,7 @@ import step09_success = await step09_tactician_specialist_training.run_step
                     if not await self.validate_step_dependencies("step10_model_selection", pipeline_state, self.force_rerun):
     pass
     pass
+    pass
                         self.logger.error("❌ Step 10 dependencies not met, skipping")
                         return False
 
@@ -3045,6 +3271,7 @@ import step10_success = await step10_confidence_calibration.run_step
                     if not step10_success:
     pass
     pass
+    pass
                         return False
 
                     # Run validator for Step 10
@@ -3052,6 +3279,7 @@ import step10_success = await step10_confidence_calibration.run_step
                         "step10_confidence_calibration", training_input, pipeline_state,
                     )
                     if step10_validation and step10_validation.get("validation_passed", False):
+    pass
     pass
     pass
                         self.logger.info(
@@ -3073,6 +3301,8 @@ import step10_success = await step10_confidence_calibration.run_step
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
                     )
                     summary_path = data_root / f"{exchange}_{symbol}_calibration_summary.json"
                     _safe_json_write(summary_path, summary_obj)
@@ -3088,11 +3318,15 @@ import step10_success = await step10_confidence_calibration.run_step
 import except Exception as e:
     except Exception as e:
         pass
+import except Exception as e:
+    except Exception as e:
+        pass
                     # Load the latest processed frame if available
 import processed_path = data_root / f"{exchange}_{symbol}_labeled_validation.parquet"
                     processed_path = data_root / f"{exchange}_{symbol}_labeled_validation.parquet"
                     df_proc = None
                     if processed_path.exists():
+    pass
     pass
     pass
                         import pandas as _pd
@@ -3102,6 +3336,7 @@ import processed_path = data_root / f"{exchange}_{symbol}_labeled_validation.par
                     df_input = df_proc if isinstance(df_proc, pd.DataFrame) else None
                     # Gather label names from intensity columns
                     if isinstance(df_input, pd.DataFrame):
+    pass
     pass
     pass
                         label_names = sorted(
@@ -3152,6 +3387,8 @@ import processed_path = data_root / f"{exchange}_{symbol}_labeled_validation.par
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
                     )
                     artifacts_root = Path(artifacts_dir)
                     artifacts_root.mkdir(parents=True, exist_ok=True)
@@ -3164,6 +3401,7 @@ import processed_path = data_root / f"{exchange}_{symbol}_labeled_validation.par
                     if not reliability:
     pass
     pass
+    pass
                         # fallback: simple per-label accuracy proxy from analyst_models calibration if present
                         acc_map = {}
                         try:
@@ -3172,13 +3410,19 @@ import processed_path = data_root / f"{exchange}_{symbol}_labeled_validation.par
     except Exception as e:
         pass
     pass
+    except Exception as e:
+        pass
+    pass
                                 if isinstance(models, dict):
+    pass
     pass
     pass
                                     for name, res in models.items():
     pass
     pass
+    pass
                                         if isinstance(res, dict) and "accuracy" in res:
+    pass
     pass
     pass
                                             acc_map[name] = float(res.get("accuracy", 0.0))
@@ -3197,12 +3441,15 @@ import processed_path = data_root / f"{exchange}_{symbol}_labeled_validation.par
                     if thresholds:
     pass
     pass
+    pass
                         _safe_json_write(artifacts_root / "thresholds.json", thresholds)
                     # Persist active labels if evaluated
                     try:
                         if (
                             "active_meta_labels" in pipeline_state
                             or "inactive_meta_labels" in pipeline_state
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -3230,6 +3477,7 @@ import processed_path = data_root / f"{exchange}_{symbol}_labeled_validation.par
                 if not should_run_step11:
     pass
     pass
+    pass
                     self.logger.info(
                         f"⏭️ Skipping Step 11: Final Parameters Optimization (starting from '{start_step_key}')",
                     )
@@ -3249,10 +3497,12 @@ import processed_path = data_root / f"{exchange}_{symbol}_labeled_validation.par
                     if not await self.validate_step_dependencies("step11_backtesting", pipeline_state, self.force_rerun):
     pass
     pass
+    pass
                         self.logger.error("❌ Step 11 dependencies not met, skipping")
                         return False
 
                     if self.computational_optimization_manager:
+    pass
     pass
     pass
                         step11_success = await self._run_optimized_parameters_optimization(
@@ -3278,6 +3528,7 @@ import step11_final_parameters_optimization,
                     if not step11_success:
     pass
     pass
+    pass
                         return False
 
                     # Run validator for Step 11
@@ -3287,6 +3538,7 @@ import step11_final_parameters_optimization,
                         pipeline_state,
                     )
                     if step11_validation and step11_validation.get("validation_passed", False):
+    pass
     pass
     pass
                         self.logger.info(
@@ -3301,6 +3553,7 @@ import step11_final_parameters_optimization,
                 # Step 12: Walk Forward Validation
                 should_run_step12 = _should_run("step12_walk_forward_validation")
                 if not should_run_step12:
+    pass
     pass
     pass
                     self.logger.info(
@@ -3320,6 +3573,7 @@ import step11_final_parameters_optimization,
                     if not await self.validate_step_dependencies("step12_walk_forward_validation", pipeline_state, self.force_rerun):
     pass
     pass
+    pass
                         self.logger.error("❌ Step 12 dependencies not met, skipping")
                         return False
 
@@ -3335,6 +3589,7 @@ import step12_success = await step12_walk_forward_validation.run_step
                     if not step12_success:
     pass
     pass
+    pass
                         return False
 
                     # Run validator for Step 12
@@ -3342,6 +3597,7 @@ import step12_success = await step12_walk_forward_validation.run_step
                         "step12_walk_forward_validation", training_input, pipeline_state,
                     )
                     if step12_validation and step12_validation.get("validation_passed", False):
+    pass
     pass
     pass
                         self.logger.info(
@@ -3356,6 +3612,7 @@ import step12_success = await step12_walk_forward_validation.run_step
                 # Step 13: Monte Carlo Validation
                 should_run_step13 = _should_run("step13_monte_carlo_validation")
                 if not should_run_step13:
+    pass
     pass
     pass
                     self.logger.info(
@@ -3375,6 +3632,7 @@ import step12_success = await step12_walk_forward_validation.run_step
                     if not await self._validate_step_dependencies("step13_monte_carlo_validation", pipeline_state):
     pass
     pass
+    pass
                         self.logger.error("❌ Step 13 dependencies not met, skipping")
                         return False
 
@@ -3390,6 +3648,7 @@ import step13_success = await step13_monte_carlo_validation.run_step
                     if not step13_success:
     pass
     pass
+    pass
                         return False
 
                     # Run validator for Step 13
@@ -3397,6 +3656,7 @@ import step13_success = await step13_monte_carlo_validation.run_step
                         "step13_monte_carlo_validation", training_input, pipeline_state,
                     )
                     if step13_validation and step13_validation.get("validation_passed", False):
+    pass
     pass
     pass
                         self.logger.info(
@@ -3411,6 +3671,7 @@ import step13_success = await step13_monte_carlo_validation.run_step
                 # Step 14: A/B Testing
                 should_run_step14 = _should_run("step14_ab_testing")
                 if not should_run_step14:
+    pass
     pass
     pass
                     self.logger.info(
@@ -3430,6 +3691,7 @@ import step13_success = await step13_monte_carlo_validation.run_step
                     if not await self._validate_step_dependencies("step14_model_deployment", pipeline_state):
     pass
     pass
+    pass
                         self.logger.error("❌ Step 14 dependencies not met, skipping")
                         return False
 
@@ -3445,6 +3707,7 @@ import step14_success = await step14_ab_testing.run_step
                     if not step14_success:
     pass
     pass
+    pass
                         return False
 
                     # Run validator for Step 14
@@ -3452,6 +3715,7 @@ import step14_success = await step14_ab_testing.run_step
                         "step14_ab_testing", training_input, pipeline_state,
                     )
                     if step14_validation and step14_validation.get("validation_passed", False):
+    pass
     pass
     pass
                         self.logger.info(
@@ -3466,6 +3730,7 @@ import step14_success = await step14_ab_testing.run_step
                 # Step 15: Saving Results
                 should_run_step15 = _should_run("step15_saving")
                 if not should_run_step15:
+    pass
     pass
     pass
                     self.logger.info(
@@ -3485,6 +3750,7 @@ import step14_success = await step14_ab_testing.run_step
                     if not await self._validate_step_dependencies("step15_live_monitoring", pipeline_state):
     pass
     pass
+    pass
                         self.logger.error("❌ Step 15 dependencies not met, skipping")
                         return False
 
@@ -3500,6 +3766,7 @@ import step15_success = await step15_saving.run_step
                     if not step15_success:
     pass
     pass
+    pass
                         return False
 
                     # Run validator for Step 15
@@ -3507,6 +3774,7 @@ import step15_success = await step15_saving.run_step
                         "step15_saving", training_input, pipeline_state,
                     )
                     if step15_validation and step15_validation.get("validation_passed", False):
+    pass
     pass
     pass
                         self.logger.info(
@@ -3544,6 +3812,7 @@ import step15_success = await step15_saving.run_step
                 for step_name, step_time in step_times.items():
     pass
     pass
+    pass
                     percentage = (step_time / total_time) * 100
                     self.logger.info(
                         f"   {step_name}: {step_time:.2f}s ({percentage:.1f}%)",
@@ -3576,8 +3845,11 @@ import step15_success = await step15_saving.run_step
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             # Ensure optimized_manager is defined
             if not hasattr(self, "optimized_manager"):
+    pass
     pass
     pass
                 self.logger.warning("⚠️ optimized_manager not defined, skipping initialization")
@@ -3591,6 +3863,7 @@ import step15_success = await step15_saving.run_step
             if self.chunk_size:
     pass
     pass
+    pass
                 self.streaming_processor = StreamingDataProcessor(
                     chunk_size=self.chunk_size,
                 )
@@ -3598,6 +3871,7 @@ import step15_success = await step15_saving.run_step
 
             # Initialize parallel backtester if enabled
             if self.enable_parallelization:
+    pass
     pass
     pass
                 self.parallel_backtester = ParallelBacktester(
@@ -3643,6 +3917,8 @@ import step15_success = await step15_saving.run_step
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             )
 
             # Use optimized data loading from the optimized manager
@@ -3651,6 +3927,7 @@ import step15_success = await step15_saving.run_step
             )
 
             if market_data is None or market_data.empty:
+    pass
     pass
     pass
                 self.logger.error("❌ Failed to load market data for optimization")
@@ -3664,11 +3941,13 @@ import step15_success = await step15_saving.run_step
             if self.enable_caching and self.cached_backtester is None:
     pass
     pass
+    pass
                 self.cached_backtester = CachedBacktester(market_data)
                 self.logger.info("✅ Cached backtester initialized for optimization")
 
             # Initialize progressive evaluator if not already done
             if self.enable_early_stopping and self.progressive_evaluator is None:
+    pass
     pass
     pass
                 self.progressive_evaluator = ProgressiveEvaluator(market_data)
@@ -3680,6 +3959,7 @@ import step15_success = await step15_saving.run_step
             def optimization_objective(params):
     pass
     pass
+    pass
                 """Optimization objective using cached backtesting."""
                 try:
                     # Use cached backtester for faster evaluation
@@ -3687,7 +3967,10 @@ import step15_success = await step15_saving.run_step
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
                     if self.cached_backtester:
+    pass
     pass
     pass
                         return self.cached_backtester.run_cached_backtest(params)
@@ -3701,9 +3984,12 @@ import step15_success = await step15_saving.run_step
             def progressive_evaluator_func(data_subset, params):
     pass
     pass
+    pass
                 """Progressive evaluation function for early stopping."""
                 try:
                     # Create temporary backtester for subset evaluation
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -3716,6 +4002,7 @@ import step15_success = await step15_saving.run_step
             # Use parallel backtester if enabled
             optimization_results = {}
             if self.enable_parallelization:
+    pass
     pass
     pass
                 self.logger.info("🔄 Using parallel backtesting for optimization...")
@@ -3731,6 +4018,7 @@ import step15_success = await step15_saving.run_step
 
                 # Find best parameters from parallel results
                 if parallel_results:
+    pass
     pass
     pass
                     best_result, max(
@@ -3752,6 +4040,7 @@ import step15_success = await step15_saving.run_step
                 for trial in range(self.n_trials):
     pass
     pass
+    pass
                     # Generate random parameters for this trial
                     params = self._generate_random_parameters()
 
@@ -3761,6 +4050,7 @@ import step15_success = await step15_saving.run_step
                     )
 
                     if score > best_score:
+    pass
     pass
     pass
                         best_score = score
@@ -3783,6 +4073,7 @@ import step15_success = await step15_saving.run_step
                 if self.computational_optimization_manager:
     pass
     pass
+    pass
                     await self.computational_optimization_manager.initialize(
                         market_data, {},
                     )
@@ -3796,6 +4087,7 @@ import step15_success = await step15_saving.run_step
 
             # Store optimization statistics
             if self.computational_optimization_manager:
+    pass
     pass
     pass
                 self.optimization_statistics = self.computational_optimization_manager.get_optimization_statistics()
@@ -3816,6 +4108,7 @@ import step15_success = await step15_saving.run_step
 
             # Perform memory cleanup if enabled
             if self.enable_memory_management:
+    pass
     pass
     pass
                 # Check and cleanup if above threshold
@@ -3842,6 +4135,7 @@ import step15_success = await step15_saving.run_step
     def _generate_parameter_combinations(self) -> list[dict]:
     pass
     pass
+    pass
         """Generate parameter combinations for parallel backtesting."""
         # This is a simplified implementation
         # In practice, you would generate meaningful parameter combinations
@@ -3859,6 +4153,7 @@ import step15_success = await step15_saving.run_step
         return combinations
 
     def _generate_random_parameters(self) -> dict:
+    pass
     pass
     pass
         """Generate random parameters for optimization."""
@@ -3886,6 +4181,8 @@ import step15_success = await step15_saving.run_step
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             # This is a simplified implementation
 
             # Prefer consolidated Parquet/CSV produced by Step 1
@@ -3899,12 +4196,14 @@ import step15_success = await step15_saving.run_step
             if preferred_parquet.exists():
     pass
     pass
+    pass
                 market_data = self.data_manager.load_from_parquet(
                     str(preferred_parquet),
                 )
                 self.logger.info(f"✅ Loaded market data from {preferred_parquet}")
                 return market_data
             if preferred_csv.exists():
+    pass
     pass
     pass
                 market_data = pd.read_csv(preferred_csv)
@@ -3917,9 +4216,12 @@ import step15_success = await step15_saving.run_step
             if parquet_path.exists():
     pass
     pass
+    pass
                 self.logger.info(f"Loading data from Parquet: {parquet_path}")
                 try:
                     return self.data_manager.load_from_parquet(str(parquet_path))
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -3931,9 +4233,12 @@ import step15_success = await step15_saving.run_step
                 if csv_path.exists():
     pass
     pass
+    pass
                     self.logger.info(f"Loading data from CSV: {csv_path}")
                     try:
                         return pd.read_csv(csv_path)
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -3959,9 +4264,12 @@ import step15_success = await step15_saving.run_step
         if self.cached_backtester is None:
     pass
     pass
+    pass
             self.cached_backtester = CachedBacktester(market_data)
         try:
             return float(self.cached_backtester.run_cached_backtest(params))
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -3972,14 +4280,17 @@ import step15_success = await step15_saving.run_step
     def get_memory_profile(self) -> dict[str, Any]:
     pass
     pass
+    pass
         """Expose current memory profile using MemoryManager."""
         if self.memory_manager is None:
+    pass
     pass
     pass
             self.memory_manager = MemoryManager(memory_threshold=self.memory_threshold)
         return self.memory_manager.profile_memory_usage()
 
     def get_optimization_stats(self) -> dict[str, Any]:
+    pass
     pass
     pass
         """Expose optimization component status."""
@@ -3994,14 +4305,17 @@ import step15_success = await step15_saving.run_step
         if self.cached_backtester is not None:
     pass
     pass
+    pass
             stats["cache_size"] = len(self.cached_backtester.cache)
         if self.adaptive_sampler is not None:
+    pass
     pass
     pass
             stats["trial_history_size"] = len(self.adaptive_sampler.trial_history)
         return stats
 
     def _get_validation_level(self, step_name: str, is_fatal: bool) -> str:
+    pass
     pass
     pass
         """
@@ -4050,6 +4364,7 @@ import step15_success = await step15_saving.run_step
     def _log_validation_details(self, validation_result: dict[str, Any]) -> None:
     pass
     pass
+    pass
         """
         Log detailed validation information for comprehensive validation levels.
 
@@ -4058,6 +4373,9 @@ import step15_success = await step15_saving.run_step
         """
         try:
             if not validation_result:
+    pass
+    except Exception as e:
+        pass
     pass
     except Exception as e:
         pass
@@ -4072,9 +4390,11 @@ import step15_success = await step15_saving.run_step
             if "validation_level" in validation_result:
     pass
     pass
+    pass
                 self.logger.info(f"   Level: {validation_result['validation_level']}")
 
             if "duration" in validation_result:
+    pass
     pass
     pass
                 self.logger.info(f"   Duration: {validation_result['duration']:.3f}s")
@@ -4083,11 +4403,13 @@ import step15_success = await step15_saving.run_step
             if validation_result.get("warnings"):
     pass
     pass
+    pass
                 self.logger.info(f"   Warnings: {len(validation_result['warnings'])}")
                 for warning in validation_result["warnings"][:3]:  # Show first 3
                     self.logger.info(f"     - {warning}")
 
             if validation_result.get("recommendations"):
+    pass
     pass
     pass
                 self.logger.info(f"   Recommendations: {len(validation_result['recommendations'])}")
@@ -4098,8 +4420,10 @@ import step15_success = await step15_saving.run_step
             if "validation_results" in validation_result:
     pass
     pass
+    pass
                 vr = validation_result["validation_results"]
                 if isinstance(vr, dict):
+    pass
     pass
     pass
                     self.logger.info(f"   Validation Checks: {len(vr)}")
@@ -4111,6 +4435,7 @@ import step15_success = await step15_saving.run_step
             self.logger.debug(f"Error logging validation details: {e}")
 
     def _log_validation_failure(self, validation_result: dict[str, Any]) -> None:
+    pass
     pass
     pass
         """
@@ -4125,6 +4450,9 @@ import step15_success = await step15_saving.run_step
     except Exception as e:
         pass
     pass
+    except Exception as e:
+        pass
+    pass
                 return
 
     except Exception as e:
@@ -4135,10 +4463,12 @@ import step15_success = await step15_saving.run_step
             if "error" in validation_result:
     pass
     pass
+    pass
                 self.logger.error(f"   Error: {validation_result['error']}")
 
             # Log critical issues
             if validation_result.get("critical_issues"):
+    pass
     pass
     pass
                 self.logger.error(f"   Critical Issues: {len(validation_result['critical_issues'])}")
@@ -4149,12 +4479,14 @@ import step15_success = await step15_saving.run_step
             if validation_result.get("data_quality_issues"):
     pass
     pass
+    pass
                 self.logger.error(f"   Data Quality Issues: {len(validation_result['data_quality_issues'])}")
                 for issue in validation_result["data_quality_issues"][:3]:  # Show first 3
                     self.logger.error(f"     - {issue}")
 
             # Log missing artifacts
             if validation_result.get("missing_artifacts"):
+    pass
     pass
     pass
                 self.logger.error(f"   Missing Artifacts: {len(validation_result['missing_artifacts'])}")
@@ -4186,6 +4518,7 @@ import step15_success = await step15_saving.run_step
         if not self.enable_validators:
     pass
     pass
+    pass
             return {
                 "step_name": step_name,
                 "validation_passed": True,
@@ -4200,12 +4533,15 @@ import step15_success = await step15_saving.run_step
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             # First, validate step dependencies
             dependency_validation = await self.step_dependency_validator.validate_step_prerequisites(
                 step_name, pipeline_state, "checkpoints", force_rerun,
             )
 
             if not dependency_validation["valid"]:
+    pass
     pass
     pass
                 self.logger.error(f"❌ Step dependencies failed for {step_name}: {dependency_validation['reason']}")
@@ -4228,6 +4564,7 @@ import step15_success = await step15_saving.run_step
             self.validation_results[step_name] = validation_result
 
             if validation_result.get("validation_passed", False):
+    pass
     pass
     pass
                 self.logger.info(f"✅ {step_name} validation passed")
@@ -4275,6 +4612,8 @@ import step15_success = await step15_saving.run_step
 
         try:
             # Execute the original step function
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -4354,6 +4693,9 @@ import step15_success = await step15_saving.run_step
 import except Exception as e:
     except Exception as e:
         pass
+import except Exception as e:
+    except Exception as e:
+        pass
             # Execute the original step function
 import result = await step02_feature_engineering.run_step
             result = await step02_feature_engineering.run_step(
@@ -4413,6 +4755,8 @@ import result = await step02_feature_engineering.run_step
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             history_entry = {
                 "timestamp": datetime.now().isoformat(),
                 "training_input": enhanced_training_input,
@@ -4423,6 +4767,7 @@ import result = await step02_feature_engineering.run_step
 
             # Limit history size
             if len(self.enhanced_training_history) > self.max_enhanced_training_history:
+    pass
     pass
     pass
                 self.enhanced_training_history = self.enhanced_training_history[
@@ -4446,6 +4791,8 @@ import result = await step02_feature_engineering.run_step
         try:
             self.logger.info("📁 Storing enhanced training results...")
 
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -4487,6 +4834,9 @@ import result = await step02_feature_engineering.run_step
     except Exception as e:
         pass
     pass
+    except Exception as e:
+        pass
+    pass
                 return self.enhanced_training_results.get(enhanced_training_type, {})
     except Exception as e:
         pass
@@ -4520,7 +4870,10 @@ import result = await step02_feature_engineering.run_step
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             if limit:
+    pass
     pass
     pass
                 history = history[-limit:]
@@ -4531,6 +4884,7 @@ import result = await step02_feature_engineering.run_step
             return []
 
     def get_enhanced_training_status(self) -> dict[str, Any]:
+    pass
     pass
     pass
         """Get enhanced training status.
@@ -4555,6 +4909,7 @@ import result = await step02_feature_engineering.run_step
     def get_validation_results(self) -> dict[str, Any]:
     pass
     pass
+    pass
         """Get validation results for all steps.
 
         Returns:
@@ -4570,6 +4925,7 @@ import result = await step02_feature_engineering.run_step
     def get_computational_optimization_results(self) -> dict[str, Any]:
     pass
     pass
+    pass
         """Get computational optimization results and statistics.
 
         Returns:
@@ -4577,6 +4933,7 @@ import result = await step02_feature_engineering.run_step
 
         """
         if self.computational_optimization_manager:
+    pass
     pass
     pass
             return {
@@ -4604,8 +4961,11 @@ import result = await step02_feature_engineering.run_step
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             # Cleanup computational optimization manager
             if self.computational_optimization_manager:
+    pass
     pass
     pass
                 await self.computational_optimization_manager.cleanup()
@@ -4615,8 +4975,10 @@ import result = await step02_feature_engineering.run_step
             if self.parallel_backtester is not None:
     pass
     pass
+    pass
                 shutdown = getattr(self.parallel_backtester, "shutdown", None)
                 if callable(shutdown):
+    pass
     pass
     pass
                     shutdown()
@@ -4624,6 +4986,7 @@ import result = await step02_feature_engineering.run_step
 
             # Force memory cleanup
             if self.enable_memory_management and self.memory_manager is not None:
+    pass
     pass
     pass
                 self.memory_manager._cleanup_memory()
@@ -4637,10 +5000,12 @@ import result = await step02_feature_engineering.run_step
     def get_optimization_statistics(self) -> dict[str, Any]:
     pass
     pass
+    pass
         """Get optimization statistics from the enhanced training manager."""
         return self.optimization_statistics
 
     def get_cached_backtester(self) -> CachedBacktester | None:
+    pass
     pass
     pass
         """Get the cached backtester instance."""
@@ -4649,10 +5014,12 @@ import result = await step02_feature_engineering.run_step
     def get_progressive_evaluator(self) -> ProgressiveEvaluator | None:
     pass
     pass
+    pass
         """Get the progressive evaluator instance."""
         return self.progressive_evaluator
 
     def get_memory_manager(self) -> MemoryManager:
+    pass
     pass
     pass
         """Get the memory manager instance."""
@@ -4661,10 +5028,12 @@ import result = await step02_feature_engineering.run_step
     def get_data_manager(self) -> MemoryEfficientDataManager:
     pass
     pass
+    pass
         """Get the data manager instance."""
         return self.data_manager
 
     def get_optimized_manager(self) -> EnhancedTrainingManagerOptimized:
+    pass
     pass
     pass
         """Get the underlying optimized training manager."""
@@ -4681,6 +5050,8 @@ import result = await step02_feature_engineering.run_step
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             )
 
             # Delegate to optimized manager
@@ -4690,6 +5061,7 @@ import result = await step02_feature_engineering.run_step
 
             # Store results in main manager
             if result:
+    pass
     pass
     pass
                 self.enhanced_training_results.update(result)
@@ -4703,8 +5075,10 @@ import result = await step02_feature_engineering.run_step
     def use_cached_backtesting(self, params: dict[str, Any]) -> float:
     pass
     pass
+    pass
         """Use cached backtesting for parameter evaluation."""
         if self.cached_backtester:
+    pass
     pass
     pass
             return self.cached_backtester.run_cached_backtest(params)
@@ -4718,6 +5092,7 @@ import result = await step02_feature_engineering.run_step
         if self.progressive_evaluator:
     pass
     pass
+    pass
             return self.progressive_evaluator.evaluate_progressively(
                 params, evaluator_func,
             )
@@ -4725,6 +5100,7 @@ import result = await step02_feature_engineering.run_step
         return 0.0
 
     def generate_cache_key(self, params: dict[str, Any]) -> str:
+    pass
     pass
     pass
         """Generate a robust cache key using the _make_hashable utility."""
@@ -4739,8 +5115,11 @@ import result = await step02_feature_engineering.run_step
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             # Initialize optimized tools first
             if not await self._initialize_optimized_tools():
+    pass
     pass
     pass
                 self.logger.error("❌ Failed to initialize optimized tools")
@@ -4750,8 +5129,11 @@ import result = await step02_feature_engineering.run_step
             if self.enable_computational_optimization:
     pass
     pass
+    pass
                 try:
                     # create_computational_optimization_manager is async; await it here
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -4817,6 +5199,8 @@ import result = await step02_feature_engineering.run_step
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             # Load feature selection configuration
             feature_config = self.config.get("feature_interactions", {})
             selection_tiers = feature_config.get("feature_selection_tiers", {})
@@ -4843,6 +5227,7 @@ import result = await step02_feature_engineering.run_step
             if not os.path.exists(features_path):
     pass
     pass
+    pass
                 self.logger.warning(
                     f"⚠️ Engineered features not found at {features_path}",
                 )
@@ -4855,6 +5240,7 @@ import result = await step02_feature_engineering.run_step
             features_df = self.data_manager.load_from_parquet(features_path)
 
             if features_df.empty:
+    pass
     pass
     pass
                 self.logger.warning("⚠️ No features available for selection")
@@ -4947,6 +5333,8 @@ import result = await step02_feature_engineering.run_step
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             # Categorize features by tier
             feature_categories = self._categorize_features_by_tier(features_df)
 
@@ -5001,6 +5389,7 @@ import result = await step02_feature_engineering.run_step
             if len(selected_features.columns) > total_max_features:
     pass
     pass
+    pass
                 selected_features = self._apply_final_pruning(
                     selected_features, total_max_features,
                 )
@@ -5017,6 +5406,7 @@ import result = await step02_feature_engineering.run_step
     def _categorize_features_by_tier(self, features_df: pd.DataFrame) -> dict:
     pass
     pass
+    pass
         """Categorize features into tiers based on naming patterns."""
         categories = {
             "tier_1": [],  # Core features
@@ -5027,6 +5417,7 @@ import result = await step02_feature_engineering.run_step
         }
 
         for col in features_df.columns:
+    pass
     pass
     pass
             col_lower = col.lower()
@@ -5104,11 +5495,13 @@ import result = await step02_feature_engineering.run_step
         if not tier_1_features:
     pass
     pass
+    pass
             return pd.DataFrame()
 
         # Get available features
         available_features = [f for f in tier_1_features if f in features_df.columns]
         if not available_features:
+    pass
     pass
     pass
             return pd.DataFrame()
@@ -5126,10 +5519,12 @@ import result = await step02_feature_engineering.run_step
         if not tier_2_features:
     pass
     pass
+    pass
             return pd.DataFrame()
 
         available_features = [f for f in tier_2_features if f in features_df.columns]
         if not available_features:
+    pass
     pass
     pass
             return pd.DataFrame()
@@ -5147,10 +5542,12 @@ import result = await step02_feature_engineering.run_step
         if not tier_3_features:
     pass
     pass
+    pass
             return pd.DataFrame()
 
         available_features = [f for f in tier_3_features if f in features_df.columns]
         if not available_features:
+    pass
     pass
     pass
             return pd.DataFrame()
@@ -5168,10 +5565,12 @@ import result = await step02_feature_engineering.run_step
         if not tier_4_features:
     pass
     pass
+    pass
             return pd.DataFrame()
 
         available_features = [f for f in tier_4_features if f in features_df.columns]
         if not available_features:
+    pass
     pass
     pass
             return pd.DataFrame()
@@ -5189,10 +5588,12 @@ import result = await step02_feature_engineering.run_step
         if not tier_5_features:
     pass
     pass
+    pass
             return pd.DataFrame()
 
         available_features = [f for f in tier_5_features if f in features_df.columns]
         if not available_features:
+    pass
     pass
     pass
             return pd.DataFrame()
@@ -5210,6 +5611,7 @@ import result = await step02_feature_engineering.run_step
         if len(selected_features.columns) <= max_features:
     pass
     pass
+    pass
             return selected_features
 
         # Calculate overall feature importance based on variance
@@ -5222,9 +5624,11 @@ import result = await step02_feature_engineering.run_step
     def get_label_expert_models(self) -> dict[str, dict[str, Any]]:
     pass
     pass
+    pass
         return self.label_expert_models
 
     def get_label_expert_calibrators(self) -> dict[str, Any]:
+    pass
     pass
     pass
         return self.label_expert_calibrators
@@ -5232,7 +5636,9 @@ import result = await step02_feature_engineering.run_step
     def get_label_reliability(self) -> dict[str, float]:
     pass
     pass
+    pass
         if not self.label_reliability:
+    pass
     pass
     pass
             self._load_label_reliability()
@@ -5241,7 +5647,9 @@ import result = await step02_feature_engineering.run_step
     def get_activation_thresholds(self) -> dict[str, float]:
     pass
     pass
+    pass
         if not self.activation_thresholds:
+    pass
     pass
     pass
             self._load_activation_thresholds()
@@ -5250,8 +5658,11 @@ import result = await step02_feature_engineering.run_step
     def save_activation_thresholds(self, thresholds: dict[str, Any]) -> None:
     pass
     pass
+    pass
         try:
             target = self.artifacts_dir / "thresholds.json"
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -5265,7 +5676,11 @@ import result = await step02_feature_engineering.run_step
     except Exception as e:
         pass
     pass
+    except Exception as e:
+        pass
+    pass
                     if isinstance(v, dict) and "threshold" in v:
+    pass
     pass
     pass
                         flat[k] = float(v.get("threshold", 0.5))
@@ -5276,11 +5691,13 @@ import result = await step02_feature_engineering.run_step
                 if flat:
     pass
     pass
+    pass
                     self.activation_thresholds.update(flat)
                     self.logger.info(f"Saved activation thresholds to {target}")
             except Exception:
                 pass
             if flat:
+    pass
     pass
     pass
                 self.activation_thresholds.update(flat)
@@ -5291,7 +5708,9 @@ import result = await step02_feature_engineering.run_step
     def _load_activation_thresholds(self) -> None:
     pass
     pass
+    pass
         if self.force_rerun:
+    pass
     pass
     pass
             self.logger.info(
@@ -5304,7 +5723,10 @@ import result = await step02_feature_engineering.run_step
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             if path.exists():
+    pass
     pass
     pass
                 with open(path) as f:
@@ -5313,7 +5735,9 @@ import result = await step02_feature_engineering.run_step
                 for k, v in data.items():
     pass
     pass
+    pass
                     if isinstance(v, dict) and "threshold" in v:
+    pass
     pass
     pass
                         flat[k] = float(v.get("threshold", 0.5))
@@ -5327,8 +5751,11 @@ import result = await step02_feature_engineering.run_step
     def save_label_reliability(self, reliability: dict[str, float]) -> None:
     pass
     pass
+    pass
         try:
             target = self.artifacts_dir / "reliability.json"
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -5342,7 +5769,9 @@ import result = await step02_feature_engineering.run_step
     def _load_label_reliability(self) -> None:
     pass
     pass
+    pass
         if self.force_rerun:
+    pass
     pass
     pass
             self.logger.info(
@@ -5355,7 +5784,10 @@ import result = await step02_feature_engineering.run_step
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             if path.exists():
+    pass
     pass
     pass
                 with open(path) as f:
@@ -5390,9 +5822,13 @@ import result = await step02_feature_engineering.run_step
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             # Find the index of the starting step using class constant
             try:
                 start_index = self.STEP_ORDER.index(start_step)
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -5405,6 +5841,7 @@ import result = await step02_feature_engineering.run_step
             steps_to_clear = self.STEP_ORDER[start_index:]
 
             for step in steps_to_clear:
+    pass
     pass
     pass
                 await self._clear_step_artifacts(step, symbol, exchange, timeframe)
@@ -5439,8 +5876,12 @@ import result = await step02_feature_engineering.run_step
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             try:
                 current_index = self.STEP_ORDER.index(step_name)
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -5451,6 +5892,7 @@ import result = await step02_feature_engineering.run_step
 
             # If this is the first step, no previous artifacts to verify
             if current_index == 0:
+    pass
     pass
     pass
                 return True
@@ -5464,6 +5906,7 @@ import result = await step02_feature_engineering.run_step
             if not previous_artifacts:
     pass
     pass
+    pass
                 self.logger.warning(f"⚠️ No critical artifacts defined for {previous_step}")
                 return True
 
@@ -5473,6 +5916,7 @@ import result = await step02_feature_engineering.run_step
             artifacts_found = []
 
             for artifact_pattern in previous_artifacts:
+    pass
     pass
     pass
                 # Substitute placeholders in the pattern
@@ -5486,9 +5930,11 @@ import result = await step02_feature_engineering.run_step
                 if "**" in substituted_pattern:
     pass
     pass
+    pass
                     # Use glob to find matching files
                     matching_files = glob.glob(substituted_pattern, recursive=True)
                     if matching_files:
+    pass
     pass
     pass
                         artifacts_found.append(f"{artifact_pattern} -> {len(matching_files)} files found")
@@ -5497,9 +5943,11 @@ import result = await step02_feature_engineering.run_step
                         if Path(substituted_pattern).exists():
     pass
     pass
+    pass
                             artifacts_found.append(f"{artifact_pattern} -> {substituted_pattern}")
 
             if artifacts_found:
+    pass
     pass
     pass
                 self.logger.info(f"✅ Found previous step artifacts for {previous_step}: {artifacts_found}")
@@ -5536,6 +5984,8 @@ import result = await step02_feature_engineering.run_step
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             from pathlib import Path
 
             # Get patterns for this step using class constant
@@ -5546,13 +5996,17 @@ import patterns = self.ARTIFACT_PATTERNS.get
             for pattern in patterns:
     pass
     pass
+    pass
                 # Find files matching the pattern
                 matching_files = glob.glob(pattern)
                 for file_path in matching_files:
     pass
     pass
+    pass
                     try:
                         Path(file_path).unlink()
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -5565,6 +6019,7 @@ import patterns = self.ARTIFACT_PATTERNS.get
                         self.logger.warning(f"   ⚠️ Could not delete {file_path}: {e}")
 
             if cleared_count > 0:
+    pass
     pass
     pass
                 self.logger.info(f"   🧹 Cleared {cleared_count} artifacts for {step_name}")
@@ -5598,8 +6053,12 @@ import patterns = self.ARTIFACT_PATTERNS.get
     except Exception as e:
         pass
     pass
+    except Exception as e:
+        pass
+    pass
                 # Convert data to numpy array for metrics calculation
                 if hasattr(data, 'values'):
+    pass
     pass
     pass
                     data_array = np.array(data.values)
@@ -5610,6 +6069,7 @@ import patterns = self.ARTIFACT_PATTERNS.get
 
                 # Create dummy expected values if not provided
                 if expected is None:
+    pass
     pass
     pass
                     expected_array = np.zeros_like(data_array)
@@ -5652,6 +6112,9 @@ import patterns = self.ARTIFACT_PATTERNS.get
         """
         try:
             if model is not None and hasattr(model, 'predict'):
+    pass
+    except Exception as e:
+        pass
     pass
     except Exception as e:
         pass
@@ -5700,6 +6163,9 @@ import patterns = self.ARTIFACT_PATTERNS.get
         """
         try:
             if optimization_results:
+    pass
+    except Exception as e:
+        pass
     pass
     except Exception as e:
         pass
@@ -5753,6 +6219,9 @@ import patterns = self.ARTIFACT_PATTERNS.get
         """
         try:
             if validation_results:
+    pass
+    except Exception as e:
+        pass
     pass
     except Exception as e:
         pass
@@ -5812,6 +6281,9 @@ import patterns = self.ARTIFACT_PATTERNS.get
     except Exception as e:
         pass
     pass
+    except Exception as e:
+        pass
+    pass
                 # Extract key metrics from A/B testing results
                 variant_a_score = ab_test_results.get('variant_a_score', 0.0)
                 variant_b_score = ab_test_results.get('variant_b_score', 0.0)
@@ -5852,10 +6324,13 @@ import patterns = self.ARTIFACT_PATTERNS.get
         if not self.enable_detailed_reporting:
     pass
     pass
+    pass
             return
 
         try:
             step_end_time = time.time()
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -5883,6 +6358,7 @@ import patterns = self.ARTIFACT_PATTERNS.get
             shared_report_path = self.pipeline_reports_dir / f"{self.current_pipeline_execution_id}_shared_report.json"
 
             if shared_report_path.exists():
+    pass
     pass
     pass
                 with open(shared_report_path, 'r', encoding='utf-8') as f:
@@ -5926,6 +6402,7 @@ import patterns = self.ARTIFACT_PATTERNS.get
     def _summarize_result(self, result: Any) -> Dict[str, Any]:
     pass
     pass
+    pass
         """Create a summary of the step result."""
 
         try:
@@ -5936,6 +6413,8 @@ import patterns = self.ARTIFACT_PATTERNS.get
                     "columns_count": len(result.columns),
                     "memory_usage_mb": result.memory_usage(deep=True).sum() / (1024**2) if hasattr(result, 'memory_usage') else None
                 }
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -5973,6 +6452,8 @@ import patterns = self.ARTIFACT_PATTERNS.get
 
         try:
             memory = psutil.virtual_memory()
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -6016,7 +6497,10 @@ async def setup_enhanced_training_manager(
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         if await manager.initialize():
+    pass
     pass
     pass
             return manager

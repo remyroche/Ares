@@ -62,11 +62,15 @@ class RegimeTransitionConfig:
 def get_regime_transition_config() -> RegimeTransitionConfig:
     pass
     pass
+    pass
+    pass
     """Get regime transition configuration."""
     return RegimeTransitionConfig()
 
 
 def get_regime_transition_search_space() -> dict[str, dict[str, Any]]:
+    pass
+    pass
     pass
     pass
     """Get search space for regime transition optimization."""

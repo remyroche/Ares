@@ -31,6 +31,9 @@ try:
 import except Exception as e:
     except Exception as e:
         pass
+import except Exception as e:
+    except Exception as e:
+        pass
 import retry_with_backoff, circuit_breaker, categorize_errors,
         retry_with_backoff, circuit_breaker, categorize_errors,
         RetryableError, NonRetryableError, DATA_OPERATION_ERRORS
@@ -58,6 +61,7 @@ class OptimizedUnifiedDataProcessor:
     def __init__(self, config: Step1_5Config):
     pass
     pass
+    pass
         self.config, config
         self.logger, system_logger.getChild("UnifiedDataProcessor")
         self.quality_validator, UnifiedDataQualityValidator(
@@ -82,7 +86,9 @@ class OptimizedUnifiedDataProcessor:
         for source_name, file_path in data_sources.items():
     pass
     pass
+    pass
         if not os.path.exists(file_path):
+    pass
     pass
     pass
         self.logger.warning(f"Source file not found: {file_path}")
@@ -99,12 +105,15 @@ class OptimizedUnifiedDataProcessor:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         except Exception as e:
         self.logger.error(f"Error processing {source_name}: {e}")
                 continue
 
         # Combine all processed chunks
         if processed_chunks:
+    pass
     pass
     pass
             unified_data, pd.concat(processed_chunks, ignore_index = True)
@@ -125,6 +134,9 @@ class OptimizedUnifiedDataProcessor:
     except Exception as e:
         pass
     pass
+    except Exception as e:
+        pass
+    pass
                 chunk_count += 1
     except Exception as e:
         pass
@@ -138,6 +150,7 @@ class OptimizedUnifiedDataProcessor:
         if not quality_result.passed:
     pass
     pass
+    pass
         self.logger.warning(f"Quality issues in {source_name} chunk {chunk_count}: {quality_result.issues}")
 
         # Transform chunk to unified format
@@ -146,10 +159,12 @@ class OptimizedUnifiedDataProcessor:
         if not unified_chunk.empty:
     pass
     pass
+    pass
                     chunks.append(unified_chunk)
 
         # Check memory pressure
         if self.memory_monitor.is_memory_pressure(self.config.max_memory_mb * 0.8):
+    pass
     pass
     pass
         self.logger.warning("Memory pressure detected, processing existing chunks")
@@ -166,6 +181,7 @@ class OptimizedUnifiedDataProcessor:
         if chunk.empty:
     pass
     pass
+    pass
         return chunk
 
         # Create unified DataFrame
@@ -175,17 +191,21 @@ class OptimizedUnifiedDataProcessor:
         if 'timestamp' in chunk.columns:
     pass
     pass
+    pass
             unified_chunk['timestamp'] = chunk['timestamp']
 
         # Add OHLCV columns based on source type
         if source_name == 'klines':
     pass
     pass
+    pass
             ohlcv_columns = ['open', 'high', 'low', 'close', 'volume']
         for col in ohlcv_columns:
     pass
     pass
+    pass
         if col in chunk.columns:
+    pass
     pass
     pass
                     unified_chunk[col] = chunk[col]
@@ -193,6 +213,7 @@ class OptimizedUnifiedDataProcessor:
         elif source_name == 'aggtrades':
         # Transform aggtrades to OHLCV
         if 'price' in chunk.columns and 'quantity' in chunk.columns:
+    pass
     pass
     pass
         # Simple aggregation - in practice, you'd want more sophisticated aggregation
@@ -211,6 +232,7 @@ class OptimizedUnifiedDataProcessor:
         if self.config.auto_add_date_columns and 'timestamp' in unified_chunk.columns:
     pass
     pass
+    pass
             timestamps, pd.to_datetime(unified_chunk['timestamp'], unit='ms', utc = True)
             unified_chunk['year'] = timestamps.dt.year.astype('int16')
             unified_chunk['month'] = timestamps.dt.month.astype('int8')
@@ -219,6 +241,7 @@ class OptimizedUnifiedDataProcessor:
         return unified_chunk
 
     def _optimize_dtypes(self, df: pd.DataFrame) -> pd.DataFrame:
+    pass
     pass
     pass
         """Optimize DataFrame data types for memory efficiency."""
@@ -233,6 +256,7 @@ class EnhancedStep1_5DataConverter:
     """
 
     def __init__(self, config: Optional[Step1_5Config] = None):
+    pass
     pass
     pass
         self.config, config or Step1_5Config()
@@ -254,12 +278,14 @@ class EnhancedStep1_5DataConverter:
         if config_issues:
     pass
     pass
+    pass
             raise ValueError(f"Configuration validation failed: {config_issues}")
 
         # Initialize directories
         self._initialize_directories()
 
     def _initialize_directories(self):
+    pass
     pass
     pass
         """Initialize required directories."""
@@ -271,6 +297,7 @@ class EnhancedStep1_5DataConverter:
         ]
 
         for directory in directories:
+    pass
     pass
     pass
             os.makedirs(directory, exist_ok = True)
@@ -301,6 +328,8 @@ class EnhancedStep1_5DataConverter:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         self.logger.info(f"🎯 Converting data for {exchange} {symbol} {timeframe}")
 
         # Check if unified data already exists
@@ -309,12 +338,15 @@ class EnhancedStep1_5DataConverter:
         if unified_exists and not self.config.force_rerun:
     pass
     pass
+    pass
         if self.config.enable_incremental:
+    pass
     pass
     pass
         self.logger.info("✅ Unified data exists, checking for incremental updates...")
                     incremental_success, await self._process_incremental_updates(symbol, exchange, timeframe)
         if incremental_success:
+    pass
     pass
     pass
         self.logger.info("✅ Incremental processing completed")
@@ -329,6 +361,7 @@ class EnhancedStep1_5DataConverter:
             conversion_success, await self._perform_full_conversion(symbol, exchange, timeframe, data_dir)
 
         if conversion_success:
+    pass
     pass
     pass
         self.logger.info("✅ Enhanced data conversion completed successfully")
@@ -360,16 +393,21 @@ class EnhancedStep1_5DataConverter:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         if os.path.exists(unified_base):
+    pass
     pass
     pass
                 parquet_files = []
         for root, dirs, files in os.walk(unified_base):
     pass
     pass
+    pass
                     parquet_files.extend([f for f in files if f.endswith('.parquet')])
 
         if parquet_files:
+    pass
     pass
     pass
         self.logger.info(f"✅ Found existing unified data: {len(parquet_files)} files")
@@ -388,9 +426,12 @@ class EnhancedStep1_5DataConverter:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             backup_path, os.path.join(self.config.backup_dir, f"{exchange}_{symbol}_{timeframe}_{int(time.time())}")
 
         if os.path.exists(unified_base):
+    pass
     pass
     pass
                 import shutil
@@ -403,6 +444,8 @@ class EnhancedStep1_5DataConverter:
         """Process incremental updates to existing unified data."""
         try:
         self.logger.info("🔍 Processing incremental updates...")
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -427,7 +470,10 @@ class EnhancedStep1_5DataConverter:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         if not data_sources:
+    pass
     pass
     pass
         self.logger.warning("No data sources found for conversion")
@@ -441,6 +487,7 @@ class EnhancedStep1_5DataConverter:
         if unified_data.empty:
     pass
     pass
+    pass
         self.logger.warning("No unified data generated")
         return False
 
@@ -452,6 +499,7 @@ class EnhancedStep1_5DataConverter:
         if not quality_result.passed:
     pass
     pass
+    pass
         self.logger.warning(f"⚠️ Quality issues in unified data: {quality_result.issues}")
         # Continue with warning instead of failing
         self.logger.warning("⚠️ Continuing with quality issues - review logs for details")
@@ -460,6 +508,7 @@ class EnhancedStep1_5DataConverter:
             save_success, await self._save_unified_data(unified_data, symbol, exchange, timeframe)
 
         if not save_success:
+    pass
     pass
     pass
         self.logger.error("Failed to save unified data")
@@ -483,6 +532,7 @@ class EnhancedStep1_5DataConverter:
         if os.path.exists(klines_file):
     pass
     pass
+    pass
             data_sources['klines'] = klines_file
 
         # Check for aggtrades data
@@ -490,11 +540,13 @@ class EnhancedStep1_5DataConverter:
         if os.path.exists(aggtrades_file):
     pass
     pass
+    pass
             data_sources['aggtrades'] = aggtrades_file
 
         # Check for futures data
         futures_file, os.path.join(data_dir, f"futures_{exchange}_{symbol}_consolidated.parquet")
         if os.path.exists(futures_file):
+    pass
     pass
     pass
             data_sources['futures'] = futures_file
@@ -508,6 +560,8 @@ class EnhancedStep1_5DataConverter:
             output_dir, os.path.join(self.config.unified_dir, exchange.lower(), symbol, timeframe)
             os.makedirs(output_dir, exist_ok = True)
 
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -529,12 +583,15 @@ class EnhancedStep1_5DataConverter:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
                 import pyarrow.parquet as pq
 
                 table, pa.Table.from_pandas(unified_data, preserve_index = False)
 
         # Write with partitioning
         if partition_cols:
+    pass
     pass
     pass
                     pq.write_to_dataset(
@@ -576,10 +633,12 @@ class EnhancedStep1_5DataConverter:
     def get_memory_stats(self) -> Dict[str, Any]:
     pass
     pass
+    pass
         """Get memory statistics."""
         return self.memory_monitor.get_memory_stats()
 
     def get_quality_summary(self) -> Dict[str, Any]:
+    pass
     pass
     pass
         """Get quality validation summary."""
@@ -608,6 +667,7 @@ async def run_enhanced_step1_5(
 
 # Example usage
 if __name__ == "__main__":
+    pass
     pass
     pass
     import asyncio
@@ -651,6 +711,8 @@ if __name__ == "__main__":
         try:
             result, await step01_5.execute(training_input, pipeline_state)
 
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:

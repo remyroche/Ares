@@ -28,6 +28,7 @@ class LiveWaveletDemo:
     def __init__(self, config_path: str = "src/config/live_wavelet_config.yaml"):
     pass
     pass
+    pass
         self.config_path = config_path
         self.config = self._load_config()
         self.logger = system_logger.getChild("LiveWaveletDemo")
@@ -42,10 +43,13 @@ class LiveWaveletDemo:
     def _load_config(self) -> dict:
     pass
     pass
+    pass
         """Load configuration from YAML file."""
         try:
             with open(self.config_path) as f:
                 return yaml.safe_load(f)
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -63,9 +67,12 @@ class LiveWaveletDemo:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             # Initialize wavelet integration
             success = await self.wavelet_integration.initialize()
             if not success:
+    pass
     pass
     pass
                 self.logger.error("Failed to initialize wavelet integration")
@@ -84,9 +91,12 @@ class LiveWaveletDemo:
     def _generate_demo_data(self) -> None:
     pass
     pass
+    pass
         """Generate realistic demo market data."""
         try:
             # Generate 1000 data points of realistic price data
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -114,6 +124,7 @@ class LiveWaveletDemo:
             # Create OHLCV data
             self.demo_data = []
             for i in range(n_points):
+    pass
     pass
     pass
                 price = prices[i]
@@ -151,6 +162,8 @@ class LiveWaveletDemo:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             self.is_running = True
 
             start_time = time.time()
@@ -159,6 +172,7 @@ class LiveWaveletDemo:
             while self.is_running and (time.time() - start_time) < duration:
                 # Get next data point
                 if data_index >= len(self.demo_data):
+    pass
     pass
     pass
                     data_index = 0  # Loop back to start
@@ -173,16 +187,19 @@ class LiveWaveletDemo:
                 if results:
     pass
     pass
+    pass
                     self._log_signal_results(results)
 
                 # Update performance stats periodically
                 if data_index % 50 == 0:
     pass
     pass
+    pass
                     self._log_performance_stats()
 
                 # Check health
                 if data_index % 100 == 0:
+    pass
     pass
     pass
                     self._check_health()
@@ -201,9 +218,13 @@ class LiveWaveletDemo:
     def _create_market_data(self, index: int) -> dict:
     pass
     pass
+    pass
         """Create market data for demo."""
         try:
             if index >= len(self.demo_data):
+    pass
+    except Exception as e:
+        pass
     pass
     except Exception as e:
         pass
@@ -229,9 +250,12 @@ class LiveWaveletDemo:
     def _log_signal_results(self, results: dict) -> None:
     pass
     pass
+    pass
         """Log signal results."""
         try:
             signal = results.get("wavelet_signal", "hold")
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -242,6 +266,7 @@ class LiveWaveletDemo:
             comp_time = results.get("wavelet_computation_time", 0.0)
 
             if signal != "hold":
+    pass
     pass
     pass
                 self.logger.info(
@@ -258,6 +283,7 @@ class LiveWaveletDemo:
     def _log_performance_stats(self) -> None:
     pass
     pass
+    pass
         """Log performance statistics."""
         try:
             stats = self.wavelet_integration.get_performance_stats()
@@ -266,7 +292,10 @@ class LiveWaveletDemo:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             if stats:
+    pass
     pass
     pass
                 recent = stats.get("recent_signals", {})
@@ -289,6 +318,7 @@ class LiveWaveletDemo:
     def _check_health(self) -> None:
     pass
     pass
+    pass
         """Check system health."""
         try:
             is_healthy = self.wavelet_integration.is_healthy()
@@ -297,7 +327,10 @@ class LiveWaveletDemo:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             if not is_healthy:
+    pass
     pass
     pass
                 self.logger.error("⚠️ Wavelet integration health check failed")
@@ -310,10 +343,13 @@ class LiveWaveletDemo:
     def _log_final_stats(self) -> None:
     pass
     pass
+    pass
         """Log final statistics."""
         try:
             stats = self.wavelet_integration.get_performance_stats()
 
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -323,6 +359,7 @@ class LiveWaveletDemo:
 
             recent = stats.get("recent_signals", {})
             if recent:
+    pass
     pass
     pass
                 self.logger.info(f"  Buy signals: {recent.get('buy_count', 0)}")
@@ -340,6 +377,7 @@ class LiveWaveletDemo:
             if perf_stats:
     pass
     pass
+    pass
                 self.logger.info(f"  Window size: {perf_stats.get('window_size', 0)}")
                 self.logger.info(
                     f"  Wavelet type: {perf_stats.get('wavelet_type', 'unknown')}",
@@ -354,6 +392,7 @@ class LiveWaveletDemo:
     def stop_demo(self) -> None:
     pass
     pass
+    pass
         """Stop the demo."""
         self.is_running = False
         self.logger.info("🛑 Demo stopped by user")
@@ -366,10 +405,13 @@ async def main():
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         demo = LiveWaveletDemo()
 
         success = await demo.initialize()
         if not success:
+    pass
     pass
     pass
             print("Failed to initialize demo")
@@ -379,11 +421,12 @@ async def main():
         await demo.run_demo(duration=60)
 
     except KeyboardInterrupt:
-        print("\\\n🛑 Demo interrupted by user")
+        print("\\\\n🛑 Demo interrupted by user")
     except Exception as e:
         print(f"Error in demo: {e}")
 
 if __name__ == "__main__":
+    pass
     pass
     pass
     asyncio.run(main())

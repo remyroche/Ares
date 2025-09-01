@@ -54,9 +54,12 @@ class RollingMTInference:
     def load(self) -> bool:
     pass
     pass
+    pass
         try:
             models, meta, feat = MultiTaskRandomForest.load(
                 self.models_dir, prefix=self.prefix,
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -69,6 +72,7 @@ class RollingMTInference:
             if not self.models:
     pass
     pass
+    pass
                 self.logger.warning("No models loaded for rolling inference")
                 return False
             return True
@@ -77,6 +81,7 @@ class RollingMTInference:
             return False
 
     def _rf_pooled_features(self, seq_df: pd.DataFrame) -> dict[str, float]:
+    pass
     pass
     pass
         out: dict[str, float] = {}
@@ -97,6 +102,7 @@ class RollingMTInference:
             if col in seq_df.columns:
     pass
     pass
+    pass
                 s = pd.to_numeric(seq_df[col], errors="coerce")
                 out[f"mean_{col}"] = float(np.nanmean(s.values))
                 out[f"std_{col}"] = float(np.nanstd(s.values))
@@ -105,12 +111,15 @@ class RollingMTInference:
     def _build_X_last(self, combined_df: pd.DataFrame) -> pd.DataFrame:
     pass
     pass
+    pass
         if combined_df is None or combined_df.empty:
+    pass
     pass
     pass
             return pd.DataFrame(columns=self.feature_names)
         pre = self.cfg.pre_window
         if len(combined_df) < pre + 1:
+    pass
     pass
     pass
             return pd.DataFrame(columns=self.feature_names)
@@ -128,6 +137,9 @@ class RollingMTInference:
     ) -> float:
         try:
             if head == "path_class" and cls is not None:
+    pass
+    except Exception as e:
+        pass
     pass
     except Exception as e:
         pass
@@ -153,6 +165,9 @@ class RollingMTInference:
     except Exception as e:
         pass
     pass
+    except Exception as e:
+        pass
+    pass
                 return float(self.thresholds.get("path_class", {}).get(cls, default))
     except Exception as e:
         pass
@@ -163,8 +178,10 @@ class RollingMTInference:
     def predict_latest(self, combined_df: pd.DataFrame) -> dict[str, Any]:
     pass
     pass
+    pass
         X = self._build_X_last(combined_df)
         if X.empty:
+    pass
     pass
     pass
             return {"ready": False}
@@ -176,14 +193,18 @@ class RollingMTInference:
         if pc is not None:
     pass
     pass
+    pass
             try:
                 proba = pc.predict_proba(X)[0]
     except Exception as e:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
                 classes = list(getattr(pc, "classes_", []))
                 for i, c in enumerate(classes):
+    pass
     pass
     pass
                     p_adj = self._apply_reliability(
@@ -197,6 +218,7 @@ class RollingMTInference:
                 if s > 0:
     pass
     pass
+    pass
                     p_path = {k: v / s for k, v in p_path.items()}
             except Exception:
                 pass
@@ -206,13 +228,17 @@ class RollingMTInference:
         for head in ("onset_beginning", "end_trend"):
     pass
     pass
+    pass
             mdl = self.models.get(head)
             if mdl is None:
+    pass
     pass
     pass
                 continue
             try:
                 p = float(mdl.predict_proba(X)[0, 1])
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -225,14 +251,18 @@ class RollingMTInference:
         if self.cfg.horizons:
     pass
     pass
+    pass
             H = int(self.cfg.horizons[0])
             head = f"direction_up_{H}"
             mdl = self.models.get(head)
             if mdl is not None:
     pass
     pass
+    pass
                 try:
                     p = float(mdl.predict_proba(X)[0, 1])
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -245,6 +275,7 @@ class RollingMTInference:
             if rmdl is not None:
     pass
     pass
+    pass
                 with contextlib.suppress(Exception):
                     out[f"return_{H}"] = float(rmdl.predict(X)[0])
             out["horizon"] = H
@@ -254,8 +285,11 @@ class RollingMTInference:
         if nr is not None:
     pass
     pass
+    pass
             try:
                 proba = nr.predict_proba(X)[0]
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -263,6 +297,7 @@ class RollingMTInference:
                 classes = list(getattr(nr, "classes_", []))
                 p_nr = {}
                 for i, c in enumerate(classes):
+    pass
     pass
     pass
                     p_adj = self._apply_reliability(
@@ -273,6 +308,7 @@ class RollingMTInference:
                     p_nr[str(c)] = p_adj
                 s = float(sum(p_nr.values()))
                 if s > 0:
+    pass
     pass
     pass
                     p_nr = {k: v / s for k, v in p_nr.items()}
@@ -289,9 +325,11 @@ class RollingMTInference:
         for cls in ["beginning_of_trend", "continuation"]:
     pass
     pass
+    pass
             p = float(p_path.get(cls, 0.0))
             thr = self._get_threshold("path_class", cls, default=0.6)
             if p >= thr and p > fav:
+    pass
     pass
     pass
                 allow = True
@@ -301,9 +339,11 @@ class RollingMTInference:
         if not allow and "p_onset_beginning" in out:
     pass
     pass
+    pass
             p_onset = float(out.get("p_onset_beginning", 0.0))
             thr_onset = self._get_threshold("onset_beginning", default=0.6)
             if p_onset >= thr_onset:
+    pass
     pass
     pass
                 allow = True
@@ -320,11 +360,13 @@ class RollingMTInference:
         if H is not None:
     pass
     pass
+    pass
             p_up = float(out.get(f"p_direction_up_{H}", 0.0))
             thr_up = self._get_threshold(f"direction_up_{H}", default=0.6)
             side = "long" if p_up >= thr_up else "short"
             # reinforcement: scale between 0.5 and 2.0 based on how far above threshold fav is
             if allow and fav_thr < 1.0:
+    pass
     pass
     pass
                 mult = float(

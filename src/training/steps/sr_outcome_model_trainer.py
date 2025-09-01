@@ -41,6 +41,7 @@ class SROutcomeModelTrainer:
     def __init__(self, config: dict[str, Any]) -> None:
     pass
     pass
+    pass
         self.config, config
         self.logger, system_logger.getChild("SROutcomeModelTrainer")
 
@@ -106,9 +107,12 @@ class SROutcomeModelTrainer:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         # Initialize SR predictor
             sr_init_success, await self.sr_predictor.initialize()
         if not sr_init_success:
+    pass
     pass
     pass
         self.logger.warning("Failed to initialize SRBreakoutPredictor")
@@ -137,9 +141,12 @@ class SROutcomeModelTrainer:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         # Prepare training data
             prepared_data, await self._prepare_training_data(training_data)
         if prepared_data is None:
+    pass
     pass
     pass
         self.logger.error("Failed to prepare training data")
@@ -150,11 +157,13 @@ class SROutcomeModelTrainer:
         if X is None or y is None:
     pass
     pass
+    pass
         self.logger.error("Failed to engineer features")
         return False
 
         # Train models based on configuration
         if self.use_ensemble:
+    pass
     pass
     pass
                 training_result, await self._train_ensemble_models(X, y)
@@ -185,13 +194,17 @@ class SROutcomeModelTrainer:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         # Combine data from different timeframes
             combined_data, pd.DataFrame()
 
         for timeframe, data in training_data.items():
     pass
     pass
+    pass
         if data.empty:
+    pass
     pass
     pass
                     continue
@@ -207,9 +220,11 @@ class SROutcomeModelTrainer:
         if labeled_data is not None:
     pass
     pass
+    pass
                     combined_data, pd.concat([combined_data, labeled_data], ignore_index = True)
 
         if combined_data.empty:
+    pass
     pass
     pass
         self.logger.error("No valid training data found")
@@ -233,6 +248,9 @@ class SROutcomeModelTrainer:
     pass
     except Exception as e:
         pass
+    pass
+    except Exception as e:
+        pass
         return None
 
         # Sample data for efficiency (process every 10th row for large datasets)
@@ -244,6 +262,7 @@ class SROutcomeModelTrainer:
         for idx, row in sample_data.iterrows():
     pass
     pass
+    pass
         try:
         # Get current price and market context
                     current_price, row["close"]
@@ -252,9 +271,12 @@ class SROutcomeModelTrainer:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         # Create market data slice for S / R analysis
                     market_slice, data.loc[:idx].tail(100)
         if len(market_slice) < 20:
+    pass
     pass
     pass
                         continue
@@ -271,6 +293,7 @@ class SROutcomeModelTrainer:
                     is_near_sr, sr_outcome.get("is_near_sr_level", False)
 
         if is_near_sr:
+    pass
     pass
     pass
         # Create labeled sample
@@ -296,6 +319,7 @@ class SROutcomeModelTrainer:
         if not labeled_samples:
     pass
     pass
+    pass
         return None
 
         # Convert to DataFrame
@@ -317,6 +341,8 @@ class SROutcomeModelTrainer:
         try:
             features: dict[str, float] = {}
 
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -384,6 +410,7 @@ class SROutcomeModelTrainer:
         if sr_context:
     pass
     pass
+    pass
                 nearest_support, sr_context.get("nearest_support", current_price)
                 nearest_resistance, sr_context.get("nearest_resistance", current_price)
 
@@ -401,6 +428,7 @@ class SROutcomeModelTrainer:
         # Pivot level features
                 pivot_levels, sr_context.get("pivot_levels", {})
         if pivot_levels:
+    pass
     pass
     pass
                     features["nearest_pivot_strength"] = pivot_levels.get(
@@ -421,6 +449,7 @@ class SROutcomeModelTrainer:
         if self.use_temporal_features:
     pass
     pass
+    pass
                 features["time_since_sr_touch"] = self._calculate_time_since_sr_touch(
                     market_data = market_data, sr_context = sr_context
                 )
@@ -430,6 +459,7 @@ class SROutcomeModelTrainer:
 
         # Volatility regime features
         if self.use_volatility_regime:
+    pass
     pass
     pass
                 features["volatility_regime"] = self._classify_volatility_regime(
@@ -445,6 +475,7 @@ class SROutcomeModelTrainer:
     def _balance_classes(self, data: pd.DataFrame) -> pd.DataFrame:
     pass
     pass
+    pass
         """Balance classes to handle imbalanced S / R outcomes."""
         try:
         # Count samples per class
@@ -457,12 +488,16 @@ class SROutcomeModelTrainer:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         for outcome in ["breakout", "rebounce", "consolidation"]:
+    pass
     pass
     pass
                 outcome_data, data[data["outcome"] == outcome]
 
         if len(outcome_data) > min_count:
+    pass
     pass
     pass
         # Sample down to min_count
@@ -495,6 +530,8 @@ class SROutcomeModelTrainer:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         # Extract features from all samples
             feature_vectors: list[list[float]] = []
             labels: list[str] = []
@@ -502,8 +539,10 @@ class SROutcomeModelTrainer:
         for _, row in data.iterrows():
     pass
     pass
+    pass
                 features, row.get("features", {})
         if features:
+    pass
     pass
     pass
         # Create feature vector
@@ -511,10 +550,12 @@ class SROutcomeModelTrainer:
         if feature_vector is not None:
     pass
     pass
+    pass
                         feature_vectors.append(feature_vector)
                         labels.append(row["outcome"])
 
         if not feature_vectors:
+    pass
     pass
     pass
         self.logger.error("No valid feature vectors found")
@@ -542,6 +583,7 @@ class SROutcomeModelTrainer:
     def _create_feature_vector(self, features: dict) -> list[float] | None:
     pass
     pass
+    pass
         """Create feature vector from features dictionary."""
         try:
             feature_names, self._get_feature_names()
@@ -549,9 +591,12 @@ class SROutcomeModelTrainer:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             feature_vector = []
 
         for feature_name in feature_names:
+    pass
     pass
     pass
                 feature_vector.append(features.get(feature_name, 0.0))
@@ -562,6 +607,7 @@ class SROutcomeModelTrainer:
         return None
 
     def _get_feature_names(self) -> list[str]:
+    pass
     pass
     pass
         """Get list of feature names in order."""
@@ -589,9 +635,11 @@ class SROutcomeModelTrainer:
         if self.use_temporal_features:
     pass
     pass
+    pass
             base_features.extend(["time_since_sr_touch", "sr_touch_frequency"])
 
         if self.use_volatility_regime:
+    pass
     pass
     pass
             base_features.extend(["volatility_regime", "atr_ratio"])
@@ -603,6 +651,8 @@ class SROutcomeModelTrainer:
         try:
         self.logger.info("🔄 Training LightGBM model...")
 
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -633,6 +683,7 @@ class SROutcomeModelTrainer:
         if not self.use_ensemble:
     pass
     pass
+    pass
         self.ensemble_model, final_model
 
         # Evaluate model
@@ -649,6 +700,8 @@ class SROutcomeModelTrainer:
         try:
         self.logger.info("🔄 Training XGBoost model...")
 
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -679,6 +732,7 @@ class SROutcomeModelTrainer:
         if not self.use_ensemble:
     pass
     pass
+    pass
         self.ensemble_model, final_model
 
         # Evaluate model
@@ -699,9 +753,12 @@ class SROutcomeModelTrainer:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         # Train LightGBM
             lgb_model_success, await self._train_lightgbm_model(X, y)
         if not lgb_model_success:
+    pass
     pass
     pass
         self.logger.error("Failed to train LightGBM model for ensemble")
@@ -710,6 +767,7 @@ class SROutcomeModelTrainer:
         # Train XGBoost
             xgb_model_success, await self._train_xgboost_model(X, y)
         if not xgb_model_success:
+    pass
     pass
     pass
         self.logger.error("Failed to train XGBoost model for ensemble")
@@ -743,6 +801,7 @@ class SROutcomeModelTrainer:
             def objective(trial):
     pass
     pass
+    pass
                 params = {
                     "objective": "multiclass",
                     "num_class": 3,
@@ -771,6 +830,7 @@ class SROutcomeModelTrainer:
         # Cross - validation
                 scores: list[float] = []
         for train_idx, val_idx in tscv.split(X):
+    pass
     pass
     pass
                     X_train, X[train_idx]
@@ -837,6 +897,7 @@ class SROutcomeModelTrainer:
             def objective(trial):
     pass
     pass
+    pass
                 params = {
                     "objective": "multi:softprob",
                     "num_class": 3,
@@ -861,6 +922,7 @@ class SROutcomeModelTrainer:
         # Cross - validation
                 scores: list[float] = []
         for train_idx, val_idx in tscv.split(X):
+    pass
     pass
     pass
                     X_train, X[train_idx]
@@ -925,7 +987,10 @@ class SROutcomeModelTrainer:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         if model_name == "Ensemble" and self.ensemble_model is not None:
+    pass
     pass
     pass
                 model_to_evaluate, self.ensemble_model
@@ -937,6 +1002,7 @@ class SROutcomeModelTrainer:
                 model_to_evaluate, self.ensemble_model
 
         if model_to_evaluate is None:
+    pass
     pass
     pass
         self.logger.warning(f"No model available for evaluation: {model_name}")
@@ -956,6 +1022,7 @@ class SROutcomeModelTrainer:
         # Feature importance (for individual models)
             feature_importance, None
         if hasattr(model_to_evaluate, "feature_importances_"):
+    pass
     pass
     pass
                 feature_importance, pd.DataFrame(
@@ -980,6 +1047,7 @@ class SROutcomeModelTrainer:
         if lgb_importance is not None and xgb_importance is not None:
     pass
     pass
+    pass
         # Weighted average of feature importance
                     weighted_importance = (
                         lgb_importance * self.ensemble_weights[0]
@@ -995,11 +1063,12 @@ class SROutcomeModelTrainer:
         # Log results
         self.logger.info(f"Model Evaluation Results for {model_name}:")
         self.logger.info(f"AUC Score: {auc_score:.4f}")
-        self.logger.info(f"Classification Report:\\\n{report}")
+        self.logger.info(f"Classification Report:\\\\n{report}")
         if feature_importance is not None:
     pass
     pass
-        self.logger.info(f"Top 10 Features:\\\n{feature_importance.head(10)}")
+    pass
+        self.logger.info(f"Top 10 Features:\\\\n{feature_importance.head(10)}")
 
         # Save evaluation results
             evaluation_results = {
@@ -1029,7 +1098,10 @@ class SROutcomeModelTrainer:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         if "lgb" in self.models:
+    pass
     pass
     pass
                 lgb_path, os.path.join(self.artifacts_dir, "lightgbm_model.pkl")
@@ -1039,12 +1111,14 @@ class SROutcomeModelTrainer:
         if "xgb" in self.models:
     pass
     pass
+    pass
                 xgb_path, os.path.join(self.artifacts_dir, "xgboost_model.pkl")
         with open(xgb_path, "wb") as f:
                     pickle.dump(self.models["xgb"], f)
 
         # Save ensemble model
         if self.ensemble_model is not None:
+    pass
     pass
     pass
                 ensemble_path, os.path.join(self.artifacts_dir, "ensemble_model.pkl")
@@ -1089,9 +1163,13 @@ class SROutcomeModelTrainer:
     def predict(self, features: dict[str, float]) -> dict[str, Any]:
     pass
     pass
+    pass
         """Make prediction using the trained ensemble or individual model."""
         try:
         if self.ensemble_model is None:
+    pass
+    except Exception as e:
+        pass
     pass
     except Exception as e:
         pass
@@ -1114,6 +1192,7 @@ class SROutcomeModelTrainer:
         if feature_vector is None:
     pass
     pass
+    pass
         return {
                     "probabilities": {
                         "breakout": 0.33,
@@ -1130,6 +1209,7 @@ class SROutcomeModelTrainer:
 
         # Make prediction
         if self.use_ensemble and self.ensemble_model is not None:
+    pass
     pass
     pass
         # Use ensemble prediction
@@ -1179,6 +1259,7 @@ class SROutcomeModelTrainer:
     def _calculate_rsi(self, prices: pd.Series, period: int, 14) -> pd.Series:
     pass
     pass
+    pass
         """Calculate RSI indicator."""
         delta, prices.diff()
         gain = (delta.where(delta > 0, 0)).rolling(window = period).mean()
@@ -1210,9 +1291,13 @@ class SROutcomeModelTrainer:
     def _calculate_market_trend(self, market_data: pd.DataFrame) -> float:
     pass
     pass
+    pass
         """Calculate market trend strength."""
         try:
         if len(market_data) < 20:
+    pass
+    except Exception as e:
+        pass
     pass
     except Exception as e:
         pass
@@ -1236,9 +1321,13 @@ class SROutcomeModelTrainer:
     def _calculate_momentum_strength(self, market_data: pd.DataFrame) -> float:
     pass
     pass
+    pass
         """Calculate momentum strength."""
         try:
         if len(market_data) < 10:
+    pass
+    except Exception as e:
+        pass
     pass
     except Exception as e:
         pass
@@ -1282,9 +1371,13 @@ class SROutcomeModelTrainer:
     def _classify_volatility_regime(self, market_data: pd.DataFrame) -> float:
     pass
     pass
+    pass
         """Classify volatility regime."""
         try:
         if len(market_data) < 20:
+    pass
+    except Exception as e:
+        pass
     pass
     except Exception as e:
         pass
@@ -1314,9 +1407,13 @@ class SROutcomeModelTrainer:
     def _calculate_atr_ratio(self, market_data: pd.DataFrame) -> float:
     pass
     pass
+    pass
         """Calculate ATR ratio for volatility analysis."""
         try:
         if len(market_data) < 20:
+    pass
+    except Exception as e:
+        pass
     pass
     except Exception as e:
         pass

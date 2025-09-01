@@ -24,6 +24,7 @@ class EnhancedExecutionManager:
     def __init__(self, config: Dict[str, Any]) -> None:
     pass
     pass
+    pass
         """Initialize the enhanced execution manager."""
         self.config = config.get("tactician_triple_barrier", {})
         self.logger = get_logger("EnhancedExecutionManager")
@@ -36,6 +37,7 @@ class EnhancedExecutionManager:
         self.precision_metrics: Dict[str, float] = {}
 
     def _load_config(self) -> None:
+    pass
     pass
     pass
         """Load configuration for high precision execution."""
@@ -100,6 +102,9 @@ import self.barrier_calculator = DynamicBarrierCalculator
     except Exception as e:
         pass
     pass
+    except Exception as e:
+        pass
+    pass
                 return {
                     "valid": False,
                     "reason": "missing_predictions",
@@ -122,6 +127,7 @@ import self.barrier_calculator = DynamicBarrierCalculator
             if analyst_confidence < 0.5 or tactician_confidence < 0.5:
     pass
     pass
+    pass
                 return {
                     "valid": False,
                     "should_execute": False,
@@ -132,6 +138,7 @@ import self.barrier_calculator = DynamicBarrierCalculator
 
             # Determine trade direction based on price predictions
             if analyst_price_pred > 0 and tactician_price_pred > 0:
+    pass
     pass
     pass
                 trade_direction = "long"
@@ -150,6 +157,7 @@ import self.barrier_calculator = DynamicBarrierCalculator
             combined_confidence = (analyst_confidence + tactician_confidence) / 2
 
             if combined_confidence < self.precision_threshold:
+    pass
     pass
     pass
                 return {
@@ -184,10 +192,12 @@ import self.barrier_calculator = DynamicBarrierCalculator
     def _determine_tactician_direction(self, confidence: float) -> str:
     pass
     pass
+    pass
         """Determine Tactician direction based on confidence."""
         # This would be based on the specific Tactician model outputs
         # For now, use a simple threshold-based approach
         if confidence > 0.7:
+    pass
     pass
     pass
             return "long"
@@ -199,8 +209,10 @@ import self.barrier_calculator = DynamicBarrierCalculator
     def _directions_agree(self, analyst_direction: str, tactician_direction: str) -> bool:
     pass
     pass
+    pass
         """Check if Analyst and Tactician agree on trade direction."""
         if analyst_direction == "neutral" or tactician_direction == "neutral":
+    pass
     pass
     pass
             return False
@@ -226,8 +238,11 @@ import self.barrier_calculator = DynamicBarrierCalculator
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             validation = self.validate_analyst_predictions(analyst_predictions, tactician_predictions)
             if not validation["should_execute"]:
+    pass
     pass
     pass
                 return {
@@ -325,6 +340,8 @@ import self.barrier_calculator = DynamicBarrierCalculator
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             risk_per_unit = abs(current_price - stop_loss_price) / current_price
 
             # Calculate maximum position size based on risk limit
@@ -340,6 +357,7 @@ import self.barrier_calculator = DynamicBarrierCalculator
     def _calculate_entry_timing(self, market_data: pd.DataFrame, confidence: float) -> Dict[str, Any]:
     pass
     pass
+    pass
         """Calculate optimal entry timing."""
         try:
             # Simple timing based on confidence and market conditions
@@ -347,7 +365,10 @@ import self.barrier_calculator = DynamicBarrierCalculator
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             if confidence > self.confidence_boost_threshold:
+    pass
     pass
     pass
                 delay = 0  # Immediate execution for high confidence
@@ -381,6 +402,8 @@ import self.barrier_calculator = DynamicBarrierCalculator
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             base_precision = combined_confidence
 
             # Volatility penalty (higher volatility = lower precision)
@@ -389,6 +412,7 @@ import self.barrier_calculator = DynamicBarrierCalculator
             # Market condition bonus (if recent price action is favorable)
             market_bonus = 0.0
             if len(market_data) >= 5:
+    pass
     pass
     pass
                 recent_returns = market_data["close"].pct_change().tail(5).mean()
@@ -416,6 +440,9 @@ import self.barrier_calculator = DynamicBarrierCalculator
         """Execute trade with high precision parameters."""
         try:
             if not execution_params.get("should_execute", False):
+    pass
+    except Exception as e:
+        pass
     pass
     except Exception as e:
         pass
@@ -469,6 +496,7 @@ import self.barrier_calculator = DynamicBarrierCalculator
     def _update_precision_metrics(self, execution_params: Dict[str, Any]) -> None:
     pass
     pass
+    pass
         """Update precision metrics for performance tracking."""
         try:
             precision_score = execution_params.get("precision_score", 0.0)
@@ -477,8 +505,11 @@ import self.barrier_calculator = DynamicBarrierCalculator
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             # Update running averages
             if "avg_precision" not in self.precision_metrics:
+    pass
     pass
     pass
                 self.precision_metrics["avg_precision"] = precision_score
@@ -494,6 +525,7 @@ import self.barrier_calculator = DynamicBarrierCalculator
             if "max_precision" not in self.precision_metrics:
     pass
     pass
+    pass
                 self.precision_metrics["max_precision"] = precision_score
             else:
                 self.precision_metrics["max_precision"] = max(
@@ -506,9 +538,13 @@ import self.barrier_calculator = DynamicBarrierCalculator
     def get_performance_summary(self) -> Dict[str, Any]:
     pass
     pass
+    pass
         """Get performance summary for the enhanced execution manager."""
         try:
             if not self.execution_history:
+    pass
+    except Exception as e:
+        pass
     pass
     except Exception as e:
         pass

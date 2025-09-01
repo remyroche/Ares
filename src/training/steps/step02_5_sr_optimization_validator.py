@@ -39,6 +39,7 @@ class SROptimizationValidator:
     def __init__(self, config: dict[str, Any]) -> None:
     pass
     pass
+    pass
         self.config, config
         self.logger, system_logger.getChild("SROptimizationValidator")
         self.validation_results = {}
@@ -60,9 +61,12 @@ class SROptimizationValidator:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         # Validate optimization results file
             results_validation, await self._validate_optimization_results()
         if not results_validation["valid"]:
+    pass
     pass
     pass
                 validation_passed, False
@@ -73,6 +77,7 @@ class SROptimizationValidator:
         if not params_validation["valid"]:
     pass
     pass
+    pass
                 validation_passed, False
                 validation_details.extend(params_validation["errors"])
 
@@ -81,12 +86,14 @@ class SROptimizationValidator:
         if not config_validation["valid"]:
     pass
     pass
+    pass
                 validation_passed, False
                 validation_details.extend(config_validation["errors"])
 
         # Validate artifact quality
             quality_validation, await self._validate_artifact_quality()
         if not quality_validation["valid"]:
+    pass
     pass
     pass
                 validation_passed, False
@@ -100,6 +107,7 @@ class SROptimizationValidator:
             }
 
         if validation_passed:
+    pass
     pass
     pass
         self.logger.info("✅ S / R optimization validation passed")
@@ -128,9 +136,12 @@ class SROptimizationValidator:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         # Check if optimization results file exists
             results_file, Path("data / optimization / sr_optimization_results.json")
         if not results_file.exists():
+    pass
     pass
     pass
                 errors.append("Optimization results file not found")
@@ -141,6 +152,7 @@ class SROptimizationValidator:
         if not sr_results_file.exists():
     pass
     pass
+    pass
                 errors.append("SR predictor optimization results file not found")
         return {"valid": False, "errors": errors}
 
@@ -148,6 +160,8 @@ class SROptimizationValidator:
         try:
         with open(results_file, 'r') as f:
                     results_data, json.load(f)
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -171,7 +185,9 @@ class SROptimizationValidator:
         for field in required_fields:
     pass
     pass
+    pass
         if field not in results_data:
+    pass
     pass
     pass
                     errors.append(f"Missing required field: {field}")
@@ -180,12 +196,15 @@ class SROptimizationValidator:
         if "metadata" in results_data:
     pass
     pass
+    pass
                 metadata, results_data["metadata"]
         if "step" not in metadata or metadata["step"] != "step02_5_sr_optimization":
     pass
     pass
+    pass
                     errors.append("Invalid step metadata")
         if "timestamp" not in metadata:
+    pass
     pass
     pass
                     errors.append("Missing timestamp in metadata")
@@ -214,9 +233,12 @@ class SROptimizationValidator:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         # Load optimization results
             results_file, Path("data / optimization / sr_optimization_results.json")
         if not results_file.exists():
+    pass
     pass
     pass
         return {"valid": False, "errors": ["Optimization results file not found"]}
@@ -229,12 +251,15 @@ class SROptimizationValidator:
         if not isinstance(method_weights, dict):
     pass
     pass
+    pass
                 errors.append("Method weights must be a dictionary")
             else:
         for method, weight in method_weights.items():
     pass
     pass
+    pass
         if not isinstance(weight, (int, float)) or weight < 0:
+    pass
     pass
     pass
                         errors.append(f"Invalid method weight for {method}: {weight}")
@@ -244,12 +269,15 @@ class SROptimizationValidator:
         if not isinstance(strength_weights, dict):
     pass
     pass
+    pass
                 errors.append("Strength weights must be a dictionary")
             else:
         for strength, weight in strength_weights.items():
     pass
     pass
+    pass
         if not isinstance(weight, (int, float)) or weight < 0:
+    pass
     pass
     pass
                         errors.append(f"Invalid strength weight for {strength}: {weight}")
@@ -259,13 +287,16 @@ class SROptimizationValidator:
         if not isinstance(dbscan_params, dict):
     pass
     pass
+    pass
                 errors.append("DBSCAN parameters must be a dictionary")
             else:
         if "eps" in dbscan_params and not isinstance(dbscan_params["eps"], (int, float)):
     pass
     pass
+    pass
                     errors.append("DBSCAN eps must be a number")
         if "min_samples" in dbscan_params and not isinstance(dbscan_params["min_samples"], int):
+    pass
     pass
     pass
                     errors.append("DBSCAN min_samples must be an integer")
@@ -275,13 +306,16 @@ class SROptimizationValidator:
         if not isinstance(performance_metrics, dict):
     pass
     pass
+    pass
                 errors.append("Performance metrics must be a dictionary")
             else:
                 required_metrics = ["optimization_score", "sharpe_ratio", "win_rate"]
         for metric in required_metrics:
     pass
     pass
+    pass
         if metric not in performance_metrics:
+    pass
     pass
     pass
                         errors.append(f"Missing performance metric: {metric}")
@@ -312,9 +346,12 @@ class SROptimizationValidator:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         # Check if SR configuration exists
             sr_config, self.config.get("sr_breakout_predictor", {})
         if not sr_config:
+    pass
     pass
     pass
                 errors.append("SR breakout predictor configuration not found")
@@ -324,10 +361,12 @@ class SROptimizationValidator:
         if not sr_config.get("use_optimized_params", False):
     pass
     pass
+    pass
                 errors.append("use_optimized_params not enabled in SR configuration")
 
         # Check if optimization results file path is set
         if "optimization_results_file" not in sr_config:
+    pass
     pass
     pass
                 errors.append("optimization_results_file path not set in SR configuration")
@@ -335,6 +374,7 @@ class SROptimizationValidator:
         # Check if SR detection optimization config exists
             sr_opt_config, self.config.get("sr_detection_optimization", {})
         if not sr_opt_config:
+    pass
     pass
     pass
                 errors.append("SR detection optimization configuration not found")
@@ -351,7 +391,9 @@ class SROptimizationValidator:
         for param in optimized_params:
     pass
     pass
+    pass
         if param not in sr_opt_config:
+    pass
     pass
     pass
                     errors.append(f"Optimized parameter {param} not found in configuration")
@@ -380,9 +422,12 @@ class SROptimizationValidator:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         # Load optimization results
             results_file, Path("data / optimization / sr_optimization_results.json")
         if not results_file.exists():
+    pass
     pass
     pass
         return {"valid": False, "errors": ["Optimization results file not found"]}
@@ -396,6 +441,7 @@ class SROptimizationValidator:
         # Check optimization score
             optimization_score, performance_metrics.get("optimization_score", 0)
         if optimization_score <= 0:
+    pass
     pass
     pass
                 errors.append(f"Low optimization score: {optimization_score}")
@@ -438,6 +484,7 @@ class SROptimizationValidator:
     def get_validation_results(self) -> Dict[str, Any]:
     pass
     pass
+    pass
         """Get validation results."""
         return self.validation_results
 
@@ -455,6 +502,8 @@ async def run_validation(config: dict[str, Any], symbol: str, exchange: str, tim
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         # Create validator
         validator, SROptimizationValidator(config)
 
@@ -464,6 +513,7 @@ async def run_validation(config: dict[str, Any], symbol: str, exchange: str, tim
         # Log results
         results, validator.get_validation_results()
         if success:
+    pass
     pass
     pass
             logger.info("✅ Step 2.5: S / R Detection Optimization Validation completed successfully")
@@ -477,6 +527,7 @@ async def run_validation(config: dict[str, Any], symbol: str, exchange: str, tim
         return False
 
 if __name__ == "__main__":
+    pass
     pass
     pass
     # Test the validator

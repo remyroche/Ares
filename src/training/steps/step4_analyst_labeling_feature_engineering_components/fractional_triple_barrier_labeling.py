@@ -140,16 +140,19 @@ class FractionalTripleBarrierLabeling:
         if self.fractional_config["enable_distance_scaling"]:
     pass
     pass
+    pass
             components["distance_score"] = self._calculate_distance_scores(labeled_data)
 
         # Time decay scoring
         if self.fractional_config["enable_time_decay"]:
     pass
     pass
+    pass
             components["time_score"] = self._calculate_time_decay_scores(labeled_data)
 
         # Volatility normalization
         if self.fractional_config["enable_volatility_normalization"]:
+    pass
     pass
     pass
             components["volatility_score"] = self._calculate_volatility_scores(
@@ -161,12 +164,14 @@ class FractionalTripleBarrierLabeling:
     def _calculate_distance_scores(self, labeled_data: pd.DataFrame) -> np.ndarray:
     pass
     pass
+    pass
         """Calculate distance - based fractional scores."""
         scores, np.zeros(len(labeled_data))
 
         # For profit hits: score based on how quickly profit was achieved
         profit_hits, labeled_data["label"] == 1
         if profit_hits.any():
+    pass
     pass
     pass
             profit_pcts, labeled_data.loc[profit_hits, "potential_profit_pct"]
@@ -179,6 +184,7 @@ class FractionalTripleBarrierLabeling:
         if stop_hits.any():
     pass
     pass
+    pass
             stop_pcts, labeled_data.loc[stop_hits, "potential_profit_pct"]
         # Normalize by target loss (negative)
             target_loss = -self.base_labeler.stop_loss_multiplier
@@ -187,6 +193,7 @@ class FractionalTripleBarrierLabeling:
         return scores
 
     def _calculate_time_decay_scores(self, labeled_data: pd.DataFrame) -> np.ndarray:
+    pass
     pass
     pass
         """Calculate time decay scores based on how quickly barriers were hit."""
@@ -202,11 +209,13 @@ class FractionalTripleBarrierLabeling:
         if profit_hits.any():
     pass
     pass
+    pass
         # Quick profit hits get higher scores
             profit_pcts, labeled_data.loc[profit_hits, "potential_profit_pct"]
             scores[profit_hits] = np.clip(profit_pcts / self.base_labeler.profit_take_multiplier, 0, 1)
 
         if stop_hits.any():
+    pass
     pass
     pass
         # Quick stop hits get lower scores (worse performance)
@@ -224,6 +233,7 @@ class FractionalTripleBarrierLabeling:
         scores, np.zeros(len(labeled_data))
 
         if volatility_series is not None:
+    pass
     pass
     pass
         # Normalize by volatility - higher volatility periods get adjusted scores
@@ -291,6 +301,7 @@ class FractionalTripleBarrierLabeling:
         return final_confidence
 
     def get_fractional_label_statistics(self, labeled_data: pd.DataFrame) -> Dict[str, Any]:
+    pass
     pass
     pass
         """Get statistics about fractional labels."""

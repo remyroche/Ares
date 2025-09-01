@@ -41,12 +41,14 @@ class ModelTrainingQualityAnalyzer:
     def __init__(self):
     pass
     pass
+    pass
         self.training_data, None
         self.model_metrics = {}
         self.report = {}
 
 
     def load_training_data(self, data_path):
+    pass
     pass
     pass
         """Load training data and model metrics."""
@@ -56,7 +58,10 @@ class ModelTrainingQualityAnalyzer:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             if data_path.endswith('.pkl'):
+    pass
     pass
     pass
                 with open(data_path, 'rb') as f:
@@ -72,6 +77,7 @@ class ModelTrainingQualityAnalyzer:
             if self.training_data is not None:
     pass
     pass
+    pass
                 print(f"✅ Training data loaded successfully")
                 return True
             else:
@@ -83,6 +89,7 @@ class ModelTrainingQualityAnalyzer:
 
 
     def _load_from_directory(self, data_dir):
+    pass
     pass
     pass
         """Load training data from directory structure."""
@@ -98,14 +105,18 @@ class ModelTrainingQualityAnalyzer:
         for pattern in patterns:
     pass
     pass
+    pass
             files, glob.glob(os.path.join(data_dir, pattern))
         if files:
+    pass
     pass
     pass
         try:
         self.training_data, pd.read_csv(files[0])
                     print(f"Found training data: {files[0]}")
                     break
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -118,6 +129,7 @@ class ModelTrainingQualityAnalyzer:
         if model_files:
     pass
     pass
+    pass
         try:
         with open(model_files[0], 'rb') as f:
                     model_data, pickle.load(f)
@@ -125,7 +137,10 @@ class ModelTrainingQualityAnalyzer:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         if isinstance(model_data, dict):
+    pass
     pass
     pass
         self.model_metrics, model_data
@@ -137,14 +152,16 @@ class ModelTrainingQualityAnalyzer:
     def analyze_training_quality(self):
     pass
     pass
+    pass
         """Comprehensive model training quality analysis."""
         if self.training_data is None and not self.model_metrics:
+    pass
     pass
     pass
             print(warning("No training data loaded. Please load training data first."))
             return
 
-        print("\\\n" + "="*60)
+        print("\\\\n" + "="*60)
         print("🔍 MODEL TRAINING QUALITY ANALYSIS REPORT")
         print("="*60)
 
@@ -176,11 +193,13 @@ class ModelTrainingQualityAnalyzer:
     def _analyze_training_metrics(self):
     pass
     pass
+    pass
         """Analyze training metrics and loss curves."""
-        print("\\\n📊 TRAINING METRICS ANALYSIS")
+        print("\\\\n📊 TRAINING METRICS ANALYSIS")
         print("-" * 40)
 
         if self.training_data is None:
+    pass
     pass
     pass
             print("No training data available for metrics analysis.")
@@ -199,16 +218,20 @@ class ModelTrainingQualityAnalyzer:
         for metric_type, possible_names in metric_columns.items():
     pass
     pass
+    pass
         for name in possible_names:
     pass
     pass
+    pass
         if name in self.training_data.columns:
+    pass
     pass
     pass
                     found_metrics[metric_type] = name
                     break
 
         if not found_metrics:
+    pass
     pass
     pass
             print("No standard training metrics found in the data.")
@@ -220,9 +243,11 @@ class ModelTrainingQualityAnalyzer:
         for metric_type, column_name in found_metrics.items():
     pass
     pass
+    pass
             values, self.training_data[column_name].dropna()
 
         if len(values) > 0:
+    pass
     pass
     pass
         # Basic statistics
@@ -235,12 +260,14 @@ class ModelTrainingQualityAnalyzer:
         if len(values) > 1:
     pass
     pass
+    pass
         # Calculate trend (positive/negative slope)
                     x, np.arange(len(values))
                     slope, np.polyfit(x, values, 1)[0]
 
         # Check for convergence
         if metric_type in ['loss', 'val_loss']:
+    pass
     pass
     pass
         # Loss should decrease
@@ -253,6 +280,7 @@ class ModelTrainingQualityAnalyzer:
 
         # Check for stability (low variance in later epochs)
         if len(values) > 10:
+    pass
     pass
     pass
                         later_values, values[-len(values)//3:]  # Last third
@@ -283,6 +311,7 @@ class ModelTrainingQualityAnalyzer:
         for metric_type, analysis in metrics_analysis.items():
     pass
     pass
+    pass
             print(f"{metric_type:<15} {analysis['min']:<10.4f} {analysis['max']:<10.4f} "
                   f"{analysis['mean']:<10.4f} {analysis['trend_quality']:<10} {analysis['convergence_score']:<12.1f}")
 
@@ -292,8 +321,9 @@ class ModelTrainingQualityAnalyzer:
     def _analyze_model_performance(self):
     pass
     pass
+    pass
         """Analyze model performance metrics."""
-        print("\\\n🎯 MODEL PERFORMANCE ANALYSIS")
+        print("\\\\n🎯 MODEL PERFORMANCE ANALYSIS")
         print("-" * 40)
 
         # Look for performance metrics in the data
@@ -312,16 +342,20 @@ class ModelTrainingQualityAnalyzer:
         for metric_name, possible_names in performance_metrics.items():
     pass
     pass
+    pass
         for name in possible_names:
     pass
     pass
+    pass
         if self.training_data is not None and name in self.training_data.columns:
+    pass
     pass
     pass
                     found_performance[metric_name] = name
                     break
 
         if not found_performance:
+    pass
     pass
     pass
             print("No standard performance metrics found.")
@@ -333,9 +367,11 @@ class ModelTrainingQualityAnalyzer:
         for metric_name, column_name in found_performance.items():
     pass
     pass
+    pass
             values, self.training_data[column_name].dropna()
 
         if len(values) > 0:
+    pass
     pass
     pass
                 final_value, values.iloc[-1]
@@ -344,6 +380,7 @@ class ModelTrainingQualityAnalyzer:
 
         # Determine if performance is good based on metric type
         if metric_name in ['accuracy', 'precision', 'recall', 'f1_score', 'auc']:
+    pass
     pass
     pass
                     performance_quality = 'excellent' if final_value >= 0.9 else 'good' if final_value >= 0.7 else 'fair' if final_value >= 0.5 else 'poor'
@@ -368,6 +405,7 @@ class ModelTrainingQualityAnalyzer:
         for metric_name, analysis in performance_analysis.items():
     pass
     pass
+    pass
             print(f"{metric_name:<15} {analysis['final_value']:<10.4f} {analysis['best_value']:<10.4f} "
                   f"{analysis['improvement_percent']:<12.1f}% {analysis['quality']:<10}")
 
@@ -377,11 +415,13 @@ class ModelTrainingQualityAnalyzer:
     def _analyze_training_convergence(self):
     pass
     pass
+    pass
         """Analyze training convergence patterns."""
-        print("\\\n🔄 TRAINING CONVERGENCE ANALYSIS")
+        print("\\\\n🔄 TRAINING CONVERGENCE ANALYSIS")
         print("-" * 40)
 
         if self.training_data is None:
+    pass
     pass
     pass
             print("No training data available for convergence analysis.")
@@ -393,6 +433,7 @@ class ModelTrainingQualityAnalyzer:
         if not loss_columns:
     pass
     pass
+    pass
             print("No loss metrics found for convergence analysis.")
             return
 
@@ -401,9 +442,11 @@ class ModelTrainingQualityAnalyzer:
         for loss_col in loss_columns:
     pass
     pass
+    pass
             values, self.training_data[loss_col].dropna()
 
         if len(values) > 5:
+    pass
     pass
     pass
         # Calculate convergence metrics
@@ -419,6 +462,7 @@ class ModelTrainingQualityAnalyzer:
         if len(values) > 10:
     pass
     pass
+    pass
         # Check last 20% of epochs for stability
                     later_values, values[-len(values)//5:]
                     later_std, later_values.std()
@@ -431,7 +475,9 @@ class ModelTrainingQualityAnalyzer:
         for i in range(len(values) - 10, len(values)):
     pass
     pass
+    pass
         if abs(values.iloc[i] - values.iloc[i-1]) < convergence_threshold:
+    pass
     pass
     pass
                             convergence_epoch, i
@@ -442,6 +488,7 @@ class ModelTrainingQualityAnalyzer:
 
         # Convergence quality score
         if is_converged:
+    pass
     pass
     pass
                     convergence_score, 100
@@ -469,6 +516,7 @@ class ModelTrainingQualityAnalyzer:
         for loss_col, analysis in convergence_analysis.items():
     pass
     pass
+    pass
             converged_str = "Yes" if analysis['is_converged'] else "No"
             print(f"{loss_col:<20} {analysis['initial_loss']:<10.4f} {analysis['final_loss']:<10.4f} "
                   f"{analysis['total_improvement']:<12.4f} {converged_str:<10}")
@@ -479,11 +527,13 @@ class ModelTrainingQualityAnalyzer:
     def _analyze_model_stability(self):
     pass
     pass
+    pass
         """Analyze model training stability."""
-        print("\\\n⚖️ MODEL STABILITY ANALYSIS")
+        print("\\\\n⚖️ MODEL STABILITY ANALYSIS")
         print("-" * 40)
 
         if self.training_data is None:
+    pass
     pass
     pass
             print("No training data available for stability analysis.")
@@ -498,15 +548,18 @@ class ModelTrainingQualityAnalyzer:
         for metric in key_metrics:
     pass
     pass
+    pass
             matching_cols = [col for col in self.training_data.columns if metric in col.lower()]
             found_metrics.extend(matching_cols)
 
         for metric_col in found_metrics:
     pass
     pass
+    pass
             values, self.training_data[metric_col].dropna()
 
         if len(values) > 5:
+    pass
     pass
     pass
         # Calculate stability metrics
@@ -516,6 +569,7 @@ class ModelTrainingQualityAnalyzer:
 
         # Analyze stability in different phases
         if len(values) > 10:
+    pass
     pass
     pass
                     early_values, values[:len(values)//3]  # First third
@@ -555,6 +609,7 @@ class ModelTrainingQualityAnalyzer:
         for metric_col, analysis in stability_analysis.items():
     pass
     pass
+    pass
             cv_str, f"{analysis['coefficient_of_variation']:.1f}" if analysis['coefficient_of_variation'] != float('inf') else "∞"
             print(f"{metric_col:<20} {analysis['overall_std']:<10.4f} {cv_str:<10} "
                   f"{analysis['stability_improvement']:<12.1f}% {analysis['stability_score']:<8.1f}")
@@ -565,11 +620,13 @@ class ModelTrainingQualityAnalyzer:
     def _detect_overfitting_underfitting(self):
     pass
     pass
+    pass
         """Detect overfitting and underfitting patterns."""
-        print("\\\n🔍 OVERFITTING/UNDERFITTING DETECTION")
+        print("\\\\n🔍 OVERFITTING/UNDERFITTING DETECTION")
         print("-" * 40)
 
         if self.training_data is None:
+    pass
     pass
     pass
             print("No training data available for overfitting analysis.")
@@ -582,10 +639,13 @@ class ModelTrainingQualityAnalyzer:
         for col in self.training_data.columns:
     pass
     pass
+    pass
         if 'loss' in col.lower():
     pass
     pass
+    pass
         if 'val' in col.lower() or 'test' in col.lower():
+    pass
     pass
     pass
                     val_metrics['loss'] = col
@@ -593,6 +653,7 @@ class ModelTrainingQualityAnalyzer:
                     train_metrics['loss'] = col
             elif 'accuracy' in col.lower():
         if 'val' in col.lower() or 'test' in col.lower():
+    pass
     pass
     pass
                     val_metrics['accuracy'] = col
@@ -605,10 +666,12 @@ class ModelTrainingQualityAnalyzer:
         if 'loss' in train_metrics and 'loss' in val_metrics:
     pass
     pass
+    pass
             train_loss, self.training_data[train_metrics['loss']].dropna()
             val_loss, self.training_data[val_metrics['loss']].dropna()
 
         if len(train_loss) > 0 and len(val_loss) > 0:
+    pass
     pass
     pass
         # Calculate gap between training and validation loss
@@ -639,10 +702,12 @@ class ModelTrainingQualityAnalyzer:
         if 'accuracy' in train_metrics and 'accuracy' in val_metrics:
     pass
     pass
+    pass
             train_acc, self.training_data[train_metrics['accuracy']].dropna()
             val_acc, self.training_data[val_metrics['accuracy']].dropna()
 
         if len(train_acc) > 0 and len(val_acc) > 0:
+    pass
     pass
     pass
                 min_len, min(len(train_acc), len(val_acc))
@@ -672,10 +737,12 @@ class ModelTrainingQualityAnalyzer:
         if overfitting_analysis:
     pass
     pass
+    pass
             print(f"{'Metric':<15} {'Avg Gap':<10} {'Max Gap':<10} {'Overfitting':<12} {'Severity':<10}")
             print("-" * 60)
 
         for metric, analysis in overfitting_analysis.items():
+    pass
     pass
     pass
                 detected_str = "Yes" if analysis['overfitting_detected'] else "No"
@@ -690,13 +757,15 @@ class ModelTrainingQualityAnalyzer:
     def _calculate_training_quality_metrics(self):
     pass
     pass
+    pass
         """Calculate overall training quality metrics."""
-        print("\\\n📈 OVERALL TRAINING QUALITY METRICS")
+        print("\\\\n📈 OVERALL TRAINING QUALITY METRICS")
         print("-" * 50)
 
         # Calculate composite quality scores
         training_metrics_score, 0
         if self.report.get('training_metrics'):
+    pass
     pass
     pass
             convergence_scores = [analysis['convergence_score'] for analysis in self.report['training_metrics'].values()]
@@ -706,11 +775,13 @@ class ModelTrainingQualityAnalyzer:
         if self.report.get('model_performance'):
     pass
     pass
+    pass
             performance_scores = [analysis['score'] for analysis in self.report['model_performance'].values()]
             performance_score, np.mean(performance_scores) if performance_scores else 0
 
         stability_score, 0
         if self.report.get('model_stability'):
+    pass
     pass
     pass
             stability_scores = [analysis['stability_score'] for analysis in self.report['model_stability'].values()]
@@ -721,15 +792,19 @@ class ModelTrainingQualityAnalyzer:
         if self.report.get('overfitting_analysis'):
     pass
     pass
+    pass
             overfitting_issues, 0
         for analysis in self.report['overfitting_analysis'].values():
+    pass
     pass
     pass
         if analysis['overfitting_detected']:
     pass
     pass
+    pass
                     overfitting_issues += 1
         if analysis['severity'] == 'high':
+    pass
     pass
     pass
                         overfitting_penalty += 20
@@ -737,6 +812,7 @@ class ModelTrainingQualityAnalyzer:
                         overfitting_penalty += 10
 
         if overfitting_issues > 0:
+    pass
     pass
     pass
                 overfitting_penalty, min(50, overfitting_penalty)  # Cap at 50 points
@@ -761,7 +837,9 @@ class ModelTrainingQualityAnalyzer:
         for metric, score in quality_metrics.items():
     pass
     pass
+    pass
         if score >= 80:
+    pass
     pass
     pass
                 status = "✅ Excellent"
@@ -775,9 +853,10 @@ class ModelTrainingQualityAnalyzer:
             metric_name, metric.replace('_', ' ').title()
             print(f"{metric_name:<30} {score:<10.1f} {status:<15}")
 
-        print(f"\\\nOverall Training Quality: {training_score:.1f}/100")
+        print(f"\\\\nOverall Training Quality: {training_score:.1f}/100")
 
         if training_score >= 80:
+    pass
     pass
     pass
             print("🎉 Excellent training quality!")
@@ -794,8 +873,9 @@ class ModelTrainingQualityAnalyzer:
     def _generate_training_recommendations(self):
     pass
     pass
+    pass
         """Generate recommendations based on training analysis."""
-        print("\\\n💡 TRAINING RECOMMENDATIONS")
+        print("\\\\n💡 TRAINING RECOMMENDATIONS")
         print("-" * 40)
 
         recommendations = []
@@ -805,12 +885,15 @@ class ModelTrainingQualityAnalyzer:
         for metric_type, analysis in training_metrics.items():
     pass
     pass
+    pass
         if analysis['convergence_score'] < 60:
+    pass
     pass
     pass
                 recommendations.append(f"📊 {metric_type}: Poor convergence (score: {analysis['convergence_score']:.1f})")
 
         if analysis['stability_score'] < 60:
+    pass
     pass
     pass
                 recommendations.append(f"⚖️ {metric_type}: Unstable training (score: {analysis['stability_score']:.1f})")
@@ -820,7 +903,9 @@ class ModelTrainingQualityAnalyzer:
         for metric_name, analysis in model_performance.items():
     pass
     pass
+    pass
         if analysis['score'] < 60:
+    pass
     pass
     pass
                 recommendations.append(f"🎯 {metric_name}: Poor performance (score: {analysis['score']:.1f})")
@@ -830,7 +915,9 @@ class ModelTrainingQualityAnalyzer:
         for metric, analysis in overfitting_analysis.items():
     pass
     pass
+    pass
         if analysis['overfitting_detected']:
+    pass
     pass
     pass
                 recommendations.append(f"🔍 {metric}: Overfitting detected ({analysis['severity']} severity)")
@@ -840,7 +927,9 @@ class ModelTrainingQualityAnalyzer:
         for loss_col, analysis in convergence_analysis.items():
     pass
     pass
+    pass
         if not analysis['is_converged']:
+    pass
     pass
     pass
                 recommendations.append(f"🔄 {loss_col}: Model did not converge properly")
@@ -848,10 +937,12 @@ class ModelTrainingQualityAnalyzer:
         if not recommendations:
     pass
     pass
+    pass
             print("✅ No major issues detected. Training quality is good!")
         else:
             print("Recommendations for improvement:")
         for rec in recommendations:
+    pass
     pass
     pass
                 print(f"  {rec}")
@@ -862,11 +953,14 @@ class ModelTrainingQualityAnalyzer:
     def _create_training_visualizations(self):
     pass
     pass
+    pass
         """Create visualizations for the training report."""
-        print("\\\n📈 GENERATING TRAINING VISUALIZATIONS...")
+        print("\\\\n📈 GENERATING TRAINING VISUALIZATIONS...")
 
         try:
             fig, axes, plt.subplots(2, 2, figsize=(15, 12))
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -877,13 +971,16 @@ class ModelTrainingQualityAnalyzer:
         if self.training_data is not None:
     pass
     pass
+    pass
                 loss_cols = [col for col in self.training_data.columns if 'loss' in col.lower()]
         if loss_cols:
+    pass
     pass
     pass
         for i, col in enumerate(loss_cols[:2]):  # Plot first 2 loss metrics
                         values, self.training_data[col].dropna()
         if len(values) > 0:
+    pass
     pass
     pass
                             axes[0, 0].plot(range(len(values)), values, label=col, marker='o', markersize=2)
@@ -897,6 +994,7 @@ class ModelTrainingQualityAnalyzer:
         # 2. Performance metrics
             performance_analysis, self.report.get('model_performance', {})
         if performance_analysis:
+    pass
     pass
     pass
                 metrics, list(performance_analysis.keys())
@@ -915,6 +1013,7 @@ class ModelTrainingQualityAnalyzer:
         if convergence_analysis:
     pass
     pass
+    pass
                 loss_metrics, list(convergence_analysis.keys())
                 convergence_scores = [convergence_analysis[metric]['convergence_score'] for metric in loss_metrics]
 
@@ -929,6 +1028,7 @@ class ModelTrainingQualityAnalyzer:
         # 4. Overall quality pie chart
             quality_metrics, self.report.get('quality_metrics', {})
         if quality_metrics:
+    pass
     pass
     pass
                 overall_score, quality_metrics.get('overall_training_score', 0)
@@ -949,62 +1049,70 @@ class ModelTrainingQualityAnalyzer:
     def save_report(self, filename='model_training_quality_report.txt'):
     pass
     pass
+    pass
         """Save the analysis report to a file."""
         with open(filename, 'w') as f:
-            f.write("MODEL TRAINING QUALITY ANALYSIS REPORT\\\n")
-            f.write("=" * 50 + "\\\n\\\n")
+            f.write("MODEL TRAINING QUALITY ANALYSIS REPORT\\\\n")
+            f.write("=" * 50 + "\\\\n\\\\n")
 
         # Overall quality
             quality_metrics, self.report.get('quality_metrics', {})
             overall_score, quality_metrics.get('overall_training_score', 0)
-            f.write(f"Overall Training Quality: {overall_score:.1f}/100\\\n\\\n")
+            f.write(f"Overall Training Quality: {overall_score:.1f}/100\\\\n\\\\n")
 
         # Training metrics
             training_metrics, self.report.get('training_metrics', {})
-            f.write("TRAINING METRICS QUALITY:\\\n")
+            f.write("TRAINING METRICS QUALITY:\\\\n")
         for metric, analysis in training_metrics.items():
     pass
     pass
-                f.write(f"{metric}: convergence={analysis['convergence_score']:.1f}, stability={analysis['stability_score']:.1f}\\\n")
-            f.write("\\\n")
+    pass
+                f.write(f"{metric}: convergence={analysis['convergence_score']:.1f}, stability={analysis['stability_score']:.1f}\\\\n")
+            f.write("\\\\n")
 
         # Model performance
             model_performance, self.report.get('model_performance', {})
-            f.write("MODEL PERFORMANCE:\\\n")
+            f.write("MODEL PERFORMANCE:\\\\n")
         for metric, analysis in model_performance.items():
     pass
     pass
-                f.write(f"{metric}: {analysis['final_value']:.4f} (score: {analysis['score']:.1f})\\\n")
-            f.write("\\\n")
+    pass
+                f.write(f"{metric}: {analysis['final_value']:.4f} (score: {analysis['score']:.1f})\\\\n")
+            f.write("\\\\n")
 
         # Overfitting analysis
             overfitting_analysis, self.report.get('overfitting_analysis', {})
         if overfitting_analysis:
     pass
     pass
-                f.write("OVERFITTING ANALYSIS:\\\n")
+    pass
+                f.write("OVERFITTING ANALYSIS:\\\\n")
         for metric, analysis in overfitting_analysis.items():
     pass
     pass
+    pass
                     detected = "Yes" if analysis['overfitting_detected'] else "No"
-                    f.write(f"{metric}: {detected} ({analysis['severity']} severity)\\\n")
-                f.write("\\\n")
+                    f.write(f"{metric}: {detected} ({analysis['severity']} severity)\\\\n")
+                f.write("\\\\n")
 
         # Recommendations
             recommendations, self.report.get('recommendations', [])
         if recommendations:
     pass
     pass
-                f.write("RECOMMENDATIONS:\\\n")
+    pass
+                f.write("RECOMMENDATIONS:\\\\n")
         for rec in recommendations:
     pass
     pass
-                    f.write(f"- {rec}\\\n")
-            f.write("\\\n")
+    pass
+                    f.write(f"- {rec}\\\\n")
+            f.write("\\\\n")
 
         print(f"✅ Report saved as '{filename}'")
 
 def main():
+    pass
     pass
     pass
     """Main function to run the analysis."""
@@ -1023,10 +1131,13 @@ def main():
     for path in data_paths:
     pass
     pass
+    pass
         if os.path.exists(path):
     pass
     pass
+    pass
         if analyzer.load_training_data(path):
+    pass
     pass
     pass
                 data_loaded, True
@@ -1035,9 +1146,11 @@ def main():
     if not data_loaded:
     pass
     pass
+    pass
         print(warning("Could not find training data file. Please specify the path to your training data.")))
         print("Common locations checked:")
         for path in data_paths:
+    pass
     pass
     pass
             print(f"  - {path}")
@@ -1050,6 +1163,7 @@ def main():
     analyzer.save_report()
 
 if __name__ == "__main__":
+    pass
     pass
     pass
     main()

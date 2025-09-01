@@ -40,6 +40,7 @@ class EnhancedDataQualityManager:
     def __init__(self, data_cache_path: str = "data_cache") -> None:
     pass
     pass
+    pass
         self.data_cache_path, Path(data_cache_path)
         self.data_cache_path.mkdir(exist_ok = True)
 
@@ -52,9 +53,13 @@ class EnhancedDataQualityManager:
     def _initialize_components(self) -> None:
     pass
     pass
+    pass
         """Initialize all quality management components."""
         try:
             from .data_gap_detector import DataGapDetector
+    except Exception as e:
+        pass
+import except Exception as e:
     except Exception as e:
         pass
 import except Exception as e:
@@ -72,6 +77,9 @@ import self.gap_detector, DataGapDetector
 import except Exception as e:
     except Exception as e:
         pass
+import except Exception as e:
+    except Exception as e:
+        pass
 import self.gap_filler, ComprehensiveGapFiller
         self.gap_filler, ComprehensiveGapFiller(str(self.data_cache_path))
         except ImportError as e:
@@ -79,6 +87,9 @@ import self.gap_filler, ComprehensiveGapFiller
 
         try:
             from .aggtrades_validator import AggtradesValidator
+    except Exception as e:
+        pass
+import except Exception as e:
     except Exception as e:
         pass
 import except Exception as e:
@@ -142,13 +153,17 @@ import self.validator, AggtradesValidator
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         if check_gaps and self.gap_detector:
+    pass
     pass
     pass
                 gap_results, await self._check_data_gaps(symbol, exchange, timeframe)
                 results["gaps_detected"] = gap_results.get("gaps", [])
 
         if gap_results.get("gaps"):
+    pass
     pass
     pass
                     logger.warning(f"⚠️ Found {len(gap_results['gaps'])} data gaps")
@@ -158,10 +173,12 @@ import self.validator, AggtradesValidator
         if fill_gaps and self.gap_filler:
     pass
     pass
+    pass
                         fill_results, await self._fill_data_gaps(symbol, exchange, timeframe, gap_results["gaps"])
                         results["gaps_filled"] = fill_results.get("filled_gaps", [])
 
         if fill_results.get("success"):
+    pass
     pass
     pass
                             logger.info(f"✅ Successfully filled {len(fill_results['filled_gaps'])} gaps")
@@ -173,11 +190,13 @@ import self.validator, AggtradesValidator
         if validate_format and self.validator:
     pass
     pass
+    pass
                 format_results, await self._validate_data_format(symbol, exchange, timeframe)
                 results["format_issues"] = format_results.get("issues", [])
                 results["quality_metrics"] = format_results.get("metrics", {})
 
         if format_results.get("issues"):
+    pass
     pass
     pass
                     logger.warning(f"⚠️ Found {len(format_results['issues'])} format issues")
@@ -189,6 +208,7 @@ import self.validator, AggtradesValidator
             results["missing_for_steps"] = completeness_results.get("missing", [])
 
         if not completeness_results.get("ready"):
+    pass
     pass
     pass
                 results["recommendations"].append("Data not ready for step3 / step4 - additional data needed")
@@ -209,6 +229,7 @@ import self.validator, AggtradesValidator
         if not self.gap_detector:
     pass
     pass
+    pass
         return {"gaps": [], "error": "Gap detector not available"}
 
         try:
@@ -221,8 +242,11 @@ import self.validator, AggtradesValidator
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         # Process missing aggtrades
         for day in missing_data.get("missing_aggtrades_days", []):
+    pass
     pass
     pass
                 gaps.append({
@@ -236,6 +260,7 @@ import self.validator, AggtradesValidator
         for month in missing_data.get("missing_klines_months", []):
     pass
     pass
+    pass
                 gaps.append({
                     "type": "klines",
                     "date": month,
@@ -245,6 +270,7 @@ import self.validator, AggtradesValidator
 
         # Process missing futures
         for month in missing_data.get("missing_futures_months", []):
+    pass
     pass
     pass
                 gaps.append({
@@ -267,6 +293,7 @@ import self.validator, AggtradesValidator
         if not self.gap_filler:
     pass
     pass
+    pass
         return {"filled_gaps": [], "error": "Gap filler not available"}
 
         try:
@@ -276,11 +303,17 @@ import self.validator, AggtradesValidator
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         for gap in gaps:
+    pass
     pass
     pass
         try:
         if gap["type"] == "aggtrades":
+    pass
+    except Exception as e:
+        pass
     pass
     except Exception as e:
         pass
@@ -294,6 +327,7 @@ import self.validator, AggtradesValidator
         if success:
     pass
     pass
+    pass
                             filled_gaps.append(gap)
 
                     elif gap["type"] == "klines":
@@ -304,6 +338,7 @@ import self.validator, AggtradesValidator
         if success:
     pass
     pass
+    pass
                             filled_gaps.append(gap)
 
                     elif gap["type"] == "futures":
@@ -312,6 +347,7 @@ import self.validator, AggtradesValidator
                             symbol, exchange, gap["date"]
                         )
         if success:
+    pass
     pass
     pass
                             filled_gaps.append(gap)
@@ -336,10 +372,13 @@ import self.validator, AggtradesValidator
         if not self.validator:
     pass
     pass
+    pass
         return {"issues": [], "metrics": {}, "error": "Validator not available"}
 
         try:
             issues = []
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -351,8 +390,10 @@ import self.validator, AggtradesValidator
         for file_path in aggtrades_files:
     pass
     pass
+    pass
                 validation_result, self.validator.validate_file_format(file_path)
         if not validation_result.get("valid", False):
+    pass
     pass
     pass
                     issues.extend(validation_result.get("issues", []))
@@ -371,8 +412,11 @@ import self.validator, AggtradesValidator
         for file_path in klines_files:
     pass
     pass
+    pass
         try:
                     df, pd.read_parquet(file_path)
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -410,11 +454,14 @@ import self.validator, AggtradesValidator
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             ready, True
 
         # Check for unified data (required by step01_5)
             unified_path, self.data_cache_path / "unified" / exchange.lower() / symbol / timeframe
         if not unified_path.exists():
+    pass
     pass
     pass
                 missing.append("Unified data directory not found")
@@ -425,8 +472,11 @@ import self.validator, AggtradesValidator
         if klines_file.exists():
     pass
     pass
+    pass
         try:
                     df, pd.read_parquet(klines_file)
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -439,6 +489,7 @@ import self.validator, AggtradesValidator
                     required_columns = ["timestamp", "open", "high", "low", "close", "volume"]
                     missing_columns = [col for col in required_columns if col not in df.columns]
         if missing_columns:
+    pass
     pass
     pass
                         missing.append(f"Missing required columns: {missing_columns}")
@@ -454,6 +505,7 @@ import self.validator, AggtradesValidator
         # Check for aggtrades data (required for step4 labeling)
             aggtrades_file, self.data_cache_path / f"aggtrades_{exchange}_{symbol}_consolidated.parquet"
         if not aggtrades_file.exists():
+    pass
     pass
     pass
                 missing.append("Aggtrades consolidated file not found")
@@ -500,7 +552,10 @@ import self.validator, AggtradesValidator
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         if not quality_results.get("success", False):
+    pass
     pass
     pass
                 logger.error("❌ Data quality check failed")
@@ -516,12 +571,14 @@ import self.validator, AggtradesValidator
         if not completeness_results.get("ready", False):
     pass
     pass
+    pass
                 logger.warning("⚠️ Data not ready for step3 / step4, attempting to fix...")
 
         # Try to use step1 and step01_5 components to get missing data
                 fix_results, await self._fix_missing_data_for_steps(symbol, exchange, timeframe)
 
         if not fix_results.get("success", False):
+    pass
     pass
     pass
         return {
@@ -561,9 +618,14 @@ import self.validator, AggtradesValidator
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         # Try to run step1 data collection if needed
         try:
                 from ..step1_data_collection import run_step as run_step1
+    except Exception as e:
+        pass
+import except Exception as e:
     except Exception as e:
         pass
 import except Exception as e:
@@ -578,6 +640,7 @@ import step1_success, await run_step1
                 )
 
         if step1_success:
+    pass
     pass
     pass
                     logger.info("✅ Step1 data collection completed successfully")
@@ -596,6 +659,9 @@ import step1_success, await run_step1
 import except Exception as e:
     except Exception as e:
         pass
+import except Exception as e:
+    except Exception as e:
+        pass
 import step01_5_success, await run_step01_5
                 step01_5_success, await run_step01_5(
                     symbol = symbol,
@@ -605,6 +671,7 @@ import step01_5_success, await run_step01_5
                 )
 
         if step01_5_success:
+    pass
     pass
     pass
                     logger.info("✅ Step1_5 data conversion completed successfully")

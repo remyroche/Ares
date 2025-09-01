@@ -25,6 +25,8 @@ try:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
 except Exception:  # pragma: no cover
     joblib, None
 
@@ -34,8 +36,10 @@ class ConfidenceCalibrationStep:
     def _validate_environment(self) -> None:
     pass
     pass
+    pass
         """Validate environment dependencies and configuration."""
         if not dependency_status["all_available"]:
+    pass
     pass
     pass
             missing_modules, dependency_status["missing_modules"]
@@ -43,6 +47,7 @@ class ConfidenceCalibrationStep:
         # Continue with available modules, using fallbacks where needed
 
 def __init__(self, config: dict[str, Any]) -> None:
+    pass
     pass
     pass
         self.config, config
@@ -82,6 +87,8 @@ def __init__(self, config: dict[str, Any]) -> None:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         # Extract parameters
             symbol, training_input.get("symbol", "ETHUSDT")
             exchange, training_input.get("exchange", "BINANCE")
@@ -96,6 +103,7 @@ def __init__(self, config: dict[str, Any]) -> None:
         if os.path.exists(analyst_models_dir):
     pass
     pass
+    pass
                 from src.utils.logger import heartbeat
 
 import with heartbeat
@@ -107,15 +115,19 @@ import with heartbeat
         for regime_dir in os.listdir(analyst_models_dir):
     pass
     pass
+    pass
                         regime_path, os.path.join(analyst_models_dir, regime_dir)
         if os.path.isdir(regime_path):
+    pass
     pass
     pass
                             regime_models: dict[str, Any] = {}
         for model_file in os.listdir(regime_path):
     pass
     pass
+    pass
         if model_file.endswith((".pkl", ".joblib")):
+    pass
     pass
     pass
                                     model_name, model_file.replace(".pkl", "").replace(
@@ -125,6 +137,9 @@ import with heartbeat
                                     model_path, os.path.join(regime_path, model_file)
         try:
         if model_file.endswith(".joblib") and joblib is not None:
+    pass
+    except Exception as e:
+        pass
     pass
     except Exception as e:
         pass
@@ -154,6 +169,7 @@ import with heartbeat
         if os.path.exists(tactician_models_dir):
     pass
     pass
+    pass
                 from src.utils.logger import heartbeat
 
 import with heartbeat
@@ -165,7 +181,9 @@ import with heartbeat
         for model_file in os.listdir(tactician_models_dir):
     pass
     pass
+    pass
         if model_file.endswith(".pkl"):
+    pass
     pass
     pass
                             model_name, model_file.replace(".pkl", "")
@@ -187,6 +205,7 @@ import with heartbeat
         if os.path.exists(analyst_ensembles_dir):
     pass
     pass
+    pass
                 from src.utils.logger import heartbeat
 
 import with heartbeat
@@ -198,7 +217,9 @@ import with heartbeat
         for ensemble_file in os.listdir(analyst_ensembles_dir):
     pass
     pass
+    pass
         if ensemble_file.endswith("_ensemble.pkl"):
+    pass
     pass
     pass
                             regime_name, ensemble_file.replace("_ensemble.pkl", "")
@@ -213,6 +234,7 @@ import with heartbeat
         # Load tactician ensembles
             tactician_ensembles_dir, f"{data_dir}/tactician_ensembles"
         if os.path.exists(tactician_ensembles_dir):
+    pass
     pass
     pass
         # New format: single model pickle per symbol / exchange
@@ -231,6 +253,7 @@ import with heartbeat
         if os.path.exists(model_path):
     pass
     pass
+    pass
         with open(model_path, "rb") as f:
         # Store under a default key for downstream usage
                             tactician_ensembles["blended"] = {
@@ -238,6 +261,7 @@ import with heartbeat
                             }
         # Also support any additional ensembles present (e.g., experimental)
         for ensemble_file in os.listdir(tactician_ensembles_dir):
+    pass
     pass
     pass
                         candidate_path, os.path.join(
@@ -257,6 +281,8 @@ import with heartbeat
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         except Exception as e:
         self.logger.warning(
                                     f"⚠️ Failed to load tactician ensemble {ensemble_file}: {e}",
@@ -269,6 +295,8 @@ import with heartbeat
         # Try to augment with 1m meta - labels if present
         try:
                 step04_train, f"{data_dir}/{exchange}_{symbol}_labeled_train.pkl"
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -371,6 +399,8 @@ import with heartbeat
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         # Compact summary of counts for quick troubleshooting
                 summary_counts = {
                     "analyst_models": sum(
@@ -406,6 +436,8 @@ import with heartbeat
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
                 )
                 os.makedirs(artifacts_dir, exist_ok = True)
         # Persist reliability if available from pipeline_state or calibration
@@ -415,6 +447,7 @@ import with heartbeat
                     else {}
                 )
         if not reliability:
+    pass
     pass
     pass
         # fallback: simple per - label accuracy proxy from analyst_models calibration if present
@@ -427,13 +460,19 @@ import with heartbeat
     pass
     except Exception as e:
         pass
+    pass
+    except Exception as e:
+        pass
         if isinstance(models, dict):
+    pass
     pass
     pass
         for name, res in models.items():
     pass
     pass
+    pass
         if isinstance(res, dict) and "metrics" in res:
+    pass
     pass
     pass
                                         acc_map[name] = float(
@@ -453,6 +492,7 @@ import with heartbeat
                     else {}
                 )
         if thresholds:
+    pass
     pass
     pass
         with open(os.path.join(artifacts_dir, "thresholds.json"), "w") as f:
@@ -491,12 +531,16 @@ import with heartbeat
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         if os.path.exists(path):
+    pass
     pass
     pass
         with open(path, "rb") as f:
                     df, pickle.load(f)
         if isinstance(df, pd.DataFrame) and "label" in df.columns:
+    pass
     pass
     pass
         return df
@@ -519,6 +563,8 @@ import with heartbeat
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             path, os.path.join(
                 regime_dir,
                 f"{exchange}_{symbol}_{regime_name}_data.pkl",
@@ -526,9 +572,11 @@ import with heartbeat
         if os.path.exists(path):
     pass
     pass
+    pass
         with open(path, "rb") as f:
                     df, pickle.load(f)
         if isinstance(df, pd.DataFrame) and "label" in df.columns:
+    pass
     pass
     pass
         return df
@@ -544,6 +592,7 @@ import with heartbeat
         """Extract feature matrix X and labels y for a given model from a dataframe."""
         y, df["label"].astype(int)
         if hasattr(model, "feature_names_in_"):
+    pass
     pass
     pass
             cols = [
@@ -572,11 +621,13 @@ import with heartbeat
         for regime_name, regime_models in models.items():
     pass
     pass
+    pass
             regime_df = (
         self._load_regime_validation(data_dir, exchange, symbol, regime_name)
                 or generic_val
             )
         if regime_df is None:
+    pass
     pass
     pass
         self.logger.warning(
@@ -587,9 +638,12 @@ import with heartbeat
         for model_name, model_data in regime_models.items():
     pass
     pass
+    pass
         try:
                     base_model = (
                         model_data
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -598,6 +652,7 @@ import with heartbeat
                         else (model_data.get("model", None) if isinstance(model_data, dict) else None)
                     )
         if base_model is None:
+    pass
     pass
     pass
                         continue
@@ -649,8 +704,10 @@ import with heartbeat
         if generic_val is None:
     pass
     pass
+    pass
         return results
         for model_name, model_data in models.items():
+    pass
     pass
     pass
         try:
@@ -660,10 +717,13 @@ import with heartbeat
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         if hasattr(model_data, "predict_proba")
                     else (model_data.get("model", None) if isinstance(model_data, dict) else None)
                 )
         if base_model is None:
+    pass
     pass
     pass
                     continue
@@ -711,12 +771,15 @@ import with heartbeat
         for regime_name, regime_ensembles in ensembles.items():
     pass
     pass
+    pass
         # Prefer stacking_cv ensemble if present
             ensemble_obj: Any | None, None
         if isinstance(regime_ensembles, dict):
     pass
     pass
+    pass
         for key in ("stacking_cv", "dynamic_weighting", "voting"):
+    pass
     pass
     pass
         if key in regime_ensembles and isinstance(
@@ -727,8 +790,10 @@ import with heartbeat
         if ensemble_obj is not None:
     pass
     pass
+    pass
                             break
         if ensemble_obj is None:
+    pass
     pass
     pass
                 continue
@@ -740,9 +805,12 @@ import with heartbeat
         if regime_df is None:
     pass
     pass
+    pass
                 continue
         try:
                 X_val, y_val, self._extract_features(regime_df, ensemble_obj)
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -788,9 +856,11 @@ import with heartbeat
         if not ensembles or generic_val is None:
     pass
     pass
+    pass
         return results
         # ensembles may be a dict of types -> data
         for ensemble_type, ensemble_data in ensembles.items():
+    pass
     pass
     pass
             ensemble_obj = (
@@ -801,9 +871,12 @@ import with heartbeat
         if ensemble_obj is None:
     pass
     pass
+    pass
                 continue
         try:
                 X_val, y_val, self._extract_features(generic_val, ensemble_obj)
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -841,6 +914,7 @@ import with heartbeat
         return results
 
     def _summarize_calibration(self, results: dict[str, Any]) -> dict[str, Any]:
+    pass
     pass
     pass
         summary: dict[str, Any] = {}
@@ -881,6 +955,9 @@ import with heartbeat
     pass
     except Exception as e:
         pass
+    pass
+    except Exception as e:
+        pass
         return {}
             base_pred, model.predict(X_val)
             base_acc, accuracy_score(y_val, base_pred)
@@ -899,9 +976,11 @@ class _PrefitWrapper:
     def __init__(self, base) -> None:
     pass
     pass
+    pass
         self.base, base
         # feature_names_in_ passthrough for feature selection
         if hasattr(base, "feature_names_in_"):
+    pass
     pass
     pass
         self.feature_names_in_, base.feature_names_in_  # type: ignore[attr - defined]
@@ -913,7 +992,9 @@ class _PrefitWrapper:
     def predict(self, X: pd.DataFrame) -> np.ndarray:
     pass
     pass
+    pass
         if hasattr(self.base, "predict"):
+    pass
     pass
     pass
         return np.asarray(self.base.predict(X))
@@ -923,7 +1004,9 @@ class _PrefitWrapper:
     def predict_proba(self, X: pd.DataFrame) -> np.ndarray:
     pass
     pass
+    pass
         if hasattr(self.base, "predict_proba"):
+    pass
     pass
     pass
         return np.asarray(self.base.predict_proba(X))
@@ -936,6 +1019,7 @@ class _PrefitWrapper:
         idx, preds.astype(int) + 1
         valid_mask = (idx >= 0) & (idx < n_classes)
         if np.any(valid_mask):
+    pass
     pass
     pass
             proba[np.arange(len(preds))[valid_mask], idx[valid_mask]] = 1.0
@@ -1060,6 +1144,8 @@ async def run_step(
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         config = {"symbol": symbol, "exchange": exchange, "data_dir": data_dir}
         step, ConfidenceCalibrationStep(config)
         await step.initialize()
@@ -1082,6 +1168,7 @@ async def run_step(
         return False
 
 if __name__ == "__main__":
+    pass
     pass
     pass
     # Test the step

@@ -32,12 +32,16 @@ try:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
 except ImportError:
     shap, None
 
 # Import new model architectures
 try:
     import torch
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -107,6 +111,7 @@ class AnalystCreationStep:
     def __init__(self, config: dict[str, Any]) -> None:
     pass
     pass
+    pass
         """Initializes the AnalystCreationStep.
 
         Args:
@@ -149,8 +154,10 @@ class AnalystCreationStep:
     def _validate_environment(self) -> None:
     pass
     pass
+    pass
         """Validate environment dependencies and configuration."""
         if not dependency_status["all_available"]:
+    pass
     pass
     pass
             missing_modules, dependency_status["missing_modules"]
@@ -158,6 +165,7 @@ class AnalystCreationStep:
         # Continue with available modules, using fallbacks where needed
 
     def _safe_get_device(self) -> str:
+    pass
     pass
     pass
         """Safely determine the best device to use with timeout protection."""
@@ -175,8 +183,13 @@ class AnalystCreationStep:
     pass
     except Exception as e:
         pass
+    pass
+    except Exception as e:
+        pass
         try:
                     is_available, torch.backends.mps.is_available()
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -197,7 +210,10 @@ class AnalystCreationStep:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         if err:
+    pass
     pass
     pass
         self.logger.error(failed(f"MPS check failed: {err}, using CPU"))
@@ -253,6 +269,8 @@ class AnalystCreationStep:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             models_dir: str, os.path.join(data_dir, "analyst_models")
             regime_data_dir: str, data_dir
 
@@ -268,6 +286,7 @@ class AnalystCreationStep:
             regime_splits, await self._load_regime_splits(regime_data_dir)
 
         if not regime_splits:
+    pass
     pass
     pass
                 msg, f"No regime splits found in {regime_data_dir}. Step 8 must complete successfully first."
@@ -286,6 +305,8 @@ class AnalystCreationStep:
         try:
         # Prepare data for this regime
                     X_train, y_train, X_val, y_val, await self._prepare_regime_data(regime_data)
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -312,6 +333,7 @@ class AnalystCreationStep:
         for regime_name, regime_data in regime_splits.items():
     pass
     pass
+    pass
                 task, asyncio.create_task(create_regime_analysts(regime_name, regime_data))
                 tasks.append(task)
 
@@ -324,6 +346,7 @@ class AnalystCreationStep:
         for batch_idx, i in enumerate(range(0, len(tasks), max_concurrent), 1):
     pass
     pass
+    pass
                 batch, tasks[i : i + max_concurrent]
         self.logger.info(
                     f"🔄 Processing batch {batch_idx}: regimes {i + 1}-{min(i + max_concurrent, len(tasks))}",
@@ -333,8 +356,10 @@ class AnalystCreationStep:
         for j, result in enumerate(results):
     pass
     pass
+    pass
                     regime_idx, i + j
         if isinstance(result, Exception):
+    pass
     pass
     pass
         self.logger.error(f"❌ Error in regime {regime_idx}: {result}")
@@ -371,6 +396,8 @@ class AnalystCreationStep:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             exchange, self.config.get("exchange", "BINANCE")
             timeframe, self.config.get("timeframe", "1m")
 
@@ -381,6 +408,7 @@ class AnalystCreationStep:
             )
 
         if os.path.exists(unified_regime_file):
+    pass
     pass
     pass
         self.logger.info(f"✅ Loading unified regime dataset: {unified_regime_file}")
@@ -395,6 +423,7 @@ class AnalystCreationStep:
         if os.path.exists(labels_file):
     pass
     pass
+    pass
         with open(labels_file) as f:
                         regime_labels, json.load(f)
 
@@ -406,9 +435,11 @@ class AnalystCreationStep:
         for regime_id in regime_ids:
     pass
     pass
+    pass
                         regime_data, unified_data[unified_data["composite_cluster_id"] == regime_id].copy()
 
         if len(regime_data) > 0:
+    pass
     pass
     pass
                             regime_splits[f"regime_{regime_id}"] = regime_data
@@ -425,6 +456,7 @@ class AnalystCreationStep:
         if not os.path.exists(regime_splits_dir):
     pass
     pass
+    pass
         self.logger.error(f"❌ Legacy regime splits directory not found: {regime_splits_dir}")
         return {}
 
@@ -432,7 +464,9 @@ class AnalystCreationStep:
         for file in os.listdir(regime_splits_dir):
     pass
     pass
+    pass
         if file.endswith(".parquet") and "regime_" in file:
+    pass
     pass
     pass
                     regime_name, file.split("regime_")[-1].replace(".parquet", "")
@@ -452,6 +486,8 @@ class AnalystCreationStep:
         try:
         # Separate features and labels
             feature_columns = [col for col in regime_data.columns
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -490,6 +526,8 @@ class AnalystCreationStep:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         # Create LightGBM model
         self.logger.info(f"🌳 Creating LightGBM model for regime: {regime_name}")
             lgb_model, await self._create_lightgbm_model(X_train, y_train, X_val, y_val)
@@ -507,6 +545,7 @@ class AnalystCreationStep:
 
         # Create neural network model if PyTorch is available
         if TORCH_AVAILABLE:
+    pass
     pass
     pass
         self.logger.info(f"🧠 Creating Neural Network model for regime: {regime_name}")
@@ -538,6 +577,8 @@ class AnalystCreationStep:
                 'verbose': -1
             }
 
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -592,6 +633,8 @@ class AnalystCreationStep:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         # Train model
             model, xgb.XGBClassifier(**params)
             model.fit(X_train, y_train, eval_set=[(X_val, y_val)], early_stopping_rounds = 10, verbose = False)
@@ -626,6 +669,8 @@ class AnalystCreationStep:
                 'random_state': 42
             }
 
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -665,6 +710,8 @@ class AnalystCreationStep:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         # Create simple neural network
             input_size, X_train.shape[1]
             model, nn.Sequential(
@@ -685,6 +732,7 @@ class AnalystCreationStep:
         # Train model
             model.train()
         for epoch in range(50):
+    pass
     pass
     pass
                 optimizer.zero_grad()
@@ -720,6 +768,9 @@ class AnalystCreationStep:
     except Exception as e:
         pass
     pass
+    except Exception as e:
+        pass
+    pass
                 regime_dir, os.path.join(models_dir, regime_name)
                 os.makedirs(regime_dir, exist_ok = True)
 
@@ -728,7 +779,9 @@ class AnalystCreationStep:
         for model_name, model_data in regime_models.items():
     pass
     pass
+    pass
         if model_data.get("model") is not None:
+    pass
     pass
     pass
                         model_file, os.path.join(regime_dir, f"{model_name}.joblib")
@@ -798,6 +851,8 @@ async def run_step(
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         config = {
             "SYMBOL": symbol,
             "EXCHANGE": exchange,
@@ -826,10 +881,12 @@ async def run_step(
         if result.get("analyst_creation_completed", False):
     pass
     pass
+    pass
             logger.info("✅ Step 11: Analyst Creation completed successfully")
 
         # Log creation results
         if result.get("created_analyst_models"):
+    pass
     pass
     pass
                 models, result["created_analyst_models"]
@@ -838,10 +895,12 @@ async def run_step(
         for regime_name, regime_models in models.items():
     pass
     pass
+    pass
                     model_count, len(regime_models)
                     logger.info(f"   - {regime_name}: {model_count} models")
 
         for model_name, model_data in regime_models.items():
+    pass
     pass
     pass
                         accuracy, model_data.get("accuracy", 0.0)

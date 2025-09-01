@@ -38,6 +38,9 @@ async def download_all_data_with_consolidation(
     except Exception as e:
         pass
     pass
+    except Exception as e:
+        pass
+    pass
             model_training_cfg: dict[str, Any] | None, CONFIG.get("MODEL_TRAINING")  # type: ignore[assignment]
     except Exception as e:
         pass
@@ -53,6 +56,9 @@ async def download_all_data_with_consolidation(
     # Preferred path: optimized downloader
     try:
         from backtesting.ares_data_downloader_optimized import (
+    except Exception as e:
+        pass
+import except Exception as e:
     except Exception as e:
         pass
 import except Exception as e:
@@ -83,6 +89,9 @@ import OptimizedDataDownloader,
     # Fallback: clean downloader
     try:
         from backtesting.ares_data_downloader_clean import (
+    except Exception as e:
+        pass
+import except Exception as e:
     except Exception as e:
         pass
 import except Exception as e:

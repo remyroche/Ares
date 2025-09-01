@@ -15,6 +15,8 @@ try:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
     import optuna
     import pandas as pd
     import tensorflow as tf
@@ -65,7 +67,9 @@ class AutoencoderConfig:
     def __init__(self, config_path: str | None = None):
     pass
     pass
+    pass
         if not DEPENDENCIES_AVAILABLE:
+    pass
     pass
     pass
             msg = f"Required dependencies not available: {MISSING_DEPENDENCY}"
@@ -82,10 +86,13 @@ class AutoencoderConfig:
     def _load_config(self) -> dict[str, Any]:
     pass
     pass
+    pass
         """Load configuration from YAML file."""
         try:
             with open(self.config_path) as file:
                 config = yaml.safe_load(file)
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -102,6 +109,7 @@ class AutoencoderConfig:
             return self._get_default_config()
 
     def _get_default_config(self) -> dict[str, Any]:
+    pass
     pass
     pass
         """Get default configuration if file loading fails."""
@@ -149,13 +157,16 @@ class AutoencoderConfig:
     def get(self, key: str, default: Any = None) -> Any:
     pass
     pass
+    pass
         """Get configuration value using dot notation."""
         keys = key.split(".")
         value = self.config
         for k in keys:
     pass
     pass
+    pass
             if isinstance(value, dict) and k in value:
+    pass
     pass
     pass
                 value = value[k]
@@ -166,9 +177,12 @@ class AutoencoderConfig:
     def save_config(self, output_path: str) -> None:
     pass
     pass
+    pass
         """Save current configuration to file."""
         try:
             os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -184,6 +198,7 @@ class PriceReturnConverter:
     """Convert price features to returns (price differences) for better autoencoder training."""
 
     def __init__(self, config: AutoencoderConfig):
+    pass
     pass
     pass
         self.config = config
@@ -220,6 +235,7 @@ class PriceReturnConverter:
         if not self.use_price_returns:
     pass
     pass
+    pass
             self.logger.info(
                 "📊 Price return conversion disabled, using original features"
             )
@@ -235,6 +251,7 @@ class PriceReturnConverter:
         if self.enable_feature_selection:
     pass
     pass
+    pass
             # OPTIMIZED APPROACH: Select only one price feature and one volume feature
             self.logger.info("🎯 Using optimized feature selection to avoid redundancy")
 
@@ -243,6 +260,7 @@ class PriceReturnConverter:
             available_volume_features = []
 
             for col in converted_df.columns:
+    pass
     pass
     pass
                 col_lower = col.lower()
@@ -268,8 +286,11 @@ class PriceReturnConverter:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
                     sample_value = converted_df[col].iloc[0]
                     if isinstance(sample_value, (np.ndarray, list)):
+    pass
     pass
     pass
                         self.logger.warning(f"Skipping array-valued column {col}: contains {type(sample_value)}")
@@ -277,6 +298,7 @@ class PriceReturnConverter:
 
                     unique_count = converted_df[col].nunique()
                     if unique_count <= 5:
+    pass
     pass
     pass
                         continue
@@ -302,12 +324,14 @@ class PriceReturnConverter:
                     if col not in available_price_features:
     pass
     pass
+    pass
                         available_price_features.append(col)
                 elif any(
                     volume_pattern in col_lower
                     for volume_pattern in ["volume", "trade_volume", "vol"]
                 ):
                     if col not in available_volume_features:
+    pass
     pass
     pass
                         available_volume_features.append(col)
@@ -327,6 +351,7 @@ class PriceReturnConverter:
             if self.primary_price_feature in available_price_features:
     pass
     pass
+    pass
                 selected_price_feature = self.primary_price_feature
             elif available_price_features:
                 selected_price_feature = available_price_features[0]
@@ -338,6 +363,7 @@ class PriceReturnConverter:
 
             # Select volume feature (prefer 'volume' if available, otherwise first available)
             if self.primary_volume_feature in available_volume_features:
+    pass
     pass
     pass
                 selected_volume_feature = self.primary_volume_feature
@@ -352,6 +378,7 @@ class PriceReturnConverter:
             # Remove redundant price and volume features
             features_to_remove = []
             for col in converted_df.columns:
+    pass
     pass
     pass
                 col_lower = col.lower()
@@ -377,7 +404,10 @@ class PriceReturnConverter:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
                     if unique_count <= 5:
+    pass
     pass
     pass
                         continue
@@ -403,6 +433,7 @@ class PriceReturnConverter:
                     if col != selected_price_feature:
     pass
     pass
+    pass
                         features_to_remove.append(col)
 
                 # Remove redundant volume features (keep only selected one)
@@ -413,10 +444,12 @@ class PriceReturnConverter:
                     if col != selected_volume_feature:
     pass
     pass
+    pass
                         features_to_remove.append(col)
 
             # Remove redundant features
             if features_to_remove:
+    pass
     pass
     pass
                 self.logger.info(
@@ -429,8 +462,10 @@ class PriceReturnConverter:
             if selected_price_feature:
     pass
     pass
+    pass
                 features_to_convert.append(selected_price_feature)
             if selected_volume_feature:
+    pass
     pass
     pass
                 features_to_convert.append(selected_volume_feature)
@@ -516,6 +551,7 @@ class PriceReturnConverter:
             for col in converted_df.columns:
     pass
     pass
+    pass
                 # Skip regime and categorical features
                 if any(
                     exclude_pattern in col.lower()
@@ -535,10 +571,12 @@ class PriceReturnConverter:
                 if unique_count <= 5:
     pass
     pass
+    pass
                     continue
 
                 # Check if column matches price patterns
                 if any(pattern in col.lower() for pattern in price_patterns):
+    pass
     pass
     pass
                     # Skip columns that are already returns or differences
@@ -554,8 +592,12 @@ class PriceReturnConverter:
         for col in features_to_convert:
     pass
     pass
+    pass
             try:
                 if col in converted_df.columns:
+    pass
+    except Exception as e:
+        pass
     pass
     except Exception as e:
         pass
@@ -577,6 +619,7 @@ class PriceReturnConverter:
                     if self.price_return_method == "pct_change":
     pass
     pass
+    pass
                         # Percentage change (most common)
                         returns = original_values.pct_change().fillna(0)
                     elif self.price_return_method == "diff":
@@ -596,6 +639,7 @@ class PriceReturnConverter:
                     if inf_count_before > 0:
     pass
     pass
+    pass
                         self.logger.warning(
                             f"⚠️ Found {inf_count_before} infinite values in '{col}' returns - replacing with NaN"
                         )
@@ -607,6 +651,7 @@ class PriceReturnConverter:
                     max_abs_value = 1000  # Reasonable limit for percentage changes
                     extreme_count_before = (np.abs(returns) > max_abs_value).sum()
                     if extreme_count_before > 0:
+    pass
     pass
     pass
                         self.logger.warning(
@@ -621,6 +666,7 @@ class PriceReturnConverter:
 
                     # Log conversion details for first few columns
                     if converted_count <= 5:
+    pass
     pass
     pass
                         self.logger.info(
@@ -653,6 +699,7 @@ class PriceReturnConverter:
         if final_inf_count > 0:
     pass
     pass
+    pass
             self.logger.error(
                 f"🚨 CRITICAL: {final_inf_count} infinite values still present after conversion!"
             )
@@ -670,7 +717,9 @@ class FeatureFilter:
     def __init__(self, config: AutoencoderConfig):
     pass
     pass
+    pass
         if not DEPENDENCIES_AVAILABLE:
+    pass
     pass
     pass
             msg = f"Required dependencies not available: {MISSING_DEPENDENCY}"
@@ -693,6 +742,8 @@ class FeatureFilter:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             )
             self.logger.info(f"📊 Input data shape: {features_df.shape}")
             self.logger.info(f"🎯 Number of unique labels: {len(np.unique(labels))}")
@@ -707,6 +758,7 @@ class FeatureFilter:
             if raw_ohlcv_columns:
     pass
     pass
+    pass
                 self.logger.warning(f"🚨 CRITICAL: Found raw OHLCV columns in features: {raw_ohlcv_columns}")
                 self.logger.warning("🚨 These should be excluded from feature filtering")
                 self.logger.warning("🚨 Raw price data should be processed into engineered features first")
@@ -717,6 +769,7 @@ class FeatureFilter:
                 self.logger.info(f"📊 Features shape after removal: {features_df.shape}")
 
                 if features_df.empty:
+    pass
     pass
     pass
                     self.logger.error("🚨 CRITICAL: No engineered features remaining after removing raw OHLCV data")
@@ -730,6 +783,7 @@ class FeatureFilter:
             if X.empty or X.shape[1] == 0:
     pass
     pass
+    pass
                 self.logger.warning("⚠️ No numeric features available for filtering")
                 self.logger.warning("⚠️ Returning original features without filtering")
                 return features_df
@@ -738,6 +792,7 @@ class FeatureFilter:
             self.logger.info(f"📏 Feature names: {list(X.columns)}")
 
             if len(np.unique(y)) < 2:
+    pass
     pass
     pass
                 self.logger.warning(
@@ -788,6 +843,9 @@ class FeatureFilter:
 import except Exception as e:
     except Exception as e:
         pass
+import except Exception as e:
+    except Exception as e:
+        pass
 import self.logger.info
                 self.logger.info("📦 Using SHAP TreeExplainer from shap.explainers")
             except ImportError:
@@ -820,6 +878,7 @@ import self.logger.info
 
             # EFFICIENCY OPTIMIZATION 2: Enhanced stratified sampling with fallback
             if sample_size < len(X):
+    pass
     pass
     pass
                 self.logger.info(
@@ -876,10 +935,14 @@ import self.logger.info
 import except Exception as e:
     except Exception as e:
         pass
+import except Exception as e:
+    except Exception as e:
+        pass
                         # Calculate stratified sample size per class
 import class_sample_sizes = {}
                         class_sample_sizes = {}
                         for label, count in zip(unique_labels, label_counts):
+    pass
     pass
     pass
                             class_sample_size = int(count * sample_percentage / 100)
@@ -942,6 +1005,7 @@ import class_sample_sizes = {}
             )
 
             if enable_prefiltering and len(X_sample.columns) > max_features_for_shap:
+    pass
     pass
     pass
                 self.logger.info(
@@ -1041,8 +1105,10 @@ import class_sample_sizes = {}
             if platform.system() != "Windows":
     pass
     pass
+    pass
                 # Unix-like systems can use signal.SIGALRM
                 def timeout_handler(signum, frame):
+    pass
     pass
     pass
                     raise TimeoutError("SHAP computation timed out")
@@ -1057,6 +1123,8 @@ import class_sample_sizes = {}
 
             try:
                 # EFFICIENCY OPTIMIZATION 7: Use background values for faster computation
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -1083,6 +1151,7 @@ import class_sample_sizes = {}
                 if platform.system() != "Windows":
     pass
     pass
+    pass
                     signal.alarm(0)
                 shap_time = time.time() - start_time
                 self.logger.info(f"✅ SHAP values computed in {shap_time:.2f} seconds")
@@ -1090,6 +1159,7 @@ import class_sample_sizes = {}
             except TimeoutError:
                 # Cancel the alarm on Unix systems
                 if platform.system() != "Windows":
+    pass
     pass
     pass
                     signal.alarm(0)
@@ -1112,6 +1182,7 @@ import class_sample_sizes = {}
                 self.logger.info(f"📊 Total importance: {total_importance:.6f}")
                 self.logger.info("🏆 Top 5 most important features:")
                 for i in range(min(5, len(sorted_indices))):
+    pass
     pass
     pass
                     feature_name = X.columns[sorted_indices[i]]
@@ -1153,6 +1224,7 @@ import class_sample_sizes = {}
                 if len(selected_indices) < min_features:
     pass
     pass
+    pass
                     self.logger.info(
                         f"⚠️ Selected features ({len(selected_indices)}) below minimum ({min_features}), expanding selection"
                     )
@@ -1180,6 +1252,7 @@ import class_sample_sizes = {}
                 if len(selected_features) > shap_refine_min:
     pass
     pass
+    pass
                     k = max(min_features, len(selected_features))
                     final_features = selected_features[:k]
                     self.logger.info(
@@ -1202,6 +1275,7 @@ import class_sample_sizes = {}
             if hasattr(shap_values, "values"):
     pass
     pass
+    pass
                 self.logger.info("📦 SHAP values format: shap_values.values")
                 shap_arr = np.asarray(shap_values.values)
             elif isinstance(shap_values, list):
@@ -1218,6 +1292,7 @@ import class_sample_sizes = {}
 
             # Ensure we always end up with shape (..., n_samples, n_features)
             if shap_arr.ndim == 2:
+    pass
     pass
     pass
                 # (n_samples, n_features) -> add class axis
@@ -1254,6 +1329,7 @@ import class_sample_sizes = {}
             self.logger.info(f"📊 Total importance: {total_importance:.6f}")
             self.logger.info("🏆 Top 5 most important features:")
             for i in range(min(5, len(sorted_indices))):
+    pass
     pass
     pass
                 feature_name = X.columns[sorted_indices[i]]
@@ -1333,6 +1409,7 @@ import class_sample_sizes = {}
             if len(selected_indices) < min_features:
     pass
     pass
+    pass
                 self.logger.warning(
                     f"⚠️ Selected features ({len(selected_indices)}) below minimum ({min_features})"
                 )
@@ -1361,6 +1438,7 @@ import class_sample_sizes = {}
 
             # Apply maximum feature constraint
             if len(selected_indices) > max_features:
+    pass
     pass
     pass
                 self.logger.warning(
@@ -1407,7 +1485,9 @@ class ImprovedAutoencoderPreprocessor:
     def __init__(self, config: AutoencoderConfig):
     pass
     pass
+    pass
         if not DEPENDENCIES_AVAILABLE:
+    pass
     pass
     pass
             msg = f"Required dependencies not available: {MISSING_DEPENDENCY}"
@@ -1418,6 +1498,7 @@ class ImprovedAutoencoderPreprocessor:
         scaler_type = config.get("preprocessing.scaler_type", "robust")
 
         if scaler_type == "robust":
+    pass
     pass
     pass
             self.scaler = RobustScaler()
@@ -1434,6 +1515,7 @@ class ImprovedAutoencoderPreprocessor:
     def fit(self, X: pd.DataFrame) -> "ImprovedAutoencoderPreprocessor":
     pass
     pass
+    pass
         """Fit the preprocessor on training data only."""
         self.logger.info(f"🔧 Fitting preprocessor on data with shape {X.shape}")
 
@@ -1442,6 +1524,7 @@ class ImprovedAutoencoderPreprocessor:
         X_clean = self._handle_missing_values(X)
         missing_count = X.isnull().sum().sum()
         if missing_count > 0:
+    pass
     pass
     pass
             self.logger.info(
@@ -1479,6 +1562,7 @@ class ImprovedAutoencoderPreprocessor:
         if outliers_clipped > 0:
     pass
     pass
+    pass
             self.logger.info(f"📊 Outliers clipped: {outliers_clipped} values")
 
         # Fit scaler
@@ -1493,8 +1577,10 @@ class ImprovedAutoencoderPreprocessor:
     def transform(self, X: pd.DataFrame) -> np.ndarray:
     pass
     pass
+    pass
         """Transform data using fitted preprocessor."""
         if not self.is_fitted:
+    pass
     pass
     pass
             msg = "Preprocessor must be fitted before transform can be called."
@@ -1525,12 +1611,15 @@ class ImprovedAutoencoderPreprocessor:
         if extreme_values_clipped > 0:
     pass
     pass
+    pass
             self.logger.info(
                 f"📊 Extreme values clipped: {extreme_values_clipped} values (threshold: ±{final_threshold})"
             )
 
         try:
             self.logger.info("✅ Transform completed successfully")
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -1546,6 +1635,7 @@ class ImprovedAutoencoderPreprocessor:
     def _handle_missing_values(self, X: pd.DataFrame) -> pd.DataFrame:
     pass
     pass
+    pass
         """Handle missing values based on strategy."""
         strategy = self.config.get(
             "preprocessing.missing_value_strategy",
@@ -1554,11 +1644,13 @@ class ImprovedAutoencoderPreprocessor:
         if strategy == "forward_fill":
     pass
     pass
+    pass
             return X.fillna(method="ffill").fillna(method="bfill").fillna(0)
         # Default to zero fill
         return X.fillna(0)
 
     def _clip_outliers(self, X: pd.DataFrame) -> pd.DataFrame:
+    pass
     pass
     pass
         """Clip outliers using pre-calculated bounds to prevent data leakage."""
@@ -1580,6 +1672,7 @@ def create_sequences_with_index(
     if X.ndim == 1:
     pass
     pass
+    pass
         X = X.reshape(-1, 1)
 
     # Calculate sequence information
@@ -1599,6 +1692,7 @@ def create_sequences_with_index(
     )
 
     for i in range(num_sequences):
+    pass
     pass
     pass
         sequence = X[i : i + timesteps]
@@ -1625,7 +1719,9 @@ class SequenceAwareAutoencoder:
     def __init__(self, config: AutoencoderConfig):
     pass
     pass
+    pass
         if not DEPENDENCIES_AVAILABLE:
+    pass
     pass
     pass
             msg = f"Required dependencies not available: {MISSING_DEPENDENCY}"
@@ -1646,6 +1742,7 @@ class SequenceAwareAutoencoder:
         timesteps, features = input_shape
 
         if trial:
+    pass
     pass
     pass
             filters = trial.suggest_categorical("filters", [16, 32, 64])
@@ -1712,6 +1809,8 @@ class SequenceAwareAutoencoder:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             )
             self.logger.info("✅ Model compiled successfully!")
             self.logger.info(f"📊 Optimizer: Adam(learning_rate={learning_rate})")
@@ -1721,6 +1820,7 @@ class SequenceAwareAutoencoder:
 
             # Model complexity assessment
             if total_params < 10000:
+    pass
     pass
     pass
                 complexity = "Lightweight"
@@ -1771,11 +1871,13 @@ class SequenceAwareAutoencoder:
         if trial and self.config.get("training.pruning_enabled", True):
     pass
     pass
+    pass
             callbacks.append(TFKerasPruningCallback(trial, "val_loss"))
             self.logger.info("📊 Optuna pruning callback enabled")
 
         # Determine batch size
         if trial:
+    pass
     pass
     pass
             batch_size = trial.suggest_categorical("batch_size", [32, 64, 128])
@@ -1822,11 +1924,14 @@ class SequenceAwareAutoencoder:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             train_losses = history.history.get("loss", [])
             val_mae = history.history.get("val_mae", [])
             history.history.get("mae", [])
 
             if val_losses:
+    pass
     pass
     pass
                 best_epoch = int(np.argmin(val_losses))
@@ -1845,6 +1950,7 @@ class SequenceAwareAutoencoder:
                 if val_mae:
     pass
     pass
+    pass
                     best_val_mae = val_mae[best_epoch]
                     final_val_mae = val_mae[-1]
                     self.logger.info(f"📊 Best validation MAE: {best_val_mae:.6f}")
@@ -1852,6 +1958,7 @@ class SequenceAwareAutoencoder:
 
                 # Performance assessment
                 if best_val_loss < 0.1:
+    pass
     pass
     pass
                     performance = "Excellent"
@@ -1878,7 +1985,9 @@ class AutoencoderFeatureAnalyzer:
     def __init__(self, config: AutoencoderConfig):
     pass
     pass
+    pass
         if not DEPENDENCIES_AVAILABLE:
+    pass
     pass
     pass
             msg = f"Required dependencies not available: {MISSING_DEPENDENCY}"
@@ -1919,6 +2028,8 @@ class AutoencoderFeatureAnalyzer:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             )
             self.logger.info(f"📊 Encoded features shape: {encoded_features.shape}")
             self.logger.info(f"🎯 Labels shape: {labels.shape}")
@@ -1953,6 +2064,7 @@ class AutoencoderFeatureAnalyzer:
             if regime_labels is not None:
     pass
     pass
+    pass
                 self.logger.info("🔄 Performing regime-specific analysis...")
                 regime_results = self._analyze_regime_specific_importance(
                     encoded_features, labels, regime_labels
@@ -1961,6 +2073,7 @@ class AutoencoderFeatureAnalyzer:
 
             # 5. Comparison with Original Features (if provided)
             if original_features is not None:
+    pass
     pass
     pass
                 self.logger.info("🔄 Comparing with original features...")
@@ -1984,6 +2097,7 @@ class AutoencoderFeatureAnalyzer:
             if regime_labels is not None:
     pass
     pass
+    pass
                 self.regime_analysis = analysis_results["regime_analysis"]
 
             self.logger.info(
@@ -2005,6 +2119,8 @@ class AutoencoderFeatureAnalyzer:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             analysis_df = encoded_features.copy()
             analysis_df["target"] = labels
 
@@ -2017,6 +2133,9 @@ class AutoencoderFeatureAnalyzer:
             # Calculate mutual information (if scikit-learn available)
             try:
                 from sklearn.feature_selection import (
+    except Exception as e:
+        pass
+import except Exception as e:
     except Exception as e:
         pass
 import except Exception as e:
@@ -2112,10 +2231,13 @@ import mutual_info_classif,
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             X = encoded_features.select_dtypes(include=[np.number]).fillna(0)
             y = labels
 
             if len(np.unique(y)) < 2:
+    pass
     pass
     pass
                 self.logger.warning(
@@ -2142,6 +2264,9 @@ import mutual_info_classif,
 import except Exception as e:
     except Exception as e:
         pass
+import except Exception as e:
+    except Exception as e:
+        pass
 import gb_model = GradientBoostingClassifier
                 gb_model = GradientBoostingClassifier(
                     n_estimators=100, max_depth=6, random_state=42
@@ -2160,6 +2285,9 @@ import gb_model = GradientBoostingClassifier
             # 3. Permutation Importance (more robust)
             try:
                 from sklearn.inspection import permutation_importance
+    except Exception as e:
+        pass
+import except Exception as e:
     except Exception as e:
         pass
 import except Exception as e:
@@ -2218,12 +2346,15 @@ import perm_model = LogisticRegression
             if len(available_methods) > 1:
     pass
     pass
+    pass
                 # Normalize importance scores to [0, 1] range
                 normalized_importance = {}
                 for method_name, method_df in available_methods.items():
     pass
     pass
+    pass
                     if method_df is not None:
+    pass
     pass
     pass
                         normalized_importance[method_name] = (
@@ -2284,6 +2415,8 @@ import perm_model = LogisticRegression
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             window_size = self.config.get("feature_analysis.stability_window", 100)
 
             stability_metrics = {}
@@ -2291,7 +2424,9 @@ import perm_model = LogisticRegression
             for column in encoded_features.columns:
     pass
     pass
+    pass
                 if column in ["autoencoder_recon_error"]:
+    pass
     pass
     pass
                     continue  # Skip reconstruction error for stability analysis
@@ -2299,6 +2434,7 @@ import perm_model = LogisticRegression
                 feature_data = encoded_features[column].dropna()
 
                 if len(feature_data) < window_size * 2:
+    pass
     pass
     pass
                     continue
@@ -2386,6 +2522,8 @@ import perm_model = LogisticRegression
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             self.logger.info(
                 f"🔄 Analyzing feature importance across {len(unique_regimes)} regimes: {unique_regimes}"
             )
@@ -2393,6 +2531,7 @@ import perm_model = LogisticRegression
             regime_importance = {}
 
             for regime in unique_regimes:
+    pass
     pass
     pass
                 regime_mask = regime_labels == regime
@@ -2418,6 +2557,7 @@ import perm_model = LogisticRegression
             if len(regime_importance) > 1:
     pass
     pass
+    pass
                 # Find common features across all regimes
                 all_features = set(encoded_features.columns)
                 common_features = all_features.copy()
@@ -2425,7 +2565,9 @@ import perm_model = LogisticRegression
                 for regime, importance_data in regime_importance.items():
     pass
     pass
+    pass
                     if "ensemble" in importance_data:
+    pass
     pass
     pass
                         regime_features = set(
@@ -2438,11 +2580,14 @@ import perm_model = LogisticRegression
                 for feature in common_features:
     pass
     pass
+    pass
                     importances = []
                     for regime, importance_data in regime_importance.items():
     pass
     pass
+    pass
                         if "ensemble" in importance_data:
+    pass
     pass
     pass
                             feature_importance = next(
@@ -2456,6 +2601,7 @@ import perm_model = LogisticRegression
                             importances.append(feature_importance)
 
                     if importances:
+    pass
     pass
     pass
                         consistency_scores[feature] = {
@@ -2515,6 +2661,8 @@ import perm_model = LogisticRegression
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             encoded_importance = self._compute_ml_importance(encoded_features, labels)
             original_importance = self._compute_ml_importance(original_features, labels)
 
@@ -2527,6 +2675,7 @@ import perm_model = LogisticRegression
 
             # Extract top features for comparison
             if "ensemble" in encoded_importance and "ensemble" in original_importance:
+    pass
     pass
     pass
                 encoded_top = [
@@ -2551,6 +2700,7 @@ import perm_model = LogisticRegression
             if "comparison_metrics" in comparison_results:
     pass
     pass
+    pass
                 self.logger.info(
                     f"   📊 Top feature overlap: {comparison_results['comparison_metrics']['top_feature_overlap']}"
                 )
@@ -2570,6 +2720,8 @@ import perm_model = LogisticRegression
         """Generate summary statistics and actionable recommendations."""
         try:
             summary = {}
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -2613,11 +2765,13 @@ import perm_model = LogisticRegression
             if summary.get("mean_importance", 0) < 0.3:
     pass
     pass
+    pass
                 recommendations.append(
                     "⚠️ Low feature importance detected. Consider retraining autoencoder with different parameters."
                 )
 
             if summary.get("mean_correlation", 0) < 0.1:
+    pass
     pass
     pass
                 recommendations.append(
@@ -2627,6 +2781,7 @@ import perm_model = LogisticRegression
             if summary.get("mean_stability", 0) < 0.5:
     pass
     pass
+    pass
                 recommendations.append(
                     "⚠️ Low feature stability. Consider using more stable features or retraining with different data."
                 )
@@ -2634,11 +2789,13 @@ import perm_model = LogisticRegression
             if summary.get("high_corr_count", 0) > 5:
     pass
     pass
+    pass
                 recommendations.append(
                     "💡 High correlation features detected. Consider feature selection to reduce redundancy."
                 )
 
             if summary.get("stable_count", 0) > 10:
+    pass
     pass
     pass
                 recommendations.append(
@@ -2649,11 +2806,13 @@ import perm_model = LogisticRegression
             if summary.get("mean_importance", 0) > 0.7:
     pass
     pass
+    pass
                 recommendations.append(
                     "🎉 High feature importance detected. Autoencoder is generating valuable features."
                 )
 
             if summary.get("mean_correlation", 0) > 0.3:
+    pass
     pass
     pass
                 recommendations.append(
@@ -2669,8 +2828,10 @@ import perm_model = LogisticRegression
     def get_feature_ranking(self, method: str = "ensemble") -> pd.DataFrame:
     pass
     pass
+    pass
         """Get feature ranking based on specified method."""
         if method not in self.importance_scores:
+    pass
     pass
     pass
             self.logger.warning(
@@ -2681,6 +2842,7 @@ import perm_model = LogisticRegression
         if "ensemble" in self.importance_scores:
     pass
     pass
+    pass
             return pd.DataFrame(self.importance_scores["ensemble"])
         else:
             return pd.DataFrame(self.importance_scores[method])
@@ -2688,8 +2850,10 @@ import perm_model = LogisticRegression
     def get_stable_features(self, threshold: float = 0.7) -> list[str]:
     pass
     pass
+    pass
         """Get list of stable features above threshold."""
         if "stability_metrics" not in self.stability_metrics:
+    pass
     pass
     pass
             return []
@@ -2698,7 +2862,9 @@ import perm_model = LogisticRegression
         for feature, metrics in self.stability_metrics["stability_metrics"].items():
     pass
     pass
+    pass
             if metrics.get("overall_stability", 0) > threshold:
+    pass
     pass
     pass
                 stable_features.append(feature)
@@ -2708,8 +2874,10 @@ import perm_model = LogisticRegression
     def get_high_correlation_features(self, threshold: float = 0.5) -> list[str]:
     pass
     pass
+    pass
         """Get list of features with high correlation to target."""
         if "correlation_analysis" not in self.correlation_analysis:
+    pass
     pass
     pass
             return []
@@ -2722,7 +2890,9 @@ import perm_model = LogisticRegression
         for feature, corr in correlations.items():
     pass
     pass
+    pass
             if abs(corr) > threshold:
+    pass
     pass
     pass
                 high_corr_features.append(feature)
@@ -2736,7 +2906,9 @@ class AutoencoderFeatureGenerator:
     def __init__(self, config: str | dict | None = None):
     pass
     pass
+    pass
         if not DEPENDENCIES_AVAILABLE:
+    pass
     pass
     pass
             msg = f"Required dependencies not available: {MISSING_DEPENDENCY}"
@@ -2746,6 +2918,7 @@ class AutoencoderFeatureGenerator:
 
         # Handle both string (config path) and dict (config object) inputs
         if isinstance(config, dict):
+    pass
     pass
     pass
             # Create a config object with proper initialization
@@ -2783,6 +2956,7 @@ class AutoencoderFeatureGenerator:
         if raw_ohlcv_columns:
     pass
     pass
+    pass
             self.logger.warning(f"🚨 CRITICAL: Found raw OHLCV columns in features: {raw_ohlcv_columns}")
             self.logger.warning("🚨 These should be excluded from autoencoder feature generation")
             self.logger.warning("🚨 Raw price data should be processed into engineered features first")
@@ -2795,6 +2969,7 @@ class AutoencoderFeatureGenerator:
             if features_df.empty:
     pass
     pass
+    pass
                 self.logger.error("🚨 CRITICAL: No engineered features remaining after removing raw OHLCV data")
                 self.logger.error("🚨 This indicates a serious data pipeline issue")
                 return pd.DataFrame()
@@ -2802,6 +2977,8 @@ class AutoencoderFeatureGenerator:
         try:
             self.logger.info(
                 f"🚀 Starting autoencoder feature generation for regime: {regime_name}",
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -2871,6 +3048,7 @@ class AutoencoderFeatureGenerator:
             if actual_label_columns:
     pass
     pass
+    pass
                 self.logger.error("🚨 CRITICAL DATA LEAKAGE DETECTED in autoencoder!")
                 self.logger.error(
                     f"🚨 Found label columns in autoencoder input: {actual_label_columns}"
@@ -2887,6 +3065,7 @@ class AutoencoderFeatureGenerator:
 
             # Check if we have enough data
             if len(features_df) < 10:
+    pass
     pass
     pass
                 self.logger.warning(
@@ -2913,6 +3092,7 @@ class AutoencoderFeatureGenerator:
 
             # Check if features_df has any columns to avoid division by zero
             if features_df.shape[1] == 0:
+    pass
     pass
     pass
                 self.logger.warning("⚠️ No features available for filtering - returning original features")
@@ -2947,6 +3127,7 @@ class AutoencoderFeatureGenerator:
             if actual_numeric_features < min_features_for_ae:
     pass
     pass
+    pass
                 self.logger.warning("⚠️ Insufficient features for autoencoder training")
                 self.logger.warning(
                     f"📊 Have: {actual_numeric_features} numeric features, Need: {min_features_for_ae}+ features"
@@ -2964,6 +3145,7 @@ class AutoencoderFeatureGenerator:
             ].tolist()
 
             if len(low_std_cols) > 0:
+    pass
     pass
     pass
                 preview = ", ".join(low_std_cols[:10]) + (
@@ -3024,6 +3206,7 @@ class AutoencoderFeatureGenerator:
             if len(X_sequences) < min_sequences:
     pass
     pass
+    pass
                 self.logger.warning(
                     "⚠️ Insufficient sequences for autoencoder training"
                 )
@@ -3076,6 +3259,7 @@ class AutoencoderFeatureGenerator:
             for param, value in best_params.items():
     pass
     pass
+    pass
                 self.logger.info(f"   📊 {param}: {value}")
 
             # Step 4: Train final model and generate features
@@ -3095,6 +3279,7 @@ class AutoencoderFeatureGenerator:
 
             # Extract training metrics
             if hasattr(training_history, "history"):
+    pass
     pass
     pass
                 final_train_loss = training_history.history.get("loss", [0])[-1]
@@ -3191,9 +3376,12 @@ class AutoencoderFeatureGenerator:
             if enable_analysis:
     pass
     pass
+    pass
                 self.logger.info("🔍 Starting feature importance analysis...")
                 try:
                     # Initialize feature analyzer
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -3223,12 +3411,14 @@ class AutoencoderFeatureGenerator:
                     if "error" not in analysis_results:
     pass
     pass
+    pass
                         self.logger.info(
                             "📊 Feature importance analysis completed successfully!"
                         )
 
                         # Log key findings
                         if "summary_statistics" in analysis_results:
+    pass
     pass
     pass
                             summary = analysis_results["summary_statistics"]
@@ -3250,8 +3440,10 @@ class AutoencoderFeatureGenerator:
                         if "recommendations" in analysis_results:
     pass
     pass
+    pass
                             recommendations = analysis_results["recommendations"]
                             if recommendations:
+    pass
     pass
     pass
                                 self.logger.info("💡 Recommendations:")
@@ -3302,13 +3494,17 @@ class AutoencoderFeatureGenerator:
     def _run_optuna_optimization(self, X_train, y_train, X_val, y_val):
     pass
     pass
+    pass
         """Helper to encapsulate the Optuna study logic."""
 
         def objective(trial):
     pass
     pass
+    pass
             try:
                 autoencoder = SequenceAwareAutoencoder(self.config)
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -3363,10 +3559,12 @@ class AutoencoderFeatureGenerator:
     def get_last_analysis_results(self) -> dict[str, Any] | None:
     pass
     pass
+    pass
         """Get the results from the last feature importance analysis."""
         return getattr(self, "last_analysis_results", None)
 
     def get_feature_ranking(self, method: str = "ensemble") -> pd.DataFrame:
+    pass
     pass
     pass
         """Get feature ranking from the last analysis."""
@@ -3374,8 +3572,10 @@ class AutoencoderFeatureGenerator:
         if analysis_results and "feature_importance" in analysis_results:
     pass
     pass
+    pass
             feature_importance = analysis_results["feature_importance"]
             if method in feature_importance and feature_importance[method] is not None:
+    pass
     pass
     pass
                 return pd.DataFrame(feature_importance[method])
@@ -3384,13 +3584,16 @@ class AutoencoderFeatureGenerator:
     def get_stable_features(self, threshold: float = 0.7) -> list[str]:
     pass
     pass
+    pass
         """Get list of stable features from the last analysis."""
         analysis_results = self.get_last_analysis_results()
         if analysis_results and "stability_metrics" in analysis_results:
     pass
     pass
+    pass
             stability_metrics = analysis_results["stability_metrics"]
             if "stable_features" in stability_metrics:
+    pass
     pass
     pass
                 return stability_metrics["stable_features"]
@@ -3399,13 +3602,16 @@ class AutoencoderFeatureGenerator:
     def get_high_correlation_features(self, threshold: float = 0.5) -> list[str]:
     pass
     pass
+    pass
         """Get list of features with high correlation to target from the last analysis."""
         analysis_results = self.get_last_analysis_results()
         if analysis_results and "correlation_analysis" in analysis_results:
     pass
     pass
+    pass
             correlation_analysis = analysis_results["correlation_analysis"]
             if "high_correlations" in correlation_analysis:
+    pass
     pass
     pass
                 return list(correlation_analysis["high_correlations"].keys())
@@ -3414,9 +3620,11 @@ class AutoencoderFeatureGenerator:
     def get_recommendations(self) -> list[str]:
     pass
     pass
+    pass
         """Get recommendations from the last analysis."""
         analysis_results = self.get_last_analysis_results()
         if analysis_results and "recommendations" in analysis_results:
+    pass
     pass
     pass
             return analysis_results["recommendations"]

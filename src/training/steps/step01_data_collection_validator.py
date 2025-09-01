@@ -13,6 +13,7 @@ project_root, Path(__file__).parent.parent.parent
 if str(project_root) not in sys.path:
     pass
     pass
+    pass
 	sys.path.insert(0, str(project_root))
 
 from src.config import CONFIG
@@ -24,6 +25,7 @@ class Step1DataCollectionValidator(BaseValidator):
 	"""Validator for Step 1: Data Collection."""
 
     def __init__(self, config: Dict[str, Any]) -> None:
+    pass
     pass
     pass
 		super().__init__("step01_data_collection", config)
@@ -73,6 +75,7 @@ class Step1DataCollectionValidator(BaseValidator):
 		if isinstance(md, pd.DataFrame) and not md.empty:
     pass
     pass
+    pass
 			self.logger.info(f"✅ Market data present in state: {md.shape} rows / cols")
 
 			# Comprehensive DataFrame validation
@@ -94,12 +97,16 @@ class Step1DataCollectionValidator(BaseValidator):
 			if df_validation:
     pass
     pass
+    pass
 				validation_result["validation_passed"] = True
 				validation_result["data_quality_metrics"] = df_metrics
 
 				# Log additional details
 				try:
 					if isinstance(md.index, pd.DatetimeIndex):
+    pass
+    except Exception as e:
+        pass
     pass
     except Exception as e:
         pass
@@ -130,6 +137,7 @@ class Step1DataCollectionValidator(BaseValidator):
 		if consolidated_files["found"]:
     pass
     pass
+    pass
 			self.logger.info(f"✅ Found consolidated files: {consolidated_files['files']}")
 
 			# Validate the data quality of the consolidated files
@@ -140,6 +148,7 @@ class Step1DataCollectionValidator(BaseValidator):
 			validation_result["validation_results"]["data_quality"] = data_validation
 
 			if data_validation.get("valid", False):
+    pass
     pass
     pass
 				self.logger.info("✅ Consolidated data quality validation passed")
@@ -153,6 +162,7 @@ class Step1DataCollectionValidator(BaseValidator):
 			validation_result["critical_issues"].append("No consolidated files found")
 
 		if not validation_result["validation_passed"]:
+    pass
     pass
     pass
 			self.logger.error("❌ No market data found in state or consolidated files")
@@ -189,7 +199,9 @@ class Step1DataCollectionValidator(BaseValidator):
 		for pattern in klines_patterns:
     pass
     pass
+    pass
 			if os.path.exists(pattern):
+    pass
     pass
     pass
 				files_found.append(pattern)
@@ -205,7 +217,9 @@ class Step1DataCollectionValidator(BaseValidator):
 		for pattern in aggtrades_patterns:
     pass
     pass
+    pass
 			if os.path.exists(pattern):
+    pass
     pass
     pass
 				files_found.append(pattern)
@@ -253,11 +267,14 @@ class Step1DataCollectionValidator(BaseValidator):
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
 			}
 
 			# Validate klines data first (required)
 			klines_files = [f for f in files if "klines" in f]
 			if not klines_files:
+    pass
     pass
     pass
 				validation_result["valid"] = False
@@ -270,6 +287,9 @@ class Step1DataCollectionValidator(BaseValidator):
 
 			try:
 				if klines_file.endswith(".parquet"):
+    pass
+    except Exception as e:
+        pass
     pass
     except Exception as e:
         pass
@@ -307,6 +327,7 @@ class Step1DataCollectionValidator(BaseValidator):
 				if df_validation:
     pass
     pass
+    pass
 					validation_result["metrics"]["valid_files"] = 1
 					validation_result["metrics"]["total_records"] = len(df)
 					validation_result["metrics"]["data_quality_score"] = 1.0
@@ -317,6 +338,7 @@ class Step1DataCollectionValidator(BaseValidator):
 				# Additional data characteristics validation
 				characteristics_validation, self._validate_data_characteristics(df, symbol, exchange)
 				if not characteristics_validation:
+    pass
     pass
     pass
 					validation_result["warnings"].append("Data characteristics validation failed")
@@ -358,7 +380,10 @@ class Step1DataCollectionValidator(BaseValidator):
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
 			if len(data) < self.min_records:
+    pass
     pass
     pass
 				self.logger.warning(
@@ -372,6 +397,7 @@ class Step1DataCollectionValidator(BaseValidator):
 			if missing_columns:
     pass
     pass
+    pass
 				self.logger.warning(
 					f"⚠️ Missing required columns: {missing_columns} - continuing with caution",
 				)
@@ -382,7 +408,9 @@ class Step1DataCollectionValidator(BaseValidator):
 			for col in price_columns:
     pass
     pass
+    pass
 				if col in data.columns:
+    pass
     pass
     pass
 					min_price, float(data[col].min())
@@ -396,6 +424,7 @@ class Step1DataCollectionValidator(BaseValidator):
 			if "volume" in data.columns:
     pass
     pass
+    pass
 				min_volume, float(data["volume"].min())
 				if min_volume < -self.volume_tolerance:  # Allow small negative values due to precision
 					self.logger.warning(
@@ -405,6 +434,7 @@ class Step1DataCollectionValidator(BaseValidator):
 
 			# Check data consistency (high >= low, etc.) - more lenient
 			if all(col in data.columns for col in ["high", "low", "open", "close"]):
+    pass
     pass
     pass
 				invalid_rows = (
@@ -423,6 +453,7 @@ class Step1DataCollectionValidator(BaseValidator):
 
 			# Check for reasonable time gaps (if timestamp column exists) - more lenient
 			if "timestamp" in data.columns:
+    pass
     pass
     pass
 				data_sorted, data.sort_values("timestamp")
@@ -476,6 +507,7 @@ async def run_validator(
 	}
 
 if __name__ == "__main__":
+    pass
     pass
     pass
 	import asyncio as _asyncio

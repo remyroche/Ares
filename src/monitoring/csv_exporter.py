@@ -28,6 +28,7 @@ class CSVExporter:
     def __init__(self, config: Dict[str, Any]) -> None:
     pass
     pass
+    pass
         self.config = config
         self.logger = system_logger.getChild("CSVExporter")
 
@@ -87,6 +88,7 @@ class CSVExporter:
         if not data:
     pass
     pass
+    pass
             self.logger.warning("No performance data to export")
             return None
 
@@ -112,15 +114,19 @@ class CSVExporter:
             for row in rows:
     pass
     pass
+    pass
                 writer.writerow(row)
 
         if include_metadata:
+    pass
     pass
     pass
             meta_path = filepath.with_suffix(".json")
             try:
                 import json
 
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -136,6 +142,7 @@ class CSVExporter:
                 pass
 
     def _record_export(self, data_type: str, filepath: Path, count: int) -> None:
+    pass
     pass
     pass
         self.export_history.append(

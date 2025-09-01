@@ -38,6 +38,7 @@ class DataProvider(Protocol[DataT]):
     def is_connected(self) -> bool:
     pass
     pass
+    pass
         """Check if the data provider is connected."""
         ...
 
@@ -60,11 +61,13 @@ class ModelPredictor(Protocol[T]):
     def get_feature_importance(self) -> dict[str , float]:
     pass
     pass
+    pass
         """Get feature importance scores."""
         ...
 
     @abstractmethod
     def is_trained(self) -> bool:
+    pass
     pass
     pass
         """Check if the model is trained and ready for prediction."""
@@ -87,6 +90,7 @@ class RiskManager(Protocol):
 
     @abstractmethod
     def get_risk_parameters(self) -> RiskParameters:
+    pass
     pass
     pass
         """Get current risk parameters."""
@@ -176,6 +180,7 @@ class Configurable(Protocol[ConfigT]):
     def configure(self, config: ConfigT) -> None:
     pass
     pass
+    pass
         """Configure the component."""
         ...
 
@@ -183,11 +188,13 @@ class Configurable(Protocol[ConfigT]):
     def get_config(self) -> ConfigT:
     pass
     pass
+    pass
         """Get current configuration."""
         ...
 
     @abstractmethod
     def validate_config(self, config: ConfigT) -> bool:
+    pass
     pass
     pass
         """Validate configuration."""
@@ -202,6 +209,7 @@ class Monitorable(Protocol):
     def get_health_status(self) -> dict[str , Any]:
     pass
     pass
+    pass
         """Get health status."""
         ...
 
@@ -209,11 +217,13 @@ class Monitorable(Protocol):
     def get_metrics(self) -> dict[str , float]:
     pass
     pass
+    pass
         """Get performance metrics."""
         ...
 
     @abstractmethod
     def get_status(self) -> str:
+    pass
     pass
     pass
         """Get current status."""
@@ -236,6 +246,7 @@ class Startable(Protocol):
 
     @abstractmethod
     def is_running(self) -> bool:
+    pass
     pass
     pass
         """Check if component is running."""
@@ -264,6 +275,7 @@ class DataProcessor(Protocol[DataT, ResultT]):
 
     @abstractmethod
     def validate_input(self, data: DataT) -> bool:
+    pass
     pass
     pass
         """Validate input data."""

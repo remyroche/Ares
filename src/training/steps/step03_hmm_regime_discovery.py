@@ -46,6 +46,7 @@ pandas, PipelineStandards.safe_import("pandas", None)
 def create_fallback_logger():
     pass
     pass
+    pass
     import logging
     logging.basicConfig(level = logging.INFO)
     return logging.getLogger(__name__)
@@ -53,7 +54,9 @@ def create_fallback_logger():
 def create_fallback_decorator():
     pass
     pass
+    pass
     def decorator(func):
+    pass
     pass
     pass
         return func
@@ -63,9 +66,11 @@ def create_fallback_decorator():
 if system_logger is None:
     pass
     pass
+    pass
     system_logger, create_fallback_logger()
 
 if centralized_decorators is None:
+    pass
     pass
     pass
     comprehensive_data_validation, create_fallback_decorator()
@@ -99,6 +104,7 @@ else:
 if enhanced_mlflow is None:
     pass
     pass
+    pass
     with_enhanced_mlflow_logging, create_fallback_decorator()
     log_step_artifact, lambda * args, **kwargs: "fallback_artifact"
     log_step_dataframe, lambda * args, **kwargs: "fallback_dataframe"
@@ -121,6 +127,7 @@ class HMMRegimeDiscoveryStep:
     def __init__(self, config: dict[str, Any]) -> None:
     pass
     pass
+    pass
         self.config, config
         self.logger, system_logger.getChild("HMMRegimeDiscoveryStep")
         self.standards, pipeline_standards
@@ -134,11 +141,13 @@ class HMMRegimeDiscoveryStep:
     def _validate_environment(self) -> None:
     pass
     pass
+    pass
         """Validate environment dependencies."""
         self.logger.info("🔍 Validating environment dependencies...")
 
         missing_modules = [module for module, available in dependency_status.items() if not available]
         if missing_modules:
+    pass
     pass
     pass
         self.logger.warning(f"⚠️ Missing optional modules: {missing_modules}")
@@ -149,6 +158,7 @@ class HMMRegimeDiscoveryStep:
     def _initialize_components(self) -> None:
     pass
     pass
+    pass
         """Initialize HMM and data quality components."""
         self.logger.info("🔧 Initializing HMM regime discovery components...")
 
@@ -156,8 +166,11 @@ class HMMRegimeDiscoveryStep:
         if sr_breakout_predictor is not None:
     pass
     pass
+    pass
         try:
                 sr_config, self.config.copy()
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -195,8 +208,11 @@ class HMMRegimeDiscoveryStep:
         if hasattr(self, 'sr_predictor'):
     pass
     pass
+    pass
         try:
         await self.sr_predictor.initialize()
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -208,6 +224,7 @@ class HMMRegimeDiscoveryStep:
         self.logger.info("✅ HMM Regime Discovery Step initialized successfully")
 
     def _log_step_timing(self, step_name: str, start_time: float) -> None:
+    pass
     pass
     pass
         """Log timing information for a step."""
@@ -272,6 +289,7 @@ class HMMRegimeDiscoveryStep:
         if PSUTIL_AVAILABLE:
     pass
     pass
+    pass
             initial_memory, psutil.virtual_memory()
         self.logger.info(f"💾 Initial memory usage: {initial_memory.percent:.1f}% ({initial_memory.used / 1024**3:.1f}GB / {initial_memory.total / 1024**3:.1f}GB)")
         else:
@@ -279,6 +297,8 @@ class HMMRegimeDiscoveryStep:
 
         try:
         # Step 1: Ensure data quality and readiness
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -292,6 +312,7 @@ class HMMRegimeDiscoveryStep:
         self.logger.info(f"⏱️ Data Quality Validation completed in {data_quality_elapsed:.2f} seconds")
 
         if not data_ready:
+    pass
     pass
     pass
         self.logger.error("❌ Data not ready for HMM regime discovery")
@@ -311,6 +332,7 @@ class HMMRegimeDiscoveryStep:
         if not data_loaded.get("success", False):
     pass
     pass
+    pass
         self.logger.error("❌ Failed to load and prepare data for HMM")
                 error_msg, data_loaded.get("error", "Unknown error")
         self.logger.error(f"   Error details: {error_msg}")
@@ -328,6 +350,7 @@ class HMMRegimeDiscoveryStep:
         if data_dir is None:
     pass
     pass
+    pass
                 data_dir, self.standards.build_path("processed_data", exchange, symbol)
 
         self.logger.info("=" * 60)
@@ -337,6 +360,7 @@ class HMMRegimeDiscoveryStep:
 
             optimized_params, await self._run_automatic_optimization(symbol, exchange, timeframe, data_dir)
         if optimized_params:
+    pass
     pass
     pass
         self.logger.info("✅ Parameter optimization completed successfully")
@@ -363,6 +387,7 @@ class HMMRegimeDiscoveryStep:
         self.logger.info(f"⏱️ HMM Regime Discovery completed in {hmm_elapsed:.2f} seconds")
 
         if regime_results.get("success", False):
+    pass
     pass
     pass
         self.logger.info("✅ HMM regime discovery completed successfully")
@@ -430,10 +455,12 @@ class HMMRegimeDiscoveryStep:
         if 'sr_elapsed' in locals():
     pass
     pass
+    pass
         self.logger.info(f"   - SR Context Analysis: {sr_elapsed:.2f}s")
 
         # Memory usage summary
         if PSUTIL_AVAILABLE:
+    pass
     pass
     pass
             memory_usage, psutil.virtual_memory()
@@ -452,12 +479,15 @@ class HMMRegimeDiscoveryStep:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             exchange, training_input.get("exchange", "BINANCE")
             timeframe, training_input.get("timeframe", "1m")
             data_dir, training_input.get("data_dir", "data_cache")
 
         # Log composite clusters DataFrame with standardized naming
         if "composite_df" in regime_results:
+    pass
     pass
     pass
                 composite_df, regime_results["composite_df"]
@@ -479,6 +509,7 @@ class HMMRegimeDiscoveryStep:
         if "intensity_df" in regime_results:
     pass
     pass
+    pass
                 intensity_df, regime_results["intensity_df"]
                 artifact_name, log_step_dataframe_with_standardized_name(
                     config = self.config,
@@ -496,6 +527,7 @@ class HMMRegimeDiscoveryStep:
 
         # Log regime discovery report
         if "metrics" in regime_results and "reports" in regime_results:
+    pass
     pass
     pass
                 report_data = {
@@ -526,18 +558,22 @@ class HMMRegimeDiscoveryStep:
         if "metrics" in regime_results:
     pass
     pass
+    pass
                 metrics, regime_results["metrics"]
         # Extract numeric metrics
                 numeric_metrics = {}
         for key, value in metrics.items():
     pass
     pass
+    pass
         if isinstance(value, (int, float)):
+    pass
     pass
     pass
                         numeric_metrics[f"step03_{key}"] = float(value)
 
         if numeric_metrics:
+    pass
     pass
     pass
                     log_step_metrics(
@@ -553,6 +589,7 @@ class HMMRegimeDiscoveryStep:
 
         # Log HMM model if available
         if "hmm_model" in regime_results:
+    pass
     pass
     pass
                 hmm_model, regime_results["hmm_model"]
@@ -572,6 +609,7 @@ class HMMRegimeDiscoveryStep:
 
         # Log K - means model if available
         if "kmeans_model" in regime_results:
+    pass
     pass
     pass
                 kmeans_model, regime_results["kmeans_model"]
@@ -597,6 +635,7 @@ class HMMRegimeDiscoveryStep:
     def _log_regime_discovery_results(self, regime_results: dict[str, Any]) -> None:
     pass
     pass
+    pass
         """Log detailed regime discovery results."""
         self.logger.info("📊 REGIME DISCOVERY RESULTS")
         self.logger.info("-" * 40)
@@ -609,8 +648,10 @@ class HMMRegimeDiscoveryStep:
         if regime_distribution:
     pass
     pass
+    pass
         self.logger.info("📊 Regime distribution:")
         for regime, count in regime_distribution.items():
+    pass
     pass
     pass
                 percentage = (count / metrics.get('total_periods', 1)) * 100
@@ -620,12 +661,15 @@ class HMMRegimeDiscoveryStep:
         if transitions:
     pass
     pass
+    pass
         self.logger.info("🔄 Regime transition probabilities:")
         for from_regime, to_regimes in transitions.items():
     pass
     pass
+    pass
         self.logger.info(f"   From {from_regime}:")
         for to_regime, prob in to_regimes.items():
+    pass
     pass
     pass
         self.logger.info(f"     → {to_regime}: {prob:.3f}")
@@ -644,12 +688,15 @@ class HMMRegimeDiscoveryStep:
         if not self.data_quality_manager:
     pass
     pass
+    pass
         self.logger.warning("⚠️ Data quality manager not available, proceeding without quality check")
         self.logger.info("📝 Skipping enhanced data quality validation")
         return True
 
         try:
             symbol, training_input.get("symbol", "ETHUSDT")
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -670,12 +717,15 @@ class HMMRegimeDiscoveryStep:
         if data_results.get("success", False):
     pass
     pass
+    pass
         self.logger.info("✅ Data quality check passed")
         self.logger.info("📊 Data quality metrics:")
         for key, value in data_results.items():
     pass
     pass
+    pass
         if key != "success":
+    pass
     pass
     pass
         self.logger.info(f"   - {key}: {value}")
@@ -692,12 +742,15 @@ class HMMRegimeDiscoveryStep:
         if fix_results.get("success", False):
     pass
     pass
+    pass
         self.logger.info("✅ Successfully fixed missing data")
         self.logger.info("📊 Fix results:")
         for key, value in fix_results.items():
     pass
     pass
+    pass
         if key != "success":
+    pass
     pass
     pass
         self.logger.info(f"   - {key}: {value}")
@@ -726,6 +779,8 @@ class HMMRegimeDiscoveryStep:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             exchange, training_input.get("exchange", "BINANCE")
             timeframe, training_input.get("timeframe", "1m")
 
@@ -741,6 +796,9 @@ class HMMRegimeDiscoveryStep:
 import except Exception as e:
     except Exception as e:
         pass
+import except Exception as e:
+    except Exception as e:
+        pass
 import step01_success, await run_step1
                 step01_success, await run_step1(
                     symbol = symbol,
@@ -749,6 +807,7 @@ import step01_success, await run_step1
                     force_rerun = True
                 )
         if step01_success:
+    pass
     pass
     pass
         self.logger.info("✅ Step1 data collection completed successfully")
@@ -767,6 +826,9 @@ import step01_success, await run_step1
 import except Exception as e:
     except Exception as e:
         pass
+import except Exception as e:
+    except Exception as e:
+        pass
 import step01_5_success, await run_step1_5
                 step01_5_success, await run_step1_5(
                     symbol = symbol,
@@ -777,6 +839,7 @@ import step01_5_success, await run_step1_5
         if step01_5_success:
     pass
     pass
+    pass
         self.logger.info("✅ Step1_5 data conversion completed successfully")
                 else:
         self.logger.warning("⚠️ Step1_5 data conversion failed")
@@ -785,6 +848,7 @@ import step01_5_success, await run_step1_5
 
         # Check if data is now ready
         if self.data_quality_manager:
+    pass
     pass
     pass
         self.logger.info("🔍 Re - checking data quality after fixes...")
@@ -826,12 +890,15 @@ import step01_5_success, await run_step1_5
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             exchange, training_input.get("exchange", "BINANCE")
             timeframe, training_input.get("timeframe", "1m")
 
         # Use standardized path construction
             data_dir, training_input.get("data_dir")
         if data_dir is None:
+    pass
     pass
     pass
                 data_dir, self.standards.build_path("processed_data", exchange, symbol)
@@ -848,6 +915,7 @@ import step01_5_success, await run_step1_5
         self.logger.info(f"📁 Looking for klines file: {klines_path}")
 
         if not klines_path.exists():
+    pass
     pass
     pass
         self.logger.error(f"❌ Klines file not found: {klines_path}")
@@ -869,15 +937,18 @@ import step01_5_success, await run_step1_5
         if validation_result.passed:
     pass
     pass
+    pass
         self.logger.info(f"✅ Data validation passed (quality score: {validation_result.quality_score:.2f})")
             else:
         self.logger.warning(f"⚠️ Data validation found issues:")
         for issue in validation_result.issues[:3]:
     pass
     pass
+    pass
         self.logger.warning(f"   - {issue.message}")
 
         if df.empty:
+    pass
     pass
     pass
         self.logger.error("❌ Klines data is empty")
@@ -893,6 +964,7 @@ import step01_5_success, await run_step1_5
             required_columns = ["timestamp", "open", "high", "low", "close", "volume"]
             missing_columns = [col for col in required_columns if col not in df.columns]
         if missing_columns:
+    pass
     pass
     pass
         self.logger.error(f"❌ Missing required columns: {missing_columns}")
@@ -948,9 +1020,12 @@ import step01_5_success, await run_step1_5
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         # Ensure timestamp is datetime
             df, df.copy()
         if not pd.api.types.is_datetime64_any_dtype(df["timestamp"]):
+    pass
     pass
     pass
         self.logger.info("🕒 Converting timestamp to datetime...")
@@ -1103,7 +1178,9 @@ import step01_5_success, await run_step1_5
         for col in technical_cols:
     pass
     pass
+    pass
         if col in hmm_features.columns:
+    pass
     pass
     pass
                     hmm_features[col] = hmm_features[col].ffill()
@@ -1138,6 +1215,7 @@ import step01_5_success, await run_step1_5
     def _calculate_rsi(self, prices: Any, window: int, 14) -> Any:
     pass
     pass
+    pass
         """Calculate Relative Strength Index."""
         self.logger.debug(f"Calculating RSI with window {window}...")
         delta, prices.diff()
@@ -1155,6 +1233,7 @@ import step01_5_success, await run_step1_5
     def _calculate_macd(self, prices: Any, fast: int, 12, slow: int, 26, signal: int, 9) -> Any:
     pass
     pass
+    pass
         """Calculate MACD (Moving Average Convergence Divergence)."""
         self.logger.debug(f"Calculating MACD (fast={fast}, slow={slow}, signal={signal})...")
         ema_fast, prices.ewm(span = fast).mean()
@@ -1168,6 +1247,7 @@ import step01_5_success, await run_step1_5
         context="calculate_atr"
     )
     def _calculate_atr(self, df: Any, window: int, 14) -> Any:
+    pass
     pass
     pass
         """Calculate Average True Range (ATR)."""
@@ -1190,6 +1270,7 @@ import step01_5_success, await run_step1_5
         context="calculate_bollinger_bands"
     )
     def _calculate_bollinger_bands(self, prices: Any, window: int, 20, num_std: float, 2) -> Any:
+    pass
     pass
     pass
         """Calculate Bollinger Bands."""
@@ -1218,6 +1299,7 @@ import step01_5_success, await run_step1_5
         context="calculate_adx"
     )
     def _calculate_adx(self, df: Any, window: int, 14) -> Any:
+    pass
     pass
     pass
         """Calculate Average Directional Index (ADX)."""
@@ -1261,6 +1343,7 @@ import step01_5_success, await run_step1_5
     def _calculate_sr_strength(self, df: Any, window: int, 20) -> Any:
     pass
     pass
+    pass
         """Calculate support / resistance strength indicator."""
         self.logger.debug(f"Calculating S / R strength with window {window}...")
 
@@ -1285,6 +1368,7 @@ import step01_5_success, await run_step1_5
     def _log_feature_categories(self, features: Any) -> None:
     pass
     pass
+    pass
         """Log feature categories for analysis."""
         try:
             feature_categories = {
@@ -1298,12 +1382,16 @@ import step01_5_success, await run_step1_5
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             }
 
         for col in features.columns:
     pass
     pass
+    pass
         if "momentum" in col.lower():
+    pass
     pass
     pass
                     feature_categories["momentum"].append(col)
@@ -1324,7 +1412,9 @@ import step01_5_success, await run_step1_5
         for category, cols in feature_categories.items():
     pass
     pass
+    pass
         if cols:
+    pass
     pass
     pass
         self.logger.info(f"   - {category.capitalize()}: {len(cols)} features")
@@ -1355,6 +1445,8 @@ import step01_5_success, await run_step1_5
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         self.logger.info(f"📊 Input data shape: {data.shape}")
 
         # Prepare comprehensive features
@@ -1362,6 +1454,7 @@ import step01_5_success, await run_step1_5
             features, await self._prepare_hmm_features(data)
 
         if features.empty:
+    pass
     pass
     pass
         self.logger.error("❌ No features available for HMM analysis")
@@ -1374,8 +1467,10 @@ import step01_5_success, await run_step1_5
         for col in features.columns:
     pass
     pass
+    pass
                 series, features[col].dropna()
         if len(series) > 0:
+    pass
     pass
     pass
         self.logger.info(f"   - {col}: mean={series.mean():.6f}, std={series.std():.6f}, min={series.min():.6f}, max={series.max():.6f}")
@@ -1383,6 +1478,9 @@ import step01_5_success, await run_step1_5
         # Try to import hmmlearn
         try:
                 from hmmlearn import hmm
+    except Exception as e:
+        pass
+import except Exception as e:
     except Exception as e:
         pass
 import except Exception as e:
@@ -1396,6 +1494,7 @@ import HMM_AVAILABLE, True
         self.logger.warning("⚠️ hmmlearn not available, falling back to simple regime detection")
 
         if HMM_AVAILABLE:
+    pass
     pass
     pass
         # Use proper HMM implementation
@@ -1418,6 +1517,9 @@ import HMM_AVAILABLE, True
         """Perform HMM regime discovery using hmmlearn library with 20 - cluster composite approach."""
         try:
             from hmmlearn import hmm
+    except Exception as e:
+        pass
+import except Exception as e:
     except Exception as e:
         pass
 import except Exception as e:
@@ -1595,6 +1697,8 @@ import self.logger.info
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         # Use key features for regime classification
             volatility, features.get("volatility_20", features.get("volatility", pd.Series([0] * len(features))))
             momentum, features.get("price_momentum_10", pd.Series([0] * len(features)))
@@ -1624,6 +1728,7 @@ import self.logger.info
         for i in range(total_periods):
     pass
     pass
+    pass
                 vol, volatility.iloc[i] if hasattr(volatility, 'iloc') else volatility[i]
                 mom, momentum.iloc[i] if hasattr(momentum, 'iloc') else momentum[i]
                 vol_ratio, volume_ratio.iloc[i] if hasattr(volume_ratio, 'iloc') else volume_ratio[i]
@@ -1632,7 +1737,9 @@ import self.logger.info
         if vol > vol_quantiles[0.8]:
     pass
     pass
+    pass
         if mom > mom_quantiles[0.7]:
+    pass
     pass
     pass
                         regime = "high_volatility_bull"
@@ -1644,6 +1751,7 @@ import self.logger.info
         if mom > mom_quantiles[0.7]:
     pass
     pass
+    pass
                         regime = "low_volatility_bull"
                     elif mom < mom_quantiles[0.3]:
                         regime = "low_volatility_bear"
@@ -1651,6 +1759,7 @@ import self.logger.info
                         regime = "low_volatility_neutral"
                 else:
         if mom > mom_quantiles[0.7]:
+    pass
     pass
     pass
                         regime = "medium_volatility_bull"
@@ -1664,6 +1773,7 @@ import self.logger.info
 
         # Progress logging
         if (i + 1) % progress_interval == 0:
+    pass
     pass
     pass
                     progress = ((i + 1) / total_periods) * 100
@@ -1682,6 +1792,7 @@ import self.logger.info
         self.logger.info(f"✅ Simple regime discovery completed")
         self.logger.info(f"📊 Discovered {len(regime_counts)} unique regimes:")
         for regime, count in regime_counts.items():
+    pass
     pass
     pass
                 percentage = (count / len(regimes)) * 100
@@ -1706,10 +1817,13 @@ import self.logger.info
     def _interpret_hmm_states(self, features: Any, state_sequence: Any, state_probs: Any) -> dict[str, Any]:
     pass
     pass
+    pass
         """Interpret HMM states based on feature characteristics."""
         try:
         self.logger.info("🔍 Interpreting HMM states...")
 
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -1723,11 +1837,13 @@ import self.logger.info
         for state in unique_states:
     pass
     pass
+    pass
         # Get data points for this state
                 state_mask, state_sequence == state
                 state_data, features[state_mask]
 
         if len(state_data) == 0:
+    pass
     pass
     pass
                     continue
@@ -1747,11 +1863,14 @@ import self.logger.info
         for feature in key_features:
     pass
     pass
+    pass
         if feature in state_data.columns:
+    pass
     pass
     pass
                         feature_data, state_data[feature].dropna()
         if len(feature_data) > 0:
+    pass
     pass
     pass
                             state_char[f"{feature}_mean"] = feature_data.mean()
@@ -1782,6 +1901,7 @@ import self.logger.info
     def _map_state_to_regime(self, state_char: dict[str, Any]) -> str:
     pass
     pass
+    pass
         """Map state characteristics to regime name."""
         try:
         # Extract key characteristics
@@ -1791,6 +1911,8 @@ import self.logger.info
             rsi, state_char.get("rsi_mean", 50)
             adx, state_char.get("adx_mean", 25)
 
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -1807,6 +1929,7 @@ import self.logger.info
         if momentum > 0.001:
     pass
     pass
+    pass
         return "low_volatility_bull"
                 elif momentum < -0.001:
         return "low_volatility_bear"
@@ -1814,6 +1937,7 @@ import self.logger.info
         return "low_volatility_neutral"
             else:  # Medium volatility
         if momentum > 0.001:
+    pass
     pass
     pass
         return "medium_volatility_bull"
@@ -1834,11 +1958,13 @@ import self.logger.info
     def _calculate_regime_transitions(self, regimes: List[str]) -> dict[str, Any]:
     pass
     pass
+    pass
         """Calculate regime transition probabilities."""
         self.logger.info("🔄 Calculating regime transition probabilities...")
         transitions = {}
 
         for i in range(len(regimes) - 1):
+    pass
     pass
     pass
             current_regime, regimes[i]
@@ -1847,9 +1973,11 @@ import self.logger.info
         if current_regime not in transitions:
     pass
     pass
+    pass
                 transitions[current_regime] = {}
 
         if next_regime not in transitions[current_regime]:
+    pass
     pass
     pass
                 transitions[current_regime][next_regime] = 0
@@ -1861,8 +1989,10 @@ import self.logger.info
         for current_regime in transitions:
     pass
     pass
+    pass
             total, sum(transitions[current_regime].values())
         for next_regime in transitions[current_regime]:
+    pass
     pass
     pass
                 transitions[current_regime][next_regime] /= total
@@ -1896,6 +2026,8 @@ import self.logger.info
         try:
         self.logger.info("🔍 Detecting regime changes using advanced probability - based approach...")
 
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -1973,6 +2105,8 @@ import self.logger.info
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         # Calculate regime durations
             durations, self._calculate_regime_durations(states)
 
@@ -1980,12 +2114,15 @@ import self.logger.info
         for i in range(len(transitions)):
     pass
     pass
+    pass
         if transitions[i]:
+    pass
     pass
     pass
         # Check if current regime has persisted long enough
                     current_duration, durations[i] if i < len(durations) else 0
         if current_duration < min_persistence:
+    pass
     pass
     pass
                         filtered_transitions[i] = False
@@ -2014,10 +2151,14 @@ import self.logger.info
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         for i in range(len(transitions)):
     pass
     pass
+    pass
         if transitions[i] and i < len(hmm_probs) - 1:
+    pass
     pass
     pass
         # Calculate confidence based on probability change magnitude
@@ -2048,6 +2189,8 @@ import self.logger.info
         # Regime strength based on probability dominance
             max_probs, np.max(hmm_probs, axis = 1)
 
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -2085,10 +2228,14 @@ import self.logger.info
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         for i in range(len(transitions)):
     pass
     pass
+    pass
         if transitions[i] and i < len(states) - 1:
+    pass
     pass
     pass
                     event = {
@@ -2115,9 +2262,12 @@ import self.logger.info
     def _calculate_regime_durations(self, states: np.ndarray) -> np.ndarray:
     pass
     pass
+    pass
         """Calculate how long each regime persists."""
         try:
             durations, np.zeros(len(states), dtype = int)
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -2128,7 +2278,9 @@ import self.logger.info
         for i in range(1, len(states)):
     pass
     pass
+    pass
         if states[i] == current_state:
+    pass
     pass
     pass
                     current_duration += 1
@@ -2137,12 +2289,14 @@ import self.logger.info
         for j in range(i - current_duration, i):
     pass
     pass
+    pass
                         durations[j] = current_duration
                     current_state, states[i]
                     current_duration, 1
 
         # Handle the last regime
         for j in range(len(states) - current_duration, len(states)):
+    pass
     pass
     pass
                 durations[j] = current_duration
@@ -2161,6 +2315,7 @@ import self.logger.info
     def _calculate_adaptive_regime_boundaries(self, features: pd.DataFrame) -> dict[str, Any]:
     pass
     pass
+    pass
         """Calculate adaptive regime boundaries using clustering of regime characteristics."""
         try:
         self.logger.info("🔧 Calculating adaptive regime boundaries...")
@@ -2173,11 +2328,15 @@ import self.logger.info
 import except Exception as e:
     except Exception as e:
         pass
+import except Exception as e:
+    except Exception as e:
+        pass
         # Extract regime characteristics
 import regime_features, self._extract_regime_characteristics
             regime_features, self._extract_regime_characteristics(features)
 
         if regime_features.empty:
+    pass
     pass
     pass
         self.logger.warning("⚠️ No regime characteristics available for boundary calculation")
@@ -2196,6 +2355,7 @@ import regime_features, self._extract_regime_characteristics
             boundary_stats = {}
 
         for boundary_id in unique_boundaries:
+    pass
     pass
     pass
                 boundary_mask, regime_boundaries == boundary_id
@@ -2228,10 +2388,13 @@ import regime_features, self._extract_regime_characteristics
     def _extract_regime_characteristics(self, features: pd.DataFrame) -> pd.DataFrame:
     pass
     pass
+    pass
         """Extract regime characteristics for boundary calculation."""
         try:
             characteristics, pd.DataFrame()
 
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -2245,7 +2408,9 @@ import regime_features, self._extract_regime_characteristics
         for feature in key_features:
     pass
     pass
+    pass
         if feature in features.columns:
+    pass
     pass
     pass
         # Calculate rolling statistics
@@ -2257,11 +2422,13 @@ import regime_features, self._extract_regime_characteristics
         if "price_momentum_10" in features.columns and "volatility_20" in features.columns:
     pass
     pass
+    pass
                 characteristics["momentum_volatility_ratio"] = (
                     features["price_momentum_10"] / (features["volatility_20"] + 1e - 8)
                 )
 
         if "volume_ratio_10" in features.columns and "price_momentum_10" in features.columns:
+    pass
     pass
     pass
                 characteristics["volume_momentum_correlation"] = (
@@ -2285,6 +2452,7 @@ import regime_features, self._extract_regime_characteristics
     def _model_regime_persistence(self, regime_sequence: np.ndarray) -> dict[str, Any]:
     pass
     pass
+    pass
         """Model how long regimes typically persist using statistical distributions."""
         try:
         self.logger.info("📊 Modeling regime persistence...")
@@ -2292,6 +2460,9 @@ import regime_features, self._extract_regime_characteristics
             from scipy.stats import weibull_min, expon, gamma
             from scipy.optimize import minimize
 
+    except Exception as e:
+        pass
+import except Exception as e:
     except Exception as e:
         pass
 import except Exception as e:
@@ -2305,6 +2476,7 @@ import durations, self._calculate_regime_durations
         if len(unique_durations) < 3:
     pass
     pass
+    pass
         self.logger.warning("⚠️ Insufficient regime duration data for modeling")
         return {}
 
@@ -2314,6 +2486,8 @@ import durations, self._calculate_regime_durations
         # Weibull distribution (most common for duration modeling)
         try:
                 shape, loc, scale, weibull_min.fit(durations)
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -2335,6 +2509,8 @@ import durations, self._calculate_regime_durations
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
                 distribution_fits["exponential"] = {
                     "scale": float(scale),
                     "mean_duration": float(scale),
@@ -2347,6 +2523,8 @@ import durations, self._calculate_regime_durations
         # Gamma distribution (more flexible)
         try:
                 shape, loc, scale, gamma.fit(durations)
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -2368,7 +2546,9 @@ import durations, self._calculate_regime_durations
         for dist_name, dist_params in distribution_fits.items():
     pass
     pass
+    pass
         if dist_params["aic"] < best_aic:
+    pass
     pass
     pass
                     best_aic, dist_params["aic"]
@@ -2414,11 +2594,14 @@ import durations, self._calculate_regime_durations
     def _calculate_aic(self, data: np.ndarray, pdf_func, *params) -> float:
     pass
     pass
+    pass
         """Calculate Akaike Information Criterion for distribution fitting."""
         try:
         # Calculate log - likelihood
             log_likelihood, np.sum(np.log(pdf_func(data, *params) + 1e - 10))
 
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -2441,6 +2624,7 @@ import durations, self._calculate_regime_durations
     def _calculate_transition_matrix(self, regime_sequence: np.ndarray) -> np.ndarray:
     pass
     pass
+    pass
         """Calculate regime transition probability matrix."""
         try:
             unique_states, np.unique(regime_sequence)
@@ -2448,9 +2632,12 @@ import durations, self._calculate_regime_durations
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
             n_states, len(unique_states)
 
         if n_states == 0:
+    pass
     pass
     pass
         return np.array([])
@@ -2463,6 +2650,7 @@ import durations, self._calculate_regime_durations
 
         # Count transitions
         for i in range(len(regime_sequence) - 1):
+    pass
     pass
     pass
                 current_state, state_map[regime_sequence[i]]
@@ -2487,6 +2675,9 @@ import durations, self._calculate_regime_durations
         """Get SR context for regime analysis."""
         try:
         if not hasattr(self, 'sr_predictor') or self.sr_predictor is None:
+    pass
+    except Exception as e:
+        pass
     pass
     except Exception as e:
         pass
@@ -2520,6 +2711,8 @@ import durations, self._calculate_regime_durations
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         # Add SR context to regime analysis
             enhanced_results["sr_context"] = sr_context
 
@@ -2534,6 +2727,7 @@ import durations, self._calculate_regime_durations
 
         # Generate SR - enhanced regime report
         if hasattr(self, 'sr_predictor') and self.sr_predictor and self.sr_predictor.reporting_enabled:
+    pass
     pass
     pass
         await self.sr_predictor.generate_manual_report(market_data, sr_context)
@@ -2559,6 +2753,8 @@ import durations, self._calculate_regime_durations
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         # Add SR proximity to regime analysis
             features["sr_proximity_by_regime"] = {}
             features["sr_strength_by_regime"] = {}
@@ -2567,10 +2763,12 @@ import durations, self._calculate_regime_durations
         for regime in set(regime_states):
     pass
     pass
+    pass
                 regime_mask = [i for i, r in enumerate(regime_states) if r == regime]
                 regime_data, market_data.iloc[regime_mask]
 
         if len(regime_data) > 0:
+    pass
     pass
     pass
                     regime_price, regime_data["close"].iloc[-1]
@@ -2643,8 +2841,11 @@ async def run_step(
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         # Use standardized path construction
         if data_dir is None:
+    pass
     pass
     pass
             data_dir, pipeline_standards.build_path("processed_data", exchange, symbol)
@@ -2689,14 +2890,17 @@ async def run_step(
         if result.get("hmm_regime_discovery_completed", False):
     pass
     pass
+    pass
             logger.info("✅ Step 3: HMM Regime Discovery completed successfully")
 
         # Log optimization information
         if result.get("optimization_used", False):
     pass
     pass
+    pass
                 logger.info("🔧 Automatic parameter optimization completed successfully")
         if result.get("optimized_params"):
+    pass
     pass
     pass
                     logger.info(f"📊 Optimized parameters applied: {list(result['optimized_params'].keys())}")
@@ -2707,11 +2911,13 @@ async def run_step(
         if result.get("regime_states"):
     pass
     pass
+    pass
                 unique_regimes, len(set(result['regime_states']))
                 total_periods, len(result['regime_states'])
                 logger.info(f"📊 Discovered {unique_regimes} unique regimes across {total_periods:,} periods")
 
         if result.get("regime_metrics"):
+    pass
     pass
     pass
                 metrics, result["regime_metrics"]
@@ -2723,8 +2929,10 @@ async def run_step(
         if regime_dist:
     pass
     pass
+    pass
                     logger.info("📊 Regime distribution:")
         for regime, count in regime_dist.items():
+    pass
     pass
     pass
                         percentage = (count / metrics.get('total_periods', 1)) * 100
@@ -2785,6 +2993,7 @@ async def run_step(
     def _create_composite_features(self, features: Any, hmm_states: Any, hmm_probs: Any) -> Any:
     pass
     pass
+    pass
         """Create composite features combining HMM states with original features."""
         try:
         self.logger.info("🔧 Creating composite features...")
@@ -2793,8 +3002,11 @@ async def run_step(
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         # Convert to DataFrame if needed
         if not isinstance(features, pd.DataFrame):
+    pass
     pass
     pass
                 features, pd.DataFrame(features)
@@ -2811,6 +3023,7 @@ async def run_step(
         for i in range(hmm_probs.shape[1]):
     pass
     pass
+    pass
                 composite_df[f"hmm_state_prob_{i}"] = hmm_probs[:, i]
 
         # Add feature interactions with HMM states
@@ -2818,7 +3031,9 @@ async def run_step(
         for feature in key_features:
     pass
     pass
+    pass
         if feature in composite_df.columns:
+    pass
     pass
     pass
                     composite_df[f"{feature}_x_hmm_state"] = composite_df[feature] * composite_df["hmm_state"]
@@ -2843,6 +3058,7 @@ async def run_step(
     def _calculate_cluster_quality_metrics(self, features_scaled: Any, cluster_labels: Any, kmeans_model: Any) -> dict[str, Any]:
     pass
     pass
+    pass
         """Calculate comprehensive cluster quality metrics."""
         try:
         self.logger.info("📊 Calculating cluster quality metrics...")
@@ -2853,9 +3069,13 @@ async def run_step(
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         # Silhouette score (higher is better, range: -1 to 1)
         try:
                 metrics["silhouette_score"] = silhouette_score(features_scaled, cluster_labels)
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -2870,12 +3090,16 @@ async def run_step(
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         except Exception:
                 metrics["calinski_harabasz_score"] = 0.0
 
         # Davies - Bouldin score (lower is better)
         try:
                 metrics["davies_bouldin_score"] = davies_bouldin_score(features_scaled, cluster_labels)
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -2923,6 +3147,7 @@ async def run_step(
     def _analyze_composite_clusters(self, features: Any, hmm_states: Any, cluster_labels: Any, cluster_metrics: dict[str, Any]) -> dict[str, Any]:
     pass
     pass
+    pass
         """Analyze composite clusters and their characteristics."""
         try:
         self.logger.info("🔍 Analyzing composite clusters...")
@@ -2939,10 +3164,13 @@ async def run_step(
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         # Analyze each cluster
             unique_clusters, np.unique(cluster_labels)
 
         for cluster_id in unique_clusters:
+    pass
     pass
     pass
                 cluster_mask, cluster_labels == cluster_id
@@ -2963,7 +3191,9 @@ async def run_step(
         for col in features.columns:
     pass
     pass
+    pass
         if col in cluster_data.columns:
+    pass
     pass
     pass
                         cluster_char["feature_means"][col] = cluster_data[col].mean()
@@ -3007,6 +3237,8 @@ async def run_step(
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         # 1. Cluster Quality Report
             reports["cluster_quality"] = self._generate_cluster_quality_report(cluster_metrics)
 
@@ -3043,10 +3275,13 @@ async def run_step(
     def _create_composite_cluster_dataframe(self, features: Any, hmm_states: Any, cluster_labels: Any, composite_analysis: dict[str, Any]) -> Any:
     pass
     pass
+    pass
         """Create composite cluster DataFrame with all relevant information."""
         try:
         self.logger.info("📊 Creating composite cluster DataFrame...")
 
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -3058,6 +3293,7 @@ async def run_step(
 
         # Add cluster characteristics
         for cluster_id, char in composite_analysis.get("cluster_characteristics", {}).items():
+    pass
     pass
     pass
                 cluster_mask, cluster_labels == cluster_id
@@ -3087,10 +3323,13 @@ async def run_step(
     def _create_intensity_dataframe(self, features: Any, hmm_states: Any, cluster_labels: Any, composite_analysis: dict[str, Any]) -> Any:
     pass
     pass
+    pass
         """Create intensity DataFrame for cluster analysis."""
         try:
         self.logger.info("📊 Creating intensity DataFrame...")
 
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -3104,6 +3343,7 @@ async def run_step(
             unique_clusters, np.unique(cluster_labels)
 
         for cluster_id in unique_clusters:
+    pass
     pass
     pass
                 cluster_mask, cluster_labels == cluster_id
@@ -3133,6 +3373,7 @@ async def run_step(
         context="create_meta_information"
     )
     def _create_meta_information(self, hmm_model: Any, kmeans_model: Any, composite_analysis: dict[str, Any], cluster_metrics: dict[str, Any], reports: dict[str, Any]) -> dict[str, Any]:
+    pass
     pass
     pass
         """Create meta information for the composite HMM analysis."""
@@ -3178,6 +3419,8 @@ async def run_step(
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         self.logger.info("✅ Created meta information")
         return meta
 
@@ -3190,9 +3433,12 @@ async def run_step(
     def _calculate_persistence(self, states: Any) -> Any:
     pass
     pass
+    pass
         """Calculate state persistence (how long we stay in current state)."""
         try:
             persistence, np.zeros(len(states))
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -3203,7 +3449,9 @@ async def run_step(
         for i in range(1, len(states)):
     pass
     pass
+    pass
         if states[i] == current_state:
+    pass
     pass
     pass
                     current_count += 1
@@ -3212,12 +3460,14 @@ async def run_step(
         for j in range(i - current_count, i):
     pass
     pass
+    pass
                         persistence[j] = current_count
                     current_state, states[i]
                     current_count, 1
 
         # Handle the last state
         for j in range(len(states) - current_count, len(states)):
+    pass
     pass
     pass
                 persistence[j] = current_count
@@ -3229,6 +3479,7 @@ async def run_step(
     def _calculate_transitions(self, states: Any) -> Any:
     pass
     pass
+    pass
         """Calculate number of state transitions."""
         try:
             transitions, np.zeros(len(states))
@@ -3236,10 +3487,14 @@ async def run_step(
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         for i in range(1, len(states)):
     pass
     pass
+    pass
         if states[i] != states[i - 1]:
+    pass
     pass
     pass
                     transitions[i] = 1
@@ -3250,9 +3505,12 @@ async def run_step(
     def _calculate_hmm_state_distribution(self, hmm_states: Any) -> dict[int, int]:
     pass
     pass
+    pass
         """Calculate distribution of HMM states."""
         try:
             unique_states, counts, np.unique(hmm_states, return_counts = True)
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -3264,9 +3522,12 @@ async def run_step(
     def _get_dominant_hmm_state(self, hmm_states: Any) -> int:
     pass
     pass
+    pass
         """Get the dominant HMM state in a cluster."""
         try:
             unique_states, counts, np.unique(hmm_states, return_counts = True)
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -3276,6 +3537,7 @@ async def run_step(
         return 0
 
     def _determine_market_condition(self, cluster_char: dict[str, Any]) -> str:
+    pass
     pass
     pass
         """Determine market condition for a cluster based on its characteristics."""
@@ -3290,11 +3552,15 @@ async def run_step(
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         # Determine market condition
         if volatility > 0.02:
     pass
     pass
+    pass
         if momentum > 0.001:
+    pass
     pass
     pass
         return "high_volatility_bull"
@@ -3306,6 +3572,7 @@ async def run_step(
         if momentum > 0.001:
     pass
     pass
+    pass
         return "low_volatility_bull"
                 elif momentum < -0.001:
         return "low_volatility_bear"
@@ -3313,6 +3580,7 @@ async def run_step(
         return "low_volatility_neutral"
             else:
         if momentum > 0.001:
+    pass
     pass
     pass
         return "medium_volatility_bull"
@@ -3326,6 +3594,7 @@ async def run_step(
     def _calculate_feature_importance(self, features: Any, cluster_labels: Any) -> dict[str, float]:
     pass
     pass
+    pass
         """Calculate feature importance based on cluster separation."""
         try:
             importance = {}
@@ -3333,10 +3602,14 @@ async def run_step(
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         for col in features.columns:
     pass
     pass
+    pass
         if col in features.columns:
+    pass
     pass
     pass
         # Calculate feature variance between clusters vs within clusters
@@ -3344,10 +3617,12 @@ async def run_step(
         if total_var > 0:
     pass
     pass
+    pass
                         between_cluster_var, 0
                         within_cluster_var, 0
 
         for cluster_id in np.unique(cluster_labels):
+    pass
     pass
     pass
                             cluster_mask, cluster_labels == cluster_id
@@ -3359,6 +3634,7 @@ async def run_step(
                             within_cluster_var += cluster_size * cluster_var
 
         if within_cluster_var > 0:
+    pass
     pass
     pass
                             importance[col] = between_cluster_var / within_cluster_var
@@ -3374,12 +3650,15 @@ async def run_step(
     def _calculate_cluster_stability(self, cluster_labels: Any, cluster_metrics: dict[str, Any]) -> dict[str, float]:
     pass
     pass
+    pass
         """Calculate cluster stability metrics."""
         try:
             stability = {
                 "silhouette_score": cluster_metrics.get("silhouette_score", 0),
                 "cluster_balance": cluster_metrics.get("cluster_balance", 0),
                 "mean_distance_to_center": cluster_metrics.get("mean_distance_to_center", 0)
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -3392,6 +3671,7 @@ async def run_step(
     def _calculate_cluster_intensity(self, cluster_labels: Any, composite_analysis: dict[str, Any]) -> Any:
     pass
     pass
+    pass
         """Calculate cluster intensity scores."""
         try:
             intensity, np.zeros(len(cluster_labels))
@@ -3399,7 +3679,10 @@ async def run_step(
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         for cluster_id, char in composite_analysis.get("cluster_characteristics", {}).items():
+    pass
     pass
     pass
                 cluster_mask, cluster_labels == cluster_id
@@ -3411,9 +3694,12 @@ async def run_step(
     def _calculate_cluster_stability_scores(self, cluster_labels: Any, composite_analysis: dict[str, Any]) -> Any:
     pass
     pass
+    pass
         """Calculate cluster stability scores."""
         try:
             stability, np.ones(len(cluster_labels))  # Default stability score
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -3426,9 +3712,13 @@ async def run_step(
     def _calculate_volatility_intensity(self, features: Any, cluster_mask: Any) -> float:
     pass
     pass
+    pass
         """Calculate volatility intensity for a cluster."""
         try:
         if "volatility_20" in features.columns:
+    pass
+    except Exception as e:
+        pass
     pass
     except Exception as e:
         pass
@@ -3443,9 +3733,13 @@ async def run_step(
     def _calculate_momentum_intensity(self, features: Any, cluster_mask: Any) -> float:
     pass
     pass
+    pass
         """Calculate momentum intensity for a cluster."""
         try:
         if "price_momentum_10" in features.columns:
+    pass
+    except Exception as e:
+        pass
     pass
     except Exception as e:
         pass
@@ -3460,9 +3754,13 @@ async def run_step(
     def _calculate_volume_intensity(self, features: Any, cluster_mask: Any) -> float:
     pass
     pass
+    pass
         """Calculate volume intensity for a cluster."""
         try:
         if "volume_ratio_10" in features.columns:
+    pass
+    except Exception as e:
+        pass
     pass
     except Exception as e:
         pass
@@ -3479,9 +3777,12 @@ async def run_step(
     def _generate_cluster_quality_report(self, cluster_metrics: dict[str, Any]) -> str:
     pass
     pass
+    pass
         """Generate cluster quality report."""
         try:
             report = []
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -3500,16 +3801,19 @@ async def run_step(
             report.append(f"- **Mean Cluster Size**: {cluster_metrics.get('mean_cluster_size', 0):.1f}")
             report.append(f"- **Cluster Balance**: {cluster_metrics.get('cluster_balance', 0):.4f}")
 
-        return "\\\n".join(report)
+        return "\\\\n".join(report)
         except Exception as e:
         return f"Error generating cluster quality report: {e}"
 
     def _generate_cluster_characteristics_report(self, composite_analysis: dict[str, Any]) -> str:
     pass
     pass
+    pass
         """Generate cluster characteristics report."""
         try:
             report = []
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -3520,22 +3824,26 @@ async def run_step(
         for cluster_id, char in composite_analysis.get("cluster_characteristics", {}).items():
     pass
     pass
+    pass
                 report.append(f"## Cluster {cluster_id}")
                 report.append(f"- **Size**: {char.get('size', 0)} ({char.get('percentage', 0):.1f}%)")
                 report.append(f"- **Dominant HMM State**: {char.get('dominant_hmm_state', 'unknown')}")
                 report.append(f"- **Market Condition**: {composite_analysis.get('market_conditions', {}).get(cluster_id, 'unknown')}")
                 report.append("")
 
-        return "\\\n".join(report)
+        return "\\\\n".join(report)
         except Exception as e:
         return f"Error generating cluster characteristics report: {e}"
 
     def _generate_market_conditions_report(self, composite_analysis: dict[str, Any]) -> str:
     pass
     pass
+    pass
         """Generate market conditions report."""
         try:
             report = []
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -3549,23 +3857,28 @@ async def run_step(
         for condition in market_conditions.values():
     pass
     pass
+    pass
                 condition_counts[condition] = condition_counts.get(condition, 0) + 1
 
         for condition, count in condition_counts.items():
     pass
     pass
+    pass
                 report.append(f"- **{condition}**: {count} clusters")
 
-        return "\\\n".join(report)
+        return "\\\\n".join(report)
         except Exception as e:
         return f"Error generating market conditions report: {e}"
 
     def _generate_feature_importance_report(self, composite_analysis: dict[str, Any]) -> str:
     pass
     pass
+    pass
         """Generate feature importance report."""
         try:
             report = []
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -3580,18 +3893,22 @@ async def run_step(
         for i, (feature, importance) in enumerate(sorted_features[:10], 1):
     pass
     pass
+    pass
                 report.append(f"{i}. **{feature}**: {importance:.4f}")
 
-        return "\\\n".join(report)
+        return "\\\\n".join(report)
         except Exception as e:
         return f"Error generating feature importance report: {e}"
 
     def _generate_hmm_state_analysis_report(self, hmm_states: Any, composite_analysis: dict[str, Any]) -> str:
     pass
     pass
+    pass
         """Generate HMM state analysis report."""
         try:
             report = []
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -3606,19 +3923,23 @@ async def run_step(
         for state, count in hmm_distribution.items():
     pass
     pass
+    pass
                 percentage = (count / total_states * 100) if total_states > 0 else 0
                 report.append(f"- **State {state}**: {count} ({percentage:.1f}%)")
 
-        return "\\\n".join(report)
+        return "\\\\n".join(report)
         except Exception as e:
         return f"Error generating HMM state analysis report: {e}"
 
     def _generate_temporal_analysis_report(self, cluster_labels: Any, features: Any) -> str:
     pass
     pass
+    pass
         """Generate temporal analysis report."""
         try:
             report = []
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -3631,7 +3952,9 @@ async def run_step(
         for i in range(1, len(cluster_labels)):
     pass
     pass
+    pass
         if cluster_labels[i] != cluster_labels[i - 1]:
+    pass
     pass
     pass
                     transitions += 1
@@ -3640,16 +3963,19 @@ async def run_step(
             report.append(f"- **Total Transitions**: {transitions}")
             report.append(f"- **Transition Rate**: {transitions / len(cluster_labels) * 100:.2f}%")
 
-        return "\\\n".join(report)
+        return "\\\\n".join(report)
         except Exception as e:
         return f"Error generating temporal analysis report: {e}"
 
     def _generate_recommendations_report(self, cluster_metrics: dict[str, Any], composite_analysis: dict[str, Any]) -> str:
     pass
     pass
+    pass
         """Generate recommendations report."""
         try:
             report = []
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -3662,6 +3988,7 @@ async def run_step(
         if silhouette < 0.2:
     pass
     pass
+    pass
                 report.append("- **Low Silhouette Score**: Consider reducing number of clusters or improving feature engineering")
             elif silhouette > 0.5:
                 report.append("- **Good Silhouette Score**: Clusters are well - separated")
@@ -3671,6 +3998,7 @@ async def run_step(
         if balance > 0.5:
     pass
     pass
+    pass
                 report.append("- **Unbalanced Clusters**: Consider adjusting clustering parameters for better balance")
 
         # Analyze feature importance
@@ -3678,10 +4006,11 @@ async def run_step(
         if feature_importance:
     pass
     pass
+    pass
                 top_feature, max(feature_importance.items(), key = lambda x: x[1])
                 report.append(f"- **Most Important Feature**: {top_feature[0]} (importance: {top_feature[1]:.4f})")
 
-        return "\\\n".join(report)
+        return "\\\\n".join(report)
         except Exception as e:
         return f"Error generating recommendations report: {e}"
 
@@ -3692,6 +4021,7 @@ async def run_step(
     def _should_run_optimization(self, symbol: str, exchange: str, timeframe: str, data_dir: str, force_rerun: bool) -> bool:
     pass
     pass
+    pass
         """Determine if parameter optimization should be run."""
 
         # Get optimization configuration
@@ -3700,6 +4030,7 @@ async def run_step(
 
         # Check if automatic optimization is enabled
         if not auto_config.get("enabled", True):
+    pass
     pass
     pass
         self.logger.info("🔧 Automatic optimization is disabled")
@@ -3719,9 +4050,13 @@ async def run_step(
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         # Import the optimizer
         try:
                 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -3736,6 +4071,7 @@ import except ImportError as e:
         # Load feature data for optimization
             feature_data, await self._load_feature_data_for_optimization(symbol, exchange, timeframe, data_dir)
         if feature_data is None or feature_data.empty:
+    pass
     pass
     pass
         self.logger.error("❌ Could not load feature data for optimization")
@@ -3771,6 +4107,7 @@ import except ImportError as e:
         if optimization_results and optimization_results.get('best_params'):
     pass
     pass
+    pass
         # Save optimization results
         await self._save_optimization_results(
                     optimization_results, symbol, exchange, timeframe, data_dir
@@ -3802,7 +4139,10 @@ import except ImportError as e:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         if feature_file.exists():
+    pass
     pass
     pass
         self.logger.info(f"📂 Loading feature data from: {feature_file}")
@@ -3812,6 +4152,7 @@ import except ImportError as e:
         self.logger.info("📂 Feature file not found, creating basic features from raw data")
             raw_data, await self._load_data(symbol, exchange, timeframe, data_dir)
         if raw_data is not None and not raw_data.empty:
+    pass
     pass
     pass
         return await self._create_basic_features(raw_data)
@@ -3834,8 +4175,11 @@ import except ImportError as e:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         # Add basic market condition features
         if 'close' in features.columns:
+    pass
     pass
     pass
                 features['returns'] = features['close'].pct_change()
@@ -3845,10 +4189,12 @@ import except ImportError as e:
         if 'volume' in features.columns:
     pass
     pass
+    pass
                 features['volume_ratio_10'] = features['volume'] / features['volume'].rolling(10).mean()
 
         # Add some technical indicators
         if 'close' in features.columns:
+    pass
     pass
     pass
                 features['sma_20'] = features['close'].rolling(20).mean()
@@ -3868,9 +4214,12 @@ import except ImportError as e:
     def _calculate_rsi(self, prices: pd.Series, period: int, 14) -> pd.Series:
     pass
     pass
+    pass
         """Calculate RSI indicator."""
         try:
             delta, prices.diff()
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -3886,6 +4235,7 @@ import except ImportError as e:
     def _get_optimization_config(self) -> Dict[str, Any]:
     pass
     pass
+    pass
         """Get optimization configuration."""
 
         try:
@@ -3895,7 +4245,10 @@ import except ImportError as e:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         if config_file.exists():
+    pass
     pass
     pass
                 import json
@@ -3945,6 +4298,9 @@ import except ImportError as e:
 import except Exception as e:
     except Exception as e:
         pass
+import except Exception as e:
+    except Exception as e:
+        pass
             import json
 
         # Create optimization directory
@@ -3981,6 +4337,8 @@ import except Exception as e:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         # Generate report
             report_file, optimization_dir / f"{exchange}_{symbol}_{timeframe}_optimization_report.md"
             optimizer.generate_optimization_report(output_path = str(report_file))
@@ -3996,6 +4354,7 @@ import except Exception as e:
     def _apply_optimized_parameters(self, optimized_params: Dict[str, Any]) -> None:
     pass
     pass
+    pass
         """Apply optimized parameters to the HMM regime discovery configuration."""
 
         try:
@@ -4005,24 +4364,31 @@ import except Exception as e:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         # Update HMM parameters
         if 'n_components' in optimized_params:
+    pass
     pass
     pass
         self.config['hmm_n_components'] = optimized_params['n_components']
         if 'covariance_type' in optimized_params:
     pass
     pass
+    pass
         self.config['hmm_covariance_type'] = optimized_params['covariance_type']
         if 'n_iter' in optimized_params:
+    pass
     pass
     pass
         self.config['hmm_n_iter'] = optimized_params['n_iter']
         if 'tol' in optimized_params:
     pass
     pass
+    pass
         self.config['hmm_tol'] = optimized_params['tol']
         if 'reg_covar' in optimized_params:
+    pass
     pass
     pass
         self.config['hmm_reg_covar'] = optimized_params['reg_covar']
@@ -4031,8 +4397,10 @@ import except Exception as e:
         if 'clustering_method' in optimized_params:
     pass
     pass
+    pass
         self.config['clustering_method'] = optimized_params['clustering_method']
         if 'n_clusters' in optimized_params:
+    pass
     pass
     pass
         self.config['n_clusters'] = optimized_params['n_clusters']
@@ -4041,20 +4409,25 @@ import except Exception as e:
         if 'target_regimes' in optimized_params:
     pass
     pass
+    pass
         self.config['target_regimes'] = optimized_params['target_regimes']
         if 'merging_method' in optimized_params:
+    pass
     pass
     pass
         self.config['merging_method'] = optimized_params['merging_method']
         if 'similarity_threshold' in optimized_params:
     pass
     pass
+    pass
         self.config['similarity_threshold'] = optimized_params['similarity_threshold']
         if 'coherence_threshold' in optimized_params:
     pass
     pass
+    pass
         self.config['coherence_threshold'] = optimized_params['coherence_threshold']
         if 'differentiation_threshold' in optimized_params:
+    pass
     pass
     pass
         self.config['differentiation_threshold'] = optimized_params['differentiation_threshold']
@@ -4067,12 +4440,14 @@ import except Exception as e:
 if __name__ == "__main__":
     pass
     pass
+    pass
     # Parse command line arguments
     import asyncio
 
     async def main() -> None:
         # Get command line arguments
         if len(sys.argv) >= 4:
+    pass
     pass
     pass
             symbol, sys.argv[1]
@@ -4108,6 +4483,7 @@ if __name__ == "__main__":
         if success:
     pass
     pass
+    pass
             print("✅ Step 3: HMM Regime Discovery completed successfully")
         else:
             print("❌ Step 3: HMM Regime Discovery failed")
@@ -4125,8 +4501,10 @@ if __name__ == "__main__":
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
     except KeyboardInterrupt:
-        print("\\\n🛑 Interrupted by user")
+        print("\\\\n🛑 Interrupted by user")
     except Exception as e:
         print(f"❌ Error: {e}")
     finally:

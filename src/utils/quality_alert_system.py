@@ -20,6 +20,8 @@ project_root, Path(__file__).parent.parent.parent
 if str(project_root) not in sys.path:
     pass
     pass
+    pass
+    pass
     sys.path.append(str(project_root))
 
 from src.utils.logger import system_logger
@@ -32,6 +34,8 @@ class QualityAlertManager:
     def __init__(self, alert_config: AlertConfig):
     pass
     pass
+    pass
+    pass
         self.config, alert_config
         self.alert_history: List[Alert] = []
         self.logger, system_logger.getChild("QualityAlertManager")
@@ -39,11 +43,15 @@ class QualityAlertManager:
     def check_alerts(self, validation_result: MLValidationResult) -> List[Alert]:
     pass
     pass
+    pass
+    pass
         """Generate alerts based on validation results."""
         alerts = []
 
         # Check quality score
         if validation_result.quality_score:
+    pass
+    pass
     pass
     pass
             score, validation_result.quality_score.overall
@@ -70,8 +78,12 @@ class QualityAlertManager:
         if validation_result.drift_report:
     pass
     pass
+    pass
+    pass
             drift_issues, validation_result.drift_report.issues
         if len(drift_issues) > 0:
+    pass
+    pass
     pass
     pass
                 alerts.append(Alert(
@@ -86,6 +98,8 @@ class QualityAlertManager:
         if validation_result.correlation_issues:
     pass
     pass
+    pass
+    pass
             alerts.append(Alert(
                 level="WARNING",
                 message = f"Feature correlation issues: {len(validation_result.correlation_issues)} issues found",
@@ -96,6 +110,8 @@ class QualityAlertManager:
 
         # Check for target issues
         if validation_result.target_issues:
+    pass
+    pass
     pass
     pass
             alerts.append(Alert(
@@ -110,6 +126,8 @@ class QualityAlertManager:
         if validation_result.distribution_issues:
     pass
     pass
+    pass
+    pass
             alerts.append(Alert(
                 level="WARNING",
                 message = f"Distribution issues: {len(validation_result.distribution_issues)} issues found",
@@ -120,6 +138,8 @@ class QualityAlertManager:
 
         # Check for outlier issues
         if validation_result.outlier_issues:
+    pass
+    pass
     pass
     pass
             alerts.append(Alert(
@@ -134,6 +154,8 @@ class QualityAlertManager:
         if validation_result.time_series_issues:
     pass
     pass
+    pass
+    pass
             alerts.append(Alert(
                 level="WARNING",
                 message = f"Time series issues: {len(validation_result.time_series_issues)} issues found",
@@ -144,6 +166,8 @@ class QualityAlertManager:
 
         # Check for financial data issues
         if validation_result.financial_issues:
+    pass
+    pass
     pass
     pass
             alerts.append(Alert(
@@ -159,10 +183,14 @@ class QualityAlertManager:
     def send_alerts(self, alerts: List[Alert]) -> Dict[str, bool]:
     pass
     pass
+    pass
+    pass
         """Send alerts through configured channels."""
         results = {}
 
         for alert in alerts:
+    pass
+    pass
     pass
     pass
         self.alert_history.append(alert)
@@ -171,10 +199,14 @@ class QualityAlertManager:
         if self.config.slack_webhook:
     pass
     pass
+    pass
+    pass
                 results["slack"] = self._send_slack_alert(alert)
 
         # Send email
         if self.config.email_config:
+    pass
+    pass
     pass
     pass
                 results["email"] = self._send_email_alert(alert)
@@ -183,11 +215,15 @@ class QualityAlertManager:
         if self.config.webhook_url:
     pass
     pass
+    pass
+    pass
                 results["webhook"] = self._send_webhook_alert(alert)
 
         return results
 
     def _send_slack_alert(self, alert: Alert) -> bool:
+    pass
+    pass
     pass
     pass
         """Send alert to Slack."""
@@ -229,11 +265,17 @@ class QualityAlertManager:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Add details if available
         if alert.details:
     pass
     pass
-                details_text = "\\\n".join([f"• {k}: {v}" for k, v in alert.details.items()])
+    pass
+    pass
+                details_text = "\\\\\n".join([f"• {k}: {v}" for k, v in alert.details.items()])
                 slack_message["attachments"][0]["fields"].append({
                     "title": "Details",
                     "value": details_text,
@@ -250,6 +292,8 @@ class QualityAlertManager:
         if response.status_code == 200:
     pass
     pass
+    pass
+    pass
         self.logger.info(f"✅ Slack alert sent successfully: {alert.level}")
         return True
             else:
@@ -263,6 +307,8 @@ class QualityAlertManager:
     def _send_email_alert(self, alert: Alert) -> bool:
     pass
     pass
+    pass
+    pass
         """Send alert via email."""
         try:
             email_config, self.config.email_config
@@ -270,7 +316,13 @@ class QualityAlertManager:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if not email_config:
+    pass
+    pass
     pass
     pass
         return False
@@ -293,12 +345,16 @@ Details:
         if alert.details:
     pass
     pass
+    pass
+    pass
         for key, value in alert.details.items():
     pass
     pass
-                    body += f"• {key}: {value}\\\n"
+    pass
+    pass
+                    body += f"• {key}: {value}\\\\\n"
 
-            body += "\\\n---\\\nData Quality Monitoring System"
+            body += "\\\\\n---\\\\\nData Quality Monitoring System"
 
         # Send email
         with smtplib.SMTP(email_config.get("smtp_server", "localhost"),
@@ -307,9 +363,13 @@ Details:
         if email_config.get("use_tls", True):
     pass
     pass
+    pass
+    pass
                     server.starttls()
 
         if email_config.get("username") and email_config.get("password"):
+    pass
+    pass
     pass
     pass
                     server.login(email_config["username"], email_config["password"])
@@ -338,6 +398,8 @@ import msg, MIMEMultipart
     def _send_webhook_alert(self, alert: Alert) -> bool:
     pass
     pass
+    pass
+    pass
         """Send alert via webhook."""
         try:
             webhook_data = {
@@ -346,6 +408,10 @@ import msg, MIMEMultipart
                 "timestamp": alert.timestamp.isoformat(),
                 "action_required": alert.action_required,
                 "details": alert.details
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -362,6 +428,8 @@ import msg, MIMEMultipart
         if response.status_code in [200, 201, 202]:
     pass
     pass
+    pass
+    pass
         self.logger.info(f"✅ Webhook alert sent successfully: {alert.level}")
         return True
             else:
@@ -375,11 +443,15 @@ import msg, MIMEMultipart
     def get_alert_history(self, hours: int, 24) -> List[Alert]:
     pass
     pass
+    pass
+    pass
         """Get alert history for the last N hours."""
         cutoff_time, datetime.now() - timedelta(hours = hours)
         return [alert for alert in self.alert_history if alert.timestamp > cutoff_time]
 
     def get_alert_summary(self, hours: int, 24) -> Dict[str, int]:
+    pass
+    pass
     pass
     pass
         """Get summary of alerts in the last N hours."""
@@ -401,12 +473,16 @@ class StreamingQualityValidator:
     def __init__(self, validation_rules: List[Any], alert_manager: QualityAlertManager):
     pass
     pass
+    pass
+    pass
         self.validation_rules, validation_rules
         self.alert_manager, alert_manager
         self.quality_metrics, defaultdict(list)
         self.logger, system_logger.getChild("StreamingQualityValidator")
 
     def validate_streaming_data(self, data_chunk: pd.DataFrame) -> Dict[str, Any]:
+    pass
+    pass
     pass
     pass
         """Validate streaming data in real - time."""
@@ -417,8 +493,14 @@ class StreamingQualityValidator:
         for rule in self.validation_rules:
     pass
     pass
+    pass
+    pass
         try:
                 rule_result, rule.validate(data_chunk)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -432,10 +514,14 @@ class StreamingQualityValidator:
         for metric_name, value in metrics.items():
     pass
     pass
+    pass
+    pass
         self.quality_metrics[metric_name].append(value)
 
         # Keep only last 1000 values
         if len(self.quality_metrics[metric_name]) > 1000:
+    pass
+    pass
     pass
     pass
         self.quality_metrics[metric_name].pop(0)
@@ -445,6 +531,8 @@ class StreamingQualityValidator:
 
         # Generate alerts if needed
         if issues:
+    pass
+    pass
     pass
     pass
             alert, Alert(
@@ -467,13 +555,19 @@ class StreamingQualityValidator:
     def _calculate_rolling_metrics(self) -> Dict[str, float]:
     pass
     pass
+    pass
+    pass
         """Calculate rolling statistics for quality metrics."""
         rolling_metrics = {}
 
         for metric_name, values in self.quality_metrics.items():
     pass
     pass
+    pass
+    pass
         if values:
+    pass
+    pass
     pass
     pass
                 rolling_metrics[f"{metric_name}_mean"] = np.mean(values)
@@ -489,10 +583,14 @@ class QualityDashboard:
     def __init__(self, alert_manager: QualityAlertManager):
     pass
     pass
+    pass
+    pass
         self.alert_manager, alert_manager
         self.logger, system_logger.getChild("QualityDashboard")
 
     def generate_quality_report(self, validation_result: MLValidationResult) -> Dict[str, Any]:
+    pass
+    pass
     pass
     pass
         """Generate a comprehensive quality report."""
@@ -524,11 +622,15 @@ class QualityDashboard:
     def _generate_recommendations(self, validation_result: MLValidationResult) -> List[str]:
     pass
     pass
+    pass
+    pass
         """Generate recommendations based on validation results."""
         recommendations = []
 
         # Quality score recommendations
         if validation_result.quality_score.overall < 0.6:
+    pass
+    pass
     pass
     pass
             recommendations.append("CRITICAL: Data quality is very poor. Immediate action required.")
@@ -539,10 +641,14 @@ class QualityDashboard:
         if validation_result.correlation_issues:
     pass
     pass
+    pass
+    pass
             recommendations.append("Consider removing highly correlated features to reduce multicollinearity.")
 
         # Target recommendations
         if validation_result.target_issues:
+    pass
+    pass
     pass
     pass
             recommendations.append("Review target variable for class imbalance or target leakage.")
@@ -551,10 +657,14 @@ class QualityDashboard:
         if validation_result.distribution_issues:
     pass
     pass
+    pass
+    pass
             recommendations.append("Check for data drift or distribution shifts in features.")
 
         # Outlier recommendations
         if validation_result.outlier_issues:
+    pass
+    pass
     pass
     pass
             recommendations.append("Investigate and handle outliers appropriately.")
@@ -563,10 +673,14 @@ class QualityDashboard:
         if validation_result.time_series_issues:
     pass
     pass
+    pass
+    pass
             recommendations.append("Check time series data for gaps, duplicates, or ordering issues.")
 
         # Financial data recommendations
         if validation_result.financial_issues:
+    pass
+    pass
     pass
     pass
             recommendations.append("Verify financial data integrity and OHLC relationships.")
@@ -574,6 +688,8 @@ class QualityDashboard:
         return recommendations
 
     def get_alert_summary(self, hours: int, 24) -> Dict[str, Any]:
+    pass
+    pass
     pass
     pass
         """Get alert summary for dashboard."""

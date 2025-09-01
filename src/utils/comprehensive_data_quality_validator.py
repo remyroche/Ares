@@ -27,6 +27,12 @@ try:
 import except Exception as e:
     except Exception as e:
         pass
+import except Exception as e:
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 import except ImportError:
 except ImportError:
@@ -42,6 +48,8 @@ class ComprehensiveDataQualityValidator:
     """
 
     def __init__(self, config: Optional[Dict[str, Any]] = None):
+    pass
+    pass
     pass
     pass
         self.config, config or {}
@@ -60,6 +68,8 @@ class ComprehensiveDataQualityValidator:
         self.quality_issues = {}
 
     def validate_step1_data_quality(self, symbol: str, exchange: str, data_dir: str = "data_cache") -> Dict[str, Any]:
+    pass
+    pass
     pass
     pass
         """
@@ -98,7 +108,13 @@ class ComprehensiveDataQualityValidator:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         for file_name in required_files:
+    pass
+    pass
     pass
     pass
                 file_path, os.path.join(data_dir, file_name)
@@ -108,11 +124,15 @@ class ComprehensiveDataQualityValidator:
         if file_check["exists"]:
     pass
     pass
+    pass
+    pass
         # Validate data quality for existing files
                     data_quality, self._validate_dataframe_quality(file_path, file_name)
                     results["data_quality"][file_name] = data_quality
 
         if not data_quality["passed"]:
+    pass
+    pass
     pass
     pass
                         results["issues"].extend(data_quality["issues"])
@@ -123,6 +143,8 @@ class ComprehensiveDataQualityValidator:
             results["validation_passed"] = len(results["issues"]) == 0
 
         if results["validation_passed"]:
+    pass
+    pass
     pass
     pass
         self.logger.info("✅ Step1 data quality validation passed")
@@ -138,6 +160,8 @@ class ComprehensiveDataQualityValidator:
         return results
 
     def validate_step1_5_data_quality(self, symbol: str, exchange: str, data_dir: str = "data_cache") -> Dict[str, Any]:
+    pass
+    pass
     pass
     pass
         """
@@ -173,7 +197,13 @@ class ComprehensiveDataQualityValidator:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if not os.path.exists(unified_dir):
+    pass
+    pass
     pass
     pass
                 results["issues"].append(f"Unified data directory not found: {unified_dir}")
@@ -182,6 +212,8 @@ class ComprehensiveDataQualityValidator:
                 parquet_files, list(Path(unified_dir).rglob("*.parquet"))
 
         if not parquet_files:
+    pass
+    pass
     pass
     pass
                     results["issues"].append("No parquet files found in unified directory")
@@ -200,12 +232,16 @@ class ComprehensiveDataQualityValidator:
         if not data_quality["passed"]:
     pass
     pass
+    pass
+    pass
                             results["issues"].extend(data_quality["issues"])
 
         # Check if validation passed
             results["validation_passed"] = len(results["issues"]) == 0
 
         if results["validation_passed"]:
+    pass
+    pass
     pass
     pass
         self.logger.info("✅ Step1.5 data quality validation passed")
@@ -221,6 +257,8 @@ class ComprehensiveDataQualityValidator:
         return results
 
     def validate_step2_data_quality(self, symbol: str, exchange: str, data_dir: str = "data / training") -> Dict[str, Any]:
+    pass
+    pass
     pass
     pass
         """
@@ -267,7 +305,13 @@ class ComprehensiveDataQualityValidator:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         for file_name in feature_files:
+    pass
+    pass
     pass
     pass
                 file_path, os.path.join(data_dir, file_name)
@@ -277,11 +321,15 @@ class ComprehensiveDataQualityValidator:
         if file_check["exists"]:
     pass
     pass
+    pass
+    pass
         # Comprehensive feature quality validation
                     feature_quality, self._validate_feature_quality(file_path, file_name)
                     results["feature_quality"][file_name] = feature_quality
 
         if not feature_quality["passed"]:
+    pass
+    pass
     pass
     pass
                         results["issues"].extend(feature_quality["issues"])
@@ -290,7 +338,11 @@ class ComprehensiveDataQualityValidator:
         for issue_type in ["nan_features", "infinite_features", "constant_features", "high_correlation_pairs"]:
     pass
     pass
+    pass
+    pass
         if issue_type in feature_quality:
+    pass
+    pass
     pass
     pass
                             results["problematic_features"][issue_type].extend(feature_quality[issue_type])
@@ -304,6 +356,8 @@ class ComprehensiveDataQualityValidator:
         self._log_feature_quality_report(results)
 
         if results["validation_passed"]:
+    pass
+    pass
     pass
     pass
         self.logger.info("✅ Step2 feature quality validation passed")
@@ -321,6 +375,8 @@ class ComprehensiveDataQualityValidator:
     def _validate_file_structure(self, file_path: str, file_name: str) -> Dict[str, Any]:
     pass
     pass
+    pass
+    pass
         """Validate file structure and basic properties."""
         result = {
             "exists": False,
@@ -336,6 +392,12 @@ class ComprehensiveDataQualityValidator:
     except Exception as e:
         pass
     pass
+    except Exception as e:
+        pass
+    pass
+    except Exception as e:
+        pass
+    pass
                 result["exists"] = True
                 result["size_bytes"] = os.path.getsize(file_path)
                 result["size_mb"] = result["size_bytes"] / (1024 * 1024)
@@ -345,6 +407,8 @@ class ComprehensiveDataQualityValidator:
         pass
         # Check if file is empty
         if result["size_bytes"] == 0:
+    pass
+    pass
     pass
     pass
                     result["issues"].append("File is empty")
@@ -358,6 +422,8 @@ class ComprehensiveDataQualityValidator:
         return result
 
     def _validate_dataframe_quality(self, file_path: str, file_name: str) -> Dict[str, Any]:
+    pass
+    pass
     pass
     pass
         """Validate DataFrame quality including NaN, infinite, and constant values."""
@@ -379,7 +445,13 @@ class ComprehensiveDataQualityValidator:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if file_path.endswith('.parquet'):
+    pass
+    pass
     pass
     pass
                 df, pd.read_parquet(file_path)
@@ -387,6 +459,8 @@ class ComprehensiveDataQualityValidator:
         with open(file_path, 'rb') as f:
                     df, pickle.load(f)
         if not isinstance(df, pd.DataFrame):
+    pass
+    pass
     pass
     pass
                         df, pd.DataFrame(df)
@@ -411,9 +485,13 @@ class ComprehensiveDataQualityValidator:
         if nan_features:
     pass
     pass
+    pass
+    pass
         # Detailed NaN logging
                 nan_details = []
         for feature in nan_features:
+    pass
+    pass
     pass
     pass
                     nan_count, nan_counts[feature]
@@ -429,6 +507,8 @@ class ComprehensiveDataQualityValidator:
         for col in df.select_dtypes(include=[np.number]).columns:
     pass
     pass
+    pass
+    pass
                 infinite_count, np.isinf(df[col]).sum()
                 infinite_counts[col] = infinite_count
 
@@ -442,6 +522,8 @@ class ComprehensiveDataQualityValidator:
         if infinite_features:
     pass
     pass
+    pass
+    pass
                 result["issues"].append(f"Features with infinite values (zero tolerance): {', '.join(infinite_details)}")
 
         # Check for constant features (2 + unique values, except boolean)
@@ -449,9 +531,13 @@ class ComprehensiveDataQualityValidator:
         for col in df.columns:
     pass
     pass
+    pass
+    pass
                 unique_count, df[col].nunique()
         # Allow boolean features (2 unique values) and binary features
         if unique_count < self.min_unique_values and not self._is_boolean_feature(df[col]):
+    pass
+    pass
     pass
     pass
                     constant_features.append(col)
@@ -459,6 +545,8 @@ class ComprehensiveDataQualityValidator:
             result["constant_features"] = constant_features
 
         if constant_features:
+    pass
+    pass
     pass
     pass
                 result["issues"].append(f"Constant features found: {constant_features}")
@@ -472,6 +560,8 @@ class ComprehensiveDataQualityValidator:
         return result
 
     def _validate_data_structure(self, df: pd.DataFrame, file_name: str) -> List[str]:
+    pass
+    pass
     pass
     pass
         """
@@ -490,6 +580,8 @@ class ComprehensiveDataQualityValidator:
         if df.empty:
     pass
     pass
+    pass
+    pass
             issues.append(f"{file_name}: DataFrame is empty")
         return issues
 
@@ -497,9 +589,13 @@ class ComprehensiveDataQualityValidator:
         if "klines" in file_name.lower():
     pass
     pass
+    pass
+    pass
             required_columns = ["timestamp", "open", "high", "low", "close", "volume"]
             missing_columns, set(required_columns) - set(df.columns)
         if missing_columns:
+    pass
+    pass
     pass
     pass
                 issues.append(f"{file_name}: Missing required klines columns: {missing_columns}")
@@ -510,11 +606,15 @@ class ComprehensiveDataQualityValidator:
         if missing_columns:
     pass
     pass
+    pass
+    pass
                 issues.append(f"{file_name}: Missing required aggtrades columns: {missing_columns}")
 
         elif "features" in file_name.lower():
         # Features should have timestamp and at least some feature columns
         if "timestamp" not in df.columns:
+    pass
+    pass
     pass
     pass
                 issues.append(f"{file_name}: Missing timestamp column in features")
@@ -528,6 +628,8 @@ class ComprehensiveDataQualityValidator:
         if duplicate_columns:
     pass
     pass
+    pass
+    pass
             issues.append(f"{file_name}: Duplicate columns found: {duplicate_columns}")
 
         # Check for empty columns
@@ -535,11 +637,17 @@ class ComprehensiveDataQualityValidator:
         for col in df.columns:
     pass
     pass
+    pass
+    pass
         if df[col].isnull().all():
+    pass
+    pass
     pass
     pass
                 empty_columns.append(col)
         if empty_columns:
+    pass
+    pass
     pass
     pass
             issues.append(f"{file_name}: Empty columns found: {empty_columns}")
@@ -549,11 +657,17 @@ class ComprehensiveDataQualityValidator:
         for col in df.columns:
     pass
     pass
+    pass
+    pass
         if col == "timestamp":
+    pass
+    pass
     pass
     pass
         # Timestamp should be datetime
         if not pd.api.types.is_datetime64_any_dtype(df[col]):
+    pass
+    pass
     pass
     pass
                     type_issues.append(f"timestamp column should be datetime, got {df[col].dtype}")
@@ -562,9 +676,13 @@ class ComprehensiveDataQualityValidator:
         if not pd.api.types.is_numeric_dtype(df[col]):
     pass
     pass
+    pass
+    pass
                     type_issues.append(f"{col} column should be numeric, got {df[col].dtype}")
 
         if type_issues:
+    pass
+    pass
     pass
     pass
             issues.append(f"{file_name}: Data type issues: {type_issues}")
@@ -573,9 +691,15 @@ class ComprehensiveDataQualityValidator:
         if not isinstance(df.index, pd.DatetimeIndex) and "timestamp" in df.columns:
     pass
     pass
+    pass
+    pass
         # If timestamp column exists, it should be properly formatted
         try:
                 pd.to_datetime(df["timestamp"])
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -588,14 +712,22 @@ class ComprehensiveDataQualityValidator:
         for col in df.columns:
     pass
     pass
+    pass
+    pass
         if pd.api.types.is_numeric_dtype(df[col]):
+    pass
+    pass
     pass
     pass
         # Check for extreme values
         if col in ["open", "high", "low", "close", "price"]:
     pass
     pass
+    pass
+    pass
         if (df[col] <= 0).any():
+    pass
+    pass
     pass
     pass
                         range_issues.append(f"{col} contains non - positive values")
@@ -603,9 +735,13 @@ class ComprehensiveDataQualityValidator:
         if (df[col] < 0).any():
     pass
     pass
+    pass
+    pass
                         range_issues.append(f"{col} contains negative values")
 
         if range_issues:
+    pass
+    pass
     pass
     pass
             issues.append(f"{file_name}: Data range issues: {range_issues}")
@@ -613,6 +749,8 @@ class ComprehensiveDataQualityValidator:
         return issues
 
     def _is_boolean_feature(self, series: pd.Series) -> bool:
+    pass
+    pass
     pass
     pass
         """
@@ -628,11 +766,15 @@ class ComprehensiveDataQualityValidator:
         if pd.api.types.is_bool_dtype(series):
     pass
     pass
+    pass
+    pass
         return True
 
         # Check if it has exactly 2 unique values that could be boolean
         unique_values, series.dropna().unique()
         if len(unique_values) == 2:
+    pass
+    pass
     pass
     pass
         # Check if values are typical boolean patterns
@@ -652,7 +794,11 @@ class ComprehensiveDataQualityValidator:
         for pattern in boolean_patterns:
     pass
     pass
+    pass
+    pass
         if unique_set == pattern:
+    pass
+    pass
     pass
     pass
         return True
@@ -660,6 +806,8 @@ class ComprehensiveDataQualityValidator:
         return False
 
     def _validate_feature_quality(self, file_path: str, file_name: str) -> Dict[str, Any]:
+    pass
+    pass
     pass
     pass
         """Comprehensive feature quality validation for Step2."""
@@ -681,7 +829,13 @@ class ComprehensiveDataQualityValidator:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if file_path.endswith('.parquet'):
+    pass
+    pass
     pass
     pass
                 df, pd.read_parquet(file_path)
@@ -689,6 +843,8 @@ class ComprehensiveDataQualityValidator:
         with open(file_path, 'rb') as f:
                     df, pickle.load(f)
         if not isinstance(df, pd.DataFrame):
+    pass
+    pass
     pass
     pass
                         df, pd.DataFrame(df)
@@ -703,6 +859,8 @@ class ComprehensiveDataQualityValidator:
             forbidden = {"open", "high", "low", "close", "volume"}
             present_forbidden = [c for c in df.columns if c in forbidden]
         if present_forbidden:
+    pass
+    pass
     pass
     pass
                 df, df.drop(columns = present_forbidden)
@@ -721,9 +879,13 @@ class ComprehensiveDataQualityValidator:
         if nan_features:
     pass
     pass
+    pass
+    pass
         # Detailed NaN logging with counts and percentages
                 nan_details = []
         for feature in nan_features:
+    pass
+    pass
     pass
     pass
                     nan_count, nan_counts[feature]
@@ -737,6 +899,8 @@ class ComprehensiveDataQualityValidator:
         for col in df.select_dtypes(include=[np.number]).columns:
     pass
     pass
+    pass
+    pass
                 infinite_count, np.isinf(df[col]).sum()
         if infinite_count > 0:  # Any infinite values
                     infinite_features.append(col)
@@ -748,6 +912,8 @@ class ComprehensiveDataQualityValidator:
         if infinite_features:
     pass
     pass
+    pass
+    pass
                 result["issues"].append(f"Features with infinite values (zero tolerance): {', '.join(infinite_details)}")
 
         # Check for constant features (2 + unique values, except boolean)
@@ -756,9 +922,13 @@ class ComprehensiveDataQualityValidator:
         for col in df.columns:
     pass
     pass
+    pass
+    pass
                 unique_count, df[col].nunique()
         # Allow boolean features (2 unique values) and binary features
         if unique_count < self.min_unique_values and not self._is_boolean_feature(df[col]):
+    pass
+    pass
     pass
     pass
                     constant_features.append(col)
@@ -770,11 +940,15 @@ class ComprehensiveDataQualityValidator:
         if constant_features:
     pass
     pass
+    pass
+    pass
                 result["issues"].append(f"Constant features found: {', '.join(constant_details)}")
 
         # Check for high correlation
             numeric_cols, df.select_dtypes(include=[np.number]).columns
         if len(numeric_cols) > 1:
+    pass
+    pass
     pass
     pass
                 corr_matrix, df[numeric_cols].corr().abs()
@@ -784,11 +958,17 @@ class ComprehensiveDataQualityValidator:
         for i in range(len(corr_matrix.columns)):
     pass
     pass
+    pass
+    pass
         for j in range(i + 1, len(corr_matrix.columns)):
+    pass
+    pass
     pass
     pass
                         corr_value, corr_matrix.iloc[i, j]
         if corr_value > self.max_correlation_threshold:
+    pass
+    pass
     pass
     pass
                             pair = (corr_matrix.columns[i], corr_matrix.columns[j])
@@ -800,6 +980,8 @@ class ComprehensiveDataQualityValidator:
         if high_corr_pairs:
     pass
     pass
+    pass
+    pass
                     result["issues"].append(f"Highly correlated feature pairs: {', '.join(high_corr_details)}")
 
         # Calculate relevant features
@@ -809,6 +991,8 @@ class ComprehensiveDataQualityValidator:
 
         # Check minimum feature requirement
         if result["relevant_feature_count"] < self.min_feature_count:
+    pass
+    pass
     pass
     pass
                 result["issues"].append(
@@ -827,6 +1011,8 @@ class ComprehensiveDataQualityValidator:
     def _log_feature_quality_report(self, results: Dict[str, Any]) -> None:
     pass
     pass
+    pass
+    pass
         """Log detailed feature quality report with comprehensive information about problematic values."""
         self.logger.info("=" * 80)
         self.logger.info("📊 STEP2 FEATURE QUALITY REPORT")
@@ -838,10 +1024,14 @@ class ComprehensiveDataQualityValidator:
         if problematic["nan_features"]:
     pass
     pass
+    pass
+    pass
         self.logger.warning(f"⚠️ Features with NaN values ({len(problematic['nan_features'])}):")
         for feature in problematic["nan_features"][:10]:  # Show first 10
         self.logger.warning(f"   - {feature}")
         if len(problematic["nan_features"]) > 10:
+    pass
+    pass
     pass
     pass
         self.logger.warning(f"   ... and {len(problematic['nan_features']) - 10} more")
@@ -855,10 +1045,14 @@ class ComprehensiveDataQualityValidator:
         if problematic["infinite_features"]:
     pass
     pass
+    pass
+    pass
         self.logger.warning(f"⚠️ Features with infinite values ({len(problematic['infinite_features'])}):")
         for feature in problematic["infinite_features"][:10]:  # Show first 10
         self.logger.warning(f"   - {feature}")
         if len(problematic["infinite_features"]) > 10:
+    pass
+    pass
     pass
     pass
         self.logger.warning(f"   ... and {len(problematic['infinite_features']) - 10} more")
@@ -872,10 +1066,14 @@ class ComprehensiveDataQualityValidator:
         if problematic["constant_features"]:
     pass
     pass
+    pass
+    pass
         self.logger.warning(f"⚠️ Constant features ({len(problematic['constant_features'])}):")
         for feature in problematic["constant_features"][:10]:  # Show first 10
         self.logger.warning(f"   - {feature}")
         if len(problematic["constant_features"]) > 10:
+    pass
+    pass
     pass
     pass
         self.logger.warning(f"   ... and {len(problematic['constant_features']) - 10} more")
@@ -889,10 +1087,14 @@ class ComprehensiveDataQualityValidator:
         if problematic["high_correlation_pairs"]:
     pass
     pass
+    pass
+    pass
         self.logger.warning(f"⚠️ Highly correlated feature pairs ({len(problematic['high_correlation_pairs'])}):")
         for pair in problematic["high_correlation_pairs"][:5]:  # Show first 5
         self.logger.warning(f"   - {pair[0]} ↔ {pair[1]}")
         if len(problematic["high_correlation_pairs"]) > 5:
+    pass
+    pass
     pass
     pass
         self.logger.warning(f"   ... and {len(problematic['high_correlation_pairs']) - 5} more")
@@ -913,6 +1115,8 @@ class ComprehensiveDataQualityValidator:
         if total_issues == 0:
     pass
     pass
+    pass
+    pass
         self.logger.info("✅ No feature quality issues detected")
         else:
         self.logger.warning(f"⚠️ Total feature quality issues: {total_issues}")
@@ -928,6 +1132,8 @@ class ComprehensiveDataQualityValidator:
     def save_validation_report(self, output_path: str) -> None:
     pass
     pass
+    pass
+    pass
         """Save comprehensive validation report to file."""
         try:
             report = {
@@ -939,6 +1145,10 @@ class ComprehensiveDataQualityValidator:
                     "passed_steps": sum(1 for r in self.validation_results.values() if r["validation_passed"]),
                     "failed_steps": sum(1 for r in self.validation_results.values() if not r["validation_passed"])
                 }
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -957,6 +1167,8 @@ class ComprehensiveDataQualityValidator:
 def validate_step1_quality(symbol: str, exchange: str, data_dir: str = "data_cache") -> Dict[str, Any]:
     pass
     pass
+    pass
+    pass
     """Convenience function to validate Step1 data quality."""
     validator, ComprehensiveDataQualityValidator()
     return validator.validate_step1_data_quality(symbol, exchange, data_dir)
@@ -964,11 +1176,15 @@ def validate_step1_quality(symbol: str, exchange: str, data_dir: str = "data_cac
 def validate_step1_5_quality(symbol: str, exchange: str, data_dir: str = "data_cache") -> Dict[str, Any]:
     pass
     pass
+    pass
+    pass
     """Convenience function to validate Step1.5 data quality."""
     validator, ComprehensiveDataQualityValidator()
     return validator.validate_step1_5_data_quality(symbol, exchange, data_dir)
 
 def validate_step2_quality(symbol: str, exchange: str, data_dir: str = "data / training") -> Dict[str, Any]:
+    pass
+    pass
     pass
     pass
     """Convenience function to validate Step2 data quality."""

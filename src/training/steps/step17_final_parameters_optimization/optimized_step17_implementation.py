@@ -35,6 +35,8 @@ try:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
     MLFLOW_AVAILABLE, True
 except ImportError:
     MLFLOW_AVAILABLE, False
@@ -42,6 +44,8 @@ except ImportError:
 # Import Optuna for optimization
 try:
     import optuna
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -76,6 +80,7 @@ class IntelligentParameterPruner:
     def __init__(self, sensitivity_threshold: float, 0.005, max_parameters: int, 50):
     pass
     pass
+    pass
         self.sensitivity_threshold, sensitivity_threshold
         self.max_parameters, max_parameters
         self.parameter_importance = {}
@@ -99,7 +104,9 @@ class IntelligentParameterPruner:
         for step_name, step_params in parameter_mapping.items():
     pass
     pass
+    pass
         for param_name, param_config in step_params.items():
+    pass
     pass
     pass
                 param_key, f"{step_name}.{param_name}"
@@ -113,11 +120,13 @@ class IntelligentParameterPruner:
         if len(sensitivity_scores) % 10 == 0:
     pass
     pass
+    pass
         self.logger.info(f"Phase 1: Analyzed {len(sensitivity_scores)}/{total_params} parameters")
 
         # Phase 2: Cross - validation sensitivity analysis for borderline parameters
         borderline_params, self._identify_borderline_parameters(sensitivity_scores)
         if borderline_params:
+    pass
     pass
     pass
         self.logger.info(f"Phase 2: Cross - validation analysis for {len(borderline_params)} borderline parameters")
@@ -136,6 +145,7 @@ class IntelligentParameterPruner:
         return sensitivity_scores
 
     def _identify_borderline_parameters(self, sensitivity_scores: Dict[str, float]) -> List[str]:
+    pass
     pass
     pass
         """Identify parameters near the sensitivity threshold for detailed analysis."""
@@ -163,6 +173,7 @@ class IntelligentParameterPruner:
         for param_key in borderline_params:
     pass
     pass
+    pass
         try:
         # Perform 3 - fold cross - validation sensitivity test
                 cv_sensitivities = []
@@ -171,7 +182,10 @@ class IntelligentParameterPruner:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         for fold in range(3):
+    pass
     pass
     pass
         # Split data for this fold
@@ -187,11 +201,13 @@ class IntelligentParameterPruner:
         if param_config:
     pass
     pass
+    pass
                         sensitivity, await self._detailed_sensitivity_test(fold_data, step_name, param_name, param_config)
                         cv_sensitivities.append(sensitivity)
 
         # Use average CV sensitivity
         if cv_sensitivities:
+    pass
     pass
     pass
                     cv_scores[param_key] = np.mean(cv_sensitivities)
@@ -221,6 +237,8 @@ class IntelligentParameterPruner:
         for param2 in high_impact_params[i + 1:11]:  # Test with next 10
         try:
                     interaction_strength, await self._test_parameter_interaction(data, param1, param2, parameter_mapping)
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -256,7 +274,10 @@ class IntelligentParameterPruner:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         if not (config1 and config2):
+    pass
     pass
     pass
         return 0.0
@@ -271,11 +292,13 @@ class IntelligentParameterPruner:
         for val2 in values2[:2]:
     pass
     pass
+    pass
                     score, await self._evaluate_parameter_combination(data, param1, val1, param2, val2)
                     performance_scores.append(score)
 
         # Calculate interaction strength (variance in performance)
         if len(performance_scores) > 1:
+    pass
     pass
     pass
                 interaction_strength, np.var(performance_scores)
@@ -300,7 +323,9 @@ class IntelligentParameterPruner:
         for param, interactions in interaction_scores.items():
     pass
     pass
+    pass
         if param in boosted_scores:
+    pass
     pass
     pass
         # Calculate interaction boost
@@ -323,15 +348,18 @@ class IntelligentParameterPruner:
         if step_name in parameter_mapping and param_name in parameter_mapping[step_name]:
     pass
     pass
+    pass
         return parameter_mapping[step_name][param_name]
         return None
 
     def _get_test_values(self, param_config: Any) -> List[Any]:
     pass
     pass
+    pass
         """Get test values for a parameter configuration."""
 
         if isinstance(param_config, tuple) and len(param_config) == 2:
+    pass
     pass
     pass
             min_val, max_val, param_config
@@ -357,6 +385,8 @@ class IntelligentParameterPruner:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         # For now, providing a simulated evaluation
 
             base_score, 0.5
@@ -365,10 +395,13 @@ class IntelligentParameterPruner:
         for param, value in [(param1, val1), (param2, val2)]:
     pass
     pass
+    pass
         if "model_type" in param:
     pass
     pass
+    pass
         if value in ["xgboost", "lightgbm"]:
+    pass
     pass
     pass
                         base_score += 0.03
@@ -376,9 +409,11 @@ class IntelligentParameterPruner:
         if 100 <= value <= 1000:
     pass
     pass
+    pass
                         base_score += 0.02
                 elif "learning_rate" in param:
         if 0.01 <= value <= 0.3:
+    pass
     pass
     pass
                         base_score += 0.02
@@ -408,7 +443,10 @@ class IntelligentParameterPruner:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         if isinstance(param_config, tuple) and len(param_config) == 2:
+    pass
     pass
     pass
                 min_val, max_val, param_config
@@ -429,11 +467,13 @@ class IntelligentParameterPruner:
         for value in test_values:
     pass
     pass
+    pass
                 score, await self._evaluate_single_parameter(data, step, param, value)
                 performance_scores.append(score)
 
         # Calculate sensitivity with more sophisticated metrics
         if len(performance_scores) > 1:
+    pass
     pass
     pass
         # Use both variance and range for sensitivity
@@ -472,6 +512,7 @@ class IntelligentParameterPruner:
         if len(high_impact) > self.max_parameters:
     pass
     pass
+    pass
             high_impact, high_impact[:self.max_parameters]
         self.logger.info(f"Limited to top {self.max_parameters} parameters")
 
@@ -493,6 +534,8 @@ class IntelligentParameterPruner:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         # In production, this would integrate with your actual evaluation pipeline
 
         # Simulate performance based on parameter characteristics
@@ -502,7 +545,9 @@ class IntelligentParameterPruner:
         if "model_type" in param:
     pass
     pass
+    pass
         if value in ["xgboost", "lightgbm"]:
+    pass
     pass
     pass
                     base_score += 0.1  # These models typically perform well
@@ -512,11 +557,13 @@ class IntelligentParameterPruner:
         if isinstance(value, (int, float)) and 100 <= value <= 1000:
     pass
     pass
+    pass
                     base_score += 0.1  # Optimal range
                 elif isinstance(value, (int, float)) and value > 1000:
                     base_score += 0.05  # Good but diminishing returns
             elif "learning_rate" in param:
         if isinstance(value, float) and 0.01 <= value <= 0.3:
+    pass
     pass
     pass
                     base_score += 0.1  # Optimal range
@@ -536,9 +583,11 @@ class IntelligentParameterPruner:
     def get_parameter_importance_summary(self) -> Dict[str, Any]:
     pass
     pass
+    pass
         """Get summary of parameter importance analysis."""
 
         if not self.parameter_importance:
+    pass
     pass
     pass
         return {"error": "No parameter importance data available"}
@@ -554,7 +603,9 @@ class IntelligentParameterPruner:
         for param, interactions in self.parameter_interactions.items():
     pass
     pass
+    pass
         if interactions:
+    pass
     pass
     pass
                 interaction_summary[param] = {
@@ -579,6 +630,7 @@ class AdaptiveTrialAllocator:
     def __init__(self, total_trials: int, 1000, min_trials_per_phase: int, 50):
     pass
     pass
+    pass
         self.total_trials, total_trials
         self.min_trials_per_phase, min_trials_per_phase
         self.phase_trials = {}
@@ -595,6 +647,7 @@ class AdaptiveTrialAllocator:
         if not phase_performance:
     pass
     pass
+    pass
         # Equal allocation if no performance data
             equal_allocation, self.total_trials // len(phase_complexity)
         return {phase: max(equal_allocation, self.min_trials_per_phase) for phase in phase_complexity}
@@ -604,6 +657,7 @@ class AdaptiveTrialAllocator:
         phase_scores = {}
 
         for phase in phase_complexity:
+    pass
     pass
     pass
             performance, phase_performance.get(phase, 0.5)  # Default to 0.5 if no data
@@ -617,6 +671,7 @@ class AdaptiveTrialAllocator:
         if total_score == 0:
     pass
     pass
+    pass
         # Equal allocation if no scores
             equal_allocation, self.total_trials // len(phase_complexity)
         return {phase: max(equal_allocation, self.min_trials_per_phase) for phase in phase_complexity}
@@ -626,6 +681,7 @@ class AdaptiveTrialAllocator:
         remaining_trials, self.total_trials
 
         for phase, score in phase_scores.items():
+    pass
     pass
     pass
             ratio, score / total_score
@@ -638,12 +694,15 @@ class AdaptiveTrialAllocator:
         if remaining_trials > 0:
     pass
     pass
+    pass
         # Add to phases with highest scores
             sorted_phases, sorted(phase_scores.items(), key = lambda x: x[1], reverse = True)
         for i, (phase, _) in enumerate(sorted_phases):
     pass
     pass
+    pass
         if remaining_trials <= 0:
+    pass
     pass
     pass
                     break
@@ -678,6 +737,7 @@ class AdaptiveTrialAllocator:
     def get_allocation_summary(self) -> Dict[str, Any]:
     pass
     pass
+    pass
         """Get summary of trial allocation."""
 
         return {
@@ -693,10 +753,12 @@ class SmartParameterGrouper:
     def __init__(self):
     pass
     pass
+    pass
         self.parameter_groups, self._create_parameter_groups()
         self.logger, logging.getLogger(__name__)
 
     def _create_parameter_groups(self) -> Dict[str, List[str]]:
+    pass
     pass
     pass
         """Create logical parameter groups."""
@@ -751,6 +813,7 @@ class SmartParameterGrouper:
     def get_optimization_order(self) -> List[str]:
     pass
     pass
+    pass
         """Return optimal order for parameter group optimization."""
 
         # Order by expected impact and dependencies
@@ -764,6 +827,7 @@ class SmartParameterGrouper:
         ]
 
     def get_phase_complexity(self) -> Dict[str, int]:
+    pass
     pass
     pass
         """Get complexity score for each phase (higher, more trials needed)."""
@@ -780,6 +844,7 @@ class SmartParameterGrouper:
     def get_parameters_for_phase(self, phase: str) -> List[str]:
     pass
     pass
+    pass
         """Get list of parameters for a specific phase."""
 
         return self.parameter_groups.get(phase, [])
@@ -787,10 +852,12 @@ class SmartParameterGrouper:
     def get_parameter_group_summary(self) -> Dict[str, Any]:
     pass
     pass
+    pass
         """Get summary of parameter grouping."""
 
         summary = {}
         for phase, params in self.parameter_groups.items():
+    pass
     pass
     pass
             summary[phase] = {
@@ -805,6 +872,7 @@ class HierarchicalOptimizer:
     """Run step17 optimization in hierarchical phases with advanced optimization strategies."""
 
     def __init__(self, config: Dict[str, Any], training_manager = None):
+    pass
     pass
     pass
         self.config, config
@@ -873,6 +941,7 @@ class HierarchicalOptimizer:
         for phase, trials in trial_allocations.items():
     pass
     pass
+    pass
         self.logger.info(f"  {phase}: {trials} trials")
 
         # Step 4: Run hierarchical optimization with advanced strategies
@@ -882,7 +951,8 @@ class HierarchicalOptimizer:
         for phase_idx, phase_name in enumerate(parameter_groups):
     pass
     pass
-        self.logger.info(f"\\\n🚀 Phase {phase_idx + 1}/{len(parameter_groups)}: {phase_name}")
+    pass
+        self.logger.info(f"\\\\n🚀 Phase {phase_idx + 1}/{len(parameter_groups)}: {phase_name}")
         self.logger.info("-" * 60)
 
         # Get parameters for this phase
@@ -897,6 +967,7 @@ class HierarchicalOptimizer:
         if not high_impact_phase_params:
     pass
     pass
+    pass
         self.logger.info(f"⚠️ No high - impact parameters for phase {phase_name}, skipping")
                 continue
 
@@ -905,6 +976,7 @@ class HierarchicalOptimizer:
         # Check for ensemble parameters in this phase
             ensemble_params, self._identify_ensemble_parameters(high_impact_phase_params)
         if ensemble_params and self.ensemble_optimization_enabled:
+    pass
     pass
     pass
         self.logger.info(f"🎯 Ensemble parameters detected: {ensemble_params}")
@@ -933,11 +1005,13 @@ class HierarchicalOptimizer:
         if self._should_stop_early(group_result.best_value, phase_idx, len(parameter_groups)):
     pass
     pass
+    pass
         self.logger.info(f"🎯 Excellent performance achieved in phase {phase_idx + 1}! Stopping early")
                 break
 
         # Dynamic trial reallocation based on performance
         if self.adaptive_learning_rate:
+    pass
     pass
     pass
                 new_trials, self.trial_allocator.adjust_allocation_during_optimization(
@@ -946,6 +1020,7 @@ class HierarchicalOptimizer:
                     trial_allocations.get(phase_name, 100)
                 )
         if new_trials != trial_allocations.get(phase_name, 100):
+    pass
     pass
     pass
         self.logger.info(f"🔄 Adjusted trials for {phase_name}: {trial_allocations.get(phase_name, 100)} → {new_trials}")
@@ -958,7 +1033,7 @@ class HierarchicalOptimizer:
         total_time = (datetime.now() - start_time).total_seconds()
 
         # Final summary with advanced metrics
-        self.logger.info("\\\n" + "=" * 80)
+        self.logger.info("\\\\n" + "=" * 80)
         self.logger.info("🎉 ADVANCED HIERARCHICAL OPTIMIZATION COMPLETED")
         self.logger.info("=" * 80)
         self.logger.info(f"Total optimization time: {total_time:.2f}s")
@@ -967,6 +1042,7 @@ class HierarchicalOptimizer:
 
         # Performance summary with thresholds
         for phase_name, result in results.items():
+    pass
     pass
     pass
             performance_level, self._get_performance_level(result.best_value)
@@ -989,6 +1065,7 @@ class HierarchicalOptimizer:
     def _identify_ensemble_parameters(self, parameters: List[str]) -> List[str]:
     pass
     pass
+    pass
         """Identify parameters related to ensemble methods."""
 
         ensemble_keywords = [
@@ -1000,7 +1077,9 @@ class HierarchicalOptimizer:
         for param in parameters:
     pass
     pass
+    pass
         if any(keyword in param.lower() for keyword in ensemble_keywords):
+    pass
     pass
     pass
                 ensemble_params.append(param)
@@ -1008,6 +1087,7 @@ class HierarchicalOptimizer:
         return ensemble_params
 
     def _optimize_ensemble_parameter_order(self, parameters: List[str], ensemble_params: List[str]) -> List[str]:
+    pass
     pass
     pass
         """Optimize the order of ensemble parameters for better optimization outcomes."""
@@ -1020,6 +1100,7 @@ class HierarchicalOptimizer:
         return optimized_order
 
     def _should_stop_early(self, best_value: float, phase_idx: int, total_phases: int) -> bool:
+    pass
     pass
     pass
         """Determine if optimization should stop early based on performance."""
@@ -1035,9 +1116,11 @@ class HierarchicalOptimizer:
     def _get_performance_level(self, value: float) -> str:
     pass
     pass
+    pass
         """Get performance level description."""
 
         if value >= self.performance_thresholds.get("excellent", 0.9):
+    pass
     pass
     pass
         return "🎯 EXCELLENT"
@@ -1061,6 +1144,7 @@ class HierarchicalOptimizer:
         if not OPTUNA_AVAILABLE:
     pass
     pass
+    pass
             raise ImportError("Optuna is required for optimization")
 
         # Choose optimization strategy based on phase and parameters
@@ -1080,6 +1164,7 @@ class HierarchicalOptimizer:
         ]
 
         if self.adaptive_learning_rate:
+    pass
     pass
     pass
             callbacks.append(self._create_adaptive_learning_callback(phase_idx))
@@ -1153,10 +1238,12 @@ class HierarchicalOptimizer:
     def _create_adaptive_learning_callback(self, phase_idx: int):
     pass
     pass
+    pass
         """Create adaptive learning rate callback for dynamic optimization."""
 
         class AdaptiveLearningCallback:
             def __init__(self, phase_idx, optimizer):
+    pass
     pass
     pass
         self.phase_idx, phase_idx
@@ -1164,6 +1251,7 @@ class HierarchicalOptimizer:
         self.trial_count, 0
 
             def __call__(self, study, trial):
+    pass
     pass
     pass
         self.trial_count += 1
@@ -1177,10 +1265,12 @@ class HierarchicalOptimizer:
         if current_value < 0.6:
     pass
     pass
+    pass
         # Increase exploration
                             study.sampler.n_startup_trials, min(study.sampler.n_startup_trials + 5, 50)
                     else:  # Later phases
         if current_value > 0.8:
+    pass
     pass
     pass
         # Increase exploitation
@@ -1191,9 +1281,11 @@ class HierarchicalOptimizer:
     def _create_advanced_group_objective(self, parameters: List[str], data: pd.DataFrame, phase_idx: int):
     pass
     pass
+    pass
         """Create advanced objective function with phase - specific logic."""
 
         def objective(trial):
+    pass
     pass
     pass
         # Sample parameters for this group
@@ -1202,17 +1294,21 @@ class HierarchicalOptimizer:
         for param_path in parameters:
     pass
     pass
+    pass
                 step_name, param_name, param_path.split(".", 1)
                 param_config, self._get_parameter_config(step_name, param_name)
 
         if param_config:
     pass
     pass
+    pass
         if isinstance(param_config, tuple) and len(param_config) == 2:
+    pass
     pass
     pass
                         min_val, max_val, param_config
         if param_name in ["n_estimators", "max_depth", "calibration_cv_folds"]:
+    pass
     pass
     pass
                             params[param_path] = trial.suggest_int(param_path, min_val, max_val)
@@ -1232,6 +1328,9 @@ class HierarchicalOptimizer:
     pass
     except Exception as e:
         pass
+    pass
+    except Exception as e:
+        pass
         # Multi - objective evaluation
                     objectives, self._evaluate_multi_objective(data, params, parameters, phase_idx)
         return objectives
@@ -1244,6 +1343,7 @@ class HierarchicalOptimizer:
         if self.multi_objective_enabled and phase_idx >= 2:
     pass
     pass
+    pass
         return [float('-inf')] * 3
                 else:
         return float('-inf')
@@ -1251,6 +1351,7 @@ class HierarchicalOptimizer:
         return objective
 
     def _evaluate_multi_objective(self, data: pd.DataFrame, params: Dict[str, Any], parameters: List[str], phase_idx: int) -> List[float]:
+    pass
     pass
     pass
         """Evaluate parameters for multi - objective optimization."""
@@ -1264,10 +1365,13 @@ class HierarchicalOptimizer:
         for param_path, value in params.items():
     pass
     pass
+    pass
         if "model_type" in param_path:
     pass
     pass
+    pass
         if value in ["xgboost", "lightgbm"]:
+    pass
     pass
     pass
                     base_score += 0.05
@@ -1275,9 +1379,11 @@ class HierarchicalOptimizer:
         if 100 <= value <= 1000:
     pass
     pass
+    pass
                     base_score += 0.03
             elif "ensemble_size" in param_path:
         if 3 <= value <= 15:
+    pass
     pass
     pass
                     base_score += 0.02
@@ -1313,6 +1419,8 @@ class HierarchicalOptimizer:
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         # For now, providing a simulated evaluation with phase - specific logic
 
             base_score, 0.5
@@ -1321,10 +1429,13 @@ class HierarchicalOptimizer:
         for param_path, value in params.items():
     pass
     pass
+    pass
         if "model_type" in param_path:
     pass
     pass
+    pass
         if value in ["xgboost", "lightgbm"]:
+    pass
     pass
     pass
                         base_score += 0.05  # Good models
@@ -1332,9 +1443,11 @@ class HierarchicalOptimizer:
         if 100 <= value <= 1000:
     pass
     pass
+    pass
                         base_score += 0.03  # Optimal range
                 elif "max_depth" in param_path:
         if 3 <= value <= 15:
+    pass
     pass
     pass
                         base_score += 0.03  # Optimal range
@@ -1342,9 +1455,11 @@ class HierarchicalOptimizer:
         if 0.01 <= value <= 0.3:
     pass
     pass
+    pass
                         base_score += 0.03  # Optimal range
                 elif "ensemble_size" in param_path:
         if 3 <= value <= 15:
+    pass
     pass
     pass
                         base_score += 0.02  # Good ensemble size
@@ -1367,6 +1482,7 @@ class HierarchicalOptimizer:
     def _calculate_comprehensive_metrics(self, best_value: float, phase_idx: int, parameters: List[str]) -> Dict[str, float]:
     pass
     pass
+    pass
         """Calculate comprehensive performance metrics."""
 
         # Base metrics
@@ -1382,6 +1498,7 @@ class HierarchicalOptimizer:
         if phase_idx == 0:
     pass
     pass
+    pass
             metrics["foundation_strength"] = best_value
         elif phase_idx == len(self.parameter_grouper.get_optimization_order()) - 1:
             metrics["final_refinement"] = best_value
@@ -1391,6 +1508,7 @@ class HierarchicalOptimizer:
         return metrics
 
     def _get_parameter_config(self, step_name: str, param_name: str) -> Any:
+    pass
     pass
     pass
         """Get parameter configuration for sampling."""
@@ -1421,6 +1539,7 @@ class HierarchicalOptimizer:
     def get_optimization_summary(self) -> Dict[str, Any]:
     pass
     pass
+    pass
         """Get comprehensive optimization summary."""
 
         return {
@@ -1443,11 +1562,13 @@ class HierarchicalOptimizer:
 def create_hierarchical_optimizer(config: Dict[str, Any], training_manager = None):
     pass
     pass
+    pass
     """Create hierarchical optimizer instance."""
 
     return HierarchicalOptimizer(config, training_manager)
 
 if __name__ == "__main__":
+    pass
     pass
     pass
     # Example usage
@@ -1464,12 +1585,12 @@ if __name__ == "__main__":
     optimizer, create_hierarchical_optimizer(config)
 
     print("✅ Hierarchical Step17 Optimizer created successfully!")
-    print("\\\nOptimization Strategies Implemented:")
+    print("\\\\nOptimization Strategies Implemented:")
     print("  1. 🎯 Hierarchical Optimization - Break into logical phases")
     print("  2. 🔍 Intelligent Parameter Pruning - Remove low - impact parameters")
     print("  3. 📊 Adaptive Trial Allocation - Dynamic trial distribution")
     print("  4. 🧠 Smart Parameter Grouping - Group related parameters")
-    print("\\\nExpected Performance Improvements:")
+    print("\\\\nExpected Performance Improvements:")
     print("  - 3 - 5x faster convergence with hierarchical approach")
     print("  - 2 - 3x reduction in optimization time with parameter pruning")
     print("  - 2 - 4x speedup with adaptive trial allocation")

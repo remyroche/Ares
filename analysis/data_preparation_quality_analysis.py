@@ -39,6 +39,7 @@ class DataPreparationQualityAnalyzer:
     def __init__(self):
     pass
     pass
+    pass
         self.data, None
         self.report = {}
 
@@ -46,9 +47,13 @@ class DataPreparationQualityAnalyzer:
     def load_data(self, data_path):
     pass
     pass
+    pass
         """Load the prepared data for analysis."""
         try:
             if data_path.endswith('.pkl'):
+    pass
+    except Exception as e:
+        pass
     pass
     except Exception as e:
         pass
@@ -65,6 +70,7 @@ class DataPreparationQualityAnalyzer:
             if self.data is not None and not self.data.empty:
     pass
     pass
+    pass
                 print(f"✅ Data loaded: {len(self.data)} rows, {len(self.data.columns)} columns")
                 return True
             else:
@@ -78,17 +84,22 @@ class DataPreparationQualityAnalyzer:
     def _load_from_directory(self, data_dir):
     pass
     pass
+    pass
         """Load data from directory structure."""
         patterns = ['*features*.csv', '*prepared*.csv', '*processed*.csv', '*training*.csv']
         for pattern in patterns:
+    pass
     pass
     pass
             files = glob.glob(os.path.join(data_dir, pattern))
             if files:
     pass
     pass
+    pass
                 try:
                     self.data = pd.read_csv(files[0])
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -102,14 +113,16 @@ class DataPreparationQualityAnalyzer:
     def analyze_preparation_quality(self):
     pass
     pass
+    pass
         """Comprehensive data preparation quality analysis."""
         if self.data is None or self.data.empty:
+    pass
     pass
     pass
             print(warning("No data loaded. Please load data first."))
             return
 
-        print("\\\n" + "="*60)
+        print("\\\\n" + "="*60)
         print("🔍 DATA PREPARATION QUALITY ANALYSIS REPORT")
         print("="*60)
 
@@ -135,8 +148,9 @@ class DataPreparationQualityAnalyzer:
     def _analyze_feature_engineering_quality(self):
     pass
     pass
+    pass
         """Analyze the quality of feature engineering."""
-        print("\\\n🔧 FEATURE ENGINEERING QUALITY ANALYSIS")
+        print("\\\\n🔧 FEATURE ENGINEERING QUALITY ANALYSIS")
         print("-" * 50)
 
         # Check for common feature categories
@@ -154,14 +168,17 @@ class DataPreparationQualityAnalyzer:
         for category, keywords in feature_categories.items():
     pass
     pass
+    pass
             matching_features = []
         for keyword in keywords:
+    pass
     pass
     pass
                 matching_cols = [col for col in self.data.columns if keyword.lower() in col.lower()]
                 matching_features.extend(matching_cols)
 
         if matching_features:
+    pass
     pass
     pass
         # Analyze feature quality
@@ -174,8 +191,10 @@ class DataPreparationQualityAnalyzer:
         if missing_pct > 10:
     pass
     pass
+    pass
                     quality_score -= (missing_pct - 10) * 2
         if inf_count > 0:
+    pass
     pass
     pass
                     quality_score -= inf_count * 0.1
@@ -201,6 +220,7 @@ class DataPreparationQualityAnalyzer:
         for category, stats in feature_stats.items():
     pass
     pass
+    pass
             print(f"{category:<20} {stats['found_features']:<10} {stats['missing_percentage']:<12.1f} {stats['quality_score']:<10.1f}")
 
         self.report['feature_engineering'] = feature_stats
@@ -209,8 +229,9 @@ class DataPreparationQualityAnalyzer:
     def _analyze_data_cleaning_effectiveness(self):
     pass
     pass
+    pass
         """Analyze the effectiveness of data cleaning processes."""
-        print("\\\n🧹 DATA CLEANING EFFECTIVENESS ANALYSIS")
+        print("\\\\n🧹 DATA CLEANING EFFECTIVENESS ANALYSIS")
         print("-" * 50)
 
         # Check for remaining missing values
@@ -254,14 +275,16 @@ class DataPreparationQualityAnalyzer:
     def _analyze_feature_correlations(self):
     pass
     pass
+    pass
         """Analyze feature correlations and multicollinearity."""
-        print("\\\n🔗 FEATURE CORRELATION ANALYSIS")
+        print("\\\\n🔗 FEATURE CORRELATION ANALYSIS")
         print("-" * 40)
 
         # Select numeric features for correlation analysis
         numeric_cols, self.data.select_dtypes(include=[np.number]).columns
 
         if len(numeric_cols) < 2:
+    pass
     pass
     pass
             print("Not enough numeric features for correlation analysis.")
@@ -275,7 +298,9 @@ class DataPreparationQualityAnalyzer:
         for i in range(len(correlation_matrix.columns)):
     pass
     pass
+    pass
         for j in range(i+1, len(correlation_matrix.columns)):
+    pass
     pass
     pass
                 corr_val, correlation_matrix.iloc[i, j]
@@ -289,6 +314,7 @@ class DataPreparationQualityAnalyzer:
         # Find features with very low correlation
         low_corr_features = []
         for col in numeric_cols:
+    pass
     pass
     pass
             correlations, correlation_matrix[col].abs()
@@ -309,18 +335,22 @@ class DataPreparationQualityAnalyzer:
         if high_corr_pairs:
     pass
     pass
+    pass
             print("Top high correlation pairs:")
         for pair in sorted(high_corr_pairs, key=lambda x: abs(x['correlation']), reverse=True)[:5]:
     pass
     pass
+    pass
                 print(f"  {pair['feature1']} ↔ {pair['feature2']}: {pair['correlation']:.3f}")
 
-        print(f"\\\nLow correlation features (avg |r| < 0.1): {len(low_corr_features)}")
+        print(f"\\\\nLow correlation features (avg |r| < 0.1): {len(low_corr_features)}")
         if low_corr_features:
+    pass
     pass
     pass
             print("Features with low correlations:")
         for feature in sorted(low_corr_features, key=lambda x: x['avg_correlation'])[:5]:
+    pass
     pass
     pass
                 print(f"  {feature['feature']}: {feature['avg_correlation']:.3f}")
@@ -331,13 +361,15 @@ class DataPreparationQualityAnalyzer:
     def _calculate_preparation_quality_metrics(self):
     pass
     pass
+    pass
         """Calculate overall preparation quality metrics."""
-        print("\\\n📈 OVERALL PREPARATION QUALITY METRICS")
+        print("\\\\n📈 OVERALL PREPARATION QUALITY METRICS")
         print("-" * 50)
 
         # Calculate composite quality score
         feature_engineering_score, 0
         if self.report.get('feature_engineering'):
+    pass
     pass
     pass
             scores = [stats['quality_score'] for stats in self.report['feature_engineering'].values()]
@@ -361,7 +393,9 @@ class DataPreparationQualityAnalyzer:
         for metric, score in quality_metrics.items():
     pass
     pass
+    pass
         if score >= 80:
+    pass
     pass
     pass
                 status = "✅ Excellent"
@@ -375,9 +409,10 @@ class DataPreparationQualityAnalyzer:
             metric_name, metric.replace('_', ' ').title()
             print(f"{metric_name:<30} {score:<10.1f} {status:<15}")
 
-        print(f"\\\nOverall Preparation Quality: {preparation_score:.1f}/100")
+        print(f"\\\\nOverall Preparation Quality: {preparation_score:.1f}/100")
 
         if preparation_score >= 80:
+    pass
     pass
     pass
             print("🎉 Excellent data preparation quality!")
@@ -394,8 +429,9 @@ class DataPreparationQualityAnalyzer:
     def _generate_preparation_recommendations(self):
     pass
     pass
+    pass
         """Generate recommendations based on preparation analysis."""
-        print("\\\n💡 DATA PREPARATION RECOMMENDATIONS")
+        print("\\\\n💡 DATA PREPARATION RECOMMENDATIONS")
         print("-" * 40)
 
         recommendations = []
@@ -405,7 +441,9 @@ class DataPreparationQualityAnalyzer:
         for category, stats in feature_engineering.items():
     pass
     pass
+    pass
         if stats['found_features'] == 0:
+    pass
     pass
     pass
                 recommendations.append(f"🔧 {category}: No features found - consider adding {category}")
@@ -417,10 +455,12 @@ class DataPreparationQualityAnalyzer:
         if data_cleaning.get('overall_score', 0) < 70:
     pass
     pass
+    pass
             recommendations.append("🧹 Data cleaning needs improvement")
 
         missing_pct, data_cleaning.get('missing_values', {}).get('percentage', 0)
         if missing_pct > 10:
+    pass
     pass
     pass
             recommendations.append(f"🧹 High missing values ({missing_pct:.1f}%) - consider imputation")
@@ -431,15 +471,18 @@ class DataPreparationQualityAnalyzer:
         if len(high_corr_pairs) > 10:
     pass
     pass
+    pass
             recommendations.append(f"🔗 High multicollinearity detected ({len(high_corr_pairs)} pairs)")
 
         if not recommendations:
+    pass
     pass
     pass
             print("✅ No major issues detected. Data preparation quality is good!")
         else:
             print("Recommendations for improvement:")
         for rec in recommendations:
+    pass
     pass
     pass
                 print(f"  {rec}")
@@ -450,11 +493,14 @@ class DataPreparationQualityAnalyzer:
     def _create_preparation_visualizations(self):
     pass
     pass
+    pass
         """Create visualizations for the preparation report."""
-        print("\\\n📈 GENERATING PREPARATION VISUALIZATIONS...")
+        print("\\\\n📈 GENERATING PREPARATION VISUALIZATIONS...")
 
         try:
             fig, axes, plt.subplots(2, 2, figsize=(15, 12))
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -464,6 +510,7 @@ class DataPreparationQualityAnalyzer:
         # 1. Feature engineering quality
             feature_engineering, self.report.get('feature_engineering', {})
         if feature_engineering:
+    pass
     pass
     pass
                 categories, list(feature_engineering.keys())
@@ -482,6 +529,7 @@ class DataPreparationQualityAnalyzer:
         if data_cleaning:
     pass
     pass
+    pass
                 cleaning_metrics = ['missing_values', 'infinite_values', 'duplicates']
                 cleaning_scores = []
                 metric_names = []
@@ -489,7 +537,9 @@ class DataPreparationQualityAnalyzer:
         for metric in cleaning_metrics:
     pass
     pass
+    pass
         if metric in data_cleaning:
+    pass
     pass
     pass
                         score, data_cleaning[metric].get('score', 0)
@@ -497,6 +547,7 @@ class DataPreparationQualityAnalyzer:
                         metric_names.append(metric.replace('_', ' ').title())
 
         if cleaning_scores:
+    pass
     pass
     pass
                     colors = ['green' if score >= 80 else 'orange' if score >= 60 else 'red' for score in cleaning_scores]
@@ -510,6 +561,7 @@ class DataPreparationQualityAnalyzer:
         # 3. Correlation analysis
             correlation_analysis, self.report.get('correlation_analysis', {})
         if correlation_analysis.get('high_correlation_pairs'):
+    pass
     pass
     pass
                 high_corr_pairs, correlation_analysis['high_correlation_pairs'][:10]
@@ -526,6 +578,7 @@ class DataPreparationQualityAnalyzer:
         # 4. Overall quality pie chart
             quality_metrics, self.report.get('quality_metrics', {})
         if quality_metrics:
+    pass
     pass
     pass
                 overall_score, quality_metrics.get('overall_preparation_score', 0)
@@ -546,46 +599,51 @@ class DataPreparationQualityAnalyzer:
     def save_report(self, filename='data_preparation_quality_report.txt'):
     pass
     pass
+    pass
         """Save the analysis report to a file."""
         with open(filename, 'w') as f:
-            f.write("DATA PREPARATION QUALITY ANALYSIS REPORT\\\n")
-            f.write("=" * 50 + "\\\n\\\n")
+            f.write("DATA PREPARATION QUALITY ANALYSIS REPORT\\\\n")
+            f.write("=" * 50 + "\\\\n\\\\n")
 
         # Overall quality
             quality_metrics, self.report.get('quality_metrics', {})
             overall_score, quality_metrics.get('overall_preparation_score', 0)
-            f.write(f"Overall Preparation Quality: {overall_score:.1f}/100\\\n\\\n")
+            f.write(f"Overall Preparation Quality: {overall_score:.1f}/100\\\\n\\\\n")
 
         # Feature engineering
             feature_engineering, self.report.get('feature_engineering', {})
-            f.write("FEATURE ENGINEERING QUALITY:\\\n")
+            f.write("FEATURE ENGINEERING QUALITY:\\\\n")
         for category, stats in feature_engineering.items():
     pass
     pass
-                f.write(f"{category}: {stats['quality_score']:.1f}/100\\\n")
-            f.write("\\\n")
+    pass
+                f.write(f"{category}: {stats['quality_score']:.1f}/100\\\\n")
+            f.write("\\\\n")
 
         # Data cleaning
             data_cleaning, self.report.get('data_cleaning', {})
-            f.write("DATA CLEANING EFFECTIVENESS:\\\n")
-            f.write(f"Missing values: {data_cleaning.get('missing_values', {}).get('percentage', 0):.2f}%\\\n")
-            f.write(f"Overall cleaning score: {data_cleaning.get('overall_score', 0):.1f}/100\\\n\\\n")
+            f.write("DATA CLEANING EFFECTIVENESS:\\\\n")
+            f.write(f"Missing values: {data_cleaning.get('missing_values', {}).get('percentage', 0):.2f}%\\\\n")
+            f.write(f"Overall cleaning score: {data_cleaning.get('overall_score', 0):.1f}/100\\\\n\\\\n")
 
         # Recommendations
             recommendations, self.report.get('recommendations', [])
         if recommendations:
     pass
     pass
-                f.write("RECOMMENDATIONS:\\\n")
+    pass
+                f.write("RECOMMENDATIONS:\\\\n")
         for rec in recommendations:
     pass
     pass
-                    f.write(f"- {rec}\\\n")
-            f.write("\\\n")
+    pass
+                    f.write(f"- {rec}\\\\n")
+            f.write("\\\\n")
 
         print(f"✅ Report saved as '{filename}'")
 
 def main():
+    pass
     pass
     pass
     """Main function to run the analysis."""
@@ -604,10 +662,13 @@ def main():
     for path in data_paths:
     pass
     pass
+    pass
         if os.path.exists(path):
     pass
     pass
+    pass
         if analyzer.load_data(path):
+    pass
     pass
     pass
                 data_loaded, True
@@ -616,9 +677,11 @@ def main():
     if not data_loaded:
     pass
     pass
+    pass
         print(warning("Could not find data file. Please specify the path to your prepared data.")))
         print("Common locations checked:")
         for path in data_paths:
+    pass
     pass
     pass
             print(f"  - {path}")
@@ -631,6 +694,7 @@ def main():
     analyzer.save_report()
 
 if __name__ == "__main__":
+    pass
     pass
     pass
     main()

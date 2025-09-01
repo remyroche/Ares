@@ -44,7 +44,7 @@ async def test_missing_data_identification():
     # Identify missing data
     missing_data, downloader.identify_missing_data(symbol, exchange, end_date)
 
-    print(f"\\\n📊 MISSING DATA SUMMARY FOR {exchange}_{symbol}:")
+    print(f"\\\\n📊 MISSING DATA SUMMARY FOR {exchange}_{symbol}:")
     print(f"• Missing Aggtrades Days: {len(missing_data['missing_aggtrades_days'])}")
     print(f"• Missing Klines Months: {len(missing_data['missing_klines_months'])}")
     print(f"• Missing Futures Months: {len(missing_data['missing_futures_months'])}")
@@ -53,12 +53,15 @@ async def test_missing_data_identification():
     if missing_data['missing_aggtrades_days']:
     pass
     pass
-        print(f"\\\n📅 MISSING AGGTRADES DAYS (first 5):")
+    pass
+        print(f"\\\\n📅 MISSING AGGTRADES DAYS (first 5):")
         for date in missing_data['missing_aggtrades_days'][:5]:
+    pass
     pass
     pass
             print(f"  • {date}")
         if len(missing_data['missing_aggtrades_days']) > 5:
+    pass
     pass
     pass
             print(f"  ... and {len(missing_data['missing_aggtrades_days']) - 5} more")
@@ -66,8 +69,10 @@ async def test_missing_data_identification():
     if missing_data['missing_klines_months']:
     pass
     pass
-        print(f"\\\n📊 MISSING KLINES MONTHS:")
+    pass
+        print(f"\\\\n📊 MISSING KLINES MONTHS:")
         for date in missing_data['missing_klines_months']:
+    pass
     pass
     pass
             print(f"  • {date}")
@@ -75,8 +80,10 @@ async def test_missing_data_identification():
     if missing_data['missing_futures_months']:
     pass
     pass
-        print(f"\\\n📈 MISSING FUTURES MONTHS:")
+    pass
+        print(f"\\\\n📈 MISSING FUTURES MONTHS:")
         for date in missing_data['missing_futures_months']:
+    pass
     pass
     pass
             print(f"  • {date}")
@@ -84,12 +91,15 @@ async def test_missing_data_identification():
     if missing_data['aggtrades_gaps']:
     pass
     pass
-        print(f"\\\n⚠️ AGGTRADES GAPS (first 3):")
+    pass
+        print(f"\\\\n⚠️ AGGTRADES GAPS (first 3):")
         for gap in missing_data['aggtrades_gaps'][:3]:
+    pass
     pass
     pass
             print(f"  • {gap['file']}: {gap['gap_start']} to {gap['gap_end']} ({gap['gap_duration_seconds']:.1f}s)")
         if len(missing_data['aggtrades_gaps']) > 3:
+    pass
     pass
     pass
             print(f"  ... and {len(missing_data['aggtrades_gaps']) - 3} more")
@@ -99,8 +109,9 @@ async def test_missing_data_identification():
 def test_data_format_standardization():
     pass
     pass
+    pass
     """Test data format standardization functions"""
-    print("\\\n🧪 TESTING DATA FORMAT STANDARDIZATION")
+    print("\\\\n🧪 TESTING DATA FORMAT STANDARDIZATION")
     print("=" * 60)
 
     downloader, MissingDataDownloaderAndGapFiller()
@@ -132,7 +143,7 @@ def test_data_format_standardization():
     print(f"  • Sample data: {standardized_df.iloc[0].to_dict()}")
 
     # Test futures format standardization
-    print("\\\n📈 Testing futures format standardization...")
+    print("\\\\n📈 Testing futures format standardization...")
 
     # Sample futures data (Binance format)
     sample_futures = [
@@ -155,6 +166,7 @@ def test_data_format_standardization():
 def main():
     pass
     pass
+    pass
     """Main test function"""
     print("🚀 MISSING DATA DOWNLOADER TEST SUITE")
     print("=" * 80)
@@ -165,21 +177,24 @@ def main():
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
         missing_data, asyncio.run(test_missing_data_identification())
 
         # Test data format standardization
         test_data_format_standardization()
 
-        print("\\\n" + "=" * 80)
+        print("\\\\n" + "=" * 80)
         print("✅ ALL TESTS COMPLETED SUCCESSFULLY!")
-        print("\\\n💡 To actually download missing data, run:")
+        print("\\\\n💡 To actually download missing data, run:")
         print("   python src / training / steps / step1 / run_step1.py --symbol ETHUSDT --exchange BINANCE --mode download - missing")
 
     except Exception as e:
-        print(f"\\\n❌ TEST FAILED: {e}")
+        print(f"\\\\n❌ TEST FAILED: {e}")
         traceback.print_exc()
 
 if __name__ == "__main__":
+    pass
     pass
     pass
     main()

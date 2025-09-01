@@ -42,12 +42,15 @@ async def run_validator(
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
 		symbol, training_input.get("symbol", "")
 		exchange, training_input.get("exchange", "")
 		timeframe, training_input.get("timeframe", "")
 		data_dir, training_input.get("data_dir", "data / training")
 
 		if not all([symbol, exchange, timeframe]):
+    pass
     pass
     pass
 			return {
@@ -61,6 +64,7 @@ async def run_validator(
 		# Check pipeline state
 		hmm_state, pipeline_state.get("hmm_regime_discovery", {})
 		if not hmm_state.get("completed", False):
+    pass
     pass
     pass
 			return {
@@ -84,8 +88,10 @@ async def run_validator(
 		for artifact in required_artifacts:
     pass
     pass
+    pass
 			artifact_path, Path(data_dir) / artifact
 			if artifact_path.exists():
+    pass
     pass
     pass
 				# Get file info
@@ -100,8 +106,11 @@ async def run_validator(
 				if artifact.endswith(".parquet"):
     pass
     pass
+    pass
 					try:
 						df, pd.read_parquet(artifact_path)
+    except Exception as e:
+        pass
     except Exception as e:
         pass
     except Exception as e:
@@ -113,8 +122,10 @@ async def run_validator(
 						if "block_states" in artifact:
     pass
     pass
+    pass
 							required_cols = [col for col in df.columns if "state_id" in col or "p_state_" in col]
 							if not required_cols:
+    pass
     pass
     pass
 								missing_artifacts.append(f"{artifact} - missing state columns")
@@ -123,11 +134,13 @@ async def run_validator(
 							if "composite_cluster_id" not in df.columns:
     pass
     pass
+    pass
 								missing_artifacts.append(f"{artifact} - missing composite_cluster_id column")
 
 						elif "intensity" in artifact:
 							intensity_cols = [col for col in df.columns if "intensity_" in col]
 							if not intensity_cols:
+    pass
     pass
     pass
 								missing_artifacts.append(f"{artifact} - missing intensity columns")
@@ -144,12 +157,15 @@ async def run_validator(
         pass
     except Exception as e:
         pass
+    except Exception as e:
+        pass
 						artifact_info[artifact]["metadata"] = meta
 
 						# Check required metadata fields
 						required_meta_fields = ["symbol", "exchange", "timeframe", "blocks_used", "n_composite_clusters"]
 						missing_fields = [field for field in required_meta_fields if field not in meta]
 						if missing_fields:
+    pass
     pass
     pass
 							missing_artifacts.append(f"{artifact} - missing metadata fields: {missing_fields}")
@@ -169,8 +185,10 @@ async def run_validator(
 		for artifact in hmm_regimes_artifacts:
     pass
     pass
+    pass
 			artifact_path, hmm_regimes_dir / artifact
 			if artifact_path.exists():
+    pass
     pass
     pass
 				artifact_info[f"hmm_regimes/{artifact}"] = {
@@ -200,6 +218,7 @@ async def run_validator(
 		}
 
 		if validation_passed:
+    pass
     pass
     pass
 			logger.info(f"✅ Step 3 validation passed: {artifacts_found}/{total_artifacts} artifacts found")

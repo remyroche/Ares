@@ -11,9 +11,9 @@ import pandas as pd
 
 def _load_parquet(path: str) -> pd.DataFrame | None:
     try:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 if os.path.exists(path):
             return pd.read_parquet(path)
 return None
@@ -162,9 +162,9 @@ if not row_int.empty:
             for c in row_int.columns:
                 if c.startswith("intensity_cluster_"):
                     try:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 kid = int(c.split("_")[-1])
 intensities[kid] = float(row_int[c].iloc[0])
 except Exception:
@@ -173,9 +173,9 @@ except Exception:
 p_emerge: dict[int, float] = {}
 exit_hazard: float | None = None
 try:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 if blk_df is not None and not blk_df.empty:
             blk_row = _align_last(blk_df, ts)
 comp_row = last_row
@@ -194,9 +194,9 @@ if os.path.isdir(models_dir):
 "_calibrator.joblib",
 ):
                             try:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 k = int(fname.split("_")[2])
 cal = joblib.load(os.path.join(models_dir, fname))
 keep_cols = _build_keep_cols(X_all, k)
@@ -217,9 +217,9 @@ models_dir, f"hazard_cluster_{cid}_calibrator.joblib",
 )
 if cid >= 0 and os.path.exists(hcal_path):
                         try:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 cal_h = joblib.load(hcal_path)
 keep_cols_h = _build_keep_cols(X_all, cid)
 Xh = (

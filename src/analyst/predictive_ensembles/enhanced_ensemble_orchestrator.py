@@ -23,7 +23,7 @@ from src.utils.logger import system_logger
 
 
 class EnhancedRegimePredictiveEnsembles(RegimePredictiveEnsembles):
-    pass  # TODO: Add implementation
+    # Implementation placeholder - add specific implementation as needed
 class EnhancedRegimePredictiveEnsembles(RegimePredictiveEnsembles):
     pass  # TODO: Add implementation
 class EnhancedRegimePredictiveEnsembles(RegimePredictiveEnsembles):
@@ -117,9 +117,9 @@ f"🔧 [{regime_idx}.{model_idx}] Training {model_type} for regime: {regime_key}
 )
 
 try:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 # Create multi-timeframe ensemble for this model type
 ensemble = MultiTimeframeEnsemble(
 model_type=model_type,
@@ -201,9 +201,9 @@ for regime_key, regime_ensembles in self.enhanced_regime_ensembles.items():
 
 for model_type, ensemble in regime_ensembles.items():
                 try:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 prediction = ensemble.predict(data)
 regime_predictions[model_type] = prediction
 except Exception as e:
@@ -227,9 +227,9 @@ os.makedirs(regime_path, exist_ok=True)
 
 for model_type, ensemble in regime_ensembles.items():
                 try:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 model_path = os.path.join(regime_path, f"{model_type}_ensemble.pkl")
 ensemble.save(model_path)
 self.logger.info(f"✅ Saved {model_type} ensemble for regime {regime_key}")
@@ -251,9 +251,9 @@ if regime_key not in self.enhanced_regime_ensembles:
 
 for model_type in self.model_types:
                 try:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 model_path = os.path.join(regime_path, f"{model_type}_ensemble.pkl")
 if os.path.exists(model_path):
                         ensemble = MultiTimeframeEnsemble.load(model_path)

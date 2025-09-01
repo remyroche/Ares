@@ -15,8 +15,7 @@ import lightgbm as lgb
 import shap
 from sklearn.covariance import LedoitWolf
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.feature_selection import mutual_info_classif
-from sklearn.linear_model import Lasso
+from sklearn.feature_selection import mutual_info_classif from sklearn.linear_model import Lasso
 from sklearn.preprocessing import StandardScaler
 
 from src.utils.error_handler import handle_errors
@@ -24,10 +23,26 @@ from src.utils.logger import system_logger
 
 
 class OptimizedFeatureSelectionManager:
-    """Optimized Feature Selection Manager for ML Training Steps.
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="optimizedfeatureselectionmanager initialization",
+    )
+    async def initialize(self) -> bool:
+        """Initialize OptimizedFeatureSelectionManager."""
+        try:
+            self.logger.info(f"🚀 Initializing {class_name}...")
+            self.is_initialized = True
+            self.logger.info(f"✅ {class_name} initialized successfully")
+            return True
+        except Exception as e:
+            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
+            return False
+                """Optimized Feature Selection Manager for ML Training Steps.
 
     Key improvements:
-    1. Matrix-based VIF calculation (O(n²) instead of O(n³))
+1. Matrix-based VIF calculation (O(n²) instead of O(n³))
     2. RF+SHAP for feature importance assessment
     3. Balanced feature mix (50-100 features) across categories
     4. Model-specific optimization for different architectures
@@ -56,9 +71,9 @@ class OptimizedFeatureSelectionManager:
             "matrix_operations_time": 0.0,
         }
 
-    def _load_config(self) -> None:
-        """Load and validate configuration."""
-        # Default configuration
+    def _load_config(...) -> ...:
+    """..."""
+# Default configuration
         default_config = {
             "target_features": {
                 "neural_networks": 80,
@@ -89,12 +104,8 @@ class OptimizedFeatureSelectionManager:
 
         # Override with config if provided
         fs_config = self.config.get("feature_selection", {})
-        for key, value in fs_config.items():
-            if key in default_config:
-                if isinstance(default_config[key], dict):
-                    default_config[key].update(value)
                 else:
-                    default_config[key] = value
+default_config[key] = value
 
         self.config = default_config
 
@@ -103,29 +114,6 @@ class OptimizedFeatureSelectionManager:
         default_return=(pd.DataFrame(), {}),
         context="optimized feature selection",
     )
-    def select_features_optimized(
-        self, features_df: pd.DataFrame, target: pd.Series,
-        model_type: str = "general",
-        step_name: str = "step2",
-        **kwargs,
-    ) -> Tuple[pd.DataFrame, Dict[str, Any]]:
-        """Optimized feature selection with computational efficiency and balanced feature mix.
-
-        Args:
-            features_df: Input features DataFrame
-            target: Target variable series
-            model_type: Model type (neural_networks, linear_models, ensemble_models)
-            step_name: Training step name
-            **kwargs: Additional parameters
-
-        Returns:
-            Tuple of (selected_features_df, selection_metadata)
-
-        """
-        start_time = time.time()
-        self.logger.info(f"🚀 Starting optimized feature selection for {model_type} in {step_name}")
-
-        try:
             # Get target feature count
             target_features = self._get_target_feature_count(model_type, step_name)
             self.logger.info(f"📊 Target features: {target_features} (from {len(features_df.columns)} original)")
@@ -174,27 +162,18 @@ class OptimizedFeatureSelectionManager:
             return features_df, selection_metadata
 
         except Exception as e:
-            self.logger.exception(f"❌ Optimized feature selection failed: {e}")
-            raise
-
-    def _get_target_feature_count(self, model_type: str, step_name: str) -> int:
-        """Get target feature count based on model type and step."""
-        target_config = self.config["target_features"]
 
         # Backward compatibility for step2 vs step02 keys
         if step_name in ("step2", "step02", "step02_feature_engineering"):
-            return target_config.get("step02_general", target_config.get("step02_general", 100))
+                return target_config.get("step02_general", target_config.get("step02_general", 100))
         if model_type == "neural_networks":
-            return target_config.get("neural_networks", 80)
+                return target_config.get("neural_networks", 80)
         if model_type == "linear_models":
-            return target_config.get("linear_models", 60)
+                return target_config.get("linear_models", 60)
         if model_type == "ensemble_models":
-            return target_config.get("ensemble_models", 90)
+                return target_config.get("ensemble_models", 90)
         return target_config.get("step02_general", 100)
 
-    def _stage1_data_quality_filtering(self, features_df: pd.DataFrame) -> Tuple[pd.DataFrame, Dict[str, Any]]:
-        """Stage 1: Fast data quality filtering."""
-        original_count = len(features_df.columns)
 
         # Remove features with too many NaN values (>10%)
         nan_ratio = features_df.isna().sum() / len(features_df)
@@ -223,10 +202,6 @@ class OptimizedFeatureSelectionManager:
         self.logger.info(f"Stage 1: Removed {original_count - len(features_df.columns)} low-quality features")
         return features_df, metadata
 
-    def _stage2_matrix_vif_filtering(self, features_df: pd.DataFrame) -> Tuple[pd.DataFrame, Dict[str, Any]]:
-        """Stage 2: Matrix-based VIF calculation (O(n²) instead of O(n³))."""
-        if not self.config["enable_matrix_vif"]:
-            return features_df, {"skipped": True, "reason": "matrix_vif_disabled"}
 
         start_time = time.time()
         len(features_df.columns)
@@ -245,22 +220,12 @@ class OptimizedFeatureSelectionManager:
 
             metadata = {
                 "removed_high_vif": len(high_vif_features),
-                "vif_threshold": vif_threshold,
-                "max_vif": float(vif_scores.max()) if not vif_scores.empty else 0.0,
-                "calculation_time": vif_time,
-                "features_after_stage": len(features_df.columns),
             }
 
             self.logger.info(f"Stage 2: Matrix VIF removed {len(high_vif_features)} features in {vif_time:.2f}s")
             return features_df, metadata
 
         except Exception as e:
-            self.logger.warning(f"Stage 2: Matrix VIF failed, skipping: {e}")
-            return features_df, {"error": str(e), "features_after_stage": len(features_df.columns)}
-
-    def _calculate_matrix_vif(self, features_df: pd.DataFrame) -> pd.Series:
-        """Calculate VIF using matrix operations (much faster than iterative approach)."""
-        # Standardize features
         scaler = StandardScaler()
         X_scaled = scaler.fit_transform(features_df)
 
@@ -285,7 +250,7 @@ class OptimizedFeatureSelectionManager:
             return pd.Series(vif_scores, index=features_df.columns)
 
         except Exception:
-            # Fallback to correlation-based approach
+                # Fallback to correlation-based approach
             corr_matrix = features_df.corr().values
             try:
                 corr_inv = np.linalg.pinv(corr_matrix)
@@ -295,23 +260,12 @@ class OptimizedFeatureSelectionManager:
 
             return pd.Series(vif_scores, index=features_df.columns)
 
-    def _calculate_iterative_vif(self, features_df: pd.DataFrame) -> np.ndarray:
-        """Fallback iterative VIF calculation for problematic matrices."""
-        from statsmodels.stats.outliers_influence import variance_inflation_factor
-
-        vif_scores = []
-        for i, _col in enumerate(features_df.columns):
-            try:
-                vif = variance_inflation_factor(features_df.values, i)
                 vif_scores.append(vif)
             except:
                 vif_scores.append(1.0)
 
         return np.array(vif_scores)
 
-    def _stage3_efficient_correlation_filtering(self, features_df: pd.DataFrame) -> Tuple[pd.DataFrame, Dict[str, Any]]:
-        """Stage 3: Efficient correlation analysis using matrix operations."""
-        start_time = time.time()
         len(features_df.columns)
         corr_threshold = self.config["correlation_threshold"]
 
@@ -324,8 +278,6 @@ class OptimizedFeatureSelectionManager:
 
         # Remove one feature from each highly correlated pair
         features_to_remove = set()
-        for i, j in zip(high_corr_pairs[0], high_corr_pairs[1], strict=False):
-            feat1 = features_df.columns[i]
             feat2 = features_df.columns[j]
 
             # Keep the feature with higher variance
@@ -334,7 +286,7 @@ class OptimizedFeatureSelectionManager:
             if var1 < var2:
                 features_to_remove.add(feat1)
             else:
-                features_to_remove.add(feat2)
+features_to_remove.add(feat2)
 
         features_df = features_df.drop(columns=list(features_to_remove))
 
@@ -352,10 +304,6 @@ class OptimizedFeatureSelectionManager:
         self.logger.info(f"Stage 3: Correlation filtering removed {len(features_to_remove)} features in {corr_time:.2f}s")
         return features_df, metadata
 
-    def _stage4_rf_shap_importance(self, features_df: pd.DataFrame, target: pd.Series) -> Tuple[pd.DataFrame, Dict[str, Any]]:
-        """Stage 4: RF+SHAP feature importance assessment."""
-        if not self.config["enable_shap_analysis"]:
-            return features_df, {"skipped": True, "reason": "shap_analysis_disabled"}
 
         start_time = time.time()
 
@@ -374,8 +322,6 @@ class OptimizedFeatureSelectionManager:
 
             # Calculate mean absolute SHAP values
             if isinstance(shap_values, list):
-                shap_values = np.array(shap_values)
-            mean_shap = np.mean(np.abs(shap_values), axis=0)
 
             # Combine RF importance and SHAP importance
             rf_importance = pd.Series(rf.feature_importances_, index = features_df.columns)
@@ -404,7 +350,6 @@ class OptimizedFeatureSelectionManager:
             return features_df, metadata
 
         except Exception as e:
-            self.logger.warning(f"Stage 4: RF+SHAP failed, using RF only: {e}")
             # Fallback to RF importance only
             rf = RandomForestClassifier(n_estimators = 100, random_state = 42, n_jobs=-1)
             rf.fit(features_df, target)
@@ -412,10 +357,6 @@ class OptimizedFeatureSelectionManager:
 
             return features_df, {"fallback": "rf_only", "features_after_stage": len(features_df.columns)}
 
-    def _stage5_balanced_selection(self, features_df: pd.DataFrame, target: pd.Series, target_features: int, model_type: str) -> Tuple[pd.DataFrame, Dict[str, Any]]:
-        """Stage 5: Balanced feature selection across categories."""
-        if not self.config["enable_balanced_selection"]:
-            return features_df, {"skipped": True, "reason": "balanced_selection_disabled"}
 
         # Categorize features
         feature_categories = self._categorize_features(features_df.columns)
@@ -423,16 +364,13 @@ class OptimizedFeatureSelectionManager:
 
         # Calculate target features per category
         selected_features = []
-        for category, weight in category_weights.items():
-            if category in feature_categories:
-                category_features = feature_categories[category]
                 target_per_category = int(target_features * weight)
 
                 if category_features:
-                    # Rank features within category by importance
+# Rank features within category by importance
                     if "rf_shap" in self.feature_importance_cache: importance_scores = self.feature_importance_cache["rf_shap"][category_features]
                     else:
-                        # Fallback to mutual information
+# Fallback to mutual information
                         mi_scores = mutual_info_classif(features_df[category_features], target, random_state = 42)
                         importance_scores = pd.Series(mi_scores, index = category_features)
 
@@ -442,12 +380,8 @@ class OptimizedFeatureSelectionManager:
 
         # If we don't have enough features = add from other categories
         if len(selected_features) < target_features:
-            remaining_features = [f for f in features_df.columns if f not in selected_features]
+remaining_features = [f for f in features_df.columns if f not in selected_features]
             if remaining_features:
-                if "rf_shap" in self.feature_importance_cache: importance_scores = self.feature_importance_cache["rf_shap"][remaining_features]
-                else:
-                    mi_scores = mutual_info_classif(features_df[remaining_features], target, random_state = 42)
-                    importance_scores = pd.Series(mi_scores, index = remaining_features)
 
                 additional_features = importance_scores.nlargest(target_features - len(selected_features)).index.tolist()
                 selected_features.extend(additional_features)
@@ -467,19 +401,6 @@ class OptimizedFeatureSelectionManager:
         self.logger.info(f"Stage 5: Balanced selection: {len(selected_features)} features across categories")
         return features_df, metadata
 
-    def _stage6_model_specific_optimization(self, features_df: pd.DataFrame, target: pd.Series, model_type: str) -> Tuple[pd.DataFrame, Dict[str, Any]]:
-        """Stage 6: Model-specific optimization."""
-        if model_type == "neural_networks":
-            return self._optimize_for_neural_networks(features_df, target)
-        if model_type == "linear_models":
-            return self._optimize_for_linear_models(features_df, target)
-        if model_type == "ensemble_models":
-            return self._optimize_for_ensemble_models(features_df, target)
-        return features_df, {"optimization": "none", "features_after_stage": len(features_df.columns)}
-
-    def _optimize_for_neural_networks(self, features_df: pd.DataFrame, target: pd.Series) -> Tuple[pd.DataFrame, Dict[str, Any]]:
-        """Optimize features for neural networks."""
-        # Neural networks benefit from diverse, non-linear features
         # Keep interaction features = normalized features = and SR features
         interaction_features = [col for col in features_df.columns if "_x_" in col or "_div_" in col]
         normalized_features = [col for col in features_df.columns if "_norm" in col or "_z_score" in col]
@@ -508,9 +429,6 @@ class OptimizedFeatureSelectionManager:
 
         return features_df, metadata
 
-    def _optimize_for_linear_models(self, features_df: pd.DataFrame, target: pd.Series) -> Tuple[pd.DataFrame, Dict[str, Any]]:
-        """Optimize features for linear models."""
-        # Linear models benefit from uncorrelated = interpretable features
         # Remove interaction features
         linear_features = [col for col in features_df.columns if "_x_" not in col and "_div_" not in col]
 
@@ -534,9 +452,6 @@ class OptimizedFeatureSelectionManager:
 
         return features_df, metadata
 
-    def _optimize_for_ensemble_models(self, features_df: pd.DataFrame, target: pd.Series) -> Tuple[pd.DataFrame, Dict[str, Any]]:
-        """Optimize features for ensemble models."""
-        # Ensemble models benefit from diverse feature set
         # Use multiple feature selection methods
         methods = [
             ("random_forest", RandomForestClassifier(n_estimators=100, random_state=42)),
@@ -545,11 +460,6 @@ class OptimizedFeatureSelectionManager:
         ]
 
         feature_scores = {}
-        for method_name, estimator in methods:
-            if method_name == "mutual_info":
-                scores = mutual_info_classif(features_df, target, random_state=42)
-            else:
-                estimator.fit(features_df, target)
                 scores = estimator.feature_importances_
 
             feature_scores[method_name] = pd.Series(scores, index=features_df.columns)
@@ -568,9 +478,6 @@ class OptimizedFeatureSelectionManager:
 
         return features_df, metadata
 
-    def _categorize_features(self, feature_names: List[str]) -> Dict[str, List[str]]:
-        """Categorize features by type."""
-        categories = {
             "momentum": [],
             "volatility": [],
             "liquidity": [],
@@ -596,7 +503,7 @@ class OptimizedFeatureSelectionManager:
 
             # Momentum indicators (including multi-timeframe and derivative forms)
             if not categorized:
-                momentum_base_tokens = [
+momentum_base_tokens = [
                     "momentum", "mom", "rsi", "macd", "cci", "roc", "willr", "stoch",
                     "adx", "dmi", "kama", "tema", "dema", "hma", "wma", "vwma", "zlema",
                     "ichimoku", "psar", "trix", "cmo", "tsi", "ppo", "pmo", "uo",
@@ -615,12 +522,12 @@ class OptimizedFeatureSelectionManager:
                     ])
                 )
                 if has_momentum_base or has_derivative_with_anchor:
-                    categories["momentum"].append(feature)
+                categories["momentum"].append(feature)
                     categorized = True
 
             # Volatility measures (including multi-timeframe and derivative forms)
             if not categorized:
-                volatility_base_tokens = [
+volatility_base_tokens = [
                     "volatility", "atr", "true_range", "truerange", "natr", "parkinson",
                     "garman", "gk_vol", "garman_klass", "roll", "rvol", "realized_vol",
                     "hv", "hist_vol", "historical_vol", "variance", "std", "bbands",
@@ -639,12 +546,12 @@ class OptimizedFeatureSelectionManager:
                     ])
                 )
                 if has_volatility_base or has_derivative_with_anchor:
-                    categories["volatility"].append(feature)
+                categories["volatility"].append(feature)
                     categorized = True
 
             # Volume features (including multi-timeframe and derivative forms)
             if not categorized:
-                volume_base_tokens = [
+volume_base_tokens = [
                     "volume", "tick_volume", "obv", "cmf", "mfi", "vwap",
                     "pvi", "nvi", "efi", "delta_volume", "volume_ratio", "volume_ma",
                     "volume_change", "volume_sma", "volume_momentum", "volume_weighted",
@@ -662,12 +569,12 @@ class OptimizedFeatureSelectionManager:
                     ])
                 )
                 if has_volume_base or has_derivative_with_anchor:
-                    categories["volume"].append(feature)
+                categories["volume"].append(feature)
                     categorized = True
 
             # Liquidity features (including multi-timeframe and derivative forms)
             if not categorized:
-                liquidity_base_tokens = [
+liquidity_base_tokens = [
                     "liquidity", "spread", "bid_ask", "bidask", "quote_imbalance",
                     "liquidity_", "spread_", "bid_", "ask_", "quote_",
                 ]
@@ -683,12 +590,12 @@ class OptimizedFeatureSelectionManager:
                     ])
                 )
                 if has_liquidity_base or has_derivative_with_anchor:
-                    categories["liquidity"].append(feature)
+                categories["liquidity"].append(feature)
                     categorized = True
 
             # Microstructure features (including multi-timeframe and derivative forms)
             if not categorized:
-                microstructure_base_tokens = [
+microstructure_base_tokens = [
                     "microstructure", "order_flow", "orderflow", "ofi", "imbalance",
                     "quote_imbalance", "depth", "orderbook", "book", "microprice",
                     "trade_count", "trade_frequency", "order_", "flow_", "imbalance_",
@@ -705,12 +612,12 @@ class OptimizedFeatureSelectionManager:
                     ])
                 )
                 if has_microstructure_base or has_derivative_with_anchor:
-                    categories["microstructure"].append(feature)
+                categories["microstructure"].append(feature)
                     categorized = True
 
             # Regime features (including multi-timeframe and derivative forms)
             if not categorized:
-                regime_base_tokens = [
+regime_base_tokens = [
                     "regime", "cluster", "state", "composite", "hmm", "regime_",
                     "cluster_", "state_", "hmm_", "composite_",
                 ]
@@ -726,12 +633,12 @@ class OptimizedFeatureSelectionManager:
                     ])
                 )
                 if has_regime_base or has_derivative_with_anchor:
-                    categories["regime"].append(feature)
+                categories["regime"].append(feature)
                     categorized = True
 
             # Support/Resistance features (including multi-timeframe and derivative forms)
             if not categorized:
-                sr_base_tokens = [
+sr_base_tokens = [
                     "sr_distance", "support_level", "resistance_level", "proximity",
                     "multi_timeframe_sr_score", "sr_proximity", "sr_outcome",
                     "normalized_distance", "sr_proximity_score", "strength_score",
@@ -750,37 +657,16 @@ class OptimizedFeatureSelectionManager:
                     ])
                 )
                 if has_sr_base or has_derivative_with_anchor:
-                    categories["sr_features"].append(feature)
+                categories["sr_features"].append(feature)
                     categorized = True
 
 
 
             if not categorized:
-                categories["other"].append(feature)
+categories["other"].append(feature)
 
         return categories
 
-    def save_selection_metadata(self, metadata: Dict[str, Any], symbol: str, exchange: str, data_dir: str) -> None:
-        """Save feature selection metadata."""
-        try:
-            metadata_file = f"{data_dir}/{exchange}_{symbol}_optimized_feature_selection_metadata.json"
-            with open(metadata_file, "w") as f:
-                json.dump(metadata, f, indent=2)
-            self.logger.info(f"💾 Optimized feature selection metadata saved: {metadata_file}")
-        except Exception as e:
-            self.logger.warning(f"⚠️ Failed to save feature selection metadata: {e}")
-
-    def apply_vectorized_operations(self, features_df: pd.DataFrame) -> pd.DataFrame:
-        """Apply vectorized operations for efficient feature processing.
-
-        Args:
-            features_df: Input features DataFrame
-
-        Returns:
-            Processed features DataFrame with vectorized operations
-
-        """
-        try:
             start_time = time.time()
             self.logger.info("🔄 Applying vectorized operations for feature processing...")
 
@@ -791,9 +677,6 @@ class OptimizedFeatureSelectionManager:
             # 1. Rolling statistics (vectorized)
             numeric_cols = processed_df.select_dtypes(include=[np.number]).columns
             for col in numeric_cols:
-                # Rolling mean and std (vectorized)
-                processed_df[f"{col}_rolling_mean_5"] = processed_df[col].rolling(window = 5, min_periods = 1).mean()
-                processed_df[f"{col}_rolling_std_5"] = processed_df[col].rolling(window = 5, min_periods = 1).std()
 
                 # Rolling mean and std (vectorized)
                 processed_df[f"{col}_rolling_mean_10"] = processed_df[col].rolling(window = 10, min_periods = 1).mean()
@@ -801,33 +684,30 @@ class OptimizedFeatureSelectionManager:
 
             # 2. Lag features (vectorized)
             for col in numeric_cols:
-                processed_df[f"{col}_lag_1"] = processed_df[col].shift(1)
+processed_df[f"{col}_lag_1"] = processed_df[col].shift(1)
                 processed_df[f"{col}_lag_5"] = processed_df[col].shift(5)
 
             # 3. Difference features (vectorized)
             for col in numeric_cols:
-                processed_df[f"{col}_diff_1"] = processed_df[col].diff(1)
+processed_df[f"{col}_diff_1"] = processed_df[col].diff(1)
                 processed_df[f"{col}_diff_5"] = processed_df[col].diff(5)
 
             # 4. Z-score normalization (vectorized)
             for col in numeric_cols: mean_val = processed_df[col].mean()
                 std_val = processed_df[col].std()
                 if std_val > 0:
-                    processed_df[f"{col}_zscore"] = (processed_df[col] - mean_val) / std_val
+processed_df[f"{col}_zscore"] = (processed_df[col] - mean_val) / std_val
 
             # 5. Percentile ranks (vectorized)
             for col in numeric_cols:
-                processed_df[f"{col}_percentile_rank"] = processed_df[col].rank(pct=True)
 
             # 6. Interaction features (vectorized)
             if len(numeric_cols) >= 2:
-                # Create interaction features between top correlated features
+# Create interaction features between top correlated features
                 corr_matrix = processed_df[numeric_cols].corr().abs()
                 high_corr_pairs = []
 
                 for i in range(len(numeric_cols)):
-                    for j in range(i+1, len(numeric_cols)):
-                        if corr_matrix.iloc[i, j] > 0.7:  # High correlation threshold
                             high_corr_pairs.append((numeric_cols[i], numeric_cols[j]))
 
                 # Create interaction features for highly correlated pairs
@@ -847,20 +727,6 @@ class OptimizedFeatureSelectionManager:
             return processed_df
 
         except Exception as e:
-            self.logger.exception(f"❌ Vectorized operations failed: {e}")
-            return features_df
-
-    def apply_matrix_operations(self, features_df: pd.DataFrame) -> pd.DataFrame:
-        """Apply efficient matrix operations for feature processing.
-
-        Args:
-            features_df: Input features DataFrame
-
-        Returns:
-            Processed features DataFrame with matrix operations
-
-        """
-        try:
             start_time = time.time()
             self.logger.info("🔄 Applying matrix operations for feature processing...")
 
@@ -917,9 +783,6 @@ class OptimizedFeatureSelectionManager:
 
             # 4. Matrix-based feature scaling
             if len(numeric_cols) > 0:
-                # Min-max scaling
-                X_min = np.min(X, axis=0)
-                X_max = np.max(X, axis=0)
                 X_scaled = (X - X_min) / (X_max - X_min + 1e-8)
 
                 # Create scaled features
@@ -938,5 +801,4 @@ class OptimizedFeatureSelectionManager:
             return result_df
 
         except Exception as e:
-            self.logger.exception(f"❌ Matrix operations failed: {e}")
             return features_df

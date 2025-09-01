@@ -40,14 +40,14 @@ pandas, PipelineStandards.safe_import("pandas", None)
 numpy = PipelineStandards.safe_import("numpy", None)
 
 # Fallback functions if imports fail
-def create_fallback_logger():
-    import logging
-    logging.basicConfig(level=logging.INFO)
+def create_fallback_logger(...):
+                import logging
+    logging.basicConfig(level = logging.INFO)
     return logging.getLogger(__name__)
 
-def create_fallback_decorator():
-    def decorator(func):
-        return func
+def create_fallback_decorator(...):
+def decorator(...):
+                return func
     return decorator
 
 # Initialize fallbacks
@@ -63,7 +63,7 @@ if centralized_decorators is None: comprehensive_data_validation, create_fallbac
     quality_gate, create_fallback_decorator()
     monitor_feature_engineering, create_fallback_decorator()
 else:
-    comprehensive_data_validation = centralized_decorators.comprehensive_data_validation
+comprehensive_data_validation, centralized_decorators.comprehensive_data_validation
     handle_errors = centralized_decorators.handle_errors
     memory_efficient = centralized_decorators.memory_efficient
     resource_monitor = centralized_decorators.resource_monitor
@@ -89,7 +89,7 @@ else: with_enhanced_mlflow_logging = enhanced_mlflow.with_enhanced_mlflow_loggin
 logger = system_logger.getChild("Step4RegimeDataSplitting")
 
 class RegimeDataSplittingStep:
-    """Step 4: Regime Data Splitting with standardized data quality management."""
+"""Step 4: Regime Data Splitting with standardized data quality management."""
 
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
@@ -101,20 +101,20 @@ class RegimeDataSplittingStep:
         # Validate environment on initialization
         self._validate_environment()
 
-    def _validate_environment(self) -> None:
-        """Validate environment dependencies."""
-        self.logger.info("🔍 Validating environment dependencies...")
+    def _validate_environment(...) -> ...:
+    """..."""
+                self.logger.info("🔍 Validating environment dependencies...")
 
         missing_modules, [module for module, available in dependency_status.items() if not available]
         if missing_modules:
-    self.logger.warning(f"⚠️ Missing optional modules: {missing_modules}")
+self.logger.warning(f"⚠️ Missing optional modules: {missing_modules}")
         self.logger.info("📝 Pipeline will continue with fallback implementations")
         else:
-        self.logger.info("✅ All required dependencies available")
+                self.logger.info("✅ All required dependencies available")
 
-    async def initialize(self) -> None:
-        """Initialize the regime data splitting step."""
-        self.start_time, time.time()
+    async def initialize(...) -> ...:
+    """..."""
+self.start_time = time.time()
         self.logger.info("🚀 Initializing Regime Data Splitting Step...")
         self.logger.info("📋 Step 4 Configuration:")
         self.logger.info(f"   - Unified dataset approach: Enabled")
@@ -122,10 +122,10 @@ class RegimeDataSplittingStep:
         self.logger.info(f"   - Memory management: Optimized")
         self.logger.info("✅ Regime Data Splitting Step initialized successfully")
 
-    def _log_step_timing(self, step_name: str, start_time: float) -> None:
-        """Log timing information for a step."""
-        elapsed = time.time() - start_time
-        self.step_timings[step_name], elapsed
+    def _log_step_timing(...) -> ...:
+    """..."""
+elapsed = time.time() - start_time
+        self.step_timings[step_name] = elapsed
         self.logger.info(f"⏱️ {step_name} completed in {elapsed:.2f} seconds")
 
     @with_tracing_span("split_data_by_regimes")
@@ -134,25 +134,21 @@ class RegimeDataSplittingStep:
     )
     @comprehensive_data_validation
     @memory_efficient
-    async def split_data_by_regimes(
-        self,
-        symbol: str, exchange: str, timeframe: str,
-        data_dir: str
-    ) -> bool:
-        """Create unified dataset with regime labels for regime - aware processing."""
-        step_start, time.time()
+    async def split_data_by_regimes(...) -> ...:
+    """..."""
+step_start = time.time()
         self.logger.info(f"🔀 Creating unified dataset with regime labels for {symbol} on {exchange} ({timeframe})")
 
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
         # Load HMM regime data
             regime_data = await self._load_regime_data(symbol, exchange, timeframe, data_dir)
         if regime_data is None:
-        return False
+                return False
 
         # Get unique regime IDs
             regime_ids, regime_data['composite_cluster_id'].unique()
@@ -162,11 +158,11 @@ class RegimeDataSplittingStep:
 
         # Validate regime count
         if num_regimes < 3:
-        self.logger.error(f"❌ Too few regimes: {num_regimes} (minimum 3 required)")
+                self.logger.error(f"❌ Too few regimes: {num_regimes} (minimum 3 required)")
         return False
 
         if num_regimes > 20:
-        self.logger.warning(f"⚠️ Many regimes detected: {num_regimes} (maximum 20 supported)")
+                self.logger.warning(f"⚠️ Many regimes detected: {num_regimes} (maximum 20 supported)")
         # Continue but with memory optimization
 
         # Create unified dataset with regime labels
@@ -175,7 +171,7 @@ class RegimeDataSplittingStep:
             )
 
         if success:
-    self._log_step_timing("Regime Data Splitting", step_start)
+                self._log_step_timing("Regime Data Splitting", step_start)
         self.logger.info(f"✅ Successfully created unified dataset with {num_regimes} regime labels")
 
         # Save regime metadata
@@ -183,47 +179,43 @@ class RegimeDataSplittingStep:
 
         return True
             else:
-        self.logger.error("❌ Failed to create unified regime dataset")
+                self.logger.error("❌ Failed to create unified regime dataset")
         return False
 
         except Exception as e:
-    self.logger.exception(f"❌ Error in regime data splitting: {e}")
+                            self.logger.exception(f"❌ Error in regime data splitting: {e}")
         return False
 
-    async def _load_regime_data(
-        self, symbol: str,
-        exchange: str, timeframe: str, data_dir: str
-    ) -> Optional[pd.DataFrame]:
-        """Load HMM regime data with standardized validation."""
-        try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+    async def _load_regime_data(...) -> ...:
+    """..."""
+try:
+# TODO: Implement based on requirements proper exception handling
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
         # Use standardized path construction
             unified_data_path, Path(self.standards.build_path("unified_data", exchange, symbol)) / timeframe
         if not unified_data_path.exists():
-        self.logger.error(f"❌ Unified data path not found: {unified_data_path}")
+                self.logger.error(f"❌ Unified data path not found: {unified_data_path}")
         return None
 
         # Load regime clusters using standardized naming
             regime_file, Path(data_dir) / "hmm_regimes" / f"{exchange}_{symbol}_{timeframe}_composite_clusters.parquet"
         if not regime_file.exists():
-        self.logger.error(f"❌ Regime file not found: {regime_file}")
+                self.logger.error(f"❌ Regime file not found: {regime_file}")
         return None
 
         # Load data
             unified_files, list(unified_data_path.glob("**/*.parquet"))
         if not unified_files:
-        self.logger.error(f"❌ No unified data files found in {unified_data_path}")
+                self.logger.error(f"❌ No unified data files found in {unified_data_path}")
         return None
 
         # Load and concatenate unified data
             unified_data, []
         for file_path in sorted(unified_files):
-                df, pd.read_parquet(file_path)
-
+df = pd.read_parquet(file_path)
         # Standardize timestamps and validate schema
                 df = self.standards.standardize_timestamp(df, "timestamp")
                 df, self.standards.enforce_schema(df, "unified")
@@ -248,20 +240,17 @@ class RegimeDataSplittingStep:
         return merged_data
 
         except Exception as e:
-    self.logger.exception(f"❌ Error loading regime data: {e}")
+                            self.logger.exception(f"❌ Error loading regime data: {e}")
         return None
 
-    async def _create_unified_regime_dataset(
-        self, data: pd.DataFrame, regime_ids: List[int],
-        symbol: str, exchange: str, timeframe: str, data_dir: str
-    ) -> bool:
-        """Create unified dataset with regime labels."""
-        try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+    async def _create_unified_regime_dataset(...) -> ...:
+    """..."""
+try:
+# TODO: Implement based on requirements proper exception handling
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
         # Ensure data is sorted by timestamp for proper lookback
             data, data.sort_values('timestamp').reset_index(drop, True)
 
@@ -281,9 +270,8 @@ class RegimeDataSplittingStep:
         # Save regime statistics
             stats_file = training_dir / f"{exchange}_{symbol}_{timeframe}_regime_statistics.json"
             import json
-        with open(stats_file, 'w') as f:
-                json.dump(regime_stats, f = indent = 2)
-
+        with open(stats_file = 'w') as f:
+json.dump(regime_stats, f = indent = 2)
         self.logger.info(f"✅ Saved regime statistics: {stats_file}")
 
         # Create regime labels mapping for easy access
@@ -298,26 +286,23 @@ class RegimeDataSplittingStep:
 
             labels_file, training_dir / f"{exchange}_{symbol}_{timeframe}_regime_labels.json"
         with open(labels_file, 'w') as f:
-                json.dump(regime_labels = f, indent = 2)
-
+json.dump(regime_labels = f = indent = 2)
         self.logger.info(f"✅ Saved regime labels mapping: {labels_file}")
 
         return True
 
         except Exception as e:
-    self.logger.exception(f"❌ Error creating unified regime dataset: {e}")
+                            self.logger.exception(f"❌ Error creating unified regime dataset: {e}")
         return False
 
-    def _calculate_regime_statistics(
-        self, data: pd.DataFrame, regime_ids: List[int]
-    ) -> Dict[str, Any]:
-        """Calculate statistics for each regime."""
-        try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+    def _calculate_regime_statistics(...) -> ...:
+    """..."""
+try:
+# TODO: Implement based on requirements proper exception handling
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
             stats, {
                 "total_regimes": len(regime_ids),
                 "total_data_points": len(data),
@@ -329,10 +314,10 @@ class RegimeDataSplittingStep:
                     },
                     "price_stats": {
                         "mean": float(data['close'].mean()) if 'close' in data.columns else:
-    None, "std": float(data['close'].std()) if 'close' in data.columns else:
-    None, "min": float(data['close'].min()) if 'close' in data.columns else:
-    None, "max": float(data['close'].max()) if 'close' in data.columns else:
-    None
+                None = "std": float(data['close'].std()) if 'close' in data.columns else:
+                None = "min": float(data['close'].min()) if 'close' in data.columns else:
+                None = "max": float(data['close'].max()) if 'close' in data.columns else:
+                None
                     }
                 }
             }
@@ -341,8 +326,8 @@ class RegimeDataSplittingStep:
         for regime_id in regime_ids: regime_data, data[data['composite_cluster_id'] == regime_id]
 
         if len(regime_data) > 0:
-    regime_stats, {
-                        "data_points": len(regime_data), "percentage": len(regime_data) / len(data) * 100, "date_range": {
+regime_stats = {
+                        "data_points": len(regime_data) = "percentage": len(regime_data) / len(data) * 100 = "date_range": {
                             "start": regime_data['timestamp'].min().isoformat(),
                             "end": regime_data['timestamp'].max().isoformat()
                         }
@@ -350,7 +335,7 @@ class RegimeDataSplittingStep:
 
         # Add price statistics if available
         if 'close' in regime_data.columns:
-                        regime_stats["price_stats"], {
+regime_stats["price_stats"] = {
                             "mean": float(regime_data['close'].mean()),
                             "std": float(regime_data['close'].std()),
                             "min": float(regime_data['close'].min()),
@@ -362,17 +347,17 @@ class RegimeDataSplittingStep:
         return stats
 
         except Exception as e:
-    self.logger.exception(f"❌ Error calculating regime statistics: {e}")
+                            self.logger.exception(f"❌ Error calculating regime statistics: {e}")
         return {}
 
-    async def _save_regime_metadata(self, regime_ids: List[int], data_dir: str, symbol: str, exchange: str, timeframe: str) -> None:
-        """Save metadata about the unified regime dataset."""
-        try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+    async def _save_regime_metadata(...) -> ...:
+    """..."""
+try:
+# TODO: Implement based on requirements proper exception handling
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
             metadata, {
                 "approach": "unified_dataset_with_labels",
                 "total_regimes": len(regime_ids),
@@ -397,13 +382,12 @@ class RegimeDataSplittingStep:
 
             metadata_file = Path(data_dir) / "training" / f"{exchange}_{symbol}_{timeframe}_regime_metadata.json"
             import json
-        with open(metadata_file, 'w') as f:
+        with open(metadata_file = 'w') as f:
                 json.dump(metadata = f, indent = 2)
-
         self.logger.info(f"✅ Regime metadata saved: {metadata_file}")
 
         except Exception as e:
-    self.logger.exception(f"❌ Error saving regime metadata: {e}")
+                            self.logger.exception(f"❌ Error saving regime metadata: {e}")
 
 @with_tracing_span("execute_regime_data_splitting")
 @quality_gate(
@@ -416,34 +400,18 @@ class RegimeDataSplittingStep:
 @secure_data_processing
 @validate_data_structure
 @monitor_feature_engineering()
-async def run_step(
-    symbol: str,
-    exchange: str, timeframe: str, data_dir: str, None, force_rerun: bool, False,
-    config: dict[str, Any] = None = ) -> bool:
-    """Run Step 4: Regime Data Splitting with standardized data quality management.
-
-    Args:
-        symbol: Trading symbol
-        exchange: Exchange name
-        timeframe: Timeframe
-        data_dir: Data directory (will use standardized path if None)
-        force_rerun: Force rerun flag
-        config: Configuration dictionary
-
-    Returns:
-        bool: Success status
-    """
-    logger.info("🚀 Starting Step 4: Regime Data Splitting with Standardized Data Quality Management")
-
+async def run_step(...) -> ...:
+    """..."""
+                logger.info("🚀 Starting Step 4: Regime Data Splitting with Standardized Data Quality Management")
     # Use standardized path construction
     if data_dir is None: data_dir, pipeline_standards.build_path("processed_data", exchange, symbol)
 
     try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+# TODO: Implement based on requirements proper exception handling
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
         # Initialize step
         step = RegimeDataSplittingStep(config or {})
         await step.initialize()
@@ -452,20 +420,20 @@ async def run_step(
         success, await step.split_data_by_regimes(symbol, exchange, timeframe, data_dir)
 
         if success:
-    logger.info("✅ Step 4: Regime Data Splitting completed successfully")
+                logger.info("✅ Step 4: Regime Data Splitting completed successfully")
         else:
-            logger.error("❌ Step 4: Regime Data Splitting failed")
+                logger.error("❌ Step 4: Regime Data Splitting failed")
 
         return success
 
     except Exception as e:
-    logger.exception(f"❌ Error in Step 4: {e}")
+                logger.exception(f"❌ Error in Step 4: {e}")
         return False
 
 if __name__ == "__main__":
-    # Test the step
-    async def test():
-        test_config = {
+# Test the step
+    async def test(...):
+test_config = {
             "symbol": "ETHUSDT",
             "exchange": "BINANCE",
             "timeframe": "1m"

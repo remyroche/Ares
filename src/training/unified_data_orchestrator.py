@@ -2,8 +2,6 @@
 
 """Unified Data Orchestrator - Single Source of Truth for Data Operations.
 
-This module provides a centralized unified approach to all data operations including:
-- Data loading from various sources (cache, unified format, raw files): Intelligent source selection with fallback strategies
 - Data merging and consolidation: Efficient merging of multiple data sources with conflict resolution
 - Multi-timeframe resampling: Cached resampling operations for improved performance
 - Data quality validation and repair: Automated detection and correction of data quality issues
@@ -42,10 +40,10 @@ from src.utils.training_pipeline_decorators import (
 
 
 class UnifiedDataOrchestrator:
-    """Unified Data Orchestrator - Single source of truth for all data operations.
+                """Unified Data Orchestrator - Single source of truth for all data operations.
 
     This orchestrator provides a centralized interface for:
-    - Data loading with intelligent fallback strategies
+- Data loading with intelligent fallback strategies
     - Multi-timeframe resampling with caching
     - Data merging and consolidation
     - Quality validation and repair
@@ -103,17 +101,6 @@ class UnifiedDataOrchestrator:
         init_time = time.time() - start_time
         self.logger.info(f"UnifiedDataOrchestrator initialized in {init_time:.2f}s")
 
-        # Log initial memory usage
-        try:
-            process = psutil.Process()
-            memory_mb = process.memory_info().rss / 1024 / 1024
-            self.logger.info(f"Initial memory usage: {memory_mb:.2f} MB")
-        except Exception as e:
-            self.logger.warning(f"Could not get initial memory usage: {e}")
-
-    def _log_memory_usage(self, context: str) -> None:
-        """Log current memory usage with context."""
-        memory_mb = self._get_memory_usage_mb()
         self.stats["memory_usage_history"].append(
             {"timestamp": datetime.now(), "context": context, "memory_mb": memory_mb}
         )
@@ -137,27 +124,9 @@ class UnifiedDataOrchestrator:
     @secure_data_processing(
         format_validation=False)
     @quality_gate(
-        data_quality_metrics={}, validation_score_requirements={"initialization_success": 1.0},
-        exceptions=(Exception,), default_return=False,
-        validation_timeout=30.0, retry_on_failure=True)
-    async def initialize(self) -> bool:
-        """Initialize the orchestrator with proper error handling and resource monitoring."""
-        start_time = time.time()
-        
-        try:
-            self.logger.info("Initializing UnifiedDataOrchestrator...")
-            
-            # Initialize data loader
-            await self.data_loader.initialize()
-            
-            # Initialize data sharing manager
             await self.data_sharing_manager.initialize()
             
             # Start cache cleanup task
-            self._cache_cleanup_task = asyncio.create_task(
-                self._cache_cleanup_loop()
-            )
-            
             init_time = time.time() - start_time
             self.stats["operation_times"]["initialization"] = init_time
             self.logger.info(f"UnifiedDataOrchestrator initialized successfully in {init_time:.2f}s")
@@ -181,28 +150,6 @@ class UnifiedDataOrchestrator:
         log_intermediate_results=True,
         save_debug_artifacts=True, performance_profiling=True, error_context_preservation=True)
     @circuit_breaker_protection(
-        failure_threshold=5, recovery_timeout=30.0, expected_exception=Exception,
-        monitor_interval=5.0)
-    async def _handle_initialization_error(self, error: Exception) -> None:
-        """Handle initialization errors with proper cleanup and recovery."""
-        self.logger.error(f"Handling initialization error: {error}")
-        
-        try:
-            # Cleanup any partially initialized components
-            if hasattr(self, 'data_loader'):
-                await self.data_loader.cleanup()
-            
-            if hasattr(self, 'data_sharing_manager'):
-                await self.data_sharing_manager.cleanup()
-            
-            # Cancel cleanup task if it exists
-            if self._cache_cleanup_task and not self._cache_cleanup_task.done():
-                self._cache_cleanup_task.cancel()
-                try:
-                    await self._cache_cleanup_task
-                except asyncio.CancelledError:
-                    pass
-            
             # Clear caches
             self.resampling_cache.clear()
             self.stats.clear()
@@ -212,53 +159,6 @@ class UnifiedDataOrchestrator:
         except Exception as cleanup_error:
             self.logger.error(f"Error during cleanup after initialization failure: {cleanup_error}")
 
-    def _get_memory_usage_mb(self) -> float:
-        """Get current memory usage in MB."""
-        try:
-            process = psutil.Process()
-            return process.memory_info().rss / 1024 / 1024
-        except Exception as e:
-            self.logger.warning(f"Could not get memory usage: {e}")
-            return 0.0
-
-    async def _cache_cleanup_loop(self) -> None:
-        """Background task to clean up caches and manage memory."""
-        while True:
-            try:
-                await asyncio.sleep(300)  # Run every 5 minutes
-                
-                # Clean up resampling cache if it's too large
-                if len(self.resampling_cache) > self.resampling_cache_size:
-                    self._cleanup_resampling_cache()
-                
-                # Force garbage collection
-                if self.enable_memory_optimization:
-                    gc.collect()
-                    self.stats["memory_cleanups"] += 1
-                
-                # Log memory usage
-                self._log_memory_usage("cache_cleanup")
-                
-            except asyncio.CancelledError:
-                self.logger.info("Cache cleanup loop cancelled")
-                break
-            except Exception as e:
-                self.logger.error(f"Error in cache cleanup loop: {e}")
-                await asyncio.sleep(60)  # Wait before retrying
-
-    def _cleanup_resampling_cache(self) -> None:
-        """Clean up resampling cache by removing oldest entries."""
-        if len(self.resampling_cache) <= self.resampling_cache_size:
-            return
-        
-        # Remove oldest entries (simple FIFO approach)
-        items_to_remove = len(self.resampling_cache) - self.resampling_cache_size
-        keys_to_remove = list(self.resampling_cache.keys())[:items_to_remove]
-        
-        for key in keys_to_remove:
-            del self.resampling_cache[key]
-        
-        self.logger.info(f"Cleaned up {len(keys_to_remove)} items from resampling cache")
 
     @secure_data_processing(
         format_validation=True)
@@ -291,52 +191,6 @@ class UnifiedDataOrchestrator:
             return data
             
         except Exception as e:
-            self.logger.error(f"Error loading data from {source}: {e}")
-            return None
-
-    async def _validate_and_repair_data(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Validate and repair data quality issues."""
-        original_length = len(data)
-        
-        # Check for minimum data points
-        if len(data) < self.min_data_points:
-            self.logger.warning(f"Data has only {len(data)} points, minimum required: {self.min_data_points}")
-        
-        # Check for missing values
-        missing_ratio = data.isnull().sum().sum() / (len(data) * len(data.columns))
-        if missing_ratio > self.max_missing_ratio:
-            self.logger.warning(f"High missing value ratio: {missing_ratio:.3f}")
-            if self.enable_auto_repair:
-                data = self._repair_missing_values(data)
-        
-        # Check for duplicates
-        duplicate_ratio = data.duplicated().sum() / len(data)
-        if duplicate_ratio > self.max_duplicate_ratio:
-            self.logger.warning(f"High duplicate ratio: {duplicate_ratio:.3f}")
-            if self.enable_auto_repair:
-                data = data.drop_duplicates()
-        
-        # Update repair statistics
-        if len(data) != original_length:
-            self.stats["quality_repairs"] += 1
-        
-        return data
-
-    def _repair_missing_values(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Repair missing values using appropriate strategies."""
-        # For numeric columns, use forward fill then backward fill
-        numeric_columns = data.select_dtypes(include=['number']).columns
-        data[numeric_columns] = data[numeric_columns].fillna(method='ffill').fillna(method='bfill')
-        
-        # For categorical columns, use mode
-        categorical_columns = data.select_dtypes(include=['object']).columns
-        for col in categorical_columns:
-            if data[col].isnull().any():
-                mode_value = data[col].mode()
-                if not mode_value.empty:
-                    data[col] = data[col].fillna(mode_value.iloc[0])
-        
-        return data
 
     @memory_efficient(
         min_memory_gb=0.5, min_disk_gb=0.1, required_packages=["pandas"],
@@ -401,43 +255,3 @@ class UnifiedDataOrchestrator:
             self.logger.error(f"Error in resampling operation: {e}")
             return None
 
-    async def cleanup(self) -> None:
-        """Clean up resources and stop background tasks."""
-        try:
-            self.logger.info("Cleaning up UnifiedDataOrchestrator...")
-            
-            # Cancel cleanup task
-            if self._cache_cleanup_task and not self._cache_cleanup_task.done():
-                self._cache_cleanup_task.cancel()
-                try:
-                    await self._cache_cleanup_task
-                except asyncio.CancelledError:
-                    pass
-            
-            # Cleanup components
-            await self.data_loader.cleanup()
-            await self.data_sharing_manager.cleanup()
-            
-            # Clear caches
-            self.resampling_cache.clear()
-            
-            # Stop memory tracking
-            tracemalloc.stop()
-            
-            self.logger.info("UnifiedDataOrchestrator cleanup completed")
-            
-        except Exception as e:
-            self.logger.error(f"Error during cleanup: {e}")
-
-    def get_statistics(self) -> dict[str, Any]:
-        """Get current statistics and performance metrics."""
-        current_memory = self._get_memory_usage_mb()
-        
-        stats = self.stats.copy()
-        stats["current_memory_mb"] = current_memory
-        stats["cache_size"] = len(self.resampling_cache)
-        stats["cache_hit_ratio"] = (
-            stats["cache_hits"] / max(stats["total_requests"], 1)
-        )
-        
-        return stats

@@ -21,16 +21,14 @@ from .probabilistic_bayesian_optimizer import (
 
 # Import existing model components
 try:
-    from src.analyst.predictive_ensembles.ensemble_orchestrator import RegimePredictiveEnsembles
-    from src.tactician.enhanced_prediction_integrator import EnhancedPredictionIntegrator
 except ImportError:
-    # Fallback for testing
-    pass
+                # Fallback for testing
+
 
 
 @dataclass
 class ModelOptimizationTarget:
-    """Defines what aspects of a model to optimize."""
+"""Defines what aspects of a model to optimize."""
 
     model_type: str  # 'tactician' or 'analyst'
     model_name: str  # Specific model identifier
@@ -41,18 +39,16 @@ class ModelOptimizationTarget:
 
 
 class ProbabilisticModelIntegrator:
-    """
+"""
     Integrates probabilistic Bayesian optimization with existing Tactician and Analyst models.
 
     This class provides:
-    1. Seamless integration with existing model architectures
+                1. Seamless integration with existing model architectures
     2. Automated optimization workflows
     3. Model performance monitoring and retraining
     4. Uncertainty quantification enhancement
     """
 
-    def __init__(self, config: Dict[str, Any]):
-        self.config = config
         self.logger = logging.getLogger(__name__)
 
         # Initialize optimizers for different model types
@@ -63,10 +59,6 @@ class ProbabilisticModelIntegrator:
         self.optimization_history = {}
         self.model_performance = {}
 
-    def _initialize_model_targets(self) -> Dict[str, ModelOptimizationTarget]:
-        """Initialize optimization targets for different model types."""
-
-        return {
             "tactician": ModelOptimizationTarget(
                 model_type="tactician",
                 model_name="enhanced_prediction_integrator",
@@ -102,11 +94,6 @@ class ProbabilisticModelIntegrator:
             )
         }
 
-    def create_optimizer(self, model_type: str) -> ProbabilisticBayesianOptimizer:
-        """Create a probabilistic Bayesian optimizer for a specific model type."""
-
-        if model_type not in self.model_targets:
-            raise ValueError(f"Unknown model type: {model_type}")
 
         target = self.model_targets[model_type]
 
@@ -126,17 +113,10 @@ class ProbabilisticModelIntegrator:
         self.optimizers[model_type] = optimizer
         return optimizer
 
-    async def optimize_tactician_model(
-        self,
-        market_data: pd.DataFrame, historical_predictions: pd.DataFrame, optimization_config: Optional[Dict[str, Any]] = None
-    ) -> Dict[str, Any]:
-        """Optimize the Tactician model using probabilistic Bayesian optimization."""
-
-        self.logger.info("🚀 Starting Tactician model optimization...")
 
         # Create optimizer if not exists
         if "tactician" not in self.optimizers:
-            self.create_optimizer("tactician")
+self.create_optimizer("tactician")
 
         optimizer = self.optimizers["tactician"]
 
@@ -160,17 +140,10 @@ class ProbabilisticModelIntegrator:
         self.logger.info("✅ Tactician model optimization completed!")
         return results
 
-    async def optimize_analyst_model(
-        self, market_data: pd.DataFrame, historical_predictions: pd.DataFrame,
-        optimization_config: Optional[Dict[str, Any]] = None
-    ) -> Dict[str, Any]:
-        """Optimize the Analyst model using probabilistic Bayesian optimization."""
-
-        self.logger.info("🚀 Starting Analyst model optimization...")
 
         # Create optimizer if not exists
         if "analyst" not in self.optimizers:
-            self.create_optimizer("analyst")
+self.create_optimizer("analyst")
 
         optimizer = self.optimizers["analyst"]
 
@@ -194,31 +167,25 @@ class ProbabilisticModelIntegrator:
         self.logger.info("✅ Analyst model optimization completed!")
         return results
 
-    def _prepare_tactician_optimization_data(
-        self, market_data: pd.DataFrame, historical_predictions: pd.DataFrame
-    ) -> Tuple[np.ndarray, np.ndarray]:
-        """Prepare data for Tactician model optimization."""
-
-        # Extract features from market data
         features = []
 
         # Price-based features
         if 'close' in market_data.columns:
-            features.append(market_data['close'].pct_change().fillna(0))
+features.append(market_data['close'].pct_change().fillna(0))
             features.append(market_data['close'].rolling(20).std().fillna(0))
 
         # Volume features
         if 'volume' in market_data.columns:
-            features.append(market_data['volume'].pct_change().fillna(0))
+features.append(market_data['volume'].pct_change().fillna(0))
             features.append(market_data['volume'].rolling(20).mean().fillna(0))
 
         # Technical indicators
         if 'high' in market_data.columns and 'low' in market_data.columns:
-            features.append((market_data['high'] - market_data['low']) / market_data['close'])
+features.append((market_data['high'] - market_data['low']) / market_data['close'])
 
         # Historical prediction accuracy
         if 'prediction_accuracy' in historical_predictions.columns:
-            features.append(historical_predictions['prediction_accuracy'].fillna(0.5))
+features.append(historical_predictions['prediction_accuracy'].fillna(0.5))
 
         # Combine features
         X = np.column_stack([f.values for f in features if len(f) > 0])
@@ -229,32 +196,25 @@ class ProbabilisticModelIntegrator:
 
         return X, y
 
-    def _prepare_analyst_optimization_data(
-        self,
-        market_data: pd.DataFrame, historical_predictions: pd.DataFrame
-    ) -> Tuple[np.ndarray, np.ndarray]:
-        """Prepare data for Analyst model optimization."""
-
-        # Extract features from market data
         features = []
 
         # Price-based features
         if 'close' in market_data.columns:
-            features.append(market_data['close'].pct_change().fillna(0))
+features.append(market_data['close'].pct_change().fillna(0))
             features.append(market_data['close'].rolling(50).std().fillna(0))
             features.append(market_data['close'].rolling(200).mean().fillna(0))
 
         # Volume features
         if 'volume' in market_data.columns:
-            features.append(market_data['volume'].rolling(50).mean().fillna(0))
+features.append(market_data['volume'].rolling(50).mean().fillna(0))
 
         # Historical prediction accuracy
         if 'prediction_accuracy' in historical_predictions.columns:
-            features.append(historical_predictions['prediction_accuracy'].fillna(0.5))
+features.append(historical_predictions['prediction_accuracy'].fillna(0.5))
 
         # Regime features
         if 'regime_prediction' in historical_predictions.columns:
-            features.append(historical_predictions['regime_prediction'].fillna(0.5))
+features.append(historical_predictions['regime_prediction'].fillna(0.5))
 
         # Combine features
         X = np.column_stack([f.values for f in features if len(f) > 0])
@@ -265,12 +225,9 @@ class ProbabilisticModelIntegrator:
 
         return X, y
 
-    def _create_tactician_model_factory(self):
-        """Create a factory function for Tactician models."""
+    def _create_tactician_model_factory(...):
+                """Create a factory function for Tactician models."""
 
-        def factory(params: Dict[str, Any]):
-            # This would integrate with your existing Tactician model
-            # For now, returning a placeholder
             from sklearn.ensemble import RandomForestClassifier
 
             model = RandomForestClassifier(
@@ -283,12 +240,9 @@ class ProbabilisticModelIntegrator:
 
         return factory
 
-    def _create_analyst_model_factory(self):
-        """Create a factory function for Analyst models."""
+    def _create_analyst_model_factory(...):
+                """Create a factory function for Analyst models."""
 
-        def factory(params: Dict[str, Any]):
-            # This would integrate with your existing Analyst model
-            # For now, returning a placeholder
             from sklearn.ensemble import RandomForestClassifier
 
             model = RandomForestClassifier(
@@ -301,10 +255,6 @@ class ProbabilisticModelIntegrator:
 
         return factory
 
-    async def _apply_tactician_optimization_results(self, results: Dict[str, Any]):
-        """Apply optimization results to the Tactician model."""
-
-        try:
             # Get best hyperparameters
             best_params = results.get("best_solutions", {}).get("calibration", {}).get("params", {})
 
@@ -330,12 +280,6 @@ class ProbabilisticModelIntegrator:
             self.logger.info("✅ Tactician optimization results applied successfully!")
 
         except Exception as e:
-            self.logger.error(f"Error applying Tactician optimization results: {e}")
-
-    async def _apply_analyst_optimization_results(self, results: Dict[str, Any]):
-        """Apply optimization results to the Analyst model."""
-
-        try:
             # Get best hyperparameters
             best_params = results.get("best_solutions", {}).get("calibration", {}).get("params", {})
 
@@ -357,14 +301,6 @@ class ProbabilisticModelIntegrator:
             self.logger.info("✅ Analyst optimization results applied successfully!")
 
         except Exception as e:
-            self.logger.error(f"Error applying Analyst optimization results: {e}")
-
-    async def run_comprehensive_optimization(
-        self, market_data: pd.DataFrame, historical_predictions: pd.DataFrame
-    ) -> Dict[str, Any]:
-        """Run comprehensive optimization for both Tactician and Analyst models."""
-
-        self.logger.info("🚀 Starting comprehensive model optimization...")
 
         results = {}
 
@@ -375,7 +311,6 @@ class ProbabilisticModelIntegrator:
             )
             results["tactician"] = tactician_results
         except Exception as e:
-            self.logger.error(f"Tactician optimization failed: {e}")
             results["tactician"] = {"error": str(e)}
 
         # Optimize Analyst
@@ -385,7 +320,6 @@ class ProbabilisticModelIntegrator:
             )
             results["analyst"] = analyst_results
         except Exception as e:
-            self.logger.error(f"Analyst optimization failed: {e}")
             results["analyst"] = {"error": str(e)}
 
         # Generate optimization summary
@@ -395,34 +329,26 @@ class ProbabilisticModelIntegrator:
         self.logger.info("✅ Comprehensive optimization completed!")
         return results
 
-    def _generate_optimization_summary(self, results: Dict[str, Any]) -> Dict[str, Any]:
-        """Generate a summary of optimization results."""
-
-        summary = {
             "total_models_optimized": 0,
             "successful_optimizations": 0, "failed_optimizations": 0, "best_parameters": {},
             "performance_improvements": {},
             "recommendations": []
         }
 
-        for model_type, result in results.items():
-            if model_type == "summary":
-                continue
 
             summary["total_models_optimized"] += 1
 
             if "error" in result:
-                summary["failed_optimizations"] += 1
+summary["failed_optimizations"] += 1
                 summary["recommendations"].append(
                     f"Investigate {model_type} optimization failure: {result['error']}"
                 )
             else:
-                summary["successful_optimizations"] += 1
+summary["successful_optimizations"] += 1
 
                 # Extract best parameters
                 best_solutions = result.get("best_solutions", {})
                 if best_solutions:
-                    summary["best_parameters"][model_type] = best_solutions
 
                 # Generate recommendations
                 if "calibration" in best_solutions:
@@ -434,18 +360,6 @@ class ProbabilisticModelIntegrator:
 
         return summary
 
-    def get_optimization_status(self) -> Dict[str, Any]:
-        """Get the current status of all optimizations."""
-
-        status = {
-            "optimizers_created": list(self.optimizers.keys()), "optimization_history": self.optimization_history,
-            "model_performance": self.model_performance, "recommendations": []
-        }
-
-        # Generate recommendations based on optimization history
-        for model_type, history in self.optimization_history.items():
-            if "best_solutions" in history:
-                best_solutions = history["best_solutions"]
 
                 # Check if calibration needs improvement
                 if "calibration" in best_solutions:
@@ -467,11 +381,11 @@ class ProbabilisticModelIntegrator:
 
         return status
 
-    def plot_optimization_results(self, model_type: str, save_path: Optional[str] = None):
-        """Plot optimization results for a specific model type."""
+    def plot_optimization_results(...):
+"""Plot optimization results for a specific model type."""
 
         if model_type not in self.optimizers:
-            self.logger.warning(f"No optimizer found for {model_type}")
+self.logger.warning(f"No optimizer found for {model_type}")
             return
 
         optimizer = self.optimizers[model_type]
@@ -479,8 +393,8 @@ class ProbabilisticModelIntegrator:
 
 
 # Example usage
-async def main():
-    """Example usage of the ProbabilisticModelIntegrator."""
+async def main(...):
+                """Example usage of the ProbabilisticModelIntegrator."""
 
     # Configuration
     config = {
@@ -517,5 +431,5 @@ async def main():
 
 
 if __name__ == "__main__":
-    # Run example
+# Run example
     asyncio.run(main())

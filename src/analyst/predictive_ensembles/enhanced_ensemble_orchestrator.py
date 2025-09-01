@@ -22,18 +22,29 @@ from src.config import CONFIG
 from src.utils.logger import system_logger
 
 
-class EnhancedRegimePredictiveEnsembles(RegimePredictiveEnsembles):
-    """
-Enhanced ensemble orchestrator that integrates multi-timeframe training.
+class EnhancedRegimePredictiveEnsembles(...):
 
-Each individual model (XGBoost, LSTM, etc.) becomes a multi-timeframe ensemble.
-"""
-
-def __init__(self, config: dict[str, Any]):
-    def __init__(self, config: dict[str, Any]):
-    def __init__(self, config: dict[str, Any]):
-    def __init__(self, config: dict[str, Any]):
-        super().__init__(config)
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="enhancedregimepredictiveensembles initialization",
+    )
+    async def initialize(self) -> bool:
+        """Initialize EnhancedRegimePredictiveEnsembles."""
+        try:
+            self.logger.info(f"🚀 Initializing {class_name}...")
+            self.is_initialized = True
+            self.logger.info(f"✅ {class_name} initialized successfully")
+            return True
+        except Exception as e:
+            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
+            return False
+    """..."""
+    passdef __init__(...):
+    passdef __init__(...):
+    passdef __init__(...):
+    passdef __init__(...):
+    passsuper().__init__(config)
 self.logger = system_logger.getChild("EnhancedRegimePredictiveEnsembles")
 
 # Multi-timeframe configuration
@@ -57,13 +68,8 @@ self.logger.info(f"📊 Active timeframes: {self.active_timeframes}")
 self.logger.info(f"🔧 Model types: {self.model_types}")
 self.logger.info(f"⚙️ Timeframe set: {self.timeframe_set}")
 
-def train_all_models(
-self,
-asset: str,
-prepared_data: dict[str, pd.DataFrame],  # Now accepts multi-timeframe data
-model_path_prefix: str | None = None,
-):
-        """
+def train_all_models(...):
+    pass"""
 Train all enhanced multi-timeframe ensemble models.
 
 Args:
@@ -94,7 +100,7 @@ training_stats = {
 
 # Train each regime ensemble with multi-timeframe models
 for regime_idx, regime_key in enumerate(self.regime_ensembles.keys(), 1):
-            self.logger.info(
+    passpassself.logger.info(
 f"🔄 [{regime_idx}/{len(self.regime_ensembles)}] Training enhanced ensemble for regime: {regime_key}",
 )
 
@@ -108,14 +114,14 @@ regime_stats = {
 
 # Train each model type for this regime
 for model_idx, model_type in enumerate(self.model_types, 1):
-                self.logger.info(
+    passself.logger.info(
 f"🔧 [{regime_idx}.{model_idx}] Training {model_type} for regime: {regime_key}",
 )
 
 try:
-    # Exception handling placeholder - implement specific error handling as needed
+    pass# Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
+    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
 # Create multi-timeframe ensemble for this model type
 ensemble = MultiTimeframeEnsemble(
 model_type=model_type,
@@ -128,7 +134,7 @@ ensemble.train(prepared_data)
 
 # Store the trained ensemble
 if regime_key not in self.enhanced_regime_ensembles:
-                        self.enhanced_regime_ensembles[regime_key] = {}
+    passpassself.enhanced_regime_ensembles[regime_key] = {}
 self.enhanced_regime_ensembles[regime_key][model_type] = ensemble
 
 regime_stats["successful_models"] += 1
@@ -137,7 +143,7 @@ f"✅ [{regime_idx}.{model_idx}] {model_type} trained successfully for regime: {
 )
 
 except Exception as e:
-                    regime_stats["failed_models"] += 1
+    passpasspasspasspasspasspassregime_stats["failed_models"] += 1
 self.logger.error(
 f"❌ [{regime_idx}.{model_idx}] Failed to train {model_type} for regime {regime_key}: {e}",
 )
@@ -172,104 +178,96 @@ self.logger.info(f"⏱️ Total time: {total_time:.2f} seconds")
 
 return training_stats
 
-def _initialize_enhanced_ensembles(self):
-    def _initialize_enhanced_ensembles(self):
-    def _initialize_enhanced_ensembles(self):
-    def _initialize_enhanced_ensembles(self):
-        """Initialize enhanced regime ensembles."""
+def _initialize_enhanced_ensembles(...):
+    passdef _initialize_enhanced_ensembles(...):
+    passdef _initialize_enhanced_ensembles(...):
+    passdef _initialize_enhanced_ensembles(...):
+    pass"""Initialize enhanced regime ensembles."""
 self.logger.info("🔧 Initializing enhanced regime ensembles...")
 self.enhanced_regime_ensembles = {}
 
-def predict(self, data: dict[str, pd.DataFrame]) -> dict[str, Any]:
-        """
-Make predictions using all enhanced ensembles.
-
-Args:
-            data: Multi-timeframe data for prediction
-
-Returns:
-            Dictionary with regime -> predictions mapping
-"""
-predictions = {}
+def predict(...) -> ...:
+    """..."""
+    passpredictions = {}
 
 for regime_key, regime_ensembles in self.enhanced_regime_ensembles.items():
-            regime_predictions = {}
+    passregime_predictions = {}
 
 for model_type, ensemble in regime_ensembles.items():
-                try:
-    # Exception handling placeholder - implement specific error handling as needed
+    passtry:
+    pass# Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
+    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
 prediction = ensemble.predict(data)
 regime_predictions[model_type] = prediction
 except Exception as e:
-                    self.logger.error(f"❌ Prediction failed for {model_type} in regime {regime_key}: {e}")
+    passpasspasspasspasspasspassself.logger.error(f"❌ Prediction failed for {model_type} in regime {regime_key}: {e}")
 regime_predictions[model_type] = None
 
 predictions[regime_key] = regime_predictions
 
 return predictions
 
-def save_models(self, base_path: str):
-    def save_models(self, base_path: str):
-    def save_models(self, base_path: str):
-    def save_models(self, base_path: str):
-        """Save all trained models."""
+def save_models(...):
+    passdef save_models(...):
+    passdef save_models(...):
+    passdef save_models(...):
+    pass"""Save all trained models."""
 self.logger.info(f"💾 Saving enhanced ensemble models to {base_path}")
 
 for regime_key, regime_ensembles in self.enhanced_regime_ensembles.items():
-            regime_path = os.path.join(base_path, f"regime_{regime_key}")
+    passregime_path = os.path.join(base_path, f"regime_{regime_key}")
 os.makedirs(regime_path, exist_ok=True)
 
 for model_type, ensemble in regime_ensembles.items():
-                try:
-    # Exception handling placeholder - implement specific error handling as needed
+    passtry:
+    pass# Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
+    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
 model_path = os.path.join(regime_path, f"{model_type}_ensemble.pkl")
 ensemble.save(model_path)
 self.logger.info(f"✅ Saved {model_type} ensemble for regime {regime_key}")
 except Exception as e:
-                    self.logger.error(f"❌ Failed to save {model_type} ensemble for regime {regime_key}: {e}")
+    passpasspasspasspasspasspasspassself.logger.error(f"❌ Failed to save {model_type} ensemble for regime {regime_key}: {e}")
 
-def load_models(self, base_path: str):
-    def load_models(self, base_path: str):
-    def load_models(self, base_path: str):
-    def load_models(self, base_path: str):
-        """Load all trained models."""
+def load_models(...):
+    passdef load_models(...):
+    passdef load_models(...):
+    passdef load_models(...):
+    pass"""Load all trained models."""
 self.logger.info(f"📂 Loading enhanced ensemble models from {base_path}")
 
 for regime_key in self.regime_ensembles.keys():
-            regime_path = os.path.join(base_path, f"regime_{regime_key}")
+    passregime_path = os.path.join(base_path, f"regime_{regime_key}")
 
 if regime_key not in self.enhanced_regime_ensembles:
-                self.enhanced_regime_ensembles[regime_key] = {}
+    passself.enhanced_regime_ensembles[regime_key] = {}
 
 for model_type in self.model_types:
-                try:
-    # Exception handling placeholder - implement specific error handling as needed
+    passtry:
+    pass# Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
+    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
 model_path = os.path.join(regime_path, f"{model_type}_ensemble.pkl")
 if os.path.exists(model_path):
-                        ensemble = MultiTimeframeEnsemble.load(model_path)
+    passensemble = MultiTimeframeEnsemble.load(model_path)
 self.enhanced_regime_ensembles[regime_key][model_type] = ensemble
 self.logger.info(f"✅ Loaded {model_type} ensemble for regime {regime_key}")
 else:
-                        self.logger.warning(f"⚠️ Model file not found: {model_path}")
+    passpassself.logger.warning(f"⚠️ Model file not found: {model_path}")
 except Exception as e:
-                    self.logger.error(f"❌ Failed to load {model_type} ensemble for regime {regime_key}: {e}")
+    passpasspasspasspasspasspassself.logger.error(f"❌ Failed to load {model_type} ensemble for regime {regime_key}: {e}")
 
-def get_ensemble_summary(self) -> dict[str, Any]:
-        """Get a summary of all ensembles."""
-summary = {
+def get_ensemble_summary(...) -> ...:
+    """..."""
+    passsummary = {
 "total_regimes": len(self.enhanced_regime_ensembles),
 "total_models": 0,
 "regime_details": {},
 }
 
 for regime_key, regime_ensembles in self.enhanced_regime_ensembles.items():
-            regime_summary = {
+    passregime_summary = {
 "model_count": len(regime_ensembles),
 "model_types": list(regime_ensembles.keys()),
 "is_trained": all(ensemble.is_trained for ensemble in regime_ensembles.values()),

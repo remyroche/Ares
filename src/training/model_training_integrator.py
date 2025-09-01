@@ -28,11 +28,8 @@ from src.utils.warning_symbols import (
 
 
 class ModelTrainingIntegrator:
-    """Model Training Integrator for enabling full functionality with trained models."""
+                """Model Training Integrator for enabling full functionality with trained models."""
 
-    def __init__(self, config: dict[str, Any]) -> None:
-        """Initialize Model Training Integrator."""
-        self.config = config
         self.logger = get_component_logger("ModelTrainingIntegrator")
 
         # Training configuration
@@ -91,11 +88,6 @@ class ModelTrainingIntegrator:
         # Ensure directories exist
         self._ensure_directories()
 
-    def _ensure_directories(self) -> None:
-        """Ensure required directories exist."""
-        try:
-            os.makedirs(self.models_path, exist_ok=True)
-            os.makedirs(self.training_data_path, exist_ok=True)
             self.logger.info("Directories ensured")
 
         except Exception as e:
@@ -104,12 +96,6 @@ class ModelTrainingIntegrator:
             self.print(error(error_msg))
 
     @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="model training integrator initialization")
-    async def initialize(self) -> bool:
-        """Initialize Model Training Integrator."""
-        try:
             self.logger.info("Initializing Model Training Integrator...")
 
             # Initialize data optimizer
@@ -127,9 +113,6 @@ class ModelTrainingIntegrator:
             self.print(initialization_error(error_msg))
             return False
 
-    async def _load_existing_models(self) -> None:
-        """Load existing trained models."""
-        try:
             self.trained_models = {}
 
             # Check for existing model files
@@ -142,14 +125,11 @@ class ModelTrainingIntegrator:
                 model_path = os.path.join(self.models_path, model_file)
 
                 try:
-                    with open(model_path, "rb") as f:
-                        model = pickle.load(f)
 
                     self.trained_models[model_name] = model
                     self.logger.info(f"Loaded existing model: {model_name}")
 
                 except Exception as e:
-                    error_msg = (
                         f"Error loading model {model_name} from {model_path}: {e}"
                     )
                     self.logger.exception(error_msg)
@@ -162,11 +142,6 @@ class ModelTrainingIntegrator:
             self.logger.exception(error_msg)
             self.print(error(error_msg))
 
-    async def generate_training_data(
-        self,
-        size: int = 10000) -> Tuple[pd.DataFrame, pd.Series]:
-        """Generate synthetic training data for model training."""
-        try:
             self.logger.info(f"Generating training data with {size} samples...")
 
             np.random.seed(self.random_state)
@@ -232,9 +207,6 @@ class ModelTrainingIntegrator:
             self.print(error(error_msg))
             return pd.DataFrame(), pd.Series()
 
-    async def train_models(self, X: pd.DataFrame, y: pd.Series) -> dict[str, Any]:
-        """Train multiple models and select the best one."""
-        try:
             self.logger.info("Starting model training...")
 
             # Optimize training data
@@ -263,8 +235,6 @@ class ModelTrainingIntegrator:
             training_times = {}
 
             # Train each model type
-            for model_name, model_config in self.model_configs.items():
-                try:
                     self.logger.info(f"Training {model_name}...")
 
                     start_time = datetime.now()
@@ -354,14 +324,6 @@ class ModelTrainingIntegrator:
             self.print(error(error_msg))
             return {}
 
-    async def _save_models(self, models: dict[str, Any]) -> None:
-        """Save trained models to disk."""
-        try:
-            for model_name, model in models.items():
-                model_path = os.path.join(self.models_path, f"{model_name}.pkl")
-
-                with open(model_path, "wb") as f:
-                    pickle.dump(model, f)
 
                 self.logger.info(f"Saved model: {model_name}")
 
@@ -370,9 +332,6 @@ class ModelTrainingIntegrator:
             self.logger.exception(error_msg)
             self.print(error(error_msg))
 
-    async def train_ml_confidence_predictor(self) -> bool:
-        """Train the ML Confidence Predictor with synthetic data."""
-        try:
             self.logger.info("Training ML Confidence Predictor...")
 
             # Generate training data
@@ -401,11 +360,6 @@ class ModelTrainingIntegrator:
             self.print(error(error_msg))
             return False
 
-    async def _update_ml_confidence_predictor(
-        self,
-        training_results: dict[str, Any]) -> None:
-        """Update ML Confidence Predictor with trained models."""
-        try:
             # Get the best model
             best_model_name = training_results["best_model"]
             trained_models = training_results["trained_models"]
@@ -413,16 +367,13 @@ class ModelTrainingIntegrator:
 
             # Create a simple model interface for ML Confidence Predictor
             class TrainedModelWrapper:
-                def __init__(self, model, model_name) -> None:
                     self.model = model
                     self.model_name = model_name
                     self.is_trained = True
 
-                def predict_proba(self, X):
-                    return self.model.predict_proba(X)
 
-                def predict(self, X):
-                    return self.model.predict(X)
+                def predict(...):
+                return self.model.predict(X)
 
             # Create wrapper for the best model
             model_wrapper = TrainedModelWrapper(best_model, best_model_name)
@@ -434,15 +385,11 @@ class ModelTrainingIntegrator:
             self.logger.info(f"Updated ML Confidence Predictor with {best_model_name}")
 
         except Exception as e:
-            error_msg = (
                 f"Error updating ML Confidence Predictor with training results: {e}"
             )
             self.logger.exception(error_msg)
             self.print(error(error_msg))
 
-    async def train_ensemble_models(self) -> dict[str, Any]:
-        """Train ensemble models for different timeframes."""
-        try:
             self.logger.info("Training ensemble models...")
 
             ensemble_models = {}
@@ -457,18 +404,13 @@ class ModelTrainingIntegrator:
                 X, y = await self.generate_training_data(10000)
 
                 if not X.empty and not y.empty:
-                    # Train models for this timeframe
-                    training_results = await self.train_models(X, y)
-
-                    if training_results:
-                        ensemble_models[timeframe] = training_results["trained_models"]
                         self.logger.info(f"✅ Ensemble model trained for {timeframe}")
                     else:
-                        self.logger.warning(
+self.logger.warning(
                             f"Failed to train ensemble model for {timeframe}",
                         )
                 else:
-                    self.print(failed("Failed to generate data for {timeframe}"))
+                self.print(failed("Failed to generate data for {timeframe}"))
 
             # Save ensemble models
             await self._save_ensemble_models(ensemble_models)
@@ -484,18 +426,6 @@ class ModelTrainingIntegrator:
             self.print(error(error_msg))
             return {}
 
-    async def _save_ensemble_models(self, ensemble_models: dict[str, Any]) -> None:
-        """Save ensemble models to disk."""
-        try:
-            for timeframe, models in ensemble_models.items():
-                timeframe_path = os.path.join(self.models_path, f"ensemble_{timeframe}")
-                os.makedirs(timeframe_path, exist_ok=True)
-
-                for model_name, model in models.items():
-                    model_path = os.path.join(timeframe_path, f"{model_name}.pkl")
-
-                    with open(model_path, "wb") as f:
-                        pickle.dump(model, f)
 
                 self.logger.info(f"Saved ensemble models for {timeframe}")
 
@@ -504,9 +434,6 @@ class ModelTrainingIntegrator:
             self.logger.exception(error_msg)
             self.print(error(error_msg))
 
-    async def load_trained_models(self) -> dict[str, Any]:
-        """Load all trained models from disk."""
-        try:
             self.logger.info("Loading trained models...")
 
             loaded_models = {}
@@ -521,14 +448,11 @@ class ModelTrainingIntegrator:
                 model_path = os.path.join(self.models_path, model_file)
 
                 try:
-                    with open(model_path, "rb") as f:
-                        model = pickle.load(f)
 
                     loaded_models[model_name] = model
                     self.logger.info(f"Loaded model: {model_name}")
 
                 except Exception as e:
-                    error_msg = (
                         f"Error loading model {model_name} from {model_path}: {e}"
                     )
                     self.logger.exception(error_msg)
@@ -553,18 +477,14 @@ class ModelTrainingIntegrator:
                     model_path = os.path.join(ensemble_path, model_file)
 
                     try:
-                        with open(model_path, "rb") as f:
-                            model = pickle.load(f)
 
                         ensemble_models[model_name] = model
 
                     except Exception as e:
-                        self.logger.exception(
                             f"Error loading ensemble model {model_name}: {e}",
                         )
 
                 if ensemble_models:
-                    loaded_models[f"ensemble_{timeframe}"] = ensemble_models
                     self.logger.info(f"Loaded ensemble models for {timeframe}")
 
             self.logger.info(f"✅ Loaded {len(loaded_models)} model groups")
@@ -576,9 +496,6 @@ class ModelTrainingIntegrator:
             self.print(error(error_msg))
             return {}
 
-    def get_training_stats(self) -> dict[str, Any]:
-        """Get training statistics."""
-        try:
             return {
                 "training_stats": self.training_stats, "models_available": list(self.trained_models.keys())
                 if hasattr(self, "trained_models")
@@ -591,7 +508,6 @@ class ModelTrainingIntegrator:
             }
 
         except Exception as e:
-            self.print(error("Error getting training stats: {e}"))
             return {"error": str(e)}
 
     @handle_errors(
@@ -599,17 +515,12 @@ class ModelTrainingIntegrator:
         default_return=None,
         context="model training integrator cleanup",
     )
-    async def stop(self) -> None:
-        """Stop Model Training Integrator."""
-        try:
             self.logger.info("Stopping Model Training Integrator...")
 
             # Save final training statistics
             stats = self.get_training_stats()
             stats_path = os.path.join(self.models_path, "training_stats.json")
 
-            with open(stats_path, "w") as f:
-                json.dump(stats, f, indent=2, default=str)
 
             self.logger.info("✅ Model Training Integrator stopped successfully")
 
@@ -623,11 +534,9 @@ class ModelTrainingIntegrator:
 model_training_integrator: Optional[ModelTrainingIntegrator] = None
 
 
-async def setup_model_training_integrator(
-    config: dict[str, Any],
-) -> ModelTrainingIntegrator:
-    """Setup global model training integrator."""
-    global model_training_integrator
+async def setup_model_training_integrator(...) -> ...:
+    """..."""
+global model_training_integrator
 
     if model_training_integrator is None:
         model_training_integrator = ModelTrainingIntegrator(config)
@@ -636,6 +545,3 @@ async def setup_model_training_integrator(
     return model_training_integrator
 
 
-def get_model_training_integrator() -> Optional[ModelTrainingIntegrator]:
-    """Get global model training integrator instance."""
-    return model_training_integrator

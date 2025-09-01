@@ -16,51 +16,24 @@ logger = logging.getLogger(__name__)
 
 
 class BaseProbabilityCalculator:
-    """Base class for probability calculations across different model types."""
 
-    def __init__(self):
-        self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
-
-    def validate_probability(self, prob: float, name: str) -> float:
-        """Validate that probability is between 0.0 and 1.0."""
-        if not 0.0 <= prob <= 1.0:
-            self.logger.warning(f"{name} probability {prob} out of range [0,1], clamping")
-            return np.clip(prob, 0.0, 1.0)
-        return prob
-
-    def calculate_confidence_from_proba(self, y_pred_proba: np.ndarray) -> float:
-        """Calculate confidence from prediction probabilities."""
-        if y_pred_proba.ndim == 1:
-            # Binary classification
-            return np.mean(np.maximum(y_pred_proba, 1 - y_pred_proba))
-        else:
-            # Multi-class classification
-            return np.mean(np.max(y_pred_proba, axis=1))
-
-
-class ClassificationProbabilityCalculator(BaseProbabilityCalculator):
-    """Probability calculator for classification models."""
-
-    def calculate_triple_barrier_probability(
-        self,
-        model, X_test: np.ndarray, market_data: pd.DataFrame,
-        profit_target: float = 0.02, stop_loss: float = 0.01, volatility_window: int = 20
-    ) -> float:
-        """
-        Calculate probability of reaching profit target without hitting stop-loss.
-
-        Args:
-            model: Trained classification model
-            X_test: Test features
-            market_data: Market data with OHLCV information
-            profit_target: Profit target percentage (default: 2%)
-            stop_loss: Stop loss percentage (default: 1%)
-            volatility_window: Window for volatility calculation
-
-        Returns:
-            float: Probability between 0.0 and 1.0
-        """
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="baseprobabilitycalculator initialization",
+    )
+    async def initialize(self) -> bool:
+        """Initialize BaseProbabilityCalculator."""
         try:
+            self.logger.info(f"🚀 Initializing {class_name}...")
+            self.is_initialized = True
+            self.logger.info(f"✅ {class_name} initialized successfully")
+            return True
+        except Exception as e:
+            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
+            return False
+                """Base class for probability calculations across different model types."""
+
             # Get model predictions and probabilities
             y_pred_proba = model.predict_proba(X_test)
             confidence = self.calculate_confidence_from_proba(y_pred_proba)
@@ -86,25 +59,6 @@ class ClassificationProbabilityCalculator(BaseProbabilityCalculator):
             return self.validate_probability(final_prob, "triple_barrier")
 
         except Exception as e:
-            self.logger.error(f"Error calculating triple barrier probability: {e}")
-            return 0.5  # Default fallback
-
-    def calculate_direction_probability(
-        self,
-        model, X_test: np.ndarray, y_test: np.ndarray
-    ) -> float:
-        """
-        Calculate probability of price moving in predicted direction.
-
-        Args:
-            model: Trained classification model
-            X_test: Test features
-            y_test: True labels
-
-        Returns:
-            float: Probability between 0.0 and 1.0
-        """
-        try:
             # Get predictions
             y_pred = model.predict(X_test)
             y_pred_proba = model.predict_proba(X_test)
@@ -120,26 +74,6 @@ class ClassificationProbabilityCalculator(BaseProbabilityCalculator):
             return self.validate_probability(direction_prob, "direction")
 
         except Exception as e:
-            self.logger.error(f"Error calculating direction probability: {e}")
-            return 0.5  # Default fallback
-
-    def calculate_magnitude_probability(
-        self, model,
-        X_test: np.ndarray, market_data: pd.DataFrame, threshold_factor: float = 0.8
-    ) -> float:
-        """
-        Calculate probability of price moving by expected magnitude.
-
-        Args:
-            model: Trained classification model
-            X_test: Test features
-            market_data: Market data
-            threshold_factor: Factor for magnitude threshold
-
-        Returns:
-            float: Probability between 0.0 and 1.0
-        """
-        try:
             # Get prediction probabilities
             y_pred_proba = model.predict_proba(X_test)
             confidence = self.calculate_confidence_from_proba(y_pred_proba)
@@ -158,26 +92,6 @@ class ClassificationProbabilityCalculator(BaseProbabilityCalculator):
             return self.validate_probability(magnitude_prob, "magnitude")
 
         except Exception as e:
-            self.logger.error(f"Error calculating magnitude probability: {e}")
-            return 0.5  # Default fallback
-
-    def calculate_barrier_avoidance_probability(
-        self, model, X_test: np.ndarray,
-        market_data: pd.DataFrame, adverse_threshold: float = 0.01
-    ) -> float:
-        """
-        Calculate probability of avoiding adverse price movements.
-
-        Args:
-            model: Trained classification model
-            X_test: Test features
-            market_data: Market data
-            adverse_threshold: Threshold for adverse movements
-
-        Returns:
-            float: Probability between 0.0 and 1.0
-        """
-        try:
             # Get prediction probabilities
             y_pred_proba = model.predict_proba(X_test)
             confidence = self.calculate_confidence_from_proba(y_pred_proba)
@@ -199,41 +113,14 @@ class ClassificationProbabilityCalculator(BaseProbabilityCalculator):
             return self.validate_probability(avoidance_prob, "barrier_avoidance")
 
         except Exception as e:
-            self.logger.error(f"Error calculating barrier avoidance probability: {e}")
-            return 0.5  # Default fallback
-
-
-class RegressionProbabilityCalculator(BaseProbabilityCalculator):
-    """Probability calculator for regression models."""
-
-    def calculate_triple_barrier_probability(
-        self, model, X_test: np.ndarray,
-        market_data: pd.DataFrame, profit_target: float = 0.02, stop_loss: float = 0.01
-    ) -> float:
-        """
-        Calculate probability of reaching profit target without hitting stop-loss.
-
-        Args:
-            model: Trained regression model
-            X_test: Test features
-            market_data: Market data
-            profit_target: Profit target percentage
-            stop_loss: Stop loss percentage
-
-        Returns:
-            float: Probability between 0.0 and 1.0
-        """
-        try:
             # Get predictions
             y_pred = model.predict(X_test)
 
             # Calculate prediction confidence based on variance
-            if hasattr(model, 'predict_proba'):
-                # Some regression models support predict_proba
                 y_pred_proba = model.predict_proba(X_test)
                 confidence = self.calculate_confidence_from_proba(y_pred_proba)
             else:
-                # Use prediction magnitude as confidence proxy
+# Use prediction magnitude as confidence proxy
                 pred_magnitude = np.abs(y_pred)
                 confidence = np.mean(np.minimum(pred_magnitude / 0.02, 1.0))
 
@@ -253,25 +140,6 @@ class RegressionProbabilityCalculator(BaseProbabilityCalculator):
             return self.validate_probability(final_prob, "triple_barrier")
 
         except Exception as e:
-            self.logger.error(f"Error calculating triple barrier probability: {e}")
-            return 0.5
-
-    def calculate_direction_probability(
-        self, model,
-        X_test: np.ndarray, y_test: np.ndarray
-    ) -> float:
-        """
-        Calculate probability of price moving in predicted direction.
-
-        Args:
-            model: Trained regression model
-            X_test: Test features
-            y_test: True values
-
-        Returns:
-            float: Probability between 0.0 and 1.0
-        """
-        try:
             # Get predictions
             y_pred = model.predict(X_test)
 
@@ -288,26 +156,6 @@ class RegressionProbabilityCalculator(BaseProbabilityCalculator):
             return self.validate_probability(direction_prob, "direction")
 
         except Exception as e:
-            self.logger.error(f"Error calculating direction probability: {e}")
-            return 0.5
-
-    def calculate_magnitude_probability(
-        self, model, X_test: np.ndarray,
-        market_data: pd.DataFrame, threshold_factor: float = 0.8
-    ) -> float:
-        """
-        Calculate probability of price moving by expected magnitude.
-
-        Args:
-            model: Trained regression model
-            X_test: Test features
-            market_data: Market data
-            threshold_factor: Factor for magnitude threshold
-
-        Returns:
-            float: Probability between 0.0 and 1.0
-        """
-        try:
             # Get predictions
             y_pred = model.predict(X_test)
             predicted_magnitude = np.abs(y_pred)
@@ -331,26 +179,6 @@ class RegressionProbabilityCalculator(BaseProbabilityCalculator):
             return self.validate_probability(magnitude_prob, "magnitude")
 
         except Exception as e:
-            self.logger.error(f"Error calculating magnitude probability: {e}")
-            return 0.5
-
-    def calculate_barrier_avoidance_probability(
-        self, model, X_test: np.ndarray,
-        market_data: pd.DataFrame, adverse_threshold: float = 0.01
-    ) -> float:
-        """
-        Calculate probability of avoiding adverse price movements.
-
-        Args:
-            model: Trained regression model
-            X_test: Test features
-            market_data: Market data
-            adverse_threshold: Threshold for adverse movements
-
-        Returns:
-            float: Probability between 0.0 and 1.0
-        """
-        try:
             # Get predictions
             y_pred = model.predict(X_test)
 
@@ -375,25 +203,9 @@ class RegressionProbabilityCalculator(BaseProbabilityCalculator):
             return self.validate_probability(avoidance_prob, "barrier_avoidance")
 
         except Exception as e:
-            self.logger.error(f"Error calculating barrier avoidance probability: {e}")
-            return 0.5
-
-
-def get_probability_calculator(model_type: str) -> Union[ClassificationProbabilityCalculator, RegressionProbabilityCalculator]:
-    """
-    Factory function to get appropriate probability calculator.
-
-    Args:
-        model_type: Type of model ('classification' or 'regression')
-
-    Returns:
-        Appropriate probability calculator instance
-    """
-    if model_type.lower() in ['classification', 'classifier', 'clf']:
-        return ClassificationProbabilityCalculator()
     elif model_type.lower() in ['regression', 'regressor', 'reg']:
-        return RegressionProbabilityCalculator()
+                return RegressionProbabilityCalculator()
     else:
-        # Default to classification
+# Default to classification
         logger.warning(f"Unknown model type '{model_type}', defaulting to classification")
         return ClassificationProbabilityCalculator()

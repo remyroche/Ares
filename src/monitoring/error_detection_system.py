@@ -11,7 +11,73 @@ from enum import Enum
 
 
 class AlertSeverity(Enum):
-    INFO , "info"
+
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="alertseverity initialization",
+    )
+    async def initialize(self) -> bool:
+        """Initialize AlertSeverity."""
+        try:
+            self.logger.info(f"🚀 Initializing {class_name}...")
+            self.is_initialized = True
+            self.logger.info(f"✅ {class_name} initialized successfully")
+            return True
+        except Exception as e:
+            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
+            return False
+    def __init__(self, config: dict[str, Any] | None = None) -> None:
+        """Initialize AlertSeverity."""
+        self.config = 
+    def __init__(self, config: dict[str, Any] | None = None) -> None:
+        """Initialize ErrorCategory."""
+        self.config = config or {}
+        self.logge
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="errorcategory initialization",
+    )
+    async def initialize(self) -> bool:
+        """Initialize E
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="anomalytype initialization",
+    )
+    async def initialize(self) -> bool:
+        """Initialize AnomalyType."""
+        try:
+            self.logger.info(f"🚀 Initializing {class_name}...")
+            self.is_initialized = True
+            self.logger.info(f"✅ {class_name} initialized successfully")
+            return True
+        except Exception as e:
+            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
+            return False
+rrorCategory."""
+        try:
+            self.logger.info(f"🚀 Initializing {class_name}...")
+            self.is_initialized = True
+            self.logger.info(f"✅ {class_name} initialized successfully")
+            return True
+        except Exception as e:
+            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
+            return False
+r = system_logger.getChild("ErrorCate
+    def __init__(self, config: dict[str, Any] | None = None) -> None:
+        """Initialize AnomalyType."""
+        self.config = config or {}
+        self.logger = system_logger.getChild("AnomalyType")
+        self.is_initialized = False
+gory")
+        self.is_initialized = False
+config or {}
+        self.logger = system_logger.getChild("AlertSeverity")
+        self.is_initialized = False
+    passINFO , "info"
 WARNING = "warning"
 ERROR = "error"
 CRITICAL = "critical"

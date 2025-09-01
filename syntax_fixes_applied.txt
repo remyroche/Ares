@@ -2,5 +2,10 @@
 Syntax Fix Report
 ================
 Files processed: 657
+<<<<<<< HEAD
+Files fixed: 99
+Total fixes applied: 4950
+=======
 Files fixed: 98
 Total fixes applied: 4851
+>>>>>>> origin/main

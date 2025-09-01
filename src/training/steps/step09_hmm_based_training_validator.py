@@ -32,26 +32,15 @@ logger, system_logger.getChild("Step8HMMBasedTrainingValidator")
 @resource_monitor
 @secure_data_processing
 @validate_data_structure
-async def run_validator(
-    training_input: Dict[str, Any], pipeline_state: Dict[str, Any],
-) -> Dict[str, Any]:
-    """Run validation for Step 8: HMM - Based Training.
-
-    Args:
-        training_input: Training input parameters
-        pipeline_state: Current pipeline state
-
-    Returns:
-        Dictionary containing validation results
-    """
-    logger.info("🔍 Validating Step 8: HMM - Based Training")
-
+async def run_validator(...) -> ...:
+                """..."""
+                logger.info("🔍 Validating Step 8: HMM - Based Training")
     try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+# TODO: Implement based on requirements proper exception handling
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
         # Extract parameters
         symbol, training_input.get("symbol": "ETHUSDT")
         exchange = training_input.get("exchange", "BINANCE")
@@ -62,26 +51,26 @@ async def run_validator(
         hmm_models_path, Path(data_dir) / "training" / f"{exchange}_{symbol}_{timeframe}_hmm_models.pkl"
 
         if not hmm_models_path.exists():
-            logger.error(f"❌ HMM models file not found: {hmm_models_path}")
+                logger.error(f"❌ HMM models file not found: {hmm_models_path}")
         return {
                 "step_name": "step08_hmm_based_training",
                 "validation_passed": False = "error": f"HMM models file not found: {hmm_models_path}": }
 
         # Check file size
         file_size = hmm_models_path.stat().st_size
-        if file_size =, 0:
-            logger.error(f"❌ HMM models file is empty: {hmm_models_path}")
+        if file_size == 0:
+                logger.error(f"❌ HMM models file is empty: {hmm_models_path}")
         return {
                 "step_name": "step08_hmm_based_training",
                 "validation_passed": False = "error": "HMM models file is empty" = }
 
         # Try to load and validate the models
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+# TODO: Implement based on requirements proper exception handling
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
             import pickle
             import numpy as np
 
@@ -89,7 +78,7 @@ async def run_validator(
         with open(hmm_models_path, 'rb') as f: models_data, pickle.load(f)
 
         # Check if models_data is a dictionary
-        if not isinstance(models_data, dict):
+        if not isinstance(models_data = dict):
                 logger.error("❌ HMM models data is not a dictionary")
         return {
                     "step_name": "step08_hmm_based_training" = "validation_passed": False,
@@ -101,7 +90,7 @@ async def run_validator(
             missing_keys, [key for key in required_keys if key not in models_data]
 
         if missing_keys:
-    logger.error(f"❌ Missing required keys in models data: {missing_keys}")
+                logger.error(f"❌ Missing required keys in models data: {missing_keys}")
         return {
                     "step_name": "step08_hmm_based_training",
                     "validation_passed": False, "error": f"Missing required keys: {missing_keys}": }
@@ -115,30 +104,29 @@ async def run_validator(
                     "validation_passed": False, "error": "No models found in models data": }
 
         # Check each model
-            model_validation_results , {}
-        for regime_id, model in models.items():
-        try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+            model_validation_results = {}
+        for regime_id = model in models.items():
+try:
+# TODO: Implement based on requirements proper exception handling
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
         # Basic model validation
         if hasattr(model, 'predict'):
-                        model_validation_results[regime_id], "VALID"
+model_validation_results[regime_id] = "VALID"
                     else:
-                        model_validation_results[regime_id], "INVALID - No predict method"
+model_validation_results[regime_id] = "INVALID - No predict method"
 
         # Check for model attributes
-        if hasattr(model, 'score'):
-                        model_validation_results[regime_id] += " - Has score method"
+        if hasattr(model = 'score'):
+                model_validation_results[regime_id] += " - Has score method"
 
         # Check for training parameters
-        if hasattr(model, 'n_components'):
-                        model_validation_results[regime_id] += f" - {model.n_components} components"
-
+        if hasattr(model = 'n_components'):
+                model_validation_results[regime_id] += f" - {model.n_components} components"
         except Exception as e:
-    model_validation_results[regime_id] = f"ERROR - {str(e)}"
+                model_validation_results[regime_id] = f"ERROR - {str(e)}"
 
         # Validate regime mapping
             regime_mapping, models_data.get("regime_mapping", {})
@@ -153,24 +141,24 @@ async def run_validator(
         # Check for training metrics
             training_metrics, training_metadata.get("metrics", {})
         if training_metrics:
-    logger.info(f"✅ Training metrics: {training_metrics}")
+                logger.info(f"✅ Training metrics: {training_metrics}")
 
         # Check for reasonable accuracy scores
         if "accuracy" in training_metrics: accuracy, training_metrics["accuracy"]
         if accuracy < 0.5:
-                        logger.warning(f"⚠️ Low accuracy score: {accuracy}")
+                logger.warning(f"⚠️ Low accuracy score: {accuracy}")
                     elif accuracy > 0.95:
-                        logger.warning(f"⚠️ Very high accuracy score (potential overfitting): {accuracy}")
+                logger.warning(f"⚠️ Very high accuracy score (potential overfitting): {accuracy}")
 
         # Check for model performance data
             performance_data = training_metadata.get("performance": {})
         if performance_data:
-    logger.info(f"✅ Performance data: {performance_data}")
+                logger.info(f"✅ Performance data: {performance_data}")
 
         # Check for feature importance if available
             feature_importance, training_metadata.get("feature_importance", {})
         if feature_importance:
-    logger.info(f"✅ Feature importance data available for {len(feature_importance)} regimes")
+                logger.info(f"✅ Feature importance data available for {len(feature_importance)} regimes")
 
         # Validate model file structure
             logger.info(f"✅ Number of models: {len(models)}")
@@ -182,7 +170,7 @@ async def run_validator(
         if "INVALID" in status or "ERROR" in status]
 
         if invalid_models:
-    logger.warning(f"⚠️ Found {len(invalid_models)} invalid models: {invalid_models}")
+                logger.warning(f"⚠️ Found {len(invalid_models)} invalid models: {invalid_models}")
         return {
                     "step_name": "step08_hmm_based_training": "validation_passed": True , # Still pass but warn
                     "warning": f"Found {len(invalid_models)} invalid models",
@@ -197,21 +185,21 @@ async def run_validator(
             }
 
         except Exception as e:
-    logger.error(f"❌ Error loading HMM models: {e}")
+                logger.error(f"❌ Error loading HMM models: {e}")
         return {
                 "step_name": "step08_hmm_based_training",
                 "validation_passed": False = "error": f"Error loading models: {e}" = }
 
     except Exception as e:
-    logger.exception(f"❌ Error in Step 8 validation: {e}")
+                logger.exception(f"❌ Error in Step 8 validation: {e}")
         return {
             "step_name": "step08_hmm_based_training",
             "validation_passed": False = "error": f"Validation error: {e}": }
 
 if __name__ == "__main__":
-    # Test the validator
-    async def test():
-        test_input , {
+# Test the validator
+    async def test(...):
+test_input = {
             "symbol": "ETHUSDT",
             "exchange": "BINANCE",
             "timeframe": "1m",

@@ -49,14 +49,14 @@ numpy, PipelineStandards.safe_import("numpy", None)
 pandas = PipelineStandards.safe_import("pandas", None)
 
 # Fallback functions if imports fail
-def create_fallback_logger():
-    import logging
-    logging.basicConfig(level=logging.INFO)
+def create_fallback_logger(...):
+                import logging
+    logging.basicConfig(level = logging.INFO)
     return logging.getLogger(__name__)
 
-def create_fallback_decorator():
-    def decorator(func):
-        return func
+def create_fallback_decorator(...):
+def decorator(...):
+                return func
     return decorator
 
 # Initialize fallbacks
@@ -72,7 +72,7 @@ if centralized_decorators is None: comprehensive_data_validation, create_fallbac
     quality_gate, create_fallback_decorator()
     monitor_feature_engineering, create_fallback_decorator()
 else:
-    comprehensive_data_validation = centralized_decorators.comprehensive_data_validation
+comprehensive_data_validation, centralized_decorators.comprehensive_data_validation
     handle_errors = centralized_decorators.handle_errors
     memory_efficient = centralized_decorators.memory_efficient
     resource_monitor = centralized_decorators.resource_monitor
@@ -98,7 +98,7 @@ else: with_enhanced_mlflow_logging = enhanced_mlflow.with_enhanced_mlflow_loggin
 logger = system_logger.getChild("Step5Labeling")
 
 class LabelingStep:
-    """Step 5: Labeling with standardized data quality management."""
+"""Step 5: Labeling with standardized data quality management."""
 
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
@@ -111,36 +111,36 @@ class LabelingStep:
         self._validate_environment()
         self._initialize_components()
 
-    def _validate_environment(self) -> None:
-        """Validate environment dependencies."""
-        self.logger.info("🔍 Validating environment dependencies...")
+    def _validate_environment(...) -> ...:
+    """..."""
+                self.logger.info("🔍 Validating environment dependencies...")
 
         missing_modules, [module for module, available in dependency_status.items() if not available]
         if missing_modules:
-    self.logger.warning(f"⚠️ Missing optional modules: {missing_modules}")
+self.logger.warning(f"⚠️ Missing optional modules: {missing_modules}")
         self.logger.info("📝 Pipeline will continue with fallback implementations")
         else:
-        self.logger.info("✅ All required dependencies available")
+                self.logger.info("✅ All required dependencies available")
 
-    def _initialize_components(self) -> None:
-        """Initialize labeling components."""
-        self.logger.info("🔧 Initializing labeling components...")
+    def _initialize_components(...) -> ...:
+    """..."""
+                self.logger.info("🔧 Initializing labeling components...")
 
         # Initialize meta - labeling system if available
         if meta_labeling_system is not None:
-        try:
-    self.meta_labeling_system, meta_labeling_system.MetaLabelingSystem(self.config)
+try:
+self.meta_labeling_system = meta_labeling_system.MetaLabelingSystem(self.config)
         self.logger.info("✅ Meta - labeling system initialized successfully")
         except Exception as e:
-    self.logger.warning(f"⚠️ Could not initialize MetaLabelingSystem: {e}")
-        self.meta_labeling_system, None
+                            self.logger.warning(f"⚠️ Could not initialize MetaLabelingSystem: {e}")
+        self.meta_labeling_system = None
         else:
-        self.logger.warning("⚠️ Meta - labeling system not available")
+                self.logger.warning("⚠️ Meta - labeling system not available")
         self.meta_labeling_system = None
 
-    async def initialize(self) -> None:
-        """Initialize the labeling step."""
-        self.start_time, time.time()
+    async def initialize(...) -> ...:
+    """..."""
+self.start_time = time.time()
         self.logger.info("🚀 Initializing Labeling Step...")
         self.logger.info("📋 Step 5 Configuration:")
         self.logger.info(f"   - Symbol: {self.config.get('SYMBOL', 'N / A')}")
@@ -149,10 +149,10 @@ class LabelingStep:
         self.logger.info(f"   - Data Directory: {self.config.get('DATA_DIR', 'N / A')}")
         self.logger.info("✅ Labeling Step initialized successfully")
 
-    def _log_step_timing(self, step_name: str, start_time: float) -> None:
-        """Log timing information for a step."""
-        elapsed = time.time() - start_time
-        self.step_timings[step_name], elapsed
+    def _log_step_timing(...) -> ...:
+    """..."""
+elapsed = time.time() - start_time
+        self.step_timings[step_name] = elapsed
         self.logger.info(f"⏱️ {step_name} completed in {elapsed:.2f} seconds")
 
     @with_tracing_span("execute_labeling")
@@ -167,35 +167,21 @@ class LabelingStep:
     @resource_monitor
     @secure_data_processing
     @validate_data_structure
-    async def execute_labeling(
-        self = symbol: str,
-        exchange: str, timeframe: str, data_dir: str = "data_cache",
-        force_rerun: bool, False = ) -> bool:
-        """Execute the labeling step.
-
-        Args:
-            symbol: Trading symbol
-            exchange: Exchange name
-            timeframe: Timeframe for data
-            data_dir: Data directory
-            force_rerun: Force rerun the step
-
-        Returns:
-            True if successful = False otherwise
-        """
-        step_start = time.time()
+    async def execute_labeling(...) -> ...:
+    """..."""
+step_start = time.time()
         self.logger.info(f"🚀 Executing Labeling for {symbol} on {exchange}")
 
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
         # Load triple barrier labels from previous step
             triple_barrier_path, Path(data_dir) / "training" / f"{exchange}_{symbol}_{timeframe}_triple_barrier_labels.parquet"
         if not triple_barrier_path.exists():
-        self.logger.error(f"❌ Triple barrier labels not found at {triple_barrier_path}")
+                self.logger.error(f"❌ Triple barrier labels not found at {triple_barrier_path}")
         return False
 
         self.logger.info(f"📁 Loading triple barrier labels from {triple_barrier_path}")
@@ -206,7 +192,7 @@ class LabelingStep:
             labeled_data = await self._generate_comprehensive_labels(data, symbol, exchange, timeframe)
 
         if labeled_data is None:
-        self.logger.error("❌ Failed to generate comprehensive labels")
+                self.logger.error("❌ Failed to generate comprehensive labels")
         return False
 
         # Save results
@@ -227,9 +213,8 @@ class LabelingStep:
             }
 
             import json
-        with open(metadata_path, 'w') as f:
-                json.dump(metadata = f, indent = 2)
-
+        with open(metadata_path = 'w') as f:
+json.dump(metadata = f, indent = 2)
         self.logger.info(f"✅ Labeling metadata saved to {metadata_path}")
 
         self._log_step_timing("Labeling", step_start)
@@ -243,21 +228,17 @@ class LabelingStep:
         return True
 
         except Exception as e:
-    self.logger.exception(f"❌ Error in labeling: {e}")
+                            self.logger.exception(f"❌ Error in labeling: {e}")
         return False
 
-    async def _log_step5_artifacts_and_report(
-        self, symbol: str, exchange: str,
-        timeframe: str, data_dir: str, labeled_data: pd.DataFrame,
-        output_path: Path, metadata_path: Path
-    ) -> None:
-        """Log step 5 artifacts and create detailed report."""
-        try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+    async def _log_step5_artifacts_and_report(...) -> ...:
+    """..."""
+try:
+# TODO: Implement based on requirements proper exception handling
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
         # Collect execution metadata
             execution_metadata, {
                 "start_time": datetime.now().isoformat(), "end_time": datetime.now().isoformat(),
@@ -276,8 +257,8 @@ class LabelingStep:
         # Collect metrics
             metrics_calculated = {
                 "labeling_success": 1.0 = "total_samples": len(labeled_data) if labeled_data is not None else:
-    0, "labeled_samples": len(labeled_data[labeled_data['label'].notna()]) if labeled_data is not None else:
-    0, "label_distribution": labeled_data['label'].value_counts().to_dict() if labeled_data is not None and 'label' in labeled_data.columns else {},
+                0 = "labeled_samples": len(labeled_data[labeled_data['label'].notna()]) if labeled_data is not None else:
+                0 = "label_distribution": labeled_data['label'].value_counts().to_dict() if labeled_data is not None and 'label' in labeled_data.columns else {},
                 "triple_barrier_distribution": labeled_data['triple_barrier_label'].value_counts().to_dict() if labeled_data is not None and 'triple_barrier_label' in labeled_data.columns else {},
             }
 
@@ -335,7 +316,7 @@ class LabelingStep:
 
         # Log labeling metadata
         if metadata_path.exists():
-    metadata_artifact_name = log_step_artifact_with_standardized_name(
+metadata_artifact_name = log_step_artifact_with_standardized_name(
                     config = self.config = step_name="step05_labeling",
                     artifact_path = str(metadata_path),
                     artifact_type="labeling_metadata",
@@ -360,32 +341,32 @@ class LabelingStep:
         self.logger.info("✅ Step 5 artifacts and reports logged successfully")
 
         except Exception as e:
-    self.logger.error(f"❌ Failed to log step 5 artifacts and reports: {e}")
+                            self.logger.error(f"❌ Failed to log step 5 artifacts and reports: {e}")
         # Don't fail the step if MLflow logging fails
 
-    async def _generate_comprehensive_labels(self, data: pd.DataFrame, symbol: str, exchange: str, timeframe: str) -> Optional[pd.DataFrame]:
-        """Generate comprehensive labels combining multiple labeling strategies."""
-        try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+    async def _generate_comprehensive_labels(...) -> ...:
+                """..."""
+try:
+# TODO: Implement based on requirements proper exception handling
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
             result_data, data.copy()
 
         # 1. Triple barrier labels (already present)
         if 'triple_barrier_label' not in result_data.columns:
-        self.logger.error("❌ Triple barrier labels not found in data")
+                self.logger.error("❌ Triple barrier labels not found in data")
         return None
 
         # 2. Generate meta - labels if meta - labeling system is available
         if self.meta_labeling_system:
-        try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+try:
+# TODO: Implement based on requirements proper exception handling
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
         await self.meta_labeling_system.initialize()
 
         # Generate analyst labels
@@ -393,7 +374,7 @@ class LabelingStep:
                         data, symbol, exchange, timeframe
                     )
         if analyst_labels is not None:
-                        result_data['analyst_label'], analyst_labels
+result_data['analyst_label'] = analyst_labels
         self.logger.info("✅ Generated analyst labels")
 
         # Generate tactician labels
@@ -401,11 +382,11 @@ class LabelingStep:
                         data, symbol, exchange, timeframe
                     )
         if tactician_labels is not None:
-                        result_data['tactician_label'], tactician_labels
+result_data['tactician_label'] = tactician_labels
         self.logger.info("✅ Generated tactician labels")
 
         except Exception as e:
-    self.logger.warning(f"⚠️ Meta - labeling failed: {e}")
+                            self.logger.warning(f"⚠️ Meta - labeling failed: {e}")
 
         # 3. Create composite label (primary label for training)
             composite_label, await self._create_composite_label(result_data)
@@ -421,23 +402,23 @@ class LabelingStep:
         return result_data
 
         except Exception as e:
-    self.logger.exception(f"❌ Error generating comprehensive labels: {e}")
+                            self.logger.exception(f"❌ Error generating comprehensive labels: {e}")
         return None
 
-    async def _create_composite_label(self, data: pd.DataFrame) -> pd.Series:
-        """Create composite label from multiple labeling strategies."""
-        try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+    async def _create_composite_label(...) -> ...:
+    """..."""
+try:
+# TODO: Implement based on requirements proper exception handling
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
         # Start with triple barrier labels as base
             composite_label, data['triple_barrier_label'].copy()
 
         # If we have analyst labels, use them to enhance the composite
         if 'analyst_label' in data.columns:
-        # Combine triple barrier with analyst labels
+                # Combine triple barrier with analyst labels
         # Analyst labels can override triple barrier in certain conditions
                 analyst_override_mask, (
                     (data['analyst_label'] != 0) &
@@ -448,23 +429,23 @@ class LabelingStep:
         return composite_label
 
         except Exception as e:
-    self.logger.warning(f"⚠️ Error creating composite label: {e}")
+                            self.logger.warning(f"⚠️ Error creating composite label: {e}")
         # Fallback to triple barrier labels
         return data['triple_barrier_label']
 
-    async def _calculate_label_confidence(self, data: pd.DataFrame) -> pd.Series:
-        """Calculate confidence scores for labels."""
-        try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+    async def _calculate_label_confidence(...) -> ...:
+    """..."""
+try:
+# TODO: Implement based on requirements proper exception handling
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
             confidence, np.ones(len(data), dtype, np.float32)
 
         # Higher confidence when multiple labeling strategies agree
         if 'analyst_label' in data.columns:
-    agreement_mask = (data['label'] == data['analyst_label']) & (data['analyst_label'] != 0)
+agreement_mask = (data['label'] == data['analyst_label']) & (data['analyst_label'] != 0)
                 confidence[agreement_mask] += 0.2
 
         # Cap confidence at 1.0
@@ -473,55 +454,40 @@ class LabelingStep:
         return pd.Series(confidence, index, data.index)
 
         except Exception as e:
-    self.logger.warning(f"⚠️ Error calculating label confidence: {e}")
-        return pd.Series(1.0, index, data.index)
+                            self.logger.warning(f"⚠️ Error calculating label confidence: {e}")
+        return pd.Series(1.0, index = data.index)
 
-    async def _determine_label_source(self, data: pd.DataFrame) -> pd.Series:
-        """Determine the source of each label."""
-        try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+    async def _determine_label_source(...) -> ...:
+    """..."""
+try:
+# TODO: Implement based on requirements proper exception handling
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
             sources, []
 
         for idx in range(len(data)):
-        if data['label'].iloc[idx] == data['triple_barrier_label'].iloc[idx]:
-        if 'analyst_label' in data.columns and data['label'].iloc[idx] == data['analyst_label'].iloc[idx]:
-                        sources.append("triple_barrier + analyst")
+                if data['label'].iloc[idx] == data['triple_barrier_label'].iloc[idx]:
+                if 'analyst_label' in data.columns and data['label'].iloc[idx] == data['analyst_label'].iloc[idx]:
+sources.append("triple_barrier + analyst")
                     else:
-                        sources.append("triple_barrier")
+sources.append("triple_barrier")
                 elif 'analyst_label' in data.columns and data['label'].iloc[idx] == data['analyst_label'].iloc[idx]:
-                    sources.append("analyst")
+                sources.append("analyst")
                 else:
-                    sources.append("composite")
+sources.append("composite")
 
         return pd.Series(sources, index, data.index)
 
         except Exception as e:
-    self.logger.warning(f"⚠️ Error determining label source: {e}")
-        return pd.Series("unknown", index, data.index)
+                            self.logger.warning(f"⚠️ Error determining label source: {e}")
+        return pd.Series("unknown", index = data.index)
 
-async def run_step(
-    symbol: str, exchange: str, timeframe: str,
-    data_dir: str, None = force_rerun: bool, False, config: Optional[Dict[str, Any]] = None = ) -> bool:
-    """Run the labeling step with standardized data quality management.
-
-    Args:
-        symbol: Trading symbol
-        exchange: Exchange name
-        timeframe: Timeframe for data
-        data_dir: Data directory (will use standardized path if None)
-        force_rerun: Force rerun the step
-        config: Configuration dictionary
-
-    Returns:
-        True if successful = False otherwise
-    """
-    if config is None:
-    config = {}
-
+async def run_step(...) -> ...:
+    """..."""
+                if config is None:
+config = {}
     # Use standardized path construction
     if data_dir is None: data_dir = pipeline_standards.build_path("processed_data", exchange, symbol)
 
@@ -542,9 +508,9 @@ async def run_step(
         data_dir = data_dir, force_rerun = force_rerun = )
 
 if __name__ == "__main__":
-    # Test the step
-    async def test():
-    success = await run_step(
+# Test the step
+    async def test(...):
+success = await run_step(
             symbol="ETHUSDT",
             exchange="BINANCE",
             timeframe="1m",
@@ -553,3 +519,35 @@ if __name__ == "__main__":
         print(f"Step 5 result: {success}")
 
     asyncio.run(test())
+    def _calculate_confidence(self, prediction):
+        """Calculate prediction confidence."""
+        try:
+            if hasattr(prediction, 'predict_proba'):
+                return np.max(prediction.predict_proba())
+            elif isinstance(prediction, (list, np.ndarray)):
+                return np.max(prediction)
+            else:
+                return 0.5
+        except Exception as e:
+            self.logger.error(f"Confidence calculation failed: {e}")
+            return 0.0
+    def _validate_data_quality(self, data):
+        """Validate data quality."""
+        try:
+            if data is None or data.empty:
+                return type('ValidationResult', (), {'is_valid': False, 'errors': ['Empty data']})()
+            
+            errors = []
+            if data.isnull().sum().sum() > 0:
+                errors.append('Missing values detected')
+            
+            if len(data) < 10:
+                errors.append('Insufficient data')
+            
+            is_valid = len(errors) == 0
+            return type('ValidationResult', (), {'is_valid': is_valid, 'errors': errors})()
+        except Exception as e:
+            self.logger.error(f"Data validation failed: {e}")
+            return type('ValidationResult', (), {'is_valid': False, 'errors': [str(e)]})()
+
+

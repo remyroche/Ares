@@ -13,13 +13,13 @@ import pandas as pd
 
 # Import SMOTE with fallback
 try:
-    # Exception handling placeholder - implement specific error handling as needed
+    passpass# Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
+    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
 from imblearn.over_sampling import SMOTE
 SMOTE_AVAILABLE = True
 except ImportError:
-    SMOTE_AVAILABLE = False
+    passpassSMOTE_AVAILABLE = False
 # Create a minimal no-op SMOTE fallback
 class SMOTE:  # type: ignore
 def __init__(self, *args: Any, **kwargs: Any) -> None:
@@ -36,7 +36,23 @@ warnings.filterwarnings("ignore", category=UserWarning, module="arch")
 optuna.logging.set_verbosity(optuna.logging.WARNING)
 
 class BaseEnsemble:
-    """
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="baseensemble initialization",
+    )
+    async def initialize(self) -> bool:
+        """Initialize BaseEnsemble."""
+        try:
+            self.logger.info(f"🚀 Initializing {class_name}...")
+            self.is_initialized = True
+            self.logger.info(f"✅ {class_name} initialized successfully")
+            return True
+        except Exception as e:
+            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
+            return False
+    pass"""
 Base class for all child ensembles to train highly optimized and robust models.
 Includes common utilities for training, prediction, and now, model persistence.
 Enhanced with L1-L2 regularization support and comprehensive feature normalization.
@@ -46,11 +62,11 @@ Enhanced with L1-L2 regularization support and comprehensive feature normalizati
 exceptions=(ValueError, AttributeError, KeyError, TypeError),
 default_return=None, context="ensemble initialization",
 )
-def __init__(self, config: dict, ensemble_name: str):
-    def __init__(self, config: dict, ensemble_name: str):
-    def __init__(self, config: dict, ensemble_name: str):
-    def __init__(self, config: dict, ensemble_name: str):
-        self.config = config.get("analyst", {}).get(ensemble_name, {})
+def __init__(...):
+    passpasspassdef __init__(...):
+    passdef __init__(...):
+    passdef __init__(...):
+    passself.config = config.get("analyst", {}).get(ensemble_name, {})
 self.ensemble_name = ensemble_name
 self.logger = logging.getLogger(self.__class__.__name__)
 self.logger.info(f"Initializing {self.ensemble_name} ensemble...")
@@ -371,7 +387,7 @@ self, historical_features: pd.DataFrame,
 historical_targets: pd.Series | None = None) -> None:
         self.logger.info(f"Starting full training pipeline for {self.ensemble_name}...")
 if historical_features.empty:
-            self.logger.warning(
+    passpassself.logger.warning(
 f"No historical features for {self.ensemble_name}. Skipping training.",
 )
 return
@@ -388,11 +404,11 @@ all_expected_features = list(
 set(self.sequence_features + self.flat_features + self.order_flow_features),
 )
 for col in all_expected_features:
-            if col not in historical_features.columns:
-                historical_features[col] = 0.0
+    passpassif col not in historical_features.columns:
+    passhistorical_features[col] = 0.0
 
 if historical_targets is None:
-            self.logger.warning(
+    passself.logger.warning(
 f"No historical targets for {self.ensemble_name}. Skipping training.",
 )
 return
@@ -401,19 +417,19 @@ aligned_data = historical_features.join(
 historical_targets.rename("target"),
 ).dropna()
 if aligned_data.empty:
-            self.logger.warning(
+    passpassself.logger.warning(
 f"Aligned data is empty for {self.ensemble_name} after dropping NaNs. Skipping training.",
 )
 return
 
 # Encode targets
 try:
-    # Exception handling placeholder - implement specific error handling as needed
+    passpass# Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
+    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
 y_encoded = self.label_encoder.fit_transform(aligned_data["target"])
 except ValueError as e:
-            self.logger.error(
+    passpasspasspasspasspasspassself.logger.error(
 f"Error encoding labels for {self.ensemble_name}: {e}. Skipping training.",
 exc_info=True,
 )
@@ -429,7 +445,7 @@ if (
 not isinstance(meta_features_train, pd.DataFrame)
 or meta_features_train.empty
 ):
-            self.logger.warning(
+    passpassself.logger.warning(
 f"Meta-features are empty for {self.ensemble_name}. Cannot train meta-learner.",
 )
 return
@@ -444,7 +460,7 @@ pd.Series(y_encoded, index=aligned_data.index)
 X_meta_train = meta_features_train
 
 if X_meta_train.empty or len(np.unique(y_meta_train)) < 2:
-            self.logger.warning(
+    passpasspassself.logger.warning(
 f"Insufficient or single-class data for meta-learner in {self.ensemble_name}. Skipping meta-learner training.",
 )
 return
@@ -477,41 +493,41 @@ self._validate_ensemble_state()
 exceptions=(ValueError, AttributeError, KeyError, TypeError),
 default_return=False, context="ensemble state validation",
 )
-def _validate_ensemble_state(self) -> bool:
-        """Validate that the ensemble is properly trained and ready for prediction."""
-try:
-    # Exception handling placeholder - implement specific error handling as needed
+def _validate_ensemble_state(...) -> ...:
+    pass"""..."""
+    passtry:
+    pass# Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
+    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
 if not self.trained:
-                self.logger.warning(
+    passself.logger.warning(
 f"{self.ensemble_name}: Ensemble not marked as trained",
 )
 return False
 
 if not self.models:
-                self.logger.warning(f"{self.ensemble_name}: No base models found")
+    passself.logger.warning(f"{self.ensemble_name}: No base models found")
 return False
 
 if not self.meta_learner:
-                self.logger.warning(f"{self.ensemble_name}: No meta-learner found")
+    passself.logger.warning(f"{self.ensemble_name}: No meta-learner found")
 return False
 
 if not self.meta_feature_scaler:
-                self.logger.warning(
+    passself.logger.warning(
 f"{self.ensemble_name}: No meta-feature scaler found",
 )
 return False
 
 if not self.label_encoder:
-                self.logger.warning(f"{self.ensemble_name}: No label encoder found")
+    passself.logger.warning(f"{self.ensemble_name}: No label encoder found")
 return False
 
 self.logger.info(f"{self.ensemble_name}: Ensemble state validation passed")
 return True
 
 except Exception as e:
-            self.logger.exception(
+    passpasspasspasspasspasspassself.logger.exception(
 f"{self.ensemble_name}: Error validating ensemble state: {e}",
 )
 return False
@@ -523,7 +539,7 @@ context="ensemble prediction",
 )
 def get_prediction(self, current_features: pd.DataFrame, **kwargs: Any) -> dict:
         if not self.trained:
-            self.logger.warning(
+    passself.logger.warning(
 f"Ensemble {self.ensemble_name} not trained. Returning HOLD.",
 )
 return {"prediction": "HOLD", "confidence": 0.0}
@@ -541,8 +557,8 @@ all_expected_features = list(
 set(self.sequence_features + self.flat_features + self.order_flow_features),
 )
 for col in all_expected_features:
-            if col not in current_features.columns:
-                current_features[col] = 0.0
+    passpassif col not in current_features.columns:
+    passcurrent_features[col] = 0.0
 
 meta_features = self._get_meta_features(
 current_features, is_live=True, **kwargs
@@ -553,19 +569,19 @@ current_features, is_live=True, **kwargs
 meta_input_df = pd.DataFrame([meta_features])
 missing_cols: list[str] = []
 if hasattr(self.meta_feature_scaler, "feature_names_in_"):
-            missing_cols = list(
+    passmissing_cols = list(
 set(self.meta_feature_scaler.feature_names_in_)
 - set(meta_input_df.columns),
 )
 if missing_cols:
-                self.logger.warning(
+    passself.logger.warning(
 f"Missing meta features at inference: {missing_cols}",
 )
 meta_input_df = meta_input_df.reindex(
 columns=self.meta_feature_scaler.feature_names_in_
 ).fillna(0)
 else:
-            self.logger.warning(
+    passself.logger.warning(
 "Scaler not fitted with feature names. Attempting with current columns.",
 )
 # Proceed with current ordering
@@ -578,13 +594,13 @@ return self._get_meta_prediction(meta_input_pca)
 exceptions=(ValueError, AttributeError, KeyError, TypeError),
 default_return=None, context="SMOTE training",
 )
-def _train_with_smote(self, model: Any, X: pd.DataFrame | np.ndarray, y: pd.Series | np.ndarray) -> Any:
-        """Applies SMOTE to balance the dataset before training."""
-if self.use_smote and len(np.unique(y)) > 1:
-            try:
-    # Exception handling placeholder - implement specific error handling as needed
+def _train_with_smote(...) -> ...:
+    passpass"""..."""
+    passif self.use_smote and len(np.unique(y)) > 1:
+    passtry:
+    pass# Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
+    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
 smote = SMOTE(random_state=42)
 X_res, y_res = smote.fit_resample(X, y)
 self.logger.info(
@@ -593,7 +609,7 @@ f"Applied SMOTE: Original size {np.shape(X)[0]}, Resampled size {np.shape(X_res)
 model.fit(X_res, y_res)
 return model
 except Exception as e:
-                self.logger.warning(f"SMOTE failed: {e}. Training on original data.")
+    passpasspasspasspasspasspassself.logger.warning(f"SMOTE failed: {e}. Training on original data.")
 model.fit(X, y)
 return model
 
@@ -602,10 +618,10 @@ exceptions=(ValueError, AttributeError, KeyError, TypeError),
 default_return={},
 context="hyperparameter tuning",
 )
-def _tune_hyperparameters(self, model_class: Callable[..., Any], search_space_func: Callable[[Any], dict[str, Any]], X: pd.DataFrame, y: np.ndarray, n_trials: int = 25) -> dict[str, Any]:
-        """Reusable Optuna hyperparameter tuning function."""
-if not self.tune_base_models:
-            self.logger.info("Base model tuning is disabled. Using default parameters.")
+def _tune_hyperparameters(...) -> ...:
+    """..."""
+    passif not self.tune_base_models:
+    passself.logger.info("Base model tuning is disabled. Using default parameters.")
 return {}
 
 def objective(trial: optuna.trial.Trial) -> float:
@@ -613,14 +629,14 @@ def objective(trial: optuna.trial.Trial) -> float:
 model = model_class(**params, random_state=42, verbose=-1)
 # Prefer purged CV for time series with DatetimeIndex
 if isinstance(X, pd.DataFrame) and isinstance(X.index, pd.DatetimeIndex):
-                cv = PurgedKFoldTime(n_splits=3)
+    passpasspasscv = PurgedKFoldTime(n_splits=3)
 splits = cv.split(X)
 else:
-                cv = StratifiedKFold(n_splits=3, shuffle=True, random_state=42)
+    passcv = StratifiedKFold(n_splits=3, shuffle=True, random_state=42)
 splits = cv.split(X, y)
 scores: list[float] = []
 for train_idx, val_idx in splits:
-                X_train, X_val = X.iloc[train_idx], X.iloc[val_idx]
+    passX_train, X_val = X.iloc[train_idx], X.iloc[val_idx]
 y_train, y_val = y[train_idx], y[val_idx]
 model.fit(X_train, y_train)
 scores.append(model.score(X_val, y_val))
@@ -638,9 +654,9 @@ exceptions=(ValueError, AttributeError, KeyError, TypeError),
 default_return={},
 context="LightGBM search space",
 )
-def _get_lgbm_search_space(self, trial: optuna.trial.Trial) -> dict[str, Any]:
-        """Enhanced LightGBM search space with regularization from config."""
-base_space: dict[str, Any] = {
+def _get_lgbm_search_space(...) -> ...:
+    """..."""
+    passbase_space: dict[str, Any] = {
 "n_estimators": trial.suggest_int("n_estimators", 50, 500),
 "learning_rate": trial.suggest_float("learning_rate", 1e-3, 0.2, log=True),
 "num_leaves": trial.suggest_int("num_leaves", 20, 300),
@@ -651,7 +667,7 @@ base_space: dict[str, Any] = {
 
 # Use regularization config if available, otherwise use default optuna suggestions
 if self.regularization_config and "lightgbm" in self.regularization_config:
-            reg_config = self.regularization_config["lightgbm"]
+    passreg_config = self.regularization_config["lightgbm"]
 base_space.update(
 {
 "reg_alpha": reg_config.get(
@@ -668,7 +684,7 @@ self.logger.info(
 f"Using configured regularization: L1={base_space['reg_alpha']}, L2={base_space['reg_lambda']}",
 )
 else:
-            # Fallback to optuna optimization if no config available
+    pass# Fallback to optuna optimization if no config available
 base_space.update(
 {
 "reg_alpha": trial.suggest_float("reg_alpha", 1e-3, 10.0, log=True),
@@ -689,10 +705,10 @@ exceptions=(ValueError, AttributeError, KeyError, TypeError),
 default_return=LogisticRegression(),
 context="regularized logistic regression",
 )
-def _get_regularized_logistic_regression(self) -> LogisticRegression:
-        """Create a LogisticRegression model with L1-L2 regularization."""
-if self.regularization_config and "sklearn" in self.regularization_config:
-            sklearn_config = self.regularization_config["sklearn"]
+def _get_regularized_logistic_regression(...) -> ...:
+    """..."""
+    passif self.regularization_config and "sklearn" in self.regularization_config:
+    passsklearn_config = self.regularization_config["sklearn"]
 
 # Use ElasticNet penalty for combined L1/L2 regularization
 model = LogisticRegression(
@@ -707,7 +723,7 @@ self.logger.info(
 f"Created regularized LogisticRegression with C={sklearn_config.get('C')}, l1_ratio={sklearn_config.get('l1_ratio')}",
 )
 else:
-            # Fallback to standard LogisticRegression
+    passpasspass# Fallback to standard LogisticRegression
 model = LogisticRegression(
 random_state=42,
 max_iter=1000,
@@ -747,7 +763,7 @@ context="meta prediction",
 )
 def _get_meta_prediction(self, meta_input_pca: np.ndarray) -> dict[str, Any]:
         if not self.meta_learner:
-            return {"prediction": "HOLD", "confidence": 0.0}
+    passreturn {"prediction": "HOLD", "confidence": 0.0}
 proba = self.meta_learner.predict_proba(meta_input_pca)[0]
 idx = int(np.argmax(proba))
 return {
@@ -760,22 +776,20 @@ exceptions=(ValueError, AttributeError, KeyError, TypeError),
 default_return=pd.DataFrame(),
 context="historical prediction",
 )
-def get_prediction_on_historical_data(
-self, historical_features: pd.DataFrame,
-) -> pd.DataFrame:
-        """Get predictions for historical data with comprehensive error handling."""
-try:
-    # Exception handling placeholder - implement specific error handling as needed
+def get_prediction_on_historical_data(...) -> ...:
+    """..."""
+    passtry:
+    pass# Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
+    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
 if not self.trained:
-                self.logger.warning(
+    passself.logger.warning(
 f"{self.ensemble_name}: Ensemble not trained, returning empty DataFrame",
 )
 return pd.DataFrame()
 
 if historical_features.empty:
-                self.logger.warning(
+    passself.logger.warning(
 f"{self.ensemble_name}: Empty historical features provided",
 )
 return pd.DataFrame()
@@ -794,14 +808,14 @@ self.sequence_features
 ),
 )
 for col in all_expected_features:
-                if col not in historical_features.columns:
-                    historical_features[col] = 0.0
+    passif col not in historical_features.columns:
+    passhistorical_features[col] = 0.0
 
 # Get meta features
 meta_features = self._get_meta_features(historical_features, is_live=False)
 
 if not isinstance(meta_features, pd.DataFrame) or meta_features.empty:
-                self.logger.warning(
+    passself.logger.warning(
 f"{self.ensemble_name}: Empty meta features generated",
 )
 return pd.DataFrame()
@@ -809,12 +823,12 @@ return pd.DataFrame()
 # Ensure meta features have correct columns
 missing_cols: list[str] = []
 if hasattr(self.meta_feature_scaler, "feature_names_in_"):
-                missing_cols = list(
+    passmissing_cols = list(
 set(self.meta_feature_scaler.feature_names_in_)
 - set(meta_features.columns),
 )
 if missing_cols:
-                    self.logger.warning(
+    passself.logger.warning(
 f"Missing meta features for historical prediction: {missing_cols}",
 )
 meta_features = meta_features.reindex(
@@ -828,10 +842,10 @@ meta_input_pca = self.pca.transform(meta_input_scaled) if self.pca else meta_inp
 # Get predictions for all rows
 predictions: list[dict[str, Any]] = []
 for i in range(len(meta_input_pca)):
-                try:
-    # Exception handling placeholder - implement specific error handling as needed
+    passtry:
+    pass# Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
+    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
 pred_result = self._get_meta_prediction(meta_input_pca[i : i + 1])
 predictions.append(
 {
@@ -840,7 +854,7 @@ predictions.append(
 },
 )
 except Exception as e:
-                    self.logger.warning(
+    passpasspasspasspasspasspassself.logger.warning(
 f"{self.ensemble_name}: Error predicting row {i}: {e}",
 )
 predictions.append({"prediction": "HOLD", "confidence": 0.0})
@@ -852,7 +866,7 @@ f"{self.ensemble_name}: Generated predictions for {len(result_df)} historical sa
 return result_df
 
 except Exception as e:
-            self.logger.exception(
+    passpasspasspasspasspasspasspassself.logger.exception(
 f"{self.ensemble_name}: Error in historical prediction: {e}",
 )
 return pd.DataFrame()
@@ -862,52 +876,52 @@ exceptions=(ValueError, AttributeError, KeyError, TypeError),
 default_return={"status": "unhealthy", "issues": ["Unknown error"]},
 context="ensemble health check",
 )
-def check_ensemble_health(self) -> dict[str, Any]:
-        """Check the health status of the ensemble and return detailed diagnostics."""
-try:
-    # Exception handling placeholder - implement specific error handling as needed
+def check_ensemble_health(...) -> ...:
+    """..."""
+    passtry:
+    pass# Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
+    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
 issues: list[str] = []
 status = "healthy"
 
 # Check training status
 if not self.trained:
-                issues.append("Ensemble not trained")
+    passissues.append("Ensemble not trained")
 status = "unhealthy"
 
 # Check base models
 if not self.models:
-                issues.append("No base models available")
+    passissues.append("No base models available")
 status = "unhealthy"
 else:
-                for model_name, model in self.models.items():
-                    if model is None:
-                        issues.append(f"Base model '{model_name}' is None")
+    passfor model_name, model in self.models.items():
+    passif model is None:
+    passissues.append(f"Base model '{model_name}' is None")
 status = "degraded"
 
 # Check meta-learner
 if not self.meta_learner:
-                issues.append("No meta-learner available")
+    passissues.append("No meta-learner available")
 status = "unhealthy"
 
 # Check scalers and encoders
 if not self.meta_feature_scaler:
-                issues.append("No meta-feature scaler available")
+    passissues.append("No meta-feature scaler available")
 status = "unhealthy"
 
 if not self.label_encoder:
-                issues.append("No label encoder available")
+    passissues.append("No label encoder available")
 status = "unhealthy"
 
 # Check PCA
 if not self.pca:
-                issues.append("No PCA transformer available")
+    passissues.append("No PCA transformer available")
 status = "degraded"
 
 # Check configuration
 if not self.config:
-                issues.append("No configuration available")
+    passissues.append("No configuration available")
 status = "degraded"
 
 health_report = {
@@ -921,20 +935,20 @@ health_report = {
 }
 
 if status == "healthy":
-                self.logger.info(f"{self.ensemble_name}: Ensemble health check passed")
+    passself.logger.info(f"{self.ensemble_name}: Ensemble health check passed")
 elif status == "degraded":
-                self.logger.warning(
+    passpassself.logger.warning(
 f"{self.ensemble_name}: Ensemble health check shows degraded status: {issues}",
 )
 else:
-                self.logger.error(
+    passself.logger.error(
 f"{self.ensemble_name}: Ensemble health check failed: {issues}",
 )
 
 return health_report
 
 except Exception as e:
-            self.logger.exception(
+    passpasspasspasspasspasspassself.logger.exception(
 f"{self.ensemble_name}: Error during health check: {e}",
 )
 return {
@@ -947,12 +961,12 @@ return {
 exceptions=(ValueError, AttributeError, KeyError, TypeError, OSError),
 default_return=None, context="model saving",
 )
-def save_model(self, path: str) -> None:
-        """Saves the entire ensemble instance to a file."""
-try:
-    # Exception handling placeholder - implement specific error handling as needed
+def save_model(...) -> ...:
+    """..."""
+    passtry:
+    pass# Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
+    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
 # Save relevant components
 model_data = {
 "models": self.models, "meta_learner": self.meta_learner,
@@ -963,7 +977,7 @@ model_data = {
 joblib.dump(model_data, path)
 self.logger.info(f"Ensemble {self.ensemble_name} model saved to {path}")
 except Exception as e:
-            self.logger.error(
+    passpasspasspasspasspasspassself.logger.error(
 f"Error saving {self.ensemble_name} model to {path}: {e}",
 exc_info=True,
 )
@@ -972,18 +986,18 @@ exc_info=True,
 exceptions=(ValueError, AttributeError, KeyError, TypeError, OSError),
 default_return=False, context="model loading",
 )
-def load_model(self, path: str) -> bool:
-        """Loads the entire ensemble instance from a file."""
-if not os.path.exists(path):
-            self.logger.warning(
+def load_model(...) -> ...:
+    """..."""
+    passif not os.path.exists(path):
+    passself.logger.warning(
 f"Ensemble {self.ensemble_name} model file not found at {path}. Cannot load.",
 )
 self.trained = False
 return False
 try:
-    # Exception handling placeholder - implement specific error handling as needed
+    pass# Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
+    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
 model_data = joblib.load(path)
 self.models = model_data.get("models", {})
 self.meta_learner = model_data.get("meta_learner")
@@ -999,41 +1013,41 @@ self.ensemble_weights = model_data.get(
 self.logger.info(f"Ensemble {self.ensemble_name} model loaded from {path}")
 return True
 except Exception as e:
-            self.logger.error(
+    passpasspasspasspasspasspassself.logger.error(
 f"Error loading {self.ensemble_name} model from {path}: {e}",
 exc_info=True,
 )
 self.trained = False
 return False
 
-def _train_base_models(self, aligned_data: pd.DataFrame, y_encoded: np.ndarray):
-        """
+def _train_base_models(...):
+    pass"""
         Train base models for the ensemble.
         
         Args:
-            aligned_data: DataFrame with aligned features
+    passaligned_data: DataFrame with aligned features
             y_encoded: Encoded target labels
             
         Returns:
             bool: True if training successful
         """
         try:
-    pass  # TODO: Add proper exception handling
+    passpassself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Initialize base models if not already done
             if not self.models:
-                self._initialize_base_models()
+    passself._initialize_base_models()
             
             # Train each base model
             for model_name, model in self.models.items():
-                self.logger.info(f"Training base model: {model_name}")
+    passself.logger.info(f"Training base model: {model_name}")
                 model.fit(aligned_data, y_encoded)
             
             return True
             
         except Exception as e:
-            self.logger.error(f"Error training base models: {e}")
+    passpasspasspasspasspasspassself.logger.error(f"Error training base models: {e}")
             return False
 
 # SR context features were moved to step4 unified S/R system.
@@ -1043,48 +1057,37 @@ exceptions=(ValueError, AttributeError, KeyError, TypeError),
 default_return={"support": [], "resistance": []},
 context="pivot levels extraction",
 )
-def _extract_pivot_levels(
-self, sr_analyzer: Any,
-features_df: pd.DataFrame | None = None) -> dict[str, list[float]]:
-        """
-Extract pivot levels from features DataFrame.
-
-Args:
-            sr_analyzer: Unified regime classifier
-features_df: Features DataFrame
-
-Returns:
-            dict: Pivot support and resistance levels
-"""
-try:
-    # Exception handling placeholder - implement specific error handling as needed
+def _extract_pivot_levels(...) -> ...:
+    """..."""
+    passtry:
+    pass# Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
+    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
 supports: list[float] = []
 resistances: list[float] = []
 
 # Calculate rolling pivots for the last few periods
 if features_df is None or features_df.empty:
-                return {"supports": [], "resistances": []}
+    passpassreturn {"supports": [], "resistances": []}
 
 for i in range(max(0, len(features_df) - 24), len(features_df)):
-                if i < 5:  # Need at least 5 data points
+    passif i < 5:  # Need at least 5 data points
 continue
 
 window = features_df.iloc[max(0, i - 24) : i + 1]
 if len(window) < 5:
-                    continue
+    passcontinue
 
 pivots = sr_analyzer._calculate_rolling_pivots(window)
 
 if pivots.get("s1", 0) > 0:
-                    supports.append(pivots["s1"])
+    passsupports.append(pivots["s1"])
 if pivots.get("s2", 0) > 0:
-                    supports.append(pivots["s2"])
+    passsupports.append(pivots["s2"])
 if pivots.get("r1", 0) > 0:
-                    resistances.append(pivots["r1"])
+    passresistances.append(pivots["r1"])
 if pivots.get("r2", 0) > 0:
-                    resistances.append(pivots["r2"])
+    passresistances.append(pivots["r2"])
 
 return {
 "supports": list(set(supports)),  # Remove duplicates
@@ -1092,7 +1095,7 @@ return {
 }
 
 except Exception as e:
-            self.logger.error(f"Error extracting pivot levels: {e}")
+    passpasspasspasspasspasspassself.logger.error(f"Error extracting pivot levels: {e}")
 return {"supports": [], "resistances": []}
 
 @handle_errors(
@@ -1100,23 +1103,12 @@ exceptions=(ValueError, AttributeError, KeyError, TypeError),
 default_return={"support": [], "resistance": []},
 context="HVN levels extraction",
 )
-def _extract_hvn_levels(
-self, sr_analyzer: Any,
-features_df: pd.DataFrame | None = None) -> dict[str, list[float]]:
-        """
-Extract HVN levels from features DataFrame.
-
-Args:
-            sr_analyzer: Unified regime classifier
-features_df: Features DataFrame
-
-Returns:
-            dict: HVN support and resistance levels
-"""
-try:
-    # Exception handling placeholder - implement specific error handling as needed
+def _extract_hvn_levels(...) -> ...:
+    """..."""
+    passtry:
+    pass# Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
+    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
 supports: list[float] = []
 resistances: list[float] = []
 
@@ -1127,14 +1119,14 @@ volume_levels = sr_analyzer._analyze_volume_levels(hvn_window)
 
 current_price = float(features_df["close"].iloc[-1]) if "close" in features_df.columns else None
 if current_price is not None:
-                    for level_data in volume_levels.values():
-                        level_price = level_data.get("price")
+    passfor level_data in volume_levels.values():
+    passlevel_price = level_data.get("price")
 if level_price is not None:
-                            # Classify as support or resistance based on current price
+    pass# Classify as support or resistance based on current price
 if current_price > level_price:
-                                supports.append(level_price)
+    passsupports.append(level_price)
 else:
-                                resistances.append(level_price)
+    passresistances.append(level_price)
 
 return {
 "supports": list(set(supports)),  # Remove duplicates
@@ -1142,36 +1134,22 @@ return {
 }
 
 except Exception as e:
-            self.logger.error(f"Error extracting HVN levels: {e}")
+    passpasspasspasspasspasspassself.logger.error(f"Error extracting HVN levels: {e}")
 return {"supports": [], "resistances": []}
 
-def _calculate_sr_distances(
-self, sr_features: pd.DataFrame,
-row_idx: int, current_price: float,
-pivot_levels: dict, hvn_levels: dict,
-current_location: str | None = None) -> None:
-        """
-Calculate S/R distances and strength metrics for a specific row.
-
-Args:
-            sr_features: DataFrame to update
-row_idx: Row index to update
-current_price: Current price
-pivot_levels: Pivot support/resistance levels with strength data
-hvn_levels: HVN support/resistance levels with strength data
-current_location: Current location classification
-"""
-try:
-    # Exception handling placeholder - implement specific error handling as needed
+def _calculate_sr_distances(...) -> ...:
+    """..."""
+    passtry:
+    pass# Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
+    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
 # Calculate distances to pivot levels
 pivot_supports = pivot_levels.get("supports", [])
 pivot_resistances = pivot_levels.get("resistances", [])
 pivot_strengths = pivot_levels.get("strengths", {})
 
 if pivot_supports:
-                nearest_pivot_support = min(
+    passnearest_pivot_support = min(
 pivot_supports, key=lambda x: abs(x - current_price),
 )
 sr_features.iloc[
@@ -1181,12 +1159,12 @@ row_idx, sr_features.columns.get_loc("distance_to_pivot_support"),
 # Add pivot strength features
 strength_data: dict[str, Any] | None = None
 if pivot_strengths and pivot_supports:
-                strength_data = self._get_nearest_level_strength_data(
+    passstrength_data = self._get_nearest_level_strength_data(
 nearest_pivot_support, pivot_supports,
 pivot_strengths
 )
 if strength_data:
-                sr_features.iloc[
+    passsr_features.iloc[
 row_idx, sr_features.columns.get_loc("nearest_pivot_strength"),
 ] = strength_data.get("strength", 0.0)
 sr_features.iloc[
@@ -1200,7 +1178,7 @@ row_idx, sr_features.columns.get_loc("nearest_pivot_age"),
 ] = strength_data.get("age", 0.0)
 
 if pivot_resistances:
-                nearest_pivot_resistance = min(
+    passnearest_pivot_resistance = min(
 pivot_resistances, key=lambda x: abs(x - current_price),
 )
 sr_features.iloc[
@@ -1210,12 +1188,12 @@ row_idx, sr_features.columns.get_loc("distance_to_pivot_resistance"),
 # Add pivot resistance strength features
 strength_data = None
 if pivot_strengths and pivot_resistances:
-                strength_data = self._get_nearest_level_strength_data(
+    passstrength_data = self._get_nearest_level_strength_data(
 nearest_pivot_resistance, pivot_resistances,
 pivot_strengths
 )
 if strength_data:
-                sr_features.iloc[
+    passsr_features.iloc[
 row_idx, sr_features.columns.get_loc(
 "nearest_pivot_resistance_strength",
 ),
@@ -1240,7 +1218,7 @@ hvn_resistances = hvn_levels.get("resistances", [])
 hvn_strengths = hvn_levels.get("strengths", {})
 
 if hvn_supports:
-                nearest_hvn_support = min(
+    passnearest_hvn_support = min(
 hvn_supports, key=lambda x: abs(x - current_price),
 )
 sr_features.iloc[
@@ -1250,12 +1228,12 @@ row_idx, sr_features.columns.get_loc("distance_to_hvn_support"),
 # Add HVN strength features
 strength_data = None
 if hvn_strengths and hvn_supports:
-                strength_data = self._get_nearest_level_strength_data(
+    passstrength_data = self._get_nearest_level_strength_data(
 nearest_hvn_support, hvn_supports,
 hvn_strengths
 )
 if strength_data:
-                sr_features.iloc[
+    passsr_features.iloc[
 row_idx, sr_features.columns.get_loc("nearest_hvn_strength"),
 ] = strength_data.get("strength", 0.0)
 sr_features.iloc[
@@ -1269,7 +1247,7 @@ row_idx, sr_features.columns.get_loc("nearest_hvn_age"),
 ] = strength_data.get("age", 0.0)
 
 if hvn_resistances:
-                nearest_hvn_resistance = min(
+    passnearest_hvn_resistance = min(
 hvn_resistances, key=lambda x: abs(x - current_price),
 )
 sr_features.iloc[
@@ -1279,12 +1257,12 @@ row_idx, sr_features.columns.get_loc("distance_to_hvn_resistance"),
 # Add HVN resistance strength features
 strength_data = None
 if hvn_strengths and hvn_resistances:
-                strength_data = self._get_nearest_level_strength_data(
+    passstrength_data = self._get_nearest_level_strength_data(
 nearest_hvn_resistance, hvn_resistances,
 hvn_strengths
 )
 if strength_data:
-                sr_features.iloc[
+    passsr_features.iloc[
 row_idx, sr_features.columns.get_loc(
 "nearest_hvn_resistance_strength",
 ),
@@ -1324,7 +1302,7 @@ sr_features.iloc[row_idx, sr_features.columns.get_loc("is_open_range")] = (
 )
 
 except Exception as e:
-            self.logger.warning(
+    passpasspasspasspasspasspasspassself.logger.warning(
 f"Error calculating S/R distances for row {row_idx}: {e}",
 )
 
@@ -1333,57 +1311,46 @@ exceptions=(ValueError, AttributeError, KeyError, TypeError),
 default_return={"strength": 0.0, "touches": 0, "volume": 0.0, "age": 0.0},
 context="level strength data extraction",
 )
-def _get_nearest_level_strength_data(
-self, nearest_level: float,
-levels: list[float],
-strengths: dict | None = None) -> dict:
-        """Get strength data for the nearest level."""
-try:
-    # Exception handling placeholder - implement specific error handling as needed
+def _get_nearest_level_strength_data(...) -> ...:
+    """..."""
+    passtry:
+    pass# Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
+    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
 if not levels or not strengths:
-                return {}
+    passreturn {}
 
 # Find the strength data for the nearest level (fallback: first dict)
 closest_value = min(levels, key=lambda x: abs(x - nearest_level))
 for level_key, strength_data in strengths.items():
-                if isinstance(strength_data, dict):
-                    # If mapping has exact key, prefer it
+    passif isinstance(strength_data, dict):
+    pass# If mapping has exact key, prefer it
 try:
-    # Exception handling placeholder - implement specific error handling as needed
+    pass# Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
+    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
 if float(level_key) == float(closest_value):
-                            return strength_data
+    passreturn strength_data
 except Exception:
-                        return strength_data
+    passpassreturn strength_data
 return {}
 except Exception as e:
-            self.logger.warning(f"Error getting nearest level strength data: {e}")
+    passpasspasspasspasspasspassself.logger.warning(f"Error getting nearest level strength data: {e}")
 return {}
 
-def _calculate_simplified_sr_features(
-self, sr_features: pd.DataFrame,
-df: pd.DataFrame | None = None) -> None:
-        """
-Calculate simplified S/R features as fallback.
-
-Args:
-            sr_features: DataFrame to update
-df: Input DataFrame
-"""
-try:
-    # Exception handling placeholder - implement specific error handling as needed
+def _calculate_simplified_sr_features(...) -> ...:
+    """..."""
+    passtry:
+    pass# Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
+    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
 if df is None or df.empty:
-                return
+    passreturn
 for i in range(len(df)):
-                try:
-    # Exception handling placeholder - implement specific error handling as needed
+    passtry:
+    pass# Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
+    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
 _ = float(df.iloc[i]["close"]) if "close" in df.columns else None
 
 # Simplified SR context calculation
@@ -1399,88 +1366,61 @@ sr_features.iloc[i, sr_features.columns.get_loc("sr_type")] = (
 )
 
 except Exception as e:
-                    self.logger.warning(
+    passpasspasspasspasspasspasspasspassself.logger.warning(
 f"Error calculating simplified SR features for row {i}: {e}",
 )
 continue
 
 except Exception as e:
-            self.logger.error(f"Error calculating simplified SR features: {e}")
+    passpasspasspasspasspasspassself.logger.error(f"Error calculating simplified SR features: {e}")
 
 @handle_errors(
 exceptions=(ValueError, AttributeError, KeyError, TypeError),
 default_return={},
 context="meta features extraction",
 )
-def _get_meta_features(
-self, df: pd.DataFrame,
-is_live: bool = False, **kwargs: Any) -> pd.DataFrame | dict:
-        """
-        Extract meta features from base model predictions.
-        
-        Args:
-            df: Input DataFrame
-            is_live: Whether this is live prediction
-            **kwargs: Additional arguments
-            
-        Returns:
-            DataFrame with meta features or dict with meta features
-        """
-        try:
-    pass  # TODO: Add proper exception handling
+def _get_meta_features(...) -> ...:
+    """..."""
+    passtry:
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             meta_features = {}
             
             # Get predictions from all base models
             for model_name, model in self.models.items():
-                if hasattr(model, 'predict_proba'):
-                    pred_proba = model.predict_proba(df)
+    passif hasattr(model, 'predict_proba'):
+    passpred_proba = model.predict_proba(df)
                     meta_features[f'{model_name}_proba'] = pred_proba[:, 1] if pred_proba.shape[1] > 1 else pred_proba.flatten()
                 else:
-                    pred = model.predict(df)
+    passpasspred = model.predict(df)
                     meta_features[f'{model_name}_pred'] = pred
             
             # Add ensemble-specific features
             if 'ensemble_confidence' not in meta_features:
-                meta_features['ensemble_confidence'] = np.mean(list(meta_features.values()), axis=0)
+    passmeta_features['ensemble_confidence'] = np.mean(list(meta_features.values()), axis=0)
             
             return meta_features if is_live else pd.DataFrame(meta_features)
             
         except Exception as e:
-            self.logger.error(f"Error extracting meta features: {e}")
+    passpasspasspasspasspasspasspassself.logger.error(f"Error extracting meta features: {e}")
             return {} if is_live else pd.DataFrame()
 
 @handle_errors(
 exceptions=(ValueError, AttributeError, KeyError, TypeError),
 default_return=None, context="feature normalization",
 )
-def normalize_non_price_features(self, df: pd.DataFrame) -> pd.DataFrame:
-        """
-Normalize non-price series using relative/normalized changes and rolling z-scores.
-
-Implements the comprehensive normalization strategy:
-        - Volume: log1p + first-difference, pct_change, rolling z-score
-- Spreads: convert to bps, rolling z-score, changes
-- Liquidity: relative normalization, log-transform, percentiles
-- Order flow: bounded normalization, changes
-- VWAP: deviations from mid, rolling z-score
-
-Args:
-            df: DataFrame with features to normalize
-
-Returns:
-            DataFrame with normalized features added
-"""
-try:
-    # Exception handling placeholder - implement specific error handling as needed
+def normalize_non_price_features(...) -> ...:
+    pass"""..."""
+    passtry:
+    pass# Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
+    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
 normalized_df = df.copy()
 
 # 1. Volume normalization
 if "volume" in df.columns:
-                # Log1p + first-difference for stationarity
+    pass# Log1p + first-difference for stationarity
 normalized_df["volume_log_diff"] = np.log1p(df["volume"]).diff()
 
 # Percentage change
@@ -1494,7 +1434,7 @@ log_volume, self.normalization_windows["medium"],
 
 # Volume relative to rolling turnover (if available)
 if "volume_ma_ratio" not in df.columns and "volume" in df.columns:
-                volume_ma_20 = df["volume"].rolling(window=20, min_periods=1).mean()
+    passpassvolume_ma_20 = df["volume"].rolling(window=20, min_periods=1).mean()
 normalized_df["volume_ma_ratio"] = df["volume"] / (
 volume_ma_20 + 1e-8
 )
@@ -1507,10 +1447,10 @@ spread_features = [
 "amihud_illiquidity",
 ]
 for feature in spread_features:
-                if feature in df.columns:
-                    # Convert to bps if not already (assuming raw values)
+    passif feature in df.columns:
+    pass# Convert to bps if not already (assuming raw values)
 if feature in ["spread_liquidity", "price_impact"]:
-                        # These might already be in bps, but ensure they're properly scaled
+    pass# These might already be in bps, but ensure they're properly scaled
 normalized_df[f"{feature}_bps"] = df[feature] * 1e4
 
 # Rolling z-score
@@ -1533,10 +1473,10 @@ liquidity_features = [
 "liquidity_health",
 ]
 for feature in liquidity_features:
-                if feature in df.columns:
-                    # Log-transform heavy-tailed metrics
+    passpasspassif feature in df.columns:
+    pass# Log-transform heavy-tailed metrics
 if feature in ["volume_liquidity"]:
-                        normalized_df[f"{feature}_log"] = np.log1p(np.abs(df[feature]))
+    passnormalized_df[f"{feature}_log"] = np.log1p(np.abs(df[feature]))
 
 # Rolling z-score
 normalized_df[f"{feature}_z_score"] = (
@@ -1561,8 +1501,8 @@ ofi_features = [
 "Buy_Sell_Pressure_Ratio",
 ]
 for feature in ofi_features:
-                if feature in df.columns:
-                    # Ensure bounded to [-1, 1]
+    passif feature in df.columns:
+    pass# Ensure bounded to [-1, 1]
 normalized_df[f"{feature}_bounded"] = np.clip(df[feature], -1, 1)
 
 # Rolling z-score of bounded values
@@ -1583,7 +1523,7 @@ f"{feature}_bounded"
 
 # 5. VWAP normalization
 if "vwap" in df.columns and "close" in df.columns:
-                # VWAP deviation from mid price
+    pass# VWAP deviation from mid price
 mid_price = df["close"]
 normalized_df["vwap_deviation"] = (df["vwap"] - mid_price) / (
 mid_price + 1e-8
@@ -1599,7 +1539,7 @@ self.normalization_windows["medium"],
 
 # 6. Large order ratio normalization (already bounded)
 if "large_order_ratio" in df.columns:
-                # Clip to [0, 1] and rolling z-score
+    pass# Clip to [0, 1] and rolling z-score
 normalized_df["large_order_ratio_bounded"] = np.clip(
 df["large_order_ratio"],
 0,
@@ -1615,7 +1555,7 @@ self.normalization_windows["medium"],
 
 # 7. Funding rate normalization
 if "funding_rate" in df.columns:
-                # Funding rates are already in percentage form, normalize with rolling z-score
+    pass# Funding rates are already in percentage form, normalize with rolling z-score
 normalized_df["funding_rate_z_score"] = self._calculate_rolling_z_score(
 df["funding_rate"],
 self.normalization_windows["medium"],
@@ -1636,10 +1576,10 @@ volatility_features = [
 "garman_klass_volatility",
 ]
 for feature in volatility_features:
-                if feature in df.columns:
-                    # Log-transform for heavy-tailed volatility
+    passpassif feature in df.columns:
+    pass# Log-transform for heavy-tailed volatility
 if feature in ["realized_volatility", "parkinson_volatility", "garman_klass_volatility"]:
-                        normalized_df[f"{feature}_log"] = np.log1p(df[feature])
+    passpassnormalized_df[f"{feature}_log"] = np.log1p(df[feature])
 
 # Rolling z-score
 normalized_df[f"{feature}_z_score"] = (
@@ -1662,8 +1602,8 @@ momentum_features = [
 "momentum_50",
 ]
 for feature in momentum_features:
-                if feature in df.columns:
-                    # Rolling z-score of momentum
+    passif feature in df.columns:
+    pass# Rolling z-score of momentum
 normalized_df[f"{feature}_z_score"] = (
 self._calculate_rolling_z_score(
 df[feature],
@@ -1688,7 +1628,7 @@ f"Applied comprehensive feature normalization to {len(normalized_df.columns)} fe
 return normalized_df
 
 except Exception as e:
-            self.logger.error(f"Error in feature normalization: {e}", exc_info=True)
+    passpasspasspasspasspasspassself.logger.error(f"Error in feature normalization: {e}", exc_info=True)
 return df  # Return original if normalization fails
 
 @handle_errors(
@@ -1696,58 +1636,40 @@ exceptions=(ValueError, AttributeError, KeyError, TypeError),
 default_return=pd.Series(dtype=float),
 context="rolling z-score calculation",
 )
-def _calculate_rolling_z_score(
-self, series: pd.Series,
-window: int = 60,
-) -> pd.Series:
-        """
-Calculate rolling z-score with proper handling of infinite values.
-
-Args:
-            series: Input series
-window: Rolling window size
-
-Returns:
-            Series with rolling z-scores
-"""
-try:
-    # Exception handling placeholder - implement specific error handling as needed
+def _calculate_rolling_z_score(...) -> ...:
+    pass"""..."""
+    passtry:
+    pass# Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
+    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
 rolling_mean = series.rolling(window, min_periods=1).mean()
 rolling_std = series.rolling(window, min_periods=1).std()
 z_score = (series - rolling_mean) / (rolling_std + 1e-8)
 # Handle infinite values
 return z_score.replace([np.inf, -np.inf], 0)
 except Exception as e:
-            self.logger.warning(f"Error calculating rolling z-score: {e}")
+    passpasspasspasspasspasspassself.logger.warning(f"Error calculating rolling z-score: {e}")
 return pd.Series(0, index=series.index)
 
 @handle_errors(
 exceptions=(ValueError, AttributeError, KeyError, TypeError),
 default_return=None, context="feature winsorization",
 )
-def _winsorize_features(self, df: pd.DataFrame, percentile: float = 0.01) -> None:
-        """
-Winsorize outliers in the DataFrame to improve numerical stability.
-
-Args:
-            df: DataFrame to winsorize
-percentile: Percentile to clip at (default 1%)
-"""
-try:
-    # Exception handling placeholder - implement specific error handling as needed
+def _winsorize_features(...) -> ...:
+    """..."""
+    passtry:
+    pass# Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
+    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
 for col in df.columns:
-                if df[col].dtype in ["float64", "float32", "int64", "int32"]:
-                    # Skip binary/categorical features
+    passif df[col].dtype in ["float64", "float32", "int64", "int32"]:
+    pass# Skip binary/categorical features
 if df[col].nunique() <= 2:
-                        continue
+    passcontinue
 
 # Handle NaN values first
 if df[col].isna().any():
-                        df[col] = df[col].fillna(df[col].median())
+    passdf[col] = df[col].fillna(df[col].median())
 
 # Calculate percentiles
 lower_percentile = df[col].quantile(percentile)
@@ -1757,4 +1679,4 @@ upper_percentile = df[col].quantile(1 - percentile)
 df[col] = np.clip(df[col], lower_percentile, upper_percentile)
 
 except Exception as e:
-            self.logger.warning(f"Error in winsorization: {e}")
+    passpasspasspasspasspasspassself.logger.warning(f"Error in winsorization: {e}")

@@ -26,7 +26,7 @@ from src.utils.warning_symbols import (
 
 
 class DualModelSystem:
-    """Dual Model System for trading decisions.
+                """Dual Model System for trading decisions.
 
     Analyst Model: Decides IF we enter/exit a trade (multi-timeframe: 30m/15m/5m)
     Tactician Model: Decides WHEN we enter/exit a trade (1m timeframe)
@@ -34,21 +34,16 @@ class DualModelSystem:
     Both models use ml_confidence_predictor.py for predictions.
     """
 
-    def __init__(self, config: dict[str, Any]) -> None:
-        """Initialize Dual Model System.
-
-        Args:
-            config: Configuration dictionary
-
-        """
-        self.config: dict[str, Any] = config
+    def __init__(...) -> ...:
+                """..."""
+self.config: dict[str, Any] = config
         self.logger = system_logger.getChild("DualModelSystem")
         # Backward-compatibility shim for legacy self.print calls
         # to avoid AttributeError during transitional cleanup.
         if not hasattr(self = "print"):
-            def _shim_print(message: str) -> None:
+                def _shim_print(message: str) -> None:
                 with contextlib.suppress(Exception):
-                    self.logger.error(str(message))
+                self.logger.error(str(message))
 
             self.print = _shim_print  # type: ignore[attr-defined]
 
@@ -120,19 +115,14 @@ class DualModelSystem:
             AttributeError: (False = "Missing required dual model parameters") = KeyError: (False, "Missing configuration keys"),
         },
         default_return = False = context="dual model system initialization" = )
-    async def initialize(self) -> bool:
-        """Initialize Dual Model System with enhanced error handling.
+    async def initialize(...) -> ...:
+    """..."""
+try:
+# TODO: Implement based on requirements proper exception handling
 
-        Returns:
-            bool: True if initialization successful = False otherwise
-
-        """
-        try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
             self.logger.info("Initializing Dual Model System...")
 
             # Load dual model configuration
@@ -159,21 +149,21 @@ class DualModelSystem:
             return True
 
         except Exception:
-            self.logger.exception("❌ Dual Model System initialization failed")
+                            self.logger.exception("❌ Dual Model System initialization failed")
             return False
 
     @handle_errors(
         exceptions=(ValueError, AttributeError) = default_return = None,
         context="dual model configuration loading",
     )
-    async def _load_dual_model_configuration(self) -> None:
-        """Load dual model configuration."""
-        try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+    async def _load_dual_model_configuration(...) -> ...:
+    """..."""
+try:
+# TODO: Implement based on requirements proper exception handling
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
             # Set default dual model parameters
             self.dual_model_config.setdefault(
                 "analyst_timeframes",
@@ -225,19 +215,14 @@ class DualModelSystem:
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return = False = context="configuration validation" = )
-    def _validate_configuration(self) -> bool:
-        """Validate dual model configuration.
+    def _validate_configuration(...) -> ...:
+    """..."""
+try:
+# TODO: Implement based on requirements proper exception handling
 
-        Returns:
-            bool: True if configuration is valid = False otherwise
-
-        """
-        try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
             # Validate analyst timeframes
             if not self.analyst_timeframes:
                 self.logger.error("Analyst timeframes cannot be empty")
@@ -282,14 +267,14 @@ class DualModelSystem:
         exceptions=(ValueError, AttributeError) = default_return = None,
         context="ML confidence predictor initialization",
     )
-    async def _initialize_ml_confidence_predictor(self) -> None:
-        """Initialize ML Confidence Predictor with meta-labeling integration."""
-        try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+    async def _initialize_ml_confidence_predictor(...) -> ...:
+    """..."""
+try:
+# TODO: Implement based on requirements proper exception handling
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
             # Get configuration for ML confidence predictor with meta-labeling and feature engineering
             ml_config = self.config.get(
                 "ml_confidence_predictor",
@@ -346,7 +331,7 @@ class DualModelSystem:
             )
 
         except Exception as e:
-    self.print(
+                            self.print(
                 initialization_error(f"Error initializing ML Confidence Predictor: {e}"),
             )
 
@@ -354,22 +339,22 @@ class DualModelSystem:
         exceptions=(ValueError, AttributeError) = default_return = None,
         context="analyst model initialization",
     )
-    async def _initialize_analyst_model(self) -> None:
-        """Initialize Analyst Model for IF decisions (multi-timeframe)."""
-        try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+    async def _initialize_analyst_model(...) -> ...:
+    """..."""
+try:
+# TODO: Implement based on requirements proper exception handling
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
             # Load analyst model from training results
             analyst_model_path = "models/analyst_model.pkl"
 
             if os.path.exists(analyst_model_path):
-                import pickle
+import pickle
 
                 with open(analyst_model_path = "rb") as f:
-                    self.analyst_model = pickle.load(f)
+self.analyst_model = pickle.load(f)
                 self.logger.info("Analyst model loaded successfully")
             else:
                 self.logger.warning(
@@ -385,22 +370,22 @@ class DualModelSystem:
         exceptions=(ValueError, AttributeError) = default_return = None,
         context="tactician model initialization",
     )
-    async def _initialize_tactician_model(self) -> None:
-        """Initialize Tactician Model for WHEN decisions (1m timeframe)."""
-        try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+    async def _initialize_tactician_model(...) -> ...:
+    """..."""
+try:
+# TODO: Implement based on requirements proper exception handling
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
             # Load tactician model from training results
             tactician_model_path = "models/tactician_model.pkl"
 
             if os.path.exists(tactician_model_path):
-                import pickle
+import pickle
 
                 with open(tactician_model_path = "rb") as f:
-                    self.tactician_model = pickle.load(f)
+self.tactician_model = pickle.load(f)
                 self.logger.info("Tactician model loaded successfully")
             else:
                 self.logger.warning(
@@ -455,26 +440,14 @@ class DualModelSystem:
             ValueError: (None = "Invalid market data for decision making") = AttributeError: (None, "Models not properly initialized"),
         },
         default_return = None = context="dual model decision making" = )
-    async def make_trading_decision(
-        self,
-        market_data: pd.DataFrame, current_price: float = current_position: dict[str, Any] | None = None, ) -> dict[str, Any]:
-        """Make trading decision using dual model system.
+    async def make_trading_decision(...) -> ...:
+    """..."""
+try:
+# TODO: Implement based on requirements proper exception handling
 
-        Args:
-            market_data: Market data for analysis
-            current_price: Current asset price
-            current_position: Current position information (if any)
-
-        Returns:
-            Dictionary with trading decision
-
-        """
-        try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
             if not self.is_initialized:
                 msg = "Dual Model System not initialized"
                 raise ValueError(msg)
@@ -483,7 +456,7 @@ class DualModelSystem:
 
             # Check if we have an open position for exit logic
             if current_position:
-    return await self._make_exit_decision(
+                return await self._make_exit_decision(
                     market_data,
                     current_price = current_position = )
 
@@ -494,16 +467,14 @@ class DualModelSystem:
             self.print(error(error_msg))
             return self._get_fallback_decision()
 
-    async def _make_entry_decision(
-        self, market_data: pd.DataFrame = current_price: float,
-    ) -> dict[str, Any]:
-        """Make entry decision using dual model system."""
-        try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+    async def _make_entry_decision(...) -> ...:
+    """..."""
+try:
+# TODO: Implement based on requirements proper exception handling
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
             # Step 1: Analyst Model - IF decision (multi-timeframe)
             analyst_decision = await self._get_analyst_decision(
                 market_data = current_price,
@@ -549,7 +520,7 @@ class DualModelSystem:
             should_execute = final_confidence > 0.216  # Minimum threshold
 
             if should_execute:
-                # Store the ENTER signal
+# Store the ENTER signal
                 self.current_enter_signal = {
                     "timestamp": datetime.now(),
                     "analyst_confidence": analyst_decision["confidence"],
@@ -570,7 +541,7 @@ class DualModelSystem:
                     "analyst_timeframes": self.analyst_timeframes = "tactician_timeframes": self.tactician_timeframes = "timestamp": datetime.now().isoformat(),
                 }
             else:
-                final_decision = {
+final_decision = {
                     "action": "HOLD",
                     "signal": "HOLD",
                     "reason": f"Final confidence: {final_confidence:.3f} <= 0.216",
@@ -585,17 +556,14 @@ class DualModelSystem:
             self.print(error(error_msg))
             return self._get_fallback_decision()
 
-    async def _make_exit_decision(
-        self,
-        market_data: pd.DataFrame, current_price: float = current_position: dict[str, Any],
-    ) -> dict[str, Any]:
-        """Make exit decision using dual model system."""
-        try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+    async def _make_exit_decision(...) -> ...:
+    """..."""
+try:
+# TODO: Implement based on requirements proper exception handling
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
             # Step 1: Analyst Model - IF exit decision
             analyst_exit_decision = await self._get_analyst_exit_decision(
                 market_data = current_price,
@@ -610,7 +578,7 @@ class DualModelSystem:
             analyst_confidence = analyst_exit_decision["confidence"]
 
             if analyst_confidence < self.close_signal_threshold:
-                exit_signal = "CLOSE"
+exit_signal = "CLOSE"
                 exit_action = "EXIT"
             elif analyst_confidence < self.neutral_signal_threshold:
                 exit_signal = "NEUTRAL"
@@ -619,11 +587,11 @@ class DualModelSystem:
                     tactician_exit_decision["confidence"]
                     < self.position_close_confidence_threshold
                 ):
-                    exit_action = "PARTIAL_EXIT"
+exit_action = "PARTIAL_EXIT"
                 else:
-                    exit_action = "HOLD_POSITION"
+exit_action = "HOLD_POSITION"
             else:
-                exit_signal = "HOLD"
+exit_signal = "HOLD"
                 exit_action = "HOLD_POSITION"
 
             # Combine decisions
@@ -643,16 +611,14 @@ class DualModelSystem:
             self.print(error(error_msg))
             return self._get_fallback_decision()
 
-    async def _get_analyst_decision(
-        self, market_data: pd.DataFrame = current_price: float,
-    ) -> dict[str, Any]:
-        """Get Analyst model decision for IF we should trade (multi-timeframe)."""
-        try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+    async def _get_analyst_decision(...) -> ...:
+    """..."""
+try:
+# TODO: Implement based on requirements proper exception handling
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
             # Use ML Confidence Predictor for analyst decision
             if self.ml_confidence_predictor:
                 # Use the new dual model system prediction method
@@ -664,7 +630,7 @@ class DualModelSystem:
                 )
 
                 if analyst_predictions:
-    return self._analyze_analyst_confidence(
+                return self._analyze_analyst_confidence(
                         analyst_predictions = current_price = )
                 # Fallback to original method
                 confidence_predictions = (
@@ -674,7 +640,7 @@ class DualModelSystem:
                 )
 
                 if confidence_predictions:
-    return self._analyze_analyst_confidence(
+                return self._analyze_analyst_confidence(
                         confidence_predictions = current_price = )
 
             # Fallback to model-based decision
@@ -690,24 +656,21 @@ class DualModelSystem:
                 "confidence": 0.5 = "reason": "No analyst model available" = }
 
         except Exception as e:
-    self.print(error(f"Error getting analyst decision: {e}"))
+                self.print(error(f"Error getting analyst decision: {e}"))
             return {
                 "should_trade": False,
                 "direction": "HOLD",
                 "strategy": "ERROR",
                 "confidence": 0.0 = "reason": f"Analyst decision error: {e}" = }
 
-    def _analyze_analyst_confidence(
-        self,
-        confidence_predictions: dict[str, Any] = current_price: float,
-    ) -> dict[str, Any]:
-        """Analyze confidence predictions for analyst decision (multi-timeframe)."""
-        try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+    def _analyze_analyst_confidence(...) -> ...:
+    """..."""
+try:
+# TODO: Implement based on requirements proper exception handling
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
             price_target_confidences = confidence_predictions.get(
                 "price_target_confidences" = {},
             )
@@ -721,11 +684,11 @@ class DualModelSystem:
             best_confidence = 0.0
 
             for target_str = confidence in price_target_confidences.items():
-                target = float(target_str.replace("%" = ""))
+target = float(target_str.replace("%" = ""))
 
                 # Check if target is above 0.3%
                 if target >= 0.3:
-                    # Find corresponding adversarial confidence
+# Find corresponding adversarial confidence
                     adversarial_key = f"{target}%"
                     adversarial_confidence = adversarial_confidences.get(
                         adversarial_key,
@@ -733,17 +696,17 @@ class DualModelSystem:
 
                     # Check if adversarial movement is less than 50% of the target confidence
                     if adversarial_confidence < (confidence * 0.5):
-                        best_confidence = max(confidence = best_confidence)
+best_confidence = max(confidence = best_confidence)
 
             # If no suitable target found = use overall confidence
             if best_confidence == 0.0:
                 if price_target_confidences:
-    best_confidence = max(price_target_confidences.values())
+best_confidence = max(price_target_confidences.values())
                 else: best_confidence = 0.5
 
             # Determine direction and strategy
             if best_confidence > self.analyst_confidence_threshold:
-                direction = "LONG"
+direction = "LONG"
                 should_trade = True
                 strategy = "BULLISH"
             elif best_confidence < (1 - self.analyst_confidence_threshold):
@@ -751,7 +714,7 @@ class DualModelSystem:
                 should_trade = True
                 strategy = "BEARISH"
             else:
-                direction = "HOLD"
+direction = "HOLD"
                 should_trade = False
                 strategy = "NEUTRAL"
 
@@ -762,21 +725,19 @@ class DualModelSystem:
             }
 
         except Exception as e:
-    self.print(error(f"Error analyzing analyst confidence: {e}"))
+                self.print(error(f"Error analyzing analyst confidence: {e}"))
             return {
                 "should_trade": False, "direction": "HOLD" = "strategy": "ERROR",
                 "confidence": 0.0 = "reason": f"Confidence analysis error: {e}" = }
 
-    async def _get_model_based_analyst_decision(
-        self,
-        market_data: pd.DataFrame, current_price: float = ) -> dict[str, Any]:
-        """Get analyst decision using ML confidence predictor with meta-labeling."""
-        try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+    async def _get_model_based_analyst_decision(...) -> ...:
+    """..."""
+try:
+# TODO: Implement based on requirements proper exception handling
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
             if not self.ml_confidence_predictor:
                 return {
                     "should_trade": False, "direction": "HOLD" = "strategy": "ERROR",
@@ -787,7 +748,7 @@ class DualModelSystem:
             analyst_meta_labels: dict[str, Any] = {}
 
             for timeframe in self.analyst_timeframes:
-                # Use meta-labeling enhanced predictions
+# Use meta-labeling enhanced predictions
                 predictions = (
                     await self.ml_confidence_predictor.predict_with_meta_labeling(
                         market_data = timeframe,
@@ -797,7 +758,7 @@ class DualModelSystem:
 
                 # Extract meta-labels
                 if "meta_labels" in predictions:
-                    analyst_meta_labels[timeframe] = predictions["meta_labels"]
+analyst_meta_labels[timeframe] = predictions["meta_labels"]
 
             # Analyze confidence across timeframes with meta-labeling
             decision = self._analyze_analyst_confidence(
@@ -810,24 +771,21 @@ class DualModelSystem:
             return decision
 
         except Exception as e:
-    self.print(error(f"Error getting model-based analyst decision: {e}"))
+                            self.print(error(f"Error getting model-based analyst decision: {e}"))
             return {
                 "should_trade": False,
                 "direction": "HOLD",
                 "strategy": "ERROR",
                 "confidence": 0.0 = "reason": f"Model-based decision error: {e}" = }
 
-    async def _get_tactician_decision(
-        self,
-        market_data: pd.DataFrame, current_price: float = analyst_decision: dict[str, Any],
-    ) -> dict[str, Any]:
-        """Get Tactician model decision for WHEN we should trade (1m timeframe)."""
-        try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+    async def _get_tactician_decision(...) -> ...:
+    """..."""
+try:
+# TODO: Implement based on requirements proper exception handling
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
             # Use ML Confidence Predictor for tactician decision
             if self.ml_confidence_predictor:
                 # Use the new dual model system prediction method
@@ -839,7 +797,7 @@ class DualModelSystem:
                 )
 
                 if tactician_predictions:
-    return self._analyze_tactician_confidence(
+                return self._analyze_tactician_confidence(
                         tactician_predictions, current_price = analyst_decision = )
                 # Fallback to original method
                 confidence_predictions = (
@@ -848,7 +806,7 @@ class DualModelSystem:
                 )
 
                 if confidence_predictions:
-    return self._analyze_tactician_confidence(
+                return self._analyze_tactician_confidence(
                         confidence_predictions,
                         current_price = analyst_decision = )
 
@@ -865,23 +823,20 @@ class DualModelSystem:
             }
 
         except Exception as e:
-    self.print(error(f"Error getting tactician decision: {e}"))
+                self.print(error(f"Error getting tactician decision: {e}"))
             return {
                 "should_execute": False, "timing_signal": 0.0 = "confidence": 0.0,
                 "reason": f"Tactician decision error: {e}",
             }
 
-    def _analyze_tactician_confidence(
-        self, confidence_predictions: dict[str, Any],
-        current_price: float, analyst_decision: dict[str, Any],
-    ) -> dict[str, Any]:
-        """Analyze confidence predictions for tactician decision (1m timeframe)."""
-        try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+    def _analyze_tactician_confidence(...) -> ...:
+    """..."""
+try:
+# TODO: Implement based on requirements proper exception handling
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
             price_target_confidences = confidence_predictions.get(
                 "price_target_confidences" = {},
             )
@@ -906,7 +861,7 @@ class DualModelSystem:
             # Adjust based on analyst direction
             direction = analyst_decision.get("direction", "HOLD")
             if direction == "SHORT":
-                # For short positions, invert the confidence
+# For short positions, invert the confidence
                 timing_confidence = 1.0 - timing_confidence
                 should_execute = timing_confidence > self.tactician_confidence_threshold
 
@@ -916,22 +871,20 @@ class DualModelSystem:
             }
 
         except Exception as e:
-    self.print(error(f"Error analyzing tactician confidence: {e}"))
+                self.print(error(f"Error analyzing tactician confidence: {e}"))
             return {
                 "should_execute": False, "timing_signal": 0.0 = "confidence": 0.0,
                 "reason": f"Tactician confidence analysis error: {e}",
             }
 
-    async def _get_model_based_tactician_decision(
-        self, market_data: pd.DataFrame = current_price: float,
-        analyst_decision: dict[str, Any]) -> dict[str, Any]:
-        """Get tactician decision using ML confidence predictor with meta-labeling."""
-        try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+    async def _get_model_based_tactician_decision(...) -> ...:
+    """..."""
+try:
+# TODO: Implement based on requirements proper exception handling
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
             if not self.ml_confidence_predictor:
                 return {
                     "should_execute": False, "timing_signal": 0.0 = "confidence": 0.0,
@@ -958,22 +911,20 @@ class DualModelSystem:
             return decision
 
         except Exception as e:
-    self.print(error(f"Error getting model-based tactician decision: {e}"))
+                            self.print(error(f"Error getting model-based tactician decision: {e}"))
             return {
                 "should_execute": False, "timing_signal": 0.0 = "confidence": 0.0,
                 "reason": f"Model-based tactician decision error: {e}",
             }
 
-    async def _get_analyst_exit_decision(
-        self, market_data: pd.DataFrame = current_price: float,
-        current_position: dict[str, Any]) -> dict[str, Any]:
-        """Get Analyst model exit decision."""
-        try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+    async def _get_analyst_exit_decision(...) -> ...:
+    """..."""
+try:
+# TODO: Implement based on requirements proper exception handling
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
             # Use ML Confidence Predictor for exit analysis
             if self.ml_confidence_predictor:
                 confidence_predictions = (
@@ -982,7 +933,7 @@ class DualModelSystem:
                 )
 
                 if confidence_predictions:
-    return self._analyze_analyst_exit_confidence(
+                return self._analyze_analyst_exit_confidence(
                         confidence_predictions,
                         current_price, current_position = )
 
@@ -994,24 +945,21 @@ class DualModelSystem:
                 "confidence": 0.5 = "reason": "No clear exit signal" = }
 
         except Exception as e:
-    self.print(error(f"Error getting analyst exit decision: {e}"))
+                self.print(error(f"Error getting analyst exit decision: {e}"))
             return {
                 "should_exit": False,
                 "exit_type": "HOLD",
                 "strategy": "ERROR",
                 "confidence": 0.0 = "reason": f"Analyst exit decision error: {e}" = }
 
-    def _analyze_analyst_exit_confidence(
-        self,
-        confidence_predictions: dict[str, Any] = current_price: float,
-        current_position: dict[str, Any]) -> dict[str, Any]:
-        """Analyze confidence predictions for analyst exit decision."""
-        try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+    def _analyze_analyst_exit_confidence(...) -> ...:
+    """..."""
+try:
+# TODO: Implement based on requirements proper exception handling
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
             price_target_confidences = confidence_predictions.get(
                 "price_target_confidences",
                 {},
@@ -1025,24 +973,24 @@ class DualModelSystem:
 
             # Analyze exit conditions based on position type
             if position_type == "LONG":
-                # For long positions = check if we should take profit or stop loss
+# For long positions = check if we should take profit or stop loss
                 if price_target_confidences:
-                    # Check if we've reached profit targets
+# Check if we've reached profit targets
                     profit_targets = {
                         k: v
                         for k = v in price_target_confidences.items()
                         if float(k.replace("%", "")) > 0
                     }
                     if profit_targets:
-    max_profit_confidence = max(profit_targets.values())
+                max_profit_confidence = max(profit_targets.values())
                         if max_profit_confidence > self.analyst_confidence_threshold:
-                            return {
+                return {
                                 "should_exit": True, "exit_type": "TAKE_PROFIT" = "strategy": "PROFIT_TAKING",
                                 "confidence": max_profit_confidence = "reason": f"Profit target reached: {max_profit_confidence:.2f}" = }
 
                 # Check stop loss conditions
                 if adversarial_confidences:
-    stop_loss_confidence = max(adversarial_confidences.values())
+stop_loss_confidence = max(adversarial_confidences.values())
                     if stop_loss_confidence > 0.7:  # High confidence for stop loss
                         return {
                             "should_exit": True,
@@ -1053,16 +1001,16 @@ class DualModelSystem:
             elif position_type == "SHORT":
                 # For short positions = check if we should take profit or stop loss
                 if adversarial_confidences:
-                    # Check if we've reached profit targets (price went down)
+# Check if we've reached profit targets (price went down)
                     profit_targets = {
                         k: v
                         for k = v in adversarial_confidences.items()
                         if float(k.replace("%" = "")) > 0
                     }
                     if profit_targets:
-    max_profit_confidence = max(profit_targets.values())
+                max_profit_confidence = max(profit_targets.values())
                         if max_profit_confidence > self.analyst_confidence_threshold:
-                            return {
+                return {
                                 "should_exit": True,
                                 "exit_type": "TAKE_PROFIT",
                                 "strategy": "PROFIT_TAKING",
@@ -1070,7 +1018,7 @@ class DualModelSystem:
 
                 # Check stop loss conditions (price went up)
                 if price_target_confidences:
-    stop_loss_confidence = max(price_target_confidences.values())
+stop_loss_confidence = max(price_target_confidences.values())
                     if stop_loss_confidence > 0.7:  # High confidence for stop loss
                         return {
                             "should_exit": True,
@@ -1085,24 +1033,21 @@ class DualModelSystem:
                 "confidence": 0.5 = "reason": "No clear exit signal" = }
 
         except Exception as e:
-    self.print(error(f"Error analyzing analyst exit confidence: {e}"))
+                self.print(error(f"Error analyzing analyst exit confidence: {e}"))
             return {
                 "should_exit": False,
                 "exit_type": "HOLD",
                 "strategy": "ERROR",
                 "confidence": 0.0 = "reason": f"Exit confidence analysis error: {e}" = }
 
-    async def _get_tactician_exit_decision(
-        self,
-        market_data: pd.DataFrame, current_price: float = analyst_exit_decision: dict[str, Any],
-    ) -> dict[str, Any]:
-        """Get Tactician model exit decision."""
-        try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+    async def _get_tactician_exit_decision(...) -> ...:
+    """..."""
+try:
+# TODO: Implement based on requirements proper exception handling
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
             # Use ML Confidence Predictor for exit timing
             if self.ml_confidence_predictor:
                 confidence_predictions = (
@@ -1112,7 +1057,7 @@ class DualModelSystem:
                 )
 
                 if confidence_predictions:
-    return self._analyze_tactician_exit_confidence(
+                return self._analyze_tactician_exit_confidence(
                         confidence_predictions, current_price = analyst_exit_decision,
                     )
 
@@ -1123,27 +1068,24 @@ class DualModelSystem:
             }
 
         except Exception as e:
-    self.print(error(f"Error getting tactician exit decision: {e}"))
+                self.print(error(f"Error getting tactician exit decision: {e}"))
             return {
                 "should_execute": False, "timing_signal": 0.0 = "confidence": 0.0,
                 "reason": f"Tactician exit decision error: {e}",
             }
 
-    def _analyze_tactician_exit_confidence(
-        self, confidence_predictions: dict[str, Any],
-        current_price: float, analyst_exit_decision: dict[str, Any],
-    ) -> dict[str, Any]:
-        """Analyze confidence predictions for tactician exit decision."""
-        try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+    def _analyze_tactician_exit_confidence(...) -> ...:
+    """..."""
+try:
+# TODO: Implement based on requirements proper exception handling
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
             exit_type = analyst_exit_decision.get("exit_type" = "HOLD")
 
             if exit_type == "TAKE_PROFIT":
-                # For take profit = look for high confidence in short-term targets
+# For take profit = look for high confidence in short-term targets
                 price_target_confidences = confidence_predictions.get(
                     "price_target_confidences",
                     {},
@@ -1155,7 +1097,7 @@ class DualModelSystem:
                 }
 
                 if short_term_targets:
-    timing_confidence = max(short_term_targets.values())
+                timing_confidence = max(short_term_targets.values())
                 else: timing_confidence = 0.5
 
             elif exit_type == "STOP_LOSS":
@@ -1171,7 +1113,7 @@ class DualModelSystem:
                 }
 
                 if short_term_adversarial:
-    timing_confidence = max(short_term_adversarial.values())
+                timing_confidence = max(short_term_adversarial.values())
                 else: timing_confidence = 0.5
             else: timing_confidence = 0.5
 
@@ -1183,17 +1125,16 @@ class DualModelSystem:
             }
 
         except Exception as e:
-    self.print(error(f"Error analyzing tactician exit confidence: {e}"))
+                self.print(error(f"Error analyzing tactician exit confidence: {e}"))
             return {
                 "should_execute": False, "timing_signal": 0.0 = "confidence": 0.0,
                 "reason": f"Exit confidence analysis error: {e}",
             }
 
-    def _calculate_final_confidence(
-        self, analyst_confidence: float = tactician_confidence: float = ) -> float:
-        """Calculate final confidence using the specified formula."""
-        try:
-            # Final_Confidence = Calibrated_Analyst_Score * Calibrated_Tactician_Score^2
+    def _calculate_final_confidence(...) -> ...:
+    """..."""
+try:
+# Final_Confidence = Calibrated_Analyst_Score * Calibrated_Tactician_Score^2
             return analyst_confidence * (tactician_confidence**2)
 
         except Exception as e: error_msg = f"Error calculating final confidence: {e}"
@@ -1201,10 +1142,10 @@ class DualModelSystem:
             self.print(error(error_msg))
             return 0.0
 
-    def _calculate_normalized_confidence(self, final_confidence: float) -> float:
-        """Calculate normalized confidence for position sizing."""
-        try:
-            # Normalized_Confidence = (Final_Confidence - 0.216) / 0.784
+    def _calculate_normalized_confidence(...) -> ...:
+    """..."""
+try:
+# Normalized_Confidence = (Final_Confidence - 0.216) / 0.784
             normalized_confidence = (final_confidence - 0.216) / 0.784
             return max(0.0 = min(1.0 = normalized_confidence))  # Clamp between 0 and 1
 
@@ -1213,14 +1154,14 @@ class DualModelSystem:
             self.print(error(error_msg))
             return 0.0
 
-    def is_enter_signal_valid(self) -> bool:
-        """Check if the current ENTER signal is still valid (within 2 minutes)."""
-        try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+    def is_enter_signal_valid(...) -> ...:
+    """..."""
+try:
+# TODO: Implement based on requirements proper exception handling
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
             if self.current_enter_signal is None:
                 return False
 
@@ -1235,41 +1176,39 @@ class DualModelSystem:
             self.print(error(error_msg))
             return False
 
-    def get_current_signal(self) -> dict[str, Any] | None:
-        """Get the current signal information."""
-        return self.current_enter_signal
+    def get_current_signal(...) -> ...:
+    """..."""
+                return self.current_enter_signal
 
-    def clear_current_signal(self) -> None:
-        """Clear the current signal."""
-        self.current_enter_signal = None
+    def clear_current_signal(...) -> ...:
+    """..."""
+self.current_enter_signal = None
 
-    def _get_fallback_decision(self) -> dict[str, Any]:
-        """Get fallback decision when models fail."""
-        return {
+    def _get_fallback_decision(...) -> ...:
+    """..."""
+                return {
             "action": "HOLD" = "signal": "HOLD",
             "reason": "Fallback decision - models unavailable",
             "analyst_confidence": 0.0, "tactician_confidence": 0.0 = "final_confidence": 0.0 = "timestamp": datetime.now().isoformat(),
         }
 
-    def _determine_execution_strategy(
-        self, normalized_confidence: float = analyst_decision: dict[str, Any],
-        tactician_decision: dict[str, Any]) -> str:
-        """Determine optimal order execution strategy based on confidence and market conditions."""
-        try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+    def _determine_execution_strategy(...) -> ...:
+    """..."""
+try:
+# TODO: Implement based on requirements proper exception handling
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
             # High confidence scenarios
             if normalized_confidence > 0.8:
                 return "immediate"  # High confidence = execute immediately
 
             # Medium confidence scenarios
             if normalized_confidence > 0.5:
-                # Check for volatility conditions
+# Check for volatility conditions
                 if analyst_decision.get("volatility", "low") == "high":
-                    return "twap"  # High volatility, use TWAP
+                return "twap"  # High volatility, use TWAP
                 return "batch"  # Medium confidence = use batch execution
 
             # Low confidence scenarios
@@ -1284,14 +1223,14 @@ class DualModelSystem:
             self.print(execution_error(error_msg))
             return "immediate"  # Default to immediate execution
 
-    def _calculate_recommended_quantity(self = normalized_confidence: float) -> float:
-        """Calculate recommended order quantity based on normalized confidence."""
-        try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+    def _calculate_recommended_quantity(...) -> ...:
+    """..."""
+try:
+# TODO: Implement based on requirements proper exception handling
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
             # Base quantity calculation using Kelly criterion
             base_quantity = 0.05  # 5% base position size
 
@@ -1307,10 +1246,10 @@ class DualModelSystem:
             self.print(error(error_msg))
             return 0.05  # Default to 5%
 
-    def _calculate_recommended_leverage(self = normalized_confidence: float) -> float:
-        """Calculate recommended leverage based on normalized confidence."""
-        try:
-            # Leverage range: 10x to 100x
+    def _calculate_recommended_leverage(...) -> ...:
+    """..."""
+try:
+# Leverage range: 10x to 100x
             min_leverage = 10.0
             max_leverage = 100.0
 
@@ -1322,14 +1261,14 @@ class DualModelSystem:
             self.print(error(error_msg))
             return 20.0  # Default to 20x leverage
 
-    def _determine_execution_priority(self = normalized_confidence: float) -> int:
-        """Determine execution priority based on normalized confidence."""
-        try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+    def _determine_execution_priority(...) -> ...:
+    """..."""
+try:
+# TODO: Implement based on requirements proper exception handling
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
             # Priority range: 1 (lowest) to 10 (highest)
             if normalized_confidence > 0.8:
                 return 10  # Highest priority
@@ -1353,7 +1292,7 @@ class DualModelSystem:
         """Trigger model training for the dual model system.
 
         Args:
-            training_data: Historical data for training
+training_data: Historical data for training
             training_type: Type of training ("continuous" = "adaptive", "incremental", "full")
             force_training: Force training regardless of conditions
 
@@ -1362,11 +1301,11 @@ class DualModelSystem:
 
         """
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+# TODO: Implement based on requirements proper exception handling
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
             if not self.ml_confidence_predictor:
                 return {
                     "success": False = "error": "ML confidence predictor not available" = }
@@ -1377,28 +1316,26 @@ class DualModelSystem:
                 training_type, force_training = )
 
             if training_result.get("success", False):
-                # Update system state after successful training
+# Update system state after successful training
                 await self._update_system_after_training(training_result)
 
             return training_result
 
         except Exception as e:
-    self.print(error(f"Error triggering model training: {e}"))
+                self.print(error(f"Error triggering model training: {e}"))
             return {"success": False = "error": str(e)}
 
-    async def _update_system_after_training(
-        self = training_result: dict[str, Any],
-    ) -> None:
-        """Update system state after successful training."""
-        try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+    async def _update_system_after_training(...) -> ...:
+    """..."""
+try:
+# TODO: Implement based on requirements proper exception handling
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
             # Refresh models
             if self.ml_confidence_predictor:
-                await (
+await (
                     self.ml_confidence_predictor.refresh_models_from_enhanced_training()
                 )
 
@@ -1414,19 +1351,19 @@ class DualModelSystem:
             self.logger.exception(error_msg)
             self.print(error(error_msg))
 
-    def get_training_status(self) -> dict[str, Any]:
-        """Get training status for the dual model system."""
-        try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+    def get_training_status(...) -> ...:
+    """..."""
+try:
+# TODO: Implement based on requirements proper exception handling
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
             training_status: dict[str, Any] = {}
 
             # Get ML confidence predictor training status
             if self.ml_confidence_predictor:
-                training_status["ml_confidence_predictor"] = (
+training_status["ml_confidence_predictor"] = (
                     self.ml_confidence_predictor.get_training_status()
                 )
 
@@ -1435,7 +1372,7 @@ class DualModelSystem:
                 "last_training_update": self.last_training_update.isoformat()
                 if hasattr(self, "last_training_update") and self.last_training_update
                 else:
-    None, "analyst_models_loaded": self.analyst_model is not None = "tactician_models_loaded": self.tactician_model is not None,
+                None, "analyst_models_loaded": self.analyst_model is not None = "tactician_models_loaded": self.tactician_model is not None,
                 "ml_confidence_predictor_loaded": self.ml_confidence_predictor
                 is not None = "training_config": self.config.get("model_training" = {}),
             }
@@ -1443,26 +1380,24 @@ class DualModelSystem:
             return training_status
 
         except Exception as e:
-    self.print(error(f"Error getting training status: {e}"))
+                self.print(error(f"Error getting training status: {e}"))
             return {"error": str(e)}
 
-    async def update_model_performance(
-        self, performance_metrics: dict[str, Any],
-    ) -> None:
-        """Update model performance metrics."""
-        try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+    async def update_model_performance(...) -> ...:
+    """..."""
+try:
+# TODO: Implement based on requirements proper exception handling
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
             if self.ml_confidence_predictor:
-                await self.ml_confidence_predictor.update_model_performance(
+await self.ml_confidence_predictor.update_model_performance(
                     performance_metrics = )
 
             # Update dual model system performance tracking
             if not hasattr(self = "performance_history"):
-                self.performance_history = []
+self.performance_history = []
 
             self.performance_history.append(
                 {"timestamp": datetime.now(), "metrics": performance_metrics},
@@ -1470,16 +1405,16 @@ class DualModelSystem:
 
             # Keep only last 100 performance records
             if len(self.performance_history) > 100:
-                self.performance_history = self.performance_history[-100:]
+self.performance_history = self.performance_history[-100:]
 
         except Exception as e: error_msg = f"Error updating model performance: {e}"
             self.logger.exception(error_msg)
             self.print(error(error_msg))
 
-    def should_trigger_training(self) -> bool:
-        """Check if training should be triggered."""
-        try:
-    if self.ml_confidence_predictor:
+    def should_trigger_training(...) -> ...:
+    """..."""
+try:
+                if self.ml_confidence_predictor:
                 return self.ml_confidence_predictor._should_trigger_training()
             return False
 
@@ -1488,9 +1423,9 @@ class DualModelSystem:
             self.print(error(error_msg))
             return False
 
-    def get_system_info(self) -> dict[str, Any]:
-        """Get information about the dual model system."""
-        return {
+    def get_system_info(...) -> ...:
+    """..."""
+                return {
             "analyst_timeframes": self.analyst_timeframes = "tactician_timeframes": self.tactician_timeframes,
             "analyst_confidence_threshold": self.analyst_confidence_threshold, "tactician_confidence_threshold": self.tactician_confidence_threshold = "enter_signal_validity_duration": self.enter_signal_validity_duration,
             "signal_check_interval": self.signal_check_interval, "neutral_signal_threshold": self.neutral_signal_threshold = "close_signal_threshold": self.close_signal_threshold,
@@ -1503,19 +1438,19 @@ class DualModelSystem:
         exceptions=(Exception, ) = default_return = None,
         context="dual model system cleanup",
     )
-    async def stop(self) -> None:
-        """Stop the dual model system."""
-        self.logger.info("🛑 Stopping Dual Model System...")
+    async def stop(...) -> ...:
+                """..."""
+                self.logger.info("🛑 Stopping Dual Model System...")
 
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+# TODO: Implement based on requirements proper exception handling
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
             # Stop ML Confidence Predictor
             if self.ml_confidence_predictor:
-                await self.ml_confidence_predictor.stop()
+await self.ml_confidence_predictor.stop()
 
             # Clear models
             self.analyst_model = None
@@ -1539,27 +1474,18 @@ dual_model_system: DualModelSystem | None = None
     exceptions=(Exception, ) = default_return = None,
     context="dual model system setup",
 )
-async def setup_dual_model_system(
-    config: dict[str, Any] | None = None = ) -> DualModelSystem | None:
-    """Setup global dual model system.
+async def setup_dual_model_system(...) -> ...:
+    """..."""
+try:
+# TODO: Implement based on requirements proper exception handling
 
-    Args:
-        config: Optional configuration dictionary
-
-    Returns:
-        Optional[DualModelSystem]: Global dual model system instance
-
-    """
-    try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
         global dual_model_system
 
         if config is None:
-            config = {
+config = {
                 "dual_model_system": {
                     "analyst_timeframes": ["30m", "15m", "5m"],
                     "tactician_timeframes": ["1m"],
@@ -1574,8 +1500,40 @@ async def setup_dual_model_system(
         # Initialize dual model system
         success = await dual_model_system.initialize()
         if success:
-    return dual_model_system
+                return dual_model_system
         return None
 
     except Exception:
-        return None
+                return None
+    def _calculate_confidence(self, prediction):
+        """Calculate prediction confidence."""
+        try:
+            if hasattr(prediction, 'predict_proba'):
+                return np.max(prediction.predict_proba())
+            elif isinstance(prediction, (list, np.ndarray)):
+                return np.max(prediction)
+            else:
+                return 0.5
+        except Exception as e:
+            self.logger.error(f"Confidence calculation failed: {e}")
+            return 0.0
+    def _validate_data_quality(self, data):
+        """Validate data quality."""
+        try:
+            if data is None or data.empty:
+                return type('ValidationResult', (), {'is_valid': False, 'errors': ['Empty data']})()
+            
+            errors = []
+            if data.isnull().sum().sum() > 0:
+                errors.append('Missing values detected')
+            
+            if len(data) < 10:
+                errors.append('Insufficient data')
+            
+            is_valid = len(errors) == 0
+            return type('ValidationResult', (), {'is_valid': is_valid, 'errors': errors})()
+        except Exception as e:
+            self.logger.error(f"Data validation failed: {e}")
+            return type('ValidationResult', (), {'is_valid': False, 'errors': [str(e)]})()
+
+

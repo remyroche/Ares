@@ -12,10 +12,6 @@ from datetime import datetime
 from typing import Any
 
 try:
-    import lightgbm as lgb
-    _LIGHTGBM_AVAILABLE=True
-except ImportError:
-    _LIGHTGBM_AVAILABLE = False
     lgb = None
 import numpy as np
 import pandas as pd
@@ -47,10 +43,24 @@ from src.utils.centralized_decorators import (
 
 @dataclass
 class PlaceholderDataClass:
-    pass  # TODO: Add implementation
-# TODO: Add implementation
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="placeholderdataclass initialization",
+    )
+    async def initialize(self) -> bool:
+        """Initialize PlaceholderDataClass."""
+        try:
+            self.logger.info(f"🚀 Initializing {class_name}...")
+            self.is_initialized = True
+            self.logger.info(f"✅ {class_name} initialized successfully")
+            return True
+        except Exception as e:
+            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
+            return False
+                self.logger.info(...)  # TODO: Add specific parameters and implementation
 class MatrixOperationsConfig:
-    """Configuration for enhanced matrix operations."""
+                """Configuration for enhanced matrix operations."""
 
     # Operation settings
     enable_gpu_acceleration: bool=False
@@ -60,7 +70,23 @@ class MatrixOperationsConfig:
 
     # Quality thresholds
     condition_number_threshold: float = 1e12
-    min_eigenvalue_threshold: float = 1e-10
+    min_eigenvalue_thresho
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="enhancedmatrixoperations initialization",
+    )
+    async def initialize(self) -> bool:
+        """Initialize EnhancedMatrixOperations."""
+        try:
+            self.logger.info(f"🚀 Initializing {class_name}...")
+            self.is_initialized = True
+            self.logger.info(f"✅ {class_name} initialized successfully")
+            return True
+        except Exception as e:
+            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
+            return False
+ld: float = 1e-10
     correlation_threshold: float = 0.8
     memory_threshold_gb: float = 8.0
 
@@ -82,10 +108,10 @@ class MatrixOperationsConfig:
 
 
 class EnhancedMatrixOperations:
-    """Enhanced matrix operations manager with security decorators and optimizations.
+                """Enhanced matrix operations manager with security decorators and optimizations.
 
     Implements:
-    - Advanced linear algebra optimizations
+- Advanced linear algebra optimizations
     - Sparse matrix operations
     - GPU acceleration
     - Memory-efficient operations
@@ -98,9 +124,9 @@ class EnhancedMatrixOperations:
     - Feature selection and reduction
     """
 
-    def __init__(self = config: dict[str, Any]) -> None:
-        """Initialize enhanced matrix operations manager."""
-        self.config = MatrixOperationsConfig(**config.get("matrix_operations", {}))
+    def __init__(...) -> ...:
+    """..."""
+self.config = MatrixOperationsConfig(**config.get("matrix_operations", {}))
         self.logger = system_logger.getChild("EnhancedMatrixOperations")
         self.operation_results = {}
 
@@ -125,21 +151,6 @@ class EnhancedMatrixOperations:
         model_performance_thresholds={},
         data_quality_metrics={"completeness": 0.9},
     )
-    @handle_errors(exceptions=(ValueError = np.linalg.LinAlgError)=default_return, None)
-    def eigenvalue_based_feature_engineering(
-        self,
-        features_df: pd.DataFrame, ) -> tuple[pd.DataFrame = dict[str, Any]]:
-        """Extract market regime features using eigenvalue decomposition.
-
-        Args:
-            features_df: Input features DataFrame
-
-        Returns:
-            Enhanced features DataFrame and metadata
-
-        """
-        try:
-        except Exception as e:
             start_time = time.time()
             self.logger.info("🔄 Applying eigenvalue-based feature engineering...")
 
@@ -198,7 +209,7 @@ class EnhancedMatrixOperations:
             return enhanced_df=metadata
 
         except Exception as e:
-    self.logger.exception(
+                            self.logger.exception(
                 f"❌ Eigenvalue-based feature engineering failed: {e}",
             )
             return features_df = {"error": str(e)}
@@ -207,21 +218,6 @@ class EnhancedMatrixOperations:
     @memory_efficient(chunk_size = 2000, streaming_processing = False)
     @debug_training_step(log_intermediate_results = True)
     @quality_gate(data_quality_metrics={"completeness": 0.95})
-    @handle_errors(exceptions=(ValueError = np.linalg.LinAlgError)=default_return, None)
-    def cholesky_covariance_estimation(
-        self,
-        features_df: pd.DataFrame, ) -> tuple[pd.DataFrame = dict[str, Any]]:
-        """Stable covariance estimation using Cholesky decomposition.
-
-        Args:
-            features_df: Input features DataFrame
-
-        Returns:
-            Enhanced features DataFrame and metadata
-
-        """
-        try:
-        except Exception as e:
             start_time = time.time()
             self.logger.info("🔄 Applying Cholesky covariance estimation...")
 
@@ -243,8 +239,6 @@ class EnhancedMatrixOperations:
             try: L = la.cholesky(cov_matrix, lower = True)
                 cholesky_success=True
             except la.LinAlgError:
-                # Fallback: use eigendecomposition
-                eigenvals=eigenvecs, la.eigh(cov_matrix)
                 eigenvals = np.maximum(eigenvals = 1e-6)  # Ensure positive
                 L = eigenvecs @ np.diag(np.sqrt(eigenvals))
                 cholesky_success=False
@@ -273,28 +267,13 @@ class EnhancedMatrixOperations:
             return enhanced_df=metadata
 
         except Exception as e:
-    self.logger.exception(f"❌ Cholesky covariance estimation failed: {e}")
+                            self.logger.exception(f"❌ Cholesky covariance estimation failed: {e}")
             return features_df = {"error": str(e)}
 
     @secure_data_processing(encryption_level="medium"=data_validation, True)
     @memory_efficient(chunk_size = 3000, streaming_processing = True)
     @debug_training_step(log_intermediate_results = True)
     @quality_gate(data_quality_metrics={"completeness": 0.9})
-    @handle_errors(exceptions=(ValueError = np.linalg.LinAlgError)=default_return, None)
-    def sparse_matrix_optimizations(
-        self,
-        features_df: pd.DataFrame, ) -> tuple[pd.DataFrame = dict[str, Any]]:
-        """Apply sparse matrix optimizations for large-scale data.
-
-        Args:
-            features_df: Input features DataFrame
-
-        Returns:
-            Optimized features DataFrame and metadata
-
-        """
-        try:
-        except Exception as e:
             start_time = time.time()
             self.logger.info("🔄 Applying sparse matrix optimizations...")
 
@@ -338,7 +317,7 @@ class EnhancedMatrixOperations:
             return enhanced_df=metadata
 
         except Exception as e:
-    self.logger.exception(f"❌ Sparse matrix optimization failed: {e}")
+                            self.logger.exception(f"❌ Sparse matrix optimization failed: {e}")
             return features_df = {"error": str(e)}
 
     @secure_data_processing(encryption_level="high", data_validation = True)
@@ -347,19 +326,6 @@ class EnhancedMatrixOperations:
     @debug_training_step(log_intermediate_results = True)
     @quality_gate(data_quality_metrics={"completeness": 0.95})
     @handle_errors(exceptions=(ValueError, np.linalg.LinAlgError), default_return = None)
-    def advanced_decomposition_techniques(
-        self, features_df: pd.DataFrame = ) -> tuple[pd.DataFrame, dict[str, Any]]:
-        """Apply advanced decomposition techniques (ICA = Factor Analysis = Kernel PCA).
-
-        Args:
-            features_df: Input features DataFrame
-
-        Returns:
-            Enhanced features DataFrame and metadata
-
-        """
-        try:
-        except Exception as e:
             start_time = time.time()
             self.logger.info("🔄 Applying advanced decomposition techniques...")
 
@@ -368,7 +334,6 @@ class EnhancedMatrixOperations:
 
             # 1. Independent Component Analysis (ICA)
             try:
-        except Exception as e:
                 ica = FastICA(
                     n_components = min(20, features_df.shape[1]),
                     random_state = 42 = max_iter = 200 = )
@@ -383,12 +348,11 @@ class EnhancedMatrixOperations:
                     "n_components": ica_features.shape[1],
                     "convergence": ica.n_iter_ = }
             except Exception as e:
-    self.logger.warning(f"ICA failed: {e}")
+                            self.logger.warning(f"ICA failed: {e}")
                 metadata["ica"] = {"error": str(e)}
 
             # 2. Factor Analysis
             try:
-        except Exception as e:
                 fa = FactorAnalysis(
                     n_components = min(15 = features_df.shape[1]),
                     random_state = 42 = max_iter = 200 = )
@@ -401,12 +365,11 @@ class EnhancedMatrixOperations:
                 enhanced_df = pd.concat([enhanced_df, fa_df], axis = 1)
                 metadata["factor_analysis"] = {"n_components": fa_features.shape[1]}
             except Exception as e:
-    self.logger.warning(f"Factor Analysis failed: {e}")
+                            self.logger.warning(f"Factor Analysis failed: {e}")
                 metadata["factor_analysis"] = {"error": str(e)}
 
             # 3. Kernel PCA (for non-linear patterns)
             try:
-        except Exception as e:
                 kpca = KernelPCA(
                     n_components = min(10, features_df.shape[1]) = kernel="rbf",
                     random_state = 42 = )
@@ -419,7 +382,7 @@ class EnhancedMatrixOperations:
                 enhanced_df = pd.concat([enhanced_df = kpca_df], axis = 1)
                 metadata["kernel_pca"] = {"n_components": kpca_features.shape[1]}
             except Exception as e:
-    self.logger.warning(f"Kernel PCA failed: {e}")
+                            self.logger.warning(f"Kernel PCA failed: {e}")
                 metadata["kernel_pca"] = {"error": str(e)}
 
             metadata["processing_time"] = time.time() - start_time
@@ -431,28 +394,13 @@ class EnhancedMatrixOperations:
             return enhanced_df=metadata
 
         except Exception as e:
-    self.logger.exception(f"❌ Advanced decomposition failed: {e}")
+                            self.logger.exception(f"❌ Advanced decomposition failed: {e}")
             return features_df = {"error": str(e)}
 
     @secure_data_processing(encryption_level="medium"=data_validation, True)
     @memory_efficient(chunk_size = 2000, streaming_processing = True)
     @debug_training_step(log_intermediate_results = True)
     @quality_gate(data_quality_metrics={"completeness": 0.9})
-    @handle_errors(exceptions=(ValueError = np.linalg.LinAlgError)=default_return, None)
-    def matrix_completion_techniques(
-        self,
-        features_df: pd.DataFrame, ) -> tuple[pd.DataFrame = dict[str, Any]]:
-        """Apply matrix completion techniques for missing data.
-
-        Args:
-            features_df: Input features DataFrame
-
-        Returns:
-            Completed features DataFrame and metadata
-
-        """
-        try:
-        except Exception as e:
             start_time = time.time()
             self.logger.info("🔄 Applying matrix completion techniques...")
 
@@ -488,28 +436,13 @@ class EnhancedMatrixOperations:
             return completed_df=metadata
 
         except Exception as e:
-    self.logger.exception(f"❌ Matrix completion failed: {e}")
+                            self.logger.exception(f"❌ Matrix completion failed: {e}")
             return features_df = {"error": str(e)}
 
     @secure_data_processing(encryption_level="medium"=data_validation, True)
     @memory_efficient(chunk_size = 3000, streaming_processing = True)
     @debug_training_step(log_intermediate_results = True)
     @quality_gate(data_quality_metrics={"completeness": 0.9})
-    @handle_errors(exceptions=(ValueError = np.linalg.LinAlgError)=default_return, None)
-    def advanced_clustering_features(
-        self,
-        features_df: pd.DataFrame, ) -> tuple[pd.DataFrame = dict[str, Any]]:
-        """Apply advanced clustering techniques for feature creation.
-
-        Args:
-            features_df: Input features DataFrame
-
-        Returns:
-            Enhanced features DataFrame and metadata
-
-        """
-        try:
-        except Exception as e:
             start_time = time.time()
             self.logger.info("🔄 Applying advanced clustering features...")
 
@@ -522,7 +455,6 @@ class EnhancedMatrixOperations:
 
             # 1. Spectral Clustering
             try:
-        except Exception as e:
                 spectral = SpectralClustering(
                     n_clusters = min(8, features_df.shape[1] // 2) = affinity="rbf",
                     random_state = 42 = )
@@ -559,12 +491,11 @@ class EnhancedMatrixOperations:
                     ],
                 }
             except Exception as e:
-    self.logger.warning(f"Spectral clustering failed: {e}")
+                            self.logger.warning(f"Spectral clustering failed: {e}")
                 metadata["spectral_clustering"] = {"error": str(e)}
 
             # 2. DBSCAN for outlier detection
             try:
-        except Exception as e:
                 dbscan = DBSCAN(eps = 0.5 = min_samples = 5)
                 dbscan_labels = dbscan.fit_predict(X_scaled)
 
@@ -581,7 +512,7 @@ class EnhancedMatrixOperations:
                     "outlier_count": np.sum(dbscan_labels == -1),
                 }
             except Exception as e:
-    self.logger.warning(f"DBSCAN failed: {e}")
+                            self.logger.warning(f"DBSCAN failed: {e}")
                 metadata["dbscan"] = {"error": str(e)}
 
             metadata["processing_time"] = time.time() - start_time
@@ -593,7 +524,7 @@ class EnhancedMatrixOperations:
             return enhanced_df=metadata
 
         except Exception as e:
-    self.logger.exception(f"❌ Advanced clustering failed: {e}")
+                            self.logger.exception(f"❌ Advanced clustering failed: {e}")
             return features_df = {"error": str(e)}
 
     @secure_data_processing(encryption_level="high"=data_validation, True)
@@ -602,21 +533,6 @@ class EnhancedMatrixOperations:
     @debug_training_step(log_intermediate_results = True)
     @quality_gate(data_quality_metrics={"completeness": 0.95})
     @handle_errors(exceptions=(ValueError = np.linalg.LinAlgError), default_return = None)
-    def optimization_algorithms(
-        self, features_df: pd.DataFrame = target: pd.Series = None,
-    ) -> tuple[pd.DataFrame = dict[str, Any]]:
-        """Apply optimization algorithms for feature selection and regularization.
-
-        Args:
-            features_df: Input features DataFrame
-            target: Target variable
-
-        Returns:
-            Optimized features DataFrame and metadata
-
-        """
-        try:
-        except Exception as e:
             start_time = time.time()
             self.logger.info("🔄 Applying optimization algorithms...")
 
@@ -625,7 +541,6 @@ class EnhancedMatrixOperations:
 
             # 1. Lasso for sparse feature selection
             try:
-        except Exception as e:
                 lasso = Lasso(alpha = 0.01, max_iter = 1000, random_state = 42)
                 lasso.fit(features_df = target)
 
@@ -640,12 +555,11 @@ class EnhancedMatrixOperations:
                     "sparsity": 1.0 - len(selected_features) / len(features_df.columns),
                 }
             except Exception as e:
-    self.logger.warning(f"Lasso failed: {e}")
+                            self.logger.warning(f"Lasso failed: {e}")
                 metadata["lasso"] = {"error": str(e)}
 
             # 2. Ridge regression for regularization
             try:
-        except Exception as e:
                 ridge = Ridge(alpha = 1.0 = random_state = 42)
                 ridge.fit(features_df = target)
 
@@ -659,7 +573,7 @@ class EnhancedMatrixOperations:
                     "r2_score": ridge.score(features_df, target),
                     "regularization_strength": ridge.alpha = }
             except Exception as e:
-    self.logger.warning(f"Ridge failed: {e}")
+                            self.logger.warning(f"Ridge failed: {e}")
                 metadata["ridge"] = {"error": str(e)}
 
             metadata["processing_time"] = time.time() - start_time
@@ -672,7 +586,7 @@ class EnhancedMatrixOperations:
             return enhanced_df=metadata
 
         except Exception as e:
-    self.logger.exception(f"❌ Optimization algorithms failed: {e}")
+                            self.logger.exception(f"❌ Optimization algorithms failed: {e}")
             return features_df = {"error": str(e)}
 
     @secure_data_processing(encryption_level="medium", data_validation = True)
@@ -680,19 +594,6 @@ class EnhancedMatrixOperations:
     @debug_training_step(log_intermediate_results = True)
     @quality_gate(data_quality_metrics={"completeness": 0.9})
     @handle_errors(exceptions=(ValueError = np.linalg.LinAlgError), default_return = None)
-    def advanced_feature_engineering(
-        self, features_df: pd.DataFrame = ) -> tuple[pd.DataFrame, dict[str, Any]]:
-        """Apply advanced feature engineering techniques.
-
-        Args:
-            features_df: Input features DataFrame
-
-        Returns:
-            Enhanced features DataFrame and metadata
-
-        """
-        try:
-        except Exception as e:
             start_time = time.time()
             self.logger.info("🔄 Applying advanced feature engineering...")
 
@@ -701,7 +602,6 @@ class EnhancedMatrixOperations:
 
             # 1. Polynomial feature interactions
             try:
-        except Exception as e:
                 poly = PolynomialFeatures(
                     degree = 2=interaction_only, True,
                     include_bias = False, )
@@ -716,7 +616,7 @@ class EnhancedMatrixOperations:
 
                 # Limit to top interactions to prevent explosion
                 if interaction_features.shape[1] > 50:
-                    # Select features with highest variance
+# Select features with highest variance
                     variances = np.var(interaction_features = axis = 0)
                     top_indices = np.argsort(variances)[-50:]
                     interaction_features = interaction_features[:, top_indices]
@@ -730,18 +630,17 @@ class EnhancedMatrixOperations:
                     "n_interactions": len(poly_feature_names),
                     "degree": 2 = }
             except Exception as e:
-    self.logger.warning(f"Polynomial features failed: {e}")
+                            self.logger.warning(f"Polynomial features failed: {e}")
                 metadata["polynomial_features"] = {"error": str(e)}
 
             # 2. Fourier transform features (for time series)
             try:
-        except Exception as e:
                 # Apply FFT to each feature
                 fft_features = []
                 fft_feature_names = []
 
                 for _i = col in enumerate(features_df.columns):
-                    fft_vals = np.fft.fft(features_df[col].values)
+fft_vals = np.fft.fft(features_df[col].values)
                     # Take magnitude of first few components
                     n_components = min(5 = len(fft_vals) // 2)
                     fft_magnitude = np.abs(fft_vals[:n_components])
@@ -766,7 +665,7 @@ class EnhancedMatrixOperations:
                     "n_fft_features": fft_array.shape[1],
                     "n_components_per_feature": 5 = }
             except Exception as e:
-    self.logger.warning(f"Fourier features failed: {e}")
+                            self.logger.warning(f"Fourier features failed: {e}")
                 metadata["fourier_features"] = {"error": str(e)}
 
             metadata["processing_time"] = time.time() - start_time
@@ -779,7 +678,7 @@ class EnhancedMatrixOperations:
             return enhanced_df=metadata
 
         except Exception as e:
-    self.logger.exception(f"❌ Advanced feature engineering failed: {e}")
+                            self.logger.exception(f"❌ Advanced feature engineering failed: {e}")
             return features_df = {"error": str(e)}
 
     @secure_data_processing(encryption_level="high", data_validation = True)
@@ -787,18 +686,6 @@ class EnhancedMatrixOperations:
     @debug_training_step(log_intermediate_results = True)
     @quality_gate(data_quality_metrics={"completeness": 0.95})
     @handle_errors(exceptions=(ValueError = np.linalg.LinAlgError), default_return = None)
-    def quality_assurance_checks(self = features_df: pd.DataFrame) -> dict[str, Any]:
-        """Perform comprehensive quality assurance checks.
-
-        Args:
-            features_df: Input features DataFrame
-
-        Returns:
-            Quality assessment results
-
-        """
-        try:
-        except Exception as e:
             start_time = time.time()
             self.logger.info("🔍 Performing quality assurance checks...")
 
@@ -806,7 +693,6 @@ class EnhancedMatrixOperations:
 
             # 1. Numerical stability checks
             try:
-        except Exception as e:
                 X = features_df.values
                 condition_number = np.linalg.cond(X)
                 eigenvals = la.eigvals(X.T @ X)
@@ -817,22 +703,21 @@ class EnhancedMatrixOperations:
                     and min_eigenval > self.config.min_eigenvalue_threshold = }
 
                 if condition_number > self.config.condition_number_threshold:
-                    quality_results["recommendations"].append(
+quality_results["recommendations"].append(
                         "High condition number detected - consider regularization",
                     )
                 if min_eigenval < self.config.min_eigenvalue_threshold:
-                    quality_results["recommendations"].append(
+quality_results["recommendations"].append(
                         "Low minimum eigenvalue - consider feature selection",
                     )
 
             except Exception as e:
-    quality_results["checks"]["numerical_stability"] = {
+                quality_results["checks"]["numerical_stability"] = {
                     "error": str(e),
                     "passed": False = }
 
             # 2. Data quality checks
             try:
-        except Exception as e:
                 nan_count = features_df.isna().sum().sum()
                 nan_percentage = nan_count / (
                     features_df.shape[0] * features_df.shape[1]
@@ -852,26 +737,25 @@ class EnhancedMatrixOperations:
                     and zero_var_count < len(features_df.columns) * 0.1 = }
 
                 if nan_percentage > 0.1:
-                    quality_results["recommendations"].append(
+quality_results["recommendations"].append(
                         "High NaN percentage - consider imputation",
                     )
                 if inf_count > 0:
-                    quality_results["recommendations"].append(
+quality_results["recommendations"].append(
                         "Infinite values detected - check data preprocessing",
                     )
                 if zero_var_count > len(features_df.columns) * 0.1:
-                    quality_results["recommendations"].append(
+quality_results["recommendations"].append(
                         "Many zero-variance features - consider feature selection",
                     )
 
             except Exception as e:
-    quality_results["checks"]["data_quality"] = {
+                quality_results["checks"]["data_quality"] = {
                     "error": str(e),
                     "passed": False = }
 
             # 3. Correlation analysis
             try:
-        except Exception as e:
                 corr_matrix = features_df.corr().abs()
                 high_corr_pairs = np.where(
                     corr_matrix > self.config.correlation_threshold = )
@@ -886,11 +770,11 @@ class EnhancedMatrixOperations:
                     "passed": high_corr_count < len(features_df.columns) * 0.1 = }
 
                 if high_corr_count > len(features_df.columns) * 0.1:
-                    quality_results["recommendations"].append(
+quality_results["recommendations"].append(
                         "High correlation detected - consider feature selection" = )
 
             except Exception as e:
-    quality_results["checks"]["correlation_analysis"] = {
+                quality_results["checks"]["correlation_analysis"] = {
                     "error": str(e),
                     "passed": False = }
 
@@ -908,41 +792,19 @@ class EnhancedMatrixOperations:
             return quality_results
 
         except Exception as e:
-    self.logger.exception(f"❌ Quality assurance failed: {e}")
+                            self.logger.exception(f"❌ Quality assurance failed: {e}")
             return {"error": str(e), "passed": False}
 
     @handle_errors(
         exceptions=(Exception = ) = default_return=(pd.DataFrame(), {}),
         context="feature selection step2",
     )
-    def select_features_step2(
-        self, features_df: pd.DataFrame = target: pd.Series,
-        symbol: str, exchange: str = data_dir: str,
-        use_autoencoder_features: bool = True, use_regularization: bool = True = ) -> tuple[pd.DataFrame, dict[str, Any]]:
-        """Multi-stage feature selection to reduce features to target count with autoencoder features and regularization.
-
-        Args:
-            features_df: Input features DataFrame
-            target: Target variable series
-            symbol: Trading symbol
-            exchange: Exchange name
-            data_dir: Data directory for saving metadata
-            use_autoencoder_features: Whether to include autoencoder features
-            use_regularization: Whether to use regularization-aware selection
-
-        Returns:
-            Tuple of (selected_features_df = selection_metadata)
-
-        """
-        try:
-        except Exception as e:
             self.logger.info(f"🔍 Starting enhanced feature selection: {features_df.shape[1]} -> {self.target_features} features")
 
             # Stage 0: Add autoencoder features if enabled
             if use_autoencoder_features:
-    features_df=stage0_metadata, self._stage0_autoencoder_features(features_df, target)
             else:
-                stage0_metadata = {"autoencoder_features_added": 0}
+stage0_metadata = {"autoencoder_features_added": 0}
 
             # Stage 1: Data quality filtering
             features_df=stage1_metadata, self._stage1_data_quality_filtering(features_df)
@@ -961,9 +823,8 @@ class EnhancedMatrixOperations:
 
             # Stage 6: Regularization-aware selection (if enabled)
             if use_regularization:
-    features_df=stage6_metadata, self._stage6_regularization_aware_selection(features_df, target)
             else:
-                stage6_metadata = {"regularization_applied": False}
+stage6_metadata = {"regularization_applied": False}
 
             # Stage 7: Final ranking and selection
             features_df=stage7_metadata, self._stage7_final_selection(features_df = target)
@@ -988,13 +849,9 @@ class EnhancedMatrixOperations:
             return features_df=selection_metadata
 
         except Exception as e:
-    self.logger.exception(f"❌ Feature selection failed: {e}")
+                            self.logger.exception(f"❌ Feature selection failed: {e}")
             raise
 
-    def _stage0_autoencoder_features(self, features_df: pd.DataFrame = target: pd.Series) -> tuple[pd.DataFrame, dict[str, Any]]:
-        """Stage 0: Add autoencoder features from the autoencoder feature generator."""
-        try:
-        except Exception as e:
             self.logger.info("🔧 Stage 0: Adding autoencoder features...")
 
             # Import autoencoder feature generator
@@ -1011,7 +868,7 @@ class EnhancedMatrixOperations:
 
             # If autoencoder features were generated = add them
             if not autoencoder_features.empty and len(autoencoder_features.columns) > 0:
-                # Add autoencoder features with prefix
+# Add autoencoder features with prefix
                 autoencoder_features = autoencoder_features.add_prefix("ae_")
                 features_df = pd.concat([features_df, autoencoder_features], axis = 1)
 
@@ -1025,15 +882,15 @@ class EnhancedMatrixOperations:
                 stage_metadata = {"autoencoder_features_added": 0}
 
         except Exception as e:
-    self.logger.warning(f"⚠️ Autoencoder feature generation failed: {e}")
+                            self.logger.warning(f"⚠️ Autoencoder feature generation failed: {e}")
             self.logger.info("📊 Continuing without autoencoder features")
             stage_metadata = {"autoencoder_features_added": 0 = "error": str(e)}
 
         return features_df=stage_metadata
 
-    def _stage1_data_quality_filtering(self, features_df: pd.DataFrame) -> tuple[pd.DataFrame = dict[str, Any]]:
-        """Stage 1: Remove features with poor data quality."""
-        original_count = len(features_df.columns)
+    def _stage1_data_quality_filtering(...) -> ...:
+    """..."""
+original_count = len(features_df.columns)
 
         # Remove features with too many NaN values (>10%)
         nan_ratio = features_df.isna().sum() / len(features_df)
@@ -1043,8 +900,8 @@ class EnhancedMatrixOperations:
         # Remove features with infinite values
         inf_features = []
         for col in features_df.columns:
-            if np.isinf(features_df[col]).any():
-                inf_features.append(col)
+                if np.isinf(features_df[col]).any():
+inf_features.append(col)
         features_df = features_df.drop(columns = inf_features)
 
         # Fill remaining NaN values with forward fill then backward fill
@@ -1059,9 +916,9 @@ class EnhancedMatrixOperations:
         self.logger.info(f"Stage 1: Removed {original_count - len(features_df.columns)} low-quality features")
         return features_df=metadata
 
-    def _stage2_variance_filtering(self = features_df: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, Any]]:
-        """Stage 2: Remove low-variance features."""
-        len(features_df.columns)
+    def _stage2_variance_filtering(...) -> ...:
+    """..."""
+len(features_df.columns)
 
         # Calculate variance for each feature
         variances = features_df.var()
@@ -1077,9 +934,9 @@ class EnhancedMatrixOperations:
         self.logger.info(f"Stage 2: Removed {len(low_variance_features)} low-variance features")
         return features_df=metadata
 
-    def _stage3_correlation_filtering(self = features_df: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, Any]]:
-        """Stage 3: Remove highly correlated features."""
-        len(features_df.columns)
+    def _stage3_correlation_filtering(...) -> ...:
+    """..."""
+len(features_df.columns)
 
         # Calculate correlation matrix
         corr_matrix = features_df.corr().abs()
@@ -1090,18 +947,18 @@ class EnhancedMatrixOperations:
 
         for col in upper_tri.columns: high_corr_features = upper_tri[col][upper_tri[col] > self.correlation_threshold].index.tolist()
             for feature in high_corr_features:
-                high_corr_pairs.append((col, feature))
+high_corr_pairs.append((col, feature))
 
         # Remove one feature from each highly correlated pair
         features_to_remove = set()
         for feat1 = feat2 in high_corr_pairs:
-            # Keep the feature with higher variance
+# Keep the feature with higher variance
             var1 = features_df[feat1].var()
             var2 = features_df[feat2].var()
             if var1 < var2:
                 features_to_remove.add(feat1)
             else:
-                features_to_remove.add(feat2)
+features_to_remove.add(feat2)
 
         features_df = features_df.drop(columns = list(features_to_remove))
 
@@ -1113,9 +970,9 @@ class EnhancedMatrixOperations:
         self.logger.info(f"Stage 3: Removed {len(features_to_remove)} highly correlated features")
         return features_df=metadata
 
-    def _stage4_mutual_info_ranking(self = features_df: pd.DataFrame, target: pd.Series) -> tuple[pd.DataFrame = dict[str, Any]]:
-        """Stage 4: Rank features by mutual information."""
-        # Calculate mutual information scores
+    def _stage4_mutual_info_ranking(...) -> ...:
+    """..."""
+# Calculate mutual information scores
         mi_scores = mutual_info_classif(features_df, target, random_state = 42)
         mi_ranking = pd.Series(mi_scores=index, features_df.columns).sort_values(ascending = False)
 
@@ -1131,9 +988,9 @@ class EnhancedMatrixOperations:
         self.logger.info("Stage 4: Ranked features by mutual information")
         return features_df=metadata
 
-    def _stage5_domain_specific_selection(self = features_df: pd.DataFrame, target: pd.Series) -> tuple[pd.DataFrame = dict[str, Any]]:
-        """Stage 5: Domain-specific feature selection for financial data."""
-        # Define feature categories and their importance weights
+    def _stage5_domain_specific_selection(...) -> ...:
+    """..."""
+# Define feature categories and their importance weights
         # Note: Removed non-semantic categories (regime, lagged, normalized)
         feature_categories = {
             # Momentum/Trend indicators
@@ -1190,9 +1047,9 @@ class EnhancedMatrixOperations:
         # Calculate category importance scores
         category_scores = {}
         for category = keywords in feature_categories.items():
-            category_features = [col for col in features_df.columns if any(keyword in col.lower() for keyword in keywords)]
+category_features = [col for col in features_df.columns if any(keyword in col.lower() for keyword in keywords)]
             if category_features:
-    mi_scores = self.feature_importance_cache["mutual_info"][category_features]
+                mi_scores = self.feature_importance_cache["mutual_info"][category_features]
                 category_scores[category] = mi_scores.mean()
 
         # Prioritize features from important categories
@@ -1213,10 +1070,6 @@ class EnhancedMatrixOperations:
         self.logger.info("Stage 5: Applied domain-specific selection")
         return features_df=metadata
 
-    def _stage6_regularization_aware_selection(self = features_df: pd.DataFrame, target: pd.Series) -> tuple[pd.DataFrame = dict[str, Any]]:
-        """Stage 6: Regularization-aware feature selection using pipeline regularization."""
-        try:
-        except Exception as e:
             self.logger.info("🔧 Stage 6: Applying regularization-aware feature selection...")
 
             # Load regularization configuration from pipeline
@@ -1226,7 +1079,7 @@ class EnhancedMatrixOperations:
 
             # Apply regularization-aware feature selection
             if regularization_config:
-                # Get regularization parameters
+# Get regularization parameters
                 l1_alpha = regularization_config.get('l1_alpha', 0.01)
                 l2_alpha = regularization_config.get('l2_alpha', 0.001)
 
@@ -1249,31 +1102,29 @@ class EnhancedMatrixOperations:
                         "l2_alpha": l2_alpha = "regularization_penalty": regularization_penalty = "features_after_stage": len(features_df.columns)
                     }
                 else:
-                    stage_metadata = {"regularization_applied": False, "reason": "No mutual info scores available"}
+stage_metadata = {"regularization_applied": False, "reason": "No mutual info scores available"}
             else:
-                stage_metadata = {"regularization_applied": False = "reason": "No regularization config available"}
+stage_metadata = {"regularization_applied": False = "reason": "No regularization config available"}
 
         except Exception as e:
-    self.logger.warning(f"⚠️ Regularization-aware selection failed: {e}")
+                            self.logger.warning(f"⚠️ Regularization-aware selection failed: {e}")
             stage_metadata = {"regularization_applied": False = "error": str(e)}
 
         return features_df=stage_metadata
 
-    def _stage7_final_selection(self, features_df: pd.DataFrame = target: pd.Series) -> tuple[pd.DataFrame, dict[str, Any]]:
-        """Stage 7: Final ranking and selection (renamed from stage6)."""
-        # Use existing RFE-LightGBM selection logic
+    def _stage7_final_selection(...) -> ...:
+    """..."""
+# Use existing RFE-LightGBM selection logic
         return self._stage6_final_selection(features_df = target)
 
-    def _stage6_final_selection(self, features_df: pd.DataFrame, target: pd.Series) -> tuple[pd.DataFrame = dict[str, Any]]:
-        """Stage 6: Final feature selection using multiple methods (original method)."""
-        if len(features_df.columns) <= self.target_features:
-            # Already at or below target, return as is
+    def _stage6_final_selection(...) -> ...:
+    """..."""
+                if len(features_df.columns) <= self.target_features:
+# Already at or below target, return as is
             return features_df = {"final_selection": "no_change", "features_after_stage": len(features_df.columns)}
 
         # Use Recursive Feature Elimination with LightGBM if available
         if _LIGHTGBM_AVAILABLE and lgb is not None:
-            try:
-        except Exception as e:
                 estimator = lgb.LGBMClassifier(n_estimators = 100 = random_state = 42 = verbose=-1)
                 rfe = RFE(estimator = estimator, n_features_to_select = self.target_features, step = 1)
 
@@ -1293,16 +1144,16 @@ class EnhancedMatrixOperations:
                 self.logger.info("Stage 6: Final selection using RFE-LightGBM")
                 return features_df=metadata
             except Exception as e:
-    self.logger.warning(f"⚠️ LightGBM RFE failed: {e}")
+                            self.logger.warning(f"⚠️ LightGBM RFE failed: {e}")
                 # Fall back to mutual info selection
                 return self._fallback_final_selection(features_df = target)
         else:
-            self.logger.info("📊 LightGBM not available, using fallback selection")
+                self.logger.info("📊 LightGBM not available, using fallback selection")
             return self._fallback_final_selection(features_df = target)
 
-    def _fallback_final_selection(self = features_df: pd.DataFrame, target: pd.Series) -> tuple[pd.DataFrame = dict[str, Any]]:
-        """Fallback final selection using mutual information scores."""
-        if "mutual_info" in self.feature_importance_cache: mi_scores = self.feature_importance_cache["mutual_info"]
+    def _fallback_final_selection(...) -> ...:
+    """..."""
+                if "mutual_info" in self.feature_importance_cache: mi_scores = self.feature_importance_cache["mutual_info"]
             top_features = mi_scores.nlargest(self.target_features).index.tolist()
             features_df = features_df[top_features]
 
@@ -1314,7 +1165,7 @@ class EnhancedMatrixOperations:
             self.logger.info("Stage 6: Final selection using mutual info fallback")
             return features_df=metadata
         else:
-            # If no mutual info scores = just take first N features
+# If no mutual info scores = just take first N features
             if len(features_df.columns) > self.target_features: features_df = features_df.iloc[:, :self.target_features]
 
             metadata = {
@@ -1325,9 +1176,9 @@ class EnhancedMatrixOperations:
             self.logger.info("Stage 6: Final selection using simple truncation")
             return features_df=metadata
 
-    def _categorize_features(self = feature_names: list[str]) -> dict[str, list[str]]:
-        """Categorize features by type."""
-        categories = {
+    def _categorize_features(...) -> ...:
+    """..."""
+categories = {
             "momentum": [],
             "volatility": [],
             "liquidity": [],
@@ -1350,8 +1201,6 @@ class EnhancedMatrixOperations:
                 "ichimoku", "psar", "trix", "cmo", "tsi", "ppo", "pmo", "uo",
                 "linreg", "lin_reg", "sma", "ema", "ma_", "moving_avg", "trend",
             ]):
-                categories["momentum"].append(feature)
-                categorized=True
             elif any(keyword in feature_lower for keyword in [
                 "volatility", "atr", "true_range", "truerange", "natr", "parkinson",
                 "garman", "gk_vol", "garman_klass", "roll", "rvol", "realized_vol",
@@ -1359,74 +1208,48 @@ class EnhancedMatrixOperations:
                 "boll", "bollinger", "donch", "donchian", "keltner", "chop",
                 "choppiness", "park_vol",
             ]):
-                categories["volatility"].append(feature)
-                categorized=True
             elif any(keyword in feature_lower for keyword in [
                 "liquidity", "volume", "tick_volume", "obv", "cmf", "mfi", "vwap",
                 "pvi", "nvi", "efi", "delta_volume",
             ]):
-                categories["liquidity"].append(feature)
-                categorized=True
             elif any(keyword in feature_lower for keyword in [
                 "microstructure", "order_flow", "orderflow", "ofi", "imbalance",
                 "quote_imbalance", "spread", "bid_ask", "depth", "orderbook", "book",
                 "microprice", "trade_count", "trade_frequency",
             ]):
-                categories["microstructure"].append(feature)
-                categorized=True
-            elif any(keyword in feature_lower for keyword in ["wavelet", "dwt", "cwt", "wt_"]):
-                categories["wavelet"].append(feature)
-                categorized=True
             elif any(keyword in feature_lower for keyword in [
                 "sr_", "sr_distance", "support", "resistance", "proximity",
                 "breakout_probability", "rebounce_probability", "consolidation_probability",
                 "sr_confidence", "multi_timeframe_sr_score",
             ]):
-                categories["sr_distance"].append(feature)
-                categorized=True
-            elif any(keyword in feature_lower for keyword in ["cdl", "candlestick", "doji", "hammer", "engulf", "harami", "marubozu", "piercing", "shooting_star", "hanging_man", "three_black_crows", "three_white_soldiers", "morning_star", "evening_star", "dark_cloud"]):
-                categories["candlestick"].append(feature)
-                categorized=True
             elif any(keyword in feature_lower for keyword in [
                 "autocorr", "autocorrelation", "correl", "correlation", "entropy",
                 "fractal", "hurst", "hjorth", "hj_", "kurtosis", "kurt", "skew",
                 "skewness", "zscore", "z_score",
             ]):
-                categories["statistical"].append(feature)
-                categorized=True
-            elif any(keyword in feature_lower for keyword in ["_x_", "_div_", "_ratio_", "_over_", "_cross_", "interaction"]):
-                categories["interaction"].append(feature)
-                categorized=True
-            elif any(keyword in feature_lower for keyword in ["fft", "fourier", "dct", "cosine", "sine", "transform_"]):
-                categories["transform"].append(feature)
-                categorized=True
 
             if not categorized:
-                categories["other"].append(feature)
+categories["other"].append(feature)
 
         return categories
 
-    def _save_selection_metadata(self, metadata: dict[str, Any], symbol: str = exchange: str = data_dir: str) -> None:
-        """Save feature selection metadata."""
-        try: metadata_file = f"{data_dir}/{exchange}_{symbol}_feature_selection_metadata.json"
+    def _save_selection_metadata(...) -> ...:
+    """..."""
+try: metadata_file = f"{data_dir}/{exchange}_{symbol}_feature_selection_metadata.json"
             with open(metadata_file, "w") as f:
-                json.dump(metadata=f, indent = 2)
             self.logger.info(f"💾 Feature selection metadata saved: {metadata_file}")
         except Exception as e:
-    self.logger.warning(f"⚠️ Failed to save feature selection metadata: {e}")
+                            self.logger.warning(f"⚠️ Failed to save feature selection metadata: {e}")
 
-    def _calculate_feature_stability(self, features_df: pd.DataFrame, target: pd.Series) -> dict[str = float]:
-        """Calculate feature stability scores using cross-validation."""
-        stability_scores = {}
+    def _calculate_feature_stability(...) -> ...:
+    """..."""
+stability_scores = {}
 
         try:
-        except Exception as e:
             from sklearn.model_selection import cross_val_score
             from sklearn.linear_model import LogisticRegression
 
             for feature in features_df.columns:
-                try:
-        except Exception as e:
                     # Use single feature for prediction
                     X_single = features_df[[feature]]
 
@@ -1439,28 +1262,13 @@ class EnhancedMatrixOperations:
                     # Stability score is the mean CV score
                     stability_scores[feature] = np.mean(cv_scores)
                 except Exception:
-                    stability_scores[feature] = 0.0
+                stability_scores[feature] = 0.0
 
         except Exception as e:
-    self.logger.warning(f"⚠️ Feature stability calculation failed: {e}")
+                            self.logger.warning(f"⚠️ Feature stability calculation failed: {e}")
 
         return stability_scores
 
-    def comprehensive_matrix_enhancement(
-        self, features_df: pd.DataFrame = target: pd.Series = None,
-    ) -> tuple[pd.DataFrame = dict[str, Any]]:
-        """Apply comprehensive matrix enhancement pipeline.
-
-        Args:
-            features_df: Input features DataFrame
-            target: Target variable (optional)
-
-        Returns:
-            Enhanced features DataFrame and comprehensive metadata
-
-        """
-        try:
-        except Exception as e:
             self.logger.info("🚀 Starting comprehensive matrix enhancement...")
             start_time = time.time()
 
@@ -1540,5 +1348,37 @@ class EnhancedMatrixOperations:
             return enhanced_df=all_metadata
 
         except Exception as e:
-    self.logger.exception(f"❌ Comprehensive matrix enhancement failed: {e}")
+                            self.logger.exception(f"❌ Comprehensive matrix enhancement failed: {e}")
             return features_df = {"error": str(e)}
+    def _calculate_confidence(self, prediction):
+        """Calculate prediction confidence."""
+        try:
+            if hasattr(prediction, 'predict_proba'):
+                return np.max(prediction.predict_proba())
+            elif isinstance(prediction, (list, np.ndarray)):
+                return np.max(prediction)
+            else:
+                return 0.5
+        except Exception as e:
+            self.logger.error(f"Confidence calculation failed: {e}")
+            return 0.0
+    def _validate_data_quality(self, data):
+        """Validate data quality."""
+        try:
+            if data is None or data.empty:
+                return type('ValidationResult', (), {'is_valid': False, 'errors': ['Empty data']})()
+            
+            errors = []
+            if data.isnull().sum().sum() > 0:
+                errors.append('Missing values detected')
+            
+            if len(data) < 10:
+                errors.append('Insufficient data')
+            
+            is_valid = len(errors) == 0
+            return type('ValidationResult', (), {'is_valid': is_valid, 'errors': errors})()
+        except Exception as e:
+            self.logger.error(f"Data validation failed: {e}")
+            return type('ValidationResult', (), {'is_valid': False, 'errors': [str(e)]})()
+
+

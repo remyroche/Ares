@@ -3,8 +3,7 @@
 """Training Package.
 
 This package contains all training-related components including:
-    pass  # TODO: Add implementation
-# TODO: Add implementation
+    self.logger.info(...)  # TODO: Add specific parameters and implementation
 - Training steps and pipelines
 - Optimization components
 - Core training utilities

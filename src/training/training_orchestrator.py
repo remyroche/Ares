@@ -12,18 +12,13 @@ from src.utils.warning_symbols import (
 
 
 class TrainingOrchestrator:
-    """Training orchestrator responsible for coordinating the overall training pipeline.
+"""Training orchestrator responsible for coordinating the overall training pipeline.
     This module handles the high-level coordination between different training components.
     """
 
-    def __init__(self, config: dict[str, Any]) -> None:
-        """Initialize training orchestrator.
-
-        Args:
-            config: Configuration dictionary
-
-        """
-        self.config: dict[str, Any] = config
+    def __init__(...) -> ...:
+                """..."""
+self.config: dict[str, Any] = config
         self.logger = system_logger.getChild("TrainingOrchestrator")
 
         # Training state
@@ -39,18 +34,6 @@ class TrainingOrchestrator:
 
     @handle_specific_errors(
         error_handlers={
-            ValueError: (False, "Invalid training orchestrator configuration"),
-            AttributeError: (False, "Missing required training components"),
-            KeyError: (False, "Missing configuration keys")},
-        default_return=False, context="training orchestrator initialization")
-    async def initialize(self) -> bool:
-        """Initialize training orchestrator and all component managers.
-
-        Returns:
-            bool: True if initialization successful, False otherwise
-
-        """
-        try:
             self.logger.info("Initializing Training Orchestrator...")
 
             # Initialize component managers
@@ -58,7 +41,6 @@ class TrainingOrchestrator:
 
             # Validate configuration
             if not self._validate_configuration():
-                self.logger.error(invalid("Invalid configuration for training orchestrator"))
                 return False
 
             # Initialize validation framework
@@ -68,16 +50,6 @@ class TrainingOrchestrator:
             return True
 
         except Exception as e:
-            self.logger.exception(
-                f"❌ Training Orchestrator initialization failed: {e}")
-            return False
-
-    @handle_errors(
-        exceptions=(ValueError, AttributeError), default_return=None,
-        context="validation framework initialization")
-    async def _initialize_validation_framework(self) -> None:
-        """Initialize the validation framework components."""
-        try:
             self.logger.info("Initializing validation framework...")
 
             # Initialize step dependency validator
@@ -95,17 +67,6 @@ class TrainingOrchestrator:
             self.logger.info("Validation framework initialized successfully")
 
         except Exception as e:
-            self.logger.error(f"Error initializing validation framework: {e}")
-            raise
-
-    @handle_errors(
-        exceptions=(ValueError, AttributeError), default_return=None,
-        context="component managers initialization")
-    async def _initialize_component_managers(self) -> None:
-        """Initialize all component managers."""
-        try:
-            self.logger.info("Initializing component managers...")
-
             # Initialize model trainer
             from src.training.model_trainer import ModelTrainer
             self.model_trainer = ModelTrainer(self.config)
@@ -132,17 +93,6 @@ class TrainingOrchestrator:
             self.logger.error(f"Error initializing component managers: {e}")
             raise
 
-    def _validate_configuration(self) -> bool:
-        """Validate training orchestrator configuration."""
-        try:
-            self.logger.info("Validating training orchestrator configuration...")
-
-            # Check required configuration sections
-            required_sections = ["training_orchestrator", "model_trainer", "optimization_manager"]
-            missing_sections = [section for section in required_sections if section not in self.config]
-
-            if missing_sections:
-                self.logger.error(f"Missing required configuration sections: {missing_sections}")
                 return False
 
             # Validate orchestrator configuration
@@ -170,60 +120,13 @@ class TrainingOrchestrator:
             self.logger.error(f"Error validating configuration: {e}")
             return False
 
-    @handle_errors(
-        exceptions=(Exception,), default_return=False,
-        context="training pipeline execution")
-    async def execute_training_pipeline(self, training_config: dict[str, Any]) -> bool:
-        """Execute the complete training pipeline.
-
-        Args:
-            training_config: Training configuration
-
-        Returns:
-            bool: True if pipeline executed successfully, False otherwise
-
-        """
-        try:
-            if self.is_training:
-                self.logger.warning("Training pipeline is already running")
-                return False
-
-            self.logger.info("Starting training pipeline execution...")
-
-            # Validate training configuration
-            if not self._validate_training_config(training_config):
-                self.logger.error("Invalid training configuration")
-                return False
-
-            # Set training state
             self.is_training = True
             self.training_start_time = datetime.now()
 
-            # Execute pipeline steps
-            pipeline_result = await self._execute_pipeline_steps(training_config)
-
-            # Record results
-            self.training_results = pipeline_result
 
             self.logger.info("Training pipeline execution completed successfully")
             return True
 
-        except Exception as e:
-            self.logger.error(f"Error during training pipeline execution: {e}")
-            self.is_training = False
-            return False
-
-    def _validate_training_config(self, training_config: dict[str, Any]) -> bool:
-        """Validate training configuration."""
-        try:
-            self.logger.debug("Validating training configuration...")
-
-            # Check required fields
-            required_fields = ["model_type", "data_source", "training_params"]
-            missing_fields = [field for field in required_fields if field not in training_config]
-
-            if missing_fields:
-                self.logger.error(f"Missing required training configuration fields: {missing_fields}")
                 return False
 
             # Validate model type
@@ -346,218 +249,11 @@ class TrainingOrchestrator:
                 data_info=data_result
             )
 
-            return {
-                "success": True,
-                "model_path": training_result.get("model_path"),
-                "training_metrics": training_result.get("metrics", {}),
-                "training_time": training_result.get("training_time")
-            }
-
-        except Exception as e:
-            self.logger.error(f"Error training model: {e}")
-            return {"success": False, "error": str(e)}
-
-    async def _evaluate_model(self, training_result: dict[str, Any]) -> dict[str, Any]:
-        """Evaluate the trained model."""
-        try:
-            self.logger.info("Evaluating model...")
-
-            if not self.model_trainer:
-                raise ValueError("Model trainer not initialized")
-
-            evaluation_result = await self.model_trainer.evaluate_model(
-                model_path=training_result.get("model_path")
-            )
-
-            return {
-                "success": True,
-                "evaluation_metrics": evaluation_result.get("metrics", {}),
-                "evaluation_time": evaluation_result.get("evaluation_time")
-            }
-
-        except Exception as e:
-            self.logger.error(f"Error evaluating model: {e}")
-            return {"success": False, "error": str(e)}
-
-    async def _optimize_model(self, training_result: dict[str, Any], evaluation_result: dict[str, Any]) -> dict[str, Any]:
-        """Optimize the model."""
-        try:
-            self.logger.info("Optimizing model...")
-
-            if not self.optimization_manager:
-                raise ValueError("Optimization manager not initialized")
-
-            optimization_result = await self.optimization_manager.optimize_model(
-                model_path=training_result.get("model_path"),
-                current_metrics=evaluation_result.get("evaluation_metrics", {})
-            )
-
-            return {
-                "success": True,
-                "optimization_metrics": optimization_result.get("metrics", {}),
-                "optimization_time": optimization_result.get("optimization_time")
-            }
-
-        except Exception as e:
-            self.logger.error(f"Error optimizing model: {e}")
-            return {"success": False, "error": str(e)}
-
-    async def _calibrate_model(self, training_result: dict[str, Any]) -> dict[str, Any]:
-        """Calibrate the model."""
-        try:
-            self.logger.info("Calibrating model...")
-
-            if not self.calibration_manager:
-                raise ValueError("Calibration manager not initialized")
-
-            calibration_result = await self.calibration_manager.calibrate_model(
-                model_path=training_result.get("model_path")
-            )
-
-            return {
-                "success": True,
-                "calibration_metrics": calibration_result.get("metrics", {}),
-                "calibration_time": calibration_result.get("calibration_time")
-            }
-
-        except Exception as e:
-            self.logger.error(f"Error calibrating model: {e}")
-            return {"success": False, "error": str(e)}
-
-    async def _create_ensemble(self, training_result: dict[str, Any], evaluation_result: dict[str, Any]) -> dict[str, Any]:
-        """Create ensemble model."""
-        try:
-            self.logger.info("Creating ensemble...")
-
-            if not self.ensemble_manager:
-                raise ValueError("Ensemble manager not initialized")
-
-            ensemble_result = await self.ensemble_manager.create_ensemble(
-                base_model_path=training_result.get("model_path"),
-                evaluation_metrics=evaluation_result.get("evaluation_metrics", {})
-            )
-
-            return {
-                "success": True,
-                "ensemble_path": ensemble_result.get("ensemble_path"),
-                "ensemble_metrics": ensemble_result.get("metrics", {}),
-                "ensemble_time": ensemble_result.get("ensemble_time")
-            }
-
-        except Exception as e:
-            self.logger.error(f"Error creating ensemble: {e}")
-            return {"success": False, "error": str(e)}
-
-    @handle_errors(
-        exceptions=(Exception,), default_return=False,
-        context="training pipeline stop")
-    async def stop_training_pipeline(self) -> bool:
-        """Stop the training pipeline."""
-        try:
-            if not self.is_training:
-                self.logger.warning("No training pipeline running to stop")
-                return False
-
-            self.logger.info("Stopping training pipeline...")
-
-            # Stop component managers
-            await self._stop_component_managers()
-
             # Update state
             self.is_training = False
 
-            self.logger.info("Training pipeline stopped successfully")
-            return True
 
         except Exception as e:
             self.logger.error(f"Error stopping training pipeline: {e}")
             return False
 
-    async def _stop_component_managers(self) -> None:
-        """Stop all component managers."""
-        try:
-            self.logger.debug("Stopping component managers...")
-
-            # Stop model trainer
-            if self.model_trainer:
-                await self.model_trainer.cleanup()
-
-            # Stop optimization manager
-            if self.optimization_manager:
-                await self.optimization_manager.cleanup()
-
-            # Stop ensemble manager
-            if self.ensemble_manager:
-                await self.ensemble_manager.cleanup()
-
-            # Stop calibration manager
-            if self.calibration_manager:
-                await self.calibration_manager.cleanup()
-
-            self.logger.debug("Component managers stopped successfully")
-
-        except Exception as e:
-            self.logger.error(f"Error stopping component managers: {e}")
-
-    @handle_errors(
-        exceptions=(Exception,), default_return={},
-        context="training results retrieval")
-    def get_training_results(self) -> dict[str, Any]:
-        """Get training results."""
-        try:
-            return self.training_results.copy()
-        except Exception as e:
-            self.logger.error(f"Error getting training results: {e}")
-            return {}
-
-    @handle_errors(
-        exceptions=(Exception,), default_return=False,
-        context="training status check")
-    def is_pipeline_running(self) -> bool:
-        """Check if training pipeline is running."""
-        try:
-            return self.is_training
-        except Exception as e:
-            self.logger.error(f"Error checking pipeline status: {e}")
-            return False
-
-    @handle_errors(
-        exceptions=(Exception,), default_return=None,
-        context="training orchestrator cleanup")
-    async def cleanup(self) -> None:
-        """Cleanup training orchestrator resources."""
-        try:
-            self.logger.info("Cleaning up Training Orchestrator...")
-
-            # Stop training if running
-            if self.is_training:
-                await self.stop_training_pipeline()
-
-            # Cleanup component managers
-            await self._stop_component_managers()
-
-            # Clear results
-            self.training_results.clear()
-
-            self.logger.info("Training Orchestrator cleanup completed")
-
-        except Exception as e:
-            self.logger.error(f"Error during cleanup: {e}")
-
-    def get_status(self) -> dict[str, Any]:
-        """Get training orchestrator status."""
-        try:
-            return {
-                "is_training": self.is_training,
-                "training_start_time": self.training_start_time.isoformat() if self.training_start_time else None,
-                "component_managers": {
-                    "model_trainer": self.model_trainer is not None,
-                    "optimization_manager": self.optimization_manager is not None,
-                    "ensemble_manager": self.ensemble_manager is not None,
-                    "calibration_manager": self.calibration_manager is not None
-                },
-                "results_count": len(self.training_results)
-            }
-        except Exception as e:
-            self.logger.error(f"Error getting status: {e}")
-            return {}

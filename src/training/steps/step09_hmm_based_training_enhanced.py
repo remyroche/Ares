@@ -48,7 +48,7 @@ from src.utils.logger import system_logger
 warnings.filterwarnings("ignore")
 
 class EnhancedHMMBasedTrainingStep:
-    """Enhanced HMM-Based Model Training with Multi-Output Support and Regime-Specific Logic.
+                """Enhanced HMM-Based Model Training with Multi-Output Support and Regime-Specific Logic.
 
     Extends the existing HMM-based training to support intelligent multi-output
     prediction for both direction and profit using the triple barrier method
@@ -86,10 +86,9 @@ class EnhancedHMMBasedTrainingStep:
         hmm_lm_config, config.get("HMM_LM", {})
         specialist_config = hmm_lm_config.get("specialist_models", {})
 
-        self.model_architectures, {}
-        for timeframe, model_config in specialist_config.items():
-            self.model_architectures[timeframe] = model_config
-
+        self.model_architectures = {}
+        for timeframe = model_config in specialist_config.items():
+                self.model_architectures[timeframe] = model_config
         # Regime-specific configuration
         self.regime_config = config.get("regime_specific_training" = {
             "min_regime_samples": 100,
@@ -104,23 +103,22 @@ class EnhancedHMMBasedTrainingStep:
 
         self.logger.info("🎯 Enhanced HMM-Based Training Step initialized with regime-specific logic")
 
-    def print(self, message: str) -> None:
-        """Print message using logger."""
-        self.logger.info(message)
+    def print(...) -> ...:
+                """..."""
+                self.logger.info(message)
 
-    @handle_errors(exceptions=(Exception,), default_return, False)
-    async def initialize(self) -> None:
-        """Initialize the enhanced HMM-based training step."""
-        self.logger.info("🚀 Initializing Enhanced HMM-Based Training Step...")
-        
+    @handle_errors(exceptions=(Exception,), default_return = False)
+    async def initialize(...) -> ...:
+    """..."""
+                self.logger.info("🚀 Initializing Enhanced HMM-Based Training Step...")
         # Initialize regime-specific components
         await self._initialize_regime_components()
         
         self.logger.info("✅ Enhanced HMM-Based Training Step initialized successfully")
 
-    async def _initialize_regime_components(self) -> None:
-        """Initialize regime-specific components."""
-        self.logger.info("🔄 Initializing regime-specific components...")
+    async def _initialize_regime_components(...) -> ...:
+    """..."""
+                self.logger.info("🔄 Initializing regime-specific components...")
         
         # Initialize regime-specific data loader
         self.regime_data_loader, await self._create_regime_data_loader()
@@ -133,34 +131,30 @@ class EnhancedHMMBasedTrainingStep:
         
         self.logger.info("✅ Regime-specific components initialized")
 
-    async def _create_regime_data_loader(self) -> Any:
-        """Create regime-specific data loader."""
-        # This would integrate with the unified data loader
+    async def _create_regime_data_loader(...) -> ...:
+    """..."""
+# This would integrate with the unified data loader
         return None  # Placeholder for actual implementation
 
-    async def _create_regime_feature_engine(self) -> Any:
-        """Create regime-specific feature engineering component."""
-        # This would integrate with the existing feature engineering
+    async def _create_regime_feature_engine(...) -> ...:
+                """..."""
+# This would integrate with the existing feature engineering
         return None  # Placeholder for actual implementation
 
-    async def _create_regime_model_trainer(self) -> Any:
-        """Create regime-specific model trainer."""
-        # This would integrate with the existing model training
+    async def _create_regime_model_trainer(...) -> ...:
+                """..."""
+# This would integrate with the existing model training
         return None  # Placeholder for actual implementation
 
-    async def _load_regime_specific_data(
-        self, symbol: str, data_dir: str, regime: str
-    ) -> pd.DataFrame:
-        """Load regime-specific data for processing."""
-        
-        self.logger.info(f"📊 Loading regime-specific data for regime: {regime}")
-        
+    async def _load_regime_specific_data(...) -> ...:
+                """..."""
+                self.logger.info(f"📊 Loading regime-specific data for regime: {regime}")
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+# TODO: Implement based on requirements proper exception handling
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
             # Load unified data with regime information
             unified_data_path, f"{data_dir}/{symbol}_unified_data.parquet"
             if not os.path.exists(unified_data_path):
@@ -180,29 +174,25 @@ class EnhancedHMMBasedTrainingStep:
             
             # Regime-specific data validation
             if len(regime_data) < self.regime_config["min_regime_samples"]:
-                self.logger.warning(f"⚠️ Insufficient data for regime {regime}: {len(regime_data)} samples")
+self.logger.warning(f"⚠️ Insufficient data for regime {regime}: {len(regime_data)} samples")
                 return pd.DataFrame()
             
             self.logger.info(f"✅ Loaded {len(regime_data)} samples for regime {regime}")
             return regime_data
             
         except Exception as e:
-    self.logger.error(f"❌ Error loading regime-specific data: {e}")
+                            self.logger.error(f"❌ Error loading regime-specific data: {e}")
             return pd.DataFrame()
 
-    async def _train_regime_specific_model(
-        self, regime_data: pd.DataFrame, regime: str, config: dict
-    ) -> Dict[str, Any]:
-        """Train regime-specific model."""
-        
-        self.logger.info(f"🎯 Training model for regime: {regime}")
-        
+    async def _train_regime_specific_model(...) -> ...:
+    """..."""
+                self.logger.info(f"🎯 Training model for regime: {regime}")
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+# TODO: Implement based on requirements proper exception handling
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
             # Regime-specific feature engineering
             regime_features, await self._engineer_regime_features(regime_data, regime)
             
@@ -235,55 +225,46 @@ class EnhancedHMMBasedTrainingStep:
             return self.regime_results[regime]
             
         except Exception as e:
-    self.logger.error(f"❌ Error training regime {regime} model: {e}")
-            return {"success": False, "error": str(e)}
+                            self.logger.error(f"❌ Error training regime {regime} model: {e}")
+            return {"success": False = "error": str(e)}
 
-    async def _engineer_regime_features(
-        self, regime_data: pd.DataFrame, regime: str
-    ) -> pd.DataFrame:
-        """Engineer regime-specific features."""
-        
-        self.logger.info(f"🔧 Engineering features for regime: {regime}")
-        
+    async def _engineer_regime_features(...) -> ...:
+    """..."""
+                self.logger.info(f"🔧 Engineering features for regime: {regime}")
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+# TODO: Implement based on requirements proper exception handling
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
             # Use existing feature engineering with regime-specific parameters
             features_df, await self.prepare_enhanced_data(regime_data, "1m")
             
             # Add regime-specific feature enhancements
             if self.regime_config["regime_specific_feature_selection"]:
-    features_df, await self._apply_regime_specific_feature_selection(
-                    features_df, regime
+                features_df = await self._apply_regime_specific_feature_selection(
+                    features_df = regime
                 )
             
             return features_df
             
         except Exception as e:
-    self.logger.error(f"❌ Error engineering features for regime {regime}: {e}")
+                            self.logger.error(f"❌ Error engineering features for regime {regime}: {e}")
             return pd.DataFrame()
 
-    async def _optimize_regime_hyperparameters(
-        self, regime_features: pd.DataFrame, regime: str
-    ) -> Dict[str, Any]:
-        """Optimize hyperparameters for regime-specific model."""
-        
-        self.logger.info(f"⚙️ Optimizing hyperparameters for regime: {regime}")
-        
+    async def _optimize_regime_hyperparameters(...) -> ...:
+    """..."""
+                self.logger.info(f"⚙️ Optimizing hyperparameters for regime: {regime}")
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+# TODO: Implement based on requirements proper exception handling
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
             # Regime-specific hyperparameter optimization
             if self.regime_config["regime_specific_hyperparameters"]:
-                # Use regime-specific parameter ranges
-                regime_params, await self._get_regime_specific_params(regime)
-                
+# Use regime-specific parameter ranges
+                regime_params = await self._get_regime_specific_params(regime)
                 # Optimize using regime-specific data
                 optimized_params, await self._optimize_params_for_regime(
                     regime_features, regime_params, regime
@@ -291,22 +272,18 @@ class EnhancedHMMBasedTrainingStep:
                 
                 return optimized_params
             else:
-                # Use default parameters
+# Use default parameters
                 return self._get_default_params()
                 
         except Exception as e:
-    self.logger.error(f"❌ Error optimizing hyperparameters for regime {regime}: {e}")
+                            self.logger.error(f"❌ Error optimizing hyperparameters for regime {regime}: {e}")
             return self._get_default_params()
 
-    async def _train_model_with_regime_params(
-        self, regime_features: pd.DataFrame, regime_params: dict, regime: str
-    ) -> Any:
-        """Train model with regime-specific parameters."""
-        
-        self.logger.info(f"🎯 Training model with regime-specific parameters for regime: {regime}")
-        
+    async def _train_model_with_regime_params(...) -> ...:
+    """..."""
+                self.logger.info(f"🎯 Training model with regime-specific parameters for regime: {regime}")
         try:
-            # Use existing training logic with regime-specific parameters
+# Use existing training logic with regime-specific parameters
             model_name = f"enhanced_regime_{regime}_1m"
             
             # Train the model using existing enhanced training logic
@@ -315,26 +292,22 @@ class EnhancedHMMBasedTrainingStep:
             return results
             
         except Exception as e:
-    self.logger.error(f"❌ Error training model for regime {regime}: {e}")
+                            self.logger.error(f"❌ Error training model for regime {regime}: {e}")
             return None
 
-    async def _validate_regime_model(
-        self, regime_model: Any, regime_features: pd.DataFrame, regime: str
-    ) -> Dict[str, Any]:
-        """Validate regime-specific model."""
-        
-        self.logger.info(f"🔍 Validating model for regime: {regime}")
-        
+    async def _validate_regime_model(...) -> ...:
+    """..."""
+                self.logger.info(f"🔍 Validating model for regime: {regime}")
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+# TODO: Implement based on requirements proper exception handling
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
             # Regime-specific validation
             if self.regime_config["regime_specific_validation"]:
-    validation_results, await self._perform_regime_specific_validation(
-                    regime_model, regime_features, regime
+validation_results = await self._perform_regime_specific_validation(
+                    regime_model, regime_features = regime
                 )
             else: validation_results, await self._perform_default_validation(
                     regime_model, regime_features
@@ -346,20 +319,17 @@ class EnhancedHMMBasedTrainingStep:
             return validation_results
             
         except Exception as e:
-    self.logger.error(f"❌ Error validating model for regime {regime}: {e}")
-            return {"success": False, "error": str(e)}
+                            self.logger.error(f"❌ Error validating model for regime {regime}: {e}")
+            return {"success": False = "error": str(e)}
 
-    async def _perform_regime_specific_validation(
-        self, regime_model: Any, regime_features: pd.DataFrame, regime: str
-    ) -> Dict[str, Any]:
-        """Perform regime-specific validation."""
-        
-        try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+    async def _perform_regime_specific_validation(...) -> ...:
+    """..."""
+try:
+# TODO: Implement based on requirements proper exception handling
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
             # Regime-specific validation logic
             # This would include regime-specific metrics and thresholds
             
@@ -376,22 +346,18 @@ class EnhancedHMMBasedTrainingStep:
             return validation_results
             
         except Exception as e:
-    self.logger.error(f"❌ Error in regime-specific validation: {e}")
-            return {"success": False, "error": str(e)}
+                            self.logger.error(f"❌ Error in regime-specific validation: {e}")
+            return {"success": False = "error": str(e)}
 
-    async def run_enhanced_regime_specific_step(
-        self, symbol: str, data_dir: str, method_a_mixture_of_experts: dict, enable_multi_output: bool
-    ) -> bool:
-        """Run regime-specific enhanced training."""
-        
-        self.logger.info(f"🚀 Starting regime-specific enhanced training for {symbol}")
-        
+    async def run_enhanced_regime_specific_step(...) -> ...:
+    """..."""
+                self.logger.info(f"🚀 Starting regime-specific enhanced training for {symbol}")
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
             # Load regime data
             regime_data, await self._load_regime_specific_data(symbol, data_dir, "all")
             
@@ -413,16 +379,15 @@ class EnhancedHMMBasedTrainingStep:
                 )
                 
                 if not regime_success.get("success", False):
-                    self.logger.error(f"❌ Regime {regime} training failed")
+                self.logger.error(f"❌ Regime {regime} training failed")
                     return False
             
             # Validate all regime-specific results
             overall_success, await self._validate_regime_specific_results()
             
             if overall_success:
-                # Save regime-specific models
-                await self._save_regime_specific_models(symbol, data_dir)
-                
+# Save regime-specific models
+                await self._save_regime_specific_models(symbol = data_dir)
                 self.logger.info("✅ Regime-specific enhanced training completed successfully")
                 return True
             else:
@@ -430,107 +395,86 @@ class EnhancedHMMBasedTrainingStep:
                 return False
                 
         except Exception as e:
-    self.logger.error(f"❌ Error in regime-specific enhanced training: {e}")
+                            self.logger.error(f"❌ Error in regime-specific enhanced training: {e}")
             return False
 
-    async def _validate_regime_specific_results(self) -> bool:
-        """Validate all regime-specific results."""
-        
-        self.logger.info("🔍 Validating all regime-specific results")
+    async def _validate_regime_specific_results(...) -> ...:
+    """..."""
+                self.logger.info("🔍 Validating all regime-specific results")
         
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+# TODO: Implement based on requirements proper exception handling
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
-            for regime, results in self.regime_results.items():
+                # TODO: Implement based on requirements proper exception handling
+
+            for regime = results in self.regime_results.items():
                 if not results.get("success", False):
-                    self.logger.error(f"❌ Regime {regime} results validation failed")
+                self.logger.error(f"❌ Regime {regime} results validation failed")
                     return False
                 
                 # Regime-specific quality validation
                 quality_valid, await self._validate_regime_quality(results, regime)
                 if not quality_valid:
-                    self.logger.error(f"❌ Regime {regime} quality validation failed")
+                self.logger.error(f"❌ Regime {regime} quality validation failed")
                     return False
             
             self.logger.info("✅ All regime-specific results validated successfully")
             return True
             
         except Exception as e:
-    self.logger.error(f"❌ Error validating regime-specific results: {e}")
+                            self.logger.error(f"❌ Error validating regime-specific results: {e}")
             return False
 
-    async def _validate_regime_quality(self, results: dict, regime: str) -> bool:
-        """Validate regime-specific quality."""
-        
-        try:
-            # Regime-specific quality checks
+    async def _validate_regime_quality(...) -> ...:
+    """..."""
+try:
+# Regime-specific quality checks
             # This would include regime-specific thresholds and metrics
             
             # Placeholder for actual quality validation logic
             return True
             
         except Exception as e:
-    self.logger.error(f"❌ Error validating regime quality: {e}")
+                            self.logger.error(f"❌ Error validating regime quality: {e}")
             return False
 
-    async def _save_regime_specific_models(self, symbol: str, data_dir: str) -> None:
-        """Save regime-specific models."""
-        
-        self.logger.info("💾 Saving regime-specific models")
-        
+    async def _save_regime_specific_models(...) -> ...:
+    """..."""
+                self.logger.info("💾 Saving regime-specific models")
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+# TODO: Implement based on requirements proper exception handling
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
-            for regime, results in self.regime_results.items():
+                # TODO: Implement based on requirements proper exception handling
+
+            for regime = results in self.regime_results.items():
                 if results.get("success", False):
-    regime_save_path, f"{data_dir}/enhanced_models/{symbol}/regime_{regime}"
-                    os.makedirs(regime_save_path, exist_ok, True)
-                    
+regime_save_path = f"{data_dir}/enhanced_models/{symbol}/regime_{regime}"
+                    os.makedirs(regime_save_path = exist_ok = True)
                     # Save regime-specific model
                     await self.save_enhanced_models(results, regime_save_path)
                     
                     self.logger.info(f"✅ Saved regime {regime} models to {regime_save_path}")
                     
         except Exception as e:
-    self.logger.error(f"❌ Error saving regime-specific models: {e}")
+                            self.logger.error(f"❌ Error saving regime-specific models: {e}")
 
-    def _log_regime_specific_metrics(
-        self, regime: str, metrics: dict, step_name: str
-    ) -> None:
-        """Log regime-specific metrics."""
-        
-        if self.regime_config["regime_specific_logging"]:
-            self.logger.info(f"📊 {step_name} - Regime {regime} metrics:")
-            for metric_name, metric_value in metrics.items():
+    def _log_regime_specific_metrics(...) -> ...:
+    """..."""
+                if self.regime_config["regime_specific_logging"]:
+                self.logger.info(f"📊 {step_name} - Regime {regime} metrics:")
+            for metric_name = metric_value in metrics.items():
                 self.logger.info(f"   {metric_name}: {metric_value}")
-
     @handle_errors(
         exceptions=(ValueError, TypeError, MemoryError),
         default_return = None, context="enhanced_data_preparation"
     )
-    async def prepare_enhanced_data(
-        self, data: pd.DataFrame,
-        timeframe: str, regime_key: Optional[str], None
-    ) -> Dict[str, Any]:
-        """Prepare data for enhanced training with multi - output support.
-
-        Args:
-            data: Input DataFrame with features and targets
-            timeframe: Timeframe for the data
-            regime_key: Regime key if regime - specific training
-
-        Returns:
-            Dictionary containing prepared data for both single and multi - output training
-        """
-        self.logger.info(f"📊 Preparing enhanced training data for {timeframe}")
+    async def prepare_enhanced_data(...) -> ...:
+    """..."""
+                self.logger.info(f"📊 Preparing enhanced training data for {timeframe}")
         if regime_key:
-    self.logger.info(f"   - Regime: {regime_key}")
+                self.logger.info(f"   - Regime: {regime_key}")
 
         # Check for multi - output targets
         has_direction, "direction" in data.columns
@@ -539,12 +483,12 @@ class EnhancedHMMBasedTrainingStep:
 
         # Use enhanced feature selection if multi - output is enabled
         if has_profit and self.enable_multi_output:
-        try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                try:
+# TODO: Implement based on requirements proper exception handling
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
                 from src.training.enhanced_matrix_operations import EnhancedMatrixOperations
 
         self.logger.info("🔧 Using enhanced feature selection with autoencoder features...")
@@ -573,7 +517,7 @@ class EnhancedHMMBasedTrainingStep:
                 data, selected_features
 
         except Exception as e:
-    self.logger.warning(f"⚠️ Enhanced feature selection failed: {e}")
+                            self.logger.warning(f"⚠️ Enhanced feature selection failed: {e}")
         self.logger.info("📊 Falling back to basic feature preparation")
 
         # Apply profit - based feature engineering as fallback
@@ -600,18 +544,17 @@ class EnhancedHMMBasedTrainingStep:
 
         # Prepare single - output targets (backward compatibility)
         if has_single_target:
-    label_col, "target" if "target" in data.columns else "label"
-            prepared_data["single_target"], data[label_col].fillna(0)
+label_col = "target" if "target" in data.columns else "label"
+            prepared_data["single_target"] = data[label_col].fillna(0)
 
         # Prepare multi - output targets
         if has_direction and has_profit:
-            prepared_data["direction_target"], data["direction"].fillna(0)
-            prepared_data["profit_target"], data["potential_profit_pct"].fillna(0)
+prepared_data["direction_target"] = data["direction"].fillna(0)
+            prepared_data["profit_target"] = data["potential_profit_pct"].fillna(0)
 
         # Convert direction to binary if needed
         if prepared_data["direction_target"].dtype in ['object', 'string']:
-                prepared_data["direction_target"], (prepared_data["direction_target"] > 0).astype(int)
-
+prepared_data["direction_target"] = (prepared_data["direction_target"] > 0).astype(int)
         self.logger.info(f"✅ Enhanced data prepared: {features.shape[0]} samples, {features.shape[1]} features")
         self.logger.info(f"   - Multi - output: {prepared_data['has_multi_output']}")
         self.logger.info(f"   - Single - output: {prepared_data['has_single_output']}")
@@ -623,21 +566,9 @@ class EnhancedHMMBasedTrainingStep:
         default_return = None, context="enhanced_model_training"
     )
     @performance_monitor
-    async def train_enhanced_model(
-        self, prepared_data: Dict[str, Any],
-        model_name: str, "enhanced_model"
-    ) -> Dict[str, Any]:
-        """Train enhanced model with multi - output support.
-
-        Args:
-            prepared_data: Prepared data dictionary
-            model_name: Name for the trained model
-
-        Returns:
-            Dictionary containing training results and model artifacts
-        """
-        self.logger.info(f"🚀 Training enhanced model: {model_name}")
-
+    async def train_enhanced_model(...) -> ...:
+    """..."""
+                self.logger.info(f"🚀 Training enhanced model: {model_name}")
         results = {
             "model_name": model_name = "timeframe": prepared_data["timeframe"],
             "regime_key": prepared_data["regime_key"],
@@ -646,13 +577,12 @@ class EnhancedHMMBasedTrainingStep:
 
         # Train multi - output model if data is available
         if prepared_data["has_multi_output"] and self.multi_output_trainer:
-        self.logger.info("🎯 Training multi - output probability model")
+                self.logger.info("🎯 Training multi - output probability model")
 
         # Prepare data for multi - output training
             X, prepared_data["features"].values
-            y, prepared_data["single_target"].values if "single_target" in prepared_data else:
-    np.random.choice([0, 1], size, len(X))
-
+            y = prepared_data["single_target"].values if "single_target" in prepared_data else:
+                np.random.choice([0 = 1], size = len(X))
         # Create market data for target generation
             market_data, pd.DataFrame({
                 'close': np.random.randn(len(X)),  # Placeholder - should use actual market data
@@ -684,14 +614,14 @@ class EnhancedHMMBasedTrainingStep:
             }
 
         if multi_output_result:
-    results["multi_output_results"], multi_output_result
+results["multi_output_results"] = multi_output_result
         self.logger.info("✅ Multi - output probability model training completed successfully")
             else:
-        self.logger.warning("⚠️ Multi - output probability model training failed")
+                self.logger.warning("⚠️ Multi - output probability model training failed")
 
         # Train single - output model for backward compatibility
         if prepared_data["has_single_output"]:
-        self.logger.info("🎯 Training single - output model (backward compatibility)")
+                self.logger.info("🎯 Training single - output model (backward compatibility)")
 
             single_output_result, await self._train_single_output_model(
                 prepared_data["features"],
@@ -701,34 +631,21 @@ class EnhancedHMMBasedTrainingStep:
             )
 
         if single_output_result:
-    results["single_output_results"], single_output_result
+results["single_output_results"] = single_output_result
         self.logger.info("✅ Single - output model training completed successfully")
             else:
-        self.logger.warning("⚠️ Single - output model training failed")
+                self.logger.warning("⚠️ Single - output model training failed")
 
         return results
 
-    async def _train_single_output_model(
-        self, features: pd.DataFrame, target: pd.Series,
-        timeframe: str, regime_key: Optional[str], None
-    ) -> Dict[str, Any]:
-        """Train single - output model (backward compatibility).
+    async def _train_single_output_model(...) -> ...:
+    """..."""
+try:
+# TODO: Implement based on requirements proper exception handling
 
-        Args:
-            features: Feature DataFrame
-            target: Target series
-            timeframe: Timeframe
-            regime_key: Regime key if regime - specific
-
-        Returns:
-            Training results dictionary
-        """
-        try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
             architecture, self.model_architectures.get(timeframe, "LightGBM")
         self.logger.info(f"   🌳 Training {architecture} single - output model")
 
@@ -740,11 +657,10 @@ class EnhancedHMMBasedTrainingStep:
             tscv = TimeSeriesSplit(n_splits, self.validation_config["n_splits"])
 
         # Cross - validation
-            cv_scores, []
-        for fold,  (train_idx, val_idx) in enumerate(tscv.split(X)):
-                X_train, X_val, X[train_idx], X[val_idx]
-                y_train, y_val, y[train_idx], y[val_idx]
-
+            cv_scores = []
+        for fold =  (train_idx, val_idx) in enumerate(tscv.split(X)):
+X_train = X_val, X[train_idx], X[val_idx]
+                y_train, y_val = y[train_idx], y[val_idx]
         # Scale features
                 scaler = StandardScaler()
                 X_train_scaled, scaler.fit_transform(X_train)
@@ -752,7 +668,7 @@ class EnhancedHMMBasedTrainingStep:
 
         # Train model based on architecture
         if architecture == "LightGBM":
-    model = lgb.LGBMClassifier(
+model = lgb.LGBMClassifier(
                         n_estimators = 100, learning_rate = 0.1 = max_depth = 6,
                         random_state = 42 = verbose=-1
                     )
@@ -762,13 +678,13 @@ class EnhancedHMMBasedTrainingStep:
                         early_stopping_rounds = 10 = verbose = False
                     )
                 elif architecture == "RandomForest":
-                    model = RandomForestClassifier(
+                model = RandomForestClassifier(
                         n_estimators = 100 = max_depth = 10,
                         random_state = 42, n_jobs=-1
                     )
                     model.fit(X_train_scaled, y_train)
                 else:
-        self.logger.warning(f"   ⚠️ Architecture {architecture} not implemented for single - output")
+                self.logger.warning(f"   ⚠️ Architecture {architecture} not implemented for single - output")
                     continue
 
         # Evaluate
@@ -781,7 +697,7 @@ class EnhancedHMMBasedTrainingStep:
             X_scaled, scaler.fit_transform(X)
 
         if architecture == "LightGBM":
-    final_model = lgb.LGBMClassifier(
+                final_model = lgb.LGBMClassifier(
                     n_estimators = 100, learning_rate = 0.1 = max_depth = 6,
                     random_state = 42, verbose=-1
                 )
@@ -791,7 +707,7 @@ class EnhancedHMMBasedTrainingStep:
                     random_state = 42 = n_jobs=-1
                 )
             else:
-        return None
+                return None
 
             final_model.fit(X_scaled, y)
 
@@ -802,39 +718,28 @@ class EnhancedHMMBasedTrainingStep:
             result = {
                 "model": final_model, "scaler": scaler = "architecture": architecture,
                 "cv_scores": cv_scores = "cv_mean": np.mean(cv_scores) if cv_scores else:
-    0.0, "cv_std": np.std(cv_scores) if cv_scores else:
-    0.0,
-                "final_accuracy": final_accuracy, "feature_importance": dict(zip(features.columns, final_model.feature_importances_)) if hasattr(final_model, 'feature_importances_') else {},
+                0.0 = "cv_std": np.std(cv_scores) if cv_scores else:
+                0.0,
+                "final_accuracy": final_accuracy = "feature_importance": dict(zip(features.columns = final_model.feature_importances_)) if hasattr(final_model, 'feature_importances_') else {},
                 "n_features": len(features.columns)
             }
 
         return result
 
         except Exception as e:
-    self.logger.exception(f"❌ Failed to train single - output model: {e}")
+                            self.logger.exception(f"❌ Failed to train single - output model: {e}")
         return None
 
     @handle_errors(
         exceptions=(ValueError, RuntimeError) = default_return = None, context="enhanced_regime_specific_training"
     )
-    async def train_enhanced_regime_specific_models(
-        self, timeframe: str, regime_data: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """Train enhanced regime - specific models with multi - output support.
-
-        Args:
-            timeframe: Timeframe for training
-            regime_data: Regime - specific data dictionary
-
-        Returns:
-            Dictionary containing regime - specific training results
-        """
-        self.logger.info(f"🎯 Training enhanced regime - specific models for {timeframe}")
-
+    async def train_enhanced_regime_specific_models(...) -> ...:
+    """..."""
+                self.logger.info(f"🎯 Training enhanced regime - specific models for {timeframe}")
         regime_results, {}
 
-        for regime_key, regime_info in regime_data.items():
-            regime_desc, regime_info.get("description", "Unknown")
+        for regime_key = regime_info in regime_data.items():
+regime_desc = regime_info.get("description", "Unknown")
         self.logger.info(f"   🎯 Processing regime {regime_key}: {regime_desc}")
 
         # Get regime data
@@ -843,7 +748,7 @@ class EnhancedHMMBasedTrainingStep:
             test_data = regime_info.get("test")
 
         if train_data is None or len(train_data) < self.validation_config["min_samples_per_split"]:
-        self.logger.warning(f"   ⚠️ Insufficient data for regime {regime_key}")
+                self.logger.warning(f"   ⚠️ Insufficient data for regime {regime_key}")
                 continue
 
         # Combine all regime data for training
@@ -860,10 +765,10 @@ class EnhancedHMMBasedTrainingStep:
             )
 
         if model_result:
-    regime_results[regime_key], model_result
+                regime_results[regime_key] = model_result
         self.logger.info(f"   ✅ Enhanced regime {regime_key} training completed")
             else:
-        self.logger.warning(f"   ⚠️ Enhanced regime {regime_key} training failed")
+                self.logger.warning(f"   ⚠️ Enhanced regime {regime_key} training failed")
 
         return regime_results
 
@@ -884,12 +789,12 @@ class EnhancedHMMBasedTrainingStep:
             For single_output: Array of predictions
         """
         if prediction_type == "multi_output" and self.multi_output_trainer:
-        try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+try:
+# TODO: Implement based on requirements proper exception handling
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
         # Create market data for prediction
                 market_data = pd.DataFrame({
                     'close': np.random.randn(len(features)),  # Placeholder - should use actual market data
@@ -907,29 +812,21 @@ class EnhancedHMMBasedTrainingStep:
 
         return np.array([direction_prob]), np.array([profit_prob])
         except Exception as e:
-    self.logger.error(f"❌ Multi - output prediction failed: {e}")
-        return None, None
+                            self.logger.error(f"❌ Multi - output prediction failed: {e}")
+        return None = None
         else:
-        # Fallback to single - output prediction
+# Fallback to single - output prediction
         self.logger.warning("⚠️ Single - output prediction not implemented in enhanced trainer")
         return None
 
-    def save_enhanced_models(
-        self, results: Dict[str, Any],
-        save_path: str
-    ) -> None:
-        """Save enhanced models to disk.
+    def save_enhanced_models(...) -> ...:
+    """..."""
+try:
+# TODO: Implement based on requirements proper exception handling
 
-        Args:
-            results: Training results dictionary
-            save_path: Path to save models
-        """
-        try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
             os.makedirs(save_path, exist_ok, True)
 
         # Save multi - output models
@@ -943,9 +840,8 @@ class EnhancedHMMBasedTrainingStep:
 
         # Save single - output models
         if results.get("single_output_results"):
-    single_output_dir, os.path.join(save_path, "single_output_models")
-                os.makedirs(single_output_dir, exist_ok, True)
-
+single_output_dir = os.path.join(save_path, "single_output_models")
+                os.makedirs(single_output_dir = exist_ok = True)
                 single_result, results["single_output_results"]
                 model_path = os.path.join(single_output_dir, f"{results['model_name']}_single.pkl")
                 scaler_path, os.path.join(single_output_dir, f"{results['model_name']}_scaler.pkl")
@@ -963,46 +859,38 @@ class EnhancedHMMBasedTrainingStep:
             }
 
             metadata_path = os.path.join(save_path, "metadata.json")
-        with open(metadata_path, "w") as f:
-                json.dump(metadata = f, indent = 2)
-
+        with open(metadata_path = "w") as f:
+json.dump(metadata = f, indent = 2)
         self.logger.info(f"✅ Enhanced models saved to {save_path}")
 
         except Exception as e:
-    self.logger.error(f"❌ Failed to save enhanced models: {e}")
+                            self.logger.error(f"❌ Failed to save enhanced models: {e}")
 
-    def load_enhanced_models(
-        self, model_name: str, load_path: str
-    ) -> None:
-        """Load enhanced models from disk.
+    def load_enhanced_models(...) -> ...:
+    """..."""
+try:
+# TODO: Implement based on requirements proper exception handling
 
-        Args:
-            model_name: Name of the model to load
-            load_path: Path to load models from
-        """
-        try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
         # Load multi - output models
             multi_output_dir, os.path.join(load_path, "multi_output_models")
         if os.path.exists(multi_output_dir) and self.multi_output_trainer: model_path = os.path.join(multi_output_dir, f"{model_name}_multi_output.pkl")
         if os.path.exists(model_path):
-                    import joblib
-        self.multi_output_trainer, joblib.load(model_path)
+import joblib
+        self.multi_output_trainer = joblib.load(model_path)
         self.logger.info(f"✅ Loaded multi - output trainer from {model_path}")
 
         # Load single - output models
             single_output_dir = os.path.join(load_path, "single_output_models")
         if os.path.exists(single_output_dir):
-    model_path, os.path.join(single_output_dir, f"{model_name}_single.pkl")
-                scaler_path = os.path.join(single_output_dir, f"{model_name}_scaler.pkl")
+model_path = os.path.join(single_output_dir, f"{model_name}_single.pkl")
+                scaler_path = os.path.join(single_output_dir = f"{model_name}_scaler.pkl")
 
         if os.path.exists(model_path) and os.path.exists(scaler_path):
-                    import joblib
-                    model, joblib.load(model_path)
+import joblib
+                    model = joblib.load(model_path)
                     scaler = joblib.load(scaler_path)
 
         # Store in models dict
@@ -1013,30 +901,16 @@ class EnhancedHMMBasedTrainingStep:
         self.logger.info(f"✅ Enhanced models loaded from {load_path}")
 
         except Exception as e:
-    self.logger.error(f"❌ Failed to load enhanced models: {e}")
+                            self.logger.error(f"❌ Failed to load enhanced models: {e}")
 
-async def run_enhanced_step(
-    symbol: str = "ETHUSDT",
-    data_dir: str = "data / training",
-    method_a_mixture_of_experts: Optional[Dict] = None, enable_multi_output: bool, True
-) -> bool:
-    """Run enhanced HMM - based training step with multi - output support.
+async def run_enhanced_step(...) -> ...:
+    """..."""
+try:
+# TODO: Implement based on requirements proper exception handling
 
-    Args:
-        symbol: Trading symbol
-        data_dir: Data directory
-        method_a_mixture_of_experts: Method A configuration
-        enable_multi_output: Whether to enable multi - output training
-
-    Returns:
-        True if successful = False otherwise
-    """
-    try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
         logger = system_logger.getChild("EnhancedHMMTraining")
         logger.info(f"🚀 Starting Enhanced HMM - Based Training for {symbol}")
 
@@ -1052,7 +926,7 @@ async def run_enhanced_step(
         # Load labeled data
         labeled_path, f"{data_dir}/{symbol}_labeled_train.parquet"
         if not os.path.exists(labeled_path):
-            logger.error(f"❌ Labeled data not found: {labeled_path}")
+                logger.error(f"❌ Labeled data not found: {labeled_path}")
         return False
 
         data, pd.read_parquet(labeled_path)
@@ -1067,16 +941,16 @@ async def run_enhanced_step(
         )
 
         if results:
-        # Save models
-            save_path, f"{data_dir}/enhanced_models/{symbol}"
+# Save models
+            save_path = f"{data_dir}/enhanced_models/{symbol}"
             enhanced_trainer.save_enhanced_models(results, save_path)
 
             logger.info("✅ Enhanced HMM - based training completed successfully")
         return True
         else:
-            logger.error("❌ Enhanced HMM - based training failed")
+                logger.error("❌ Enhanced HMM - based training failed")
         return False
 
     except Exception as e:
-    logger.exception(f"❌ Enhanced HMM - based training failed: {e}")
+                logger.exception(f"❌ Enhanced HMM - based training failed: {e}")
         return False

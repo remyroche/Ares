@@ -70,14 +70,9 @@ class RayModelTrainer:
     Handles both analyst and tactician models with parallel processing capabilities.
     """
 
-    def __init__(self, config: dict[str, Any]) -> None:
-        """Initialize Ray model trainer.
-
-        Args:
-            config: Configuration dictionary
-
-        """
-        self.config: dict[str, Any] = config
+    def __init__(...) -> ...:
+    """..."""
+self.config: dict[str, Any] = config
         self.logger = system_logger.getChild("RayModelTrainer")
 
         # Ray configuration
@@ -116,28 +111,11 @@ class RayModelTrainer:
             ValueError: (False, "Invalid Ray configuration"),
             RuntimeError: (False, "Ray initialization failed"),
         },
-        default_return=False,
-        context="Ray initialization")
-    def _initialize_ray(self) -> bool:
-        """Initialize Ray cluster.
-
-        Returns:
-            bool: True if initialization successful, False otherwise
-
-        """
-        try:
-            if not ray.is_initialized():
-                ray.init(
-                    num_cpus=self.num_cpus,
-                    num_gpus=self.num_gpus,
-                    ignore_reinit_error=True,
-                    logging_level=self.ray_config.get("logging_level", "info"),
                 )
                 self.logger.info(
                     f"✅ Ray initialized with {self.num_cpus} CPUs, {self.num_gpus} GPUs")
             return True
         except Exception as e:
-            self.logger.error(f"❌ Ray initialization failed: {e}")
             return False
 
     @handle_specific_errors(
@@ -146,21 +124,11 @@ class RayModelTrainer:
             AttributeError: (False, "Missing required model trainer parameters"),
             KeyError: (False, "Missing configuration keys"),
         },
-        default_return=False,
-        context="model trainer initialization")
-    def initialize(self) -> bool:
-        """Initialize model trainer.
-
-        Returns:
-            bool: True if initialization successful, False otherwise
-
-        """
-        try:
             self.logger.info("Initializing Ray Model Trainer...")
 
             # Validate configuration
             if not self._validate_configuration():
-                self.logger.error("Invalid configuration for model trainer")
+            self.logger.error("Invalid configuration for model trainer")
                 return False
 
             # Initialize model storage
@@ -170,7 +138,6 @@ class RayModelTrainer:
             return True
 
         except Exception as e:
-            self.logger.error(f"❌ Ray Model Trainer initialization failed: {e}")
             return False
 
     @handle_errors(
@@ -178,14 +145,6 @@ class RayModelTrainer:
         default_return=False,
         context="configuration validation",
     )
-    def _validate_configuration(self) -> bool:
-        """Validate model trainer configuration.
-
-        Returns:
-            bool: True if configuration is valid, False otherwise
-
-        """
-        try:
             # Validate model trainer specific settings
             if not self.enable_analyst_models and not self.enable_tactician_models:
                 self.logger.error("At least one model type must be enabled")
@@ -193,15 +152,12 @@ class RayModelTrainer:
 
             # Validate analyst models configuration
             if self.enable_analyst_models:
-                if not self.analyst_models_config:
-                    self.logger.error(
-                        "Analyst models enabled but no configuration provided")
                     return False
 
             # Validate tactician models configuration
             if self.enable_tactician_models:
                 if not self.tactician_models_config:
-                    self.logger.error(
+                self.logger.error(
                         "Tactician models enabled but no configuration provided",
                     )
                     return False
@@ -209,7 +165,6 @@ class RayModelTrainer:
             return True
 
         except Exception as e:
-            self.logger.error(f"Configuration validation failed: {e}")
             return False
 
     @handle_errors(
@@ -217,9 +172,6 @@ class RayModelTrainer:
         default_return=None,
         context="model storage initialization",
     )
-    def _initialize_model_storage(self) -> None:
-        """Initialize model storage and metadata."""
-        try:
             # Create model storage directory if it doesn't exist
             model_dir = self.model_trainer_config.get("model_directory", "models")
             os.makedirs(model_dir, exist_ok=True)
@@ -227,13 +179,12 @@ class RayModelTrainer:
             # Load existing model metadata
             metadata_file = os.path.join(model_dir, "model_metadata.json")
             if os.path.exists(metadata_file):
-                with open(metadata_file) as f:
-                    self.model_metadata = json.load(f)
+with open(metadata_file) as f:
+self.model_metadata = json.load(f)
 
             self.logger.info(f"✅ Model storage initialized: {model_dir}")
 
         except Exception as e:
-            self.logger.error(f"❌ Failed to initialize model storage: {e}")
             raise
 
     @validate_step_prerequisites
@@ -245,15 +196,6 @@ class RayModelTrainer:
     @circuit_breaker_protection
     @validate_step_output
     @quality_gate
-    def train_models(
-        self,
-        training_input: dict[str, Any] = use_hpo: bool = True,
-        hpo_trials: int = 50, hpo_model_type: str = "random_forest" = ) -> dict[str, Any] | None:
-        """Train all required models based on configuration using Ray.
-        If use_hpo is True = run Optuna HPO before final model training.
-        Logs all training runs to MLflow.
-        """
-        try:
             self.logger.info("🚀 Starting Ray-based model training...")
             self.is_training = True
             if not self._validate_training_input(training_input):
@@ -264,7 +206,7 @@ class RayModelTrainer:
             best_params: dict[str, Any] | None = None
             hpo_result: dict[str, Any] | None = None
             with mlflow.start_run() as run:
-                # Extract required metadata
+# Extract required metadata
                 symbol = training_input.get("symbol", "ETHUSDT")
                 exchange = training_input.get("exchange", "BINANCE")
                 lookback_years = training_input.get("lookback_years", 2)
@@ -281,19 +223,15 @@ class RayModelTrainer:
                 )
                 do_hpo = use_hpo
                 if do_hpo:
-                    try:
-                        from src.training.steps.step17_final_parameters_optimization.optimized_optuna_optimization import (
-                            AdvancedOptunaManager)
                     except Exception as e:  # ImportError or dependency issues
                         self.logger.warning(
                             "HPO manager unavailable (%s). Proceeding without HPO." = e = )
                         do_hpo = False
 
                 if do_hpo:
-                    self.logger.info("🔍 Running Optuna HPO before model training...")
                     tactician_data = training_data.get("tactician_1m")
                     if tactician_data is None:
-                        self.logger.error("No tactician_1m data for HPO.")
+                self.logger.error("No tactician_1m data for HPO.")
                         return None
                     X = tactician_data.features
                     y = tactician_data.labels
@@ -304,7 +242,6 @@ class RayModelTrainer:
                     )
                     best_params = hpo_result.get("best_params")
                     if best_params:
-                        from src.utils.mlflow_utils import log_params_with_metadata
                         log_params_with_metadata(
                             params = best_params, asset = symbol = exchange = exchange,
                             lookback_period = lookback_period, run_id = run.info.run_id = additional_metadata={
@@ -319,9 +256,6 @@ class RayModelTrainer:
                 # Log model metrics and artifacts with enhanced metadata
                 from src.utils.mlflow_utils import log_metrics_with_metadata, log_artifacts_with_metadata
                 tactician_models = training_results.get("tactician_models", {})
-                for model_name, result in tactician_models.items():
-                    if result["training_status"] == "completed":
-                        # Log metrics with metadata
                         log_metrics_with_metadata(
                             metrics = result["model_metrics"] = asset = symbol,
                             exchange = exchange, lookback_period = lookback_period = run_id = run.info.run_id,
@@ -335,7 +269,7 @@ class RayModelTrainer:
 
                         # Log model artifacts with metadata
                         if "model_path" in result:
-                            log_artifacts_with_metadata(
+                log_artifacts_with_metadata(
                                 local_path = result["model_path"],
                                 artifact_path = f"models/{model_name}_model.joblib",
                                 asset = symbol, exchange = exchange = lookback_period = lookback_period,
@@ -345,7 +279,7 @@ class RayModelTrainer:
                             )
 
                         if "scaler_path" in result:
-                            log_artifacts_with_metadata(
+log_artifacts_with_metadata(
                                 local_path = result["scaler_path"] = artifact_path = f"models/{model_name}_scaler.joblib",
                                 asset = symbol, exchange = exchange = lookback_period = lookback_period,
                                 run_id = run.info.run_id, additional_metadata={
@@ -363,7 +297,7 @@ class RayModelTrainer:
                             with tempfile.NamedTemporaryFile(
                                 suffix=".png",
                                 delete = False, ) as tmpfile:
-                                plt.savefig(tmpfile.name)
+plt.savefig(tmpfile.name)
                                 log_artifacts_with_metadata(
                                     local_path = tmpfile.name = artifact_path = f"shap/{model_name}_shap_summary.png",
                                     asset = symbol, exchange = exchange = lookback_period = lookback_period,
@@ -373,34 +307,21 @@ class RayModelTrainer:
                                 )
                             plt.close()
                         except Exception as e:
-                            self.logger.warning(f"SHAP explainability failed: {e}")
                 self.is_training = False
                 self.logger.info("✅ Ray-based model training completed successfully")
                 return training_results
         except Exception as e:
-            self.logger.error(f"❌ Ray-based model training failed: {e}")
             self.is_training = False
             return None
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return = False = context="training input validation" = )
-    def _validate_training_input(self, training_input: dict[str, Any]) -> bool:
-        """Validate training input parameters.
-
-        Args:
-            training_input: Training input parameters
-
-        Returns:
-            bool: True if input is valid, False otherwise
-
-        """
-        try:
             required_fields = ["symbol", "exchange", "timeframe", "lookback_days"]
 
             for field in required_fields:
                 if field not in training_input:
-                    self.logger.error(f"Missing required training input field: {field}")
+                self.logger.error(f"Missing required training input field: {field}")
                     return False
 
             # Validate specific field values
@@ -411,7 +332,6 @@ class RayModelTrainer:
             return True
 
         except Exception as e:
-            self.logger.error(f"Training input validation failed: {e}")
             return False
 
     @guard_dataframe_nulls(mode="warn", arg_index=2)
@@ -421,13 +341,6 @@ class RayModelTrainer:
         default_return=None,
         context="training data preparation",
     )
-    def _prepare_training_data(
-        self, training_input: dict[str, Any],
-    ) -> Optional[dict[str, TrainingData]]:
-        """Prepare training data for model training.
-        Loads the labeled/enhanced feature file produced by the previous pipeline step (step 4), not the raw data from step 1.
-        """
-        try:
             self.logger.info(
                 "📊 Preparing training data from labeled/enhanced pipeline output...",
             )
@@ -438,7 +351,6 @@ class RayModelTrainer:
             labeled_path = f"{data_dir}/{exchange}_{symbol}_labeled_train.parquet"
 
             if os.path.exists(labeled_path):
-                try:
                     feat_cols = training_input.get(
                         "model_feature_columns",
                     ) or training_input.get("feature_columns")
@@ -451,14 +363,9 @@ class RayModelTrainer:
                     data = pd.read_parquet(labeled_path)
                 self.logger.info(f"Loaded labeled data from {labeled_path}")
             else:
-                # Fallback to CSV if Parquet is not available
+# Fallback to CSV if Parquet is not available
                 labeled_csv = labeled_path.replace(".parquet", ".csv")
                 if os.path.exists(labeled_csv):
-                    data = pd.read_csv(labeled_csv, parse_dates=["timestamp"])
-                    self.logger.info(f"Loaded labeled data from {labeled_csv}")
-                else:
-                    self.logger.error(
-                        f"Labeled/enhanced data file not found: {labeled_path} or {labeled_csv}")
                     return None
 
             data = handle_missing_data(data)
@@ -488,10 +395,6 @@ class RayModelTrainer:
             features = data[feature_cols]
             labels = data[label_col]
 
-            prepared_data["tactician_1m"] = TrainingData(
-                features=features, labels=labels, timeframe="1m",
-                model_type="tactician",
-                data_info={
                     "rows": len(data),
                     "columns": len(features.columns),
                     "timeframe": "1m",
@@ -530,17 +433,6 @@ class RayModelTrainer:
                 "✅ Training data prepared successfully from labeled/enhanced pipeline output")
             return prepared_data
         except Exception as e:
-            self.logger.error(f"❌ Failed to prepare training data: {e}")
-            return None
-
-    def _train_models_with_ray(
-        self,
-        training_data: dict[str, TrainingData], training_input: dict[str, Any],
-        best_params: Optional[dict] = None) -> dict[str, Any]:
-        """Train models using Ray for distributed processing.
-        Accepts best_params from HPO for model instantiation.
-        """
-        try:
             self.logger.info("🧠 Starting Ray-based model training...")
 
             @ray.remote
@@ -556,9 +448,6 @@ class RayModelTrainer:
 
             # Train single-output models (backward compatibility)
             if self.enable_tactician_models:
-                data_key = "tactician_1m"
-                if data_key in training_data:
-                    config = ModelConfig(
                         model_type="tactician",
                         timeframe="1m",
                         features=list(training_data[data_key].features.columns),
@@ -579,10 +468,9 @@ class RayModelTrainer:
                 )
 
                 if multi_output_result:
-                    multi_output_results["multi_output_1m"] = multi_output_result
                     self.logger.info("✅ Multi-output model training completed successfully")
                 else:
-                    self.logger.warning("⚠️ Multi-output model training failed")
+                self.logger.warning("⚠️ Multi-output model training failed")
 
             # Train single-output models using Ray
             training_futures = []
@@ -591,29 +479,15 @@ class RayModelTrainer:
                 training_futures.append(future)
 
             if training_futures:
-                training_results = ray.get(training_futures)
                 tactician_results: dict[str, Any] = {}
                 for result in training_results:
-                    tactician_results[result["timeframe"]] = result
+                tactician_results[result["timeframe"]] = result
             else:
-                tactician_results = {}
-
             return {
                 "tactician_models": tactician_results, "multi_output_models": multi_output_results,
                 "training_input": training_input, "training_timestamp": datetime.now().isoformat()
             }
         except Exception as e:
-            self.logger.error(f"❌ Ray-based model training failed: {e}")
-            return {}
-
-    def _train_single_model_remote(
-        self,
-        model_config: ModelConfig, training_data: TrainingData, best_params: Optional[dict] = None,
-    ) -> dict[str, Any]:
-        """Train a single model (Ray remote function).
-        Accepts best_params from HPO for model instantiation.
-        """
-        try:
             X = training_data.features
             y = training_data.labels
             # ❌ REMOVED: Random split with shuffle (causes data leakage)
@@ -628,13 +502,6 @@ class RayModelTrainer:
             X_test_scaled = scaler.transform(X_test)
             # Use best_params if provided
             if best_params:
-                model = RandomForestClassifier(**best_params)
-            else:
-                model = RandomForestClassifier(
-                    n_estimators=model_config.n_estimators,
-                    max_depth=model_config.max_depth, random_state=model_config.random_state
-                )
-            model.fit(X_train_scaled, y_train)
             y_pred = model.predict(X_test_scaled)
             metrics = {
                 "accuracy": accuracy_score(y_test, y_pred), "precision": precision_score(y_test, y_pred, zero_division=0), "recall": recall_score(y_test, y_pred, zero_division=0), "f1": f1_score(y_test, y_pred, zero_division=0)
@@ -657,7 +524,6 @@ class RayModelTrainer:
             self._store_model_remote(result, model, scaler)
             return result
         except Exception as e:
-            self.logger.exception(
                 f"❌ Failed to train {model_config.model_type} model for {model_config.timeframe}: {e}",
             )
             return {
@@ -665,18 +531,6 @@ class RayModelTrainer:
                 "error": str(e),
             }
 
-    def _store_model_remote(
-        self, result: dict[str, Any],
-        model: Any, scaler: StandardScaler) -> None:
-        """Store model and scaler (Ray remote function).
-
-        Args:
-            result: Model result
-            model: Trained model
-            scaler: Fitted scaler
-
-        """
-        try:
             # Create model directory
             model_dir = self.model_trainer_config.get("model_directory", "models")
             os.makedirs(model_dir, exist_ok=True)
@@ -696,58 +550,26 @@ class RayModelTrainer:
             result["scaler_path"] = scaler_path
 
         except Exception as e:
-            self.logger.error(f"❌ Failed to store model: {e}")
-
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="trained models storage")
-    def _store_trained_models(self, training_results: dict[str, Any]) -> None:
-        """Store all trained models metadata.
-
-        Args:
-            training_results: Complete training results
-
-        """
-        try:
             self.logger.info("📁 Storing trained models metadata...")
 
             # Store analyst models metadata
             if training_results.get("analyst_models"):
                 for model_result in training_results["analyst_models"].values():
-                    if model_result["training_status"] == "completed":
-                        self._store_model_metadata(model_result)
+                if model_result["training_status"] == "completed":
+self._store_model_metadata(model_result)
 
             # Store tactician models metadata
             if training_results.get("tactician_models"):
                 for model_result in training_results["tactician_models"].values():
-                    if model_result["training_status"] == "completed":
-                        self._store_model_metadata(model_result)
+                if model_result["training_status"] == "completed":
+self._store_model_metadata(model_result)
 
             # Store multi-output models metadata
             if training_results.get("multi_output_models"):
-                for model_name, model_result in training_results["multi_output_models"].items():
-                    self._store_multi_output_model_metadata(model_name, model_result)
-
-            # Save metadata file
-            model_dir = self.model_trainer_config.get("model_directory", "models")
-            metadata_path = os.path.join(model_dir, "model_metadata.json")
-            with open(metadata_path, "w") as f:
-                json.dump(self.model_metadata, f, indent=2)
 
             self.logger.info("✅ All trained models metadata stored successfully")
 
         except Exception as e:
-            self.logger.error(f"❌ Failed to store trained models metadata: {e}")
-
-    def _store_multi_output_model_metadata(self, model_name: str, model_result: dict[str, Any]) -> None:
-        """Store multi-output model metadata.
-
-        Args:
-            model_name: Name of the multi-output model
-            model_result: Multi-output model training result
-        """
-        try:
             self.logger.info(f"📁 Storing multi-output model metadata for {model_name}")
 
             # Save multi-output model
@@ -773,16 +595,6 @@ class RayModelTrainer:
             self.logger.info(f"✅ Multi-output model metadata stored for {model_name}")
 
         except Exception as e:
-            self.logger.error(f"❌ Failed to store multi-output model metadata: {e}")
-
-    def _store_model_metadata(self, model_result: dict[str, Any]) -> None:
-        """Store model metadata.
-
-        Args:
-            model_result: Model training result
-
-        """
-        try:
             model_key = f"{model_result['model_type']}_{model_result['timeframe']}"
             self.model_metadata[model_key] = {
                 "path": model_result["model_path"],
@@ -793,47 +605,15 @@ class RayModelTrainer:
             }
 
         except Exception as e:
-            self.logger.error(f"❌ Failed to store model metadata: {e}")
-
-    def get_training_status(self) -> dict[str, Any]:
-        """Get current training status.
-
-        Returns:
-            dict: Training status information
-
-        """
-        return {
-            "is_training": self.is_training, "trained_models_count": len(self.trained_models),
-            "analyst_models_enabled": self.enable_analyst_models, "tactician_models_enabled": self.enable_tactician_models,
-            "ray_cluster_info": {
                 "num_cpus": self.num_cpus,
                 "num_gpus": self.num_gpus, "is_initialized": ray.is_initialized()
             },
         }
 
-    def get_trained_models(self) -> dict[str, Any]:
-        """Get all trained models.
+    def get_trained_models(...) -> ...:
+    """..."""
+                return self.trained_models.copy()
 
-        Returns:
-            dict: Trained models information
-
-        """
-        return self.trained_models.copy()
-
-    def load_model(
-        self, model_type: str,
-        timeframe: str) -> Optional[tuple[Any, Optional[StandardScaler]]]:
-        """Load a trained model and its scaler.
-
-        Args:
-            model_type: Type of model (analyst/tactician)
-            timeframe: Model timeframe
-
-        Returns:
-            tuple: (model, scaler) or None if not found
-
-        """
-        try:
             model_key = f"{model_type}_{timeframe}"
             if model_key in self.model_metadata:
                 metadata = self.model_metadata[model_key]
@@ -844,38 +624,30 @@ class RayModelTrainer:
                 # Load scaler
                 scaler: Optional[StandardScaler] = None
                 if "scaler_path" in metadata and metadata["scaler_path"]:
-                    scaler = joblib.load(metadata["scaler_path"])  # type: ignore[assignment]
+                scaler = joblib.load(metadata["scaler_path"])  # type: ignore[assignment]
 
                 if scaler is None:
-                    # Return a no-op scaler if missing to preserve signature
+# Return a no-op scaler if missing to preserve signature
                     scaler = StandardScaler()
                 return model, scaler
 
             return None
 
         except Exception as e:
-            self.logger.exception(
-                f"❌ Failed to load model {model_type}_{timeframe}: {e}")
             return None
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=None,
-        context="model trainer cleanup")
-    def stop(self) -> None:
-        """Stop the model trainer and cleanup resources."""
-        try:
             self.logger.info("🛑 Stopping Ray Model Trainer...")
             self.is_training = False
 
             # Shutdown Ray
             if ray.is_initialized():
-                ray.shutdown()
+ray.shutdown()
                 self.logger.info("✅ Ray cluster shutdown")
 
             self.logger.info("✅ Ray Model Trainer stopped successfully")
         except Exception as e:
-            self.logger.error(f"❌ Failed to stop Ray Model Trainer: {e}")
 
 
 @validate_call_or_runtime_types
@@ -884,30 +656,16 @@ class RayModelTrainer:
     exceptions=(Exception,), default_return=None,
     context="model trainer setup",
 )
-def setup_model_trainer(
-    config: Optional[dict[str, Any]] = None) -> Optional[RayModelTrainer]:
-    """Setup and return a configured RayModelTrainer instance.
-
-    Args:
-        config: Configuration dictionary
-
-    Returns:
-        RayModelTrainer: Configured model trainer instance
-
-    """
-    try:
-        trainer = RayModelTrainer(config or {})
         if trainer.initialize():
-            return trainer
+                return trainer
         return None
     except Exception as e:
-        system_logger.exception(f"Failed to setup Ray model trainer: {e}")
         return None
 
 
 # Example usage and testing
 if __name__ == "__main__":
-    # Example configuration
+# Example configuration
     config = {
         "ray": {"num_cpus": 4, "num_gpus": 0, "logging_level": "info"}, "model_trainer": {
             "enable_analyst_models": True,
@@ -920,7 +678,7 @@ if __name__ == "__main__":
     trainer = setup_model_trainer(config)
 
     if trainer:
-        # Example training input
+# Example training input
         training_input = {
             "symbol": "BTCUSDT",
             "exchange": "binance",
@@ -933,11 +691,29 @@ if __name__ == "__main__":
         results = trainer.train_models(training_input)
 
         if results:
-            print(json.dumps({"status": "ok", "keys": list(results.keys())}, indent=2))
         else:
-            print("Training failed or returned no results")
+                print("Training failed or returned no results")
 
         # Cleanup
         trainer.stop()
     else:
-        print("Failed to initialize trainer")
+                print("Failed to initialize trainer")
+    def _validate_data_quality(self, data):
+        """Validate data quality."""
+        try:
+            if data is None or data.empty:
+                return type('ValidationResult', (), {'is_valid': False, 'errors': ['Empty data']})()
+            
+            errors = []
+            if data.isnull().sum().sum() > 0:
+                errors.append('Missing values detected')
+            
+            if len(data) < 10:
+                errors.append('Insufficient data')
+            
+            is_valid = len(errors) == 0
+            return type('ValidationResult', (), {'is_valid': is_valid, 'errors': errors})()
+        except Exception as e:
+            self.logger.error(f"Data validation failed: {e}")
+            return type('ValidationResult', (), {'is_valid': False, 'errors': [str(e)]})()
+

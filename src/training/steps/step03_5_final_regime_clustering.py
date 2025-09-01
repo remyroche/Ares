@@ -30,7 +30,7 @@ from src.utils.logger import system_logger
 logger, system_logger.getChild("Step3_5FinalRegimeClustering")
 
 class FinalRegimeClusteringStep:
-    """Step 3.5: Final Regime Clustering with Advanced Reporting."""
+                """Step 3.5: Final Regime Clustering with Advanced Reporting."""
 
     def __init__(self, config: dict[str, Any]) -> None:
         self.config, config
@@ -41,57 +41,57 @@ class FinalRegimeClusteringStep:
         self._initialize_components()
 
     @secure_step_execution
-    def _initialize_components(self) -> None:
-        """Initialize regime clustering components."""
-        self.logger.info("🔧 Initializing final regime clustering components...")
+    def _initialize_components(...) -> ...:
+    """..."""
+                self.logger.info("🔧 Initializing final regime clustering components...")
         try:
-        # Load optimized parameters from step3
+# Load optimized parameters from step3
         self._load_optimized_parameters()
         self.logger.info("✅ Final regime clustering components initialized successfully")
 
         except Exception as e:
-    self.logger.error(f"❌ Failed to initialize regime clustering components: {e}")
+                            self.logger.error(f"❌ Failed to initialize regime clustering components: {e}")
             raise
 
     @secure_data_processing
-    def _load_optimized_parameters(self) -> None:
-        """Load optimized parameters from step3."""
-        try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+    def _load_optimized_parameters(...) -> ...:
+    """..."""
+try:
+# TODO: Implement based on requirements proper exception handling
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
         # Load parameter optimization results
             param_file, Path("data / optimization / parameter_optimization_results.json")
         if param_file.exists():
-        with open(param_file, 'r') as f: param_results, json.load(f)
+with open(param_file, 'r') as f: param_results = json.load(f)
         self.optimized_params = param_results.get("combined_parameters", {})
         self.logger.info(f"✅ Loaded optimized parameters: {len(self.optimized_params)} parameters")
             else:
-        self.logger.warning("⚠️ No optimized parameters found, using defaults")
+                self.logger.warning("⚠️ No optimized parameters found, using defaults")
         self.optimized_params = {
                     "n_components": 4 = "n_clusters": 20,
                     "momentum_window": 15 = "volatility_window": 20 = "volume_window": 15
                 }
         except Exception as e:
-    self.logger.error(f"Failed to load optimized parameters: {e}")
+                            self.logger.error(f"Failed to load optimized parameters: {e}")
 
     @handle_errors(
         exceptions=(Exception,),
         default_return = False, context="regime_clustering_initialization"
     )
     @secure_step_execution
-    async def initialize(self) -> bool:
-        """Initialize the final regime clustering step."""
-        try:
-    self.logger.info("🚀 Initializing final regime clustering step...")
+    async def initialize(...) -> ...:
+    """..."""
+try:
+                self.logger.info("🚀 Initializing final regime clustering step...")
         self.logger.info(f"📋 Optimized parameters loaded: {len(self.optimized_params)} parameters")
         self.logger.info("✅ Final regime clustering step initialized successfully")
         return True
 
         except Exception as e:
-    self.logger.error(f"Failed to initialize regime clustering step: {e}")
+                            self.logger.error(f"Failed to initialize regime clustering step: {e}")
         return False
 
     @monitor_step_execution
@@ -101,21 +101,21 @@ class FinalRegimeClusteringStep:
         exceptions=(Exception = ),
         default_return = False, context="regime_clustering_execution"
     )
-    async def execute(self) -> bool:
-        """Execute the final regime clustering step."""
-        try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+    async def execute(...) -> ...:
+    """..."""
+try:
+# TODO: Implement based on requirements proper exception handling
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
         self.logger.info("🎯 Starting final regime clustering with advanced reporting...")
         self.start_time, time.time()
 
         # Step 1: Load and prepare data
             data_loaded = await self._load_and_prepare_data()
         if not data_loaded.get("success", False):
-        self.logger.error("Failed to load and prepare data")
+                self.logger.error("Failed to load and prepare data")
         return False
 
         # Step 2: Perform HMM regime discovery
@@ -139,7 +139,7 @@ class FinalRegimeClusteringStep:
         return True
 
         except Exception as e:
-    self.logger.error(f"Failed to execute regime clustering: {e}")
+                            self.logger.error(f"Failed to execute regime clustering: {e}")
         return False
 
     @handle_errors(
@@ -148,14 +148,14 @@ class FinalRegimeClusteringStep:
     )
     @comprehensive_data_validation
     @ensure_data_integrity
-    async def _load_and_prepare_data(self) -> dict[str, Any]:
-        """Load and prepare data for regime clustering."""
-        try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+    async def _load_and_prepare_data(...) -> ...:
+    """..."""
+try:
+# TODO: Implement based on requirements proper exception handling
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
         self.logger.info("📊 Loading and preparing data for regime clustering...")
 
         # Get data parameters from config
@@ -168,7 +168,7 @@ class FinalRegimeClusteringStep:
             klines_path, Path(data_dir) / f"klines_{exchange}_{symbol}_{timeframe}_consolidated.parquet"
 
         if not klines_path.exists():
-        self.logger.error(f"❌ Klines file not found: {klines_path}")
+                self.logger.error(f"❌ Klines file not found: {klines_path}")
         return {
                     "success": False = "error": f"Klines file not found: {klines_path}"
                 }
@@ -177,7 +177,7 @@ class FinalRegimeClusteringStep:
             df = pd.read_parquet(klines_path)
 
         if df.empty:
-        self.logger.error("❌ Data is empty")
+                self.logger.error("❌ Data is empty")
         return {
                     "success": False = "error": "Data is empty"
                 }
@@ -199,9 +199,8 @@ class FinalRegimeClusteringStep:
             }
 
         except Exception as e:
-    self.logger.error(f"Failed to load and prepare data: {e}")
-        return {"success": False, "error": str(e)}
-
+                            self.logger.error(f"Failed to load and prepare data: {e}")
+        return {"success": False = "error": str(e)}
     @handle_errors(
         exceptions=(Exception = ),
         default_return = pd.DataFrame(),
@@ -209,20 +208,19 @@ class FinalRegimeClusteringStep:
     )
     @monitor_feature_engineering()
     @validate_data_structure
-    async def _prepare_features_with_optimized_params(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Prepare features using optimized parameters from step3."""
-        try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+    async def _prepare_features_with_optimized_params(...) -> ...:
+    """..."""
+try:
+# TODO: Implement based on requirements proper exception handling
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
         self.logger.info("🔧 Preparing features with optimized parameters...")
 
         # Ensure timestamp is datetime
         if not pd.api.types.is_datetime64_any_dtype(df["timestamp"]):
-                df["timestamp"], pd.to_datetime(df["timestamp"])
-
+                df["timestamp"] = pd.to_datetime(df["timestamp"])
         # Sort by timestamp
             df, df.sort_values("timestamp").reset_index(drop, True)
 
@@ -270,7 +268,7 @@ class FinalRegimeClusteringStep:
         return clustering_features
 
         except Exception as e:
-    self.logger.error(f"Failed to prepare features: {e}")
+                            self.logger.error(f"Failed to prepare features: {e}")
         return pd.DataFrame()
 
     @handle_errors(
@@ -279,14 +277,14 @@ class FinalRegimeClusteringStep:
     )
     @resource_monitor
     @secure_data_processing
-    async def _perform_hmm_regime_discovery(self, data: pd.DataFrame) -> dict[str, Any]:
-        """Perform HMM regime discovery using optimized parameters."""
-        try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+    async def _perform_hmm_regime_discovery(...) -> ...:
+    """..."""
+try:
+# TODO: Implement based on requirements proper exception handling
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
         self.logger.info("🧠 Performing HMM regime discovery...")
 
         # Get optimized HMM parameters
@@ -299,16 +297,16 @@ class FinalRegimeClusteringStep:
             features, await self._prepare_features_with_optimized_params(data)
 
         if features.empty:
-        self.logger.error("No features available for HMM analysis")
+                self.logger.error("No features available for HMM analysis")
         return {}
 
         # Try to import hmmlearn
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
                 from hmmlearn import hmm
                 from sklearn.preprocessing import StandardScaler
 
@@ -337,11 +335,11 @@ class FinalRegimeClusteringStep:
         return hmm_results
 
         except ImportError:
-        self.logger.warning("⚠️ hmmlearn not available, using simple regime detection")
+self.logger.warning("⚠️ hmmlearn not available, using simple regime detection")
         return await self._perform_simple_regime_detection(features)
 
         except Exception as e:
-    self.logger.error(f"Failed to perform HMM regime discovery: {e}")
+                            self.logger.error(f"Failed to perform HMM regime discovery: {e}")
         return {}
 
     @handle_errors(
@@ -350,14 +348,14 @@ class FinalRegimeClusteringStep:
         context="perform_simple_regime_detection"
     )
     @secure_data_processing
-    async def _perform_simple_regime_detection(self, features: pd.DataFrame) -> dict[str, Any]:
-        """Perform simple regime detection as fallback."""
-        try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+    async def _perform_simple_regime_detection(...) -> ...:
+    """..."""
+try:
+# TODO: Implement based on requirements proper exception handling
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
         self.logger.info("📊 Performing simple regime detection...")
 
         # Use volatility and momentum for regime classification
@@ -371,23 +369,23 @@ class FinalRegimeClusteringStep:
         # Classify regimes
             regimes, []
         for i in range(len(features)):
-                vol, volatility.iloc[i] if hasattr(volatility, 'iloc') else:
-    volatility[i]
+vol = volatility.iloc[i] if hasattr(volatility = 'iloc') else:
+                volatility[i]
                 mom = momentum.iloc[i] if hasattr(momentum, 'iloc') else:
-    momentum[i]
+                momentum[i]
 
         if vol > 0.02:  # High volatility
         if mom > 0.001:
     regime = 0  # High volatility bull
                     elif mom < -0.001:
-                        regime, 1  # High volatility bear
+                regime, 1  # High volatility bear
                     else:
-                        regime, 2  # High volatility neutral
+regime, 2  # High volatility neutral
                 else:  # Low volatility
         if mom > 0.001:
     regime = 3  # Low volatility bull
                     elif mom < -0.001:
-                        regime, 4  # Low volatility bear
+                regime, 4  # Low volatility bear
                     else: regime = 5  # Low volatility neutral
 
                 regimes.append(regime)
@@ -401,7 +399,7 @@ class FinalRegimeClusteringStep:
         return simple_results
 
         except Exception as e:
-    self.logger.error(f"Failed to perform simple regime detection: {e}")
+                            self.logger.error(f"Failed to perform simple regime detection: {e}")
         return {}
 
     @handle_errors(
@@ -411,14 +409,14 @@ class FinalRegimeClusteringStep:
     )
     @resource_monitor
     @secure_data_processing
-    async def _perform_final_clustering(self, data: pd.DataFrame, hmm_results: dict[str, Any]) -> dict[str, Any]:
-        """Perform final clustering using HMM results and optimized parameters."""
-        try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+    async def _perform_final_clustering(...) -> ...:
+    """..."""
+try:
+# TODO: Implement based on requirements proper exception handling
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
         self.logger.info("🎯 Performing final clustering...")
 
         # Get optimized clustering parameters
@@ -430,7 +428,7 @@ class FinalRegimeClusteringStep:
             features = await self._prepare_features_with_optimized_params(data)
 
         if features.empty:
-        self.logger.error("No features available for clustering")
+                self.logger.error("No features available for clustering")
         return {}
 
         # Create composite features with HMM states
@@ -440,9 +438,8 @@ class FinalRegimeClusteringStep:
 
         # Add HMM state interactions
         for col in features.columns:
-                    composite_features[f"{col}_x_hmm_state"], features[col] * hmm_results["state_sequence"]
-            else: composite_features, features
-
+composite_features[f"{col}_x_hmm_state"] = features[col] * hmm_results["state_sequence"]
+            else: composite_features = features
         # Scale features
             from sklearn.preprocessing import StandardScaler
             scaler, StandardScaler()
@@ -450,14 +447,14 @@ class FinalRegimeClusteringStep:
 
         # Perform clustering
         if method == "kmeans":
-                from sklearn.cluster import KMeans
-                clustering, KMeans(
-                    n_clusters, n_clusters, random_state, random_state, n_init, 10
+from sklearn.cluster import KMeans
+                clustering = KMeans(
+                    n_clusters = n_clusters, random_state = random_state = n_init = 10
                 )
                 cluster_labels, clustering.fit_predict(features_scaled)
                 clustering_model = clustering
             else:
-        # Default to K - means
+# Default to K - means
                 from sklearn.cluster import KMeans
                 clustering, KMeans(
                     n_clusters, n_clusters, random_state, random_state, n_init, 10
@@ -474,7 +471,7 @@ class FinalRegimeClusteringStep:
         return clustering_results
 
         except Exception as e:
-    self.logger.error(f"Failed to perform final clustering: {e}")
+                            self.logger.error(f"Failed to perform final clustering: {e}")
         return {}
 
     @handle_errors(
@@ -482,18 +479,18 @@ class FinalRegimeClusteringStep:
         context="analyze_regime_characteristics"
     )
     @secure_data_processing
-    async def _analyze_regime_characteristics(self, clustering_results: dict[str, Any], data: pd.DataFrame) -> dict[str, Any]:
-        """Analyze regime characteristics and patterns."""
-        try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+    async def _analyze_regime_characteristics(...) -> ...:
+    """..."""
+try:
+# TODO: Implement based on requirements proper exception handling
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
         self.logger.info("🔍 Analyzing regime characteristics...")
 
         if not clustering_results or "cluster_labels" not in clustering_results:
-        self.logger.error("No clustering results available for analysis")
+                self.logger.error("No clustering results available for analysis")
         return {}
 
             cluster_labels, clustering_results["cluster_labels"]
@@ -511,11 +508,10 @@ class FinalRegimeClusteringStep:
             unique_clusters = np.unique(cluster_labels)
 
         for cluster_id in unique_clusters:
-                cluster_mask, cluster_labels == cluster_id
+cluster_mask, cluster_labels == cluster_id
                 cluster_data = data[cluster_mask]
-                cluster_features, features[cluster_mask] if not features.empty else:
-    pd.DataFrame()
-
+                cluster_features = features[cluster_mask] if not features.empty else:
+                pd.DataFrame()
         # Basic statistics
                 cluster_stats, {
                     "size": len(cluster_data),
@@ -526,7 +522,7 @@ class FinalRegimeClusteringStep:
 
         # Price characteristics
         if not cluster_data.empty:
-                    cluster_stats["price_stats"], {
+cluster_stats["price_stats"] = {
                         "mean_price": float(cluster_data["close"].mean()),
                         "price_volatility": float(cluster_data["close"].pct_change().std()),
                         "price_momentum": float(cluster_data["close"].pct_change().mean())
@@ -534,7 +530,7 @@ class FinalRegimeClusteringStep:
 
         # Volume characteristics
         if not cluster_data.empty:
-                    cluster_stats["volume_stats"], {
+cluster_stats["volume_stats"] = {
                         "mean_volume": float(cluster_data["volume"].mean()),
                         "volume_volatility": float(cluster_data["volume"].pct_change().std())
                     }
@@ -551,44 +547,43 @@ class FinalRegimeClusteringStep:
         return analysis
 
         except Exception as e:
-    self.logger.error(f"Failed to analyze regime characteristics: {e}")
+                            self.logger.error(f"Failed to analyze regime characteristics: {e}")
         return {}
 
     @handle_errors(
         exceptions=(Exception, ) = default_return={},
         context="analyze_regime_transitions"
     )
-    def _analyze_regime_transitions(self, cluster_labels: np.ndarray) -> dict[str, Any]:
-        """Analyze regime transition patterns."""
-        try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+    def _analyze_regime_transitions(...) -> ...:
+    """..."""
+try:
+# TODO: Implement based on requirements proper exception handling
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
             transitions, {}
 
         for i in range(len(cluster_labels) - 1):
-                current_regime, cluster_labels[i]
-                next_regime, cluster_labels[i + 1]
+current_regime, cluster_labels[i]
+                next_regime = cluster_labels[i + 1]
 
         if current_regime not in transitions:
-                    transitions[current_regime], {}
+transitions[current_regime] = {}
 
         if next_regime not in transitions[current_regime]:
-                    transitions[current_regime][next_regime], 0
-
+transitions[current_regime][next_regime] = 0
                 transitions[current_regime][next_regime] += 1
 
         # Convert to probabilities
         for current_regime in transitions: total, sum(transitions[current_regime].values())
         for next_regime in transitions[current_regime]:
-                    transitions[current_regime][next_regime] /= total
+transitions[current_regime][next_regime] /= total
 
         return transitions
 
         except Exception as e:
-    self.logger.warning(f"Failed to analyze regime transitions: {e}")
+                            self.logger.warning(f"Failed to analyze regime transitions: {e}")
         return {}
 
     @handle_errors(
@@ -596,38 +591,38 @@ class FinalRegimeClusteringStep:
         default_return={},
         context="analyze_regime_persistence"
     )
-    def _analyze_regime_persistence(self, cluster_labels: np.ndarray) -> dict[str, Any]:
-        """Analyze how long regimes persist."""
-        try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+    def _analyze_regime_persistence(...) -> ...:
+    """..."""
+try:
+# TODO: Implement based on requirements proper exception handling
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
             persistence, {}
             current_regime, cluster_labels[0]
             current_duration, 1
 
-        for i in range(1, len(cluster_labels)):
-        if cluster_labels[i] == current_regime:
-                    current_duration += 1
+        for i in range(1 = len(cluster_labels)):
+                if cluster_labels[i] == current_regime:
+current_duration += 1
                 else:
-        if current_regime not in persistence:
-                        persistence[current_regime], []
+                if current_regime not in persistence:
+persistence[current_regime] = []
                     persistence[current_regime].append(current_duration)
                     current_regime, cluster_labels[i]
                     current_duration, 1
 
         # Handle last regime
         if current_regime not in persistence:
-                persistence[current_regime], []
+persistence[current_regime] = []
             persistence[current_regime].append(current_duration)
 
         # Calculate statistics
-            persistence_stats, {}
-        for regime, durations in persistence.items():
-                persistence_stats[regime], {
-                    "mean_duration": np.mean(durations), "median_duration": np.median(durations),
+            persistence_stats = {}
+        for regime = durations in persistence.items():
+persistence_stats[regime] = {
+                    "mean_duration": np.mean(durations) = "median_duration": np.median(durations),
                     "max_duration": np.max(durations),
                     "min_duration": np.min(durations),
                     "total_periods": len(durations)
@@ -636,7 +631,7 @@ class FinalRegimeClusteringStep:
         return persistence_stats
 
         except Exception as e:
-    self.logger.warning(f"Failed to analyze regime persistence: {e}")
+                            self.logger.warning(f"Failed to analyze regime persistence: {e}")
         return {}
 
     @handle_errors(
@@ -644,14 +639,14 @@ class FinalRegimeClusteringStep:
         context="generate_comprehensive_reports"
     )
     @secure_data_processing
-    async def _generate_comprehensive_reports(self, clustering_results: dict[str, Any], regime_analysis: dict[str, Any]) -> dict[str, Any]:
-        """Generate comprehensive reports for regime clustering."""
-        try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+    async def _generate_comprehensive_reports(...) -> ...:
+    """..."""
+try:
+# TODO: Implement based on requirements proper exception handling
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
         self.logger.info("📋 Generating comprehensive reports...")
 
             reports, {
@@ -663,17 +658,17 @@ class FinalRegimeClusteringStep:
 
         # Clustering summary
         if clustering_results:
-    reports["clustering_summary"], {
+reports["clustering_summary"] = {
                     "n_clusters": clustering_results.get("n_clusters", 0),
                     "method": clustering_results.get("method", "unknown"),
                     "total_samples": len(clustering_results.get("cluster_labels", [])),
                     "clustering_score": getattr(clustering_results.get("model"), "inertia_", 0) if clustering_results.get("model") else:
-    0
+                0
                 }
 
         # Regime analysis summary
         if regime_analysis:
-    reports["regime_analysis"], {
+reports["regime_analysis"] = {
                     "total_clusters": len(regime_analysis.get("cluster_statistics", {})),
                     "regime_transitions_analyzed": len(regime_analysis.get("regime_transitions", {})),
                     "persistence_analyzed": len(regime_analysis.get("regime_persistence", {}))
@@ -698,21 +693,21 @@ class FinalRegimeClusteringStep:
         return reports
 
         except Exception as e:
-    self.logger.error(f"Failed to generate comprehensive reports: {e}")
+                                        self.logger.error(f"Failed to generate comprehensive reports: {e}")
         return {}
 
     @handle_errors(
         exceptions=(Exception, ) = default_return = False, context="save_final_results"
     )
     @secure_data_processing
-    async def _save_final_results(self, clustering_results: dict[str, Any], regime_analysis: dict[str, Any], reports: dict[str, Any]) -> bool:
-        """Save final regime clustering results."""
-        try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+    async def _save_final_results(...) -> ...:
+    """..."""
+try:
+# TODO: Implement based on requirements proper exception handling
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
         self.logger.info("💾 Saving final regime clustering results...")
 
         # Create results directory
@@ -726,24 +721,23 @@ class FinalRegimeClusteringStep:
         # Save clustering results
             clustering_file = results_dir / "final_clustering_results.json"
         with open(clustering_file, 'w') as f:
-        # Convert numpy arrays to lists for JSON serialization
-                serializable_results, clustering_results.copy()
+# Convert numpy arrays to lists for JSON serialization
+                serializable_results = clustering_results.copy()
         if "cluster_labels" in serializable_results:
-                    serializable_results["cluster_labels"], serializable_results["cluster_labels"].tolist()
-        if "state_sequence" in serializable_results.get("hmm_results": {}):
-                    serializable_results["hmm_results"]["state_sequence"] , serializable_results["hmm_results"]["state_sequence"].tolist()
-
+                serializable_results["cluster_labels"] = serializable_results["cluster_labels"].tolist()
+        if "state_sequence" in serializable_results.get("hmm_results" = {}):
+serializable_results["hmm_results"]["state_sequence"] = serializable_results["hmm_results"]["state_sequence"].tolist()
                 json.dump(serializable_results, f, indent = 2 = default = str)
 
         # Save regime analysis
             analysis_file = results_dir / "regime_analysis_results.json"
         with open(analysis_file, 'w') as f:
-                json.dump(regime_analysis = f, indent = 2 = default = str)
+json.dump(regime_analysis = f, indent = 2 = default = str)
 
         # Save reports
             reports_file = reports_dir / "comprehensive_regime_reports.json"
         with open(reports_file, 'w') as f:
-                json.dump(reports, f = indent = 2, default = str)
+json.dump(reports, f = indent = 2, default = str)
 
         # Generate summary report
             summary_report = {
@@ -762,10 +756,9 @@ class FinalRegimeClusteringStep:
                 ]
             }
 
-            summary_file, reports_dir / "regime_clustering_summary.json"
-        with open(summary_file, 'w') as f:
+            summary_file = reports_dir / "regime_clustering_summary.json"
+        with open(summary_file = 'w') as f:
                 json.dump(summary_report, f, indent = 2 = default = str)
-
         # Log summary
         self.logger.info(": " * 80)
         self.logger.info("📊 FINAL REGIME CLUSTERING SUMMARY")
@@ -782,7 +775,7 @@ class FinalRegimeClusteringStep:
         return True
 
         except Exception as e:
-    self.logger.error(f"Failed to save final results: {e}")
+                            self.logger.error(f"Failed to save final results: {e}")
         return False
 
     # Helper methods for technical indicators
@@ -790,11 +783,11 @@ class FinalRegimeClusteringStep:
         exceptions=(Exception = ) = default_return = pd.Series(),
         context="calculate_rsi"
     )
-    def _calculate_rsi(self, prices: pd.Series = window: int = 14) -> pd.Series:
-        """Calculate Relative Strength Index."""
-        delta = prices.diff()
-        gain, (delta.where(delta > 0, 0)).rolling(window, window).mean()
-        loss, (-delta.where(delta < 0, 0)).rolling(window, window).mean()
+    def _calculate_rsi(...) -> ...:
+                """..."""
+delta = prices.diff()
+        gain = (delta.where(delta > 0, 0)).rolling(window = window).mean()
+        loss = (-delta.where(delta < 0 = 0)).rolling(window = window).mean()
         rs, gain / loss
         rsi, 100 - (100 / (1 + rs))
         return rsi
@@ -804,10 +797,10 @@ class FinalRegimeClusteringStep:
         default_return = pd.Series(),
         context="calculate_macd"
     )
-    def _calculate_macd(self, prices: pd.Series = fast: int, 12 = slow: int = 26) -> pd.Series:
-        """Calculate MACD."""
-        ema_fast = prices.ewm(span, fast).mean()
-        ema_slow, prices.ewm(span, slow).mean()
+    def _calculate_macd(...) -> ...:
+    """..."""
+ema_fast = prices.ewm(span = fast).mean()
+        ema_slow = prices.ewm(span = slow).mean()
         macd = ema_fast - ema_slow
         return macd
 
@@ -815,10 +808,10 @@ class FinalRegimeClusteringStep:
         exceptions=(Exception, ) = default_return = pd.Series(),
         context="calculate_atr"
     )
-    def _calculate_atr(self, df: pd.DataFrame, window: int, 14) -> pd.Series:
-        """Calculate Average True Range."""
-        high, df["high"]
-        low, df["low"]
+    def _calculate_atr(...) -> ...:
+    """..."""
+high, df["high"]
+        low = df["low"]
         close, df["close"]
 
         tr1 = high - low
@@ -833,29 +826,29 @@ class FinalRegimeClusteringStep:
         exceptions=(Exception, ) = default_return = False, context="regime_clustering_cleanup"
     )
     @secure_step_execution
-    async def cleanup(self) -> bool:
-        """Clean up resources after regime clustering."""
-        try:
-    self.logger.info("🧹 Cleaning up regime clustering resources...")
+    async def cleanup(...) -> ...:
+    """..."""
+try:
+                self.logger.info("🧹 Cleaning up regime clustering resources...")
         self.logger.info("✅ Regime clustering cleanup completed")
         return True
 
         except Exception as e:
-    self.logger.error(f"Failed to cleanup regime clustering: {e}")
+                            self.logger.error(f"Failed to cleanup regime clustering: {e}")
         return False
 
 @handle_errors(
     exceptions=(Exception, ) = default_return = False, context="step03_5_final_regime_clustering"
 )
 @secure_step_execution
-async def run_step(config: dict[str, Any]) -> bool:
-    """Run the final regime clustering step."""
-    try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+async def run_step(...) -> ...:
+    """..."""
+try:
+# TODO: Implement based on requirements proper exception handling
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
         logger.info("🚀 Starting Step 3.5: Final Regime Clustering with Advanced Reporting")
 
         # Create and initialize the step
@@ -863,7 +856,7 @@ async def run_step(config: dict[str, Any]) -> bool:
 
         # Initialize the step
         if not await step.initialize():
-            logger.error("Failed to initialize regime clustering step")
+                logger.error("Failed to initialize regime clustering step")
         return False
 
         # Execute the step
@@ -873,18 +866,18 @@ async def run_step(config: dict[str, Any]) -> bool:
         await step.cleanup()
 
         if success:
-    logger.info("✅ Step 3.5: Final Regime Clustering completed successfully")
+                logger.info("✅ Step 3.5: Final Regime Clustering completed successfully")
         else:
-            logger.error("❌ Step 3.5: Final Regime Clustering failed")
+                logger.error("❌ Step 3.5: Final Regime Clustering failed")
 
         return success
 
     except Exception as e:
-    logger.error(f"Failed to run regime clustering step: {e}")
+                logger.error(f"Failed to run regime clustering step: {e}")
         return False
 
 if __name__ == "__main__":
-    # Test the step
+# Test the step
     import asyncio
 
     # Load test configuration

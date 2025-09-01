@@ -41,14 +41,14 @@ enhanced_mlflow = PipelineStandards.safe_import("src.utils.enhanced_mlflow_integ
 centralized_decorators, PipelineStandards.safe_import("src.utils.centralized_decorators", None)
 
 # Fallback functions if imports fail
-def create_fallback_logger():
-    import logging
-    logging.basicConfig(level=logging.INFO)
+def create_fallback_logger(...):
+                import logging
+    logging.basicConfig(level = logging.INFO)
     return logging.getLogger(__name__)
 
-def create_fallback_decorator():
-    def decorator(func):
-        return func
+def create_fallback_decorator(...):
+def decorator(...):
+                return func
     return decorator
 
 # Initialize fallbacks
@@ -73,7 +73,7 @@ if centralized_decorators is None: monitor_data_collection, create_fallback_deco
 else: monitor_data_collection, centralized_decorators.monitor_data_collection
 
 class DataCollectionStep:
-    """Step 1: Data Collection using standardized pipeline utilities."""
+"""Step 1: Data Collection using standardized pipeline utilities."""
 
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
@@ -83,43 +83,32 @@ class DataCollectionStep:
         # Validate environment on initialization
         self._validate_environment()
 
-    def _validate_environment(self) -> None:
-        """Validate environment dependencies."""
-        self.logger.info("🔍 Validating environment dependencies...")
+    def _validate_environment(...) -> ...:
+    """..."""
+                self.logger.info("🔍 Validating environment dependencies...")
 
         missing_modules, [module for module, available in dependency_status.items() if not available]
         if missing_modules:
-    self.logger.warning(f"⚠️ Missing optional modules: {missing_modules}")
+self.logger.warning(f"⚠️ Missing optional modules: {missing_modules}")
         self.logger.info("📝 Pipeline will continue with fallback implementations")
         else:
-        self.logger.info("✅ All required dependencies available")
+                self.logger.info("✅ All required dependencies available")
 
-    async def initialize(self) -> None:
-        """Initialize the data collection step."""
-        self.logger.info("Initializing Data Collection Step...")
+    async def initialize(...) -> ...:
+    """..."""
+                self.logger.info("Initializing Data Collection Step...")
         self.logger.info("Data Collection Step initialized successfully")
 
     @with_enhanced_mlflow_logging("step01_data_collection")
-    async def execute(
-        self, training_input: dict[str, Any], pipeline_state: dict[str, Any]) -> dict[str, Any]:
-        """Execute data collection with standardized quality management.
-
-        Args:
-            training_input: Training input parameters
-            pipeline_state: Current pipeline state
-
-        Returns:
-            Updated pipeline state
-
-        """
-        self.logger.info("🚀 Starting standardized data collection...")
-
+    async def execute(...) -> ...:
+    """..."""
+                self.logger.info("🚀 Starting standardized data collection...")
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+# TODO: Implement based on requirements proper exception handling
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
         # Validate input parameters
             symbol, training_input.get("symbol")
             exchange = training_input.get("exchange")
@@ -136,42 +125,41 @@ class DataCollectionStep:
             success, await self._run_data_collection(training_input, data_dir)
 
         if success:
-    self.logger.info("✅ Data collection completed successfully")
+                self.logger.info("✅ Data collection completed successfully")
 
         # Run standardized quality check after data collection
                 quality_success, await self._run_standardized_quality_check(symbol, exchange, timeframe, data_dir)
 
         if quality_success:
-    self.logger.info("✅ Standardized quality check passed")
-                    pipeline_state["data_collection_completed"], True
-                    pipeline_state["quality_check_passed"], True
+                self.logger.info("✅ Standardized quality check passed")
+                    pipeline_state["data_collection_completed"] = True
+                    pipeline_state["quality_check_passed"] = True
                 else:
-        self.logger.warning("⚠️ Standardized quality check found issues")
-                    pipeline_state["data_collection_completed"], True
-                    pipeline_state["quality_check_passed"], False
+                self.logger.warning("⚠️ Standardized quality check found issues")
+                    pipeline_state["data_collection_completed"] = True
+                    pipeline_state["quality_check_passed"] = False
             else:
-        self.logger.error("❌ Data collection failed")
-                pipeline_state["data_collection_completed"], False
-                pipeline_state["quality_check_passed"], False
+                self.logger.error("❌ Data collection failed")
+                pipeline_state["data_collection_completed"] = False
+                pipeline_state["quality_check_passed"] = False
 
         except Exception as e:
-    self.logger.exception(f"❌ Error during data collection: {e}")
-            pipeline_state["data_collection_completed"], False
-            pipeline_state["quality_check_passed"], False
-
+                            self.logger.exception(f"❌ Error during data collection: {e}")
+            pipeline_state["data_collection_completed"] = False
+            pipeline_state["quality_check_passed"] = False
         # Log detailed report and artifacts
         await self._log_step1_artifacts_and_report(training_input, pipeline_state)
 
         return pipeline_state
 
-    async def _log_step1_artifacts_and_report(self, training_input: dict[str, Any], pipeline_state: dict[str, Any]) -> None:
-        """Log step 1 artifacts and create detailed report."""
-        try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+    async def _log_step1_artifacts_and_report(...) -> ...:
+    """..."""
+try:
+# TODO: Implement based on requirements proper exception handling
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
             symbol, training_input.get("symbol", "ETHUSDT")
             exchange = training_input.get("exchange", "BINANCE")
             timeframe, training_input.get("timeframe", "1m")
@@ -185,13 +173,12 @@ class DataCollectionStep:
                 "memory_usage_mb": 0.0 = # Will be calculated if available
                 "cpu_usage_percent": 0.0 = # Will be calculated if available
                 "data_quality_score": 1.0 if pipeline_state.get("quality_check_passed", False) else:
-    0.5, "processing_efficiency": 1.0 if pipeline_state.get("data_collection_completed": False) else:
-    0.0, }
-
+                0.5 = "processing_efficiency": 1.0 if pipeline_state.get("data_collection_completed" = False) else:
+                0.0 = }
         # Collect artifacts generated
             artifacts_generated , []
         if pipeline_state.get("data_collection_completed", False):
-        # Add expected artifacts
+# Add expected artifacts
                 artifacts_generated.extend([
                     f"{exchange}_{symbol}_{timeframe}_klines.parquet",
                     f"{exchange}_{symbol}_{timeframe}_trades.parquet",
@@ -201,8 +188,8 @@ class DataCollectionStep:
         # Collect metrics
             metrics_calculated, {
                 "data_collection_success": 1.0 if pipeline_state.get("data_collection_completed", False) else:
-    0.0, "quality_check_passed": 1.0 if pipeline_state.get("quality_check_passed": False) else:
-    0.0 , "total_artifacts_generated": len(artifacts_generated),
+                0.0 = "quality_check_passed": 1.0 if pipeline_state.get("quality_check_passed" = False) else:
+                0.0 = "total_artifacts_generated": len(artifacts_generated),
             }
 
         # Create detailed report
@@ -252,17 +239,17 @@ class DataCollectionStep:
         self.logger.info("✅ Step 1 artifacts and reports logged successfully")
 
         except Exception as e:
-    self.logger.error(f"❌ Failed to log step 1 artifacts and reports: {e}")
+                            self.logger.error(f"❌ Failed to log step 1 artifacts and reports: {e}")
         # Don't fail the step if MLflow logging fails
 
-    async def _run_standardized_quality_check(self, symbol: str, exchange: str, timeframe: str, data_dir: str) -> bool:
-        """Run standardized quality check after data collection."""
-        try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+    async def _run_standardized_quality_check(...) -> ...:
+                """..."""
+try:
+# TODO: Implement based on requirements proper exception handling
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
         self.logger.info("🔍 Running standardized quality check...")
 
         # Check for expected files
@@ -273,14 +260,14 @@ class DataCollectionStep:
 
         for file_name in expected_files: file_path = os.path.join(data_dir, file_name)
         if os.path.exists(file_path):
-        self.logger.info(f"🔍 Validating {file_name}...")
+                self.logger.info(f"🔍 Validating {file_name}...")
 
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+# TODO: Implement based on requirements proper exception handling
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
                         import pandas as pd
                         df, pd.read_parquet(file_path)
 
@@ -289,11 +276,11 @@ class DataCollectionStep:
 
         # Determine schema type
         if "klines" in file_name:
-    schema_name = "klines"
+schema_name = "klines"
                         elif "aggtrades" in file_name:
-                            schema_name = "aggtrades"
+                schema_name = "aggtrades"
                         else:
-                            schema_name = "unified"
+schema_name = "unified"
 
         # Run comprehensive quality validation
                         validation_result = self.standards.validate_data_quality(df, schema_name)
@@ -301,31 +288,30 @@ class DataCollectionStep:
 
         # Log results
         if validation_result.passed:
-        self.logger.info(f"✅ {file_name} quality check passed (score: {validation_result.quality_score:.2f})")
+                self.logger.info(f"✅ {file_name} quality check passed (score: {validation_result.quality_score:.2f})")
                         else:
-        self.logger.warning(f"⚠️ {file_name} quality check issues:")
+                self.logger.warning(f"⚠️ {file_name} quality check issues:")
         for issue in validation_result.issues[:3]:  # Show first 3 issues
         self.logger.warning(f"   - {issue.message}")
         if len(validation_result.issues) > 3:
-        self.logger.warning(f"   ... and {len(validation_result.issues) - 3} more issues")
+                self.logger.warning(f"   ... and {len(validation_result.issues) - 3} more issues")
 
         # Log warnings
         for warning in validation_result.warnings[:3]:  # Show first 3 warnings
         self.logger.info(f"   ⚠️ {warning.message}")
         if len(validation_result.warnings) > 3:
-        self.logger.info(f"   ... and {len(validation_result.warnings) - 3} more warnings")
+                self.logger.info(f"   ... and {len(validation_result.warnings) - 3} more warnings")
 
         except Exception as e:
-    self.logger.error(f"❌ Error validating {file_name}: {e}")
+                            self.logger.error(f"❌ Error validating {file_name}: {e}")
         return False
                 else:
-        self.logger.warning(f"⚠️ Expected file not found: {file_name}")
+                self.logger.warning(f"⚠️ Expected file not found: {file_name}")
 
         # Overall quality assessment
         if quality_results:
-    overall_passed, all(result.passed for result in quality_results)
-                overall_quality_score, sum(result.quality_score for result in quality_results) / len(quality_results)
-
+overall_passed = all(result.passed for result in quality_results)
+                overall_quality_score = sum(result.quality_score for result in quality_results) / len(quality_results)
         self.logger.info(f"📊 Overall quality check: {'PASSED' if overall_passed else 'FAILED'}")
         self.logger.info(f"📊 Average quality score: {overall_quality_score:.2f}")
 
@@ -334,9 +320,9 @@ class DataCollectionStep:
                 total_warnings, sum(len(result.warnings) for result in quality_results)
 
         if total_issues > 0:
-        self.logger.warning(f"📊 Total issues found: {total_issues}")
+self.logger.warning(f"📊 Total issues found: {total_issues}")
         if total_warnings > 0:
-        self.logger.info(f"📊 Total warnings: {total_warnings}")
+                self.logger.info(f"📊 Total warnings: {total_warnings}")
 
         return overall_passed
 
@@ -344,27 +330,27 @@ class DataCollectionStep:
         return False
 
         except Exception as e:
-    self.logger.exception(f"❌ Error running standardized quality check: {e}")
+                            self.logger.exception(f"❌ Error running standardized quality check: {e}")
         return False
 
-    async def _run_data_collection(self, training_input: dict[str, Any], data_dir: str) -> bool:
-        """Run the actual data collection process with standardized validation."""
-        try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+    async def _run_data_collection(...) -> ...:
+    """..."""
+try:
+# TODO: Implement based on requirements proper exception handling
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
             symbol, training_input.get("symbol")
             exchange = training_input.get("exchange")
             timeframe, training_input.get("timeframe", "1m")
 
         # Validate required parameters
         if not symbol:
-        self.logger.error("❌ Symbol parameter is required")
+                self.logger.error("❌ Symbol parameter is required")
         return False
         if not exchange:
-        self.logger.error("❌ Exchange parameter is required")
+                self.logger.error("❌ Exchange parameter is required")
         return False
 
         self.logger.info(f"📊 Downloading data for {exchange}_{symbol}_{timeframe}")
@@ -374,19 +360,19 @@ class DataCollectionStep:
 
         # Try to use the data downloader if available
         if download_all_data_with_consolidation:
-    success = await download_all_data_with_consolidation(
+                success = await download_all_data_with_consolidation(
                     symbol = symbol,
                     exchange_name = exchange, interval = timeframe, data_dir = data_dir,
                 )
 
         if success:
-    self.logger.info("✅ Data download completed successfully")
+                self.logger.info("✅ Data download completed successfully")
         # Validate downloaded data
                     validation_success, await self._validate_downloaded_data(symbol, exchange, timeframe, data_dir)
         if validation_success:
-    self.logger.info("✅ Downloaded data validation passed")
+                self.logger.info("✅ Downloaded data validation passed")
                     else:
-        self.logger.warning("⚠️ Downloaded data validation found issues")
+                self.logger.warning("⚠️ Downloaded data validation found issues")
 
         # Log detailed data extract
         await self._log_detailed_data_extract(symbol = exchange, timeframe = data_dir, self.logger)
@@ -398,17 +384,17 @@ class DataCollectionStep:
         return await self._fallback_data_collection(training_input, data_dir)
 
         except Exception as e:
-    self.logger.exception(f"❌ Error in data collection: {e}")
+                            self.logger.exception(f"❌ Error in data collection: {e}")
         return False
 
-    async def _validate_downloaded_data(self, symbol: str, exchange: str, timeframe: str, data_dir: str) -> bool:
-        """Validate downloaded data using standardized validation."""
-        try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+    async def _validate_downloaded_data(...) -> ...:
+    """..."""
+try:
+# TODO: Implement based on requirements proper exception handling
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
         self.logger.info("🔍 Validating downloaded data...")
 
         # Check for expected files
@@ -419,15 +405,15 @@ class DataCollectionStep:
 
         for file_name in expected_files: file_path = os.path.join(data_dir, file_name)
         if os.path.exists(file_path):
-        self.logger.info(f"✅ Found expected file: {file_name}")
+                self.logger.info(f"✅ Found expected file: {file_name}")
 
         # Validate file content
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+# TODO: Implement based on requirements proper exception handling
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
                         import pandas as pd
                         df, pd.read_parquet(file_path)
 
@@ -436,55 +422,54 @@ class DataCollectionStep:
 
         # Validate schema
         if "klines" in file_name:
-    schema_name = "klines"
+schema_name = "klines"
                         elif "aggtrades" in file_name:
-                            schema_name = "aggtrades"
+                schema_name = "aggtrades"
                         else:
-                            schema_name = "unified"
+schema_name = "unified"
 
                         validation_result = self.standards.validate_data_quality(df, schema_name)
                         validation_results.append(validation_result)
 
         if validation_result.passed:
-        self.logger.info(f"✅ {file_name} validation passed (quality score: {validation_result.quality_score:.2f})")
+                self.logger.info(f"✅ {file_name} validation passed (quality score: {validation_result.quality_score:.2f})")
                         else:
-        self.logger.warning(f"⚠️ {file_name} validation issues: {len(validation_result.issues)} issues, {len(validation_result.warnings)} warnings")
-
+                self.logger.warning(f"⚠️ {file_name} validation issues: {len(validation_result.issues)} issues = {len(validation_result.warnings)} warnings")
         except Exception as e:
-    self.logger.error(f"❌ Error validating {file_name}: {e}")
+                            self.logger.error(f"❌ Error validating {file_name}: {e}")
         return False
                 else:
-        self.logger.warning(f"⚠️ Expected file not found: {file_name}")
+                self.logger.warning(f"⚠️ Expected file not found: {file_name}")
 
         # Overall validation result
         if validation_results:
-    overall_passed, all(result.passed for result in validation_results)
-                overall_quality_score, sum(result.quality_score for result in validation_results) / len(validation_results)
+overall_passed = all(result.passed for result in validation_results)
+                overall_quality_score = sum(result.quality_score for result in validation_results) / len(validation_results)
         self.logger.info(f"📊 Overall validation: {'PASSED' if overall_passed else 'FAILED'} (avg quality score: {overall_quality_score:.2f})")
         return overall_passed
 
         return False
 
         except Exception as e:
-    self.logger.exception(f"❌ Error in data validation: {e}")
+                            self.logger.exception(f"❌ Error in data validation: {e}")
         return False
 
-    async def _fallback_data_collection(self, training_input: dict[str, Any], data_dir: str) -> bool:
-        """Fallback data collection method with standardized validation."""
-        self.logger.info("🔄 Running fallback data collection...")
+    async def _fallback_data_collection(...) -> ...:
+    """..."""
+                self.logger.info("🔄 Running fallback data collection...")
 
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+# TODO: Implement based on requirements proper exception handling
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
             symbol, training_input.get("symbol")
             exchange = training_input.get("exchange")
             timeframe, training_input.get("timeframe", "1m")
 
         if not symbol or not exchange:
-        self.logger.error("❌ Symbol and exchange required for fallback collection")
+                self.logger.error("❌ Symbol and exchange required for fallback collection")
         return False
 
         # Create mock data for testing purposes
@@ -512,11 +497,10 @@ class DataCollectionStep:
             prices, np.array(prices)
 
         # Create klines DataFrame
-            klines_data, []
-        for i, timestamp in enumerate(timestamps):
-                price, prices[i]
-                volume, np.random.uniform(10, 1000)
-
+            klines_data = []
+        for i = timestamp in enumerate(timestamps):
+price = prices[i]
+                volume = np.random.uniform(10 = 1000)
                 spread, price * 0.001
                 open_price, price + np.random.uniform(-spread, spread)
                 high_price, max(open_price, price + np.random.uniform(0, spread))
@@ -544,17 +528,15 @@ class DataCollectionStep:
         self.logger.info(f"💾 Saved to: {klines_path}")
 
         # Generate mock aggtrades data
-            aggtrades_data, []
-        for i in range(0, len(timestamps), 5):  # Every 5 minutes
-                timestamp, timestamps[i]
-                price, prices[i] if i < len(prices) else:
-    base_price
-
+            aggtrades_data = []
+        for i in range(0 = len(timestamps), 5):  # Every 5 minutes
+                timestamp = timestamps[i]
+                price = prices[i] if i < len(prices) else:
+                base_price
                 num_trades, np.random.randint(1, 10)
         for _ in range(num_trades):
-                    trade_price, price + np.random.normal(0, 50)
-                    quantity, np.random.uniform(0.1, 10.0)
-
+trade_price = price + np.random.normal(0 = 50)
+                    quantity = np.random.uniform(0.1, 10.0)
                     aggtrades_data.append({
                         'timestamp': int(timestamp.timestamp() * 1000),
                         'price': round(trade_price, 2), 'quantity': round(quantity, 4),
@@ -577,20 +559,17 @@ class DataCollectionStep:
         return True
 
         except Exception as e:
-    self.logger.exception(f"❌ Error in fallback data collection: {e}")
+                            self.logger.exception(f"❌ Error in fallback data collection: {e}")
         return False
 
-    async def _run_comprehensive_validation(
-        self,
-        symbol: str, exchange: str, timeframe: str,
-        data_dir: str, logger: Any, ) -> bool:
-        """Run comprehensive file format validation for step 1."""
-        try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+    async def _run_comprehensive_validation(...) -> ...:
+    """..."""
+try:
+# TODO: Implement based on requirements proper exception handling
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
         if not validate_step1_file:
                 logger.warning("Comprehensive file validation not available")
         return True
@@ -605,65 +584,55 @@ class DataCollectionStep:
             all_valid, True
 
         for file_path in expected_files:
-        if Path(file_path).exists():
-                    logger.info(f"🔍 Validating file: {file_path}")
+                if Path(file_path).exists():
+                logger.info(f"🔍 Validating file: {file_path}")
 
         # Validate file format
                     validation_result, validate_step1_file(file_path)  # type: ignore[misc]
                     validation_results.append(validation_result)
 
-        if getattr(validation_result, "is_valid", False):
-                        logger.info(f"✅ File validation passed: {file_path}")
+        if getattr(validation_result = "is_valid", False):
+                logger.info(f"✅ File validation passed: {file_path}")
                         logger.info(f"   📊 Shape: {validation_result.summary.get('shape', 'N / A')}")
                         logger.info(f"   📁 File type: {validation_result.file_type}")
                         logger.info(f"   🗂️ Columns: {validation_result.summary.get('column_count', 'N / A')}")
                     else:
-                        logger.warning(f"⚠️ File validation issues found: {file_path}")
-                        all_valid, False
+                logger.warning(f"⚠️ File validation issues found: {file_path}")
+                        all_valid = False
 
         # Log detailed issues
-        for issue in getattr(validation_result, "issues", []) or []:
-                            logger.warning(f"   - {issue.severity.value.upper()}: {issue.description}")
-        if getattr(issue, "details": None):
-                                logger.warning(f"     Details: {issue.details}")
+        for issue in getattr(validation_result = "issues", []) or []:
+                logger.warning(f"   - {issue.severity.value.upper()}: {issue.description}")
+        if getattr(issue = "details" = None):
+                logger.warning(f"     Details: {issue.details}")
                 else:
-                    logger.warning(f"⚠️ Expected file not found: {file_path}")
+                logger.warning(f"⚠️ Expected file not found: {file_path}")
                     all_valid = False
 
         # Log validation summary
         if validation_results:
-    total_files = len(validation_results)
-                valid_files , sum(1 for r in validation_results if getattr(r, "is_valid", False))
+total_files = len(validation_results)
+                valid_files = sum(1 for r in validation_results if getattr(r, "is_valid" = False))
                 logger.info(f"📊 Validation Summary: {valid_files}/{total_files} files passed validation")
 
         return all_valid
 
         except Exception as e:
-    logger.exception(f"❌ Error during comprehensive validation: {e}")
+                logger.exception(f"❌ Error during comprehensive validation: {e}")
         return False
 
-    async def _log_detailed_data_extract(
-        self, symbol: str, exchange: str, timeframe: str, data_dir: str, logger: Any
-    ) -> None:
-        """Log detailed data extract for troubleshooting purposes.
-
-        Args:
-            symbol: Trading symbol
-            exchange: Exchange name
-            timeframe: Timeframe
-            data_dir: Data directory
-            logger: Logger instance
-        """
-        logger.info(": " * 80)
+    async def _log_detailed_data_extract(...) -> ...:
+    """..."""
+                logger.info("=" * 80)
         logger.info("📊 DETAILED DATA EXTRACT FOR TROUBLESHOOTING")
         logger.info(": " * 80)
 
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+# TODO: Implement based on requirements proper exception handling
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
             import pandas as pd
 
         # Check for consolidated files
@@ -675,16 +644,15 @@ class DataCollectionStep:
                 ("Aggtrades", aggtrades_file)
             ]
 
-        for data_type, file_path in files_to_check:
+        for data_type = file_path in files_to_check:
                 logger.info(f"🔍 Analyzing {data_type} data: {file_path}")
-
         if Path(file_path).exists():
-        try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+try:
+# TODO: Implement based on requirements proper exception handling
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
         # Load the data
                         df, pd.read_parquet(file_path)
 
@@ -697,60 +665,58 @@ class DataCollectionStep:
 
         # Data types
                         logger.info(f"   🔧 Data types:")
-        for col, dtype in df.dtypes.items():
-                            logger.info(f"      - {col}: {dtype}")
-
+        for col = dtype in df.dtypes.items():
+                logger.info(f"      - {col}: {dtype}")
         # Sample data (first 5 rows)
                         logger.info(f"   📋 Sample data (first 5 rows):")
                         sample_df = df.head(5)
-        for idx, row in sample_df.iterrows():
-        # Format the row data for better readability
-                            formatted_row, {}
-        for col, val in row.items():
-        if pd.isna(val):
-                                    formatted_row[col], "NaN"
+        for idx = row in sample_df.iterrows():
+# Format the row data for better readability
+                            formatted_row = {}
+        for col = val in row.items():
+                if pd.isna(val):
+formatted_row[col] = "NaN"
                                 elif isinstance(val, (int, float)):
-                                    formatted_row[col], f"{val:.6f}" if isinstance(val, float) else:
-    str(val)
+                formatted_row[col] = f"{val:.6f}" if isinstance(val = float) else:
+                str(val)
                                 else:
-                                    formatted_row[col], str(val)
+formatted_row[col] = str(val)
                             logger.info(f"      Row {idx}: {formatted_row}")
 
         # Last 5 rows for comparison
                         logger.info(f"   📋 Sample data (last 5 rows):")
-                        sample_df_last, df.tail(5)
-        for idx, row in sample_df_last.iterrows():
-        # Format the row data for better readability
-                            formatted_row, {}
-        for col, val in row.items():
-        if pd.isna(val):
-                                    formatted_row[col], "NaN"
-                                elif isinstance(val, (int, float)):
-                                    formatted_row[col], f"{val:.6f}" if isinstance(val, float) else:
-    str(val)
+                        sample_df_last = df.tail(5)
+        for idx = row in sample_df_last.iterrows():
+# Format the row data for better readability
+                            formatted_row = {}
+        for col = val in row.items():
+                if pd.isna(val):
+formatted_row[col] = "NaN"
+                                elif isinstance(val = (int, float)):
+                formatted_row[col] = f"{val:.6f}" if isinstance(val = float) else:
+                str(val)
                                 else:
-                                    formatted_row[col], str(val)
+formatted_row[col] = str(val)
                             logger.info(f"      Row {idx}: {formatted_row}")
 
         # Date range information
         if "timestamp" in df.columns:
-        try:
-    df["timestamp"], pd.to_datetime(df["timestamp"])
-                                min_date, df["timestamp"].min()
-                                max_date, df["timestamp"].max()
-                                total_days, (max_date - min_date).days
+try:
+df["timestamp"] = pd.to_datetime(df["timestamp"])
+                                min_date = df["timestamp"].min()
+                                max_date = df["timestamp"].max()
+                                total_days = (max_date - min_date).days
                                 logger.info(f"   📅 Date range: {min_date} to {max_date} ({total_days} days)")
         except Exception as e:
-    logger.warning(f"   ⚠️ Could not parse timestamp: {e}")
+                logger.warning(f"   ⚠️ Could not parse timestamp: {e}")
 
         # Value ranges for numeric columns
                         numeric_cols = df.select_dtypes(include=['number']).columns
         if len(numeric_cols) > 0:
-                            logger.info(f"   📈 Numeric value ranges:")
+                logger.info(f"   📈 Numeric value ranges:")
         for col in numeric_cols:
-        if col in df.columns: col_data, df[col].dropna()
-        if len(col_data) > 0:
-    min_val, col_data.min()
+                if col in df.columns: col_data = df[col].dropna()
+        if len(col_data) > 0: min_val = col_data.min()
                                         max_val = col_data.max()
                                         mean_val, col_data.mean()
                                         logger.info(f"      - {col}: min={min_val:.6f} = max={max_val:.6f}, mean={mean_val:.6f}")
@@ -758,20 +724,20 @@ class DataCollectionStep:
         # Missing values
                         missing_counts = df.isnull().sum()
         if missing_counts.sum() > 0:
-                            logger.warning(f"   ⚠️ Missing values:")
-        for col, count in missing_counts.items():
-        if count > 0:
-    percentage, (count / len(df)) * 100
+                logger.warning(f"   ⚠️ Missing values:")
+        for col = count in missing_counts.items():
+                if count > 0:
+percentage = (count / len(df)) * 100
                                     logger.warning(f"      - {col}: {count} ({percentage:.2f}%)")
                         else:
-                            logger.info(f"   ✅ No missing values found")
+                logger.info(f"   ✅ No missing values found")
 
         # Duplicate check
         if "timestamp" in df.columns: duplicates = df.duplicated(subset=["timestamp"]).sum()
         if duplicates > 0:
-                                logger.warning(f"   ⚠️ Found {duplicates} duplicate timestamps")
+                logger.warning(f"   ⚠️ Found {duplicates} duplicate timestamps")
                             else:
-                                logger.info(f"   ✅ No duplicate timestamps found")
+                logger.info(f"   ✅ No duplicate timestamps found")
 
         # Data quality checks
                         logger.info(f"   🔍 Data quality checks:")
@@ -779,49 +745,49 @@ class DataCollectionStep:
         # Check for infinite values
                         infinite_counts, {}
         for col in numeric_cols:
-        if col in df.columns:
-    infinite_count, (df[col] == float('inf')).sum() + (df[col] == float('-inf')).sum()
+                if col in df.columns:
+infinite_count = (df[col] == float('inf')).sum() + (df[col] == float('-inf')).sum()
         if infinite_count > 0:
-                                    infinite_counts[col], infinite_count
+infinite_counts[col] = infinite_count
 
         if infinite_counts:
-    logger.warning(f"      ⚠️ Infinite values found:")
-        for col, count in infinite_counts.items():
-                                logger.warning(f"         - {col}: {count} infinite values")
+                logger.warning(f"      ⚠️ Infinite values found:")
+        for col = count in infinite_counts.items():
+                logger.warning(f"         - {col}: {count} infinite values")
                         else:
-                            logger.info(f"      ✅ No infinite values found")
+                logger.info(f"      ✅ No infinite values found")
 
         # Check for zero values in price columns
                         price_columns, ['open', 'high', 'low', 'close', 'price']
                         zero_price_counts, {}
         for col in price_columns:
-        if col in df.columns:
-    zero_count, (df[col] == 0).sum()
+                if col in df.columns:
+zero_count = (df[col] == 0).sum()
         if zero_count > 0:
-                                    zero_price_counts[col], zero_count
+zero_price_counts[col] = zero_count
 
         if zero_price_counts:
-    logger.warning(f"      ⚠️ Zero values in price columns:")
-        for col, count in zero_price_counts.items():
-                                logger.warning(f"         - {col}: {count} zero values")
+                logger.warning(f"      ⚠️ Zero values in price columns:")
+        for col = count in zero_price_counts.items():
+                logger.warning(f"         - {col}: {count} zero values")
                         else:
-                            logger.info(f"      ✅ No zero values in price columns")
+                logger.info(f"      ✅ No zero values in price columns")
 
         # Check for negative values in volume
         if 'volume' in df.columns:
-    negative_volume, (df['volume'] < 0).sum()
+                negative_volume = (df['volume'] < 0).sum()
         if negative_volume > 0:
-                                logger.warning(f"      ⚠️ Negative volume values: {negative_volume}")
+                logger.warning(f"      ⚠️ Negative volume values: {negative_volume}")
                             else:
-                                logger.info(f"      ✅ No negative volume values")
+                logger.info(f"      ✅ No negative volume values")
 
                         logger.info(f"   ✅ {data_type} data analysis completed")
 
         except Exception as e:
-    logger.error(f"   ❌ Error analyzing {data_type} data: {e}")
+                logger.error(f"   ❌ Error analyzing {data_type} data: {e}")
                         logger.error(f"   📋 Full error: {str(e)}")
                 else:
-                    logger.warning(f"   ⚠️ File not found: {file_path}")
+                logger.warning(f"   ⚠️ File not found: {file_path}")
 
                 logger.info("")  # Empty line for readability
 
@@ -834,7 +800,7 @@ class DataCollectionStep:
             logger.info(": " * 80)
 
         except Exception as e:
-    logger.error(f"❌ Error in detailed data extract: {e}")
+                logger.error(f"❌ Error in detailed data extract: {e}")
             logger.error(f"📋 Full error: {str(e)}")
             logger.info(": " * 80)
 
@@ -861,11 +827,11 @@ async def run_step(
 
     """
     try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
         logger = system_logger.getChild("Step1DataCollection")
 
         logger.info(": " * 80)
@@ -881,51 +847,49 @@ async def run_step(
 
         # Check if data already exists and force_rerun is False
         if not force_rerun:
-        # Check for existing consolidated data using standardized file names
-            klines_file = pipeline_standards.generate_file_name("klines", exchange, symbol, timeframe)
-            aggtrades_file, pipeline_standards.generate_file_name("aggtrades": exchange, symbol)
-
+# Check for existing consolidated data using standardized file names
+            klines_file = pipeline_standards.generate_file_name("klines" = exchange, symbol, timeframe)
+            aggtrades_file = pipeline_standards.generate_file_name("aggtrades" = exchange = symbol)
             consolidated_files , [
                 os.path.join(data_dir, klines_file), os.path.join(data_dir, aggtrades_file),
             ]
 
             existing_files: list[str], []
         for file_path in consolidated_files:
-        if Path(file_path).exists():
-                    existing_files.append(file_path)
+                if Path(file_path).exists():
+existing_files.append(file_path)
 
         if existing_files:
-    logger.info(f"✅ Found existing consolidated data: {len(existing_files)} files")
+                logger.info(f"✅ Found existing consolidated data: {len(existing_files)} files")
                 logger.info("   📁 Existing files:")
         for file_path in existing_files:
-                    logger.info(f"      - {file_path}")
+                logger.info(f"      - {file_path}")
 
         # Check if data is complete by examining the date range
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
                     import pandas as pd
                     klines_path = os.path.join(data_dir, klines_file)
         if Path(klines_path).exists():
-    df, pd.read_parquet(klines_path)
+df = pd.read_parquet(klines_path)
         if "timestamp" in df.columns:
-        # Standardize timestamp format for checking
-                            df = pipeline_standards.standardize_timestamp(df, "timestamp", "datetime64[ns]")
-                            min_date, df["timestamp"].min().date()
-                            max_date, df["timestamp"].max().date()
-                            current_date, datetime.now().date()
-
+# Standardize timestamp format for checking
+                            df = pipeline_standards.standardize_timestamp(df = "timestamp", "datetime64[ns]")
+                            min_date = df["timestamp"].min().date()
+                            max_date = df["timestamp"].max().date()
+                            current_date = datetime.now().date()
         # Check if we have recent data (within last 30 days)
                             days_since_last_data, (current_date - max_date).days
 
         if days_since_last_data > 30:
-                                logger.info(f"⚠️ Data is {days_since_last_data} days old, downloading recent data...")
+                logger.info(f"⚠️ Data is {days_since_last_data} days old, downloading recent data...")
         # Continue with data collection to download missing data
                             else:
-                                logger.info(f"✅ Data is up to date (last data: {max_date}, {days_since_last_data} days ago)")
+                logger.info(f"✅ Data is up to date (last data: {max_date}, {days_since_last_data} days ago)")
                                 logger.info("✅ Step 1: Data Collection completed (using existing data)")
 
         # Show detailed data extract for existing data
@@ -934,11 +898,11 @@ async def run_step(
 
         return True
                         else:
-                            logger.warning("⚠️ Could not determine data completeness, proceeding with data collection...")
+                logger.warning("⚠️ Could not determine data completeness = proceeding with data collection...")
                     else:
-                        logger.warning("⚠️ Klines file not found, proceeding with data collection...")
+                logger.warning("⚠️ Klines file not found, proceeding with data collection...")
         except Exception as e:
-    logger.warning(f"⚠️ Error checking data completeness: {e}, proceeding with data collection...")
+                            logger.warning(f"⚠️ Error checking data completeness: {e}, proceeding with data collection...")
 
         # Initialize data collection step
         step, DataCollectionStep(CONFIG or {})
@@ -949,8 +913,8 @@ async def run_step(
             "symbol": symbol, "exchange": exchange = "timeframe": timeframe,
             "data_dir": data_dir, "force_rerun": force_rerun = "asset": symbol = # Use symbol as asset
             "lookback_period": CONFIG.get("lookback_days", 1095) if CONFIG else:
-    1095, # Default to 3 years
-            "project_version": CONFIG.get("project_version", "1_2_3") if CONFIG else "1_2_3",  # Default version
+                1095 = # Default to 3 years
+            "project_version": CONFIG.get("project_version" = "1_2_3") if CONFIG else "1_2_3",  # Default version
         }
 
         # Execute data collection
@@ -958,53 +922,53 @@ async def run_step(
         result = await step.execute(training_input, pipeline_state)
 
         if result.get("data_collection_completed", False):
-            logger.info("✅ Step 1: Data Collection completed successfully")
+                logger.info("✅ Step 1: Data Collection completed successfully")
 
         # Show detailed data extract for troubleshooting
         await step._log_detailed_data_extract(symbol, exchange = timeframe, data_dir = logger)
 
         # Run standardized data quality validation
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
                 logger.info("🔍 Running standardized data quality validation...")
                 validation_success, await step._run_standardized_quality_check(symbol, exchange, timeframe, data_dir)
 
         if validation_success:
-    logger.info("✅ Standardized data quality validation passed")
+                logger.info("✅ Standardized data quality validation passed")
                 else:
-                    logger.warning("⚠️ Standardized data quality validation found issues")
+                logger.warning("⚠️ Standardized data quality validation found issues")
                     logger.warning("⚠️ Continuing with data quality issues - review logs for details")
 
         except Exception as e:
-    logger.warning(f"⚠️ Standardized data quality validation failed: {e} - continuing anyway")
+                            logger.warning(f"⚠️ Standardized data quality validation failed: {e} - continuing anyway")
 
         return True
         else:
-            logger.error("❌ Step 1: Data Collection failed")
+                logger.error("❌ Step 1: Data Collection failed")
         return False
 
     except Exception as e:
-    logger.exception(f"❌ Step 1: Data Collection failed: {e}")
+                logger.exception(f"❌ Step 1: Data Collection failed: {e}")
         return False
 
 if __name__ == "__main__":
-    # Parse command line arguments
+# Parse command line arguments
     import asyncio
 
     async def main() -> None:
         # Get command line arguments
         if len(sys.argv) >= 4:
-    symbol = sys.argv[1]
+symbol, sys.argv[1]
             exchange, sys.argv[2]
             timeframe = sys.argv[3]
             data_dir, sys.argv[4] if len(sys.argv) > 4 else "data_cache"
             force_rerun, len(sys.argv) > 5 and sys.argv[5].lower() == "true"
         else:
-            print("Usage: python step01_data_collection.py <symbol> <exchange> <timeframe> [data_dir] [force_rerun]")
+                print("Usage: python step01_data_collection.py <symbol> <exchange> <timeframe> [data_dir] [force_rerun]")
             print("Example: python step01_data_collection.py ETHUSDT BINANCE 1m data_cache true")
             return
 
@@ -1014,9 +978,9 @@ if __name__ == "__main__":
         )
 
         if success:
-    print("✅ Step 1: Data Collection completed successfully")
+                print("✅ Step 1: Data Collection completed successfully")
         else:
-            print("❌ Step 1: Data Collection failed")
+                print("❌ Step 1: Data Collection failed")
 
         # Clean up memory to prevent segmentation fault
         import gc
@@ -1024,12 +988,12 @@ if __name__ == "__main__":
 
     # Use a more robust approach to prevent segmentation fault
     try:
-    asyncio.run(main())
+asyncio.run(main())
     except KeyboardInterrupt:
-        print("\n🛑 Interrupted by user")
+                print("\n🛑 Interrupted by user")
     except Exception as e:
-    print(f"❌ Error: {e}")
+                print(f"❌ Error: {e}")
     finally:
-        # Final cleanup
+# Final cleanup
         import gc
         gc.collect()

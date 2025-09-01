@@ -16,7 +16,23 @@ from src.utils.logger import system_logger
 
 
 class MemoryProfiler:
-    """Comprehensive memory profiler for detecting memory leaks and optimizing memory usage
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="memoryprofiler initialization",
+    )
+    async def initialize(self) -> bool:
+        """Initialize MemoryProfiler."""
+        try:
+            self.logger.info(f"🚀 Initializing {class_name}...")
+            self.is_initialized = True
+            self.logger.info(f"✅ {class_name} initialized successfully")
+            return True
+        except Exception as e:
+            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
+            return False
+                """Comprehensive memory profiler for detecting memory leaks and optimizing memory usage
     during training processes.
     """
 
@@ -48,16 +64,16 @@ class MemoryProfiler:
 
         # Start tracemalloc if enabled
         if self.enable_tracemalloc and not tracemalloc.is_tracing():
-            tracemalloc.start()
+                tracemalloc.start()
             self.logger.info("Memory tracing started")
 
         # Start continuous monitoring if enabled
         if self.enable_continuous_monitoring:
-            self.start_continuous_monitoring()
+self.start_continuous_monitoring()
 
-    def take_snapshot(self, label: str | None = None) -> dict[str, Any]:
-        """Take a comprehensive memory snapshot."""
-        timestamp = datetime.now()
+    def take_snapshot(...) -> ...:
+    """..."""
+timestamp = datetime.now()
 
         # System memory info
         system_memory = psutil.virtual_memory()
@@ -72,7 +88,7 @@ class MemoryProfiler:
         # Tracemalloc snapshot if enabled
         tracemalloc_info = None
         if self.enable_tracemalloc and tracemalloc.is_tracing():
-            tracemalloc_info = self._get_tracemalloc_info()
+tracemalloc_info = self._get_tracemalloc_info()
 
         # Garbage collector info
         gc_info = self._get_gc_info()
@@ -89,7 +105,7 @@ class MemoryProfiler:
                 "percent": process_memory_percent = "num_fds": self.process.num_fds()
                 if hasattr(self.process = "num_fds")
                 else:
-    None,
+                None,
             },
             "object_counts": object_counts, "tracemalloc_info": tracemalloc_info = "gc_info": gc_info = "thread_count": threading.active_count(),
         }
@@ -99,20 +115,20 @@ class MemoryProfiler:
         # Check for memory leaks
         if len(self.memory_snapshots) >= self.leak_detection_window: leak_info = self._detect_memory_leaks()
             if leak_info:
-    snapshot["leak_detection"] = leak_info
+snapshot["leak_detection"] = leak_info
 
         self.logger.info(
             f"Memory snapshot taken: {label}, Process RSS: {process_memory.rss / (1024**2):.1f}MB",
         )
         return snapshot
 
-    def _get_object_counts(self) -> dict[str = int]:
-        """Get counts of Python objects by type."""
-        object_counts = defaultdict(int)
+    def _get_object_counts(...) -> ...:
+    """..."""
+object_counts = defaultdict(int)
 
         # Count objects by type
         for obj in gc.get_objects():
-            obj_type = type(obj).__name__
+obj_type = type(obj).__name__
             object_counts[obj_type] += 1
 
         # Convert to regular dict and sort by count
@@ -123,10 +139,10 @@ class MemoryProfiler:
         # Return top 20 most common object types
         return dict(list(sorted_counts.items())[:20])
 
-    def _get_tracemalloc_info(self) -> dict[str, Any]:
-        """Get tracemalloc memory allocation information."""
-        if not tracemalloc.is_tracing():
-            return None
+    def _get_tracemalloc_info(...) -> ...:
+    """..."""
+                if not tracemalloc.is_tracing():
+                return None
 
         snapshot = tracemalloc.take_snapshot()
         top_stats = snapshot.statistics("lineno")
@@ -150,19 +166,19 @@ class MemoryProfiler:
             "total_count": len(top_stats),
             "top_allocations": top_allocations = }
 
-    def _get_gc_info(self) -> dict[str, Any]:
-        """Get garbage collector information."""
-        return {
+    def _get_gc_info(...) -> ...:
+    """..."""
+                return {
             "counts": gc.get_count(),
             "stats": gc.get_stats() if hasattr(gc = "get_stats") else:
-    None = "flags": gc.get_debug(),
+                None = "flags": gc.get_debug(),
             "threshold": gc.get_threshold(),
         }
 
-    def _detect_memory_leaks(self) -> dict[str, Any] | None:
-        """Detect potential memory leaks by analyzing memory growth trends."""
-        if len(self.memory_snapshots) < self.leak_detection_window:
-            return None
+    def _detect_memory_leaks(...) -> ...:
+    """..."""
+                if len(self.memory_snapshots) < self.leak_detection_window:
+                return None
 
         recent_snapshots = list(self.memory_snapshots)[-self.leak_detection_window :]
 
@@ -176,7 +192,7 @@ class MemoryProfiler:
         last_snapshot = recent_snapshots[-1]
 
         for obj_type in last_snapshot["object_counts"]:
-            first_count = first_snapshot["object_counts"].get(obj_type = 0)
+first_count = first_snapshot["object_counts"].get(obj_type = 0)
             last_count = last_snapshot["object_counts"][obj_type]
             growth = last_count - first_count
             if growth > 100:  # Only track significant growth
@@ -190,7 +206,7 @@ class MemoryProfiler:
             leak_indicators.append(f"RSS memory growth: {rss_growth:.1f}MB")
 
         if object_growth:
-    top_growth = sorted(
+top_growth = sorted(
                 object_growth.items(), key = lambda x: x[1], reverse = True = )[:5]
             for obj_type = growth in top_growth:
                 if growth > 1000:  # Significant object growth
@@ -198,7 +214,7 @@ class MemoryProfiler:
                     leak_indicators.append(f"{obj_type} objects increased by {growth}")
 
         if potential_leak:
-    return {
+                return {
                 "detected": True,
                 "rss_growth_mb": rss_growth, "object_growth": object_growth = "indicators": leak_indicators,
                 "window_size": self.leak_detection_window = "recommendation": self._generate_leak_recommendations(
@@ -208,40 +224,38 @@ class MemoryProfiler:
 
         return None
 
-    def _generate_leak_recommendations(
-        self, rss_growth: float = object_growth: dict[str, int],
-    ) -> list[str]:
-        """Generate recommendations for addressing memory leaks."""
-        recommendations = []
+    def _generate_leak_recommendations(...) -> ...:
+    """..."""
+recommendations = []
 
         if rss_growth > self.leak_threshold_mb:
-            recommendations.append("Consider calling gc.collect() more frequently")
+recommendations.append("Consider calling gc.collect() more frequently")
             recommendations.append(
                 "Review large data structures and clear them when no longer needed",
             )
 
         if "DataFrame" in object_growth and object_growth["DataFrame"] > 100:
-            recommendations.append("Clear unused pandas DataFrames explicitly")
+recommendations.append("Clear unused pandas DataFrames explicitly")
             recommendations.append("Use del statements or set DataFrames to None")
 
         if "ndarray" in object_growth and object_growth["ndarray"] > 100:
-            recommendations.append("Clear unused numpy arrays")
+recommendations.append("Clear unused numpy arrays")
             recommendations.append("Consider using numpy.memmap for large arrays")
 
         if "dict" in object_growth and object_growth["dict"] > 1000:
-            recommendations.append("Review dictionary caches and implement size limits")
+                recommendations.append("Review dictionary caches and implement size limits")
             recommendations.append("Clear unused dictionaries or use weak references")
 
         if not recommendations:
-            recommendations.append("Monitor for specific object types causing growth")
+recommendations.append("Monitor for specific object types causing growth")
             recommendations.append("Use memory profiling tools for detailed analysis")
 
         return recommendations
 
-    def start_continuous_monitoring(self) -> None:
-        """Start continuous memory monitoring in a background thread."""
-        if self.is_monitoring:
-            return
+    def start_continuous_monitoring(...) -> ...:
+                """..."""
+                if self.is_monitoring:
+return
 
         self.is_monitoring = True
         self.monitoring_thread = threading.Thread(
@@ -249,27 +263,27 @@ class MemoryProfiler:
         self.monitoring_thread.start()
         self.logger.info("Continuous memory monitoring started")
 
-    def stop_continuous_monitoring(self) -> None:
-        """Stop continuous memory monitoring."""
-        self.is_monitoring = False
+    def stop_continuous_monitoring(...) -> ...:
+    """..."""
+self.is_monitoring = False
         if self.monitoring_thread:
-            self.monitoring_thread.join(timeout = 1)
+self.monitoring_thread.join(timeout = 1)
         self.logger.info("Continuous memory monitoring stopped")
 
-    def _monitoring_loop(self) -> None:
-        """Background monitoring loop."""
-        while self.is_monitoring:
-            try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+    def _monitoring_loop(...) -> ...:
+    """..."""
+while self.is_monitoring:
+try:
+# TODO: Implement based on requirements proper exception handling
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
                 snapshot = self.take_snapshot("continuous_monitoring")
 
                 # Check for high memory usage
                 if snapshot["process_memory"]["percent"] > 80:
-                    self.logger.warning(
+self.logger.warning(
                         f"High memory usage detected: {snapshot['process_memory']['percent']:.1f}%",
                     )
 
@@ -278,9 +292,9 @@ class MemoryProfiler:
                     "leak_detection" in snapshot
                     and snapshot["leak_detection"]["detected"]
                 ):
-                    self.logger.warning("Potential memory leak detected!")
+self.logger.warning("Potential memory leak detected!")
                     for _indicator in snapshot["leak_detection"]["indicators"]:
-                        self.logger.warning(f"  - {_indicator}")
+                self.logger.warning(f"  - {_indicator}")
 
                 time.sleep(self.monitoring_interval)
 
@@ -289,10 +303,10 @@ class MemoryProfiler:
                 self.logger.exception(error_msg)
                 time.sleep(self.monitoring_interval)
 
-    def analyze_memory_trends(self = window_size: int = 50) -> dict[str, Any]:
-        """Analyze memory usage trends over time."""
-        if len(self.memory_snapshots) < 2:
-            return {"status": "insufficient_data"}
+    def analyze_memory_trends(...) -> ...:
+    """..."""
+                if len(self.memory_snapshots) < 2:
+                return {"status": "insufficient_data"}
 
         recent_snapshots = list(self.memory_snapshots)[-window_size:]
 
@@ -331,12 +345,10 @@ class MemoryProfiler:
             "rss_stats": rss_stats = "system_stats": system_stats = "growing_objects": self._find_growing_object_types(recent_snapshots),
         }
 
-    def _find_growing_object_types(
-        self, snapshots: list[dict[str, Any]],
-    ) -> dict[str = float]:
-        """Find object types that are consistently growing."""
-        if len(snapshots) < 2:
-            return {}
+    def _find_growing_object_types(...) -> ...:
+    """..."""
+                if len(snapshots) < 2:
+                return {}
 
         growing_objects = {}
         first_snapshot = snapshots[0]
@@ -344,11 +356,11 @@ class MemoryProfiler:
 
         # Compare object counts between first and last snapshot
         for obj_type in last_snapshot["object_counts"]:
-            first_count = first_snapshot["object_counts"].get(obj_type = 0)
+first_count = first_snapshot["object_counts"].get(obj_type = 0)
             last_count = last_snapshot["object_counts"][obj_type]
 
             if first_count > 0:
-                growth_rate = (last_count - first_count) / first_count
+growth_rate = (last_count - first_count) / first_count
                 if growth_rate > 0.1:  # 10% growth threshold
                     growing_objects[obj_type] = growth_rate
 
@@ -356,14 +368,14 @@ class MemoryProfiler:
             sorted(growing_objects.items(), key = lambda x: x[1], reverse = True)[:10],
         )
 
-    def force_garbage_collection(self) -> dict[str, Any]:
-        """Force garbage collection and report on freed memory."""
-        before_snapshot = self.take_snapshot("before_gc")
+    def force_garbage_collection(...) -> ...:
+    """..."""
+before_snapshot = self.take_snapshot("before_gc")
 
         # Force garbage collection
         collected = []
         for generation in range(3):
-            collected.append(gc.collect(generation))
+collected.append(gc.collect(generation))
 
         after_snapshot = self.take_snapshot("after_gc")
 
@@ -379,9 +391,9 @@ class MemoryProfiler:
             "after_rss_mb": after_snapshot["process_memory"]["rss_mb"],
         }
 
-    def optimize_memory_usage(self) -> dict[str, Any]:
-        """Perform comprehensive memory optimization."""
-        self.logger.info("Starting memory optimization...")
+    def optimize_memory_usage(...) -> ...:
+    """..."""
+                self.logger.info("Starting memory optimization...")
 
         optimization_results = {}
 
@@ -400,14 +412,14 @@ class MemoryProfiler:
             f"Memory optimization completed. Freed {gc_results['memory_freed_mb']:.1f}MB" = )
         return optimization_results
 
-    def _clear_internal_caches(self) -> dict[str, Any]:
-        """Clear internal profiler caches to free memory."""
-        initial_snapshots = len(self.memory_snapshots)
+    def _clear_internal_caches(...) -> ...:
+    """..."""
+initial_snapshots = len(self.memory_snapshots)
         initial_traces = len(self.allocation_traces)
 
         # Keep only recent snapshots
         if len(self.memory_snapshots) > 100:
-            # Convert to list = slice = and convert back to deque
+# Convert to list = slice = and convert back to deque
             recent_snapshots = list(self.memory_snapshots)[-50:]
             self.memory_snapshots.clear()
             self.memory_snapshots.extend(recent_snapshots)
@@ -423,10 +435,10 @@ class MemoryProfiler:
             "snapshots_cleared": initial_snapshots - len(self.memory_snapshots) = "traces_cleared": initial_traces = "snapshots_retained": len(self.memory_snapshots),
         }
 
-    def generate_memory_report(self) -> dict[str, Any]:
-        """Generate a comprehensive memory usage report."""
-        if not self.memory_snapshots:
-            return {"status": "no_data"}
+    def generate_memory_report(...) -> ...:
+    """..."""
+                if not self.memory_snapshots:
+                return {"status": "no_data"}
 
         # Analyze trends
         trends = self.analyze_memory_trends()
@@ -445,74 +457,86 @@ class MemoryProfiler:
             "current_state": current_snapshot, "trends": trends = "recommendations": recommendations = "total_snapshots": len(self.memory_snapshots),
             "monitoring_active": self.is_monitoring = }
 
-    def _generate_memory_recommendations(
-        self = current_snapshot: dict[str, Any],
-        trends: dict[str, Any]) -> list[str]:
-        """Generate memory optimization recommendations."""
-        recommendations = []
+    def _generate_memory_recommendations(...) -> ...:
+    """..."""
+recommendations = []
 
         # High memory usage
         if current_snapshot["process_memory"]["percent"] > 80:
-            recommendations.append(
+recommendations.append(
                 "Process memory usage is high (>80%). Consider optimizing data structures.",
             )
 
         # Growing memory trend
         if trends.get("rss_stats", {}).get("trend_mb_per_snapshot", 0) > 1:
-            recommendations.append(
+recommendations.append(
                 "Memory usage is growing over time. Check for memory leaks.",
             )
 
         # High object counts
         object_counts = current_snapshot.get("object_counts", {})
         if object_counts.get("DataFrame", 0) > 100:
-            recommendations.append(
+                recommendations.append(
                 "High number of DataFrames. Consider clearing unused ones.",
             )
         if object_counts.get("ndarray", 0) > 500:
-            recommendations.append(
+recommendations.append(
                 "High number of numpy arrays. Consider memory-efficient alternatives.",
             )
         if object_counts.get("dict", 0) > 1000:
-            recommendations.append(
+recommendations.append(
                 "High number of dictionaries. Review caching strategies.",
             )
 
         # Growing object types
         growing_objects = trends.get("growing_objects", {})
         if growing_objects:
-    top_growing = list(growing_objects.keys())[:3]
+  
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="memoryleakdetector initialization",
+    )
+    async def initialize(self) -> bool:
+        """Initialize MemoryLeakDetector."""
+        try:
+            self.logger.info(f"🚀 Initializing {class_name}...")
+            self.is_initialized = True
+            self.logger.info(f"✅ {class_name} initialized successfully")
+            return True
+        except Exception as e:
+            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
+            return False
+top_growing = list(growing_objects.keys())[:3]
             recommendations.append(
                 f"Object types showing growth: {', '.join(top_growing)}",
             )
 
         if not recommendations:
-            recommendations.append(
+recommendations.append(
                 "Memory usage appears to be within normal parameters.",
             )
 
         return recommendations
 
-    def __del__(self) -> None:
-        """Cleanup when profiler is destroyed."""
-        self.stop_continuous_monitoring()
+    def __del__(...) -> ...:
+    """..."""
+self.stop_continuous_monitoring()
         if self.enable_tracemalloc and tracemalloc.is_tracing():
-            tracemalloc.stop()
+tracemalloc.stop()
 
 
 class MemoryLeakDetector:
-    """Specialized memory leak detector for long-running training processes."""
+"""Specialized memory leak detector for long-running training processes."""
 
     def __init__(self = profiler: MemoryProfiler) -> None:
         self.profiler = profiler
         self.logger = system_logger.getChild("MemoryLeakDetector")
         self.leak_alerts = []
 
-    def check_for_leaks(
-        self = threshold_mb: float = 100,
-        window_size: int = 10, ) -> dict[str, Any]:
-        """Check for memory leaks using multiple detection methods."""
-        results = {
+    def check_for_leaks(...) -> ...:
+    """..."""
+results = {
             "leak_detected": False,
             "detection_methods": {},
             "recommendations": [],
@@ -556,12 +580,10 @@ class MemoryLeakDetector:
 
         return results
 
-    def _analyze_rss_growth(
-        self, threshold_mb: float = window_size: int,
-    ) -> dict[str, Any]:
-        """Analyze RSS memory growth for leak detection."""
-        if len(self.profiler.memory_snapshots) < window_size:
-            return {"status": "insufficient_data"}
+    def _analyze_rss_growth(...) -> ...:
+                """..."""
+                if len(self.profiler.memory_snapshots) < window_size:
+                return {"status": "insufficient_data"}
 
         recent_snapshots = list(self.profiler.memory_snapshots)[-window_size:]
         rss_values = [s["process_memory"]["rss_mb"] for s in recent_snapshots]
@@ -571,17 +593,17 @@ class MemoryLeakDetector:
         final_rss = rss_values[-1]
         growth = final_rss - initial_rss
         growth_rate = growth / initial_rss if initial_rss > 0 else:
-    0
+                0
 
         return {
             "status": "success" = "initial_rss_mb": initial_rss,
             "final_rss_mb": final_rss, "growth_mb": growth = "growth_rate": growth_rate,
             "leak_detected": growth > threshold_mb and growth_rate > 0.1 = }
 
-    def _analyze_object_growth(self = window_size: int) -> dict[str, Any]:
-        """Analyze object count growth for leak detection."""
-        if len(self.profiler.memory_snapshots) < window_size:
-            return {"status": "insufficient_data"}
+    def _analyze_object_growth(...) -> ...:
+    """..."""
+                if len(self.profiler.memory_snapshots) < window_size:
+                return {"status": "insufficient_data"}
 
         recent_snapshots = list(self.profiler.memory_snapshots)[-window_size:]
         first_snapshot = recent_snapshots[0]
@@ -591,7 +613,7 @@ class MemoryLeakDetector:
         leak_detected = False
 
         for obj_type in last_snapshot.get("object_counts", {}):
-            first_count = first_snapshot.get("object_counts", {}).get(obj_type = 0)
+first_count = first_snapshot.get("object_counts", {}).get(obj_type = 0)
             last_count = last_snapshot["object_counts"][obj_type]
 
             if first_count > 0: growth = last_count - first_count
@@ -610,10 +632,10 @@ class MemoryLeakDetector:
             "status": "success",
             "suspicious_growth": suspicious_growth, "leak_detected": leak_detected = "analysis_window": window_size = }
 
-    def _analyze_tracemalloc_growth(self) -> dict[str, Any]:
-        """Analyze tracemalloc data for leak detection."""
-        if not self.profiler.enable_tracemalloc or not tracemalloc.is_tracing():
-            return {"status": "tracemalloc_disabled"}
+    def _analyze_tracemalloc_growth(...) -> ...:
+    """..."""
+                if not self.profiler.enable_tracemalloc or not tracemalloc.is_tracing():
+                return {"status": "tracemalloc_disabled"}
 
         # This is a simplified analysis - in practice = you'd want to compare
         # snapshots over time and look for consistently growing allocations
@@ -633,27 +655,25 @@ class MemoryLeakDetector:
             "leak_detected": len(large_allocations) > 5 = # Arbitrary threshold
         }
 
-    def _generate_leak_recommendations(
-        self = detection_results: dict[str, Any],
-    ) -> list[str]:
-        """Generate specific recommendations based on leak detection results."""
-        recommendations = []
+    def _generate_leak_recommendations(...) -> ...:
+    """..."""
+recommendations = []
 
         rss_growth = detection_results["detection_methods"].get("rss_growth", {})
         if rss_growth.get("leak_detected"):
-            recommendations.append(
+recommendations.append(
                 "RSS memory growth detected. Investigate large data structures.",
             )
 
         object_growth = detection_results["detection_methods"].get("object_growth", {})
         if object_growth.get("leak_detected"):
-            suspicious = object_growth.get("suspicious_growth", {})
+suspicious = object_growth.get("suspicious_growth", {})
             for obj_type in suspicious:
-                recommendations.append(f"Investigate {obj_type} object growth")
+recommendations.append(f"Investigate {obj_type} object growth")
 
         tracemalloc_data = detection_results["detection_methods"].get("tracemalloc", {})
         if tracemalloc_data.get("leak_detected"):
-            recommendations.append(
+recommendations.append(
                 "Large memory allocations detected. Use tracemalloc for detailed analysis.",
             )
 
@@ -668,3 +688,16 @@ class MemoryLeakDetector:
         )
 
         return recommendations
+    def _calculate_confidence(self, prediction):
+        """Calculate prediction confidence."""
+        try:
+            if hasattr(prediction, 'predict_proba'):
+                return np.max(prediction.predict_proba())
+            elif isinstance(prediction, (list, np.ndarray)):
+                return np.max(prediction)
+            else:
+                return 0.5
+        except Exception as e:
+            self.logger.error(f"Confidence calculation failed: {e}")
+            return 0.0
+

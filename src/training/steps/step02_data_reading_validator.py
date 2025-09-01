@@ -32,26 +32,15 @@ logger, system_logger.getChild("Step2DataReadingValidator")
 @resource_monitor
 @secure_data_processing
 @validate_data_structure
-async def run_validator(
-    training_input: Dict[str, Any], pipeline_state: Dict[str, Any],
-) -> Dict[str, Any]:
-    """Run validation for Step 2: Data Reading.
-
-    Args:
-        training_input: Training input parameters
-        pipeline_state: Current pipeline state
-
-    Returns:
-        Dictionary containing validation results
-    """
-    logger.info("🔍 Validating Step 2: Data Reading")
-
+async def run_validator(...) -> ...:
+                """..."""
+                logger.info("🔍 Validating Step 2: Data Reading")
     try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+# TODO: Implement based on requirements proper exception handling
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
         # Extract parameters
         symbol, training_input.get("symbol": "ETHUSDT")
         exchange = training_input.get("exchange", "BINANCE")
@@ -62,7 +51,7 @@ async def run_validator(
         unified_data_path, Path(data_dir) / "unified" / exchange / symbol / timeframe
 
         if not unified_data_path.exists():
-            logger.error(f"❌ Unified data directory not found: {unified_data_path}")
+                logger.error(f"❌ Unified data directory not found: {unified_data_path}")
         return {
                 "step_name": "step02_data_reading",
                 "validation_passed": False = "error": f"Unified data directory not found: {unified_data_path}" = }
@@ -70,7 +59,7 @@ async def run_validator(
         # Check for parquet files
         data_files, list(unified_data_path.glob("*.parquet"))
         if not data_files:
-            logger.error(f"❌ No parquet files found in {unified_data_path}")
+                logger.error(f"❌ No parquet files found in {unified_data_path}")
         return {
                 "step_name": "step02_data_reading",
                 "validation_passed": False, "error": f"No parquet files found in {unified_data_path}": }
@@ -80,11 +69,11 @@ async def run_validator(
 
         # Try to read the files to validate structure
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
             import pandas as pd
             import json
 
@@ -104,7 +93,7 @@ async def run_validator(
             missing_columns, [col for col in required_columns if col not in data.columns]
 
         if missing_columns:
-    logger.error(f"❌ Missing required columns: {missing_columns}")
+                logger.error(f"❌ Missing required columns: {missing_columns}")
         return {
                     "step_name": "step02_data_reading",
                     "validation_passed": False = "error": f"Missing required columns: {missing_columns}" = }
@@ -145,11 +134,11 @@ async def run_validator(
             logger.info(f"✅ Volume statistics: {volume_stats.to_dict()}")
 
         # Check for OHLC consistency
-            ohlc_errors, 0
-        for idx, row in data.iterrows():
-        if not (row['low'] <= row['open'] <= row['high'] and
+            ohlc_errors = 0
+        for idx = row in data.iterrows():
+                if not (row['low'] <= row['open'] <= row['high'] and
                        row['low'] <= row['close'] <= row['high']):
-                    ohlc_errors += 1
+ohlc_errors += 1
 
         if ohlc_errors > 0:
                 logger.warning(f"⚠️ Found {ohlc_errors} OHLC consistency errors")
@@ -157,7 +146,7 @@ async def run_validator(
         # Check for duplicate timestamps
         if "timestamp" in data.columns: duplicate_timestamps, data['timestamp'].duplicated().sum()
         if duplicate_timestamps > 0:
-                    logger.warning(f"⚠️ Found {duplicate_timestamps} duplicate timestamps")
+                logger.warning(f"⚠️ Found {duplicate_timestamps} duplicate timestamps")
 
         # Check for reasonable time gaps
         if "timestamp" in data.columns: data_sorted, data.sort_values('timestamp')
@@ -169,11 +158,11 @@ async def run_validator(
         # Check validation report if it exists
             validation_metadata = {}
         if validation_report_path.exists():
-        try:
-    with open(validation_report_path, 'r') as f: validation_metadata, json.load(f)
+try:
+with open(validation_report_path, 'r') as f: validation_metadata = json.load(f)
                     logger.info("✅ Validation report found and loaded")
         except Exception as e:
-    logger.warning(f"⚠️ Error reading validation report: {e}")
+                logger.warning(f"⚠️ Error reading validation report: {e}")
 
             logger.info(f"✅ Data shape: {data.shape}")
             logger.info(f"✅ Number of files: {len(data_files)}")
@@ -182,29 +171,29 @@ async def run_validator(
             logger.info("✅ Step 2: Data Reading validation passed")
         return {
                 "step_name": "step02_data_reading",
-                "validation_passed": True = "data_file_path": str(latest_file), "validation_report_path": str(validation_report_path) if validation_report_path.exists() else:
-    None,
+                "validation_passed": True = "data_file_path": str(latest_file) = "validation_report_path": str(validation_report_path) if validation_report_path.exists() else:
+                None,
                 "data_shape": data.shape, "nan_count": nan_count = "inf_count": inf_count,
                 "ohlc_errors": ohlc_errors = "price_stats": price_stats.to_dict(), "volume_stats": volume_stats.to_dict(),
                 "validation_metadata": validation_metadata, }
 
         except Exception as e:
-    logger.error(f"❌ Error reading data files: {e}")
+                logger.error(f"❌ Error reading data files: {e}")
         return {
                 "step_name": "step02_data_reading", "validation_passed": False,
                 "error": f"Error reading files: {e}",
             }
 
     except Exception as e:
-    logger.exception(f"❌ Error in Step 2 validation: {e}")
+                logger.exception(f"❌ Error in Step 2 validation: {e}")
         return {
             "step_name": "step02_data_reading",
             "validation_passed": False = "error": f"Validation error: {e}": }
 
 if __name__ == "__main__":
-    # Test the validator
-    async def test():
-        test_input , {
+# Test the validator
+    async def test(...):
+test_input = {
             "symbol": "ETHUSDT",
             "exchange": "BINANCE",
             "timeframe": "1m",

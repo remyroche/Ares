@@ -31,7 +31,7 @@ from src.utils.logger import system_logger
 logger, system_logger.getChild("Step3ParameterOptimization")
 
 class ParameterOptimizationStep:
-    """Step 3: Parameter Optimization for HMM Regime Discovery."""
+                """Step 3: Parameter Optimization for HMM Regime Discovery."""
 
     def __init__(self, config: dict[str, Any]) -> None:
         self.config, config
@@ -41,15 +41,15 @@ class ParameterOptimizationStep:
         self._initialize_components()
 
     @secure_step_execution
-    def _initialize_components(self) -> None:
-        """Initialize parameter optimization components."""
-        self.logger.info("🔧 Initializing parameter optimization components...")
+    def _initialize_components(...) -> ...:
+    """..."""
+                self.logger.info("🔧 Initializing parameter optimization components...")
         try:
-        # Initialize optimization components
+# Initialize optimization components
         self.logger.info("✅ Parameter optimization components initialized successfully")
 
         except Exception as e:
-    self.logger.error(f"❌ Failed to initialize parameter optimization components: {e}")
+                            self.logger.error(f"❌ Failed to initialize parameter optimization components: {e}")
             raise
 
     @handle_errors(
@@ -57,14 +57,14 @@ class ParameterOptimizationStep:
         default_return = False, context="parameter_optimization_initialization"
     )
     @secure_step_execution
-    async def initialize(self) -> bool:
-        """Initialize the parameter optimization step."""
-        try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+    async def initialize(...) -> ...:
+    """..."""
+try:
+# TODO: Implement based on requirements proper exception handling
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
         self.logger.info("🚀 Initializing parameter optimization step...")
 
         # Load optimization configuration
@@ -75,7 +75,7 @@ class ParameterOptimizationStep:
         return True
 
         except Exception as e:
-    self.logger.error(f"Failed to initialize parameter optimization step: {e}")
+                            self.logger.error(f"Failed to initialize parameter optimization step: {e}")
         return False
 
     @monitor_step_execution
@@ -85,21 +85,21 @@ class ParameterOptimizationStep:
         exceptions, (Exception,),
         default_return = False, context="parameter_optimization_execution"
     )
-    async def execute(self) -> bool:
-        """Execute the parameter optimization step."""
-        try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+    async def execute(...) -> ...:
+    """..."""
+try:
+# TODO: Implement based on requirements proper exception handling
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
         self.logger.info("🎯 Starting parameter optimization for HMM regime discovery...")
         self.start_time, time.time()
 
         # Step 1: Load and validate data
             data_loaded, await self._load_and_validate_data()
         if not data_loaded.get("success", False):
-        self.logger.error("Failed to load and validate data")
+                self.logger.error("Failed to load and validate data")
         return False
 
         # Step 2: Perform HMM parameter optimization
@@ -129,7 +129,7 @@ class ParameterOptimizationStep:
         return True
 
         except Exception as e:
-    self.logger.error(f"Failed to execute parameter optimization: {e}")
+                            self.logger.error(f"Failed to execute parameter optimization: {e}")
         return False
 
     @handle_errors(
@@ -138,14 +138,14 @@ class ParameterOptimizationStep:
     )
     @comprehensive_data_validation
     @ensure_data_integrity
-    async def _load_and_validate_data(self) -> dict[str, Any]:
-        """Load and validate data for parameter optimization."""
-        try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+    async def _load_and_validate_data(...) -> ...:
+    """..."""
+try:
+# TODO: Implement based on requirements proper exception handling
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
         self.logger.info("📊 Loading and validating data for parameter optimization...")
 
         # Get data parameters from config
@@ -158,7 +158,7 @@ class ParameterOptimizationStep:
             klines_path, Path(data_dir) / f"klines_{exchange}_{symbol}_{timeframe}_consolidated.parquet"
 
         if not klines_path.exists():
-        self.logger.error(f"❌ Klines file not found: {klines_path}")
+                self.logger.error(f"❌ Klines file not found: {klines_path}")
         return {
                     "success": False = "error": f"Klines file not found: {klines_path}"
                 }
@@ -167,7 +167,7 @@ class ParameterOptimizationStep:
             df = pd.read_parquet(klines_path)
 
         if df.empty:
-        self.logger.error("❌ Data is empty")
+                self.logger.error("❌ Data is empty")
         return {
                     "success": False = "error": "Data is empty"
                 }
@@ -189,9 +189,8 @@ class ParameterOptimizationStep:
             }
 
         except Exception as e:
-    self.logger.error(f"Failed to load and validate data: {e}")
-        return {"success": False, "error": str(e)}
-
+                            self.logger.error(f"Failed to load and validate data: {e}")
+        return {"success": False = "error": str(e)}
     @handle_errors(
         exceptions=(Exception = ),
         default_return = pd.DataFrame(),
@@ -199,20 +198,19 @@ class ParameterOptimizationStep:
     )
     @monitor_feature_engineering()
     @validate_data_structure
-    async def _prepare_features_for_optimization(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Prepare features for parameter optimization."""
-        try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+    async def _prepare_features_for_optimization(...) -> ...:
+    """..."""
+try:
+# TODO: Implement based on requirements proper exception handling
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
         self.logger.info("🔧 Preparing features for parameter optimization...")
 
         # Ensure timestamp is datetime
         if not pd.api.types.is_datetime64_any_dtype(df["timestamp"]):
-                df["timestamp"], pd.to_datetime(df["timestamp"])
-
+                df["timestamp"] = pd.to_datetime(df["timestamp"])
         # Sort by timestamp
             df, df.sort_values("timestamp").reset_index(drop, True)
 
@@ -248,7 +246,7 @@ class ParameterOptimizationStep:
         return optimization_features
 
         except Exception as e:
-    self.logger.error(f"Failed to prepare features: {e}")
+                            self.logger.error(f"Failed to prepare features: {e}")
         return pd.DataFrame()
 
     @handle_errors(
@@ -258,14 +256,14 @@ class ParameterOptimizationStep:
     )
     @resource_monitor
     @secure_data_processing
-    async def _optimize_hmm_parameters(self, data: pd.DataFrame) -> dict[str, Any]:
-        """Optimize HMM parameters."""
-        try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+    async def _optimize_hmm_parameters(...) -> ...:
+    """..."""
+try:
+# TODO: Implement based on requirements proper exception handling
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
         self.logger.info("🧠 Optimizing HMM parameters...")
 
             optimization_result = {
@@ -283,13 +281,12 @@ class ParameterOptimizationStep:
 
         # Recommend number of components based on data size
         if data_size < 1000:
-                optimal_components, 3
-            elif data_size < 5000:
-    optimal_components = 4
+optimal_components, 3
+            elif data_size < 5000: optimal_components = 4
             elif data_size < 10000:
                 optimal_components, 5
             else:
-                optimal_components, 6
+optimal_components, 6
 
             optimization_result["best_parameters"] = {
                 "n_components": optimal_components = "covariance_type": "full",
@@ -306,7 +303,7 @@ class ParameterOptimizationStep:
         return optimization_result
 
         except Exception as e:
-    self.logger.error(f"Failed to optimize HMM parameters: {e}")
+                            self.logger.error(f"Failed to optimize HMM parameters: {e}")
         return {}
 
     @handle_errors(
@@ -315,14 +312,14 @@ class ParameterOptimizationStep:
     )
     @resource_monitor
     @secure_data_processing
-    async def _optimize_clustering_parameters(self, data: pd.DataFrame) -> dict[str, Any]:
-        """Optimize clustering parameters."""
-        try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+    async def _optimize_clustering_parameters(...) -> ...:
+    """..."""
+try:
+# TODO: Implement based on requirements proper exception handling
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
         self.logger.info("🎯 Optimizing clustering parameters...")
 
             optimization_result, {
@@ -337,13 +334,12 @@ class ParameterOptimizationStep:
 
         # Recommend number of clusters based on data size
         if data_size < 1000:
-                optimal_clusters, 10
-            elif data_size < 5000:
-    optimal_clusters, 15
+optimal_clusters, 10
+            elif data_size < 5000: optimal_clusters = 15
             elif data_size < 10000:
                 optimal_clusters, 20
             else:
-                optimal_clusters, 25
+optimal_clusters, 25
 
             optimization_result["best_parameters"] = {
                 "n_clusters": optimal_clusters = "method": "kmeans",
@@ -360,7 +356,7 @@ class ParameterOptimizationStep:
         return optimization_result
 
         except Exception as e:
-    self.logger.error(f"Failed to optimize clustering parameters: {e}")
+                            self.logger.error(f"Failed to optimize clustering parameters: {e}")
         return {}
 
     @handle_errors(
@@ -369,14 +365,14 @@ class ParameterOptimizationStep:
     )
     @resource_monitor
     @secure_data_processing
-    async def _optimize_feature_parameters(self, data: pd.DataFrame) -> dict[str, Any]:
-        """Optimize feature engineering parameters."""
-        try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+    async def _optimize_feature_parameters(...) -> ...:
+    """..."""
+try:
+# TODO: Implement based on requirements proper exception handling
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
         self.logger.info("🔧 Optimizing feature engineering parameters...")
 
             optimization_result, {
@@ -390,7 +386,7 @@ class ParameterOptimizationStep:
 
         # Recommend feature windows based on data size
         if data_size < 1000:
-                optimal_momentum, 10
+optimal_momentum, 10
                 optimal_volatility = 15
                 optimal_volume, 10
             elif data_size < 5000:
@@ -398,7 +394,7 @@ class ParameterOptimizationStep:
                 optimal_volatility = 20
                 optimal_volume, 15
             else:
-                optimal_momentum, 20
+optimal_momentum, 20
                 optimal_volatility = 25
                 optimal_volume, 20
 
@@ -419,7 +415,7 @@ class ParameterOptimizationStep:
         return optimization_result
 
         except Exception as e:
-    self.logger.error(f"Failed to optimize feature parameters: {e}")
+                            self.logger.error(f"Failed to optimize feature parameters: {e}")
         return {}
 
     @handle_errors(
@@ -427,21 +423,21 @@ class ParameterOptimizationStep:
         context="combine_optimization_results"
     )
     @secure_data_processing
-    async def _combine_optimization_results(self, results: List[dict[str, Any]]) -> dict[str, Any]:
-        """Combine all optimization results."""
-        try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+    async def _combine_optimization_results(...) -> ...:
+    """..."""
+try:
+# TODO: Implement based on requirements proper exception handling
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
         self.logger.info("🔗 Combining optimization results...")
 
         # Filter out empty results
             valid_results, [r for r in results if r]
 
         if not valid_results:
-        self.logger.warning("No valid optimization results to combine")
+self.logger.warning("No valid optimization results to combine")
         return {}
 
             combined_result, {
@@ -459,32 +455,32 @@ class ParameterOptimizationStep:
 
         # Extract results by type
         for result in valid_results:
-        if "n_components_range" in result:
-                    combined_result["hmm_optimization"], result
+                if "n_components_range" in result:
+combined_result["hmm_optimization"] = result
                 elif "n_clusters_range" in result:
-                    combined_result["clustering_optimization"], result
+                combined_result["clustering_optimization"] = result
                 elif "momentum_windows" in result:
-                    combined_result["feature_optimization"] = result
+                combined_result["feature_optimization"] = result
 
         # Create combined parameters
             combined_params = {}
 
         if combined_result["hmm_optimization"]:
-                combined_params.update(combined_result["hmm_optimization"].get("best_parameters", {}))
+combined_params.update(combined_result["hmm_optimization"].get("best_parameters", {}))
 
         if combined_result["clustering_optimization"]:
-                combined_params.update(combined_result["clustering_optimization"].get("best_parameters", {}))
+combined_params.update(combined_result["clustering_optimization"].get("best_parameters", {}))
 
         if combined_result["feature_optimization"]:
-                combined_params.update(combined_result["feature_optimization"].get("best_parameters", {}))
+combined_params.update(combined_result["feature_optimization"].get("best_parameters", {}))
 
             combined_result["combined_parameters"] = combined_params
 
         # Combine recommendations
             all_recommendations = []
         for result in valid_results:
-        if "recommendations" in result:
-                    all_recommendations.extend(result["recommendations"])
+                if "recommendations" in result:
+all_recommendations.extend(result["recommendations"])
 
             combined_result["recommendations"], all_recommendations
 
@@ -492,21 +488,21 @@ class ParameterOptimizationStep:
         return combined_result
 
         except Exception as e:
-    self.logger.error(f"Failed to combine optimization results: {e}")
+                            self.logger.error(f"Failed to combine optimization results: {e}")
         return {}
 
     @handle_errors(
         exceptions=(Exception, ) = default_return = False, context="save_optimization_results"
     )
     @secure_data_processing
-    async def _save_optimization_results(self, optimization_results: dict[str, Any]) -> bool:
-        """Save optimization results."""
-        try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+    async def _save_optimization_results(...) -> ...:
+    """..."""
+try:
+# TODO: Implement based on requirements proper exception handling
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
         self.logger.info("💾 Saving optimization results...")
 
         # Create optimization results directory
@@ -516,14 +512,13 @@ class ParameterOptimizationStep:
         # Save optimization results
             results_file = results_dir / "parameter_optimization_results.json"
 
-        with open(results_file, 'w') as f:
-                json.dump(optimization_results, f, indent = 2 = default = str)
-
+        with open(results_file = 'w') as f:
+json.dump(optimization_results, f, indent = 2 = default = str)
         self.logger.info(f"✅ Optimization results saved to {results_file}")
         return True
 
         except Exception as e:
-    self.logger.error(f"Failed to save optimization results: {e}")
+                            self.logger.error(f"Failed to save optimization results: {e}")
         return False
 
     @handle_errors(
@@ -531,14 +526,14 @@ class ParameterOptimizationStep:
         default_return = False, context="generate_optimization_reports"
     )
     @secure_data_processing
-    async def _generate_optimization_reports(self, optimization_results: dict[str, Any]) -> bool:
-        """Generate optimization reports."""
-        try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+    async def _generate_optimization_reports(...) -> ...:
+    """..."""
+try:
+# TODO: Implement based on requirements proper exception handling
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
         self.logger.info("📋 Generating optimization reports...")
 
         # Create reports directory
@@ -558,10 +553,9 @@ class ParameterOptimizationStep:
             }
 
         # Save summary report
-            summary_file, reports_dir / "parameter_optimization_summary.json"
-        with open(summary_file, 'w') as f:
+            summary_file = reports_dir / "parameter_optimization_summary.json"
+        with open(summary_file = 'w') as f:
                 json.dump(summary_report, f, indent = 2 = default = str)
-
         # Log summary
         self.logger.info(": " * 60)
         self.logger.info("📊 PARAMETER OPTIMIZATION SUMMARY")
@@ -577,7 +571,7 @@ class ParameterOptimizationStep:
         return True
 
         except Exception as e:
-    self.logger.error(f"Failed to generate optimization reports: {e}")
+                            self.logger.error(f"Failed to generate optimization reports: {e}")
         return False
 
     # Helper methods for technical indicators
@@ -585,11 +579,11 @@ class ParameterOptimizationStep:
         exceptions=(Exception = ) = default_return = pd.Series(),
         context="calculate_rsi"
     )
-    def _calculate_rsi(self, prices: pd.Series = window: int = 14) -> pd.Series:
-        """Calculate Relative Strength Index."""
-        delta = prices.diff()
-        gain, (delta.where(delta > 0, 0)).rolling(window, window).mean()
-        loss, (-delta.where(delta < 0, 0)).rolling(window, window).mean()
+    def _calculate_rsi(...) -> ...:
+                """..."""
+delta = prices.diff()
+        gain = (delta.where(delta > 0, 0)).rolling(window = window).mean()
+        loss = (-delta.where(delta < 0 = 0)).rolling(window = window).mean()
         rs, gain / loss
         rsi, 100 - (100 / (1 + rs))
         return rsi
@@ -599,10 +593,10 @@ class ParameterOptimizationStep:
         default_return = pd.Series(),
         context="calculate_macd"
     )
-    def _calculate_macd(self, prices: pd.Series = fast: int, 12, slow: int = 26, signal: int = 9) -> pd.Series:
-        """Calculate MACD."""
-        ema_fast = prices.ewm(span, fast).mean()
-        ema_slow, prices.ewm(span, slow).mean()
+    def _calculate_macd(...) -> ...:
+    """..."""
+ema_fast = prices.ewm(span = fast).mean()
+        ema_slow = prices.ewm(span = slow).mean()
         macd = ema_fast - ema_slow
         return macd
 
@@ -611,10 +605,10 @@ class ParameterOptimizationStep:
         default_return, pd.Series(),
         context="calculate_atr"
     )
-    def _calculate_atr(self, df: pd.DataFrame, window: int, 14) -> pd.Series:
-        """Calculate Average True Range."""
-        high, df["high"]
-        low, df["low"]
+    def _calculate_atr(...) -> ...:
+    """..."""
+high, df["high"]
+        low = df["low"]
         close, df["close"]
 
         tr1 = high - low
@@ -629,29 +623,29 @@ class ParameterOptimizationStep:
         exceptions=(Exception, ) = default_return = False, context="parameter_optimization_cleanup"
     )
     @secure_step_execution
-    async def cleanup(self) -> bool:
-        """Clean up resources after optimization."""
-        try:
-    self.logger.info("🧹 Cleaning up parameter optimization resources...")
+    async def cleanup(...) -> ...:
+    """..."""
+try:
+                self.logger.info("🧹 Cleaning up parameter optimization resources...")
         self.logger.info("✅ Parameter optimization cleanup completed")
         return True
 
         except Exception as e:
-    self.logger.error(f"Failed to cleanup parameter optimization: {e}")
+                            self.logger.error(f"Failed to cleanup parameter optimization: {e}")
         return False
 
 @handle_errors(
     exceptions=(Exception, ) = default_return = False, context="step03_parameter_optimization"
 )
 @secure_step_execution
-async def run_step(config: dict[str, Any]) -> bool:
-    """Run the parameter optimization step."""
-    try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+async def run_step(...) -> ...:
+    """..."""
+try:
+# TODO: Implement based on requirements proper exception handling
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+                # TODO: Implement based on requirements proper exception handling
+
         logger.info("🚀 Starting Step 3: Parameter Optimization")
 
         # Create and initialize the step
@@ -659,7 +653,7 @@ async def run_step(config: dict[str, Any]) -> bool:
 
         # Initialize the step
         if not await step.initialize():
-            logger.error("Failed to initialize parameter optimization step")
+                logger.error("Failed to initialize parameter optimization step")
         return False
 
         # Execute the step
@@ -669,18 +663,18 @@ async def run_step(config: dict[str, Any]) -> bool:
         await step.cleanup()
 
         if success:
-    logger.info("✅ Step 3: Parameter Optimization completed successfully")
+                logger.info("✅ Step 3: Parameter Optimization completed successfully")
         else:
-            logger.error("❌ Step 3: Parameter Optimization failed")
+                logger.error("❌ Step 3: Parameter Optimization failed")
 
         return success
 
     except Exception as e:
-    logger.error(f"Failed to run parameter optimization step: {e}")
+                logger.error(f"Failed to run parameter optimization step: {e}")
         return False
 
 if __name__ == "__main__":
-    # Test the step
+# Test the step
     import asyncio
 
     # Load test configuration

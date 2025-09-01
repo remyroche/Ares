@@ -26,13 +26,8 @@ from src.utils.logger import system_logger
     default_return={},
     context="configuration loading",
 )
-async def load_config(config_path: str) -> dict:
-    """Load configuration from YAML file."""
-    try:
-        with open(config_path) as f:
-            return yaml.safe_load(f)
     except Exception:
-        return {}
+                return {}
 
 
 @handle_errors(
@@ -40,9 +35,6 @@ async def load_config(config_path: str) -> dict:
     default_return=pd.DataFrame(),
     context="sample data creation",
 )
-async def create_sample_data() -> pd.DataFrame:
-    """Create sample price data for demonstration."""
-    try:
         # Create sample OHLCV data
         dates = pd.date_range("2024-01-01", "2024-12-31", freq="1min")
         n_points = len(dates)
@@ -75,17 +67,10 @@ async def create_sample_data() -> pd.DataFrame:
         return data
 
     except Exception:
-        return pd.DataFrame()
+                return pd.DataFrame()
 
 
 @handle_errors(
-    exceptions=(ValueError, RuntimeError, FileNotFoundError),
-    default_return=False,
-    context="feature precomputation",
-)
-async def step01_precompute_features(config: dict) -> Optional[bool]:
-    """Step 1: Pre-compute wavelet features for the entire dataset."""
-    try:
         logger = system_logger.getChild("WaveletWorkflow")
         # Initialize pre-computer
         precomputer = WaveletFeaturePrecomputer(config)
@@ -95,7 +80,7 @@ async def step01_precompute_features(config: dict) -> Optional[bool]:
         sample_data = await create_sample_data()
 
         if sample_data.empty:
-            logger.error("Sample data generation failed")
+                logger.error("Sample data generation failed")
             return False
 
         # Save sample data
@@ -118,19 +103,16 @@ async def step01_precompute_features(config: dict) -> Optional[bool]:
         logger.info(f"Precomputation finished in {processing_time:.2f}s, success={success}")
 
         if success:
-            # Print cache statistics
+# Print cache statistics
             stats = precomputer.get_precomputation_stats()
             logger.info(f"Precomputation stats: {stats}")
             return True
         return False
 
     except Exception:
-        return False
+                return False
 
 
-async def step02_run_backtests(config: dict) -> Optional[bool]:
-    """Step 2: Run backtests using cached features."""
-    try:
         logger = system_logger.getChild("WaveletWorkflow")
         # Initialize backtesting system
         backtester = BacktestingWithCachedFeatures(config)
@@ -171,9 +153,6 @@ async def step02_run_backtests(config: dict) -> Optional[bool]:
         processing_time = time.time() - start_time
 
         if results:
-            # Print results
-            for i, result in enumerate(results):
-                logger.info(f"Backtest result summary: {result.get('summary', {})}")
 
             # Print performance statistics
             perf_stats = backtester.get_performance_stats()
@@ -183,13 +162,9 @@ async def step02_run_backtests(config: dict) -> Optional[bool]:
         return False
 
     except Exception:
-        return False
+                return False
 
 
-async def step03_performance_comparison(config: dict) -> Optional[bool]:
-    """Step 3: Compare performance with and without caching."""
-    try:
-        logger = system_logger.getChild("WaveletWorkflow")
         # Load sample data (project OHLCV)
         try:
             price_data = pd.read_parquet(
@@ -225,19 +200,16 @@ async def step03_performance_comparison(config: dict) -> Optional[bool]:
         )
 
         if cached_time < no_cache_time:
-            logger.info("Caching provided a speedup as expected.")
+                logger.info("Caching provided a speedup as expected.")
         else:
-            logger.warning("Caching did not provide expected speedup in this run.")
+                logger.warning("Caching did not provide expected speedup in this run.")
 
         return True
 
     except Exception:
-        return False
+                return False
 
 
-async def step04_cache_management(config: dict) -> Optional[bool]:
-    """Step 4: Demonstrate cache management features."""
-    try:
         logger = system_logger.getChild("WaveletWorkflow")
         # Initialize cache management
         from src.training.steps.vectorized_advanced_feature_engineering import (
@@ -255,17 +227,14 @@ async def step04_cache_management(config: dict) -> Optional[bool]:
         return True
 
     except Exception:
-        return False
+                return False
 
 
-async def main() -> None:
-    """Main workflow function."""
-    try:
         logger = system_logger.getChild("WaveletWorkflow")
         # Load configuration
         config_path = "config/wavelet_caching_config.yaml"
         if not Path(config_path).exists():
-            config = {
+config = {
                 "wavelet_cache": {
                     "cache_enabled": True,
                     "cache_dir": "data/wavelet_cache",
@@ -292,33 +261,33 @@ async def main() -> None:
         # Step 1: Pre-compute features
         step01_success = await step01_precompute_features(config)
         if not step01_success:
-            logger.error("Step 1 failed. Aborting workflow.")
+                logger.error("Step 1 failed. Aborting workflow.")
             return
 
         # Step 2: Run backtests
         step02_success = await step02_run_backtests(config)
         if not step02_success:
-            logger.error("Step 2 failed. Aborting workflow.")
+                logger.error("Step 2 failed. Aborting workflow.")
             return
 
         # Step 3: Performance comparison
         step03_success = await step03_performance_comparison(config)
         if not step03_success:
-            logger.error("Step 3 failed. Aborting workflow.")
+                logger.error("Step 3 failed. Aborting workflow.")
             return
 
         # Step 4: Cache management
         step04_success = await step04_cache_management(config)
         if not step04_success:
-            logger.error("Step 4 failed.")
+                logger.error("Step 4 failed.")
             return
 
         # Summary
         logger.info("Wavelet caching workflow completed successfully.")
 
     except Exception:
-        system_logger.getChild("WaveletWorkflow").exception("Workflow failed")
+                system_logger.getChild("WaveletWorkflow").exception("Workflow failed")
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+asyncio.run(main())

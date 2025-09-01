@@ -17,7 +17,23 @@ from src.utils.warning_symbols import (
 
 
 class StepOrchestrator:
-    """Orchestrates training step execution with progress management using EnhancedTrainingManager."""
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="steporchestrator initialization",
+    )
+    async def initialize(self) -> bool:
+        """Initialize StepOrchestrator."""
+        try:
+            self.logger.info(f"🚀 Initializing {class_name}...")
+            self.is_initialized = True
+            self.logger.info(f"✅ {class_name} initialized successfully")
+            return True
+        except Exception as e:
+            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
+            return False
+                """Orchestrates training step execution with progress management using EnhancedTrainingManager."""
 
     def __init__(self, symbol: str, exchange: str, data_dir: str = "data/training") -> None:
         self.symbol = symbol
@@ -60,21 +76,6 @@ class StepOrchestrator:
 
         self.logger.info(f"Initialized StepOrchestrator for {symbol} on {exchange}")
 
-    def print(self, message: str) -> None:
-        """Print a message using the logger."""
-        self.logger.info(message)
-
-    async def _setup_enhanced_training_manager(self, config: dict[str, Any]) -> bool:
-        """Set up the enhanced training manager.
-
-        Args:
-            config: Configuration dictionary
-
-        Returns:
-            True if setup successful, False otherwise
-
-        """
-        try:
             from src.training.enhanced_training_manager import (
                 setup_enhanced_training_manager)
 
@@ -97,38 +98,8 @@ class StepOrchestrator:
             self.print(failed(error_msg))
             return False
 
-    def get_step_module(self, step_name: str) -> Any | None:
-        """Import and return a step module.
-
-        Args:
-            step_name: Name of the step (e.g., 'step01_data_collection')
-
-        Returns:
-            Step module if found, None otherwise
-
-        """
-        try:
-            module_path = f"src.training.steps.{step_name}"
-            module = importlib.import_module(module_path)
-            self.logger.info(f"✅ Loaded step module: {step_name}")
-            return module
-        except ImportError as e:
-            self.print(failed(f"❌ Failed to import step module {step_name}: {e}"))
-            return None
-
-    def get_step_class(self, step_name: str) -> Any | None:
-        """Get the main step class from a step module.
-
-        Args:
-            step_name: Name of the step
-
-        Returns:
-            Step class if found, None otherwise
-
-        """
-        module = self.get_step_module(step_name)
         if not module:
-            return None
+                return None
 
         # Look for the main step class (usually ends with 'Step')
         step_classes = [
@@ -138,33 +109,16 @@ class StepOrchestrator:
         ]
 
         if step_classes:
-            step_class = getattr(module, step_classes[0])
             self.logger.info(f"✅ Found step class: {step_classes[0]}")
             return step_class
 
         self.print(error(f"❌ No step class found in {step_name}"))
         return None
 
-    async def execute_step(
-        self, step_name: str,
-        config: dict[str, Any], force_rerun: bool = False,
-    ) -> bool:
-        """Execute a single training step using enhanced training manager.
-
-        Args:
-            step_name: Name of the step to execute
-            config: Configuration dictionary
-            force_rerun: If True, rerun even if progress exists
-
-        Returns:
-            True if step executed successfully, False otherwise
-
-        """
-        self.logger.info(f"🚀 Executing step: {step_name}")
 
         # Check if step already completed (unless force_rerun)
         if not force_rerun and self.progress_manager.step_exists(step_name):
-            self.logger.info(f"⏭️  Step {step_name} already completed, skipping")
+                self.logger.info(f"⏭️  Step {step_name} already completed, skipping")
             return True
 
         try:
@@ -172,7 +126,7 @@ class StepOrchestrator:
             if not self.enhanced_training_manager:
                 setup_success = await self._setup_enhanced_training_manager(config)
                 if not setup_success:
-                    return False
+                return False
 
             # Determine training mode and apply mode-specific parameters
             training_mode = "blank" if os.getenv("BLANK_TRAINING_MODE", "0") == "1" else "full"
@@ -195,7 +149,7 @@ class StepOrchestrator:
                 training_input)
 
             if success:
-                # Save progress
+# Save progress
                 step_data = {
                     "result": {"status": "SUCCESS"},
                     "pipeline_state": {},
@@ -209,8 +163,6 @@ class StepOrchestrator:
 
                 if self.progress_manager.save_step_progress(
                     step_name,
-                    step_data, metadata):
-                    self.logger.info(f"✅ Step {step_name} completed successfully")
                     return True
                 self.print(failed(f"❌ Failed to save progress for {step_name}"))
                 return False
@@ -223,62 +175,32 @@ class StepOrchestrator:
             self.print(failed(error_msg))
             return False
 
-    def _build_pipeline_state(self, current_step: str) -> dict[str, Any]:
-        """Build pipeline state from previous step progress.
-
-        Args:
-            current_step: Current step being executed
-
-        Returns:
-            Pipeline state dictionary
-
-        """
-        pipeline_state = {}
+    def _build_pipeline_state(...) -> ...:
+    """..."""
+pipeline_state = {}
 
         # Load progress from all previous steps
         for step_name in self.available_steps:
-            if step_name == current_step:
-                break  # Stop at current step
+                if step_name == current_step:
+break  # Stop at current step
 
             progress = self.progress_manager.load_step_progress(step_name)
             if progress and "data" in progress:
                 step_data = progress["data"]
                 if "result" in step_data:
-                    pipeline_state[step_name] = step_data["result"]
+pipeline_state[step_name] = step_data["result"]
                 if "pipeline_state" in step_data:
-                    pipeline_state.update(step_data["pipeline_state"])
+pipeline_state.update(step_data["pipeline_state"])
 
         self.logger.info(f"📋 Built pipeline state with {len(pipeline_state)} items")
         return pipeline_state
 
-    async def execute_from_step(
-        self, start_step: str,
-        config: dict[str, Any], force_rerun: bool = False,
-    ) -> bool:
-        """Execute training pipeline starting from a specific step using enhanced training manager.
-
-        Args:
-            start_step: Step to start from
-            config: Configuration dictionary
-            force_rerun: If True, rerun completed steps
-
-        Returns:
-            True if all steps completed successfully, False otherwise
-
-        """
-        self.logger.info(f"🚀 Starting execution from step: {start_step}")
-
-        # Find the starting step index
-        try:
-            self.available_steps.index(start_step)
-        except ValueError:
-            self.print(error(f"❌ Unknown step: {start_step}"))
             return False
 
         # Set up enhanced training manager
         setup_success = await self._setup_enhanced_training_manager(config)
         if not setup_success:
-            return False
+                return False
 
         # Prepare training input for enhanced training manager
         # Use proper lookback_days based on training mode
@@ -308,40 +230,15 @@ class StepOrchestrator:
             training_input)
 
         if success:
-            self.logger.info(
                 "✅ Enhanced 16-step training pipeline completed successfully",
             )
             return True
         self.print(failed("❌ Enhanced 16-step training pipeline failed"))
         return False
 
-    async def execute_all_steps(
-        self, config: dict[str, Any],
-        force_rerun: bool = False,
-    ) -> bool:
-        """Execute all training steps from the beginning using enhanced training manager.
-
-        Args:
-            config: Configuration dictionary
-            force_rerun: If True, rerun completed steps
-
-        Returns:
-            True if all steps completed successfully, False otherwise
-
-        """
-        return await self.execute_from_step(
             self.available_steps[0],
             config, force_rerun)
 
-    def get_execution_status(self) -> dict[str, Any]:
-        """Get the current execution status.
-
-        Returns:
-            Dictionary with execution status information
-
-        """
-        status = {
-            "symbol": self.symbol, "exchange": self.exchange, "total_steps": len(self.available_steps),
             "completed_steps": [],
             "pending_steps": [],
             "latest_step": None,
@@ -349,33 +246,29 @@ class StepOrchestrator:
 
         latest_step = self.progress_manager.get_latest_step()
         if latest_step:
-            status["latest_step"] = latest_step
 
         for step_name in self.available_steps:
-            if self.progress_manager.step_exists(step_name):
-                status["completed_steps"].append(step_name)
+                if self.progress_manager.step_exists(step_name):
+status["completed_steps"].append(step_name)
             else:
-                status["pending_steps"].append(step_name)
+status["pending_steps"].append(step_name)
 
         return status
 
-    def clear_progress(self, step_name: str | None = None) -> bool:
-        """Clear progress for specific step or all steps.
 
-        Args:
-            step_name: Step name to clear, or None to clear all
+    def list_available_steps(...) -> ...:
+    """..."""
+                return self.available_steps.copy()
+    def _calculate_confidence(self, prediction):
+        """Calculate prediction confidence."""
+        try:
+            if hasattr(prediction, 'predict_proba'):
+                return np.max(prediction.predict_proba())
+            elif isinstance(prediction, (list, np.ndarray)):
+                return np.max(prediction)
+            else:
+                return 0.5
+        except Exception as e:
+            self.logger.error(f"Confidence calculation failed: {e}")
+            return 0.0
 
-        Returns:
-            True if cleared successfully, False otherwise
-
-        """
-        return self.progress_manager.clear_progress(step_name)
-
-    def list_available_steps(self) -> list[str]:
-        """Get list of available steps.
-
-        Returns:
-            List of available step names
-
-        """
-        return self.available_steps.copy()
